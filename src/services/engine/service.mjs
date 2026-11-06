@@ -156,7 +156,7 @@ export function desktopMode(env) {
   if (!DESKTOP_MODES.includes(desktop)) throw new Error(`cua: CUA_DESKTOP_MODE must be ${DESKTOP_MODES.join(' or ')} [invalid_setting]`);
   return desktop;
 }
-// How long end_task's hook may take (it writes two frames and waits on nothing).
+// How long end_task's hook may take (it writes two frames and waits at most 1 s for endTask's answer, #292).
 const TURN_ENDED_MS = 2_000;
 
 // An observation of another bundle than the approved one (internal: the call is redone once).
@@ -191,7 +191,7 @@ export function createService({nodeRepl, client = null}) {
   };
   // end_task: the cursor fades, the engine is told the task ended (its web enablement goes at once, #292), and the engine
   // connection closes, if this session's client ever reached the engine; the next engine-bound request reconnects
-  // (client.mjs `release`, #237). Nothing here waits on the engine.
+  // (client.mjs `release`, #237). The hook waits at most 1 s, for endTask's answer before the close.
   nodeRepl?.addTurnEndedHandler?.({timeoutMs: TURN_ENDED_MS, run: () => client?.release?.()});
   // A non-shipping build names its variant (#187's control build), so a sitting attests the half that answered.
   const nativeEngine = identity => ({engine: 'cua', version: identity.engineVersion, build: identity.build,

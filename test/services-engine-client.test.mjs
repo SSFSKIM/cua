@@ -311,17 +311,18 @@ test('no cursor context, no cursor request: release (end_task) sends endTask (#2
   assert.deepEqual(engine.received.map(r => r.method), ['ping', 'execute', 'endTask'], 'the engine read endTask before the close');
 });
 
-test('release (end_task) writes {hide: true} and closes the live connection at once, waiting on neither; with none live it sends nothing and launches nothing', async t => {
+test('release (end_task) unpublishes the connection at once, writes {hide: true} unawaited, then endTask, and closes on its answer; with none live it sends nothing and launches nothing', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   const lines = [];
   const {client, launches} = clientFor(socket, {cursor: CURSOR, log: line => lines.push(line)});
   t.after(() => client.close());
-  client.release();
+  await client.release();
   assert.equal(launches.length, 0, 'an end_task never starts an engine to close a connection it never had');
   const engine = await startFakeEngine(t, socket, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null}), 'execute:ok': () => 'ok'}});
   await client.execute('ok', {});
-  assert.equal(client.release(), undefined, 'nothing to wait for');
-  assert.equal(client.connected, false, 'closed at once: the hide\'s answer (here never sent) is not waited for');
+  const released = client.release();
+  assert.equal(client.connected, false, 'unpublished at once');
+  await released;
   await until(() => engine.sockets.size === 0);
   assert.deepEqual(engine.received.filter(r => r.method === 'cursor').map(r => r.params), [CURSOR, {hide: true}], 'the engine read the hide before the close');
   assert.deepEqual(engine.received.slice(-2).map(r => [r.method, r.params]), [['cursor', {hide: true}], ['endTask', {}]], 'then endTask, its task\'s end (#292)');
@@ -471,4 +472,56 @@ test('the debug engine: launched by the client through the relay when nothing an
   const mismatched = clientFor(socket, {expected: {...SOURCE_IDENTITY(), build: 'some-bundle-build'}}).client;
   t.after(() => mismatched.close());
   await assert.rejects(mismatched.connect(), error => /build unbundled/.test(error.message) && /cua install --engine/.test(error.message));
+});
+
+// The review of d2568c76..96c6f093: the real relay closes fully (src/repl-host/native-pipe.mjs: end, then destroy), and
+// the engine stops reading a connection whose answer it could not write, so endTask must be answered before the close.
+function fullCloseRepl() {
+  const repl = workerRepl();
+  const open = repl.nodeRepl.nativePipe.createConnection.bind(repl.nodeRepl.nativePipe);
+  repl.nodeRepl.nativePipe.createConnection = async path => {
+    const pipe = await open(path);
+    const socket = repl.nodeRepl.nativePipe.connections.at(-1);
+    return {...pipe, end() { socket.end(() => socket.destroy()); }};
+  };
+  return repl;
+}
+
+test('over a fully closing relay, release closes only once endTask is answered, and resolves then', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  let answered = null;
+  const engine = await startFakeEngine(t, socket, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null}), 'execute:ok': () => 'ok',
+    endTask: async () => { await new Promise(resolve => setTimeout(resolve, 60)); answered = performance.now(); return {released: 1}; }}});
+  const {nodeRepl} = fullCloseRepl();
+  const client = createEngineClient({nodeRepl, appPath: '/Applications/Fake Engine.app', socketPath: socket, expected: IDENTITY, firstConnectMs: 150, launchWaitMs: 1500, cursor: CURSOR});
+  t.after(() => client.close());
+  await client.execute('ok', {});
+  const engineSocket = [...engine.sockets][0];
+  let closedAt = null;
+  engineSocket.on('end', () => { closedAt = performance.now(); });
+  await client.release();
+  assert.ok(answered !== null, 'endTask was answered before release resolved');
+  await until(() => closedAt !== null);
+  assert.ok(closedAt >= answered, 'the close came after endTask\'s answer');
+  assert.deepEqual(engine.received.slice(-2).map(r => r.method), ['cursor', 'endTask']);
+});
+
+test('an endTask the engine never answers holds the close back at most its bound, and a request in flight fails at once', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  let finish = null;
+  const engine = await startFakeEngine(t, socket, {handlers: {endTask: () => NO_REPLY,
+    'execute:slow': () => new Promise(resolve => { finish = () => resolve('slow'); })}});
+  const {nodeRepl} = fullCloseRepl();
+  const client = createEngineClient({nodeRepl, appPath: '/Applications/Fake Engine.app', socketPath: socket, expected: IDENTITY, firstConnectMs: 150, launchWaitMs: 1500, endTaskWaitMs: 120});
+  t.after(() => client.close());
+  const inFlight = client.execute('slow', {});
+  await until(() => finish !== null);
+  const started = performance.now();
+  const released = client.release();
+  await assert.rejects(inFlight, SkyComputerUseTransportError, 'the ended task\'s request fails at once');
+  await released;
+  const waited = performance.now() - started;
+  assert.ok(waited >= 100 && waited < 1_000, `closed after the bound (${Math.round(waited)} ms)`);
+  await until(() => engine.sockets.size === 0);
+  finish();
 });

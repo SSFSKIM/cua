@@ -1001,6 +1001,32 @@ final class EnablementOwnershipAndGraceTests: XCTestCase {
     XCTAssertNil(secondSet.value ?? nil)
   }
 
+  /// The review of d2568c76..96c6f093: the relay closes fully, so an earlier answer's write can fail before the server
+  /// read the endTask the client sent; the frames still buffered are read and an endTask among them handled.
+  func testAnEndTaskBufferedBehindAFailedWriteIsStillHandled() {
+    var fds: [Int32] = [-1, -1]
+    XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds), 0)
+    let (engineEnd, clientEnd) = (fds[0], fds[1])
+    defer { close(engineEnd) }
+    for request in [["jsonrpc": "2.0", "id": 4, "method": "cursor", "params": ["hide": true]] as [String: Any],
+                    ["jsonrpc": "2.0", "id": 5, "method": "endTask", "params": [:] as [String: Any]]] {
+      XCTAssertTrue(writeFrame(clientEnd, encodeJSON(request)!))
+    }
+    close(clientEnd)  // the relay's full close
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false })
+    let app = chrome()
+    _ = engine.webAccessibility.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    let connection = ConnectionState(id: 1, fd: engineEnd)
+    var handled: [String] = []
+    endTasksAfterFailedWrite(engineEnd) { request in
+      handled.append(request.method)
+      _ = engine.handle(request, on: connection, receivedAt: 0)
+    }
+    XCTAssertEqual(handled, ["endTask"], "only the task's end: nothing else is handled or answered")
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "released at once, not after the grace")
+  }
+
   func testTheEndTaskRequestReleasesTheConnectionsEnablementAtOnce() {
     let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
                         intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false })

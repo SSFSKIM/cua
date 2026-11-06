@@ -773,12 +773,13 @@ test('against an engine without the cursor method the session goes on, and end_t
   assert.deepEqual(engine.received[1].params, {enabled: false});
 });
 
-test('end_task\'s hook answers without waiting on the engine: a hide and an endTask the engine never answers hold nothing up', async t => {
+test('end_task\'s hook waits at most endTask\'s bound: a hide and an endTask the engine never answers hold it no longer', async t => {
   const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR_LABEL: 'linux171'}, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null}),
     endTask: () => NO_REPLY}});
   await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]});
   const started = performance.now();
   await turnEnded();
-  assert.ok(performance.now() - started < 100, 'the hook returned at once');
+  const waited = performance.now() - started;
+  assert.ok(waited < 1_500, `the hook returned within endTask's 1 s bound (${Math.round(waited)} ms), under its own 2 s`);
   await until(() => engine.sockets.size === 0);
 });

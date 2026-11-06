@@ -2110,15 +2110,32 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      release, pays Chrome's 2.2 s debounce again (#288's latency); the first click into a fresh Chrome can take up to
      about 3 s. No early write at first resolution is made (the design session dropped it). A request running longer
      than the grace (a 30 s settle) could be released under it; its end re-arms the grace.
-  Proven offline (`EnablementOwnershipAndGraceTests`, 16: -25208 with a true readback owned and released, with a false
+  7. **The review of d2568c76..96c6f093** (four findings, all fixed). (i) The relay closes fully
+     (src/repl-host/native-pipe.mjs: end, then destroy), and `Server.serve` stopped reading once an earlier answer's
+     write failed, so an `endTask` buffered behind the hide could be lost: the client now unpublishes the connection,
+     fails its waiting requests, sends the hide unawaited and `endTask`, and closes only on endTask's answer, an error
+     or 1 s (`endTaskWaitMs`; end_task's hook is bounded at 2 s); and the server, after a failed write, still reads
+     the frames already buffered and handles an `endTask` among them (`endTasksAfterFailedWrite`, each read bounded
+     at 1 s), so a client that gave up waiting still ends its task. (ii) The stop raced live connections: `releaseAll`
+     now enters a stopping state under the class lock before it takes the processes; from then on `enableReporting`
+     writes nothing (checked again under the entry's lock, so an observation registered before the stop and waiting
+     on that lock does not re-enable after the reset) and `noteActivity` records nothing, and every owned entry is
+     reset whatever its observers; the shutdown request and a termination signal share it. (iii) A grace timer
+     checked its token before the entry's lock: activity landing between that check and the reset found the attribute
+     still owned and returned, then was reset underneath; the token is now checked again under the entry's lock, and a
+     stale one resets nothing. (iv) #288's container rule failed open on unreadable children (item 2 of #288's entry).
+  Proven offline (`EnablementOwnershipAndGraceTests`, 20: -25208 with a true readback owned and released, with a false
   one not owned, a value read true before never written, the write back's -25208 done and not retried; the release 30
   s after the last observation, not after the close; an open but idle connection released at 30 s and its next
   observation re-enabling, owned; a re-observation at 20 s cancelling the 30 s release; an input restarting the grace
   from itself; a click after a grace release re-enabling owned and fresh; end_task at once for the last actor only; the
   stop at once during a grace; a failed grace release retried at the close; 0 as the immediate release; an observation
-  during the grace's reset re-enabling; the `endTask` request. `RereadDeadlineTests`, 3: the rule, the action re-read
+  during the grace's reset re-enabling; the `endTask` request; and for the review, activity between the grace's first
+  check and its reset making it stale, an observation during the stop's reset writing nothing, one registered before
+  the stop not re-enabling after it, an endTask buffered behind a failed write still handled. `RereadDeadlineTests`, 3: the rule, the action re-read
   and the box re-read finding complete mode at 2.3 and 2.4 s after a write. The existing release tests at grace 0;
-  the client's and the service's endTask order in their JS suites.) Nothing live ran: the hosted check (EUI reads
+  the client's and the service's endTask order, and over a fully closing relay the close after endTask's answer and
+  at its bound, in their JS suites.) Nothing live ran: the hosted check (EUI reads
   false after end_task and after 30 s idle, a checkbox loses AXPress, the window moves without animation) is the next
   step.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #292.
@@ -2132,7 +2149,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      can answer Chrome's web-contents AXScrollArea, whose child is the AXWebArea, before it resolves inside the page.
      The toolbar's Reload resolves to an AXButton whose walk reaches the AXWindow with no web area.
   2. **The container rule** (`pointerView`, every pointer, seen or not): a hit, or any element on its walk below the
-     stop, with an AXWebArea among its children is `aboveWebArea`, a possible web area, never outside.
+     stop, with an AXWebArea among its children is `aboveWebArea`, a possible web area, never outside. Children, or a
+     child's role, that cannot be read are unknown, which the walk takes for incomplete, a possible web area too (the
+     review of d2568c76..96c6f093: a failed read had counted as no web-area child, so with a web area seen a page point
+     whose web-contents scroll area could not be read was taken to accept first mouse); the establishment keeps
+     re-hitting an unknown hit as it does a container.
   3. **The establishment** (`establishedPointerView`, the coordinate click and the element click's synthesized path,
      route 3, left button, a Chromium process with `hasSeenWebArea` false): the application's AXRole read, the target
      window searched for an AXWebArea (as `containsWebArea`, bounded by 1,000 nodes; `noteWebArea` when found), and
@@ -2142,7 +2163,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      activated or posted during it, and the intervention check before the activation is unchanged. Recorded as
      `pointerEstablish {ms, webAreaFound, rehits}` in the input meta (`cua/pointerEstablish`). A drag keeps the walk
      without the establishment.
-  Proven offline (`PointerEstablishTests`, 7: the container rule, the toolbar button resolved outside, a container
+  Proven offline (`PointerEstablishTests`, 8: the container rule, unreadable children as a possible web area, the toolbar button resolved outside, a container
   re-hit until the page control, the bound with a fast and a slow search, no web area found, no establishment where
   seen or outside Chromium, the record's wire; the service's pass-through). Nothing live ran: the first-click latency
   and the pre-observation toolbar limits stand until the hosted kit measures them.

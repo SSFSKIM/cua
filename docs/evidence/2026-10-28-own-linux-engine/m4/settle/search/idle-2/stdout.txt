@@ -1,0 +1,65 @@
+fatal: not a git repository (or any of the parent directories): .git
+| cell | lane | runs | misses (late / never) | streak at the end | verdict |
+|---|---|---:|---|---:|---|
+| chrome-input press_key background | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| chrome-input drag background | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| chrome-text press_key background | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| chrome-input press_key desktop | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| chrome-input drag desktop | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| chrome-input drag_handle desktop | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input press_key background | settle-0 | 31 | 18 (18 / 0) | 0 | not reached |
+| electron-input press_key background | settle-10 | 37 | 11 (11 / 0) | 0 | not reached |
+| electron-input press_key background | settle-25 | 33 | 11 (11 / 0) | 0 | not reached |
+| electron-input press_key background | settle-50 | 45 | 10 (10 / 0) | 0 | not reached |
+| electron-input press_key background | settle-75 | 35 | 7 (7 / 0) | 0 | not reached |
+| electron-input press_key background | settle-100 | 31 | 8 (8 / 0) | 0 | not reached |
+| electron-input drag background | settle-0 | 32 | 9 (9 / 0) | 0 | not reached |
+| electron-input drag background | settle-10 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-text press_key background | settle-0 | 35 | 3 (3 / 0) | 0 | not reached |
+| electron-text press_key background | settle-10 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input press_key desktop | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input drag desktop | settle-0 | 31 | 5 (5 / 0) | 0 | not reached |
+| electron-input drag desktop | settle-10 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| electron-input drag_handle desktop | settle-0 | 31 | 9 (9 / 0) | 0 | not reached |
+| electron-input drag_handle desktop | settle-10 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| firefox-input press_key background | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| firefox-input drag background | settle-0 | 42 | 1 (1 / 0) | 30 | 30 consecutive |
+| firefox-text press_key background | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| gedit press_key background | settle-0 | 31 | 1 (1 / 0) | 30 | 30 consecutive |
+| gedit drag background | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| gedit press_key desktop | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| gedit drag desktop | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| gedit drag_handle desktop | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| kate press_key background | settle-0 | 31 | 1 (1 / 0) | 30 | 30 consecutive |
+| kate drag background | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| qtcreator press_key background | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+| qtcreator drag background | settle-0 | 30 | 0 (0 / 0) | 30 | 30 consecutive |
+
+| cell | held step (ms) |
+|---|---:|
+| chrome-input press_key background | 0 |
+| chrome-input drag background | 0 |
+| chrome-text press_key background | 0 |
+| chrome-input press_key desktop | 0 |
+| chrome-input drag desktop | 0 |
+| chrome-input drag_handle desktop | 0 |
+| electron-input press_key background | **none** |
+| electron-input drag background | 10 |
+| electron-text press_key background | 10 |
+| electron-input press_key desktop | 0 |
+| electron-input drag desktop | 10 |
+| electron-input drag_handle desktop | 10 |
+| firefox-input press_key background | 0 |
+| firefox-input drag background | 0 |
+| firefox-text press_key background | 0 |
+| gedit press_key background | 0 |
+| gedit drag background | 0 |
+| gedit press_key desktop | 0 |
+| gedit drag desktop | 0 |
+| gedit drag_handle desktop | 0 |
+| kate press_key background | 0 |
+| kate drag background | 0 |
+| qtcreator press_key background | 0 |
+| qtcreator drag background | 0 |
+
+**Incomplete or failed:** electron-input press_key background: no step held (settle-0, settle-10, settle-25, settle-50, settle-75, settle-100).

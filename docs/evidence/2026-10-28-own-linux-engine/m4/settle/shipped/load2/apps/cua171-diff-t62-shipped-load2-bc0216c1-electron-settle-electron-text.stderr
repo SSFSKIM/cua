@@ -1,0 +1,4 @@
+[1195636:1106/033824.048283:ERROR:content/browser/browser_main_loop.cc:279] <unknown>: impl_DeleteText: assertion 'ATK_IS_EDITABLE_TEXT (user_data)' failed
+[1195636:1106/033852.482486:ERROR:content/browser/browser_main_loop.cc:279] <unknown>: impl_DeleteText: assertion 'ATK_IS_EDITABLE_TEXT (user_data)' failed
+[1195636:1106/034512.387791:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+[1195636:1106/034512.415219:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote

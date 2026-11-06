@@ -1,0 +1,4 @@
+Hspell: can't open /usr/share/hspell/hebrew.wgz.sizes.
+kf.sonnet.clients.hspell: HSpellDict::HSpellDict: Init failed
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x620432125f10 invalid) "/org/a11y/atspi/accessible/2147486466"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x620432125f10 invalid) "/org/a11y/atspi/accessible/2147486466"

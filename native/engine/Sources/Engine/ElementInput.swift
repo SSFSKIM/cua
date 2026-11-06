@@ -341,8 +341,8 @@ extension Engine {
   /// The focus route a plain left click into a web area's text field takes (#283, WebAreaFocus.swift): the text-entry
   /// element the hit resolves to (`webAreaFocusTarget`), refused as #282's walk is when there is none; else AXFocused
   /// written by route 1 with no activation and accepted once it reads back true, then the caret placed at the point
-  /// (`caretOffset` over the field's own characters' boxes when the hit is the field; a contenteditable region's text
-  /// is not mapped) and read back, the result's note saying what was done. Records the walk, the focused role, whether it
+  /// (`caretOffset` over the field's own characters' boxes when the hit is the field; over a contenteditable region's
+  /// AXStaticText hit's boxes, mapped into the region's offsets by `regionTextStart`) and read back on the focused element, the result's note saying what was done. Records the walk, the focused role, whether it
   /// was the hit, and the caret (`elementClick` reason `focusField` or `focusedNotPlaced`).
   func webAreaFocus(_ hit: AXUIElement, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
                     context: ExecutionContext) -> (inout InputMeta) throws -> Void {
@@ -379,9 +379,16 @@ extension Engine {
         },
         focused: { bool(attribute(field, kAXFocusedAttribute)) },
         offset: {
-          // Only the field's own characters: a contenteditable region's boxes are its text's, in other offsets.
-          guard !target.ancestor else { return .failure(.unmapped) }
-          return fieldCaretOffset(field, at: point)
+          guard target.ancestor else { return fieldCaretOffset(field, at: point) }
+          // A contenteditable region: the hit's own boxes give its text's offset, mapped into the region's.
+          guard role(hit) == "AXStaticText" else { return .failure(.unmapped) }
+          let local = fieldCaretOffset(hit, at: point)
+          guard case .success(let offset) = local else { return local }
+          guard let start = regionTextStart(of: hit, in: field, children: childrenRead, role: role,
+                                            value: { attribute($0, kAXValueAttribute) }, same: { CFEqual($0, $1) }) else {
+            return .failure(.unmapped)
+          }
+          return .success(start + offset)
         },
         writeSelection: { offset in
           _ = meta.posting { _ = gatedWrite(field, kAXSelectedTextRangeAttribute, axRangeValue(CFRange(location: offset, length: 0))); return true }

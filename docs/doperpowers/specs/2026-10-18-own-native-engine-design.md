@@ -1973,7 +1973,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      pointer events into an input and a region: not this route. Focus alone puts the caret at the field's existing
      selection, else at its start. AXRangeForPosition answers {0,0} for every point and AXTextMarkerForPosition
      answers no value; AXSelectedTextRange {k, 0} after focus puts the caret at k on all three kinds, and type_text
-     then lands there by route 2′.
+     then lands there by route 2′. Round 2 (run 42150236590,
+     https://github.com/SSFSKIM/cua/actions/runs/42150236590): before complete mode every character box is empty;
+     AXVisibleCharacterRange answers the whole text even when the field is scrolled; a linear box scan of 3,074
+     characters takes 165 to 185 ms. The region `alpha bravo <b>charlie delta</b><br>echo foxtrot <span>golf
+     hotel</span> india` exposes five AXStaticText children of its AXTextArea and no element for the <br>, whose
+     AXValue `alpha bravo charlie delta\necho foxtrot golf hotel india` counts the <br> as one character; a static
+     text's AXNumberOfCharacters reads 0, its AXValue is its text. Its texts found in that value in order start at
+     12 and 26 (a sum of lengths is one short after the <br>), and AXSelectedTextRange {start + local, 0} on the
+     region placed the caret at both measured points, typing landing there.
   2. **The target** (`webAreaFocusTarget`). #282's walk stops at an editable element (`walkStopped editable`); the
      route then walks again from the hit to the nearest text-entry role (`webAreaEditableRoles`, which now holds
      AXSecureTextField) whose AXFocused is settable, through editable elements and #282's passable roles only, its own
@@ -1983,29 +1991,36 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   3. **The focus** (`focusPlacingCaret`). Route 1 (`inputRoute action`), no activation: the in-flight check, the
      cursor at the point, AXFocused written and polled every 20 ms for up to 300 ms. A field that never reads focused
      answers `clickUnconfirmed`; the write's own answer never counts. #282's re-read gate does not apply.
-  4. **The caret** (`caretOffset`, `fieldCaretOffset`). The field's characters' boxes (AXBoundsForRange {i, 1}),
-     scanned over AXVisibleCharacterRange when it reads one, up to `caretScanLimit` characters: in the box that holds
+  4. **The caret** (`caretOffset`, `fieldCaretOffset`, `regionTextStart`). The field's characters' boxes
+     (AXBoundsForRange {i, 1}), scanned over AXVisibleCharacterRange when it reads one (in Chromium the whole text),
+     linearly up to `caretScanLimit` characters: in the box that holds
      the point the caret goes before the character on its left half and after it on its right; to the right of a line's
      last box, the end of that line, before its break, taken only where that end is established (a line break's box,
      or the next offset being the text's end, a line break, or a character whose non-empty box starts on a lower line, read even
-     outside the scanned range), since the rightmost box read need not be the line's last; an empty field is 0. Then
-     AXSelectedTextRange {offset, 0} is written and polled back. Not placed (`elementClick.caret`): `secure` (a password
+     outside the scanned range), since the rightmost box read need not be the line's last; an empty field is 0. A
+     contenteditable region's AXStaticText hit is scanned the same way over its own AXValue, and its local offset
+     mapped into the region's: the region's descendants walked depth-first in children order (at most
+     `regionWalkLimit`, 2,000, nodes), each non-empty static text's value found in the region's AXValue onward from
+     where the previous one ended, the hit's found location its start. Then AXSelectedTextRange {offset, 0} is
+     written on the focused element and polled back there. Not placed (`elementClick.caret`): `secure` (a password
      field is focused only, its value and ranges never read; a field whose AXSubrole read fails, as against having none,
      counts as one), `unreadable` (AXValue did not read as a string: never taken for an empty field),
-     `pointOutsideText` (no box holds the point and it is past no established line end; never a guessed offset),
-     `selectionMismatch`, `unmapped` (the focused element is not the hit: a contenteditable region's boxes are its
-     text's, in that text's offsets).
+     `noCharacterBoxes` (the scan read no usable box at all, as before complete mode), `pointOutsideText` (boxes were
+     read, but none holds the point and it is past no established line end; never a guessed offset),
+     `selectionMismatch`, `unmapped` (a region's hit that is not an AXStaticText, or whose start is not found: a value
+     or a children list unreadable, a static text not found, the hit not reached, the walk's bound run out).
   5. **The answer.** `elementClick {plan action, action AXFocused, reason focusField | focusedNotPlaced, pressedRole,
      pressed hit | ancestor, walk, caret}`, and the result's `note`, which the service now passes for `click` as for
      paste and type_text: placed, "focused through accessibility, with the caret at the point; no mouse event was
      sent, so the page saw no click"; not placed, typing goes to the field's existing selection or its start, use
      select_text or set_value first. A double click, a drag and focusField's fallback stay refused (#289).
-  Proven offline (`WebAreaFocusTests`, 21: the field hit, the region's text hit focusing its region, each refusal, the
+  Proven offline (`WebAreaFocusTests`, 25: the field hit, the region's text hit focusing its region, each refusal, the
   secure field by role, by subrole and by a failed subrole read, focused with nothing read, a write that never reads
-  back true, a caret read back elsewhere, a point in no box, an unreadable value, the line-end rule only where the end
-  is established (a failed box read, a cut scan, a soft wrap, an empty next box at negative screen y, the text's end)
-  and the empty-line rule, the in-flight
-  stop before any write, the record and the note; the service's note test for click).
+  back true, a caret read back elsewhere, a point in no box against no usable box at all, an unreadable value, the
+  line-end rule only where the end is established (a failed box read, a cut scan, a soft wrap, an empty next box at
+  negative screen y, the text's end) and the empty-line rule, the region mapping (round 2's five-node page at both
+  points, a nested group, a repeated word, each unmapped case), the in-flight stop before any write, the record and
+  the note; the service's note test for click).
   Date/Author: 2026-11-05, cursor235 for the design session's rulings on #283.
 
 ## Outcomes & Retrospective

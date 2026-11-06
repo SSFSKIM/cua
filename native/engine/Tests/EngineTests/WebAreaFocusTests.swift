@@ -148,31 +148,43 @@ final class WebAreaFocusTests: XCTestCase {
   // MARK: the caret's offset
 
   /// "ab\ncd": two lines of 10-point boxes, the first at y 0..<20 (its line break's box at x 20), the second at y 20..<40.
-  private func lines(_ point: CGPoint, range: Range<Int> = 0..<5) -> Int? {
+  private func lines(_ point: CGPoint, range: Range<Int> = 0..<5) -> Result<Int, CaretNotPlaced> {
     let boxes: [CGRect?] = [CGRect(x: 0, y: 0, width: 10, height: 20), CGRect(x: 10, y: 0, width: 10, height: 20),
                             CGRect(x: 20, y: 0, width: 0, height: 20),
                             CGRect(x: 0, y: 20, width: 10, height: 20), CGRect(x: 10, y: 20, width: 10, height: 20)]
     return caretOffset(at: point, length: 5, range: range, bounds: { boxes[$0] }, isLineBreak: { $0 == 2 })
   }
 
+  private let outside = Result<Int, CaretNotPlaced>.failure(.pointOutsideText)
+
   func testTheCaretGoesBeforeOrAfterTheCharacterUnderThePoint() {
-    XCTAssertEqual(lines(CGPoint(x: 12, y: 5)), 1, "the left half of b")
-    XCTAssertEqual(lines(CGPoint(x: 18, y: 5)), 2, "the right half of b")
-    XCTAssertEqual(lines(CGPoint(x: 2, y: 25)), 3, "the left half of c")
+    XCTAssertEqual(lines(CGPoint(x: 12, y: 5)), .success(1), "the left half of b")
+    XCTAssertEqual(lines(CGPoint(x: 18, y: 5)), .success(2), "the right half of b")
+    XCTAssertEqual(lines(CGPoint(x: 2, y: 25)), .success(3), "the left half of c")
   }
 
   func testAPointPastALinesEndIsTheEndOfThatLine() {
-    XCTAssertEqual(lines(CGPoint(x: 90, y: 5)), 2, "before the first line's break")
-    XCTAssertEqual(lines(CGPoint(x: 90, y: 25)), 5, "the end of the text")
+    XCTAssertEqual(lines(CGPoint(x: 90, y: 5)), .success(2), "before the first line's break")
+    XCTAssertEqual(lines(CGPoint(x: 90, y: 25)), .success(5), "the end of the text")
   }
 
   func testAPointInNoBoxAndPastNoLineEndIsNotPlaced() {
-    XCTAssertNil(lines(CGPoint(x: 5, y: 60)), "below every line")
-    XCTAssertNil(lines(CGPoint(x: -4, y: 5)), "left of the first character")
-    XCTAssertNil(lines(CGPoint(x: 12, y: 5), range: 3..<5), "the line's characters outside the scanned range")
-    XCTAssertNil(caretOffset(at: .zero, length: 3, range: 0..<3, bounds: { _ in nil }, isLineBreak: { _ in false }), "no boxes")
-    XCTAssertNil(caretOffset(at: .zero, length: caretScanLimit + 1, range: 0..<(caretScanLimit + 1),
-                             bounds: { _ in CGRect(x: 0, y: 0, width: 1, height: 1) }, isLineBreak: { _ in false }), "too long to scan")
+    XCTAssertEqual(lines(CGPoint(x: 5, y: 60)), outside, "below every line")
+    XCTAssertEqual(lines(CGPoint(x: -4, y: 5)), outside, "left of the first character")
+    XCTAssertEqual(lines(CGPoint(x: 12, y: 5), range: 3..<5), outside, "the line's characters outside the scanned range")
+    XCTAssertEqual(caretOffset(at: .zero, length: caretScanLimit + 1, range: 0..<(caretScanLimit + 1),
+                               bounds: { _ in CGRect(x: 0, y: 0, width: 1, height: 1) }, isLineBreak: { _ in false }), outside, "too long to scan")
+  }
+
+  /// Before Chromium's complete accessibility mode every character's box is empty: that is told apart from boxes read
+  /// with none at the point.
+  func testATextWithNoUsableBoxIsNoCharacterBoxes() {
+    let none = Result<Int, CaretNotPlaced>.failure(.noCharacterBoxes)
+    XCTAssertEqual(caretOffset(at: .zero, length: 3, range: 0..<3, bounds: { _ in nil }, isLineBreak: { _ in false }), none, "no boxes")
+    XCTAssertEqual(caretOffset(at: .zero, length: 3, range: 0..<3, bounds: { _ in .zero }, isLineBreak: { _ in false }), none, "empty boxes")
+    XCTAssertEqual(caretOffset(at: CGPoint(x: 5, y: 5), length: 3, range: 0..<3, bounds: { CGRect(x: CGFloat($0) * 10, y: 0, width: 0, height: 20) },
+                               isLineBreak: { _ in false }), none, "zero-width boxes, no line break among them")
+    XCTAssertEqual(lines(CGPoint(x: 5, y: 60)), outside, "boxes read, none at the point")
   }
 
   /// The rightmost box read is not the line's last when a later character's box failed to read: the line's end is
@@ -181,13 +193,13 @@ final class WebAreaFocusTests: XCTestCase {
     let boxes: [CGRect?] = [CGRect(x: 0, y: 0, width: 10, height: 20), CGRect(x: 10, y: 0, width: 10, height: 20),
                             CGRect(x: 20, y: 0, width: 10, height: 20)]
     let point = CGPoint(x: 25, y: 5)
-    XCTAssertNil(caretOffset(at: point, length: 3, range: 0..<3, bounds: { $0 == 0 ? boxes[0] : nil }, isLineBreak: { _ in false }),
-                 "only the first box readable")
-    XCTAssertEqual(caretOffset(at: point, length: 3, range: 0..<3, bounds: { boxes[$0] }, isLineBreak: { _ in false }), 3)
-    XCTAssertEqual(caretOffset(at: CGPoint(x: 90, y: 5), length: 3, range: 0..<3, bounds: { boxes[$0] }, isLineBreak: { _ in false }), 3,
-                   "the end of the text")
-    XCTAssertNil(caretOffset(at: CGPoint(x: 90, y: 5), length: 3, range: 0..<2, bounds: { boxes[$0] }, isLineBreak: { _ in false }),
-                 "a scan cut short of the line's last character")
+    XCTAssertEqual(caretOffset(at: point, length: 3, range: 0..<3, bounds: { $0 == 0 ? boxes[0] : nil }, isLineBreak: { _ in false }),
+                   outside, "only the first box readable")
+    XCTAssertEqual(caretOffset(at: point, length: 3, range: 0..<3, bounds: { boxes[$0] }, isLineBreak: { _ in false }), .success(3))
+    XCTAssertEqual(caretOffset(at: CGPoint(x: 90, y: 5), length: 3, range: 0..<3, bounds: { boxes[$0] }, isLineBreak: { _ in false }),
+                   .success(3), "the end of the text")
+    XCTAssertEqual(caretOffset(at: CGPoint(x: 90, y: 5), length: 3, range: 0..<2, bounds: { boxes[$0] }, isLineBreak: { _ in false }),
+                   outside, "a scan cut short of the line's last character")
   }
 
   /// "abcd" soft-wrapped after b: the next character's box starts on the line below, read even outside the scanned range.
@@ -195,8 +207,8 @@ final class WebAreaFocusTests: XCTestCase {
     let boxes: [CGRect] = [CGRect(x: 0, y: 0, width: 10, height: 20), CGRect(x: 10, y: 0, width: 10, height: 20),
                            CGRect(x: 0, y: 20, width: 10, height: 20), CGRect(x: 10, y: 20, width: 10, height: 20)]
     for range in [0..<4, 0..<2] {
-      XCTAssertEqual(caretOffset(at: CGPoint(x: 90, y: 5), length: 4, range: range, bounds: { boxes[$0] }, isLineBreak: { _ in false }), 2,
-                     "\(range)")
+      XCTAssertEqual(caretOffset(at: CGPoint(x: 90, y: 5), length: 4, range: range, bounds: { boxes[$0] }, isLineBreak: { _ in false }),
+                     .success(2), "\(range)")
     }
   }
 
@@ -205,15 +217,15 @@ final class WebAreaFocusTests: XCTestCase {
   func testAnEmptyNextBoxIsNoSoftWrapAtNegativeScreenCoordinates() {
     let line: [CGRect] = [CGRect(x: 0, y: -100, width: 10, height: 20), CGRect(x: 10, y: -100, width: 10, height: 20)]
     let point = CGPoint(x: 90, y: -95)
-    XCTAssertNil(caretOffset(at: point, length: 4, range: 0..<2, bounds: { $0 < 2 ? line[$0] : .zero }, isLineBreak: { _ in false }),
-                 "the next boxes empty")
+    XCTAssertEqual(caretOffset(at: point, length: 4, range: 0..<2, bounds: { $0 < 2 ? line[$0] : .zero }, isLineBreak: { _ in false }),
+                   outside, "the next boxes empty")
     let wrapped = line + [CGRect(x: 0, y: -80, width: 10, height: 20), CGRect(x: 10, y: -80, width: 10, height: 20)]
-    XCTAssertEqual(caretOffset(at: point, length: 4, range: 0..<2, bounds: { wrapped[$0] }, isLineBreak: { _ in false }), 2,
-                   "a soft wrap at negative y")
+    XCTAssertEqual(caretOffset(at: point, length: 4, range: 0..<2, bounds: { wrapped[$0] }, isLineBreak: { _ in false }),
+                   .success(2), "a soft wrap at negative y")
   }
 
   func testAnEmptyFieldIsPlacedAtZero() {
-    XCTAssertEqual(caretOffset(at: CGPoint(x: 50, y: 50), length: 0, range: 0..<0, bounds: { _ in nil }, isLineBreak: { _ in false }), 0)
+    XCTAssertEqual(caretOffset(at: CGPoint(x: 50, y: 50), length: 0, range: 0..<0, bounds: { _ in nil }, isLineBreak: { _ in false }), .success(0))
     XCTAssertEqual(textCaretOffset(at: CGPoint(x: 50, y: 50), value: "", visible: nil, bounds: { _ in nil }), .success(0))
   }
 
@@ -222,14 +234,63 @@ final class WebAreaFocusTests: XCTestCase {
     for value in [nil, 42 as Any, NSNull() as Any] {
       XCTAssertEqual(textCaretOffset(at: CGPoint(x: 50, y: 50), value: value, visible: nil, bounds: { _ in nil }), .failure(.unreadable))
     }
-    XCTAssertEqual(textCaretOffset(at: CGPoint(x: 50, y: 50), value: "ab", visible: nil, bounds: { _ in nil }), .failure(.pointOutsideText))
+    XCTAssertEqual(textCaretOffset(at: CGPoint(x: 50, y: 50), value: "ab", visible: nil, bounds: { _ in nil }), .failure(.noCharacterBoxes))
   }
 
   /// An empty line's only box is its line break: a point there goes before it.
   func testAPointOnAnEmptyLineGoesBeforeItsBreak() {
     let boxes: [CGRect] = [CGRect(x: 0, y: 0, width: 10, height: 20), CGRect(x: 10, y: 0, width: 0, height: 20),
                            CGRect(x: 0, y: 20, width: 0, height: 20)]
-    XCTAssertEqual(caretOffset(at: CGPoint(x: 40, y: 30), length: 3, range: 0..<3, bounds: { boxes[$0] }, isLineBreak: { $0 >= 1 }), 2)
+    XCTAssertEqual(caretOffset(at: CGPoint(x: 40, y: 30), length: 3, range: 0..<3, bounds: { boxes[$0] }, isLineBreak: { $0 >= 1 }), .success(2))
+  }
+
+  // MARK: a contenteditable region's text mapped into the region's offsets
+
+  private final class Text {
+    let role: String
+    let value: Any?
+    let children: [Text]?
+    init(_ role: String, _ value: Any? = nil, _ children: [Text]? = []) { (self.role, self.value, self.children) = (role, value, children) }
+    static func text(_ value: Any?) -> Text { Text("AXStaticText", value) }
+  }
+
+  private func start(of hit: Text, in region: Text) -> Int? {
+    regionTextStart(of: hit, in: region, children: { $0.children }, role: { $0.role }, value: { $0.value }, same: { $0 === $1 })
+  }
+
+  /// Round 2's page, `alpha bravo <b>charlie delta</b><br>echo foxtrot <span>golf hotel</span> india`: five static texts
+  /// and no element for the <br>, which is a character of the region's value. Its two measured points: node 1 local 3
+  /// is 15, node 2 local 7 is 33 (a sum of lengths would say 32).
+  func testARegionsTextStartsWhereItIsFoundInTheRegionsValueInOrder() {
+    let nodes = ["alpha bravo ", "charlie delta", "echo foxtrot ", "golf hotel", " india"].map { Text.text($0) }
+    let region = Text("AXTextArea", "alpha bravo charlie delta\necho foxtrot golf hotel india", nodes)
+    XCTAssertEqual(start(of: nodes[1], in: region).map { $0 + 3 }, 15)
+    XCTAssertEqual(start(of: nodes[2], in: region).map { $0 + 7 }, 33)
+    XCTAssertEqual(nodes.map { start(of: $0, in: region) }, [0, 12, 26, 39, 49])
+  }
+
+  func testARegionsNestedTextAndARepeatedWordMapInDocumentOrder() {
+    let inner = Text.text("charlie")
+    let after = Text.text(" delta")
+    let nested = Text("AXTextArea", "alpha bravo charlie delta",
+                      [Text.text("alpha "), Text("AXGroup", nil, [Text.text(""), Text.text("bravo "), inner]), after])
+    XCTAssertEqual(start(of: inner, in: nested), 12, "inside a group, an empty text skipped")
+    XCTAssertEqual(start(of: after, in: nested), 19, "after the group")
+    let second = Text.text("go")
+    let repeated = Text("AXTextArea", "go stop go", [Text.text("go "), Text.text("stop "), second])
+    XCTAssertEqual(start(of: second, in: repeated), 8, "found onward from the previous text, not at the first go")
+  }
+
+  func testARegionsTextThatCannotBeMappedIsNil() {
+    let hit = Text.text("bravo")
+    XCTAssertNil(start(of: hit, in: Text("AXTextArea", nil, [hit])), "the region's value unreadable")
+    XCTAssertNil(start(of: hit, in: Text("AXTextArea", "alpha bravo", [Text.text(nil), hit])), "a text's value unreadable")
+    XCTAssertNil(start(of: hit, in: Text("AXTextArea", "alpha bravo", [Text.text("zulu"), hit])), "a text not found")
+    XCTAssertNil(start(of: hit, in: Text("AXTextArea", "alpha bravo", [Text("AXGroup", nil, nil), hit])), "children unreadable")
+    XCTAssertNil(start(of: hit, in: Text("AXTextArea", "alpha bravo", [Text.text("alpha")])), "the hit not under the region")
+    let crowd = (0..<regionWalkLimit).map { _ in Text("AXGroup") } + [hit]
+    XCTAssertNil(start(of: hit, in: Text("AXTextArea", "alpha bravo", crowd)), "the walk's bound run out")
+    XCTAssertEqual(start(of: hit, in: Text("AXTextArea", "alpha bravo", Array(crowd.dropFirst()))), 6, "within the bound")
   }
 
   // MARK: the record and the note

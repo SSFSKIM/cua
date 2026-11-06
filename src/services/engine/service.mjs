@@ -50,8 +50,8 @@
 //   click's placement, #259: the screenshot point, the window-local point, the posted global and window locations, the
 //   window frame used and the one read just before the events, numbers only), cua/pointerEstablish (#288: a left
 //   click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}), and cua/stalePoint (#296: the
-//   stale-point guard at a coordinate click's or drag's point, {verdict "kept" | "refused" | "skipped", reason, identity?,
-//   recordedRole?, hitRole?, ms}, roles only). cua/afterActionRepairs rides on
+//   stale-point guard at a coordinate click's or drag's point, {verdict "kept" | "refused", reason, identity?,
+//   recordedRole?, hitRole?, ms, rechecked?}, roles only). cua/afterActionRepairs rides on
 //   input results and on observations alike once the connection's after-action watch has repaired (#200: the repairs
 //   route 3's watch made after an action had answered, the connection's total and the last actions', each keyed by its
 //   delivery's postedAt). cua/serviceMs is the wrapper's (src/services/sky.mjs).
@@ -78,7 +78,8 @@
 // - The stale point (#296): in either mode the engine refuses a coordinate click or drag, nothing posted, when what the
 //   screenshot its coordinates came from showed at the point is gone, has moved off it, or has given way to another
 //   interactive element (`screenChangedSinceScreenshot`, an input error with the meta, its sentence asking for a new
-//   get_app_state).
+//   screenshot); a background page click #282 carries by an element's action is refused the same way, nothing pressed,
+//   and presses only what the screenshot showed there.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';

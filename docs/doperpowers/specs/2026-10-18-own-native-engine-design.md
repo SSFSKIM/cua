@@ -530,10 +530,10 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     windowFrame {x, y, width, height} (the AX frame the conversion used), frameBeforePost {x, y, width, height} | null
     (the window's frame read again just before the events; null when the click stopped before them or it was unread)}
   stalePoint: #296's stale-point guard at a coordinate click's point or a drag's start, on its result and its errors once the
-    point is placed: {verdict ("kept" | "refused" | "skipped": the guard would have refused, and #282's element route carried
-    the click), reason ("unrecorded" | "sameElement" | "noHit" | "nonInteractiveHit" | "hitAboveNode" |
-    "unrecordedDescendant" | "nodeGone" | "frameMoved" | "interactiveHit"), identity? ("handle" | "recreated"),
-    recordedRole?, hitRole?, ms}; roles only, never a title
+    point is placed: {verdict ("kept" | "refused"), reason ("unrecorded" | "sameElement" | "noHit" | "nonInteractiveHit" |
+    "hitAboveNode" | "unrecordedDescendant" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther"), identity?
+    ("handle" | "recreated"), recordedRole?, hitRole?, ms, rechecked? (true: #282's or #283's route waited and the guard
+    ran again before the press; the verdict is that check's, ms both checks')}; roles only, never a title
   note: on a paste or type_text result that pasted a line with no channel to see it, read after ⌘V (#187): the sentence
     the service adds to the tool result's content
   pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): ⌘V was sent and the text
@@ -2231,12 +2231,22 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      and count, on every route (3, 4, and the spike's 2 and 2′), and a drag's start point. Not a drag's end, where it
      drops. Not a scroll at a point: a scroll presses nothing, and a model's next scroll at the same point follows content
      the last one moved, which the guard would refuse every time. Element clicks read their element's frame at click time
-     already. **Not where #282 element-routes the pointer:** in shared mode a route-3 left pointer into a possible web area
-     takes a hold that is `refusedIfPosted`. #282's `PointerRefused` still goes to the element route (meta
-     `stalePoint.verdict` "skipped") or to #282's own refusal, and every path that would post throws the internal
-     `PointerPostRefused` before subtype 1, any click or any withdrawal: the app believing it has focus, an activation
-     point's click, a join of a hold that clicked one. Everywhere else the refusal is thrown at the top of
-     `deliverPointer`, before the after-action watch is cancelled or anything is acquired.
+     already. A refusal is thrown at the top of `deliverPointer`, before the after-action watch is cancelled or anything
+     is acquired, posted or pressed. **Where #282 element-routes the pointer** (the design session's ruling 1ea561bc
+     ca82a6f4, reversing the first build's skip; the hosted A/B, run 42184616121, found the skipped guard reading stale
+     while #282's route pressed what lay at the point now, item-11 for the observed item-9 in the feed and the link
+     "Remove" reached from the hit's text in the link swap, both answering success): (a) the guard runs before the
+     route, and a refused verdict answers `screenChangedSinceScreenshot`, nothing pressed or posted; (b) a kept point's
+     route acts only on the node the screenshot showed there as found now, or an ancestor of it (the allowlisted control
+     the walk reached from the hit through plain children; #283's focus target likewise), or, by the
+     `unrecordedDescendant` reading, anything inside a node the record holds incompletely, or anything at a point no
+     recorded node holds; anything else is refused as `pressedOther` (`stalePointPressVerdict`); (c) when the route waited
+     (#282's action re-read, up to `webAreaRereadDeadline`'s 3 s), the guard runs once more just before the press with a
+     fresh hit-test, on the element about to be pressed (`StalePointGate`, meta `rechecked`). #283's focus route checks
+     its field by (b) before the focus write, which no wait precedes; its waits (the focus settle, the boxes' re-read)
+     come after that write, so the second check runs before the caret's write, and a changed page there places no caret
+     (`CaretNotPlaced.screenChanged`, the result's note asking for a new screenshot before typing) rather than refusing
+     a click whose focus already happened. No path skips the guard any more: the meta's `skipped` verdict is gone.
   3. **Which node.** The deepest recorded node whose shown frame holds the point (edges included), the later in the
      walk's order at one depth. The clipping matters: page content scrolled up under Chrome's toolbar keeps frames there,
      and would otherwise be the deepest node at a toolbar point. **The window's move:** a coordinate is posted in the
@@ -2254,16 +2264,24 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      never counts against it. **The bound:** it
      is looked for among the hit, the hit's parents up to its window (at most 300 levels, the bound of every parent walk
      here) and the hit's first 300 descendants breadth-first, the spike's bound, within which it matched every
-     re-created control it met at distance 0.
+     re-created control it met at distance 0. **A transient empty hit** (the A/B's one false positive,
+     chrome/dedicated/recreate/20s rep 1, a button replaced every 500 ms, refused `nodeGone` with no hit: the old node
+     destroyed, the new one not yet hit-testable): with the node's handle gone and the hit-test answering nothing, or an
+     element whose role cannot be read, the point is hit-tested again up to 3 times, 50 ms apart (150 ms at most;
+     `stalePointRehits`, `stalePointRehitMs`), and the search runs on the first real hit; the node is gone only if none
+     comes within that bound.
   5. **The verdict,** in this order. Refused: no handle and no re-created one (`nodeGone`); the frame read now not
      holding the point (`frameMoved`; #294's case, where Chrome's hit-test still answered the moved Reload's handle at
      its old point, so only the re-read frame tells); the hit-test now answering another interactive element
      (`interactiveHit`; the spike's 19 roles: buttons, checkboxes, radio buttons, links, pop-up and menu buttons, menu
      items, text entry, sliders, incrementors, disclosure triangles, tabs, switches, colour wells, segmented controls).
-     Kept: the hit is the node (`sameElement`), answers nothing (`noHit`), or is not interactive (`nonInteractiveHit`:
-     Chrome hit-tests a page button to its label's AXStaticText, which the tree does not list). Two readings of the
-     implementer's where the ruling is silent, both kept: an interactive hit that is an ancestor of the node
-     (`hitAboveNode`: the link whose text the tree lists), and an interactive hit inside a node whose children the record
+     Kept: the hit is the node (`sameElement`), answers nothing (`noHit`), or is not interactive (`nonInteractiveHit`; a
+     button's label text inside a button the tree lists, proven offline only: the spike's out-of-process hit-test
+     answered Chrome's AXStaticText there, but the A/B found the engine's own hit-test answering the AXButton itself,
+     `sameElement`). Two readings of the implementer's where the ruling is silent, both kept: an interactive hit that is
+     an ancestor of the node (`hitAboveNode`; proven offline only: on a link-text point the A/B found both Chrome's and
+     Safari's trees listing the link's text and the hit-test answering that same text), and an interactive hit inside a
+     node whose children the record
      does not all hold (`unrecordedDescendant`: a subtree cut by the width rule, the depth cap, the node or byte budget
      or the deadline, where the screenshot may have shown it and the tree could not). A point no recorded node holds is
      kept (`unrecorded`).
@@ -2271,12 +2289,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      screen changed since the screenshot: the <role "title"> it showed at this point <is gone | has moved away from it |
      is no longer what it reaches>[; <role "title"> is there now]. Nothing was sent. Call getScreenshot for a new
      screenshot, then give the coordinates in its pixels.` The label is the title, else the description, at most 60
-     characters. What is "there now" is the hit, named only when it is not the node itself. The re-observation is named
+     characters. What is "there now" is the hit (for `pressedOther`, the element the route would act on), named only
+     when its role reads and it is not the node itself; with nothing known there the clause is left out (the A/B's
+     sentence had read "element is there now" for a hit whose role could not be read). The re-observation is named
      as `noScreenshotForCoordinates` names it, the facade's call that returns an image. The service passes it as it passes
      every input error, and the wrapper does not admit it (no secret is substituted into a click). The model is told in
      the third paragraph of `docs/cua-api/agent-cursor.md` (the surface inventory's "Table 3 addition (2026-11-06,
      #296)").
-  7. **The meta:** `stalePoint {verdict, reason, identity?, recordedRole?, hitRole?, ms}` on the click's and the drag's
+  7. **The meta:** `stalePoint {verdict, reason, identity?, recordedRole?, hitRole?, ms, rechecked?}` on the click's and the drag's
      results and errors (Interfaces), passed by the service as `cua/stalePoint`, as #288's `pointerEstablish` is.
   8. **The measurement** (the false-positive spike, `probe/296-hosted`, runs 42179036967 and 42180641939; the guard
      emulated outside the engine over the engine's own observation, the click then posted anyway, its effect read): 240
@@ -2293,20 +2313,24 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      (Save to Delete on one element) passes: its identity and its frame are unchanged, and refusing a label change on a
      live handle would refuse every control whose label ticks (#298). (iii) A hit in another window over the point (a
      menu, a popover) reads as no hit, and passes while the node is in place. (iv) cua refuses where the vendor posts.
-  Proven offline (`StalePointTests`, 12, and `StalePointDeliveryTests`, 4; #294's test fails with the frame check removed,
-  and the delivery's with the early refusal or the activation's refusal removed): the frame re-read with the same handle
+  Proven offline (`StalePointTests`, 15, and `StalePointDeliveryTests`, 4; #294's test fails with the frame check removed,
+  the delivery's with the early refusal removed, and the A/B round's with the re-hit or the pressed-element rule removed): the frame re-read with the same handle
   refusing (#294); the non-interactive child hit passing; the bounded re-created search (the 299th descendant found, the
   301st not, the hit's ancestor found, more than 2 pt off not); the changed label refused and an absent or unreadable
   label not counting either way; the relabelled live handle passing (#298); another interactive element refusing with
   both named; the ancestor and unrecorded-descendant readings; the record's clipping and its choice of node; and, after
   the review, a window moved 100 pt (the node kept, a node moved inside it refused, a re-created one matched at the
   shifted frame), a frameless container's unrecorded button counted against the window, and a re-created control with a
-  13,200-unit label matched. Through
-  the delivery: a refusal with nothing posted, activated or held for a native view, an unknown app, a right click, a
-  dedicated web area, a forced route and a drag; the element route still carrying a web-area click (`skipped`); and a
-  web-area click that would have been posted refused before subtype 1 (an activation point's click, the app believing
-  it has focus, a join of a held activation, the hold untouched). The service's pass-through and the documents in
-  their JS suites. Nothing live ran: the hosted A/B on Chrome for Testing is next.
+  13,200-unit label matched; and, after the A/B (run 42184616121), an empty hit mid-replacement re-hit and kept as
+  re-created on the second attempt, one that stays empty refused after 3 × 50 ms with no "there now", the pressed element
+  the node or its control kept and another link refused `pressedOther`, and a change during the route's wait refused at
+  the second check (`rechecked`, both checks' time). Through the delivery: a refusal with nothing posted, activated or
+  held for a native view, an unknown app, a right click, a dedicated web area, a forced route and a drag; a stale
+  web-area click refused before the element route, nothing pressed, and a kept one element-routed as before; a web-area
+  click that would have been posted refused before subtype 1 (an activation point's click, the app believing it has
+  focus, a join of a held activation, the hold untouched). The service's pass-through and the documents in their JS
+  suites. The hosted A/B (run 42184616121, on a7a43b02, 134 branch cells) found the element-route gap, the transient
+  empty hit and the sentence's "element", all answered above; the next A/B runs on this round.
   Date/Author: 2026-11-06, cursor235's implementer for the design session's rulings on #296.
 
 ## Outcomes & Retrospective

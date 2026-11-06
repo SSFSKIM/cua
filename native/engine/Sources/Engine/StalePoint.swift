@@ -54,16 +54,19 @@ struct ScreenshotNodeRead<Element> {
 /// The record of a walk's window tree (`reads` in the walk's preorder, parents before their children): each node with a
 /// frame, its shown part cut by every clipping ancestor (a scroll area, a web area, a group that scrolls by the page, a
 /// sheet, menu or popover, the window; a window, sheet, menu or popover starts the cut again at its own frame, as the
-/// vendor's visible-frame walk stops there), and whether all its children were recorded, a frameless node's
-/// unrecorded children counting against its nearest framed ancestor.
+/// vendor's visible-frame walk stops there), and whether all its children were recorded, a frameless or strip-framed
+/// node's unrecorded children counting against its nearest framed ancestor.
 func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [ScreenshotNode<Element>] {
   var recordedChildren: [Int: Int] = [:]
   for read in reads { if let parent = read.parent { recordedChildren[parent, default: 0] += 1 } }
-  // Children come after their parents, so a backward pass sees a node's whole subtree before the node.
+  // Children come after their parents, so a backward pass sees a node's whole subtree before the node. A node framed
+  // as a strip (a collapsed container's 1-pt frame, #301) counts as frameless here: it holds no point its children
+  // show at, so what it lacks is its parent's, and a point there is checked container-only rather than refused.
   var incomplete: Set<Int> = []
   for read in reads.reversed() {
     if (recordedChildren[read.number] ?? 0) < read.childCount { incomplete.insert(read.number) }
-    if read.frame == nil, incomplete.contains(read.number), let parent = read.parent { incomplete.insert(parent) }
+    let frameless = read.frame.map { $0.width <= 1 || $0.height <= 1 } ?? true
+    if frameless, incomplete.contains(read.number), let parent = read.parent { incomplete.insert(parent) }
   }
   /// What each node leaves showing to its descendants: nil for no cut, `.null` for nothing.
   var bounds: [Int: CGRect?] = [:]

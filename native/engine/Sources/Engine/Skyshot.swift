@@ -327,16 +327,7 @@ extension Engine {
     if walk.deadlineHit { timings.set("deadlineHit", true) }
     if walk.budgetHit { timings.set("budgetHit", true) }
     if walk.nodeCapHit { timings.set("nodeCapHit", true) }
-    // #301's seeding, when the walk ran it, and the guard's record-only reads: what the hosted A/B prices.
-    if let seeding = walk.seeding {
-      timings.add("seed", seeding.ms)
-      timings.set("seedPoints", seeding.points)
-      timings.set("seedHits", seeding.hits)
-      timings.set("seedChains", seeding.chains)
-      timings.set("seeds", seeding.seeds)
-      timings.set("seedPromoted", seeding.promoted)
-      if seeding.capped { timings.set("seedCapped", true) }
-    }
+    // The guard's record-only reads (#301 item 4).
     if walk.recordOnlyReads > 0 { timings.set("recordOnlyNodes", walk.recordOnlyReads) }
 
     var focused: Any = NSNull()

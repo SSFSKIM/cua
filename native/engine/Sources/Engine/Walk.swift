@@ -14,11 +14,6 @@ import Foundation
 
 let maxDepth = 200
 let maxObservedNodes = 4_000
-/// The grid a Chromium window is hit-tested on when the node budget will cut (#301's seeding), in points: a control
-/// smaller than this inside a container Chromium reports as a strip can fall between the points and be missed.
-let seedGridSpacing: CGFloat = 80
-/// The seeding's cap, inside the observation's deadline (the ruling's "about 500 ms").
-let seedCapMs: Double = 500
 /// The most elements a walk reads for the guard's record alone (#301 item 4), beside the node budget.
 let recordOnlyBudget = 1_000
 let observationDeadlineMs: Int64 = 10_000
@@ -53,8 +48,6 @@ struct WalkLimits {
   var bytes = skyshotByteBudget
   /// Monotonic ms after which the walk stops.
   var deadline: Double
-  /// The seeding's cap (#301), inside the deadline.
-  var seedMs = seedCapMs
 }
 
 /// `shown` on a node whose children the width rule cut: how many it kept of how many, and the positions it kept among
@@ -146,27 +139,6 @@ func omittedPlace(frame: CGRect?, visible: CGRect?) -> OmittedPlace {
   return .elsewhere
 }
 
-/// The seeding's points (#301): a grid `spacing` apart over `window`, each at its cell's centre, coarse to fine (every
-/// eighth row and column first, then every fourth, …), so a seeding cut by its cap has still covered the whole window.
-func seedPoints(in window: CGRect, spacing: CGFloat = seedGridSpacing) -> [CGPoint] {
-  let xs = Array(stride(from: window.minX + spacing / 2, to: window.maxX, by: spacing))
-  let ys = Array(stride(from: window.minY + spacing / 2, to: window.maxY, by: spacing))
-  guard !xs.isEmpty, !ys.isEmpty else { return [] }
-  var step = 1
-  while step * 2 < max(xs.count, ys.count) { step *= 2 }
-  var taken = Set<Int>()
-  var points: [CGPoint] = []
-  while step >= 1 {
-    for row in stride(from: 0, to: ys.count, by: step) {
-      for column in stride(from: 0, to: xs.count, by: step) where taken.insert(row * xs.count + column).inserted {
-        points.append(CGPoint(x: xs[column], y: ys[row]))
-      }
-    }
-    step /= 2
-  }
-  return points
-}
-
 /// The positions among `children` (an element the width rule shows none of: more than 499 children, no visible subset)
 /// whose frames meet `window`, for the guard's record alone (#301 item 4). The children are taken to lie in order along
 /// the axis on which the first and the last framed child differ (a list's rows, a page's blocks): the first child not
@@ -218,8 +190,7 @@ final class TreeWalk {
   let markdown: Bool
   /// Whether `focusable` and `selectable` are read (one settability call each per element); the spike's switch.
   let interactionFlags: Bool
-  /// Whether the window is Chromium's (`isChromium`, F §1.7), where value settability counts only for some roles, and
-  /// where a walk the node budget will cut is seeded by hit-tests (#301).
+  /// Whether the window is Chromium's (`isChromium`, F §1.7), where value settability counts only for some roles.
   let chromium: Bool
   /// The window's frame: what the width rule's frame filter meets, and what the walk spends its budget on first (#301);
   /// nil (a walk rooted at a recorded menu-bar item) walks in plain preorder.
@@ -245,8 +216,6 @@ final class TreeWalk {
   private(set) var nodeCapHit = false
   private(set) var failures = 0
   private(set) var markdownFetches = 0
-  /// The seeding, when it ran (#301).
-  private(set) var seeding: Seeding?
   /// The nodes read for the guard's record alone (#301 item 4).
   private(set) var recordOnlyReads = 0
   /// The window's nodes as the stale-point record takes them (StalePoint.swift `screenshotNodes`), in document order;
@@ -275,18 +244,6 @@ final class TreeWalk {
       if inMenu != other.inMenu { return inMenu }
       return documentPrecedes(path, other.path)
     }
-  }
-
-  /// What the seeding did (#301): its time, the points it hit-tested (and those that answered), the ancestor chains it
-  /// joined to the walk, the seeds they gave, the read elements they brought forward, and whether its cap cut it.
-  struct Seeding {
-    var ms: Double = 0
-    var points = 0
-    var hits = 0
-    var chains = 0
-    var seeds = 0
-    var promoted = 0
-    var capped = false
   }
 
   /// An element to read: where it lies in the document (`path`, its positions from the root), what its ancestors leave
@@ -358,10 +315,8 @@ final class TreeWalk {
   private var selected: [ElementKey: Selected] = [:]
   private var recorded: [ElementKey: Selected] = [:]
   private var failed: Set<ElementKey> = []
-  private var seeds: Set<ElementKey> = []
   private var stack: [Pending] = []
   private var deferred: [Selected] = []
-  private var root: AXUIElement?
 
   init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, chromium: Bool = false,
        visibleFrame: CGRect?, recordsScreenshot: Bool = false) {
@@ -438,21 +393,18 @@ final class TreeWalk {
 
   // MARK: Selection (#301)
 
-  /// Reads the window's tree within the budgets, what the window shows first (the design session's ruling aed3f041). Depth
-  /// first from the root, an element's children are taken up when something of it shows in what its ancestors leave
-  /// showing of the window (`showsBeyondStrip`), when it has no frame, or when it is a seed; any other element is read but
+  /// Reads the window's tree within the budgets, what the window shows first (the design session's rulings aed3f041 and
+  /// 66f90453). Depth first from the root, an element's children are taken up when something of it shows in what its
+  /// ancestors leave showing of the window (`showsBeyondStrip`) or when it has no frame; any other element is read but
   /// its children wait (`deferred`). Once nothing showing is left, the waiting children are taken up in the document's
   /// order, each again showing first. So a walk nothing cuts reads every element, as the plain preorder does, and one the
-  /// budget cuts has spent it on what the screenshot shows. On Chromium, whose offscreen boxes and collapsed containers
-  /// read as strips, the walk is seeded (`seed`) once it knows the budget will cut: once the elements it has read and the
-  /// children they name exceed the budget.
+  /// budget cuts has spent it on what the screenshot shows. The limit: a visible control under a container that reports
+  /// a collapsed (1-pt) frame waits with it, so the budget can still cut it, and the guard checks it container-only
+  /// (#304 measures how often).
   private func select(_ window: AXUIElement, nodeLimit: Int, byteLimit: Int) {
-    root = window
     stack = [Pending(element: window, depth: 0, clip: visibleFrame)]
     var kept = 0
     selectionByteLimit = byteLimit
-    // The distinct elements the walk knows of, read or named as a child: a child listed by several parents counts once.
-    var known: Set<ElementKey> = [ElementKey(element: window)]
     var cut = false
     while true {
       guard let next = stack.popLast() else {
@@ -480,12 +432,6 @@ final class TreeWalk {
         kept += 1
         selectionBytes += jsonBytes(read.wire) + 1
         for key in read.descriptionKeys { if let key { descriptionUses[key, default: 0] += 1 } }
-        if chromium, seeding == nil, visibleFrame != nil {
-          for child in read.children { known.insert(ElementKey(element: child)) }
-          if known.count > nodeLimit { seed() }
-        }
-        // The seeding may have taken this element up already: a hit's chain can pass through it.
-        if item.expanded { continue }
         if read.children.isEmpty { item.expanded = true }
         else if enters(item, key) { expand(item) } else { setAside(item) }
       }
@@ -533,10 +479,10 @@ final class TreeWalk {
   }
 
   /// Whether a read element's children are taken up now: the root, an element with no frame or no visible frame to meet,
-  /// one that shows beyond a strip, or (on the tree) a seed.
+  /// or one that shows beyond a strip.
   private func enters(_ item: Selected, _ key: ElementKey) -> Bool {
     guard item.depth > 0, let clip = item.clip, let frame = item.read.data.frame else { return true }
-    return showsBeyondStrip(frame, in: clip) || (!item.recordOnly && seeds.contains(key))
+    return showsBeyondStrip(frame, in: clip)
   }
 
   /// What a read element leaves showing to its children: its own clip, cut by its frame when it clips its descendants
@@ -568,53 +514,10 @@ final class TreeWalk {
     deferred.insert(item, at: low)
   }
 
-  /// The earliest element in the document's order whose children wait, not yet taken up by a seed.
+  /// The earliest element in the document's order whose children wait.
   private func nextDeferred() -> Selected? {
     while let candidate = deferred.popLast() { if !candidate.expanded { return candidate } }
     return nil
-  }
-
-  /// The seeding (#301; the design session's ruling aed3f041), on Chromium once the walk knows its budget will cut: the
-  /// window's application is hit-tested on a grid `seedGridSpacing` apart (`seedPoints`), and each hit's ancestors, read
-  /// up through AXParent until one the walk has taken up or already seeded, become seeds: a read seed's children are
-  /// taken up at once, and one read later has them taken up as it is read. Capped at `seedCapMs` inside the
-  /// observation's deadline; past the cap, what is seeded stays seeded, and the rest is read in the document's order. A
-  /// chain that never meets the walk (a hit in another window) seeds nothing.
-  private func seed() {
-    guard let window = visibleFrame, let root else { return }
-    let started = monotonicMilliseconds()
-    let cap = min(started + limits.seedMs, limits.deadline)
-    let pid = source.owner(root)
-    var report = Seeding()
-    for point in seedPoints(in: window) {
-      let now = monotonicMilliseconds()
-      guard let timeout = boundedMessagingTimeout(leftMs: cap - now) else { report.capped = true; break }
-      report.points += 1
-      guard let hit = source.hitTest(pid: pid, at: point, timeout: timeout) else { continue }
-      report.hits += 1
-      var chain: [ElementKey] = []
-      var current: AXUIElement? = hit
-      var joined = false
-      for _ in 0...maxDepth {
-        guard let element = current else { break }
-        let key = ElementKey(element: element)
-        if seeds.contains(key) || selected[key]?.expanded == true { joined = true; break }
-        chain.append(key)
-        if monotonicMilliseconds() >= cap { break }
-        current = source.parent(element)
-      }
-      guard joined, !chain.isEmpty else { continue }
-      report.chains += 1
-      for key in chain where seeds.insert(key).inserted {
-        if let item = selected[key], !item.expanded {
-          expand(item)
-          report.promoted += 1
-        }
-      }
-    }
-    report.seeds = seeds.count
-    report.ms = monotonicMilliseconds() - started
-    seeding = report
   }
 
   // MARK: Emission

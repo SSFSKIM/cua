@@ -27,21 +27,12 @@ final class FakeTree {
   var descriptions: [String: String] = [:]
   /// The attributes an element lists (AXUIElementCopyAttributeNames), by id; unset lists everything it carries.
   var listed: [Int: Set<String>] = [:]
-  /// What the window's application answers at a global point (the seeding's hit-test, #301), by id.
-  var hit: (CGPoint) -> Int? = { _ in nil }
   /// How long reading an element takes, in microseconds, by id (unset: at once).
   var slow: [Int: UInt32] = [:]
   /// An element's own description of an action, by id then action name, over `descriptions`.
   var elementDescriptions: [Int: [String: String]] = [:]
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
-  /// An element's parent by id: the node whose children list it.
-  func parent(of id: Int) -> Int? {
-    if parents == nil { parents = Dictionary(children.flatMap { parent, ids in ids.map { ($0, parent) } }, uniquingKeysWith: { first, _ in first }) }
-    return parents![id]
-  }
-  private var parents: [Int: Int]?
-  func childrenChanged() { parents = nil }
 }
 
 final class FakeSource: ElementSource, @unchecked Sendable {
@@ -97,17 +88,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   }
   override func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? { tree.visible[tree.id(element)].map { $0.map(Engine.element) } }
   override func readFrame(_ element: AXUIElement) -> CGRect? { tree.frames[tree.id(element)] }
-  /// Hit-tests and parent reads (the seeding's, #301).
-  var hitTests = 0
-  var parentReads = 0
-  override func hitTest(pid: pid_t, at point: CGPoint, timeout: Float) -> AXUIElement? {
-    hitTests += 1
-    return tree.hit(point).map(Engine.element)
-  }
-  override func parent(_ element: AXUIElement) -> AXUIElement? {
-    parentReads += 1
-    return tree.parent(of: tree.id(element)).map(Engine.element)
-  }
+
   override func scrollBars(_ element: AXUIElement) -> (horizontal: Bool, vertical: Bool) {
     let id = tree.id(element)
     scrollBarReads[id, default: 0] += 1

@@ -2,7 +2,8 @@ import ApplicationServices
 import XCTest
 @testable import Engine
 
-// #301: when the node budget cuts, the walk keeps what the window shows (the design session's ruling aed3f041), over
+// #301: when the node budget cuts, the walk keeps what the window shows (the design session's rulings aed3f041 and
+// 66f90453), over
 // the fake tree of WalkTests.swift. The page is #299's shape in small: a long document scrolled part-way down, with a
 // budget smaller than the page.
 
@@ -12,8 +13,8 @@ private let viewport = CGRect(x: 0, y: 100, width: 1000, height: 700)
 
 /// A long page: the window (0), its web area (1), 50 blocks (100 + j, each 100 pt tall) of 10 leaves (1000 + 10j + k,
 /// 100 pt wide), scrolled `scroll` blocks down. `chromium` reports what lies off the viewport as Chromium does, a 1-pt
-/// strip at its nearer edge. `collapsed` puts the blocks in a container Chromium reports as a strip mid-viewport (2),
-/// after a section scrolled off above (3) whose 300 leaves (5000 + i) come first in the document.
+/// strip at its nearer edge. `collapsed` puts the blocks in a container reporting a collapsed frame, a strip
+/// mid-viewport (2), after a section scrolled off above (3) whose 300 leaves (5000 + i) come first in the document.
 private func page(scroll: Int, chromium: Bool = false, collapsed: Bool = false) -> FakeTree {
   let tree = FakeTree()
   tree.extra[0] = ["AXRole": "AXWindow" as CFString]
@@ -43,12 +44,6 @@ private func page(scroll: Int, chromium: Bool = false, collapsed: Bool = false) 
     tree.frames[100 + j] = place(CGRect(x: 0, y: y, width: 1000, height: 100))
     tree.children[100 + j] = (0..<10).map { 1000 + 10 * j + $0 }
     for k in 0..<10 { tree.frames[1000 + 10 * j + k] = place(CGRect(x: Double(k) * 100, y: y, width: 100, height: 100)) }
-  }
-  // The hit-test answers the leaf under a point of the viewport, the window above it.
-  tree.hit = { point in
-    guard point.y >= viewport.minY else { return 0 }
-    let j = scroll + Int((point.y - viewport.minY) / 100)
-    return j < 50 ? 1000 + 10 * j + Int(point.x / 100) : nil
   }
   return tree
 }
@@ -92,8 +87,6 @@ final class VisibleFirstTests: XCTestCase {
       XCTAssertEqual(payload(ordered), payload(plain), "the whole payload")
       XCTAssertEqual(ordered.omitted, 0)
       XCTAssertTrue(source.reads.values.allSatisfy { $0 == 1 }, "each element read once")
-      XCTAssertNil(ordered.seeding, "no seeding when the budget does not cut")
-      XCTAssertEqual(source.hitTests, 0)
     }
   }
 
@@ -142,26 +135,6 @@ final class VisibleFirstTests: XCTestCase {
                   "the replacement that would not fit is refused: one answer for the name")
     let plain = walk(tree, Lineage(), limits: limits)
     XCTAssertTrue(plain.budgetHit, "the preorder asks the long answer first and is cut by the bytes")
-  }
-
-  /// The same review: the seeding's trigger counts distinct elements, so a tree whose groups share their children, under
-  /// the budget, is never seeded.
-  func testSharedChildrenUnderTheBudgetNeverSeed() {
-    let tree = FakeTree()
-    tree.extra[0] = ["AXRole": "AXWindow" as CFString]
-    tree.frames[0] = windowFrame
-    tree.children[0] = Array(1...40)
-    for group in 1...40 {
-      tree.children[group] = Array(1000..<1100)
-      tree.frames[group] = CGRect(x: 0, y: Double(group) * 10, width: 1000, height: 10)
-    }
-    tree.hit = { _ in 1000 }
-    let source = FakeSource(tree)
-    let walked = walk(tree, Lineage(), limits: WalkLimits(nodes: 150, deadline: .infinity), visibleFrame: windowFrame, source: source, chromium: true)
-    XCTAssertFalse(walked.nodeCapHit)
-    XCTAssertEqual(walked.nodes.count, 141)
-    XCTAssertNil(walked.seeding)
-    XCTAssertEqual(source.hitTests, 0)
   }
 
   func testTheBudgetIsSpentOnWhatTheWindowShowsAndTheTreeStaysInTheDocumentsOrder() {
@@ -220,40 +193,29 @@ final class VisibleFirstTests: XCTestCase {
     for id in Set(third.keys).intersection(b.keys) { XCTAssertEqual(third[id], b[id]) }
   }
 
-  func testAChromiumWalkTheBudgetWillCutIsSeededByHitTestsIntoACollapsedContainer() {
+  /// The stated limit (ruling 66f90453; #304 measures it): a visible control under a container that reports a collapsed
+  /// (1-pt) frame waits with it, so the budget can still cut it, and the guard checks it container-only.
+  func testAVisibleControlUnderACollapsedContainerCanStillBeCut() {
     let tree = page(scroll: 30, chromium: true, collapsed: true)
-    let unseeded = walk(tree, Lineage(), limits: budget, visibleFrame: windowFrame)
-    XCTAssertTrue(visibleLeaves(scroll: 30).isDisjoint(with: Set(ids(unseeded))), "frames alone: the strip hides what it holds")
-
-    let source = FakeSource(tree)
-    let seeded = walk(tree, Lineage(), limits: budget, visibleFrame: windowFrame, source: source, chromium: true)
-    XCTAssertTrue(visibleLeaves(scroll: 30).isSubset(of: Set(ids(seeded))), "every leaf the window shows")
-    let kept = Set(ids(seeded))
-    XCTAssertEqual(ids(seeded), preorder(tree).filter(kept.contains), "printed in the document's order")
-    let report = try! XCTUnwrap(seeded.seeding)
-    XCTAssertFalse(report.capped)
-    XCTAssertEqual(report.points, seedPoints(in: windowFrame).count)
-    XCTAssertGreaterThan(report.chains, 0)
-    XCTAssertEqual(source.hitTests, report.points)
-    // The climb stops at what the walk took up or already seeded: far fewer parent reads than points times depth.
-    XCTAssertLessThan(source.parentReads, report.points * 2)
-    // Chromium's strips placed by their edge: the section and the blocks above at the top, the blocks below at the bottom.
-    XCTAssertGreaterThan(seeded.omittedAbove, 0)
-    XCTAssertGreaterThan(seeded.omittedBelow, 0)
-    XCTAssertEqual(seeded.omitted, seeded.omittedAbove + seeded.omittedBelow)
-  }
-
-  func testPastTheSeedingsCapWhatIsSeededStaysAndTheRestIsReadInTheDocumentsOrder() {
-    let tree = page(scroll: 30, chromium: true, collapsed: true)
-    let source = FakeSource(tree)
-    let capped = walk(tree, Lineage(), limits: WalkLimits(nodes: 150, deadline: .infinity, seedMs: 0), visibleFrame: windowFrame, source: source,
-                      chromium: true)
-    let report = try! XCTUnwrap(capped.seeding)
-    XCTAssertTrue(report.capped)
-    XCTAssertEqual(report.points, 0)
-    XCTAssertEqual(source.hitTests, 0)
-    XCTAssertEqual(capped.nodes.count, 150, "the budget still spent")
-    XCTAssertTrue(Set(5000..<5146).isSubset(of: Set(ids(capped))), "in the document's order")
+    let cut = walk(tree, Lineage(), limits: budget, visibleFrame: windowFrame, chromium: true)
+    XCTAssertTrue(cut.nodeCapHit)
+    XCTAssertTrue(visibleLeaves(scroll: 30).isDisjoint(with: Set(ids(cut))), "the strip's subtree waits behind the section above")
+    let kept = Set(ids(cut))
+    XCTAssertEqual(ids(cut), preorder(tree).filter(kept.contains), "printed in the document's order")
+    let node = try! XCTUnwrap(deepestScreenshotNode(at: CGPoint(x: 350, y: 450), in: screenshotNodes(cut.screenshotReads)))
+    XCTAssertTrue(CFEqual(node.element, Engine.element(1)), "the guard holds the web area there")
+    XCTAssertFalse(node.subtreeRecorded, "container-only: the strip's unrecorded children count against the web area")
+    // A hit on the cut leaf passes container-only, not refused as another interactive element.
+    let reads = StalePointReads<AXUIElement>(role: { tree.id($0) == 1333 ? "AXButton" : "AXGroup" }, frame: { tree.frames[tree.id($0)] },
+                                             parent: { element in tree.children.first { $0.value.contains(tree.id(element)) }.map { Engine.element($0.key) } },
+                                             children: { (tree.children[tree.id($0)] ?? []).map(Engine.element) },
+                                             title: { _ in nil }, description: { _ in nil }, same: { CFEqual($0, $1) })
+    let verdict = stalePointVerdict(at: CGPoint(x: 350, y: 450), nodes: screenshotNodes(cut.screenshotReads), hit: Engine.element(1333), reads: reads)
+    XCTAssertEqual(verdict.reason, .unrecordedDescendant)
+    // Chromium's strips placed by their edge: the section above at the top; the collapsed container mid-viewport, elsewhere.
+    XCTAssertGreaterThan(cut.omittedAbove, 0)
+    XCTAssertEqual(cut.omittedBelow, 0)
+    XCTAssertGreaterThan(cut.omitted, cut.omittedAbove, "the collapsed container's blocks are placed nowhere")
   }
 
   func testAWidthRuleOmittedListKeepsItsShownRowsInTheGuardsRecordOnly() {
@@ -370,11 +332,4 @@ final class VisibleFirstTests: XCTestCase {
     XCTAssertEqual(recordedChildPositions(rows, frame: { _ in nil }, window: window, limit: 1000), [])
   }
 
-  func testSeedPointsCoverTheGridOnceCoarseFirst() {
-    let points = seedPoints(in: windowFrame)
-    XCTAssertEqual(points.count, 12 * 10, "80 pt apart over 1000 × 800, each at its cell's centre")
-    XCTAssertEqual(Set(points.map { "\($0.x),\($0.y)" }).count, points.count)
-    XCTAssertEqual(points.first, CGPoint(x: 40, y: 40))
-    XCTAssertTrue(points.prefix(4).contains(CGPoint(x: 680, y: 680)), "the coarse pass spans the window")
-  }
 }

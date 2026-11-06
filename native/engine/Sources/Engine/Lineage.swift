@@ -436,7 +436,7 @@ extension ConnectionState {
 }
 
 /// The elements an observation would emit now (the window's tree within its depth, width and node caps and its deadline,
-/// what the window shows first as the walk spends its budget (#301, `TreeWalk.select`, unseeded: a subtree that shows
+/// what the window shows first as the walk spends its budget (#301, `TreeWalk.select`: a subtree that shows
 /// beyond a strip in what its clipping ancestors leave of the window is walked first, the rest in the document's order),
 /// then the menu-bar elements, read through the
 /// attributes they list and without a Debug item, as the walk reads them) whose eleven attributes equal the identity's,

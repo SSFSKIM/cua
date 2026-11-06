@@ -1936,8 +1936,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      synthesis. The probe showed
      the missing AXPress was Chromium's accessibility enablement coming up, not activation: with no activation at all a
      page checkbox began advertising AXPress 1.6 to 1.7 s after the engine's first observation (its enablementPrior
-     false). So where the process's accessibility is fresh (the engine's last enablement write to it under 10 s old,
-     `WebAccessibility.lastEnabledAt`, or no web area seen in it yet), a resolved control with no action is re-read every
+     false). So where the process's accessibility is fresh (under 10 s since its first observation by any connection or
+     the engine's last enablement write attempt, failed or not, `WebAccessibility.freshSince`; or no web area seen in it
+     yet: the final hosted A/B, run 42134748488, found the write failing on Chrome for Testing, so a freshness keyed on a
+     successful write never opened, while Chrome reached its complete mode anyway 1.1 to 1.6 s after the observation; the
+     observation now reports the attempt as `enablementWrite` "success" | "failed" and the AXError as
+     `enablementWriteError`, value-free), a resolved control with no action is re-read every
      100 ms for up to 2 s, posting nothing, before the refusal (`webAreaActionRereading`); a role the walk refuses waits
      not at all. After the read or the re-read, and before any activation or press, the chosen control is requalified as
      it is then (`webAreaControlRequalified`, the re-review of c768d2bb..1c8f2229: a node may change during the wait): an
@@ -1945,7 +1949,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      its action and value check follow its current role. The refusal of a control still without an action asks for an observation first
      (`backgroundClickRefusedObserveFirst`). **The cost:** up to 2 s of latency on the first click into a fresh Chrome
      whose control has not yet exposed its action, and the whole 2 s when it never does.
-  Proven offline (`BackgroundPointerTests`, 25, failing before the change where they bite: shared mode's refusal of
+  Proven offline (`BackgroundPointerTests`, 26, failing before the change where they bite: shared mode's refusal of
   a click, a double click and a drag into a web area with nothing posted, no hold taken and nothing left held; a plain
   click carried by the element route with nothing posted by cua; a web-area pointer joining its own or another connection's
   spent hold refused with the hold untouched; an Electron-shaped activation still posting; dedicated mode's inert click

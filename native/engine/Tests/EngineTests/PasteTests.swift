@@ -1572,7 +1572,7 @@ extension PasteActivationTests {
     XCTAssertEqual(engine.pasteNotificationSource(registered: false, app: textEdit, pid: target), .none)
     var value = false
     let access = EnablementAccess(listed: { ["AXManualAccessibility"] }, readRole: {}, read: { _ in value },
-                                  write: { _, written in value = written; return true }, current: { true })
+                                  write: { _, written in value = written; return .success }, current: { true })
     let launched = processGeneration(launchDate: nil, pid: target)
     XCTAssertEqual(engine.webAccessibility.enable(pid: target, launched: launched, connection: 1, access: access), "AXManualAccessibility")
     XCTAssertEqual(engine.pasteNotificationSource(registered: true, app: chrome, pid: target), .trusted)

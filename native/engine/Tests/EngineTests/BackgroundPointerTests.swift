@@ -468,10 +468,10 @@ final class BackgroundPointerTests: XCTestCase {
     // A non-allowlisted role never reaches the re-read: the walk refuses it first, with no wait.
     guard case .failure(.editable) = control(Node("AXTextArea", parent: page())) else { return XCTFail("refused at once") }
     // Fresh: a recent enablement write, or no web area seen yet.
-    XCTAssertTrue(webAreaAccessibilityFresh(enabledAt: 1_000, now: 2_700, webAreaSeen: true))
-    XCTAssertFalse(webAreaAccessibilityFresh(enabledAt: 1_000, now: 1_000 + webAreaFreshEnablementMs, webAreaSeen: true))
-    XCTAssertFalse(webAreaAccessibilityFresh(enabledAt: nil, now: 5, webAreaSeen: true))
-    XCTAssertTrue(webAreaAccessibilityFresh(enabledAt: nil, now: 5, webAreaSeen: false))
+    XCTAssertTrue(webAreaAccessibilityFresh(freshSince: 1_000, now: 2_700, webAreaSeen: true))
+    XCTAssertFalse(webAreaAccessibilityFresh(freshSince: 1_000, now: 1_000 + webAreaFreshEnablementMs, webAreaSeen: true))
+    XCTAssertFalse(webAreaAccessibilityFresh(freshSince: nil, now: 5, webAreaSeen: true))
+    XCTAssertTrue(webAreaAccessibilityFresh(freshSince: nil, now: 5, webAreaSeen: false))
   }
 
   /// A checkbox or radio button whose value is unchanged after the press, through the settle, answers clickUnconfirmed;
@@ -518,6 +518,37 @@ final class BackgroundPointerTests: XCTestCase {
                                               now: { 0 }, sleep: { _ in }) { presses += 1 })
     XCTAssertEqual(reads, 0, "no value to check: none read")
     XCTAssertEqual(presses, 2)
+  }
+
+  /// The final hosted A/B (run 42134748488): on Chrome for Testing the enablement write fails, so freshness keyed on a
+  /// successful write never opened and the re-read never ran. The process's first observation opens the fresh window,
+  /// and so does every write attempt, failed or not; the observation reports the attempt and its AXError, value-free.
+  func testAFailedEnablementWriteStillOpensTheFreshWindowAndIsReported() {
+    let web = WebAccessibility()
+    var writes = 0
+    let access = EnablementAccess(listed: { ["AXManualAccessibility"] }, readRole: {}, read: { _ in false },
+                                  write: { _, _ in writes += 1; return .cannotComplete }, current: { true })
+    XCTAssertNil(web.freshSince(pid: 7, launched: nil), "never observed")
+    let before = monotonicMilliseconds()
+    var timings = Timings()
+    let step = web.observeEnablement(eligible: true, pid: 7, launched: nil, connection: 1, access: access, timings: &timings)
+    XCTAssertEqual(writes, 1, "the write was attempted")
+    XCTAssertNil(step?.set, "and failed")
+    XCTAssertEqual(timings.wire["enablementWrite"] as? String, "failed")
+    XCTAssertEqual(timings.wire["enablementWriteError"] as? Int, Int(AXError.cannotComplete.rawValue))
+    let since = try? XCTUnwrap(web.freshSince(pid: 7, launched: nil))
+    XCTAssertGreaterThanOrEqual(since ?? 0, before)
+    web.noteWebArea(pid: 7, launched: nil)
+    XCTAssertTrue(webAreaAccessibilityFresh(freshSince: since, now: (since ?? 0) + 1_000, webAreaSeen: true),
+                  "fresh after a failed write, the web area already seen")
+    XCTAssertFalse(webAreaAccessibilityFresh(freshSince: since, now: (since ?? 0) + webAreaFreshEnablementMs, webAreaSeen: true))
+    // A process whose attribute reads true is never written, but its first observation still opens the window.
+    let other = EnablementAccess(listed: { ["AXManualAccessibility"] }, readRole: {}, read: { _ in true },
+                                 write: { _, _ in XCTFail("not written"); return .success }, current: { true })
+    var otherTimings = Timings()
+    _ = web.observeEnablement(eligible: true, pid: 8, launched: nil, connection: 1, access: other, timings: &otherTimings)
+    XCTAssertNotNil(web.freshSince(pid: 8, launched: nil))
+    XCTAssertNil(otherTimings.wire["enablementWrite"], "no attempt, nothing reported")
   }
 
   /// A node that can change while the re-read waits.

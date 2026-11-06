@@ -307,7 +307,7 @@ extension Engine {
     let control = resolved.control
     return { [self] meta in
       let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
-      let fresh = webAreaAccessibilityFresh(enabledAt: webAccessibility.lastEnabledAt(pid: appPid, launched: generation),
+      let fresh = webAreaAccessibilityFresh(freshSince: webAccessibility.freshSince(pid: appPid, launched: generation),
                                             now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
       // The action, re-read where fresh, then the control requalified as it is now, all before anything is posted.
       let decision = webAreaPressDecision(control, walkedRole: resolved.role, fresh: fresh, actions: establishedActionNames(of:),

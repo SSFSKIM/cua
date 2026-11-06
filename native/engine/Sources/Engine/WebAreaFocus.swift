@@ -146,10 +146,21 @@ func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int
 
 /// The characters whose box may legitimately be empty, so that an empty one is no sign of boxes still arriving
 /// (the design session's condition, 9ba80c48): line breaks, whitespace (a trailing space at a wrap), controls and
-/// format characters (U+200B, U+200C, U+200D, U+FEFF, U+00AD), combining marks, and either half of a surrogate pair.
+/// format characters (U+200B, U+200C, U+200D, U+FEFF, U+00AD) and combining marks.
 private let boxlessCharacters = CharacterSet.whitespacesAndNewlines.union(.controlCharacters).union(.nonBaseCharacters)
 
-func mayLackBox(_ unit: unichar) -> Bool {
+/// Whether the UTF-16 unit at `index` of `text` may legitimately have an empty box. A surrogate pair is one character:
+/// its trailing (low) half never needs a box, its leading (high) half carries the character's, exempt only when the
+/// scalar is. A lone surrogate, malformed, is exempt.
+func mayLackBox(_ text: NSString, _ index: Int) -> Bool {
+  guard index >= 0, index < text.length else { return true }
+  let unit = text.character(at: index)
+  if UTF16.isTrailSurrogate(unit) { return true }
+  if UTF16.isLeadSurrogate(unit) {
+    guard index + 1 < text.length, case let trail = text.character(at: index + 1), UTF16.isTrailSurrogate(trail),
+          let scalar = Unicode.Scalar(UInt32(0x10000 + ((Int(unit) - 0xD800) << 10) + (Int(trail) - 0xDC00))) else { return true }
+    return boxlessCharacters.contains(scalar)
+  }
   guard let scalar = Unicode.Scalar(unit) else { return true }
   return boxlessCharacters.contains(scalar)
 }
@@ -316,7 +327,7 @@ func textCaretOffset(at point: CGPoint, value: Any?, bounds: (Int) -> CGRect?) -
   let length = text.length
   return caretOffset(at: point, length: length, range: 0..<length, bounds: bounds,
                      isLineBreak: { $0 < length && [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: $0)) },
-                     mayLackBox: { $0 < length && mayLackBox(text.character(at: $0)) })
+                     mayLackBox: { mayLackBox(text, $0) })
 }
 
 /// `textCaretOffset` over an element's own AXValue and characters' boxes: a text field, or a contenteditable region's

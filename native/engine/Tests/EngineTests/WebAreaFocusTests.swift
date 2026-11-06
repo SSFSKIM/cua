@@ -339,10 +339,33 @@ final class WebAreaFocusTests: XCTestCase {
 
   /// The characters whose empty box is no sign of boxes still arriving (9ba80c48).
   func testLineBreaksSpacesAndZeroWidthCharactersMayLackABox() {
-    for unit: unichar in [0x0A, 0x0D, 0x2028, 0x20, 0x09, 0x200B, 0x200C, 0x200D, 0xFEFF, 0x00AD, 0x0301, 0xD83D, 0xDE00] {
-      XCTAssertTrue(mayLackBox(unit), String(unit, radix: 16))
+    for text in ["\n", "\r", "\u{2028}", " ", "\t", "\u{200B}", "\u{200C}", "\u{200D}", "\u{FEFF}", "\u{00AD}", "\u{0301}"] {
+      XCTAssertTrue(mayLackBox(text as NSString, 0), text.debugDescription)
     }
-    for unit: unichar in [0x61, 0x30, 0x2E, 0x4E00] { XCTAssertFalse(mayLackBox(unit), String(unit, radix: 16)) }
+    for text in ["a", "0", ".", "\u{4E00}"] { XCTAssertFalse(mayLackBox(text as NSString, 0), text) }
+  }
+
+  /// A surrogate pair is one character: its trailing half needs no box, its leading half carries the character's.
+  func testASurrogatePairNeedsOneBoxOnItsLeadingHalf() {
+    let emoji = "\u{1F600}" as NSString
+    XCTAssertFalse(mayLackBox(emoji, 0), "the emoji's leading half")
+    XCTAssertTrue(mayLackBox(emoji, 1), "its trailing half")
+    let tag = "\u{E0061}" as NSString  // a tag character, a format character beyond the BMP
+    XCTAssertTrue(mayLackBox(tag, 0))
+  }
+
+  /// "a\n😀": the emoji line still arriving is an incomplete miss (the review's case); with the emoji's box read on its
+  /// leading half, a point below every line answers at once.
+  func testAnEmojiLineStillArrivingIsIncompleteAndAWholeOneIsNot() throws {
+    let value = "a\n\u{1F600}"
+    let lineOne = CGRect(x: 0, y: 0, width: 10, height: 20)
+    let below = CGPoint(x: 5, y: 90)
+    XCTAssertEqual(textCaretOffset(at: below, value: value, bounds: { $0 == 0 ? lineOne : nil }), .failure(.boxesIncomplete))
+    let whole = { (index: Int) -> CGRect? in index == 0 ? lineOne : index == 2 ? CGRect(x: 0, y: 20, width: 20, height: 20) : nil }
+    XCTAssertEqual(textCaretOffset(at: below, value: value, bounds: whole), .failure(.pointOutsideText))
+    var field = Field(fresh: true)
+    XCTAssertEqual(try focus(&field, offsetAt: { _ in textCaretOffset(at: below, value: value, bounds: whole) }), .notPlaced(.pointOutsideText))
+    XCTAssertEqual(field.offsetAsked, 1, "a complete emoji line answers at once")
   }
 
   // MARK: boxes still arriving (run 42152333871; the design session's conditions, 9ba80c48)

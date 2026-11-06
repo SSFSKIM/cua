@@ -2022,8 +2022,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   6. **Boxes not there yet** (`caretAwaitingBoxes`; the design session's ruling 37d4c12c, widened by 9ba80c48 after
      run 42152333871). Focus is written and confirmed at once; then, where the caret answers `noCharacterBoxes` or
      `boxesIncomplete` (a miss while some character that should have a box had none: line breaks, whitespace, controls
-     and format characters such as U+200B, U+200C, U+200D, U+FEFF and U+00AD, combining marks and surrogate halves
-     may legitimately have none and never count, so a multi-line field's newlines never make a click wait) and the
+     and format characters such as U+200B, U+200C, U+200D, U+FEFF and U+00AD, combining marks and a surrogate
+     pair's trailing half may legitimately have none and never count (a pair is one character, its box on its leading
+     half), so a multi-line field's newlines never make a click wait) and the
      process is fresh by #282's rule (`webAreaAccessibilityFresh`), the offset is computed again every 100 ms for up
      to 2 s (`webAreaActionRereadSampleMs`, `webAreaActionRereadMs`), posting nothing, until it answers anything else;
      a complete-miss `pointOutsideText` or `unmapped` found then, or at once, is the answer. An incomplete miss not
@@ -2035,7 +2036,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      gets here. Limits: the first click into a fresh Chrome's text field can take up to about 2 s, as #288's does;
      with AXVisibleCharacterRange dropped, the scan is bounded only by the 5,000-character cap on the value's length
      (`caretScanLimit`; a longer value is `pointOutsideText`, #290).
-  Proven offline (`WebAreaFocusTests`, 37: the field hit, the region's text hit focusing its region, each refusal, the
+  Proven offline (`WebAreaFocusTests`, 39: the field hit, the region's text hit focusing its region, each refusal, the
   secure field by role, by subrole and by a failed subrole read, focused with nothing read, a write that never reads
   back true, a caret read back elsewhere, a point in no box against no usable box at all, an unreadable value, the
   line-end rule only where the end is established (a failed box read, a cut scan, a soft wrap, an empty next box at
@@ -2044,7 +2045,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   (appearing at 1.6 s, never by 2 s, a process not fresh, each failed re-validation, a field turned secure mid-wait
   read no more, another answer on a re-read; boxes arriving partly then wholly placed, an incomplete miss at 2 s and
   when not fresh, a complete miss at once with a multi-line value's newlines, a trailing space and U+200B boxless,
-  the characters that may lack a box), a static text scanned over its whole value, the in-flight stop before any
+  the characters that may lack a box, a surrogate pair as one character, an emoji line still arriving against a
+  whole one), a static text scanned over its whole value, the in-flight stop before any
   write, the record and the note; the service's note test for click).
   Date/Author: 2026-11-05, cursor235 for the design session's rulings on #283.
 

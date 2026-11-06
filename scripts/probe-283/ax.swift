@@ -153,6 +153,222 @@ func boundsCheck(_ e: AXUIElement, _ loc: Int, _ p: CGPoint) -> [String: Any] {
 
 let args = CommandLine.arguments
 if args.count == 3, args[1] == "order", let pid = pid_t(args[2]) { emit(order(pid)); exit(0) }
+
+// The character whose AXBoundsForRange box holds the point, over [from, to): its left half before it. Nil when none does.
+func scan(_ e: AXUIElement, _ p: CGPoint, from: Int, to: Int) -> (found: Int?, calls: Int, ms: Double) {
+  let t0 = nowMs()
+  var calls = 0
+  for i in max(0, from)..<max(from, to) {
+    calls += 1
+    guard let r = rect(param(e, "AXBoundsForRange", rangeValue(i, 1)).0) else { continue }
+    if p.x >= r.minX && p.x < r.maxX && p.y >= r.minY && p.y <= r.maxY { return (p.x < r.midX ? i : i + 1, calls, nowMs() - t0) }
+  }
+  return (nil, calls, nowMs() - t0)
+}
+func textLength(_ e: AXUIElement) -> Int {
+  max((attr(e, "AXNumberOfCharacters") as? NSNumber)?.intValue ?? 0, str(e, kAXValueAttribute)?.utf16.count ?? 0)
+}
+func number(_ ref: CFTypeRef?) -> Int? { (ref as? NSNumber)?.intValue }
+func pointArgs(_ i: Int) -> CGPoint? {
+  guard args.count > i + 1, let x = Double(args[i]), let y = Double(args[i + 1]) else { return nil }
+  return CGPoint(x: x, y: y)
+}
+
+//   ax mce <pid> <x> <y> <spec-json>   #283 round 2: a contenteditable of several text nodes. The hit (an AXStaticText),
+//       AXFocused on its AXEditableAncestor, the hit's local offset at the point from its AXBoundsForRange, the hit's
+//       start in the editable's offset space every way it can be read, then the spec's route:
+//         a           AXSelectedTextRange {local, 0} on the static text
+//         b-children  AXSelectedTextRange {start + local, 0} on the editable, start from the editable's text leaves in order
+//         b-marker    the same, start = AXIndexForTextMarker(hit's AXStartTextMarker) - the editable's, asked of the web area
+//         c           the hit's start marker stepped `local` times with AXNextTextMarkerForTextMarker, then
+//                     AXSelectedTextMarkerRange = AXTextMarkerRangeForUnorderedTextMarkers(m, m) on the editable, else the web area
+//         d           AXTextMarkerForIndex (the editable's, else the web area's at its own index) of start + local, then as c
+if args.count == 6, args[1] == "mce", let pid = pid_t(args[2]), let p = pointArgs(3),
+   let spec = try? JSONSerialization.jsonObject(with: Data(args[5].utf8)) as? [String: Any] {
+  let app = AXUIElementCreateApplication(pid)
+  AXUIElementSetMessagingTimeout(app, 3)
+  var out: [String: Any] = ["trusted": AXIsProcessTrusted(), "startMs": nowMs(), "orderBefore": order(pid)]
+  var hitRef: AXUIElement?
+  out["hitError"] = AXUIElementCopyElementAtPosition(app, Float(p.x), Float(p.y), &hitRef).rawValue
+  guard let hit = hitRef else { emit(out); exit(0) }
+  let chainElements = ancestors(hit)
+  out["chain"] = chainElements.map { ["role": str($0, kAXRoleAttribute) ?? "?", "dom": orNull(str($0, "AXDOMIdentifier")), "value": describe(attr($0, kAXValueAttribute)),
+                                     "actions": actions($0) ?? ["error"]] as [String: Any] }
+  let webArea = chainElements.first { str($0, kAXRoleAttribute) == "AXWebArea" }
+  guard let editable = element(attr(hit, "AXEditableAncestor")), let webArea else { out["problem"] = "no editable ancestor or web area"; emit(out); exit(0) }
+  out["editable"] = ["role": str(editable, kAXRoleAttribute) ?? "?", "dom": orNull(str(editable, "AXDOMIdentifier")), "value": describe(attr(editable, kAXValueAttribute)),
+                     "valueLength": orNull(str(editable, kAXValueAttribute)?.utf16.count), "numberOfCharacters": describe(attr(editable, "AXNumberOfCharacters")),
+                     "actions": actions(editable) ?? ["error"]]
+  let tf = nowMs()
+  out["focusWrite"] = ["atMs": tf, "error": AXUIElementSetAttributeValue(editable, kAXFocusedAttribute as CFString, kCFBooleanTrue).rawValue]
+  usleep(UInt32(((spec["settleMs"] as? NSNumber)?.doubleValue ?? 150) * 1000))
+  out["focusedAfterSettle"] = describe(attr(editable, "AXFocused"))
+  out["selectedAfterFocus"] = ["editable": describe(attr(editable, "AXSelectedTextRange")), "hit": describe(attr(hit, "AXSelectedTextRange"))]
+
+  // The local offset.
+  let n = textLength(hit)
+  let s = scan(hit, p, from: 0, to: n)
+  out["local"] = ["characters": n, "found": orNull(s.found), "calls": s.calls, "ms": s.ms]
+  let local = s.found ?? 0
+
+  // The hit's start in the editable's offset space.
+  var starts: [String: Any] = [:]
+  // 1. The editable's text leaves in document order (an AXStaticText or a leaf), their AXValue lengths summed.
+  var leaves: [[String: Any]] = [], startChildren: Int?, acc = 0
+  func walk(_ e: AXUIElement, _ depth: Int) {
+    guard depth < 12 else { return }
+    let kids = (attr(e, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+    let role = str(e, kAXRoleAttribute) ?? "?"
+    if kids.isEmpty || role == "AXStaticText" {
+      let v = str(e, kAXValueAttribute) ?? ""
+      let isHit = CFEqual(e, hit)
+      if isHit, startChildren == nil { startChildren = acc }
+      leaves.append(["role": role, "value": v, "length": v.utf16.count, "isHit": isHit, "startSoFar": acc])
+      acc += v.utf16.count
+      return
+    }
+    for k in kids { walk(k, depth + 1) }
+  }
+  for k in (attr(editable, kAXChildrenAttribute) as? [AXUIElement]) ?? [] { walk(k, 0) }
+  starts["children"] = ["start": orNull(startChildren), "leaves": leaves, "leafTotal": acc]
+  // 2. AXIndexForTextMarker of the start markers, asked of the web area (and of the editable, to see it refused).
+  let mHit = attr(hit, "AXStartTextMarker"), mEditable = attr(editable, "AXStartTextMarker")
+  var idxHit: Int?, idxEditable: Int?
+  if let mHit, let mEditable {
+    let (a1, e1) = param(webArea, "AXIndexForTextMarker", mHit), (a2, e2) = param(webArea, "AXIndexForTextMarker", mEditable)
+    idxHit = number(a1); idxEditable = number(a2)
+    let (a3, e3) = param(editable, "AXIndexForTextMarker", mHit)
+    starts["marker"] = ["hitIndexInWebArea": orNull(idxHit), "hitIndexError": e1, "editableIndexInWebArea": orNull(idxEditable), "editableIndexError": e2,
+                        "start": orNull(idxHit.flatMap { h in idxEditable.map { h - $0 } }),
+                        "askedOfEditable": a3 != nil ? describe(a3) : "error \(e3)"]
+    // 3. The length of the marker range from the editable's start to the hit's.
+    let (r, re) = param(webArea, "AXTextMarkerRangeForUnorderedTextMarkers", [mEditable, mHit] as CFArray)
+    if let r { let (l, le) = param(webArea, "AXLengthForTextMarkerRange", r); starts["rangeLength"] = l != nil ? describe(l) : "error \(le)"
+               let (sv, _) = param(webArea, "AXStringForTextMarkerRange", r); starts["rangeString"] = describe(sv) }
+    else { starts["rangeLength"] = "error \(re)" }
+  } else {
+    starts["marker"] = ["hitStartTextMarker": mHit != nil, "editableStartTextMarker": mEditable != nil]
+  }
+  // AXTextMarkerRangeForUIElement of the hit, asked of each level: its length (it should be the hit's own text length).
+  var uiRanges: [String: Any] = [:]
+  for (name, el) in [("hit", hit), ("editable", editable), ("webArea", webArea)] {
+    let (r, e) = param(el, "AXTextMarkerRangeForUIElement", hit)
+    if let r { let (l, _) = param(webArea, "AXLengthForTextMarkerRange", r); let (sv, _) = param(webArea, "AXStringForTextMarkerRange", r)
+               uiRanges[name] = ["length": describe(l), "string": describe(sv)] } else { uiRanges[name] = "error \(e)" }
+  }
+  starts["rangeForUIElement"] = uiRanges
+  let (ic, ice) = param(editable, "AXIndexForChildUIElement", hit)
+  starts["indexForChildUIElement"] = ic != nil ? describe(ic) : "error \(ice)"
+  out["starts"] = starts
+
+  // The route.
+  let route = spec["route"] as? String ?? "none"
+  var w: [String: Any] = ["route": route]
+  func writeMarker(_ m: CFTypeRef) {
+    guard let range = param(webArea, "AXTextMarkerRangeForUnorderedTextMarkers", [m, m] as CFArray).0 else { w["markerRange"] = "error"; return }
+    var tries: [[String: Any]] = []
+    for (name, el) in [("editable", editable), ("webArea", webArea)] {
+      let t = nowMs()
+      let e = AXUIElementSetAttributeValue(el, "AXSelectedTextMarkerRange" as CFString, range)
+      tries.append(["on": name, "atMs": t, "error": e.rawValue])
+      if w["atMs"] == nil { w["atMs"] = t }
+      if e == .success { break }
+    }
+    w["writes"] = tries
+  }
+  switch route {
+  case "a":
+    w["atMs"] = nowMs(); w["loc"] = local
+    w["error"] = AXUIElementSetAttributeValue(hit, "AXSelectedTextRange" as CFString, rangeValue(local, 0)).rawValue
+  case "b-children", "b-marker":
+    let start = route == "b-children" ? startChildren : (idxHit != nil && idxEditable != nil ? idxHit! - idxEditable! : nil)
+    if let start {
+      w["atMs"] = nowMs(); w["loc"] = start + local
+      w["error"] = AXUIElementSetAttributeValue(editable, "AXSelectedTextRange" as CFString, rangeValue(start + local, 0)).rawValue
+    } else { w["problem"] = "no start" }
+  case "c":
+    if var m = mHit {
+      var steps: [Any] = []
+      for _ in 0..<local {
+        let (next, e) = param(hit, "AXNextTextMarkerForTextMarker", m)
+        if let next { m = next; steps.append("hit") } else {
+          let (next2, e2) = param(webArea, "AXNextTextMarkerForTextMarker", m)
+          guard let next2 else { steps.append("error hit \(e) webArea \(e2)"); break }
+          m = next2; steps.append("webArea")
+        }
+      }
+      w["steps"] = Dictionary(grouping: steps.map { "\($0)" }, by: { $0 }).mapValues { $0.count }
+      if let r = param(webArea, "AXTextMarkerRangeForUnorderedTextMarkers", [mHit!, m] as CFArray).0 {
+        w["prefix"] = describe(param(webArea, "AXStringForTextMarkerRange", r).0)
+      }
+      w["stepsIndexInWebArea"] = describe(param(webArea, "AXIndexForTextMarker", m).0)
+      writeMarker(m)
+    } else { w["problem"] = "no AXStartTextMarker on the hit" }
+  case "d":
+    let start = startChildren ?? (idxHit != nil && idxEditable != nil ? idxHit! - idxEditable! : nil)
+    if let start {
+      let target = start + local
+      w["editableOffset"] = target
+      var (m, e) = param(editable, "AXTextMarkerForIndex", NSNumber(value: target))
+      w["askedOfEditable"] = m != nil ? "ok" : "error \(e)"
+      if m == nil, let idxEditable {
+        (m, e) = param(webArea, "AXTextMarkerForIndex", NSNumber(value: idxEditable + target))
+        w["askedOfWebArea"] = m != nil ? "ok index \(idxEditable + target)" : "error \(e)"
+      }
+      if let m { w["markerIndexBack"] = describe(param(webArea, "AXIndexForTextMarker", m).0); writeMarker(m) }
+    } else { w["problem"] = "no start" }
+  default: break
+  }
+  out["write"] = w
+  usleep(500_000)
+  out["after"] = ["editableSelected": describe(attr(editable, "AXSelectedTextRange")), "hitSelected": describe(attr(hit, "AXSelectedTextRange")),
+                  "editableFocused": describe(attr(editable, "AXFocused")), "editableActions": actions(editable) ?? ["error"]]
+  out["orderAfter"] = order(pid)
+  out["endMs"] = nowMs()
+  emit(out)
+  exit(0)
+}
+
+//   ax longta <pid> <x> <y> <expect>   #283 round 2: a long scrolled textarea. AXVisibleCharacterRange, the AXBoundsForRange
+//       scan for the point from 0 and bounded by the visible range (each timed), the boxes of the visible range's first and
+//       last characters, then AXSelectedTextRange {found, 0}.
+if args.count == 6, args[1] == "longta", let pid = pid_t(args[2]), let p = pointArgs(3), let expect = Int(args[5]) {
+  let app = AXUIElementCreateApplication(pid)
+  AXUIElementSetMessagingTimeout(app, 3)
+  var out: [String: Any] = ["trusted": AXIsProcessTrusted(), "startMs": nowMs(), "orderBefore": order(pid)]
+  var hitRef: AXUIElement?
+  out["hitError"] = AXUIElementCopyElementAtPosition(app, Float(p.x), Float(p.y), &hitRef).rawValue
+  guard let hit = hitRef else { emit(out); exit(0) }
+  let field = element(attr(hit, "AXEditableAncestor")) ?? hit
+  out["hit"] = ["role": str(hit, kAXRoleAttribute) ?? "?", "dom": orNull(str(hit, "AXDOMIdentifier")), "fieldRole": str(field, kAXRoleAttribute) ?? "?",
+                "isField": CFEqual(hit, field), "actions": actions(field) ?? ["error"]]
+  let n = textLength(field)
+  let tv = nowMs()
+  let (v, ve) = copy(field, "AXVisibleCharacterRange")
+  out["visible"] = ["value": v != nil ? describe(v) : "error \(ve)", "readMs": nowMs() - tv, "characters": n,
+                    "containsExpected": orNull(cfRange(v).map { expect >= $0.location && expect < $0.location + $0.length })]
+  if let vr = cfRange(v) {
+    out["visibleEdges"] = ["first": boundsCheck(field, vr.location, p), "last": boundsCheck(field, max(vr.location, vr.location + vr.length - 1), p)]
+    let b = scan(field, p, from: vr.location, to: vr.location + vr.length)
+    out["boundedScan"] = ["found": orNull(b.found), "calls": b.calls, "ms": b.ms]
+  }
+  let f = scan(field, p, from: 0, to: n)
+  out["fullScan"] = ["found": orNull(f.found), "calls": f.calls, "ms": f.ms]
+  // The whole field's boxes once, to see what an unbounded scan costs when nothing matches.
+  let all = scan(field, CGPoint(x: -10_000, y: -10_000), from: 0, to: n)
+  out["exhaustiveScan"] = ["calls": all.calls, "ms": all.ms]
+  if let found = f.found ?? (out["boundedScan"] as? [String: Any])?["found"] as? Int {
+    let t = nowMs()
+    out["write"] = ["atMs": t, "loc": found, "error": AXUIElementSetAttributeValue(field, "AXSelectedTextRange" as CFString, rangeValue(found, 0)).rawValue]
+  }
+  usleep(500_000)
+  out["after"] = ["selected": describe(attr(field, "AXSelectedTextRange")), "focused": describe(attr(field, "AXFocused")),
+                  "visible": describe(attr(field, "AXVisibleCharacterRange"))]
+  out["orderAfter"] = order(pid)
+  out["endMs"] = nowMs()
+  emit(out)
+  exit(0)
+}
 guard args.count == 6, args[1] == "act", let pid = pid_t(args[2]), let x = Double(args[3]), let y = Double(args[4]),
       let spec = try? JSONSerialization.jsonObject(with: Data(args[5].utf8)) as? [String: Any] else { emit(["usage": true]); exit(2) }
 let point = CGPoint(x: x, y: y)

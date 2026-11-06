@@ -24,6 +24,10 @@
 //                                 AXSelectedTextMarkerRange (marker)
 // Blink sends no focus event to a field focused while its window is inactive, so the page beacons its active element's
 // change (polled every 4 ms) as its focus signal.
+//   multi-<pre|post>/<t1|t2>/<route>   round 2, ?page=multi: a click point in the 2nd or 3rd text node of a contenteditable
+//                                 of several (plain, <b>, <br>, <span>) turned into a caret by each route of `ax mce`
+//   long-<pre|post>/lta           round 2: a 3074-character textarea scrolled mid-field, AXVisibleCharacterRange and the
+//                                 bounds scan with and without it (`ax longta`)
 // Every write cell then types a marker with type_text (shared mode) and reads where it landed.
 //
 //   node scripts/probe-283/probe.mjs --engine <cua-engine> --ax <ax> --out <dir> [--cells <prefix,…>]
@@ -111,9 +115,57 @@ addEventListener('load', () => {
   setInterval(() => { if (document.activeElement !== was) { const from = was; was = document.activeElement; send('active', {from: from && (from.id || from.tagName), to: was && (was.id || was.tagName)}); } }, 4);
 }); })();</script></body></html>`;
 
+// --- round 2's page (?page=multi): a contenteditable of several text nodes (plain text, a <b>, a <br> line, a <span>) and
+// a long textarea (75 lines of 40 characters) scrolled to line 32 so its click point (line 37) is mid-field.
+const MCE_HTML = 'alpha bravo <b>charlie delta</b><br>echo foxtrot <span>golf hotel</span> india';
+const LONG = Array.from({length: 75}, (_, i) => `L${String(i).padStart(2, '0')} abcdefghijklmnopqrstuvwxyz0123456789abcdefgh`.slice(0, 40)).join('\n');
+const LONG_LINE = 37, LONG_COL = 20, LONG_SCROLL_LINE = 32;
+const PAGE2 = `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe283 multi page</title>
+<style>body{margin:8px;font:14px sans-serif}.f{font:16px/20px Menlo,monospace;padding:4px 6px;border:1px solid #888;margin:8px 0;display:block;letter-spacing:0;width:460px}
+#field-mce{outline:none;white-space:normal}#field-lta{height:200px;resize:none;overflow:auto;white-space:pre}</style></head>
+<body><p><b>probe283 multi page</b></p>
+<div id="field-mce" class="f" contenteditable="true" aria-label="Probe multi editor" spellcheck="false">${MCE_HTML}</div>
+<textarea id="field-lta" class="f" aria-label="Probe long notes" spellcheck="false" wrap="off">${LONG}</textarea>
+<p id="status">Ready</p>
+<script>(() => {
+const load = Math.random().toString(36).slice(2, 10);
+const M = document.getElementById('field-mce'), L = document.getElementById('field-lta');
+const c = {pointerdown: 0, pointerup: 0, mousedown: 0, mouseup: 0, click: 0, pointermove: 0, mousemove: 0, keydown: 0, input: 0, selectionchange: 0};
+let seq = 0;
+const texts = () => { const w = document.createTreeWalker(M, NodeFilter.SHOW_TEXT); const a = []; while (w.nextNode()) a.push(w.currentNode); return a; };
+// An offset in the editable's own space as Chromium's AXValue spells it: its text, one character for each <br>.
+const flat = (node, off) => { const r = document.createRange(); r.setStart(M, 0); r.setEnd(node, off); const f = r.cloneContents(); return f.textContent.length + f.querySelectorAll('br').length; };
+const where = (node, off) => { if (!node || !(node === M || M.contains(node))) return null; const idx = texts().indexOf(node); return {idx, off, node: idx < 0 ? node.nodeName : undefined, flat: flat(node, off)}; };
+const state = (ev, extra) => { const s = getSelection(); return {load, seq: ++seq, t: Date.now(), ev, ...extra, counts: {...c},
+  active: document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : null, hasFocus: document.hasFocus(),
+  sel: {mce: {anchor: where(s.anchorNode, s.anchorOffset), focus: where(s.focusNode, s.focusOffset), type: s.type}, lta: [L.selectionStart, L.selectionEnd, L.scrollTop]},
+  texts: texts().map(t => t.data), ltaValueLength: L.value.length, ltaMark: L.value.indexOf('QZ')}; };
+const send = (ev, extra) => navigator.sendBeacon('/b', JSON.stringify(state(ev, extra)));
+for (const k of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'pointermove', 'mousemove', 'keydown', 'input'])
+  document.addEventListener(k, e => { c[k] += 1; if (!k.endsWith('move')) send(k, {trusted: e.isTrusted, target: e.target.id || e.target.tagName, key: e.key}); }, true);
+document.addEventListener('selectionchange', e => { c.selectionchange += 1; send('selectionchange', {target: e.target && (e.target.id || e.target.nodeName)}); }, true);
+const layout = () => {
+  const ctx = document.createElement('canvas').getContext('2d'); ctx.font = '16px Menlo, monospace';
+  const cw = ctx.measureText('MMMMMMMMMM').width / 10;
+  const pt = (node, k) => { const r = document.createRange(); r.setStart(node, k); r.setEnd(node, k + 1); const b = r.getBoundingClientRect(); return {x: b.left + 0.3 * b.width, y: b.top + b.height / 2}; };
+  const t = texts(), s = getComputedStyle(L), lr = L.getBoundingClientRect();
+  const ll = lr.left + parseFloat(s.borderLeftWidth) + parseFloat(s.paddingLeft), lt = lr.top + parseFloat(s.borderTopWidth) + parseFloat(s.paddingTop), lh = parseFloat(s.lineHeight);
+  return {cw, texts: t.map(x => x.data), mce: {
+      t1: {idx: 1, off: 3, flat: flat(t[1], 3), p: pt(t[1], 3), word: 'charlie'}, t2: {idx: 2, off: 7, flat: flat(t[2], 7), p: pt(t[2], 7), word: 'foxtrot'}},
+    lta: {length: L.value.length, scrollTop: L.scrollTop, expect: ${LONG_LINE} * 41 + ${LONG_COL}, firstVisibleLine: L.scrollTop / lh, visibleLines: (L.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom)) / lh,
+      p: {x: ll + (${LONG_COL} + 0.3) * cw - L.scrollLeft, y: lt + (${LONG_LINE} + 0.5) * lh - L.scrollTop}}};
+};
+addEventListener('load', () => {
+  L.scrollTop = ${LONG_SCROLL_LINE} * 20;
+  document.fonts.ready.then(() => { navigator.sendBeacon('/layout', JSON.stringify(layout())); send('load'); });
+  setInterval(() => send('tick'), 250);
+  let was = document.activeElement;
+  setInterval(() => { if (document.activeElement !== was) { const from = was; was = document.activeElement; send('active', {from: from && (from.id || from.tagName), to: was && (was.id || was.tagName)}); } }, 4);
+}); })();</script></body></html>`;
+
 let beacons = [], layoutData = null;
 const server = createServer((req, res) => {
-  if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) { res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'}); res.end(PAGE); return; }
+  if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) { res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'}); res.end(req.url.includes('page=multi') ? PAGE2 : PAGE); return; }
   let body = '';
   req.on('data', d => { body += d; if (body.length > 65536) req.destroy(); });
   req.on('end', () => {
@@ -256,7 +308,93 @@ for (const kind of KINDS) CELLS.push({label: `prior-post/${kind}/press@editable`
 for (const phase of ['pre', 'post']) for (const kind of KINDS) for (const route of ['select', 'focus+select'])
   CELLS.push({label: `${phase}/${kind}/${route}@editable`, kind, phase, route, target: 'editable', select: true});
 for (const kind of KINDS) CELLS.push({label: `place/${kind}/focus@editable`, kind, phase: 'post', route: 'focus', target: 'editable', place: true});
+// Round 2 (?page=multi): the multi-node contenteditable at t1 (the 2nd text node, in <b>) and t2 (the 3rd, after the
+// <br>), each route of `ax mce`; and the long textarea (`ax longta`).
+for (const phase of ['pre', 'post']) for (const t of ['t1', 't2']) for (const route of ['a', 'b-children', 'b-marker', 'c', 'd'])
+  CELLS.push({label: `multi-${phase}/${t}/${route}`, multi: 'mce', phase, t, route});
+for (const phase of ['pre', 'post']) CELLS.push({label: `long-${phase}/lta`, multi: 'lta', phase});
 const RUN = CELLS.filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
+
+async function multiCell(spec) {
+  const {label} = spec;
+  const row = {label, multi: spec.multi, phase: spec.phase, t: spec.t ?? null, route: spec.route ?? null};
+  let chrome, engine;
+  try {
+    chrome = await launchChrome(label, '?page=multi');
+    row.chromePid = chrome.pid;
+    row.layout = layoutData;
+    row.textEdit = await frontTextEdit();
+    engine = await startEngine(label);
+    const w = engine.wire;
+    row.ping = (await w.call('ping', {clientApiVersion: 'cua-engine-1'})).result ?? null;
+    const state = await w.execute('get_app_state', {pid: chrome.pid});
+    const observedAt = Date.now();
+    if (state.error) { row.problem = {getAppState: state.error}; return row; }
+    const sky = state.result;
+    row.observation = {enablementPrior: sky.timings?.enablementPrior ?? null, enabled: sky.timings?.enabled ?? null};
+    const webArea = sky.nodes.find(n => n.role === 'AXWebArea' && /probe283/.test(`${n.title ?? ''} ${n.description ?? ''}`)) ?? sky.nodes.find(n => n.role === 'AXWebArea');
+    if (!webArea?.frame) { row.problem = 'no AXWebArea node with a frame'; return row; }
+    const o = webArea.frame;
+    const target = spec.multi === 'mce' ? layoutData.mce[spec.t] : layoutData.lta;
+    const P = {x: o.x + target.p.x, y: o.y + target.p.y};
+    row.point = P; row.expected = spec.multi === 'mce' ? {idx: target.idx, off: target.off, flat: target.flat, word: target.word} : {offset: target.expect, scrollTop: target.scrollTop};
+    if (spec.phase === 'post') { const wait = observedAt + 3000 - Date.now(); if (wait > 0) await sleep(wait); }
+    row.frontBefore = frontmost();
+    const before = latest();
+    const args = spec.multi === 'mce' ? ['mce', String(chrome.pid), String(P.x), String(P.y), JSON.stringify({route: spec.route, settleMs: 150})]
+                                      : ['longta', String(chrome.pid), String(P.x), String(P.y), String(target.expect)];
+    const act = await ax(args);
+    row.act = act;
+    row.actStartAfterObservationMs = act.startMs ? act.startMs - observedAt : null;
+    const writeAt = act.write?.atMs ?? null;
+    await sleep(600);
+    row.frontAfterWrite = frontmost();
+    const settled = latest();
+    if (spec.multi === 'mce') {
+      const focusAt = act.focusWrite?.atMs;
+      const activeEv = beacons.find(b => b.ev === 'active' && b.to === 'field-mce' && b.t >= (focusAt ?? 0) - 5);
+      row.focus = {activeChangeMs: activeEv && focusAt ? activeEv.t - focusAt : null, selAfterFocus: at(writeAt ? writeAt - 1 : act.endMs)?.sel?.mce ?? null};
+      row.page = {active: settled?.active, sel: settled?.sel?.mce, matches: settled?.sel?.mce?.anchor?.idx === target.idx && settled?.sel?.mce?.anchor?.off === target.off
+        && settled?.sel?.mce?.focus?.idx === target.idx && settled?.sel?.mce?.focus?.off === target.off};
+    } else {
+      row.page = {active: settled?.active, sel: settled?.sel?.lta, scrollTopBefore: before?.sel?.lta?.[2], matches: settled?.sel?.lta?.[0] === target.expect && settled?.sel?.lta?.[1] === target.expect};
+    }
+    row.pageDeltaWrite = pointerDelta(before, settled);
+    row.type = lean(await w.execute('type_text', {pid: chrome.pid, text: MARK}));
+    await sleep(1500);
+    const afterType = latest();
+    if (spec.multi === 'mce') {
+      const texts = afterType?.texts ?? [];
+      const i = texts.findIndex(t => t.includes(MARK));
+      row.typed = {texts, at: i >= 0 ? {idx: i, off: texts[i].indexOf(MARK)} : null, matches: i === target.idx && i >= 0 && texts[i].indexOf(MARK) === target.off};
+    } else {
+      row.typed = {markAt: afterType?.ltaMark, matches: afterType?.ltaMark === target.expect, scrollTop: afterType?.sel?.lta?.[2]};
+    }
+    row.frontAfterType = frontmost();
+    row.orderAfterType = await ax(['order', String(chrome.pid)]);
+    row.pageDeltaAll = pointerDelta(before, afterType);
+    row.events = beacons.filter(b => b.ev !== 'tick' && b.t >= (act.startMs ?? 0) - 5).map(b => ({dt: b.t - (act.startMs ?? 0), ev: b.ev, to: b.to, trusted: b.trusted, sel: spec.multi === 'mce' ? b.sel?.mce : b.sel?.lta}));
+    try { await w.call('shutdown', {}, 5000); } catch {}
+    w.close();
+  } catch (e) {
+    row.exception = String(e?.stack || e).slice(0, 3000);
+  } finally {
+    if (engine) { row.engineStderr = engine.stderr().slice(-2000); if (engine.child.exitCode === null) engine.child.kill('SIGKILL'); }
+    if (chrome && chrome.exitCode === null) { chrome.kill('SIGTERM'); await sleep(2000); if (chrome.exitCode === null) chrome.kill('SIGKILL'); }
+    await sleep(1000);
+  }
+  return row;
+}
+function multiSummary(row) {
+  if (row.exception || row.problem) return `PROBLEM ${JSON.stringify(row.problem ?? '')} ${row.exception ?? ''}`;
+  const a = row.act ?? {};
+  const typed = row.type?.error ? `error ${row.type.error.errorName ?? row.type.error.code}` : `ok`;
+  if (row.multi === 'lta') return `+${row.actStartAfterObservationMs}ms hit=${a.hit?.role} visible=${JSON.stringify(a.visible)} edges=${JSON.stringify(a.visibleEdges && [a.visibleEdges.first?.rect, a.visibleEdges.last?.rect])} bounded=${JSON.stringify(a.boundedScan)} full=${JSON.stringify(a.fullScan)} exhaustive=${JSON.stringify(a.exhaustiveScan)} write=${JSON.stringify(a.write)} page=${JSON.stringify(row.page)} type ${typed} ${JSON.stringify(row.typed)} front ${row.frontAfterWrite}/${row.frontAfterType}`;
+  return [`+${row.actStartAfterObservationMs}ms chain=${(a.chain ?? []).map(l => `${l.role}${l.dom ? '#' + l.dom : ''}`).join('>')} hitActions=${JSON.stringify(a.chain?.[0]?.actions)} focus=${JSON.stringify(a.focusWrite?.error)} active@${row.focus?.activeChangeMs} local=${JSON.stringify(a.local)}`,
+    `starts children=${a.starts?.children?.start} marker=${JSON.stringify(a.starts?.marker && {start: a.starts.marker.start, hit: a.starts.marker.hitIndexInWebArea, ed: a.starts.marker.editableIndexInWebArea, ofEditable: a.starts.marker.askedOfEditable})} rangeLength=${JSON.stringify(a.starts?.rangeLength)} childIndex=${JSON.stringify(a.starts?.indexForChildUIElement)} leaves=${JSON.stringify(a.starts?.children?.leaves?.map(l => [l.role, l.value, l.isHit]))}`,
+    `write=${JSON.stringify(a.write)} after=${JSON.stringify(a.after)}`,
+    `expected=${JSON.stringify(row.expected)} page=${JSON.stringify(row.page)} typed=${JSON.stringify(row.typed?.at)} ${row.typed?.matches ? 'TYPED-OK' : 'typed-off'} type ${typed} front ${row.frontAfterWrite}/${row.frontAfterType} ptr=${JSON.stringify(row.pageDeltaWrite)}`].join('\n    ');
+}
 
 async function cell(spec) {
   const {label, kind} = spec;
@@ -388,9 +526,10 @@ const config = {
 log('config', JSON.stringify(config));
 const rows = [];
 for (const spec of RUN) {
-  const row = await cell(spec);
+  const row = spec.multi ? await multiCell(spec) : await cell(spec);
   rows.push(row);
   writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, cells: rows}, null, 1));
+  if (spec.multi) { log(`${row.label}: textEdit=${row.textEdit?.front}\n    ${multiSummary(row)}`); continue; }
   log(`${row.label}: textEdit=${row.textEdit?.front} load=${JSON.stringify(row.loadState?.caret)} ${row.loadState?.priorNote ? JSON.stringify(row.loadState.priorNote) : ''}\n    ${summary(row)}`);
 }
 server.close();

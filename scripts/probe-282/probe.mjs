@@ -240,7 +240,8 @@ async function cell(spec) {
     writeFileSync(join(OUT, `skyshot-${fileName(label)}.json`), JSON.stringify(sky, null, 1));
     row.window = sky.window; row.screenshot = sky.screenshot;
     row.observation = {chromium: sky.timings?.chromium, webAreaFound: sky.timings?.webAreaFound, webShaped: sky.timings?.webShaped,
-      enabled: sky.timings?.enabled ?? null, enablementPrior: sky.timings?.enablementPrior ?? null};
+      enabled: sky.timings?.enabled ?? null, enablementPrior: sky.timings?.enablementPrior ?? null,
+      enablementWrite: sky.timings?.enablementWrite ?? null, enablementWriteError: sky.timings?.enablementWriteError ?? null};
     if (spec.buttonTimeline) {
       const n = sky.nodes.find(TARGETS.button);
       row.buttonNode = {title: n.title, actions: n.actions, frame: n.frame};

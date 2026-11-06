@@ -35,7 +35,7 @@ import { performance } from 'node:perf_hooks';
 import { auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { AsyncOracle } from './bus-client.mjs';
 import { clipRead } from './clip.mjs';
-import { CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, cellName, cellsFor, chosenPlan, hopeless, landed, laneSettles, runPasses, settleVerdict } from './action-settle-cells.mjs';
+import { ACTIVATING, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, cellName, cellsFor, chosenPlan, hopeless, landed, laneSettles, runPasses, settleVerdict } from './action-settle-cells.mjs';
 import { Engine, runTmpdirInProcess } from './engine.mjs';
 import { FAMILIES, openFamily } from './families.mjs';
 import { CHROMIUM, pasteTexts, seriesVerdict } from './focus-timer.mjs';
@@ -193,6 +193,9 @@ export function requestsOf(cell, sc, run) {
       return [execute('clipboard_write', { ...target, handle: run.handle })];
     case 'activate_window':
       return [execute('activate_window', { window: { id: sc.id } })];
+    case 'activate_click':
+      // the click pipelined on the activation's answer, windowless at the window's point on the screen (task 63)
+      return [execute('activate_window', { window: { id: sc.id } }), execute('click', at(sc, run.point, 'desktop'))];
     default:
       throw new Error(`no requests for ${cell.kind}`);
   }
@@ -262,7 +265,7 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
   const effects = sc.effects;
   // the desktop route aims at the screen: the window's place read again, since the window manager may have moved it
   // since the scene opened (the points are the window's own)
-  if (cell.route === 'desktop') sc.origin = (await ctx.desktop.state(sc)).window;
+  if (cell.route === 'desktop' || cell.kind === 'activate_click') sc.origin = (await ctx.desktop.state(sc)).window;
   // where a click or a drag goes in the text, read once the caret is parked (`aimAtText`): the view may have scrolled
   let line = null;
   const aimAtText = async () => {
@@ -281,7 +284,7 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
       const down = await settled(() => svc.handleRpc(execute('key_down', { ...(cell.route === 'desktop' ? {} : { window: { id: sc.id } }), key: run.key })));
       if (!down.ok) throw new Error(`${cellName(cell)}: the key_down before the key_up failed: ${down.error}`);
     }
-  } else if (cell.kind === 'click' || cell.kind === 'key_click' || cell.kind === 'move') {
+  } else if (['click', 'key_click', 'move', 'activate_click'].includes(cell.kind)) {
     if (effects === 'editor' || effects === 'paragraphs') {
       // the caret parked at the first line's end (in Writer, at the next paragraph's), so the click must move it
       caretAt(ctx, sc.park.node, sc.park.offset);
@@ -355,7 +358,7 @@ async function afterRun(ctx, cell, sc, svc, run, answers) {
   if (cell.kind === 'clipboard_read' && answers[0]?.ok) await settled(() => svc.handleRpc(execute('clipboard_release', { handle: answers[0].value })));
   if (cell.kind === 'clipboard_write' && run.handle) await settled(() => svc.handleRpc(execute('clipboard_release', { handle: run.handle })));
   if (cell.kind === 'scroll' && sc.effects === 'input-page') await scrollPageToTop(ctx, sc, svc);
-  if (cell.kind === 'activate_window') arrange(ctx, cell, sc);
+  if (cell.kind === 'activate_window' || cell.kind === 'activate_click') arrange(ctx, cell, sc);
 }
 
 /** The scene window in its cell's occlusion, the focus in front (or, on the desktop route, in the scene window). */
@@ -405,7 +408,7 @@ async function oneRun(ctx, cell, sc, svc, settler, trial) {
     return { answers, after, answered_ms: answered - started, read_ms: performance.now() - answered, waited_ms: waited };
   });
   const { answers, after, answered_ms: answeredMs, read_ms: readMs, waited_ms: waitedMs } = span.value;
-  const background = cell.route === 'background' && cell.kind !== 'activate_window';
+  const background = cell.route === 'background' && !ACTIVATING.includes(cell.kind);
   const frontActive = background ? activeWindow() === ctx.desktop.front.id : null;
   const answersOk = answers.every((a) => a.ok);
   const effect = after.ok ? landed(sc.effects, cell.kind, before.reading, after.value, run) : false;
@@ -735,7 +738,7 @@ export async function runSettle(args, { emit, run, startLoad }) {
             all.push(s);
             if (plan.search && s.reached) break;
           }
-          if (!plan.search && plan.lanes.includes('shipped') && cell.route === 'background' && cell.kind !== 'activate_window' && args.audit !== false) audits.push(await auditCell(ctx, cell, sc, 'shipped'));
+          if (!plan.search && plan.lanes.includes('shipped') && cell.route === 'background' && !ACTIVATING.includes(cell.kind) && args.audit !== false) audits.push(await auditCell(ctx, cell, sc, 'shipped'));
         }
       } finally {
         await desktop.close(Object.values(scenes));

@@ -78,6 +78,18 @@ test('every family the foreground route carries pointer input for has its covere
   for (const [scene, kind] of cells) assert.equal(dedicated(scene, kind)?.occlusion, 'covered', `${scene} ${kind}`);
 });
 
+test('activate_window then a pipelined windowless click runs in both modes, covered, and is judged by the click landing in the window (task 63)', () => {
+  for (const route of ['background', 'dedicated']) {
+    const c = CELLS.find((x) => x.scene === 'settle-gtk3' && x.kind === 'activate_click' && x.route === route);
+    assert.equal(c?.occlusion, 'covered', route);
+  }
+  assert.equal(KIND_METHOD.activate_click, 'activate_window');
+  assert.equal(landed('settle-scene', 'activate_click', { presses: 3 }, { presses: 4 }), true);
+  assert.equal(landed('settle-scene', 'activate_click', { presses: 3 }, { presses: 3 }), false, 'the click went elsewhere');
+  const ok = { answersOk: true, landed: true };
+  assert.equal(runPasses({ route: 'background', kind: 'activate_click', ...ok, desktopClean: false, frontActive: false }), true, 'it activates on purpose');
+});
+
 test('--family and --kinds and --routes choose cells; an unknown name is refused', () => {
   const gedit = cellsFor({ families: ['gedit'] });
   assert.ok(gedit.length > 0 && gedit.every((c) => c.scene === 'gedit'));
@@ -261,6 +273,10 @@ test('a cell\'s requests to the service: its window on the background and foregr
   assert.deepEqual(requestsOf(cellOf('click', 'desktop'), sc, { point: { x: 1, y: 2 } }), [{ type: 'execute', method: 'click', args: [{ x: 11, y: 22 }] }], 'screen coordinates on the desktop route');
   assert.deepEqual(requestsOf(cellOf('click', 'dedicated'), sc, { point: { x: 1, y: 2 } }), [{ type: 'execute', method: 'click', args: [{ window: { id: 7 }, x: 1, y: 2 }] }]);
   assert.deepEqual(requestsOf(cellOf('key_click'), sc, { point: { x: 1, y: 2 } }).map((r) => [r.method, r.args[0]]), [['press_key', { window: { id: 7 }, key: 'shift' }], ['click', { window: { id: 7 }, x: 1, y: 2 }]]);
+  // task 63: the activation, then the click pipelined on its answer, windowless at the window's point on the screen
+  for (const route of ['background', 'dedicated']) {
+    assert.deepEqual(requestsOf(cellOf('activate_click', route), sc, { point: { x: 1, y: 2 } }).map((r) => [r.method, r.args[0]]), [['activate_window', { window: { id: 7 } }], ['click', { x: 11, y: 22 }]], route);
+  }
   assert.deepEqual(requestsOf(cellOf('right_click'), sc, { element: '4' }), [{ type: 'execute', method: 'click', args: [{ window: { id: 7 }, element_id: '4', mouse_button: 'right' }] }]);
   assert.deepEqual(requestsOf(cellOf('drag_handle', 'desktop'), sc, { handle: 'h', path: [{ x: 1, y: 1 }, { x: 5, y: 1 }] }),
     [{ type: 'drag_start', handle_id: 'h', point: { x: 11, y: 21 } }, { type: 'drag_move', handle_id: 'h', point: { x: 15, y: 21 } }, { type: 'drag_end', handle_id: 'h' }]);

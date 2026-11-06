@@ -104,7 +104,13 @@ export const KIND_METHOD = {
   clipboard_read: 'clipboard_read',
   clipboard_write: 'clipboard_write',
   activate_window: 'activate_window',
+  // `activate_window`, then a windowless click at the window's point as soon as it answers (task 63): the click must
+  // land in the window, not in the window that covered it, in either mode
+  activate_click: 'activate_window',
 };
+
+/** The kinds that activate their window on purpose, in either mode: their desktop changes and is not judged. */
+export const ACTIVATING = ['activate_window', 'activate_click'];
 
 const cell = (scene, kind, route = 'background', occlusion = route === 'desktop' ? 'active' : 'covered') => ({ scene, kind, route, occlusion });
 const browserCells = (browser, { pointer, clipboard = true }) => [
@@ -171,6 +177,8 @@ export const CELLS = [
   cell('xterm', 'drag'),
   cell('xterm', 'press_key', 'dedicated'),
   cell('settle-gtk3', 'click'),
+  cell('settle-gtk3', 'activate_click'),
+  cell('settle-gtk3', 'activate_click', 'dedicated'),
   cell('settle-gtk3', 'click_element'),
   cell('settle-gtk3', 'move'),
   cell('settle-gtk3', 'scroll'),
@@ -256,7 +264,7 @@ export function landed(effects, kind, before, after, run) {
   }
   if (effects === 'record') return grew(before, after, 'bytes');
   if (effects === 'settle-scene' || effects === 'counter') {
-    if (kind === 'click' || kind === 'key_click' || kind === 'click_element') return rose(before, after, 'presses');
+    if (['click', 'key_click', 'click_element', 'activate_click'].includes(kind)) return rose(before, after, 'presses');
     if (kind === 'move') return grew(before, after, 'moves');
     if (kind === 'scroll') return grew(before, after, 'scrolls');
   }
@@ -277,7 +285,7 @@ export function landed(effects, kind, before, after, run) {
  */
 export function runPasses({ route, kind, answersOk, landed: effect, desktopClean, frontActive }) {
   if (!answersOk || effect !== true) return false;
-  if (route !== 'background' || kind === 'activate_window') return true;
+  if (route !== 'background' || ACTIVATING.includes(kind)) return true;
   return desktopClean === true && frontActive === true;
 }
 

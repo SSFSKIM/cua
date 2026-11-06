@@ -1,0 +1,57 @@
+# #283's hosted probe (scripts/probe-283/probe.mjs): Accessibility writes into a background Chrome for Testing page's text
+# fields (input, textarea, contenteditable) behind a frontmost TextEdit, before and after Chromium's complete
+# accessibility mode, then a type_text through main's engine. Two repetitions on two runners. Runs only on a push to
+# probe/283-hosted (or by hand); not a ci-kit gate.
+name: probe-283
+on:
+  push:
+    branches: [probe/283-hosted]
+  workflow_dispatch:
+    inputs:
+      cells:
+        description: probe.mjs --cells (label prefixes, comma-separated; empty for all)
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2]
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: TCC rows for the services the engine needs
+        run: |
+          sw_vers
+          for db in "/Library/Application Support/com.apple.TCC/TCC.db" "$HOME/Library/Application Support/com.apple.TCC/TCC.db"; do
+            echo "== $db"
+            sudo sqlite3 "$db" "select service, client, auth_value from access where service in ('kTCCServiceAccessibility','kTCCServicePostEvent','kTCCServiceScreenCapture','kTCCServiceListenEvent') order by service, client" || true
+          done
+      - name: Build the engine (main's; this branch adds only the probe)
+        run: |
+          git diff --stat origin/main -- native/engine
+          echo "P283_ENGINE_COMMIT=$(git log -1 --format=%H origin/main -- native/engine)" >> "$GITHUB_ENV"
+          swift build --package-path native/engine --scratch-path "$RUNNER_TEMP/eng"
+      - name: Build the AX tool
+        run: swiftc -o "$RUNNER_TEMP/p283-ax" scripts/probe-283/ax.swift
+      - name: Probe
+        env:
+          P283_REP: ${{ matrix.rep }}
+          P283_CELLS: ${{ github.event.inputs.cells || '' }}
+        run: node scripts/probe-283/probe.mjs --engine "$RUNNER_TEMP/eng/debug/cua-engine" --ax "$RUNNER_TEMP/p283-ax" --cells "$P283_CELLS" --out "$RUNNER_TEMP/probe-283"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-283-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-283/*.json
+            ${{ runner.temp }}/probe-283/shots-*/**
+          if-no-files-found: warn

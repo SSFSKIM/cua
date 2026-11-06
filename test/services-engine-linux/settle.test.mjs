@@ -22,6 +22,13 @@ test('every method that defers has its own constant, a whole number of ms from 0
   assert.ok(Object.isFrozen(SETTLE_MS));
 });
 
+test('the constants are T8\'s measured steps; where no step up to 100 showed every effect, the vendor\'s 100', () => {
+  assert.deepEqual({...SETTLE_MS}, {
+    perform_secondary_action: 10, click: 100, clipboard_read: 0, clipboard_write: 0, drag: 10, drag_handle: 10, activate_window: 10, move: 0,
+    move_relative: 0, press_key: 100, key_down: 25, key_up: 50, scroll: 0, type_text: 0, launch_app: 100,
+  });
+});
+
 test('nothing deferred: wait returns at once', async () => {
   const c = clock();
   await new ActionSettler(c).wait();

@@ -123,3 +123,22 @@ export function classify(recs, points) {
   return {all: share(all), clickable: share(click), containerOnlyReasons: reasons, containerOnlyRoles: roles, missedClickable, noHit, otherWindow,
     containerOnlyClickablePoints};
 }
+
+/// The same reading over the engine's own record (`probeRecord`, the probe build's instrumentation of
+/// `lineage.screenshot.nodes`: [role, depth, subtreeRecorded, frame, shown] per node in the record's order), so nodes the
+/// record holds beyond the printed tree (#301's record-only rows) count.
+export function classifyRecord(probeRecord, points) {
+  const r = f => f && {x: f.x, y: f.y, w: f.width, h: f.height};
+  const framed = probeRecord.map(([role, depth, complete, frame, shown]) => ({role, depth, complete, frame: r(frame), shownRect: r(shown)})).filter(n => n.shownRect);
+  const t = {checked: 0, containerOnly: 0, unrecorded: 0}, c = {checked: 0, containerOnly: 0, unrecorded: 0};
+  for (const p of points) {
+    const chain = p.chain ?? null;
+    let best = null;
+    for (const n of framed) if (holds(n.shownRect, p) && (!best || n.depth >= best.depth)) best = n;
+    const cat = !best ? 'unrecorded' : !best.complete && (!chain || chain.some(x => x[0] === best.role && near(best.frame, x))) ? 'containerOnly' : 'checked';
+    t[cat] += 1;
+    if (clickable(chain)) c[cat] += 1;
+  }
+  const share = s => { const n = s.checked + s.containerOnly + s.unrecorded; const pc = v => n ? Math.round(1000 * v / n) / 10 : null; return {n, checked: pc(s.checked), containerOnly: pc(s.containerOnly), unrecorded: pc(s.unrecorded)}; };
+  return {all: share(t), clickable: share(c), recordNodes: probeRecord.length};
+}

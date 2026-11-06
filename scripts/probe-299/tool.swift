@@ -203,6 +203,96 @@ func descend(_ req: [String: Any]) -> [String: Any] {
   return ["rows": rows, "p50": pctl(ms, 0.5), "p95": pctl(ms, 0.95), "max": ms.max() ?? 0]
 }
 
+/// #301's record-only search, copied from feat/301-visible-first@effffcee Walk.swift `recordedChildPositions`, to compare
+/// against every child's frame read (whether a wide list's children bisect cleanly).
+func recordedChildPositions(_ children: [AXUIElement], frame: (AXUIElement) -> CGRect?, window: CGRect, limit: Int) -> [Int] {
+  let probe = 8
+  func framed(from start: Int, by step: Int) -> CGRect? {
+    var position = start
+    for _ in 0..<probe {
+      guard children.indices.contains(position) else { return nil }
+      if let found = frame(children[position]) { return found }
+      position += step
+    }
+    return nil
+  }
+  guard let first = framed(from: 0, by: 1), let last = framed(from: children.count - 1, by: -1) else { return [] }
+  let vertical: Bool
+  if last.minY > first.minY { vertical = true } else if last.minX > first.minX { vertical = false } else { return [] }
+  func before(_ rect: CGRect) -> Bool { vertical ? rect.maxY <= window.minY : rect.maxX <= window.minX }
+  func past(_ rect: CGRect) -> Bool { vertical ? rect.minY >= window.maxY : rect.minX >= window.maxX }
+  var low = 0, high = children.count
+  while low < high {
+    let middle = (low + high) / 2
+    if framed(from: middle, by: 1).map(before) ?? true { low = middle + 1 } else { high = middle }
+  }
+  var kept: [Int] = []
+  var position = max(0, low - 1)
+  let end = min(children.count, position + limit)
+  while position < end {
+    if let rect = frame(children[position]) {
+      if past(rect) { break }
+      if !before(rect), rect.intersects(window) { kept.append(position) }
+    }
+    position += 1
+  }
+  return kept
+}
+
+let clippingRoles: Set<String> = ["AXScrollArea", "AXWebArea", "AXWindow", "AXSheet", "AXMenu", "AXPopover"]
+
+/// The window's elements with more than 499 children, found breadth-first (their children not entered), each with what
+/// its clipping ancestors leave showing of the window; for each, every child's frame read against the bisection.
+func wide(_ req: [String: Any]) -> [String: Any] {
+  guard let pid = (req["pid"] as? NSNumber)?.int32Value, let window = rectArg(req["window"]) else { return ["error": "bad wide args"] }
+  let maxNodes = (req["maxNodes"] as? Int) ?? 30_000
+  let deadline = nowMs() + ((req["deadlineMs"] as? Double) ?? 20_000)
+  guard let root = findWindow(pid: pid, frame: window) else { return ["error": "no window"] }
+  var queue: [(AXUIElement, CGRect)] = [(root, window)]
+  var head = 0
+  var candidates: [(element: AXUIElement, role: String, children: [AXUIElement], clip: CGRect, frame: CGRect?)] = []
+  while head < queue.count, head < maxNodes, nowMs() < deadline {
+    let (e, clip) = queue[head]
+    head += 1
+    let v = multi(e, [kAXRoleAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXChildrenAttribute])
+    let role = (v[0] as? String) ?? ""
+    let f = rect(v[1], v[2])
+    let childClip = clippingRoles.contains(role) ? (f.map { clip.intersection($0) } ?? clip) : clip
+    let children = asElements(v[3])
+    if children.count > 499 { candidates.append((e, role, children, childClip, f)); continue }
+    for c in children { queue.append((c, childClip)) }
+  }
+  var out: [[String: Any]] = []
+  for c in candidates.sorted(by: { $0.children.count > $1.children.count }).prefix(3) {
+    let visible = asElements(multi(c.element, ["AXVisibleChildren"])[0]).count
+    let visibleRows = asElements(multi(c.element, [kAXVisibleRowsAttribute])[0]).count
+    let t0 = nowMs()
+    var frames: [CGRect?] = []
+    for child in c.children { let v = multi(child, [kAXPositionAttribute, kAXSizeAttribute]); frames.append(rect(v[0], v[1])) }
+    let bruteMs = nowMs() - t0
+    let brute = frames.indices.filter { frames[$0].map { $0.intersects(c.clip) && $0.width > 0 && $0.height > 0 } ?? false }
+    var ordered = 0, pairs = 0, previous: CGRect?
+    for f in frames { guard let f else { continue }; if let p = previous { pairs += 1; if f.minY >= p.minY { ordered += 1 } }; previous = f }
+    var bisectReads = 0
+    let t1 = nowMs()
+    let indexOf = Dictionary(c.children.enumerated().map { (UInt(CFHash($0.element)), $0.offset) }, uniquingKeysWith: { a, _ in a })
+    let kept = recordedChildPositions(c.children, frame: { child in
+      bisectReads += 1
+      if let i = indexOf[UInt(CFHash(child))], CFEqual(c.children[i], child) { return frames[i] }
+      let v = multi(child, [kAXPositionAttribute, kAXSizeAttribute]); return rect(v[0], v[1])
+    }, window: c.clip, limit: 1_000)
+    let bisectMs = nowMs() - t1
+    let keptSet = Set(kept), bruteSet = Set(brute)
+    let contiguous = brute.isEmpty || brute.last! - brute.first! + 1 == brute.count
+    out.append(["role": c.role, "children": c.children.count, "visibleChildren": visible, "visibleRows": visibleRows, "frame": wire(c.frame), "clip": wire(c.clip),
+                "framed": frames.compactMap { $0 }.count, "orderedPairs": ordered, "pairs": pairs, "bruteMs": r3(bruteMs),
+                "brute": brute.count, "bruteFirst": brute.first ?? NSNull(), "bruteLast": brute.last ?? NSNull(), "bruteContiguous": contiguous,
+                "bisected": kept.count, "bisectReads": bisectReads, "bisectFrameMsCached": r3(bisectMs),
+                "missing": bruteSet.subtracting(keptSet).count, "extra": keptSet.subtracting(bruteSet).count])
+  }
+  return ["candidates": candidates.count, "scanned": head, "wide": out]
+}
+
 let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
 while let line = readLine() {
   guard let data = line.data(using: .utf8), let req = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -217,6 +307,7 @@ while let line = readLine() {
   case "grid": emit(grid(req))
   case "vwalk": emit(vwalk(req))
   case "descend": emit(descend(req))
+  case "wide": emit(wide(req))
   default: emit(["error": "unknown op"])
   }
 }

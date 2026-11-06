@@ -1,7 +1,8 @@
-# #299's hosted measurement (scripts/probe-299/run.mjs): how often real, large pages and apps cut the engine's
-# observation, which limit cuts it, and what share of a window's clickable area #296's stale-point guard leaves
-# unchecked; origin/main's engine against the same engine with its node, byte and deadline budgets raised.
-# Runs only on a push to probe/299-hosted (or by hand); not a ci-kit gate.
+# #299's hosted probes. Now #301's A/B (scripts/probe-299/ab.mjs): origin/main's engine (c4057c3a) against
+# feat/301-visible-first's, both instrumented by scripts/probe-299/instrument.py on the runner only (the observation also
+# returns the stale-point guard's own record), on #299's pages; two repetitions on separate runners. #299's own
+# measurement (scripts/probe-299/run.mjs, main against a raised-budget build) ran from this file at 7c92f7bf, run
+# 42202647390. Runs only on a push to probe/299-hosted (or by hand); not a ci-kit gate.
 name: probe-299
 on:
   push:
@@ -16,6 +17,7 @@ permissions:
   contents: read
 env:
   P299_MAIN_REF: c4057c3a7426606c65145f3a4b16c5d3d307febb
+  P299_BRANCH_REF: effffcee
 jobs:
   probe:
     strategy:
@@ -24,43 +26,36 @@ jobs:
         rep: [1, 2]
         group: [chrome-a, chrome-b, safari, native]
     runs-on: macos-latest
-    timeout-minutes: 110
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Build the engines and the tool
+      - name: Build both engines (instrumented) and the tool
         run: |
           sw_vers
-          node --version
+          git fetch --no-tags origin feat/301-visible-first main
           git worktree add "$RUNNER_TEMP/main" "$P299_MAIN_REF"
-          git worktree add "$RUNNER_TEMP/wide" "$P299_MAIN_REF"
+          git worktree add "$RUNNER_TEMP/branch" "$P299_BRANCH_REF"
           echo "P299_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
-          src="$RUNNER_TEMP/wide/native/engine/Sources/Engine"
-          sed -i '' 's/^let maxObservedNodes = 4_000$/let maxObservedNodes = 40_000/' "$src/Walk.swift"
-          sed -i '' 's/^let observationDeadlineMs: Int64 = 10_000$/let observationDeadlineMs: Int64 = 60_000/' "$src/Walk.swift"
-          sed -i '' 's/^let skyshotByteBudget = 6 \* 1024 \* 1024$/let skyshotByteBudget = 64 * 1024 * 1024/' "$src/Walk.swift"
-          sed -i '' 's/^let maxFrameSize = 8 \* 1024 \* 1024$/let maxFrameSize = 128 * 1024 * 1024/' "$src/Protocol.swift"
-          grep -n '^let maxObservedNodes = 40_000$' "$src/Walk.swift"
-          grep -n '^let observationDeadlineMs: Int64 = 60_000$' "$src/Walk.swift"
-          grep -n '^let skyshotByteBudget = 64 \* 1024 \* 1024$' "$src/Walk.swift"
-          grep -n '^let maxFrameSize = 128 \* 1024 \* 1024$' "$src/Protocol.swift"
+          echo "P299_BRANCH_COMMIT=$(git -C "$RUNNER_TEMP/branch" rev-parse HEAD)" >> "$GITHUB_ENV"
+          python3 -I scripts/probe-299/instrument.py "$RUNNER_TEMP/main/native/engine/Sources/Engine"
+          python3 -I scripts/probe-299/instrument.py "$RUNNER_TEMP/branch/native/engine/Sources/Engine"
           swift build -c release --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng-main"
-          swift build -c release --package-path "$RUNNER_TEMP/wide/native/engine" --scratch-path "$RUNNER_TEMP/eng-wide"
+          swift build -c release --package-path "$RUNNER_TEMP/branch/native/engine" --scratch-path "$RUNNER_TEMP/eng-branch"
           swiftc -O -o "$RUNNER_TEMP/probe299-tool" scripts/probe-299/tool.swift
       - name: Measure
         env:
           P299_REP: ${{ matrix.rep }}
           P299_TARGETS: ${{ github.event.inputs.targets || '' }}
-        run: node scripts/probe-299/run.mjs --group ${{ matrix.group }} --engine "$RUNNER_TEMP/eng-main/release/cua-engine" --wide "$RUNNER_TEMP/eng-wide/release/cua-engine" --tool "$RUNNER_TEMP/probe299-tool" ${P299_TARGETS:+--targets "$P299_TARGETS"} --out "$RUNNER_TEMP/probe-299"
+        run: node scripts/probe-299/ab.mjs --group ${{ matrix.group }} --main "$RUNNER_TEMP/eng-main/release/cua-engine" --branch "$RUNNER_TEMP/eng-branch/release/cua-engine" --tool "$RUNNER_TEMP/probe299-tool" ${P299_TARGETS:+--targets "$P299_TARGETS"} --out "$RUNNER_TEMP/probe-299"
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: probe-299-${{ matrix.group }}-rep${{ matrix.rep }}
+          name: probe-299-ab-${{ matrix.group }}-rep${{ matrix.rep }}
           path: |
             ${{ runner.temp }}/probe-299/*.json
             ${{ runner.temp }}/probe-299/*.gz
-            ${{ runner.temp }}/probe-299/shots/**
           if-no-files-found: warn

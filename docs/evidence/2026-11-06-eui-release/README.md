@@ -6,7 +6,7 @@
 - **The final run:** https://github.com/SSFSKIM/cua/actions/runs/42168334138. The branch is at 63926945, after the review fixes. Main is at d2568c76. Both engines were built on the runner from those commits.
 - **The records:** `rep1/results.json` and `rep2/results.json`, one runner each. Each carries the config and, for every cell, the engine's full answers (meta, error), the sampler's state changes with their times, the window frames, the page's counters, and the frontmost app.
 - **The earlier run** (`earlier/`): https://github.com/SSFSKIM/cua/actions/runs/42167787338, the same cells at 96c6f093. That was before the review fixes; there end_task wrote endTask and closed without waiting for the answer. Every cell agrees with the final run.
-- **The Reload diagnostics** (`reload-idle/`, `reload-idle-2/`): runs https://github.com/SSFSKIM/cua/actions/runs/42169259575 and https://github.com/SSFSKIM/cua/actions/runs/42169900108, both at 63926945. See "Reload after idle" below.
+- **The Reload diagnostics** (`reload-idle/`, `reload-idle-2/`): runs https://github.com/SSFSKIM/cua/actions/runs/42169259575 and https://github.com/SSFSKIM/cua/actions/runs/42169900108, both at 63926945. See "Reload after a toolbar re-layout" below.
 - **The reps agree in every cell.**
 
 **The measured config:**
@@ -51,8 +51,8 @@ At 96c6f093, end_task released at 22 / 24 ms and SIGTERM at 22 / 42 ms.
 | 4, checkbox coordinate click, no re-observation | branch | 31.61 / 31.62 s | 33.2 s | success, route 3, `elementClick {plan action, AXPress, walk [AXCheckBox], pressed hit}`, `pointerEstablish {ms 9.7 / 11.0, webAreaFound true, rehits 1}` | **2426 / 2394** | checkbox changed once |
 | 4, the same | main | never | 33.2 s | success, AXPress, no `pointerEstablish` | 147 / 158 | checkbox changed once |
 | 6, Reload, no observation on the connection | both | – | – | **`noScreenshotForCoordinates`**, nothing posted | 9–18 | nothing |
-| 6, Reload after a grace release | branch | 31.86 s | 33.2 s | success, route 3 posted at Reload's point, `pointerEstablish {ms 12.3 / 23.5, webAreaFound true, rehits 1}`, no elementClick | 165 / 131 | **no reload** (see below) |
-| 6, Reload, the same timing | main | never | 33.2 s | success, route 3 posted, no establishment | 217 / 138 | **no reload** (see below) |
+| 6, Reload after a grace release | branch | 31.86 s | 33.2 s | success, route 3 posted at the observation's Reload point, `pointerEstablish {ms 12.3 / 23.5, webAreaFound true, rehits 1}`, no elementClick | 165 / 131 | **no reload**: the point was stale (see below) |
+| 6, Reload, the same timing | main | never | 33.2 s | success, route 3 posted, no establishment | 217 / 138 | **no reload**: the point was stale (see below) |
 | 6, page plain text after a grace release | branch | 31.54 / 31.86 s | 33.2 s | `backgroundClickRefused`, `elementClick {plan synthesized, walk [AXStaticText, AXGroup, AXWebArea], walkStopped roleNotAllowed}`, `pointerEstablish {rehits 1, webAreaFound true}`, nothing posted | 28 / 23 | **counters 0** |
 | 6, the same | main | never | 33.2 s | `backgroundClickRefused`, roleNotAllowed | 18 / 16 | counters 0 |
 
@@ -70,9 +70,15 @@ At 96c6f093, end_task released at 22 / 24 ms and SIGTERM at 22 / 42 ms.
 - An element-routed AXPress shows on the page as pointerdown, mousedown, mouseup and click, once each, `isTrusted` true. That is Chrome's dispatch of AXPress, as in #282's evidence. So for a press, the discriminator is the meta's `elementClick.plan action`, not zero counters. A refused click left every counter at 0.
 - A refused click after a release still takes the input's enablement step. In both reps of the plain-text cell, EUI read true again 300 ms after the refusal.
 
-## Reload after idle: route 3 into Chrome's toolbar is not delivered after 10 to 20 s, on main too
+## Reload after a toolbar re-layout: the late clicks were delivered to a stale point
 
-Registered as #294 (P1, spawned by #288).
+> **Correction (#294's spike, `docs/evidence/2026-11-06-toolbar-relayout/`).** This section first read the result below as lost
+> input after 10–20 s idle, and #294 was registered for it. It is not. About 18–20 s after launch, Chrome for Testing
+> re-lays out its toolbar: the Sign In pill collapses and the disabled Forward button comes back, so Reload moves from
+> x 442 to 478. Every late cell here clicked the first observation's point (459, 94), which by then is on the disabled
+> Forward button. Route 3 delivered the click each time, and a real HID click there misses too. The spike excludes
+> idle, a held activation and throttling. #294 was closed as not-a-bug, and the stale-point guard it called for is #296.
+> The table stands as measured; the bullets after it are corrected.
 
 The Reload cells posted at Reload's centre (459, 94; the button's frame is 442–476 × 77–111) and answered success, but the page never reloaded. The diagnostics runs isolate the cause; all reloads below are counted as GET requests at the server.
 
@@ -85,9 +91,9 @@ The Reload cells posted at Reload's centre (459, 94; the button's frame is 442�
 | 33 s, with no sampler running during the wait | no reload / no reload | no reload / no reload (`pointerEstablish` present) |
 | 33 s, then a second click 1 s later | neither click reloaded | neither click reloaded |
 
-- The failure is time-dependent, not caused by #292's release or #288's establishment: main never releases and fails the same way.
+- It is not caused by #292's release or #288's establishment: main never releases and misses the same way.
 - It is not the probe's sampler either.
-- What makes it stop is unmeasured: Chrome's side, or the engine's route-3 delivery to a window inactive for over about 10 s.
+- It is time-dependent because the re-layout is: a click before it reloads, and a click after it, at the same point, lands on Forward.
 - The checkbox's element route at 33 s works on both engines.
 
 ## What it shows
@@ -99,4 +105,4 @@ The Reload cells posted at Reload's centre (459, 94; the button's frame is 442�
 - **A never-observed Chrome cannot be clicked by coordinates.** With no screenshot on the connection the engine refuses with `noScreenshotForCoordinates`, and element tokens also come only from `get_app_state`. So the state with no page tree seen is reached only after a release, which clears `webAreaSeen`.
   - In that state the branch's click-time establishment ran (`pointerEstablish`, 10–24 ms, one re-hit).
   - Plain page text was refused with nothing posted, and the checkbox was element-routed.
-  - Reload was posted but did not reload; per the diagnostics, that comes from the 33 s idle, not the branch.
+  - Reload was posted but did not reload: the point was the observation's, from before Chrome's toolbar re-layout, so the click landed on the disabled Forward button (#294's spike). It does not come from the branch.

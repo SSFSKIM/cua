@@ -2180,10 +2180,33 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   the state with no web area seen arises after a grace release, which clears it. There the step ran in 10–24 ms
   (`pointerEstablish {webAreaFound true, rehits 1}`): Chrome's Reload walked outside every web area and was posted by
   route 3, and page text was refused with nothing posted. The posted Reload did not reload the page, on main as on
-  the branch, after the window sat idle 20 s or more (it did at 1 s): that is #294, not this step. The first quick
+  the branch: the click went to the observation's point, which Chrome for Testing's toolbar re-layout (about 18 s
+  after launch) had moved Reload off (#294's entry below), not this step. The first quick
   click's latency, re-stated: 1.7–2.0 s for a checkbox press and 1.7–1.9 s for a textarea focus, 0.1 s after the first
   observation, on both engines.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #288.
+
+- Decision (#294, 2026-11-06, `fix/294-toolbar-idle`; the design session's ruling, 1ea561bc ee29283e): **#294 is not
+  lost input, and nothing in the engine changes for it.** #294 was registered from #288's live check: a route-3 click
+  on Chrome's Reload answered success and did not reload once the window had sat 20 s or more. #294's hosted spike
+  (`docs/evidence/2026-11-06-toolbar-relayout/`; runs 42173188779, 42175037968 and 42176012181; Chrome for Testing 156,
+  two images) found the cause. About 18–20 s after launch, Chrome for Testing re-lays out its toolbar in the kit's
+  620-pt window: the Sign In pill collapses and the disabled Forward button returns, so Reload moves from x 442 to
+  478. A click at the first observation's Reload point then lands on Forward.
+  - **The clicks were delivered, and the clock was Chrome's launch, not idle.** Delivered and missed clicks were
+    identical in the engine's meta (fresh activation, `consumedByAction`), in the events a pid tap saw, and in Chrome's
+    AppKit state. The boundary fell between 18.1 s and 18.7 s after launch in both reps.
+  - **The isolating cells.** Route 3 at Reload's current centre at 25 s reloaded, and so did the element click, which
+    re-reads the frame. A real HID click at the old point missed with no engine running. An observation made after
+    the re-layout gave a click that reloaded.
+  - **What is excluded:** a held activation (synthesized clicks take a fresh one), AppKit's first click into an
+    inactive window (Chromium's `acceptsFirstMouse:` answers YES), and Chromium throttling (the page stays visible
+    and unthrottled).
+  - **The ruling.** Close #294 as not-a-bug; correct #288's evidence and this log; have the #288 kit's `noobs` cell
+    locate Reload at click time. The general hazard, a coordinate click into a screenshot the app has since
+    re-laid out, is #296: a stale-point guard that refuses in both modes, measured for false positives before it is
+    built.
+  Date/Author: 2026-11-06, cursor235 for the design session's ruling on #294.
 
 ## Outcomes & Retrospective
 

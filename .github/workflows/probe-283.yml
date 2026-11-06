@@ -12,6 +12,14 @@ on:
         description: probe.mjs --cells (label prefixes, comma-separated; empty for all)
         required: false
         default: ''
+      script:
+        description: probe (the AX measurement, probe.mjs) or ab (the engine A/B, ab.mjs, main against fix/283-web-text-focus)
+        required: false
+        default: probe
+      branch_commit:
+        description: the fix branch's commit ab.mjs builds
+        required: false
+        default: 2c016f7b
 permissions:
   contents: read
 jobs:
@@ -39,9 +47,25 @@ jobs:
           git diff --stat origin/main -- native/engine
           echo "P283_ENGINE_COMMIT=$(git log -1 --format=%H origin/main -- native/engine)" >> "$GITHUB_ENV"
           swift build --package-path native/engine --scratch-path "$RUNNER_TEMP/eng"
+      - name: Build the fix branch's engine (ab only)
+        if: github.event.inputs.script == 'ab'
+        env:
+          P283_BRANCH_REF: ${{ github.event.inputs.branch_commit }}
+        run: |
+          git worktree add "$RUNNER_TEMP/fix" "$P283_BRANCH_REF"
+          echo "P283_BRANCH_COMMIT=$(git -C "$RUNNER_TEMP/fix" rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "P283_MAIN_COMMIT=$(git log -1 --format=%H origin/main)" >> "$GITHUB_ENV"
+          swift build --package-path "$RUNNER_TEMP/fix/native/engine" --scratch-path "$RUNNER_TEMP/eng-fix"
       - name: Build the AX tool
         run: swiftc -o "$RUNNER_TEMP/p283-ax" scripts/probe-283/ax.swift
+      - name: A/B (ab only)
+        if: github.event.inputs.script == 'ab'
+        env:
+          P283_REP: ${{ matrix.rep }}
+          P283_CELLS: ${{ github.event.inputs.cells || '' }}
+        run: node scripts/probe-283/ab.mjs --main "$RUNNER_TEMP/eng/debug/cua-engine" --branch "$RUNNER_TEMP/eng-fix/debug/cua-engine" --ax "$RUNNER_TEMP/p283-ax" --cells "$P283_CELLS" --out "$RUNNER_TEMP/probe-283"
       - name: Probe
+        if: github.event.inputs.script != 'ab'
         env:
           P283_REP: ${{ matrix.rep }}
           P283_CELLS: ${{ github.event.inputs.cells || '' }}

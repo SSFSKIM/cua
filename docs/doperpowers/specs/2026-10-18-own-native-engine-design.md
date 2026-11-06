@@ -2574,8 +2574,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      strip (1 pt or less either way) whose children the record lacks (`thinGap`), and keeps main's completeness rule
      otherwise; where the verdict would refuse an interactive hit (`interactiveHit`) or an element route's target
      (`pressedOther`), it reads that element's parents up to its window (`ancestors`, the climb the re-created search
-     makes) and, when they pass through such a strip (CFEqual), reads `unrecordedDescendant` instead: the node, which
-     passed as every node does, is all that is checked. So a hit under the collapsed container passes container-only,
+     makes) and, when they pass through such a strip (CFEqual) inside the chosen node's recorded subtree (the node or
+     its recorded descendants, `gapsBelow`), reads `unrecordedDescendant` instead: the node, which passed as every node
+     does, is all that is checked. A strip outside that subtree counts for nothing (the re-review of
+     c36c3c81..9f5a0452 found every strip in the record counting, so a new button under a collapsed group, covering a
+     fully recorded button there, passed; `testAStripOutsideTheChosenNodeNeverStandsBehindANewButtonCoveringIt`, which
+     refuses on both paths and fails without the scoping). So a hit under the collapsed container passes container-only,
      a new button elsewhere in its parent is refused whether the strip clips or not, and a strip whose subtree the
      record holds changes nothing. A strip re-created since the screenshot matches no hit's parents, and refuses: the
      safe direction. **The cost:** none at a kept point, and none when the record has no such strip; otherwise one

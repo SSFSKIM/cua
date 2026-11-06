@@ -40,6 +40,10 @@ struct ScreenshotNode<Element> {
   /// tell the two apart, so only the live hit can: a hit whose ancestors pass through such a node lies in its unrecorded
   /// interior (`stalePointVerdict`), and anywhere else the strip changes nothing.
   var thinGap = false
+  /// The `thinGap` strips in its recorded subtree, itself included: the only ones a hit at a point it is chosen for may
+  /// pass through and be kept, so a strip elsewhere (beside it, or above it in the tree) never stands behind a new
+  /// control covering it.
+  var gapsBelow: [Element] = []
 }
 
 /// One element as the walk emitted it, for the record (`screenshotNodes`): its lineage number and its parent's.
@@ -67,9 +71,13 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
   for read in reads { if let parent = read.parent { recordedChildren[parent, default: 0] += 1 } }
   // Children come after their parents, so a backward pass sees a node's whole subtree before the node.
   var incomplete: Set<Int> = []
+  var gapsBelow: [Int: [Element]] = [:]
+  func thin(_ frame: CGRect) -> Bool { frame.width <= 1 || frame.height <= 1 }
   for read in reads.reversed() {
     if (recordedChildren[read.number] ?? 0) < read.childCount { incomplete.insert(read.number) }
     if read.frame == nil, incomplete.contains(read.number), let parent = read.parent { incomplete.insert(parent) }
+    if let frame = read.frame, thin(frame), incomplete.contains(read.number) { gapsBelow[read.number, default: []].append(read.element) }
+    if let parent = read.parent, let below = gapsBelow[read.number] { gapsBelow[parent, default: []].append(contentsOf: below) }
   }
   /// What each node leaves showing to its descendants: nil for no cut, `.null` for nothing.
   var bounds: [Int: CGRect?] = [:]
@@ -93,7 +101,7 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
     let shown = cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 }
     nodes.append(ScreenshotNode(element: read.element, role: read.role, title: read.title, description: read.description, frame: frame,
                                 shown: shown, depth: read.depth, subtreeRecorded: !incomplete.contains(read.number),
-                                thinGap: (frame.width <= 1 || frame.height <= 1) && incomplete.contains(read.number)))
+                                thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? []))
   }
   return nodes
 }
@@ -180,7 +188,8 @@ struct StalePointVerdict<Element> {
   var hitRole: String?
   /// The hit the verdict judged: the action's, or a later one's when the first answered nothing (`stalePointRehits`).
   var hit: Element?
-  /// The record's strips whose children it lacks (`ScreenshotNode.thinGap`), for the element route's press verdict.
+  /// The strips whose children the record lacks in the recorded node's subtree (`ScreenshotNode.gapsBelow`), for the
+  /// element route's press verdict.
   var gaps: [Element] = []
   var refused: Bool { reason.refuses }
 }
@@ -330,7 +339,7 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
     (verdict.current, verdict.identity, currentFrame) = (found.element, .recreated, found.frame)
   }
   guard let current = verdict.current else { return verdict }
-  let gaps = nodes.filter(\.thinGap).map(\.element)
+  let gaps = node.gapsBelow
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
     StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: hitRole, hit: hit, gaps: gaps)
   }
@@ -346,13 +355,15 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   if reads.same(hit, current) { return judged(.sameElement) }
   guard let hitRole, stalePointInteractiveRoles.contains(hitRole) else { return judged(.nonInteractiveHit) }
   if isInside(current, hit, reads) { return judged(.hitAboveNode) }
-  // #301: an interactive hit under a strip whose children the record lacks lies in its unrecorded interior (a collapsed
-  // container's control the budget cut), so the node, which passed as every node does, is all that is checked.
+  // #301: an interactive hit under a strip in the node's recorded subtree whose children the record lacks lies in its
+  // unrecorded interior (a collapsed container's control the budget cut), so the node, which passed as every node does,
+  // is all that is checked.
   if insideGap(hit, gaps, reads) { return judged(.unrecordedDescendant) }
   return judged(.interactiveHit)
 }
 
-/// Whether `element` lies inside one of `gaps` (a strip whose children the record lacks): its parents, read once up to
+/// Whether `element` lies inside one of `gaps` (strips in the chosen node's recorded subtree whose children the record
+/// lacks): its parents, read once up to
 /// its window, sheet or application (`ancestors`), compared with each. Read only where the verdict would otherwise
 /// refuse, and only when the record has a gap.
 private func insideGap<Element>(_ element: Element, _ gaps: [Element], _ reads: StalePointReads<Element>) -> Bool {

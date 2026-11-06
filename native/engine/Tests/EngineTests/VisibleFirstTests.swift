@@ -324,6 +324,37 @@ final class VisibleFirstTests: XCTestCase {
     }
   }
 
+  /// The re-review of c36c3c81..9f5a0452: a strip counts only inside the chosen node's recorded subtree. A collapsed
+  /// group holds a recorded button and an omitted child; a new button under the group now covers the recorded one,
+  /// which still holds the point: refused on both paths, though the new button's parents pass through the strip.
+  func testAStripOutsideTheChosenNodeNeverStandsBehindANewButtonCoveringIt() {
+    let window = CGRect(x: 0, y: 0, width: 100, height: 100)
+    let button = CGRect(x: 40, y: 40, width: 20, height: 20)
+    let reads = [
+      ScreenshotNodeRead(element: Engine.element(0), number: 0, parent: nil, depth: 0, role: "AXWindow", title: nil, description: nil,
+                         frame: window, actions: [], childCount: 1),
+      ScreenshotNodeRead(element: Engine.element(1), number: 1, parent: 0, depth: 1, role: "AXGroup", title: nil, description: nil,
+                         frame: CGRect(x: 0, y: 10, width: 100, height: 1), actions: [], childCount: 2),
+      ScreenshotNodeRead(element: Engine.element(2), number: 2, parent: 1, depth: 2, role: "AXButton", title: "Old", description: nil,
+                         frame: button, actions: ["AXPress"], childCount: 0),
+    ]
+    let nodes = screenshotNodes(reads)
+    XCTAssertTrue(nodes[1].thinGap)
+    XCTAssertTrue(nodes[2].gapsBelow.isEmpty && nodes[0].gapsBelow.count == 1)
+    let frames: [Int: CGRect] = [0: window, 1: CGRect(x: 0, y: 10, width: 100, height: 1), 2: button, 9: button]
+    let parents: [Int: Int] = [1: 0, 2: 1, 9: 1]
+    let id = { (element: AXUIElement) in Int(pid(of: element)) - 60_000 }
+    let live = StalePointReads<AXUIElement>(role: { [2: "AXButton", 9: "AXButton", 0: "AXWindow"][id($0)] ?? "AXGroup" },
+                                            frame: { frames[id($0)] }, parent: { parents[id($0)].map(Engine.element) },
+                                            children: { _ in [] }, title: { _ in nil }, description: { _ in nil }, same: { CFEqual($0, $1) })
+    let point = CGPoint(x: 50, y: 50)
+    let covered = stalePointVerdict(at: point, nodes: nodes, hit: Engine.element(9), reads: live)
+    XCTAssertTrue(CFEqual(try! XCTUnwrap(covered.node).element, Engine.element(2)), "the recorded button is chosen")
+    XCTAssertEqual(covered.reason, .interactiveHit)
+    let routed = stalePointPressVerdict(Engine.element(9), stalePointVerdict(at: point, nodes: nodes, hit: Engine.element(2), reads: live), reads: live)
+    XCTAssertEqual(routed.reason, .pressedOther)
+  }
+
   func testOmittedPartsArePlacedByTheEdgeTheirElementLiesPast() {
     XCTAssertEqual(omittedPlace(frame: CGRect(x: 0, y: 0, width: 10, height: 50), visible: viewport), .above)
     XCTAssertEqual(omittedPlace(frame: CGRect(x: 0, y: 100, width: 10, height: 1), visible: viewport), .above, "a strip at the top edge")

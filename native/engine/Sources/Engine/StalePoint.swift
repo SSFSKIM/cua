@@ -11,7 +11,8 @@ import Foundation
 // handle, or a handle re-created in place (the same role, a frame within 2 pt, and the same title, or description where
 // neither has a title, whenever both sides can be read). It refuses, with nothing posted, when that node is gone, when
 // its frame read now no longer holds the point, or when the hit-test at the point now answers another interactive
-// element; any other hit inside a node still in place (its label's text, a group) passes. The vendor posts at the point
+// element that is not itself a recorded node the screenshot showed at the point (#305, `recordedHitAtPoint`); any other
+// hit inside a node still in place (its label's text, a group) passes. The vendor posts at the point
 // blindly. Where #282 element-routes the pointer (the design session's ruling 1ea561bc ca82a6f4, reversing the first
 // build's skip), a refused point is refused before anything is pressed, and a kept one's route presses only the recorded
 // node or its control, the guard run again after any wait of the route's (`StalePointGate`). Everything here reads
@@ -170,6 +171,11 @@ enum StalePointReason: String, Equatable {
   /// Refused: #282's element route (or #283's focus) would act on an element that is neither the node nor an ancestor
   /// of it (its control), nor inside a node whose children the record does not all hold.
   case pressedOther
+  /// Kept (#305, the design session's ruling 45f5e5be): the hit (or the element a route acts on) is another interactive
+  /// element, but itself a recorded node the screenshot showed at the point (`recordedHitAtPoint`). The deepest recorded
+  /// node is not always what the hit-test answers: a same-depth sibling stacked on top, a toolbar over a deeper page view,
+  /// a wrapped text's box over its neighbour, a hit region a point past its frame.
+  case recordedHit
 
   var refuses: Bool { self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther }
 }
@@ -191,6 +197,11 @@ struct StalePointVerdict<Element> {
   /// The strips whose children the record lacks in the recorded node's subtree (`ScreenshotNode.gapsBelow`), for the
   /// element route's press verdict.
   var gaps: [Element] = []
+  /// Where the verdict was read, for the element route's press verdict (`recordedHitAtPoint`): the posted point (nil when
+  /// no recorded node held it), the window's shift since the screenshot, and the record.
+  var point: CGPoint?
+  var windowShift: CGVector = .zero
+  var nodes: [ScreenshotNode<Element>] = []
   var refused: Bool { reason.refuses }
 }
 
@@ -329,7 +340,7 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
       break
     }
   }
-  var verdict = StalePointVerdict(reason: .nodeGone, node: node, hitRole: hitRole, hit: hit)
+  var verdict = StalePointVerdict(reason: .nodeGone, node: node, hitRole: hitRole, hit: hit, point: point, windowShift: windowShift, nodes: nodes)
   var currentFrame: CGRect?
   if let frame = nodeFrame {
     (verdict.current, verdict.identity, currentFrame) = (node.element, .handle, frame)
@@ -341,7 +352,8 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   guard let current = verdict.current else { return verdict }
   let gaps = node.gapsBelow
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
-    StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: hitRole, hit: hit, gaps: gaps)
+    StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: hitRole, hit: hit, gaps: gaps,
+                      point: point, windowShift: windowShift, nodes: nodes)
   }
   // Judged in order: the node's identity (above) and its frame, then the hit (the reasons name what was read, kept or
   // refused). A node the record holds incompletely has passed as every node passes by here (the design session's
@@ -359,7 +371,38 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   // unrecorded interior (a collapsed container's control the budget cut), so the node, which passed as every node does,
   // is all that is checked.
   if insideGap(hit, gaps, reads) { return judged(.unrecordedDescendant) }
+  // #305: the hit is itself a recorded node the screenshot showed at the point, in its place.
+  if recordedHitAtPoint(hit, at: point, windowShift: windowShift, nodes: nodes, reads) { return judged(.recordedHit) }
   return judged(.interactiveHit)
+}
+
+/// #305's rule (the design session's ruling 45f5e5be): whether `element`, an interactive hit (or an element route's
+/// target) the verdict would otherwise refuse, is itself a recorded node the screenshot showed at the point, still there.
+/// All three hold:
+/// 1. it is a recorded node: its handle `CFEqual` to a recorded one; else, while that node's own handle reads no frame
+///    (gone, as #296 takes a re-created handle only then), #296's re-created identity: its role, its frame within 2 pt of
+///    the recorded one moved by `windowShift`, and its label agreeing (`stalePointLabelsAgree`). A hit that is a recorded
+///    handle is that node and no other, so a lookalike elsewhere never stands in for it;
+/// 2. that node's frame at the screenshot, widened by 2 pt, holds the point the model meant (`point` less the shift);
+/// 3. its frame read now, widened by 2 pt, holds the posted `point`.
+/// Read only where the verdict would refuse: the element's frame, role and labels, and a frame read per recorded node
+/// of its role and frame there that its handle does not match.
+func recordedHitAtPoint<Element>(_ element: Element, at point: CGPoint, windowShift: CGVector, nodes: [ScreenshotNode<Element>],
+                                 _ reads: StalePointReads<Element>) -> Bool {
+  let tolerance = stalePointFrameTolerance
+  func widened(_ rect: CGRect) -> CGRect { rect.insetBy(dx: -tolerance, dy: -tolerance) }
+  let shown = CGPoint(x: point.x - windowShift.dx, y: point.y - windowShift.dy)
+  guard let live = reads.frame(element), holdsPoint(widened(live), point) else { return false }
+  let handles = nodes.filter { reads.same(element, $0.element) }
+  if !handles.isEmpty { return handles.contains { holdsPoint(widened($0.frame), shown) } }
+  guard let role = reads.role(element) else { return false }
+  let (title, description) = (reads.title(element), reads.description(element))
+  return nodes.contains { node in
+    node.role == role && holdsPoint(widened(node.frame), shown)
+      && frameDistance(live, node.frame.offsetBy(dx: windowShift.dx, dy: windowShift.dy)) <= tolerance
+      && stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, title: title, description: description)
+      && reads.frame(node.element) == nil
+  }
 }
 
 /// Whether `element` lies inside one of `gaps` (strips in the chosen node's recorded subtree whose children the record
@@ -412,19 +455,26 @@ struct StalePointRecord: Equatable {
 /// What an element route (#282's press, #283's focus) may act on at a kept point (the design session's ruling 1ea561bc
 /// ca82a6f4): the node the screenshot showed there as found now, or an ancestor of it (the control the walk reached
 /// from the hit through plain children), or anything inside a node whose children the record does not all hold and
-/// which itself passed (the `unrecordedDescendant` limit, its reason then that one), or anything at a point no
-/// recorded node holds (`unrecorded`). Otherwise the verdict becomes `pressedOther`, refused.
+/// which itself passed (the `unrecordedDescendant` limit, its reason then that one), or a recorded node the screenshot
+/// showed at the point and still there (`recordedHit`, #305), or anything at a point no recorded node holds
+/// (`unrecorded`). Otherwise the verdict becomes `pressedOther`, refused.
 func stalePointPressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVerdict<Element>,
                                      reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
   guard !verdict.refused, let node = verdict.node, let current = verdict.current else { return verdict }
   if reads.same(pressed, current) || isInside(current, pressed, reads) { return verdict }
+  func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
+    StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: reads.role(pressed), hit: pressed,
+                      gaps: verdict.gaps, point: verdict.point, windowShift: verdict.windowShift, nodes: verdict.nodes)
+  }
   // Inside a node the record holds incompletely, or under one of its strips whose children it lacks (#301).
   if (!node.subtreeRecorded && isInside(pressed, current, reads)) || insideGap(pressed, verdict.gaps, reads) {
-    return StalePointVerdict(reason: .unrecordedDescendant, node: node, identity: verdict.identity, current: current,
-                             hitRole: reads.role(pressed), hit: pressed, gaps: verdict.gaps)
+    return judged(.unrecordedDescendant)
   }
-  return StalePointVerdict(reason: .pressedOther, node: node, identity: verdict.identity, current: current, hitRole: reads.role(pressed),
-                           hit: pressed, gaps: verdict.gaps)
+  // #305: the element is itself a recorded node the screenshot showed at the point, in its place.
+  if let point = verdict.point, recordedHitAtPoint(pressed, at: point, windowShift: verdict.windowShift, nodes: verdict.nodes, reads) {
+    return judged(.recordedHit)
+  }
+  return judged(.pressedOther)
 }
 
 /// The hit an action's element route is built from after the guard (the review of c8f37a93..7f79ca34): the action's own,

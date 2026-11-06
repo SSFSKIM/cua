@@ -60,6 +60,11 @@ take its input and do not count; InputOnly windows do, since they take pointer i
 refused at once; a window still covered at the bound (1 s) is refused; both say nothing was sent. Keys go to the
 focus, which the route already waits for.
 
+**Fix wave (`fix/`, c5aa8ea5), the design session's rulings:** only the points inside the window are waited for, and
+points outside go as before (a drag into another window is sent; the refusal of a point outside, above, is gone); and
+`activate_window` answers once its window is on top over its visible area, at most 1 s, else an error. The residual
+gap between the last stacking read and the press is #307.
+
 ## The proof
 
 `node scripts/linux-engine-diff.mjs --experiment settle --family gtk4 --routes dedicated --lanes shipped

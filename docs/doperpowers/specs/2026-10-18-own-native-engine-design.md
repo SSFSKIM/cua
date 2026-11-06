@@ -2359,7 +2359,21 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   click that would have been posted refused before subtype 1 (an activation point's click, the app believing it has
   focus, a join of a held activation, the hold untouched). The service's pass-through and the documents in their JS
   suites. The hosted A/B (run 42184616121, on a7a43b02, 134 branch cells) found the element-route gap, the transient
-  empty hit and the sentence's "element", all answered above; the next A/B runs on this round.
+  empty hit and the sentence's "element", all answered above.
+  Proven live (`docs/evidence/2026-11-06-stale-point/`; the final A/B, run 42189536608 on 2fdb9c98 against main d482bcc2,
+  2 reps, 72 branch cells across Chrome for Testing, Safari and a native window; the re-run 42187363305 on 7f79ca34).
+  Refused, with nothing posted or pressed: #294's toolbar Reload after the re-layout in shared and dedicated mode; on a
+  background Chrome page in shared mode, the stale feed, the link swap and Save swapped for Delete (main AXPressed the
+  wrong element each time); Safari's feed and swap; and natively, the swap, the moved and the removed button, and Like
+  (12) re-created as Like (13). Kept and delivered: a fresh background page point (element-routed, `rechecked`, one
+  click), Reload before the re-layout, the ticking label at 20 s, and the rebuilt button (8 of 8 at 1 s and 20 s, the
+  first build's one false positive gone with the re-hit); limit (ii) kept and landed on "Delete", as stated. The swap
+  cells inside #282's re-read window (the swap at 0.3, 0.6 and 1 s) ended in #282's own no-action refusal before the
+  final check, with nothing posted (19 of 20; the 20th observed late enough that the press came before the swap). Not
+  reached live, proven offline only: the final check's refusal after a focus hold, `pressedOther`, and the sentence with
+  no hit (a covering window still leaves the app answering its own element). The cost per click, `stalePoint.ms` p95:
+  Chrome 6.0 ms for a single check (15–29 ms where the meta sums two checks around a focus hold), Safari 6.5 ms, native
+  8.6 ms; the record per observation, p95: Chrome 0.9 ms, Safari 0.3 ms, native 0.2 ms bar one 9.5 ms observation.
   Date/Author: 2026-11-06, cursor235's implementer for the design session's rulings on #296.
 
 ## Outcomes & Retrospective

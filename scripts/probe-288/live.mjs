@@ -214,6 +214,10 @@ async function clickAt(w, pid, px, row, settleMs = 1500) {
 }
 
 const CELLS = [];
+// Diagnostics for Reload not reloading after 33 s idle (run 42167787338, both engines): Reload 1 s after the
+// observation, as #282's run (which reloaded once); and after 33 s idle with no sampler running.
+for (const e of ['branch', 'main']) CELLS.push({label: `d/${e}/reload-1s`, e, kind: 'first', target: 'reload', waitMs: 1000});
+for (const e of ['branch', 'main']) CELLS.push({label: `d/${e}/reload-33s-nowatch`, e, kind: 'afterGrace', target: 'reload', noWatch: true});
 for (const e of ['branch', 'main']) CELLS.push({label: `c1/${e}/end_task`, e, kind: 'endTask'});
 for (const e of ['branch', 'main']) CELLS.push({label: `c2/${e}/grace`, e, kind: 'grace'});
 CELLS.push({label: 'c2/branch/grace-reobs', e: 'branch', kind: 'grace', reobs: true});
@@ -302,7 +306,9 @@ async function cell(spec) {
         row.target = {node: node ? {role: node.role, title: node.title, description: node.description, actions: node.actions} : null, screen};
         const px = pixel(o.sky, screen);
         row.pixel = px;
-        if (spec.kind === 'afterGrace') {
+        if (spec.kind === 'first' && spec.waitMs) { const wait = o.at + spec.waitMs - Date.now(); if (wait > 0) await sleep(wait); }
+        if (spec.kind === 'afterGrace' && spec.noWatch) { const wait = o.at + 33_000 - Date.now(); if (wait > 0) await sleep(wait); }
+        if (spec.kind === 'afterGrace' && !spec.noWatch) {
           const wait = o.at + 33_000 - Date.now();
           row.watchIdle = await watch(pid, P, Math.max(wait, 0), 250);
           row.releasedMs = firstAt(row.watchIdle, c => c.press === false && (row.watchIdle.changes.indexOf(c) > 0), o.at);

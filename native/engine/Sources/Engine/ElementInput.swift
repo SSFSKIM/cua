@@ -299,6 +299,8 @@ extension Engine {
     }
     guard case .success(let resolved) = resolution else {
       guard case .failure(let why) = resolution else { return nil }
+      // A text field is focused instead (#283), with no re-read: AXFocused works before complete mode.
+      if why == .editable { return webAreaFocus(hit, point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context) }
       return { meta in
         refused(why, &meta)
         throw backgroundClickRefused(app.displayName)
@@ -333,6 +335,71 @@ extension Engine {
         try elementActionClick(control, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
                                point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
       }
+    }
+  }
+
+  /// The focus route a plain left click into a web area's text field takes (#283, WebAreaFocus.swift): the text-entry
+  /// element the hit resolves to (`webAreaFocusTarget`), refused as #282's walk is when there is none; else AXFocused
+  /// written by route 1 with no activation and accepted once it reads back true, then the caret placed at the point
+  /// (`caretOffset` over the field's own characters' boxes when the hit is the field; a contenteditable region's text
+  /// is not mapped) and read back, the result's note saying what was done. Records the walk, the focused role, whether it
+  /// was the hit, and the caret (`elementClick` reason `focusField` or `focusedNotPlaced`).
+  func webAreaFocus(_ hit: AXUIElement, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
+                    context: ExecutionContext) -> (inout InputMeta) throws -> Void {
+    let role: (AXUIElement) -> String? = { attribute($0, kAXRoleAttribute) as? String }
+    var walk: [String] = []
+    let resolution = webAreaFocusTarget(hit, role: role, subrole: { attribute($0, kAXSubroleAttribute) as? String },
+                                        parent: { elementAttribute($0, kAXParentAttribute) },
+                                        editable: { attribute($0, "AXEditableAncestor") != nil },
+                                        focusSettable: { AXOps.live.isSettable($0, kAXFocusedAttribute) }, walk: &walk)
+    guard case .success(let target) = resolution else {
+      let why: WebAreaRefusal
+      if case .failure(let refusal) = resolution { why = refusal } else { why = .incompleteAncestry }
+      return { meta in
+        if meta.elementClick == nil { meta.elementClick = ElementClickRecord(plan: .synthesized(.activation), reason: .webArea) }
+        meta.elementClick?.walk = walk
+        meta.elementClick?.walkStopped = why.rawValue
+        throw backgroundClickRefused(app.displayName)
+      }
+    }
+    let field = target.element
+    return { [self] meta in
+      let owner = ownerPid(of: field, fallback: appPid)
+      try refuseForbiddenOwner(owner)
+      actionTargets(owner, app: app, connection: context.connection)
+      meta.inputRoute = .action
+      meta.elementClick = ElementClickRecord(plan: .action(kAXFocusedAttribute), reason: .focusField, pressedRole: target.role,
+                                             pressedAncestor: target.ancestor, walk: walk)
+      let sleep: (Double) -> Void = { usleep(UInt32($0 * 1000)) }
+      let outcome = try focusPlacingCaret(
+        app: app.displayName, secure: target.secure, beforeMutating: guarding.checkInFlight,
+        writeFocused: {
+          cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point))
+          _ = meta.posting { _ = gatedWrite(field, kAXFocusedAttribute, kCFBooleanTrue); return true }
+        },
+        focused: { bool(attribute(field, kAXFocusedAttribute)) },
+        offset: {
+          // Only the field's own characters: a contenteditable region's boxes are its text's, in other offsets.
+          guard !target.ancestor else { return .failure(.unmapped) }
+          return fieldCaretOffset(field, at: point).map { .success($0) } ?? .failure(.pointOutsideText)
+        },
+        writeSelection: { offset in
+          _ = meta.posting { _ = gatedWrite(field, kAXSelectedTextRangeAttribute, axRangeValue(CFRange(location: offset, length: 0))); return true }
+        },
+        selection: {
+          guard let range = rangeWire(attribute(field, kAXSelectedTextRangeAttribute)), let location = range["location"],
+                let length = range["length"] else { return nil }
+          return (location, length)
+        },
+        now: monotonicMilliseconds, sleep: sleep)
+      switch outcome {
+      case .placed:
+        meta.elementClick?.caret = "placed"
+      case .notPlaced(let why):
+        meta.elementClick = ElementClickRecord(plan: .action(kAXFocusedAttribute), reason: .focusedNotPlaced, pressedRole: target.role,
+                                               pressedAncestor: target.ancestor, walk: walk, caret: why.rawValue)
+      }
+      meta.note = focusNote(app.displayName, outcome)
     }
   }
 

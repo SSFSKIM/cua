@@ -218,6 +218,10 @@ const CELLS = [];
 // observation, as #282's run (which reloaded once); and after 33 s idle with no sampler running.
 for (const e of ['branch', 'main']) CELLS.push({label: `d/${e}/reload-1s`, e, kind: 'first', target: 'reload', waitMs: 1000});
 for (const e of ['branch', 'main']) CELLS.push({label: `d/${e}/reload-33s-nowatch`, e, kind: 'afterGrace', target: 'reload', noWatch: true});
+// Round 2 of the diagnostics (run 42169259575: reloaded at 1 s, not at 33 s, on both engines): the threshold on main,
+// and at 33 s a second click 1 s after the first.
+for (const s of [5, 10, 20]) CELLS.push({label: `d2/main/reload-${s}s`, e: 'main', kind: 'first', target: 'reload', waitMs: s * 1000});
+for (const e of ['branch', 'main']) CELLS.push({label: `d2/${e}/reload-33s-twice`, e, kind: 'first', target: 'reload', waitMs: 33_000, twice: true});
 for (const e of ['branch', 'main']) CELLS.push({label: `c1/${e}/end_task`, e, kind: 'endTask'});
 for (const e of ['branch', 'main']) CELLS.push({label: `c2/${e}/grace`, e, kind: 'grace'});
 CELLS.push({label: 'c2/branch/grace-reobs', e: 'branch', kind: 'grace', reobs: true});
@@ -316,6 +320,7 @@ async function cell(spec) {
         }
         row.clickAfterObservationMs = Date.now() - o.at;
         await clickAt(w, pid, px, row, spec.target === 'reload' ? 3000 : 1500);
+        if (spec.twice) { row.second = {}; await clickAt(w, pid, px, row.second, 3000); }
         row.watchAfterClick = await watch(pid, P, 300);
       }
     }

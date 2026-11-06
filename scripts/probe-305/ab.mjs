@@ -163,6 +163,13 @@ async function click(w, pid, sky, point) {
   const out = {px, posted, emulated: {v: emu.v, node: emu.node, hit: emu.hit}, stalePoint: findKey(r.error ?? r.result, 'stalePoint') ?? null,
     result: r.error ? {error: name, message: String(r.error.message ?? '').slice(0, 300)} : {ok: true}};
   out.refused = r.error ? /screenChangedSinceScreenshot/.test(`${name} ${r.error.message}`) : false;
+  // The hit's own entries in the record (by role and a frame within 1 pt): whether the screenshot showed it whole, or
+  // clipped (its shown part), and whether the posted point lies in that shown part widened by 2 pt (#305's rule 2).
+  const h = ch.chain?.[0];
+  if (h) out.hitRecord = (sky.probeRecord ?? []).filter(([role, , , fr]) => role === h[0] && fr && Math.abs(fr.x - h[1]) <= 1 && Math.abs(fr.y - h[2]) <= 1 && Math.abs(fr.width - h[3]) <= 1 && Math.abs(fr.height - h[4]) <= 1)
+    .slice(0, 3).map(([role, depth, complete, frame, shown]) => ({role, depth, frame, shown,
+      clipped: !shown || Math.abs(shown.x - frame.x) > 0.5 || Math.abs(shown.y - frame.y) > 0.5 || Math.abs(shown.width - frame.width) > 0.5 || Math.abs(shown.height - frame.height) > 0.5,
+      pointInShown: Boolean(shown && posted.x >= shown.x - 2 && posted.x <= shown.x + shown.width + 2 && posted.y >= shown.y - 2 && posted.y <= shown.y + shown.height + 2)}));
   if (out.refused && emu.node) {
     const n = emu.node.frame;
     out.mech = await ask({op: 'mech', pid, window: [f.x, f.y, f.width, f.height], x: posted.x, y: posted.y, role: emu.node.role, frame: [n.x, n.y, n.w, n.h]}, 60_000);

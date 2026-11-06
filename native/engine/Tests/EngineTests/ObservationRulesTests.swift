@@ -616,22 +616,31 @@ final class EnablementReleaseTests: XCTestCase {
 /// A manual clock for the grace release's timer: `schedule` records each work item at now + ms, `advance` runs those
 /// that fall due, in order.
 private final class ManualTimers: @unchecked Sendable {
-  private(set) var now: Double = 0
+  private let lock = NSLock()
+  private var clock: Double = 0
   private var due: [(at: Double, work: @Sendable () -> Void)] = []
-  private(set) var scheduled = 0
+  private var count = 0
+
+  var scheduled: Int { lock.withLock { count } }
 
   func schedule(_ ms: Double, _ work: @escaping @Sendable () -> Void) {
-    scheduled += 1
-    due.append((now + ms, work))
+    lock.withLock {
+      count += 1
+      due.append((clock + ms, work))
+    }
   }
 
+  /// Runs each work item due by `time` in order, outside the lock (work may schedule more).
   func advance(to time: Double) {
-    while let next = due.enumerated().filter({ $0.element.at <= time }).min(by: { $0.element.at < $1.element.at }) {
+    while let work = lock.withLock({ () -> (@Sendable () -> Void)? in
+      guard let next = due.enumerated().filter({ $0.element.at <= time }).min(by: { $0.element.at < $1.element.at }) else { return nil }
       due.remove(at: next.offset)
-      now = next.element.at
-      next.element.work()
+      clock = next.element.at
+      return next.element.work
+    }) {
+      work()
     }
-    now = time
+    lock.withLock { clock = max(clock, time) }
   }
 }
 
@@ -709,19 +718,43 @@ final class EnablementOwnershipAndGraceTests: XCTestCase {
     XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), eui, "written back, so set again, owned")
   }
 
-  func testWithAGraceTheReleaseWaitsForItAfterTheLastClose() {
+  func testWithAGraceTheReleaseComes30SecondsAfterTheLastActivity() {
     let timers = ManualTimers()
     let web = graced(timers)
     let app = chrome()
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
-    web.release(connection: 1)
+    timers.advance(to: 5_000)
+    web.release(connection: 1)  // closed without end_task at 5 s
     XCTAssertEqual(app.written, ["\(eui)=true"], "not at the close")
     XCTAssertTrue(web.enablementHolds(pid: 7, launched: launched), "still on through the grace")
     timers.advance(to: 29_999)
     XCTAssertEqual(app.writes.count, 1)
     timers.advance(to: 30_000)
-    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "released 30 s after the close")
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "released 30 s after the observation, not after the close")
     XCTAssertFalse(web.enablementHolds(pid: 7, launched: launched))
+    XCTAssertTrue(web.observers(pid: 7, launched: launched).isEmpty, "retired")
+  }
+
+  func testAnOpenButIdleConnectionIsReleasedAt30SecondsAndItsNextObservationReEnables() {
+    // A model that never calls end_task keeps its connection open until the 15-minute idle stop.
+    let timers = ManualTimers()
+    let web = graced(timers)
+    let app = chrome()
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.noteWebArea(pid: 7, launched: launched)
+    timers.advance(to: 30_000)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "released with the connection still open")
+    XCTAssertEqual(web.observers(pid: 7, launched: launched), [1], "kept, not retired")
+    XCTAssertFalse(web.hasSeenWebArea(pid: 7, launched: launched), "the page's tree may have gone with it")
+    app.values[eui] = true  // the readback after a write-back
+    timers.advance(to: 40_000)
+    let next = web.enableReporting(pid: 7, launched: launched, connection: 1, access: app.access)
+    XCTAssertEqual(next.set, eui, "the write-back is remembered: set again, owned")
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "owned")
+    timers.advance(to: 69_999)
+    XCTAssertEqual(app.writes.count, 3)
+    timers.advance(to: 70_000)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false", "\(eui)=true", "\(eui)=false"], "30 s after that observation")
   }
 
   func testAReObservationAt20SecondsCancelsThe30SecondRelease() {
@@ -729,36 +762,17 @@ final class EnablementOwnershipAndGraceTests: XCTestCase {
     let web = graced(timers)
     let app = chrome()
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
-    web.release(connection: 1)
     timers.advance(to: 20_000)
-    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "still owned: nothing written, no debounce")
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "still owned: nothing written, no debounce")
     timers.advance(to: 30_000)
-    XCTAssertEqual(app.writes.count, 1, "the release armed at 0 was cancelled")
-    web.release(connection: 2)  // at 30 s: a new grace
-    timers.advance(to: 59_999)
+    XCTAssertEqual(app.writes.count, 1, "the release due at 30 s was cancelled")
+    timers.advance(to: 49_999)
     XCTAssertEqual(app.writes.count, 1)
-    timers.advance(to: 60_000)
-    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"])
+    timers.advance(to: 50_000)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "30 s after the re-observation")
   }
 
-  func testOnlyTheNewestGraceReleases() {
-    // Closed at 0, observed again at 10 s, closed again at 25 s: the timer armed at 0 (due at 30 s) must not release.
-    let timers = ManualTimers()
-    let web = graced(timers)
-    let app = chrome()
-    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
-    web.release(connection: 1)
-    timers.advance(to: 10_000)
-    _ = web.enable(pid: 7, launched: launched, connection: 2, access: app.access)
-    timers.advance(to: 25_000)
-    web.release(connection: 2)
-    timers.advance(to: 54_999)
-    XCTAssertEqual(app.writes.count, 1, "the first timer fired at 30 s and found its token replaced")
-    timers.advance(to: 55_000)
-    XCTAssertEqual(app.writes.count, 2)
-  }
-
-  func testAnActionWithinTheGraceCancelsItAndItsConnectionThenHoldsTheProcess() {
+  func testAnInputWithinTheGraceStartsItAgainFromThatInput() {
     let timers = ManualTimers()
     let web = graced(timers)
     let app = chrome()
@@ -766,13 +780,44 @@ final class EnablementOwnershipAndGraceTests: XCTestCase {
     web.release(connection: 1)
     timers.advance(to: 5_000)
     web.noteActivity(pid: 7, launched: launched, connection: 2)  // an input with no observation of its own
-    XCTAssertEqual(web.observers(pid: 7, launched: launched), [2])
-    timers.advance(to: 60_000)
-    XCTAssertEqual(app.writes.count, 1, "the acting connection holds it")
-    web.release(connection: 2, immediately: true)  // its end_task
-    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"])
+    XCTAssertEqual(web.observers(pid: 7, launched: launched), [2], "its connection counts as observing")
+    timers.advance(to: 34_999)
+    XCTAssertEqual(app.writes.count, 1, "not at 30 s")
+    timers.advance(to: 35_000)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "30 s after the input, its connection still open")
     web.noteActivity(pid: 8, launched: launched, connection: 3)
     XCTAssertTrue(web.observers(pid: 8, launched: launched).isEmpty, "a process with no enablement state is not recorded")
+  }
+
+  func testAClickAfterAGraceReleaseReEnablesOwnedAndFresh() {
+    // The design session's ruling 5c2f27a3: a click on a stale element 40 s later, with no observation since, takes
+    // the observation's enablement step, so #282's and #283's re-reads apply rather than our own release's refusal.
+    let timers = ManualTimers()
+    let web = graced(timers)
+    let app = chrome()
+    var timings = Timings()
+    _ = web.observeEnablement(eligible: true, pid: 7, launched: launched, connection: 1, access: app.access, timings: &timings)
+    timers.advance(to: 30_000)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"])
+    XCTAssertFalse(web.enablementHolds(pid: 7, launched: launched))
+    app.values[eui] = true  // the readback after a write-back
+    let before = web.freshSince(pid: 7, launched: launched)!
+    usleep(2_000)
+    app.calls = []
+    web.inputEnablement(chromium: true, pid: 7, launched: launched, connection: 1, access: app.access)
+    XCTAssertEqual(app.calls.prefix(3), ["role", "read \(eui)", "write \(eui)=true"], "the observation's step: role read, then the enablement")
+    XCTAssertTrue(web.enablementHolds(pid: 7, launched: launched), "set again")
+    XCTAssertGreaterThan(web.freshSince(pid: 7, launched: launched)!, before, "the write moved freshSince")
+    let now = monotonicMilliseconds()
+    XCTAssertTrue(webAreaAccessibilityFresh(freshSince: web.freshSince(pid: 7, launched: launched), now: now,
+                                            webAreaSeen: web.hasSeenWebArea(pid: 7, launched: launched)), "fresh")
+    web.inputEnablement(chromium: true, pid: 7, launched: launched, connection: 1, access: app.access)
+    XCTAssertEqual(app.writes.count, 3, "owned: the next input writes nothing")
+    web.release(connection: 1, immediately: true)
+    XCTAssertEqual(app.written.last, "\(eui)=false", "owned, so released")
+    let other = FakeApplication(names: ["AXEnhancedUserInterface"])
+    web.inputEnablement(chromium: false, pid: 9, launched: launched, connection: 1, access: other.access)
+    XCTAssertTrue(other.calls.isEmpty, "outside Chromium an input is activity only")
   }
 
   func testEndTaskReleasesAtOnceWhatOnlyItsConnectionObservedOrActedOn() {
@@ -784,15 +829,14 @@ final class EnablementOwnershipAndGraceTests: XCTestCase {
     _ = web.enable(pid: 8, launched: launched, connection: 1, access: other.access)
     web.noteActivity(pid: 8, launched: launched, connection: 2)  // another session acted on pid 8
     XCTAssertEqual(web.release(connection: 1, immediately: true), 1)
-    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "at once, with no timer")
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "at once")
     XCTAssertEqual(other.written, ["AXManualAccessibility=true"], "connection 2 was its last actor")
-    XCTAssertEqual(timers.scheduled, 0)
     web.release(connection: 1)  // the close after end_task: nothing left
-    XCTAssertEqual(timers.scheduled, 0)
-    web.release(connection: 2)  // connection 2 closes without end_task: its grace
+    web.release(connection: 2)  // connection 2 closes without end_task: its grace runs on
     XCTAssertEqual(other.writes.count, 1)
     timers.advance(to: 30_000)
     XCTAssertEqual(other.written, ["AXManualAccessibility=true", "AXManualAccessibility=false"])
+    XCTAssertEqual(app.writes.count, 2, "the released process's timer does nothing more")
   }
 
   func testTheEnginesStopReleasesAtOnceDuringAGrace() {
@@ -800,11 +844,24 @@ final class EnablementOwnershipAndGraceTests: XCTestCase {
     let web = graced(timers)
     let app = chrome()
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
-    web.release(connection: 1)
     web.releaseAll()
     XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "at once")
     timers.advance(to: 30_000)
     XCTAssertEqual(app.writes.count, 2, "the pending grace does nothing more")
+  }
+
+  func testAFailedGraceReleaseIsRetriedAtTheClose() {
+    var failures: [String] = []
+    let timers = ManualTimers()
+    let web = WebAccessibility(releaseGraceMs: 30_000, schedule: { ms, work in timers.schedule(ms, work) }, releaseFailed: { failures.append($0) })
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    app.failWrites = true
+    timers.advance(to: 30_000)
+    XCTAssertEqual(failures.count, 1)
+    app.failWrites = false
+    web.release(connection: 1)
+    XCTAssertEqual(app.values["AXManualAccessibility"], false, "no grace armed: the close retried it")
   }
 
   func testAZeroGraceReleasesAtTheCloseWithNoTimer() {
@@ -812,6 +869,8 @@ final class EnablementOwnershipAndGraceTests: XCTestCase {
     let web = WebAccessibility(releaseGraceMs: 0, schedule: { ms, work in timers.schedule(ms, work) })
     let app = chrome()
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.noteActivity(pid: 7, launched: launched, connection: 1)
+    XCTAssertEqual(timers.scheduled, 0)
     web.release(connection: 1)
     XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "today's immediate release")
     XCTAssertEqual(timers.scheduled, 0)
@@ -823,8 +882,9 @@ final class EnablementOwnershipAndGraceTests: XCTestCase {
 
   func testAnObservationThatBeginsAsTheGraceLapsesWaitsForTheResetAndEnablesAgain() {
     // The lock discipline under the timer: the grace's release holds the entry's lock through its reset, so an
-    // observation registering meanwhile reads after the reset and sets the attribute again, owned.
-    let web = WebAccessibility(releaseGraceMs: 30_000, schedule: { _, work in Thread { work() }.start() })
+    // observation beginning meanwhile, its connection still open, reads after the reset and sets the attribute again.
+    let timers = ManualTimers()
+    let web = graced(timers)
     let app = chrome()
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
     let inReset = DispatchSemaphore(value: 0)
@@ -834,16 +894,17 @@ final class EnablementOwnershipAndGraceTests: XCTestCase {
       inReset.signal()
       _ = proceed.wait(timeout: .now() + 5)
     }
-    web.release(connection: 1)  // the timer's work starts on a thread of its own at once
+    let lapsed = DispatchSemaphore(value: 0)
+    Thread { timers.advance(to: 30_000); lapsed.signal() }.start()
     XCTAssertEqual(inReset.wait(timeout: .now() + 5), .success, "the grace's release reached its reset")
     app.duringWrite = { _, _ in }
     let enabled = Box<String?>()
     let observed = DispatchSemaphore(value: 0)
     let launched = self.launched
-    Thread { enabled.value = web.enable(pid: 7, launched: launched, connection: 2, access: app.access); observed.signal() }.start()
-    let registered = Date().addingTimeInterval(5)
-    while !web.observers(pid: 7, launched: launched).contains(2), Date() < registered { usleep(1_000) }
+    Thread { enabled.value = web.enable(pid: 7, launched: launched, connection: 1, access: app.access); observed.signal() }.start()
+    usleep(50_000)  // the observation waits on the entry's lock
     proceed.signal()
+    XCTAssertEqual(lapsed.wait(timeout: .now() + 5), .success)
     XCTAssertEqual(observed.wait(timeout: .now() + 5), .success)
     XCTAssertEqual(enabled.value, eui, "it read after the reset and enabled again")
     XCTAssertEqual(app.values[eui], true)

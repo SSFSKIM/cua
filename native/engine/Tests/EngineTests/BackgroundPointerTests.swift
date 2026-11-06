@@ -820,3 +820,42 @@ final class PointerEstablishTests: XCTestCase {
                    ["ms": 312.123, "webAreaFound": true, "rehits": 9] as NSDictionary)
   }
 }
+
+/// #292 (the design session's ruling 199d194c): Chrome's complete mode lands about 2.2 s after the EUI write, so #282's
+/// action re-read and #283's box re-read run until the later of 2 s from their start and the write + 2.6 s, capped at
+/// 3 s from their start.
+final class RereadDeadlineTests: XCTestCase {
+  func testTheDeadlineRule() {
+    XCTAssertEqual(webAreaRereadDeadline(started: 10_000, freshSince: nil), 12_000, "no write known: 2 s")
+    XCTAssertEqual(webAreaRereadDeadline(started: 10_000, freshSince: 10_000), 12_600, "a write just now: its 2.2 s and a margin")
+    XCTAssertEqual(webAreaRereadDeadline(started: 10_000, freshSince: 9_700), 12_300)
+    XCTAssertEqual(webAreaRereadDeadline(started: 10_000, freshSince: 5_000), 12_000, "an old write: 2 s")
+    XCTAssertEqual(webAreaRereadDeadline(started: 10_000, freshSince: 11_000), 13_000, "never past 3 s")
+  }
+
+  func testTheActionReReadWaitsForCompleteModeAfterAFreshWrite() {
+    var clock: Double = 10_000
+    func reread(appearsAt: Double?, freshSince: Double?) -> String? {
+      webAreaActionRereading(role: "AXCheckBox", first: [], fresh: true, freshSince: freshSince,
+                             read: { appearsAt.map { clock >= $0 } == true ? ["AXPress"] : [] },
+                             now: { clock }, sleep: { clock += $0 })
+    }
+    XCTAssertEqual(reread(appearsAt: 12_300, freshSince: 10_000), "AXPress", "complete mode 2.3 s after the input's own write")
+    clock = 10_000
+    XCTAssertNil(reread(appearsAt: 12_300, freshSince: nil), "the 2 s bound alone would refuse it")
+    clock = 10_000
+    XCTAssertNil(reread(appearsAt: nil, freshSince: 10_000))
+    XCTAssertEqual(clock, 12_600, "and gives up at the write + 2.6 s")
+  }
+
+  func testTheBoxReReadWaitsForCompleteModeAfterAFreshWrite() {
+    var clock: Double = 10_000
+    func caret(boxesAt: Double, freshSince: Double?) -> Result<Int, CaretNotPlaced> {
+      caretAwaitingBoxes(fresh: true, freshSince: freshSince, offset: { clock >= boxesAt ? .success(4) : .failure(.noCharacterBoxes) },
+                         focused: { true }, sameTarget: { true }, valueLength: { 10 }, now: { clock }, sleep: { clock += $0 })
+    }
+    XCTAssertEqual(caret(boxesAt: 12_400, freshSince: 10_000), .success(4), "boxes 2.4 s after the write")
+    clock = 10_000
+    XCTAssertEqual(caret(boxesAt: 12_400, freshSince: nil), .failure(.noCharacterBoxes), "past the 2 s bound alone")
+  }
+}

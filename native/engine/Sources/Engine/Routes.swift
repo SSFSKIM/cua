@@ -495,25 +495,40 @@ func webAreaAction(role: String, actions: [String]?) -> String? {
 
 /// How long a control with no action yet is re-read in a process whose accessibility is fresh (#282's hosted probe, run
 /// 42131623237: a checkbox began advertising AXPress 1.6 to 1.7 s after the engine's enablement write, with no
-/// activation at all): every 100 ms for up to 2 s, posting nothing. Fresh: under `webAreaFreshEnablementMs` since the
-/// process's first observation or the engine's last enablement write attempt, failed or not (`WebAccessibility.freshSince`;
-/// on Chrome for Testing the write answers -25208, #292), or no observation has seen a web area in it yet.
+/// activation at all): every 100 ms until `webAreaRereadDeadline`, posting nothing. Fresh: under
+/// `webAreaFreshEnablementMs` since the process's first observation or the engine's last enablement write attempt,
+/// failed or not (`WebAccessibility.freshSince`; on Chrome for Testing the write answers -25208, #292), or no
+/// observation has seen a web area in it yet.
 let webAreaActionRereadMs: Double = 2_000
 let webAreaActionRereadSampleMs: Double = 100
 let webAreaFreshEnablementMs: Double = 10_000
+/// #292 (the design session's ruling 199d194c): Chrome's complete mode lands about 2.2 s after the EUI write (its 2 s
+/// debounce), past a 2 s re-read that starts with the write, as an input's own enablement after a grace release does.
+/// So a re-read runs until the later of 2 s from its start and `freshSince` + 2.6 s (the 2.2 s and a margin), and never
+/// past 3 s from its start.
+let webAreaRereadAfterWriteMs: Double = 2_600
+let webAreaRereadCapMs: Double = 3_000
 
 func webAreaAccessibilityFresh(freshSince: Double?, now: Double, webAreaSeen: Bool) -> Bool {
   !webAreaSeen || freshSince.map { now - $0 < webAreaFreshEnablementMs } == true
 }
 
-/// The control's action, re-read every `webAreaActionRereadSampleMs` for up to `webAreaActionRereadMs` when `fresh` and
-/// the first read found none; nil when none came (or the process was not fresh: no wait at all).
-func webAreaActionRereading(role: String, first: [String]?, fresh: Bool, read: () -> [String]?, now: () -> Double,
-                            sleep: (Double) -> Void) -> String? {
+/// When a re-read that began at `started` ends (#292): the later of `webAreaActionRereadMs` after it and
+/// `webAreaRereadAfterWriteMs` after `freshSince`, capped at `webAreaRereadCapMs` after it.
+func webAreaRereadDeadline(started: Double, freshSince: Double?) -> Double {
+  let floor = started + webAreaActionRereadMs
+  guard let freshSince else { return floor }
+  return min(started + webAreaRereadCapMs, max(floor, freshSince + webAreaRereadAfterWriteMs))
+}
+
+/// The control's action, re-read every `webAreaActionRereadSampleMs` until `webAreaRereadDeadline` when `fresh` and the
+/// first read found none; nil when none came (or the process was not fresh: no wait at all).
+func webAreaActionRereading(role: String, first: [String]?, fresh: Bool, freshSince: Double? = nil, read: () -> [String]?,
+                            now: () -> Double, sleep: (Double) -> Void) -> String? {
   if let action = webAreaAction(role: role, actions: first) { return action }
   guard fresh else { return nil }
-  let started = now()
-  while now() - started < webAreaActionRereadMs {
+  let deadline = webAreaRereadDeadline(started: now(), freshSince: freshSince)
+  while now() < deadline {
     sleep(webAreaActionRereadSampleMs)
     if let action = webAreaAction(role: role, actions: read()) { return action }
   }
@@ -548,10 +563,10 @@ func webAreaAncestry<Element>(above element: Element, role: (Element) -> String?
 /// re-read where the process's accessibility is fresh (`webAreaActionRereading`), then the control requalified as it is
 /// now (`webAreaControlRequalified`) and its action taken again under its current role. Answers the action and the
 /// current role, or why it is refused.
-func webAreaPressDecision<Element>(_ control: Element, walkedRole: String, fresh: Bool, actions: (Element) -> [String]?,
+func webAreaPressDecision<Element>(_ control: Element, walkedRole: String, fresh: Bool, freshSince: Double? = nil, actions: (Element) -> [String]?,
                                    role: (Element) -> String?, parent: (Element) -> Element?, editable: (Element) -> Bool,
                                    now: () -> Double, sleep: (Double) -> Void) -> Result<(action: String, role: String), WebAreaRefusal> {
-  guard webAreaActionRereading(role: walkedRole, first: actions(control), fresh: fresh, read: { actions(control) }, now: now,
+  guard webAreaActionRereading(role: walkedRole, first: actions(control), fresh: fresh, freshSince: freshSince, read: { actions(control) }, now: now,
                                sleep: sleep) != nil else { return .failure(.noAction) }
   switch webAreaControlRequalified(control, role: role, parent: parent, editable: editable) {
   case .failure(let why): return .failure(why)

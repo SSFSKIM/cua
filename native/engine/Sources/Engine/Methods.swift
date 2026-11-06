@@ -227,10 +227,17 @@ final class Engine: @unchecked Sendable {
     }
     // The cursor's activity (the spec's Design, "Hooks"): every request counts, a keyboard-only one may bring a faded
     // cursor back at its last point in the app; the 5 s idle runs from the end of the last request.
-    // An input to a process counts as observing it for the release of its web enablement (#292, Enablement.swift).
-    if inputMethods.contains(method), let target, let pid = target.pid {
-      webAccessibility.noteActivity(pid: pid, launched: processGeneration(launchDate: target.running?.launchDate, pid: pid), connection: connection.id)
+    // An input to a process is activity for the release of its web enablement, and in a Chromium-family process takes
+    // the observation's enablement step, so an action after a grace release re-enables it, fresh (#292, Enablement.swift).
+    // The end of an input or an observation is activity too, so the grace runs from the request's end.
+    let active = (inputMethods.contains(method) || method == "get_app_state") ? target.flatMap { app in
+      app.pid.map { (pid: $0, generation: processGeneration(launchDate: app.running?.launchDate, pid: $0), app: app) }
+    } : nil
+    if let active, inputMethods.contains(method) {
+      webAccessibility.inputEnablement(chromium: webAccessibility.isChromiumFamily(active.app.appPath), pid: active.pid, launched: active.generation,
+                                       connection: connection.id, access: .live(pid: active.pid, launched: active.generation))
     }
+    defer { if let active { webAccessibility.noteActivity(pid: active.pid, launched: active.generation, connection: connection.id) } }
     timingSignposts.emitEvent("cursor.begin")
     cursor.begin(connection: connection.id, app: target?.key, keyboardOnly: keyboardOnlyMethods.contains(method))
     defer {

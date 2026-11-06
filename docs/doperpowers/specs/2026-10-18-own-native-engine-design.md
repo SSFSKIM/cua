@@ -1947,8 +1947,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      it is then (`webAreaControlRequalified`, the re-review of c768d2bb..1c8f2229: a node may change during the wait): an
      allowlisted role, not editable, its parents read up to the AXWebArea; otherwise it is refused, nothing posted, and
      its action and value check follow its current role. The refusal of a control still without an action asks for an observation first
-     (`backgroundClickRefusedObserveFirst`). **The cost:** up to 2 s of latency on the first click into a fresh Chrome
-     whose control has not yet exposed its action, and the whole 2 s when it never does.
+     (`backgroundClickRefusedObserveFirst`). **The cost:** up to about 3 s of latency on the first click into a fresh Chrome
+     whose control has not yet exposed its action, and the whole wait when it never does (3 s since #292's re-read
+     deadline).
   Proven offline (`BackgroundPointerTests`, 26, failing before the change where they bite: shared mode's refusal of
   a click, a double click and a drag into a web area with nothing posted, no hold taken and nothing left held; a plain
   click carried by the element route with nothing posted by cua; a web-area pointer joining its own or another connection's
@@ -2035,7 +2036,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      read; an offset found by a re-read is written only if the field also still reads AXFocused true, is still that
      element, and its AXValue's length is the one read when the wait began. Otherwise, still empty at 2 s, or not
      fresh (no wait at all), `noCharacterBoxes`, with no range written. The secure field never
-     gets here. Limits: the first click into a fresh Chrome's text field can take up to about 2 s, as #288's does;
+     gets here. Limits: the first click into a fresh Chrome's text field can take up to about 3 s (#292's re-read deadline), as #288's does;
      with AXVisibleCharacterRange dropped, the scan is bounded only by the 5,000-character cap on the value's length
      (`caretScanLimit`; a longer value is `pointOutsideText`, #290).
   Proven offline (`WebAreaFocusTests`, 39: the field hit, the region's text hit focusing its region, each refusal, the
@@ -2061,11 +2062,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Corrected by #292's entry below: the enablement write these runs report as failed (-25208) is Chrome's answer to the
   AXEnhancedUserInterface write, which takes effect.
   Date/Author: 2026-11-05, cursor235 for the design session's rulings on #283.
-- Decision (#292, 2026-11-05, `fix/288-fresh-chrome`; the design session's rulings, 1ea561bc ecc2143d, and the
-  owner's: on a shared desktop AXEnhancedUserInterface is acceptable while cua drives that Chrome, provided cua releases
-  it when done; corrects #282's and #283's entries above): **the engine owns and releases the EUI write Chrome answers
-  with -25208, at end_task, at the engine's stop, or 30 s after the last connection observing or acting on that Chrome
-  closed.**
+- Decision (#292, 2026-11-05, `fix/288-fresh-chrome`; the design session's rulings, 1ea561bc ecc2143d, 5c2f27a3 and
+  199d194c, and the owner's: on a shared desktop AXEnhancedUserInterface is acceptable while cua drives that Chrome,
+  provided cua releases it when done; corrects #282's and #283's entries above): **the engine owns and releases the EUI
+  write Chrome answers with -25208, at end_task, at the engine's stop, or 30 s after cua's last observation of or input
+  to that Chrome; an input after a release enables it again; the re-reads wait for Chrome's debounce.**
   1. **The correction** (#288's hosted spike, `probe/288-hosted`, runs 42161269408 and 42162367095; Chrome for Testing
      156). Chrome lists AXEnhancedUserInterface and not AXManualAccessibility (Electron's; Chromium's source has none),
      so the engine writes EUI to Chrome. Chrome answers that write with -25208 (kAXErrorNotImplemented) and acts on it:
@@ -2084,24 +2085,42 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      the connection (client.mjs `release`), and the engine releases at once every process whose only remaining observer
      or last actor was that connection (an older engine answers methodNotFound, unread). (b) The engine's stop: the
      shutdown request, as before, and now a termination signal (`Lifecycle.beforeSignalExit`); SIGKILL leaves it on.
-     (c) `enablementReleaseGraceMs`, 30 s, after the last connection observing or acting on the process closed without
-     end_task (a transport failure, a worker restart, a crash): a timer on the global queue, keyed per process by a
-     token that a new observation, an input to the process or a later close replaces, so only the newest timer
-     releases, and an observation or input within the grace cancels it. An input counts as an observation does
-     (`noteActivity`, every input method of a resolved app): its connection joins the process's observers. The release
-     still takes the entry's lock and re-checks that nothing observes the process, so an observation beginning during it
-     shares the lock and reads after the reset, as before. A grace of 0 is the previous immediate release.
-  4. **Limits.** EUI stays on while cua drives that Chrome: until release (end_task, engine stop, or 30 s after cua's
-     last action on that Chrome); SIGKILL leaves it on. Each task after an end_task pays Chrome's 2.2 s debounce again
-     (#288's latency); no early write at first resolution is made (the design session dropped it).
-  Proven offline (`EnablementOwnershipAndGraceTests`, 14: -25208 with a true readback owned and released, with a false
-  one not owned, a value read true before never written, the write back's -25208 done and not retried, the grace's
-  release at 30 s and not before, a re-observation at 20 s cancelling the 30 s release, only the newest timer
-  releasing, an input cancelling it and holding the process, end_task at once for the last actor only, the stop at once
-  during a grace, 0 as the immediate release, an observation during the grace's reset re-enabling, the `endTask`
-  request; the existing release tests at grace 0; the client's and the service's endTask order in their JS suites).
-  Nothing live ran: the hosted check (EUI reads false after end_task, a checkbox loses AXPress, the window moves
-  without animation) is the next step.
+     (c) `enablementReleaseGraceMs`, 30 s, after the process's last activity, whether or not a connection is still open
+     (a model that never calls end_task keeps its connection until the 15-minute idle stop, and EUI must not stay on all
+     that time). Activity is an observation (its enablement step), an input to the process (every input method of a
+     resolved app), and the end of either request, so the grace runs from the request's end; any connection's counts,
+     and an input's connection joins the process's observers. Each activity arms a timer on the global queue with a new
+     per-process token, so only the newest releases. A close without end_task releases nothing by itself, except a
+     process with no timer armed (a release that failed: retried then). The grace's release takes the entry's lock as
+     every release does: an observation in flight took the token under the class lock before its read and write, so
+     either it came first (the timer is stale) or it waits on the entry's lock and reads after the reset, setting the
+     attribute again, owned, since the write-back is remembered (`writtenBack`). A process released with a connection
+     still observing it is kept, not retired. A grace of 0 is the previous immediate release at the close.
+  4. **An input after a release** (the ruling 5c2f27a3). The model may act on a stale element 40 s later with no
+     observation. In a Chromium-family process every input first takes the observation's enablement step
+     (`inputEnablement`: the role read, then `enableReporting`), so the attribute is set again, owned, and the write
+     moves `freshSince`: #282's press re-read and #283's box re-read apply, and neither answers noAction or
+     noCharacterBoxes because of cua's own release. Elsewhere an input is activity only.
+  5. **The re-read deadline** (the ruling 199d194c; `webAreaRereadDeadline`). Chrome's complete mode lands about 2.2 s
+     after the EUI write, past a 2 s re-read that starts with the write, as an input's own enablement makes it start. So
+     both re-reads run until the later of 2 s from their start and `freshSince` + 2.6 s (the 2.2 s and a margin),
+     capped at 3 s from their start; with no write since, 2 s as before.
+  6. **Limits.** EUI stays on while cua drives that Chrome: until release (end_task, engine stop, or 30 s after cua's
+     last action on that Chrome); SIGKILL leaves it on. Each task after an end_task, and the first action after a grace
+     release, pays Chrome's 2.2 s debounce again (#288's latency); the first click into a fresh Chrome can take up to
+     about 3 s. No early write at first resolution is made (the design session dropped it). A request running longer
+     than the grace (a 30 s settle) could be released under it; its end re-arms the grace.
+  Proven offline (`EnablementOwnershipAndGraceTests`, 16: -25208 with a true readback owned and released, with a false
+  one not owned, a value read true before never written, the write back's -25208 done and not retried; the release 30
+  s after the last observation, not after the close; an open but idle connection released at 30 s and its next
+  observation re-enabling, owned; a re-observation at 20 s cancelling the 30 s release; an input restarting the grace
+  from itself; a click after a grace release re-enabling owned and fresh; end_task at once for the last actor only; the
+  stop at once during a grace; a failed grace release retried at the close; 0 as the immediate release; an observation
+  during the grace's reset re-enabling; the `endTask` request. `RereadDeadlineTests`, 3: the rule, the action re-read
+  and the box re-read finding complete mode at 2.3 and 2.4 s after a write. The existing release tests at grace 0;
+  the client's and the service's endTask order in their JS suites.) Nothing live ran: the hosted check (EUI reads
+  false after end_task and after 30 s idle, a checkbox loses AXPress, the window moves without animation) is the next
+  step.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #292.
 - Decision (#288, 2026-11-05, `fix/288-fresh-chrome`; the design session's rulings; amends #282's items 3 and 4):
   **a left click by route 3 into a Chromium process where no web area has been seen establishes the page tree before

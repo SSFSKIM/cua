@@ -21,8 +21,10 @@ import os
 // (Decision Log, T1's re-review); and the engine **releases** what it set, writing the attribute back to false at
 // whichever comes first (#292): the end of the task of the last connection that observed or acted on the process
 // (end_task, the `endTask` request), the engine's stop (a shutdown request or a termination signal; SIGKILL leaves it
-// on), or `enablementReleaseGraceMs` (30 s) after the last such connection closed otherwise, a new observation or
-// action within that grace cancelling it. It owns, and so releases, only an attribute it read false and then set: one
+// on), or `enablementReleaseGraceMs` (30 s) after cua's last observation of or input to the process, whether or not a
+// connection is still open (a model that never calls end_task keeps its connection until the 15-minute idle stop); a
+// new observation or input within that grace starts it again, and one after it sets the attribute again, owned, an
+// input included (`inputEnablement`). It owns, and so releases, only an attribute it read false and then set: one
 // that read true, or could not be read, may be VoiceOver's or another assistive client's and is never written back. A
 // write that answers kAXErrorNotImplemented (-25208) counts as set when the attribute reads true right after it, and a
 // write back that answers it counts as done: Chrome lists AXEnhancedUserInterface (AXManualAccessibility is
@@ -39,9 +41,9 @@ import os
 
 private let enablementLog = Logger(subsystem: "io.github.ssfskim.cua.engine", category: "enablement")
 
-/// How long an owned enablement outlives the close of the last connection that observed or acted on its process, when
-/// that close was not its task's end (#292): long enough that a reconnect (a transport failure, a worker restart) does
-/// not pay Chrome's 2.2 s debounce again; 0 releases at the close.
+/// How long an owned enablement outlives cua's last observation of or input to its process, short of an end_task or the
+/// engine's stop (#292): long enough that a model's pause between steps does not pay Chrome's 2.2 s debounce again; 0
+/// releases at the close of the last connection that observed the process instead.
 let enablementReleaseGraceMs: Double = 30_000
 
 let webAreaLeadMs: UInt32 = 100
@@ -194,8 +196,8 @@ final class WebAccessibility: @unchecked Sendable {
   private var writes: [String: UInt64] = [:]
   /// Per process, its first observation's time, moved to every write attempt's (monotonic ms; `freshSince`).
   private var freshSinceByProcess: [String: Double] = [:]
-  /// Per process, the token of the grace release armed when its last observer closed (#292); absent when none is armed.
-  /// An observation, an action or another release replaces or clears it, so only the newest armed timer may release.
+  /// Per process, the token of the grace release armed at its last activity (#292); absent when none is armed. Every
+  /// observation and input replaces it, so only the newest armed timer may release.
   private var pendingRelease: [String: Int] = [:]
   private var releaseTokens = 0
   private let releaseGraceMs: Double
@@ -325,7 +327,7 @@ final class WebAccessibility: @unchecked Sendable {
   /// `timings.enablementPrior`, and the write's AXError when this call attempted one (`write`, nil when it did not). The
   /// process's first observation, and every write attempt, successful or not, moves its `freshSince`. A write answering
   /// kAXErrorNotImplemented counts as set when the attribute reads true right after it (#292: Chrome's answer).
-  /// The observation cancels a grace release armed for the process.
+  /// The observation is the process's activity: its grace release is armed again from now.
   func enableReporting(pid: pid_t, launched: Date?, connection: Int, access: EnablementAccess)
     -> (set: String?, prior: EnablementPrior?, write: AXError?) {
     let key = Self.process(pid, launched)
@@ -333,9 +335,10 @@ final class WebAccessibility: @unchecked Sendable {
     let entry = processes[key] ?? EnabledProcess(access: access, generationKnown: launched != nil)
     processes[key] = entry
     observers[key, default: []].insert(connection)
-    pendingRelease[key] = nil
+    let token = armLocked(key)
     if freshSinceByProcess[key] == nil { freshSinceByProcess[key] = monotonicMilliseconds() }
     lock.unlock()
+    scheduleLapse(key, token)
 
     entry.io.lock()
     defer { entry.io.unlock() }
@@ -374,53 +377,75 @@ final class WebAccessibility: @unchecked Sendable {
     return (name, prior, written)
   }
 
-  /// An input by `connection` to a process (#292): it counts as observing the process from now on, as an observation
-  /// does, so the process is released only after that connection's task ends or it closes, and any grace release armed
-  /// for it is cancelled. Nothing for a process the engine has no enablement state for.
+  /// Activity on a process by `connection` (#292): an input, or an observation's or input's end. The connection counts
+  /// as observing the process, and its grace release is armed again from now. Nothing for a process the engine has no
+  /// enablement state for.
   func noteActivity(pid: pid_t, launched: Date?, connection: Int) {
     let key = Self.process(pid, launched)
     lock.lock()
-    defer { lock.unlock() }
-    guard processes[key] != nil else { return }
+    guard processes[key] != nil else {
+      lock.unlock()
+      return
+    }
     observers[key, default: []].insert(connection)
-    pendingRelease[key] = nil
+    let token = armLocked(key)
+    lock.unlock()
+    scheduleLapse(key, token)
   }
 
-  /// `connection` stops observing (it closed, or its task ended): every process it observed or acted on that no other
-  /// connection does is released, at once when `immediately` (the task's end, `endTask`) or the grace is 0, else once
-  /// `releaseGraceMs` pass with no connection observing it (a timer whose token an observation, an action or a later
-  /// release replaces). Answers how many processes it released or armed a release for.
+  /// An input's enablement step (#292, the design session's ruling 5c2f27a3): in a Chromium-family process the
+  /// observation's role read and `enableReporting`, so an action after a grace release with no observation since sets
+  /// the attribute again, owned (the write-back is remembered), and the write moves `freshSince`, which opens #282's and
+  /// #283's re-reads; in any other process, `noteActivity`.
+  func inputEnablement(chromium: Bool, pid: pid_t, launched: Date?, connection: Int, access: @autoclosure () -> EnablementAccess) {
+    guard chromium else { return noteActivity(pid: pid, launched: launched, connection: connection) }
+    let access = access()
+    access.readRole()
+    _ = enableReporting(pid: pid, launched: launched, connection: connection, access: access)
+  }
+
+  /// A new grace token for `key`, replacing any armed one (under `lock`); nil with a grace of 0, which arms nothing.
+  private func armLocked(_ key: String) -> Int? {
+    guard releaseGraceMs > 0 else { return nil }
+    releaseTokens += 1
+    pendingRelease[key] = releaseTokens
+    return releaseTokens
+  }
+
+  private func scheduleLapse(_ key: String, _ token: Int?) {
+    guard let token else { return }
+    schedule(releaseGraceMs) { [weak self] in self?.graceLapsed(key, token) }
+  }
+
+  /// `connection` stops observing (it closed, or its task ended). A process it observed or acted on that no other
+  /// connection does is released at once when `immediately` (the task's end, `endTask`), when the grace is 0, or when
+  /// no grace is armed for it (a release that failed: retried now); otherwise its armed grace, timed from its last
+  /// activity, releases it. Answers how many processes no connection observes now.
   @discardableResult
   func release(connection: Int, immediately: Bool = false) -> Int {
     lock.lock()
     var emptied: [(String, EnabledProcess)] = []
+    var now: [(String, EnabledProcess)] = []
     for (key, var set) in observers where set.contains(connection) {
       set.remove(connection)
       observers[key] = set
-      if set.isEmpty, let entry = processes[key] { emptied.append((key, entry)) }
-    }
-    let now = immediately || releaseGraceMs <= 0
-    var armed: [(String, Int)] = []
-    for (key, _) in emptied {
-      if now {
+      guard set.isEmpty, let entry = processes[key] else { continue }
+      emptied.append((key, entry))
+      if immediately || releaseGraceMs <= 0 || pendingRelease[key] == nil {
         pendingRelease[key] = nil
-      } else {
-        releaseTokens += 1
-        pendingRelease[key] = releaseTokens
-        armed.append((key, releaseTokens))
+        now.append((key, entry))
       }
     }
     lock.unlock()
-    if now {
-      for (key, entry) in emptied { releaseIfUnobserved(key, entry) }
-    } else {
-      for (key, token) in armed { schedule(releaseGraceMs) { [weak self] in self?.graceLapsed(key, token) } }
-    }
+    for (key, entry) in now { releaseIfUnobserved(key, entry) }
     return emptied.count
   }
 
-  /// A grace release's timer fired: the process is released unless an observation, an action or a newer release took
-  /// the token since. The release itself re-checks, under the entry's lock, that no connection observes it.
+  /// A grace release's timer fired, `releaseGraceMs` after the activity that armed it: unless newer activity took the
+  /// token since, the process is released whether or not a connection still observes it (the design session's rule:
+  /// 30 s after cua's last action on it). An observation in flight is not raced: it took the token under `lock` before
+  /// its read and write, and either took it first (no release) or waits on the entry's lock and reads after the reset,
+  /// setting the attribute again, owned, since the write-back is remembered.
   private func graceLapsed(_ key: String, _ token: Int) {
     lock.lock()
     guard pendingRelease[key] == token else {
@@ -430,7 +455,7 @@ final class WebAccessibility: @unchecked Sendable {
     pendingRelease[key] = nil
     let entry = processes[key]
     lock.unlock()
-    if let entry { releaseIfUnobserved(key, entry) }
+    if let entry { releaseIfUnobserved(key, entry, evenIfObserved: true) }
   }
 
   /// The engine stops: every process is released at once, whoever observed it, and no grace release is left pending.
@@ -450,11 +475,12 @@ final class WebAccessibility: @unchecked Sendable {
   /// afterwards, by an atomic re-check that no observer registered. A reset that fails keeps the ownership and the
   /// entry, so a later close or the shutdown retries it, and is logged; one answering kAXErrorNotImplemented counts as
   /// done (#292: Chrome answers so and drops its complete mode in 4 to 150 ms), and is not read back, since Chromium's
-  /// attribute may read true after a write-back (AppKit's readback).
-  private func releaseIfUnobserved(_ key: String, _ entry: EnabledProcess) {
+  /// attribute may read true after a write-back (AppKit's readback). `evenIfObserved`: the grace's release, made whether or not
+  /// a connection observes the process, which is then kept, not retired.
+  private func releaseIfUnobserved(_ key: String, _ entry: EnabledProcess, evenIfObserved: Bool = false) {
     entry.io.lock()
     defer { entry.io.unlock() }
-    guard unobserved(key) else { return }
+    guard evenIfObserved || unobserved(key) else { return }
     var reset = false
     if let owned = entry.owned {
       if !entry.access.current() {

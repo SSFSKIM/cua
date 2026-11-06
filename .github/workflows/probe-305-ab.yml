@@ -22,7 +22,7 @@ jobs:
         # The full A/B ran at 198bfa09 (run 42269993080: chrome, safari, finder, textedit and #296's s296-* groups). This
         # push re-runs Safari split in two (its job timed out at 120 min) and the Chrome and Finder sweeps (a re-find
         # that skipped controls on a shifted page); a group <app>-<part> runs one part of scripts/probe-305/ab.mjs.
-        group: [safari-spots, safari-sweep, chrome-sweep, finder-sweep]
+        group: [finder-sweep]  # wave 3: list view restored before every click; safari-spots, safari-sweep and chrome-sweep ran at d4a1da2e (run 42294564231)
     runs-on: macos-latest
     timeout-minutes: 180
     steps:

@@ -436,6 +436,8 @@ async function runFinder() {
       sh('open', [folder]); await sleep(3000); osa('tell application "Finder" to set current view of front Finder window to list view'); await sleep(1500);
     }
     osa('tell application "Finder" to set collapsed of front Finder window to false');
+    // The sweep's view toggles (icon, column, gallery) change the view: list view again before every click.
+    osa('tell application "Finder" to set current view of front Finder window to list view');
     place('Finder'); await sleep(1200);
   };
   const effect = async () => ({windows: osa('tell application "Finder" to get name of every Finder window').out, bounds: osa('tell application "Finder" to get bounds of front Finder window').out});

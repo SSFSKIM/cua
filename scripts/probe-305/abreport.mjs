@@ -60,8 +60,10 @@ console.log('\n### #296 stale suite\n');
 console.log('| cell | expect | main (rep1, rep2) | branch (rep1, rep2) | branch meets expect |');
 console.log('|---|---|---|---|---|');
 const base = c => c.label.replace(/\/(branch|main)$/, '');
-const ans = c => c ? (c.exception || c.problem ? `PROBLEM ${(c.problem ?? c.exception).split('\n')[0].slice(0, 40)}` : c.stalePoint ? `${c.stalePoint.verdict}/${c.stalePoint.reason}${c.effect?.hit?.length ? ` →${c.effect.hit.join(',')}` : ''}` : c.errorName ? `error ${c.errorName}` : 'no stalePoint') : '-';
+const ans = c => c ? (c.exception || c.problem ? `PROBLEM ${(c.problem ?? c.exception).split('\n')[0].slice(0, 40)}` : `${c.stalePoint ? `${c.stalePoint.verdict}/${c.stalePoint.reason}` : 'no stalePoint'}${c.errorName && c.errorName !== 'screenChangedSinceScreenshot' ? ` + ${c.errorName}` : ''}${c.effect?.hit?.length ? ` →${c.effect.hit.join(',')}` : ''}`) : '-';
 const meets = (c, expect) => {
+  // A refusal another way (nothing pressed: backgroundClickRefused and the like) counts as refused, said so.
+  if (expect?.startsWith('refused') && c?.errorName && c.errorName !== 'screenChangedSinceScreenshot' && !c.effect?.hit?.length) return `refused by ${c.errorName}`;
   if (!c?.stalePoint || !expect) return c?.spec?.expect === 'skipped' ? !c?.stalePoint : '?';
   const [v, why] = expect.split('/');
   return c.stalePoint.verdict === v && (!why || c.stalePoint.reason === why);

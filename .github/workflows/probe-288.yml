@@ -61,7 +61,7 @@ jobs:
         if: github.event.inputs.script != 'probe'
         env:
           P288_REP: ${{ matrix.rep }}
-          P288_CELLS: ${{ github.event.inputs.cells || 'd2/' }}
+          P288_CELLS: ${{ github.event.inputs.cells || 'c6/main/noobs' }}
         run: node scripts/probe-288/live.mjs --main "$RUNNER_TEMP/eng/debug/cua-engine" --branch "$RUNNER_TEMP/eng-branch/debug/cua-engine" --ax "$RUNNER_TEMP/p288-ax" --cells "$P288_CELLS" --out "$RUNNER_TEMP/probe-288"
       - name: Probe
         if: github.event.inputs.script == 'probe'

@@ -10,7 +10,8 @@
 //   c3/<engine>/sigterm           observe, 2.6 s, the engine's SIGTERM, 1.5 s of samples
 //   c4/<engine>/after-grace-click observe (screenshot), 33 s idle, a coordinate click on the checkbox, no re-observation
 //   c5/<engine>/first-<checkbox|textarea>   observe (screenshot), at once a coordinate click
-//   c6/<engine>/noobs-reload      no observation on the connection: a coordinate click at Reload's point
+//   c6/<engine>/noobs-reload      no observation on the connection: a coordinate click at Reload's point (located
+//                                 through AX at click time)
 //   c6/<engine>/released-<reload|text>      observe (screenshot), 33 s idle (the branch's grace clears the page tree's
 //                                 seen state), a coordinate click on Reload, or on the page's plain text
 //
@@ -220,6 +221,10 @@ for (const e of ['branch', 'main']) CELLS.push({label: `d/${e}/reload-1s`, e, ki
 for (const e of ['branch', 'main']) CELLS.push({label: `d/${e}/reload-33s-nowatch`, e, kind: 'afterGrace', target: 'reload', noWatch: true});
 // Round 2 of the diagnostics (run 42169259575: reloaded at 1 s, not at 33 s, on both engines): the threshold on main,
 // and at 33 s a second click 1 s after the first.
+// Read these Reload cells with #294's spike (runs 42173188779, 42175037968, 42176012181): each clicks the first
+// observation's point, and Chrome for Testing re-lays out its toolbar 11-16 s after launch (Reload moves 36 pt right,
+// onto where the disabled Forward button now sits), so the late clicks land on Forward. The input was delivered; the
+// point was stale. The same holds for c6/released-reload.
 for (const s of [5, 10, 20]) CELLS.push({label: `d2/main/reload-${s}s`, e: 'main', kind: 'first', target: 'reload', waitMs: s * 1000});
 for (const e of ['branch', 'main']) CELLS.push({label: `d2/${e}/reload-33s-twice`, e, kind: 'first', target: 'reload', waitMs: 33_000, twice: true});
 for (const e of ['branch', 'main']) CELLS.push({label: `c1/${e}/end_task`, e, kind: 'endTask'});
@@ -256,9 +261,14 @@ async function cell(spec) {
     const w = engine.wire;
     row.ping = (await w.call('ping', {clientApiVersion: 'cua-engine-1'})).result ?? null;
     if (spec.kind === 'noobs') {
-      // No observation on this connection: Reload's point in a screenshot of the window at its fixed place (scale 1).
-      const reload = {x: 442 + 17, y: 77 + 17};
-      await clickAt(w, pid, {x: reload.x - 400, y: reload.y - 31}, row, 2500);
+      // No observation on this connection: Reload's point, located through AX at click time, in a screenshot of the
+      // window (scale 1). Chrome for Testing re-lays out its toolbar 11-16 s after launch (Reload moves 36 pt right;
+      // #294's spike), so a fixed point goes stale.
+      const loc = await ax(['locate', String(pid)]);
+      row.located = loc;
+      const r = loc.reload, win = loc.window;
+      if (!r?.w || !win?.w) { row.problem = 'Reload or the window not located'; return row; }
+      await clickAt(w, pid, {x: r.x + r.w / 2 - win.x, y: r.y + r.h / 2 - win.y}, row, 2500);
       row.watch = await watch(pid, P, 300);
     } else {
       const shot = ['afterGrace', 'first'].includes(spec.kind);

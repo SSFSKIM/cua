@@ -299,7 +299,7 @@ async function until(check, ms = 2_000) {
   }
 }
 
-test('no cursor context, no cursor request: release (end_task) only closes the connection', async t => {
+test('no cursor context, no cursor request: release (end_task) sends endTask (#292) and closes the connection', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   const engine = await startFakeEngine(t, socket, {handlers: {'execute:ok': () => 'ok'}});
   const {client} = clientFor(socket);
@@ -308,7 +308,7 @@ test('no cursor context, no cursor request: release (end_task) only closes the c
   client.release();
   assert.equal(client.connected, false);
   await until(() => engine.sockets.size === 0);
-  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'execute']);
+  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'execute', 'endTask'], 'the engine read endTask before the close');
 });
 
 test('release (end_task) writes {hide: true} and closes the live connection at once, waiting on neither; with none live it sends nothing and launches nothing', async t => {
@@ -324,7 +324,8 @@ test('release (end_task) writes {hide: true} and closes the live connection at o
   assert.equal(client.connected, false, 'closed at once: the hide\'s answer (here never sent) is not waited for');
   await until(() => engine.sockets.size === 0);
   assert.deepEqual(engine.received.filter(r => r.method === 'cursor').map(r => r.params), [CURSOR, {hide: true}], 'the engine read the hide before the close');
-  assert.deepEqual(lines, [], 'the hide abandoned by the close is not a failure');
+  assert.deepEqual(engine.received.slice(-2).map(r => [r.method, r.params]), [['cursor', {hide: true}], ['endTask', {}]], 'then endTask, its task\'s end (#292)');
+  assert.deepEqual(lines, [], 'the hide abandoned by the close is not a failure, nor this engine\'s methodNotFound for endTask');
   assert.equal(launches.length, 0);
 });
 
@@ -340,7 +341,7 @@ test('after release the next request reconnects: a new connection, told the sess
   assert.equal(client.connected, true);
   assert.equal(engine.sockets.size, 1);
   assert.deepEqual(engine.received.map(r => [r.method, r.method === 'cursor' ? r.params : r.params?.method ?? null]),
-    [['ping', null], ['cursor', CURSOR], ['execute', 'ok'], ['cursor', {hide: true}], ['ping', null], ['cursor', CURSOR], ['execute', 'ok']]);
+    [['ping', null], ['cursor', CURSOR], ['execute', 'ok'], ['cursor', {hide: true}], ['endTask', null], ['ping', null], ['cursor', CURSOR], ['execute', 'ok']]);
   assert.equal(launches.length, 0, 'the engine answered: nothing launched');
 });
 
@@ -386,7 +387,7 @@ test('requests queued at release fail unsent and never reconnect; the one in fli
   await assert.rejects(queued, SkyComputerUseTransportError);
   await until(() => engine.sockets.size === 0);
   assert.equal(client.connected, false);
-  assert.deepEqual(engine.received.map(r => r.method === 'execute' ? r.params.method : r.method), ['ping', 'slow'], 'the queued request was neither sent nor reconnected for');
+  assert.deepEqual(engine.received.map(r => r.method === 'execute' ? r.params.method : r.method), ['ping', 'slow', 'endTask'], 'the queued request was neither sent nor reconnected for');
   assert.equal((await client.execute('ok', {})).result, 'ok');
   assert.equal(engine.received.filter(r => r.method === 'ping').length, 2);
 });
@@ -400,7 +401,7 @@ test('an engine without the cursor method answers methodNotFound: the session go
   await client.execute('ok', {});
   client.release();
   await until(() => engine.sockets.size === 0);
-  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'cursor', 'execute', 'execute'], 'no hide after methodNotFound, and the close all the same');
+  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'cursor', 'execute', 'execute', 'endTask'], 'no hide after methodNotFound, endTask and the close all the same');
 });
 
 test('a cursor request the engine refuses otherwise fails nothing either, is logged, and the hide is still sent at release', async t => {

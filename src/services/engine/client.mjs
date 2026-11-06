@@ -35,8 +35,11 @@
 // once, neither waited for, so end_task frees the engine for other clients (its `status` stops counting the connection,
 // and `cua engine build` and `approve` proceed) without waiting on it. The engine reads the hide before the close, so
 // the cursor fades and its panel goes once the fade is over, and an after-action watch still running finishes on the
-// engine's side. Nothing is connected or launched for it, and a connect or request of the ended task still pending
-// never reaches the engine (the client's generation); the next request reconnects as after any close.
+// engine's side. The hide is followed by `endTask` (#292), also unawaited, which tells the engine the task ended, so it
+// writes back at once the web enablement no other connection holds, where a close alone (a transport failure) leaves it
+// for the engine's 30 s grace; an older engine answers methodNotFound, which nothing reads. Nothing is connected or
+// launched for it, and a connect or request of the ended task still pending never reaches the engine (the client's
+// generation); the next request reconnects as after any close.
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {
@@ -297,7 +300,7 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     async status() {
       return (await call('status', {}, {suspend: false})).result;
     },
-    // end_task: the hide (when the session has a cursor and the engine the method), then the close, both written now
+    // end_task: the hide (when the session has a cursor and the engine the method), endTask, then the close, all written now
     // on the live connection and neither answer waited for (see the header). A request still in flight fails as on any
     // close; a connect still in flight and the requests queued behind it belong to the ended task, and neither publishes
     // a connection nor writes a frame. A request made after this reconnects.
@@ -306,6 +309,7 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
       const target = connection;
       if (!target || target.closed) return;
       if (cursor && !target.noCursor) sendCursor(target, {hide: true});
+      target.call('endTask', {}, cursorWaitMs, {optional: true}).catch(() => {});  // answered or not, the close follows
       target.close();
     },
     close() { connection?.close(); },

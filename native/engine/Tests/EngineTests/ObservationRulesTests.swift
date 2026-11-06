@@ -98,6 +98,9 @@ private final class FakeApplication: @unchecked Sendable {
   var writes: [(String, Bool)] = []
   var namesRead = 0
   var failWrites = false
+  /// Chrome's answer (#292): every write answers kAXErrorNotImplemented, taking effect only when `notImplementedTakes`.
+  var notImplementedWrites = false
+  var notImplementedTakes = true
   /// The application element's calls in order: "role", "read <attribute>", "write <attribute>=<value>".
   var calls: [String] = []
   /// Runs inside every write before it takes effect (a barrier a test holds a release's reset at).
@@ -118,6 +121,10 @@ private final class FakeApplication: @unchecked Sendable {
         self.calls.append("write \(name)=\(value)")
         self.writes.append((name, value))
         guard !self.failWrites else { return .cannotComplete }
+        if self.notImplementedWrites {
+          if self.notImplementedTakes { self.values[name] = value }
+          return .notImplemented
+        }
         self.values[name] = value
         return .success
       },
@@ -134,7 +141,7 @@ final class EnablementReleaseTests: XCTestCase {
   func testItIsSetWhenItReadsFalseAndThenNeitherReadNorWrittenWhileOwned() {
     // #244: Electron's getter reads false until its complete mode lands (and after), and every write restarts that
     // mode's 2 s countdown and fires the app's accessibility-support-changed, so an owned attribute is written once.
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility", "AXEnhancedUserInterface"])
     app.values["AXManualAccessibility"] = false
     XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility", "never both")
@@ -145,7 +152,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testAnOwnedProcessIsReleasedWithOneWriteOfFalse() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     for connection in 1...3 { _ = web.enable(pid: 7, launched: launched, connection: connection, access: app.access) }
     for connection in 1...3 { web.release(connection: connection) }
@@ -154,7 +161,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testAReleasedProcessIsEnabledAndOwnedAgainAtTheNextObservation() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
@@ -167,7 +174,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testAnAttributeThatReadsTrueIsNeverOwnedAndIsReReadAtEveryObservation() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     app.values["AXManualAccessibility"] = true  // VoiceOver's, or another assistive client's
     for _ in 0..<3 { XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: app.access)) }
@@ -183,7 +190,7 @@ final class EnablementReleaseTests: XCTestCase {
   func testAnUnreadableAttributeIsReadAndWrittenAtEveryObservationSinceItIsNeverOwned() {
     // Unchanged by #244: an unreadable value may be another client's, so the engine never owns it, and only an owned
     // attribute is remembered; each observation reads it and, by the vendor's rule, sets it.
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     app.unreadable = ["AXManualAccessibility"]
     for _ in 0..<3 { XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility") }
@@ -194,7 +201,7 @@ final class EnablementReleaseTests: XCTestCase {
   func testTheApplicationsRoleIsReadAtEveryObservationBeforeTheEnablement() {
     // #244's B: reading the application element's role gives Chromium and Electron their Basic mode, and with it the
     // web tree, at once (the vendor's eager ApplicationUIElement.init, F §1.3). Never cached.
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     var timings = Timings()
     for _ in 0..<3 {
@@ -210,7 +217,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testAnIneligibleAppGetsNoRoleReadAndNoEnablement() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     var timings = Timings()
     XCTAssertNil(web.observeEnablement(eligible: false, pid: 7, launched: launched, connection: 1, access: app.access, timings: &timings))
@@ -237,7 +244,7 @@ final class EnablementReleaseTests: XCTestCase {
     // The review of 59862867: connection A settles; connection B then enables the process (owning it) and sees its web
     // area; A's enablement step finds it owned and writes nothing, and B's web area skips A's wait, so only the
     // process's enablement count shows that A's settled tree was read before the page's tree existed.
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     let adopted = adoptsSettled(web, app, connection: 1) {
       var timings = Timings()
@@ -251,7 +258,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testTheEnablementCountMovesWithEveryWriteTheEngineMakes() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     XCTAssertEqual(web.enablements(pid: 7, launched: launched), 0)
     XCTAssertFalse(adoptsSettled(web, app, connection: 1), "this observation's own enablement")
@@ -264,14 +271,14 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testEnhancedUserInterfaceOnlyWhenManualIsNotListed() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXEnhancedUserInterface"])
     XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXEnhancedUserInterface")
     XCTAssertNil(web.enable(pid: 8, launched: launched, connection: 1, access: FakeApplication(names: ["AXTitle"]).access))
   }
 
   func testItIsReleasedWhenTheLastConnectionThatObservedTheProcessCloses() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility")
     XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "the second connection finds it set")
@@ -285,7 +292,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testAnAttributeThatReadTrueBeforeTheEngineTouchedItIsNeverWritten() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXEnhancedUserInterface"])
     app.values["AXEnhancedUserInterface"] = true  // VoiceOver's, or another assistive client's
     XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: app.access))
@@ -294,7 +301,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testAnUnreadableAttributeIsSetButNeverOwnedSoACloseLeavesItEnabled() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     app.unreadable = ["AXManualAccessibility"]  // another client may have enabled it: the engine cannot tell
     XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility", "the vendor's rule: set unless it reads true")
@@ -306,7 +313,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testAnUnreadableReadDoesNotDropOwnershipTheEngineAlreadyHas() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     app.values["AXManualAccessibility"] = false
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
@@ -319,7 +326,7 @@ final class EnablementReleaseTests: XCTestCase {
 
   func testAFailedResetKeepsOwnershipSoALaterCloseOrShutdownRetries() {
     var failures: [String] = []
-    let web = WebAccessibility(releaseFailed: { failures.append($0) })
+    let web = WebAccessibility(releaseGraceMs: 0, releaseFailed: { failures.append($0) })
     let app = FakeApplication(names: ["AXManualAccessibility"])
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
     app.failWrites = true
@@ -336,7 +343,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testAProcessNoLongerTheOneObservedIsNotWritten() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
     app.current = false  // it quit, and its pid may be another process's now
@@ -345,7 +352,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testAProcessWhoseNamesCannotBeReadYetIsAskedAgainNextTime() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: nil)
     XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: app.access))
     app.names = ["AXManualAccessibility"]
@@ -355,7 +362,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testAReleaseForgetsTheWebAreaSoTheNextEnablingWaitsAgain() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
     web.noteWebArea(pid: 7, launched: launched)
@@ -367,7 +374,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testAProcessTheEngineDidNotEnableKeepsItsWebAreaAcrossAClose() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     app.values["AXManualAccessibility"] = true
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
@@ -377,7 +384,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testARelaunchReusingThePidIsAnotherProcess() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let first = FakeApplication(names: ["AXManualAccessibility"])
     let second = FakeApplication(names: ["AXManualAccessibility"])
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: first.access)
@@ -395,7 +402,7 @@ final class EnablementReleaseTests: XCTestCase {
   func testAProcessTheEngineWroteBackIsSetAgainByTheNextConnectionThoughItReadsTrue() {
     // M2a.5's Surprise: after the write-back, Chromium's attribute reads true (AppKit's readback, not Chromium's mode),
     // while the page's tree went with the mode. The next observation must enable again, owned, so the wait runs.
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility")
     web.noteWebArea(pid: 7, launched: launched)
@@ -415,7 +422,7 @@ final class EnablementReleaseTests: XCTestCase {
   /// after it (a new connection, the same session) writes the enablement once, at its first observation, which waits
   /// for the page; its warm observations write nothing, as the first task's did not.
   func testATaskAfterEndTaskReEnablesOnceAndItsWarmObservationsWriteNothing() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility", "the first task's first observation")
     web.noteWebArea(pid: 7, launched: launched)
@@ -436,7 +443,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testATrueTheEngineNeverOwnedIsNeverWrittenAcrossConnections() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let voiceOver = FakeApplication(names: ["AXManualAccessibility"])
     voiceOver.values["AXManualAccessibility"] = true
     XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: voiceOver.access))
@@ -455,7 +462,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testARelaunchReusingThePidIsNotTakenForTheProcessTheEngineWroteBack() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let first = FakeApplication(names: ["AXManualAccessibility"])
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: first.access)
     web.release(connection: 1)
@@ -469,7 +476,7 @@ final class EnablementReleaseTests: XCTestCase {
     // The review of 447bb209: with no launch date and no start time, the key is the pid alone, so a remembered
     // write-back would outlive the process and match a replacement reusing the pid (a dev `electron .`), which would be
     // written true, owned and released: an attribute cua never owned.
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let first = FakeApplication(names: ["AXManualAccessibility"])
     XCTAssertEqual(web.enable(pid: 7, launched: nil, connection: 1, access: first.access), "AXManualAccessibility")
     web.release(connection: 1)
@@ -488,7 +495,7 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertLessThan(start!.timeIntervalSinceNow, 0)
     XCTAssertEqual(processGeneration(launchDate: nil, pid: pid), start, "no launch date: the start time")
     XCTAssertEqual(processGeneration(launchDate: launched, pid: pid), launched, "LaunchServices' date when there is one")
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     let generation = processGeneration(launchDate: nil, pid: pid)
     _ = web.enable(pid: pid, launched: generation, connection: 1, access: app.access)
@@ -507,7 +514,7 @@ final class EnablementReleaseTests: XCTestCase {
   }
 
   func testShutdownReleasesEveryProcessTheEngineEnabled() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let a = FakeApplication(names: ["AXManualAccessibility"])
     let b = FakeApplication(names: ["AXEnhancedUserInterface"])
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: a.access)
@@ -519,7 +526,7 @@ final class EnablementReleaseTests: XCTestCase {
 
   func testEachObservationReportsWhatTheAttributeReadBeforeTheEngineTouchedIt() {
     // timings.enablementPrior, which the live harness reads to show the release's precondition (it read false).
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     let first = web.enableReporting(pid: 7, launched: launched, connection: 1, access: app.access)
     XCTAssertEqual(first.set, "AXManualAccessibility")
@@ -540,7 +547,7 @@ final class EnablementReleaseTests: XCTestCase {
     // A barrier holds the release inside its reset of the attribute (still true) while a new connection observes the
     // process. The new observation must not read the not-yet-reset true and skip enabling: it shares the retiring
     // entry's lock, so it reads after the reset and sets the attribute again, owning it.
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
     let inReset = DispatchSemaphore(value: 0)
@@ -574,7 +581,7 @@ final class EnablementReleaseTests: XCTestCase {
   /// the engine owns the attribute, or it read true; not before any observation, not after the write-back, and not
   /// when the write failed on a value that read false.
   func testTheEnablementHoldsWhileOwnedOrReadTrueAndNotAfterTheWriteBack() {
-    let web = WebAccessibility()
+    let web = WebAccessibility(releaseGraceMs: 0)
     let app = FakeApplication(names: ["AXManualAccessibility"])
     XCTAssertFalse(web.enablementHolds(pid: 7, launched: launched), "never observed: the role read alone is not counted")
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
@@ -603,6 +610,255 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertTrue(chromiumFamily(info: ["NSPrincipalClass": "BrowserCrApplication"]))
     XCTAssertFalse(chromiumFamily(info: ["NSPrincipalClass": "NSApplication", "CFBundleURLTypes": [["CFBundleURLSchemes": ["http"]]]]))
     XCTAssertFalse(chromiumFamily(info: [:]))
+  }
+}
+
+/// A manual clock for the grace release's timer: `schedule` records each work item at now + ms, `advance` runs those
+/// that fall due, in order.
+private final class ManualTimers: @unchecked Sendable {
+  private(set) var now: Double = 0
+  private var due: [(at: Double, work: @Sendable () -> Void)] = []
+  private(set) var scheduled = 0
+
+  func schedule(_ ms: Double, _ work: @escaping @Sendable () -> Void) {
+    scheduled += 1
+    due.append((now + ms, work))
+  }
+
+  func advance(to time: Double) {
+    while let next = due.enumerated().filter({ $0.element.at <= time }).min(by: { $0.element.at < $1.element.at }) {
+      due.remove(at: next.offset)
+      now = next.element.at
+      next.element.work()
+    }
+    now = time
+  }
+}
+
+/// #292: Chrome's -25208 answer counts as set (owned, released) when the attribute reads true after it, and as done on
+/// the write back; the release goes at end_task, the engine's stop, or 30 s after the last observing connection closed.
+final class EnablementOwnershipAndGraceTests: XCTestCase {
+  private let launched = Date(timeIntervalSince1970: 1_000)
+  private let eui = "AXEnhancedUserInterface"
+
+  private func chrome() -> FakeApplication {
+    let app = FakeApplication(names: ["AXEnhancedUserInterface"])  // Chrome lists EUI, not AXManualAccessibility
+    app.notImplementedWrites = true
+    return app
+  }
+
+  private func graced(_ timers: ManualTimers) -> WebAccessibility {
+    WebAccessibility(releaseGraceMs: 30_000, schedule: { ms, work in timers.schedule(ms, work) })
+  }
+
+  func testANotImplementedWriteThatReadsTrueAfterIsSetOwnedAndReleased() {
+    let web = WebAccessibility(releaseGraceMs: 0)
+    let app = chrome()
+    var timings = Timings()
+    let step = web.observeEnablement(eligible: true, pid: 7, launched: launched, connection: 1, access: app.access, timings: &timings)
+    XCTAssertEqual(step?.set, eui, "Chrome acted on it: set")
+    XCTAssertEqual(step?.prior, .readFalse)
+    XCTAssertEqual(timings.wire["enablementWrite"] as? String, "success")
+    XCTAssertEqual(timings.wire["enablementWriteError"] as? Int, Int(AXError.notImplemented.rawValue), "its code still reported")
+    XCTAssertEqual(app.calls, ["role", "read \(eui)", "write \(eui)=true", "read \(eui)"], "read back right after the write")
+    XCTAssertTrue(web.enablementHolds(pid: 7, launched: launched))
+    XCTAssertGreaterThan(web.enablements(pid: 7, launched: launched), 0, "counted as a write the engine made")
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "owned: written once")
+    web.release(connection: 1)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "owned, so written back")
+    XCTAssertEqual(app.values[eui], false)
+    XCTAssertFalse(web.enablementHolds(pid: 7, launched: launched))
+  }
+
+  func testANotImplementedWriteThatStillReadsFalseIsNotOwned() {
+    let web = WebAccessibility(releaseGraceMs: 0)
+    let app = chrome()
+    app.notImplementedTakes = false  // a process that really does not implement it
+    var timings = Timings()
+    let step = web.observeEnablement(eligible: true, pid: 7, launched: launched, connection: 1, access: app.access, timings: &timings)
+    XCTAssertNil(step?.set)
+    XCTAssertEqual(timings.wire["enablementWrite"] as? String, "failed")
+    XCTAssertEqual(timings.wire["enablementWriteError"] as? Int, Int(AXError.notImplemented.rawValue))
+    XCTAssertFalse(web.enablementHolds(pid: 7, launched: launched))
+    web.release(connection: 1)
+    web.releaseAll()
+    XCTAssertEqual(app.written, ["\(eui)=true"], "never owned, never written back")
+  }
+
+  func testAValueThatReadTrueBeforeIsNeverWrittenOrReleased() {
+    let web = WebAccessibility(releaseGraceMs: 0)
+    let app = chrome()
+    app.values[eui] = true  // VoiceOver's
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: app.access))
+    web.release(connection: 1)
+    web.releaseAll()
+    XCTAssertTrue(app.writes.isEmpty, "A3: not the engine's")
+    XCTAssertEqual(app.values[eui], true)
+  }
+
+  func testAWriteBackAnsweringNotImplementedCountsAsDoneAndIsNotRetried() {
+    var failures: [String] = []
+    let web = WebAccessibility(releaseGraceMs: 0, releaseFailed: { failures.append($0) })
+    let app = chrome()
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.release(connection: 1)
+    web.releaseAll()
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "one write back, not retried at the stop")
+    XCTAssertEqual(failures, [], "not a failure")
+    app.values[eui] = true  // the readback after a write-back
+    XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), eui, "written back, so set again, owned")
+  }
+
+  func testWithAGraceTheReleaseWaitsForItAfterTheLastClose() {
+    let timers = ManualTimers()
+    let web = graced(timers)
+    let app = chrome()
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.release(connection: 1)
+    XCTAssertEqual(app.written, ["\(eui)=true"], "not at the close")
+    XCTAssertTrue(web.enablementHolds(pid: 7, launched: launched), "still on through the grace")
+    timers.advance(to: 29_999)
+    XCTAssertEqual(app.writes.count, 1)
+    timers.advance(to: 30_000)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "released 30 s after the close")
+    XCTAssertFalse(web.enablementHolds(pid: 7, launched: launched))
+  }
+
+  func testAReObservationAt20SecondsCancelsThe30SecondRelease() {
+    let timers = ManualTimers()
+    let web = graced(timers)
+    let app = chrome()
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.release(connection: 1)
+    timers.advance(to: 20_000)
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "still owned: nothing written, no debounce")
+    timers.advance(to: 30_000)
+    XCTAssertEqual(app.writes.count, 1, "the release armed at 0 was cancelled")
+    web.release(connection: 2)  // at 30 s: a new grace
+    timers.advance(to: 59_999)
+    XCTAssertEqual(app.writes.count, 1)
+    timers.advance(to: 60_000)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"])
+  }
+
+  func testOnlyTheNewestGraceReleases() {
+    // Closed at 0, observed again at 10 s, closed again at 25 s: the timer armed at 0 (due at 30 s) must not release.
+    let timers = ManualTimers()
+    let web = graced(timers)
+    let app = chrome()
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.release(connection: 1)
+    timers.advance(to: 10_000)
+    _ = web.enable(pid: 7, launched: launched, connection: 2, access: app.access)
+    timers.advance(to: 25_000)
+    web.release(connection: 2)
+    timers.advance(to: 54_999)
+    XCTAssertEqual(app.writes.count, 1, "the first timer fired at 30 s and found its token replaced")
+    timers.advance(to: 55_000)
+    XCTAssertEqual(app.writes.count, 2)
+  }
+
+  func testAnActionWithinTheGraceCancelsItAndItsConnectionThenHoldsTheProcess() {
+    let timers = ManualTimers()
+    let web = graced(timers)
+    let app = chrome()
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.release(connection: 1)
+    timers.advance(to: 5_000)
+    web.noteActivity(pid: 7, launched: launched, connection: 2)  // an input with no observation of its own
+    XCTAssertEqual(web.observers(pid: 7, launched: launched), [2])
+    timers.advance(to: 60_000)
+    XCTAssertEqual(app.writes.count, 1, "the acting connection holds it")
+    web.release(connection: 2, immediately: true)  // its end_task
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"])
+    web.noteActivity(pid: 8, launched: launched, connection: 3)
+    XCTAssertTrue(web.observers(pid: 8, launched: launched).isEmpty, "a process with no enablement state is not recorded")
+  }
+
+  func testEndTaskReleasesAtOnceWhatOnlyItsConnectionObservedOrActedOn() {
+    let timers = ManualTimers()
+    let web = graced(timers)
+    let app = chrome()
+    let other = FakeApplication(names: ["AXManualAccessibility"])
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    _ = web.enable(pid: 8, launched: launched, connection: 1, access: other.access)
+    web.noteActivity(pid: 8, launched: launched, connection: 2)  // another session acted on pid 8
+    XCTAssertEqual(web.release(connection: 1, immediately: true), 1)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "at once, with no timer")
+    XCTAssertEqual(other.written, ["AXManualAccessibility=true"], "connection 2 was its last actor")
+    XCTAssertEqual(timers.scheduled, 0)
+    web.release(connection: 1)  // the close after end_task: nothing left
+    XCTAssertEqual(timers.scheduled, 0)
+    web.release(connection: 2)  // connection 2 closes without end_task: its grace
+    XCTAssertEqual(other.writes.count, 1)
+    timers.advance(to: 30_000)
+    XCTAssertEqual(other.written, ["AXManualAccessibility=true", "AXManualAccessibility=false"])
+  }
+
+  func testTheEnginesStopReleasesAtOnceDuringAGrace() {
+    let timers = ManualTimers()
+    let web = graced(timers)
+    let app = chrome()
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.release(connection: 1)
+    web.releaseAll()
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "at once")
+    timers.advance(to: 30_000)
+    XCTAssertEqual(app.writes.count, 2, "the pending grace does nothing more")
+  }
+
+  func testAZeroGraceReleasesAtTheCloseWithNoTimer() {
+    let timers = ManualTimers()
+    let web = WebAccessibility(releaseGraceMs: 0, schedule: { ms, work in timers.schedule(ms, work) })
+    let app = chrome()
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.release(connection: 1)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "today's immediate release")
+    XCTAssertEqual(timers.scheduled, 0)
+  }
+
+  func testTheDefaultGraceIs30Seconds() {
+    XCTAssertEqual(enablementReleaseGraceMs, 30_000)
+  }
+
+  func testAnObservationThatBeginsAsTheGraceLapsesWaitsForTheResetAndEnablesAgain() {
+    // The lock discipline under the timer: the grace's release holds the entry's lock through its reset, so an
+    // observation registering meanwhile reads after the reset and sets the attribute again, owned.
+    let web = WebAccessibility(releaseGraceMs: 30_000, schedule: { _, work in Thread { work() }.start() })
+    let app = chrome()
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    let inReset = DispatchSemaphore(value: 0)
+    let proceed = DispatchSemaphore(value: 0)
+    app.duringWrite = { _, value in
+      guard !value else { return }
+      inReset.signal()
+      _ = proceed.wait(timeout: .now() + 5)
+    }
+    web.release(connection: 1)  // the timer's work starts on a thread of its own at once
+    XCTAssertEqual(inReset.wait(timeout: .now() + 5), .success, "the grace's release reached its reset")
+    app.duringWrite = { _, _ in }
+    let enabled = Box<String?>()
+    let observed = DispatchSemaphore(value: 0)
+    let launched = self.launched
+    Thread { enabled.value = web.enable(pid: 7, launched: launched, connection: 2, access: app.access); observed.signal() }.start()
+    let registered = Date().addingTimeInterval(5)
+    while !web.observers(pid: 7, launched: launched).contains(2), Date() < registered { usleep(1_000) }
+    proceed.signal()
+    XCTAssertEqual(observed.wait(timeout: .now() + 5), .success)
+    XCTAssertEqual(enabled.value, eui, "it read after the reset and enabled again")
+    XCTAssertEqual(app.values[eui], true)
+    XCTAssertTrue(web.enablementHolds(pid: 7, launched: launched))
+  }
+
+  func testTheEndTaskRequestReleasesTheConnectionsEnablementAtOnce() {
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false })
+    let app = chrome()
+    _ = engine.webAccessibility.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    let outcome = engine.handle(Request(id: 1, method: "endTask", params: [:]), on: ConnectionState(id: 1, fd: -1), receivedAt: 0)
+    guard case .success(let answer) = outcome.result else { return XCTFail("endTask failed") }
+    XCTAssertEqual((answer as? [String: Any])?["released"] as? Int, 1)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "no grace for a task's end")
   }
 }
 

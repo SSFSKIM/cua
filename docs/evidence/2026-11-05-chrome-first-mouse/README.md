@@ -52,6 +52,7 @@
   - Chrome's toolbar keeps delivering.
 - **The bounded re-read.**
   - Chrome for Testing refuses the engine's AXManualAccessibility write as not implemented: `enablementWrite: failed`, `enablementWriteError: -25208`, on 15 of 15 observations in each rep.
+    - Correction (#292): the write is AXEnhancedUserInterface's, since Chrome lists that and not AXManualAccessibility (Electron's), and Chrome acts on it despite the -25208 answer: that write is what brings the complete mode below. The engine now counts it as set when the attribute reads true after it, and releases it.
   - It reaches complete accessibility mode anyway, about 1.5 to 1.7 s after the first observation (the `obs-timeline` cell). Until then its page controls advertise no AXPress.
   - The engine treats the process as fresh for 10 s after that first observation. A click inside that window waits for the action (up to 2 s), and its answer lands about 1.6 to 1.9 s after the observation.
   - A click after the action exists answers in 105 to 181 ms.

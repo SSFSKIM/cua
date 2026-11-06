@@ -425,7 +425,7 @@ func webAreaAction(role: String, actions: [String]?) -> String? {
 /// 42131623237: a checkbox began advertising AXPress 1.6 to 1.7 s after the engine's enablement write, with no
 /// activation at all): every 100 ms for up to 2 s, posting nothing. Fresh: under `webAreaFreshEnablementMs` since the
 /// process's first observation or the engine's last enablement write attempt, failed or not (`WebAccessibility.freshSince`;
-/// on Chrome for Testing the write fails), or no observation has seen a web area in it yet.
+/// on Chrome for Testing the write answers -25208, #292), or no observation has seen a web area in it yet.
 let webAreaActionRereadMs: Double = 2_000
 let webAreaActionRereadSampleMs: Double = 100
 let webAreaFreshEnablementMs: Double = 10_000

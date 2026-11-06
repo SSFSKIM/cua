@@ -186,8 +186,9 @@ export function createService({nodeRepl, client = null}) {
     }
     return (client = createEngineClient({nodeRepl, appPath, cursor: cursorParams(nodeRepl?.env), desktop: desktopMode(nodeRepl?.env)}));
   };
-  // end_task: the cursor fades and the engine connection closes, if this session's client ever reached the engine; the
-  // next engine-bound request reconnects (client.mjs `release`, #237). Nothing here waits on the engine.
+  // end_task: the cursor fades, the engine is told the task ended (its web enablement goes at once, #292), and the engine
+  // connection closes, if this session's client ever reached the engine; the next engine-bound request reconnects
+  // (client.mjs `release`, #237). Nothing here waits on the engine.
   nodeRepl?.addTurnEndedHandler?.({timeoutMs: TURN_ENDED_MS, run: () => client?.release?.()});
   // A non-shipping build names its variant (#187's control build), so a sitting attests the half that answered.
   const nativeEngine = identity => ({engine: 'cua', version: identity.engineVersion, build: identity.build,

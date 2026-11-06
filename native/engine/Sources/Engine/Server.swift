@@ -71,6 +71,7 @@ final class Server: @unchecked Sendable {
     takeLock()
     bindSocket()
     engine.server = self
+    Lifecycle.beforeSignalExit = { [engine] in engine.webAccessibility.releaseAll() }  // SIGTERM's stop releases too (#292)
     Lifecycle.started(socket: paths.socket)
     let thread = Thread { [self] in acceptLoop() }
     thread.name = "cua-engine accept"
@@ -185,7 +186,7 @@ final class Server: @unchecked Sendable {
     connection.endMenuInteraction()  // a held menu activation goes with its connection (MenuSpan.swift)
     connection.endFocusHold()  // and its focus hold (FocusHold.swift)
     engine.connectionClosed(connection)  // its drives end, the intervention tap with the last (Intervention.swift)
-    engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now (Enablement.swift)
+    engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now, after its grace (Enablement.swift)
     engine.cursor.closed(connection: connection.id)  // its cursor's panel goes, after a fade under way (Cursor/CursorHub.swift)
   }
 

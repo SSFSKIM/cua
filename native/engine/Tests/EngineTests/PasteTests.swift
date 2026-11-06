@@ -1576,7 +1576,7 @@ extension PasteActivationTests {
     let launched = processGeneration(launchDate: nil, pid: target)
     XCTAssertEqual(engine.webAccessibility.enable(pid: target, launched: launched, connection: 1, access: access), "AXManualAccessibility")
     XCTAssertEqual(engine.pasteNotificationSource(registered: true, app: chrome, pid: target), .trusted)
-    engine.webAccessibility.release(connection: 1)
+    engine.webAccessibility.release(connection: 1, immediately: true)  // end_task (#292)
     XCTAssertEqual(engine.pasteNotificationSource(registered: true, app: chrome, pid: target), .untrusted, "written back")
   }
 }

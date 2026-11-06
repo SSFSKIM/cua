@@ -1959,6 +1959,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   element route's allowlist (the textarea and an editable-ancestor hit refused, a button passing) and its value check (an unchanged checkbox answering clickUnconfirmed); the walk (a label child pressing its button, an editable element or another interactive role in between refusing) and the re-read (a late action found at 1.6 s and pressed, a timeout refused, no wait where not fresh); the ping's per-connection mode. The service's ping and pass-through, the launch's mode,
   doctor's row and the client's ping in their JS suites). Nothing live ran: the hosted Chrome for Testing A/B of the
   ruling's acceptance is the next step.
+  Corrected by #292's entry below: the write "failing" on Chrome for Testing is Chrome's -25208 answer to the
+  AXEnhancedUserInterface write, which takes effect.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's ruling on #282.
 - Decision (#283, 2026-11-05, `fix/283-web-text-focus`; the design session's rulings, 1ea561bc a9607cd9, on the
   proposal b93055dd:293; amends #282's entry above): **in shared mode a plain left click into a background Chromium
@@ -2056,7 +2058,51 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   after the observation, and in 1.5 to 1.9 s 0.1 s after it, by the re-read (32 of 32 fresh clicks in the repeat run).
   The password field is focused only, and a padding click is focused but not placed. Every cell had zero pointer events,
   TextEdit stayed frontmost, and Chrome was not raised.
+  Corrected by #292's entry below: the enablement write these runs report as failed (-25208) is Chrome's answer to the
+  AXEnhancedUserInterface write, which takes effect.
   Date/Author: 2026-11-05, cursor235 for the design session's rulings on #283.
+- Decision (#292, 2026-11-05, `fix/288-fresh-chrome`; the design session's rulings, 1ea561bc ecc2143d, and the
+  owner's: on a shared desktop AXEnhancedUserInterface is acceptable while cua drives that Chrome, provided cua releases
+  it when done; corrects #282's and #283's entries above): **the engine owns and releases the EUI write Chrome answers
+  with -25208, at end_task, at the engine's stop, or 30 s after the last connection observing or acting on that Chrome
+  closed.**
+  1. **The correction** (#288's hosted spike, `probe/288-hosted`, runs 42161269408 and 42162367095; Chrome for Testing
+     156). Chrome lists AXEnhancedUserInterface and not AXManualAccessibility (Electron's; Chromium's source has none),
+     so the engine writes EUI to Chrome. Chrome answers that write with -25208 (kAXErrorNotImplemented) and acts on it:
+     complete mode arrives about 2.2 s later (chrome_browser_application_mac.mm's 2 s debounce) and the attribute then
+     reads true. #282's and #283's texts, and the evidence READMEs of 2026-11-05, call that answer a failed
+     AXManualAccessibility write: it is the EUI write, and it takes effect. Since the engine took it for a failure it
+     never owned the attribute, and Chrome kept complete mode, the screen-reader flag and animated window moves (3 to 5
+     frames, 80 to 156 ms, against 2 frames and 10 to 90 ms) past the connection's close, the engine's SIGTERM and after.
+  2. **Ownership** (`enableReporting`). A write answering -25208 counts as set when the attribute reads true right after
+     it, and is owned by the A3 rule as any set: only when it read false before the write, or the engine wrote it back
+     since. Still false after it is not set and not owned. `enablementWrite` reports "success" for such a set, with
+     `enablementWriteError` -25208 beside it. The write back (`releaseIfUnobserved`) counts -25208 as done, unread (the
+     attribute may read true after a write-back: AppKit's readback), and is not retried; Chrome drops complete mode in 4
+     to 150 ms.
+  3. **The release, whichever comes first.** (a) end_task: the service's end_task hook sends `endTask` before it closes
+     the connection (client.mjs `release`), and the engine releases at once every process whose only remaining observer
+     or last actor was that connection (an older engine answers methodNotFound, unread). (b) The engine's stop: the
+     shutdown request, as before, and now a termination signal (`Lifecycle.beforeSignalExit`); SIGKILL leaves it on.
+     (c) `enablementReleaseGraceMs`, 30 s, after the last connection observing or acting on the process closed without
+     end_task (a transport failure, a worker restart, a crash): a timer on the global queue, keyed per process by a
+     token that a new observation, an input to the process or a later close replaces, so only the newest timer
+     releases, and an observation or input within the grace cancels it. An input counts as an observation does
+     (`noteActivity`, every input method of a resolved app): its connection joins the process's observers. The release
+     still takes the entry's lock and re-checks that nothing observes the process, so an observation beginning during it
+     shares the lock and reads after the reset, as before. A grace of 0 is the previous immediate release.
+  4. **Limits.** EUI stays on while cua drives that Chrome: until release (end_task, engine stop, or 30 s after cua's
+     last action on that Chrome); SIGKILL leaves it on. Each task after an end_task pays Chrome's 2.2 s debounce again
+     (#288's latency); no early write at first resolution is made (the design session dropped it).
+  Proven offline (`EnablementOwnershipAndGraceTests`, 14: -25208 with a true readback owned and released, with a false
+  one not owned, a value read true before never written, the write back's -25208 done and not retried, the grace's
+  release at 30 s and not before, a re-observation at 20 s cancelling the 30 s release, only the newest timer
+  releasing, an input cancelling it and holding the process, end_task at once for the last actor only, the stop at once
+  during a grace, 0 as the immediate release, an observation during the grace's reset re-enabling, the `endTask`
+  request; the existing release tests at grace 0; the client's and the service's endTask order in their JS suites).
+  Nothing live ran: the hosted check (EUI reads false after end_task, a checkbox loses AXPress, the window moves
+  without animation) is the next step.
+  Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #292.
 
 ## Outcomes & Retrospective
 

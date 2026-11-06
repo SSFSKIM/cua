@@ -19,11 +19,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rep: [1, 2]
+        rep: [2, 4]  # even reps run the branch first; run 42304011277 ran reps 1 and 2 of every group below
         # The full A/B ran at 198bfa09 (run 42269993080: chrome, safari, finder, textedit and #296's s296-* groups). This
         # push re-runs Safari split in two (its job timed out at 120 min) and the Chrome and Finder sweeps (a re-find
         # that skipped controls on a shifted page); a group <app>-<part> runs one part of scripts/probe-305/ab.mjs.
-        group: [safari-spots, finder-spots, safari-sweep, s296-chrome, s296-final, s296-safari-final, s296-native-final]
+        group: [safari-sweep]  # 42304011277 rep 1 posted only 7 branch clicks (its pick observation, after main had navigated, held 6 controls)
     runs-on: macos-latest
     timeout-minutes: 180
     steps:

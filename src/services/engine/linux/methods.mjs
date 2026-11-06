@@ -3,9 +3,9 @@
 // behind it, plus the capability check:
 //
 // - The settle (./settle.mjs): every method but clipboard_release waits for the deferred settle before it reaches the
-//   engine; an input that succeeds defers the next one (clicks, keys, scroll, drag, move, text, clipboard_read and
-//   clipboard_write, activation, launch, each drag-handle step). Reads (the lists, observations, screenshots) defer
-//   nothing; a failure defers nothing.
+//   engine; an input that succeeds defers the next one by its own method's constant (clicks, keys, scroll, drag, move,
+//   text, clipboard_read and clipboard_write, activation, launch; each drag-handle step by drag_handle's). Reads (the
+//   lists, observations, screenshots) defer nothing; a failure defers nothing.
 // - Element ids (./ids.mjs): click, scroll, type_text and perform_secondary_action translate a decimal element_id after
 //   the wait; get_window_state numbers the tree it returns.
 // - Screenshots: each file the engine wrote is read in the request and answered as {filepath, data_url} (JPEG), the
@@ -48,7 +48,7 @@ export function createLinuxMethods({engine, settler, ids}) {
   const input = (command, {gate = null, resolve = false} = {}) => async request => {
     await settler.wait();
     await engine.request(command, (resolve ? ids.resolve(request) : request) ?? {}, gate ? needs(gate(request)) : undefined);
-    settler.defer();
+    settler.defer(command);
   };
   const read = command => async () => {
     await settler.wait();
@@ -66,18 +66,18 @@ export function createLinuxMethods({engine, settler, ids}) {
         if (state !== 'idle') throw new Error('drag handle can only be started once');
         await step(Object.assign({action: 'start'}, point), needs('input.desktop'));
         state = 'dragging';
-        settler.defer();
+        settler.defer('drag_handle');
       },
       async move_to(point) {
         if (state !== 'dragging') throw new Error('drag handle must be started before moving');
         await step(Object.assign({action: 'move_to'}, point));
-        settler.defer();
+        settler.defer('drag_handle');
       },
       async end() {
         if (state !== 'dragging') throw new Error('drag handle must be started before ending');
         await step({action: 'end'});
         state = 'ended';
-        settler.defer();
+        settler.defer('drag_handle');
       },
     };
   }
@@ -88,7 +88,7 @@ export function createLinuxMethods({engine, settler, ids}) {
     async clipboard_read(request) {
       await settler.wait();
       const handle = await engine.request('clipboard_read', request ?? {});
-      settler.defer();
+      settler.defer('clipboard_read');
       return handle;
     },
     async clipboard_release(request) {

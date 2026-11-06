@@ -5,12 +5,28 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createService, LINUX_METHODS} from '../../src/services/engine/linux/service.mjs';
+import {ActionSettler, SETTLE_MS} from '../../src/services/engine/linux/settle.mjs';
 import {fakeLinuxEngine, SHOT_BYTES, TREE, WINDOWS} from '../helpers/fake-linux-engine.mjs';
 
 const W = WINDOWS[0];
 const JPEG_URL = `data:image/jpeg;base64,${SHOT_BYTES.toString('base64')}`;
-// A settler double that records each wait and defer in order.
-const recordingSettler = events => ({wait: async () => { events.push('wait'); }, defer: () => { events.push('defer'); }});
+// A settler double that records each wait and defer in order, each defer with the method it names.
+const recordingSettler = events => ({wait: async () => { events.push('wait'); }, defer: method => { events.push(`defer ${method}`); }});
+// A settler double whose wait, once `hold` is called, does not return until the test lets it go: a test orders a call
+// that waits against one that does not, by what it awaits and not by the settle's length.
+function heldSettler() {
+  let holding = false;
+  const held = [];
+  const waiting = [];
+  return {
+    wait: () => (holding ? new Promise(resolve => { held.push(resolve); waiting.splice(0).forEach(notify => notify()); }) : Promise.resolve()),
+    defer: () => {},
+    hold: () => { holding = true; },
+    // resolves once a call is waiting
+    waiting: () => (held.length ? Promise.resolve() : new Promise(notify => waiting.push(notify))),
+    release: () => { holding = false; held.splice(0).forEach(resolve => resolve()); },
+  };
+}
 
 function service(t, engine, {env = {}, settler} = {}) {
   const made = createService({env: {CUA_ENGINE_BIN: engine.path, ...env}, ...(settler ? {settler} : {})});
@@ -63,7 +79,7 @@ test('an engine the service cannot drive: setup still answers the methods, every
   assert.deepEqual(shared.spawns()[0].args, ['server', '--desktop', 'shared'], 'shared when the launch names none');
 });
 
-test('the capability is checked against the engine that receives the command: one restarted during the settle is judged by its own report', async t => {
+test('the capability is checked against the engine that receives the command: one restarted while a call waits for the settle is judged by its own report', async t => {
   // The first engine reports background input and dies on clipboard_release; the one started after it reports none.
   const engine = fakeLinuxEngine(t);
   engine.behave(`import {existsSync, writeFileSync} from 'node:fs';
@@ -77,11 +93,16 @@ test('the capability is checked against the engine that receives the command: on
       }
       if (command === 'clipboard_release') return {exit: 1};
     }`);
-  const svc = service(t, engine);
+  const settler = heldSettler();
+  const svc = service(t, engine, {settler});
   await execute(svc, 'press_key', {window: W, key: 'a'});
-  // The click waits out the settle the key deferred; meanwhile clipboard_release, which never waits, ends the engine.
+  // The click waits for the settle, held there until the test lets it go; meanwhile clipboard_release, which never
+  // waits, ends the engine.
+  settler.hold();
   const click = execute(svc, 'click', {window: W, x: 1, y: 1});
+  await settler.waiting();
   await assert.rejects(execute(svc, 'clipboard_release', {handle: 'h'}), {message: /^cua-engine stopped \(exit=1\)/});
+  settler.release();
   await assert.rejects(click, {message: 'cua-engine cannot send input to a window in the background on this desktop: its later backend reports no input.background capability'});
   const [, second] = engine.spawns();
   assert.ok(second, 'a second engine was started for the click');
@@ -167,18 +188,45 @@ test('the settle: input waits then defers; reads wait and never defer; clipboard
   await record('clipboard_read', () => execute(svc, 'clipboard_read', {window: W}));
   await record('clipboard_release', () => execute(svc, 'clipboard_release', {handle: 'handle-1'}));
   await record('activate_window', () => execute(svc, 'activate_window', {window: W}));
-  assert.deepEqual(events, ['click', 'wait', 'defer', 'list_windows', 'wait', 'get_window_state', 'wait', 'get_screenshot', 'wait', 'clipboard_read', 'wait', 'defer',
-    'clipboard_release', 'activate_window', 'wait', 'defer']);
+  assert.deepEqual(events, ['click', 'wait', 'defer click', 'list_windows', 'wait', 'get_window_state', 'wait', 'get_screenshot', 'wait', 'clipboard_read', 'wait', 'defer clipboard_read',
+    'clipboard_release', 'activate_window', 'wait', 'defer activate_window']);
 });
 
-test('the settle\'s real clock: the call after an input waits out the 100 ms', async t => {
+test('the settle: every input method defers by its own name, each drag-handle step by drag_handle\'s', async t => {
   const engine = fakeLinuxEngine(t);
-  const svc = service(t, engine);
+  const events = [];
+  const svc = service(t, engine, {settler: recordingSettler(events)});
+  const inputs = {perform_secondary_action: {window: W, element_id: '0', action: 'expand'}, click: {window: W, x: 1, y: 1}, clipboard_write: {window: W, handle: 'h'},
+    drag: {window: W, path: [{x: 1, y: 1}, {x: 2, y: 2}]}, activate_window: {window: W}, move: {window: W, x: 1, y: 1}, move_relative: {dx: 1, dy: 1},
+    press_key: {window: W, key: 'a'}, key_down: {window: W, key: 'a'}, key_up: {window: W, key: 'a'}, scroll: {window: W, x: 1, y: 1, direction: 'down'},
+    type_text: {window: W, text: 'x'}, launch_app: {app: 'x'}, clipboard_read: {window: W}};
+  await execute(svc, 'get_window_state', {window: W, include_screenshot: false});
+  for (const [method, input] of Object.entries(inputs)) {
+    events.length = 0;
+    await execute(svc, method, input);
+    assert.deepEqual(events, ['wait', `defer ${method}`], method);
+  }
+  events.length = 0;
+  await svc.handleRpc({type: 'drag_start', handle_id: 'h', point: {x: 1, y: 1}});
+  await svc.handleRpc({type: 'drag_move', handle_id: 'h', point: {x: 2, y: 2}});
+  await svc.handleRpc({type: 'drag_end', handle_id: 'h'});
+  assert.deepEqual(events, ['wait', 'defer drag_handle', 'wait', 'defer drag_handle', 'wait', 'defer drag_handle']);
+  assert.deepEqual(Object.keys(SETTLE_MS).sort(), [...Object.keys(inputs), 'drag_handle'].sort(), 'the settle has a constant for every method that defers, and only for those');
+});
+
+test('the settle\'s real clock: the call after an input waits out that input\'s constant', async t => {
+  const engine = fakeLinuxEngine(t);
+  const settles = {...SETTLE_MS, press_key: 100, click: 0};
+  const svc = service(t, engine, {settler: new ActionSettler({settles})});
   await execute(svc, 'list_windows');
   await execute(svc, 'press_key', {window: W, key: 'a'});
-  const started = performance.now();
+  let started = performance.now();
   await execute(svc, 'list_windows');
-  assert.ok(performance.now() - started >= 95, `waited ${performance.now() - started} ms`);
+  assert.ok(performance.now() - started >= 95, `waited ${performance.now() - started} ms after press_key`);
+  await execute(svc, 'click', {window: W, x: 1, y: 1});
+  started = performance.now();
+  await execute(svc, 'list_windows');
+  assert.ok(performance.now() - started < 50, `waited ${performance.now() - started} ms after a click whose constant is 0`);
 });
 
 test('drag handles: start, move_to and end reach the engine as drag_handle actions; the vendor\'s state sentences', async t => {

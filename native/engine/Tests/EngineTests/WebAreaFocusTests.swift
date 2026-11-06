@@ -200,6 +200,18 @@ final class WebAreaFocusTests: XCTestCase {
     }
   }
 
+  /// A line on a display above the primary one (y -100..<-80): a next box read as CGRect.zero lies below it in
+  /// coordinates, yet is no box, so the line's end is unknown; a real box on the line below still marks a soft wrap.
+  func testAnEmptyNextBoxIsNoSoftWrapAtNegativeScreenCoordinates() {
+    let line: [CGRect] = [CGRect(x: 0, y: -100, width: 10, height: 20), CGRect(x: 10, y: -100, width: 10, height: 20)]
+    let point = CGPoint(x: 90, y: -95)
+    XCTAssertNil(caretOffset(at: point, length: 4, range: 0..<2, bounds: { $0 < 2 ? line[$0] : .zero }, isLineBreak: { _ in false }),
+                 "the next boxes empty")
+    let wrapped = line + [CGRect(x: 0, y: -80, width: 10, height: 20), CGRect(x: 10, y: -80, width: 10, height: 20)]
+    XCTAssertEqual(caretOffset(at: point, length: 4, range: 0..<2, bounds: { wrapped[$0] }, isLineBreak: { _ in false }), 2,
+                   "a soft wrap at negative y")
+  }
+
   func testAnEmptyFieldIsPlacedAtZero() {
     XCTAssertEqual(caretOffset(at: CGPoint(x: 50, y: 50), length: 0, range: 0..<0, bounds: { _ in nil }, isLineBreak: { _ in false }), 0)
     XCTAssertEqual(textCaretOffset(at: CGPoint(x: 50, y: 50), value: "", visible: nil, bounds: { _ in nil }), .success(0))

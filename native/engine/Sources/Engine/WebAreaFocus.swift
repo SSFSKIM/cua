@@ -99,7 +99,7 @@ func webAreaFocusTarget<Element>(_ hit: Element, role: (Element) -> String?, sub
 /// before the character on its left half and after it on its right; past a line's last character (to the right of every
 /// box in the line the point's height falls in), the end of that line, before its line break. That end counts only
 /// once it is established: a line break's own box, or after the rightmost character read when the next offset is the
-/// text's end, a line break, or a character whose box starts below this one's (a soft wrap; read even outside
+/// text's end, a line break, or a character whose non-empty box starts below this one's (a soft wrap; read even outside
 /// `range`). Otherwise the rightmost box read need not be the line's last (a failed read, a scan cut to the visible
 /// characters). An empty text is 0. Nil when no box holds the point and it is past no established line end, or the
 /// range is longer than `caretScanLimit`.
@@ -123,7 +123,8 @@ func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int
   guard let lineEnd, point.x >= lineEnd.x else { return nil }
   let end = lineEnd.offset
   guard let after = lineEnd.after, end < length, !isLineBreak(end) else { return end }
-  if let next = bounds(end), next.minY >= after.maxY { return end }
+  // Only a usable box (as the scan's own) shows a lower line: an empty one, such as CGRect.zero, is no box at all.
+  if let next = bounds(end), next.width > 0, next.height > 0, next.minY >= after.maxY { return end }
   return nil
 }
 

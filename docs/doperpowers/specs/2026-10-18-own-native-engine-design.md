@@ -533,7 +533,8 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     (the window's frame read again just before the events; null when the click stopped before them or it was unread)}
   stalePoint: #296's stale-point guard at a coordinate click's point or a drag's start, on its result and its errors once the
     point is placed: {verdict ("kept" | "refused"), reason ("unrecorded" | "sameElement" | "noHit" | "nonInteractiveHit" |
-    "hitAboveNode" | "unrecordedDescendant" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther"), identity? ("handle" | "recreated"), recordedRole?, hitRole?, ms, rechecked? (true: #282's or #283's
+    "hitAboveNode" | "unrecordedDescendant" | "recordedHit" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther"), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
+    `recordedHit`), ms, rechecked? (true: #282's or #283's
     route waited and the guard ran again before the press; the verdict is that check's, ms both checks'), afterActivation?
     (true: that check ran after the route's focus hold had activated the app)}; roles only, never a title
   note: on a paste or type_text result that pasted a line with no channel to see it, read after ⌘V (#187): the sentence
@@ -2217,7 +2218,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     built.
   Date/Author: 2026-11-06, cursor235 for the design session's ruling on #294.
 
-- Decision (#296, 2026-11-06, `fix/296-stale-point`; the design session's rulings, 1ea561bc ee29283e and 0c0b70f0, on
+- Amended by the #305 entry (2026-11-06, below): an interactive hit, or an element route's target, that is itself a
+  recorded node the screenshot showed at the point, still there, is kept as `recordedHit` (items 5 and 2b).
+  Decision (#296, 2026-11-06, `fix/296-stale-point`; the design session's rulings, 1ea561bc ee29283e and 0c0b70f0, on
   #294's spike and #296's false-positive table): **a coordinate click or drag is refused, with nothing posted, in both
   device modes, when what the screenshot its coordinates came from showed at the point is gone, has moved off it, or
   has given way to another interactive element.** A declared divergence: the vendor posts at the point blindly.
@@ -2604,6 +2607,87 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Proven offline: `swift test` (`VisibleFirstTests` without the seeding's tests, the limit's test above) and the
   renderer's marker test; the first-call documents in their suites.
   Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling 66f90453 on #301.
+
+- Decision (#305, 2026-11-06, `fix/305-recorded-hit`; the design session's ruling 45f5e5be on #305's live check, amended
+  by ruling a27fc57c on the hosted A/B (item 2); the live check's runs
+  42251639474, 42256453844 and 42262640885 on c4057c3a and 4525925e, kit `probe/305-hosted` a6562d00; amends #296's
+  items 2b and 5): **an interactive hit that is itself a recorded node the screenshot showed at the point, still there,
+  is kept as `recordedHit`.** The live check clicked real coordinates on still pages and found #296 refusing every
+  flagged point as `interactiveHit` with `identity: handle` (Safari's toolbar 12 of 12, Finder's list view 12 of 12,
+  GitHub's code view 6 of 6, Wikipedia's hatnotes 4 of 8; every control point kept): the recorded node was in place and
+  held the point, while the hit was another interactive element the guard could not relate to it. Three layouts make
+  the deepest recorded node at a point something other than what the hit-test answers:
+  - **Stacking order.** GitHub's overlay AXTextArea (`#read-only-cursor-text-area`) is a sibling of the code-lines
+    AXGroup at the same depth and frame; the tie goes to the later group, while Chromium answers the textarea on top.
+    In Safari on macOS 26 the page view AXGroup (depth 4) spans the whole window under the toolbar, whose controls sit
+    at depth 2 and 3.
+  - **Wrapped text.** A two-line link's AXStaticText box (614 × 44) takes in the link before it, which the hit-test
+    answers.
+  - **The edge.** Finder's name AXTextField starts at x 231 and answers the hit-test at x 230, where the chosen node is
+    its complete parent AXCell.
+  1. **The rule** (ruling 45f5e5be, rules 2 and 3 as amended by ruling a27fc57c). Where the verdict would be
+     `interactiveHit`, and on #282's element route where it would be `pressedOther`, the click is kept as `recordedHit`
+     when all three hold (`recordedHitAtPoint`): (a) the hit is itself a recorded node, its handle `CFEqual` to a
+     recorded one, or by #296's full re-created identity (its role, a frame within 2 pt of the recorded one moved by
+     the window's shift, and a title, else description, that agrees where both read), no looser match; (b) the hit has
+     not moved: its frame read now lies within 2 pt of its recorded frame moved by the window's shift; (c) the point, in
+     the screenshot's space (the posted point less the window's shift, as the guard already places it), lies in a shown
+     frame widened by 2 pt: the hit's own, or else that of the hit's nearest recorded ancestor (the nearest framed node
+     above it in the record, frameless ones passed through), when that ancestor has not moved either (its frame read now
+     within 2 pt of its recorded one), is not an AXWindow, AXWebArea, AXScrollArea, AXSplitGroup or AXApplication, and
+     covers at most a quarter of the window's area (the record's root); an ancestor that fails any of these leaves the
+     hit's own frame alone, and none further up is tried. A shown frame is the part the clipping ancestors left in the
+     image (`ScreenshotNode.shown`), so a node scrolled under a clipping boundary (page content under a browser's
+     toolbar) never passes there, however its AX frame lies (the coordinator's ruling on the build: "the screenshot
+     showed this element at this point" means the part it showed). The chosen node's own checks (`nodeGone`,
+     `frameMoved`, the incomplete container's condition and #301's thin-gap rule) run first, unchanged, so every class
+     #296 refused still refuses: the chosen node gone, swapped or moved is judged before the hit is looked at. The reason
+     is its own in `cua/stalePoint` (a kept verdict), and a new field, `recordedHitBy` (`"hit"` | `"ancestor"`), says
+     which frame carried the point, so the evidence can count which rule carried each click.
+  2. **The amendment** (ruling a27fc57c, on the hosted A/B on 62e9f026, runs 42269993080, 42294564231 and
+     42299375682). The A/B kept every still-page point bar one and refused every cell of #296's stale suite, at a
+     `recordedHit` cost of p95 2.9 ms, every pass matched by `CFEqual`. The one refusal was Safari's address field at
+     (460, 50), 8 pt above its frame (y 58–89): Safari answers the field anywhere in its toolbar item's padding, and the
+     field's recorded parent AXGroup spans y 40–92. The first build's (c), "its frame read now, widened by 2 pt, holds
+     the posted point", became (b), the hit has not moved, and the ancestor's frame was added to (c). Where (c) reaches
+     the ancestor, Finder's list view keeps a point 3 pt left of the name field inside its unmoved AXCell, which the
+     first build refused.
+  3. **Three readings of the implementer's** where the ruling is silent. (i) The re-created identity applies only while
+     the recorded node's own handle reads no frame, as #296 takes a re-created handle only when the node's handle is
+     gone; a hit that is a live lookalike of a recorded node (another element of its role, frame and label over it) is
+     not that node, so a new button covering a recorded twin still refuses (`VisibleFirstTests`' strip test, which
+     would flip to kept otherwise). (ii) A hit that is a recorded handle is that node and no other: its own recorded
+     frames decide (b) and (c), and no gone lookalike at the point stands in for it. (iii) The meta says which frame
+     carried the point (`recordedHitBy`), but not whether the hit matched by handle or by the re-created identity.
+  4. **The limits.** (i) The ruling's: two recorded elements that overlapped at the point in the screenshot can trade
+     places on top while both stay in place, and the click then lands on the one now on top. (ii) A recorded popover
+     hidden with `opacity:0` keeps receiving the click, and one hidden with `opacity:0` and `pointer-events:none` lets
+     the click through to the button under it, since the AX hit-test still answers the popover's text; both pass as
+     `nonInteractiveHit`, not `recordedHit`, as they do on main. One hidden with `visibility:hidden` refuses as
+     `nodeGone`. (iii) Inside an ancestor that carries (c), the point may lie in the ancestor's padding beside the hit
+     rather than on it, so a recorded control answering anywhere in its small, unmoved container passes.
+     `docs/cua-api/agent-cursor.md`'s guard paragraph states none of the guard's limits, so it is unchanged.
+  5. **The cost:** nothing at a point #296 kept; where it would refuse, the hit's frame, role and labels, a `CFEqual`
+     pass over the record, a frame read per recorded node of the hit's role and frame whose handle it does not match,
+     and the ancestor's frame.
+  Proven offline (`RecordedHitTests`, 11; the removal of each rule, each bound and each excluded role fails at least
+  one test, by mutation, `~/.local/share/187/mutate-305.py`): GitHub's overlay sibling, also with the window moved
+  700 pt; Safari's address field and Reload over the full-window page view; Safari's toolbar padding carried by the
+  field's parent AXGroup (`recordedHitBy` `ancestor`, on the element route too), refused when the parent moved and when
+  the field moved inside its unchanged parent; the wrapped link text over its neighbour; Finder's edge kept by the
+  field at 1 and 2 pt and by its cell at 3 pt and 2 pt past the cell, refused 3 pt past the cell, and under an area
+  role 3 pt past the field; a recorded hit unrelated to the point inside a container refused for each excluded role, for
+  a group over a quarter of the window, and for a small group above the nearest ancestor, kept for a group of a quarter
+  or less; rule (a)'s re-created match kept in place and within 2 pt, refused 3 pt off, with another label, another
+  role, as a live lookalike, as a new element, and as a recorded node from elsewhere in a gone lookalike's place; the
+  clipping, page links scrolled under Chrome's toolbar answered at a toolbar point refused wholly and partly clipped
+  out (kept 1 pt from where one showed; the test fails under the full AX frame); rule (b)'s moved and unread frame
+  refused; every #296 class still refused (#294's frame re-read with the same handle and with a recorded Forward in
+  Reload's place, a moved button with a recorded neighbour slid in, a feed prepend, a swapped-in element new or
+  recorded, a link that replaced a button, a same-role swap with a changed label, a hit recorded elsewhere); and the
+  element route kept as `recordedHit` (and after its wait's recheck), refused `pressedOther` for a target recorded
+  elsewhere, moved over the point, new, or with its frame off the point.
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's rulings 45f5e5be and a27fc57c on #305.
 
 ## Outcomes & Retrospective
 

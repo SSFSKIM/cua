@@ -635,6 +635,381 @@ final class StalePointTests: XCTestCase {
   }
 }
 
+// MARK: #305: a hit that is itself a recorded node at the point (the design session's ruling 45f5e5be)
+
+/// #305's live check (runs 42251639474, 42256453844, 42262640885) found the deepest recorded node at a point is not always
+/// what the hit-test answers on a still page, and #296 refused those clicks as `interactiveHit`. A hit that is itself a
+/// recorded node, whose recorded frame and frame read now, each widened by 2 pt, hold the point, is kept as `recordedHit`.
+final class RecordedHitTests: XCTestCase {
+  /// GitHub's code view: the overlay AXTextArea and the code-lines AXGroup, siblings at one depth and one frame. The tie
+  /// goes to the later group; Chromium's hit-test answers the textarea stacked on top.
+  private struct Overlay {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 1000, height: 800))
+    let main = Node("AXGroup", CGRect(x: 0, y: 100, width: 1000, height: 700))
+    let textArea = Node("AXTextArea", CGRect(x: 100, y: 200, width: 800, height: 400), description: "file content")
+    let lines = Node("AXGroup", CGRect(x: 100, y: 200, width: 800, height: 400))
+    let share = Node("AXButton", CGRect(x: 900, y: 120, width: 60, height: 30), title: "Share")
+    init() {
+      window.add(main)
+      main.add(share)
+      main.add(textArea)
+      main.add(lines)
+    }
+  }
+  private let codePoint = CGPoint(x: 300, y: 300)
+
+  func testAnOverlaySiblingStackedOnTopIsARecordedHit() {
+    let page = Overlay()
+    let nodes = recorded(page.window)
+    XCTAssertTrue(deepestScreenshotNode(at: codePoint, in: nodes)?.element === page.lines, "the tie goes to the later sibling")
+    let kept = verdict(nodes, at: codePoint, hit: page.textArea)
+    XCTAssertEqual(kept.reason, .recordedHit)
+    XCTAssertFalse(kept.refused)
+    XCTAssertNil(stalePointOutcome(kept, ms: 0, reads: reads).refusal)
+    XCTAssertEqual(StalePointRecord(kept, ms: 0.5).wire as NSDictionary,
+                   ["verdict": "kept", "reason": "recordedHit", "recordedHitBy": "hit", "identity": "handle", "recordedRole": "AXGroup",
+                    "hitRole": "AXTextArea", "ms": 0.5] as NSDictionary, "a reason of its own in cua/stalePoint")
+    // The window moved 700 pt since: the same reading, the recorded frame taken in the screenshot's space.
+    let shift = CGVector(dx: 700, dy: 20)
+    move(page.window, by: shift)
+    XCTAssertEqual(verdict(nodes, at: CGPoint(x: codePoint.x + 700, y: codePoint.y + 20), shift: shift, hit: page.textArea).reason, .recordedHit)
+  }
+
+  /// Safari on macOS 26: the page view AXGroup (depth 4) spans the whole window under the toolbar, whose controls sit at
+  /// depth 2 and 3 under AXWindow.
+  func testAToolbarControlOverAFullWindowPageViewIsARecordedHit() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 1200, height: 800))
+    let address = Node("AXTextField", CGRect(x: 310, y: 12, width: 540, height: 28), description: "Smart Search Field")
+    let reload = Node("AXButton", CGRect(x: 860, y: 12, width: 28, height: 28), description: "Reload this page")
+    window.add(Node("AXToolbar", CGRect(x: 0, y: 0, width: 1200, height: 52), [Node("AXGroup", CGRect(x: 300, y: 10, width: 600, height: 32), [address, reload])]))
+    let pageView = Node("AXGroup", CGRect(x: 0, y: 0, width: 1200, height: 800))
+    window.add(Node("AXSplitGroup", CGRect(x: 0, y: 0, width: 1200, height: 800),
+                    [Node("AXTabGroup", CGRect(x: 0, y: 0, width: 1200, height: 800), [Node("AXGroup", CGRect(x: 0, y: 0, width: 1200, height: 800), [pageView])])]))
+    let nodes = recorded(window)
+    for (control, point) in [(address, CGPoint(x: 400, y: 26)), (reload, CGPoint(x: 874, y: 26))] {
+      XCTAssertTrue(deepestScreenshotNode(at: point, in: nodes)?.element === pageView, "the page view is deeper")
+      XCTAssertEqual(verdict(nodes, at: point, hit: control).reason, .recordedHit, control.role)
+    }
+  }
+
+  /// Wikipedia's hatnote: the second link's text wraps across two lines, so its 614 × 44 box takes in the first link,
+  /// which is what the hit-test answers.
+  func testAWrappedTextsBoxOverItsNeighbourIsARecordedHit() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 800, height: 600))
+    let first = Node("AXLink", CGRect(x: 200, y: 100, width: 150, height: 20), title: "Mercury (planet)",
+                     [Node("AXStaticText", CGRect(x: 200, y: 100, width: 150, height: 20), title: "Mercury (planet)")])
+    let wrapped = Node("AXStaticText", CGRect(x: 100, y: 100, width: 614, height: 44), title: "Mercury (element), the chemical element")
+    let second = Node("AXLink", CGRect(x: 100, y: 100, width: 614, height: 44), title: "Mercury (element)", [wrapped])
+    window.add(Node("AXWebArea", CGRect(x: 0, y: 0, width: 800, height: 600), [Node("AXGroup", CGRect(x: 0, y: 100, width: 800, height: 44), [first, second])]))
+    let nodes = recorded(window)
+    let point = CGPoint(x: 260, y: 110)
+    XCTAssertTrue(deepestScreenshotNode(at: point, in: nodes)?.element === wrapped)
+    XCTAssertEqual(verdict(nodes, at: point, hit: first).reason, .recordedHit)
+  }
+
+  /// Finder's list view: the name AXTextField's frame starts at x 231, and the hit-test answers it at x 230, where the
+  /// chosen node is its complete parent AXCell. The hit's own frame widened by 2 pt carries 1 and 2 pt past it; past
+  /// that, by ruling a27fc57c, its unmoved parent cell's does, up to 2 pt past the cell. Under a parent that cannot carry
+  /// it (an area role), 3 pt past the hit's own frame refuses.
+  func testAHitOnePointPastItsFrameIsARecordedHitAndThreeAreNot() {
+    func list(_ parentRole: String) -> (nodes: [ScreenshotNode<Node>], name: Node, parent: Node) {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let name = Node("AXTextField", CGRect(x: 231, y: 101, width: 160, height: 18), title: "report.pdf")
+      let parent = Node(parentRole, CGRect(x: 200, y: 100, width: 200, height: 20), [name])
+      window.add(Node("AXOutline", CGRect(x: 0, y: 50, width: 600, height: 350), [Node("AXRow", CGRect(x: 0, y: 100, width: 600, height: 20), [parent])]))
+      return (recorded(window), name, parent)
+    }
+    let (nodes, name, cell) = list("AXCell")
+    let edge = CGPoint(x: 230, y: 110)
+    XCTAssertTrue(deepestScreenshotNode(at: edge, in: nodes)?.element === cell)
+    for (x, by, why) in [(230, RecordedHitFrame.hit, "1 pt"), (229, .hit, "2 pt: the hit's bound"), (228, .ancestor, "3 pt: the cell's"),
+                         (198, .ancestor, "2 pt past the cell")] as [(CGFloat, RecordedHitFrame, String)] {
+      let kept = verdict(nodes, at: CGPoint(x: x, y: 110), hit: name)
+      XCTAssertEqual(kept.reason, .recordedHit, why)
+      XCTAssertEqual(kept.recordedHitBy, by, why)
+    }
+    XCTAssertEqual(verdict(nodes, at: CGPoint(x: 197, y: 110), hit: name).reason, .interactiveHit, "3 pt past the cell")
+    let (area, field, _) = list("AXWebArea")
+    XCTAssertEqual(verdict(area, at: CGPoint(x: 230, y: 110), hit: field).recordedHitBy, .hit, "1 pt: its own frame")
+    XCTAssertEqual(verdict(area, at: CGPoint(x: 228, y: 110), hit: field).reason, .interactiveHit, "3 pt, its parent an area")
+  }
+
+  /// Ruling a27fc57c (the A/B on 62e9f026): Safari answers its address field anywhere in its toolbar item's padding, so a
+  /// click 8 pt above the field's frame (y 58-89) lies in its recorded parent AXGroup (y 40-92), which carries it while
+  /// neither has moved. A field that moved inside its unchanged parent, or a parent that moved, refuses.
+  func testSafarisToolbarPaddingIsCarriedByTheFieldsRecordedParent() {
+    func toolbar() -> (window: Node, item: Node, field: Node) {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 1200, height: 800))
+      let field = Node("AXTextField", CGRect(x: 310, y: 58, width: 540, height: 31), description: "Smart Search Field")
+      let item = Node("AXGroup", CGRect(x: 300, y: 40, width: 600, height: 52), [field])
+      window.add(Node("AXToolbar", CGRect(x: 0, y: 30, width: 1200, height: 70), [item]))
+      let full = CGRect(x: 0, y: 0, width: 1200, height: 800)
+      window.add(Node("AXSplitGroup", full, [Node("AXTabGroup", full, [Node("AXGroup", full, [Node("AXGroup", full)])])]))  // the page view, depth 4
+      return (window, item, field)
+    }
+    let padding = CGPoint(x: 460, y: 50)
+    do {
+      let (window, _, field) = toolbar()
+      let nodes = recorded(window)
+      let kept = verdict(nodes, at: padding, hit: field)
+      XCTAssertEqual(kept.reason, .recordedHit)
+      XCTAssertEqual(StalePointRecord(kept, ms: 0).wire["recordedHitBy"] as? String, "ancestor", "the meta says which frame carried it")
+      XCTAssertEqual(verdict(nodes, at: CGPoint(x: 460, y: 70), hit: field).recordedHitBy, .hit, "inside the field: its own")
+      let first = verdict(nodes, at: padding, hit: nil)
+      XCTAssertEqual(stalePointPressVerdict(field, first, reads: reads).recordedHitBy, .ancestor, "the element route's counterpart")
+    }
+    do {
+      let (window, item, field) = toolbar()
+      let nodes = recorded(window)
+      item.frame = item.frame?.offsetBy(dx: 0, dy: 5)
+      XCTAssertEqual(verdict(nodes, at: padding, hit: field).reason, .interactiveHit, "the parent moved")
+    }
+    do {
+      let (window, _, field) = toolbar()
+      let nodes = recorded(window)
+      field.frame = field.frame?.offsetBy(dx: 0, dy: 3)
+      XCTAssertEqual(verdict(nodes, at: padding, hit: field).reason, .interactiveHit, "the field moved inside its unchanged parent")
+      XCTAssertEqual(verdict(nodes, at: CGPoint(x: 460, y: 70), hit: field).reason, .interactiveHit, "and inside its own frame")
+    }
+  }
+
+  /// Ruling a27fc57c's bounds: the nearest recorded ancestor carries the point only when it is no area role (AXWindow,
+  /// AXWebArea, AXScrollArea, AXSplitGroup, AXApplication) and covers at most a quarter of the window, and never one
+  /// further up: a recorded hit unrelated to what the point shows inside such a container is refused.
+  func testABigContainersAreaNeverCarriesAnUnrelatedRecordedHit() {
+    func container(_ role: String, _ frame: CGRect) -> StalePointVerdict<Node> {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 1000, height: 800))
+      let open = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30), title: "Open")
+      let note = Node("AXStaticText", CGRect(x: 200, y: 200, width: 100, height: 20), title: "Note")
+      window.add(Node(role, frame, [open, note]))
+      let nodes = recorded(window)
+      let point = CGPoint(x: 250, y: 210)
+      XCTAssertTrue(deepestScreenshotNode(at: point, in: nodes)?.element === note, role)
+      return verdict(nodes, at: point, hit: open)
+    }
+    let small = CGRect(x: 0, y: 0, width: 400, height: 300)  // 15% of the window
+    for role in ["AXWindow", "AXWebArea", "AXScrollArea", "AXSplitGroup", "AXApplication"] {
+      XCTAssertEqual(container(role, small).reason, .interactiveHit, role)
+    }
+    XCTAssertEqual(container("AXGroup", CGRect(x: 0, y: 0, width: 600, height: 400)).reason, .interactiveHit, "a group over a quarter (30%)")
+    XCTAssertEqual(container("AXGroup", CGRect(x: 0, y: 0, width: 500, height: 400)).recordedHitBy, .ancestor, "a group of a quarter")
+    XCTAssertEqual(container("AXGroup", small).recordedHitBy, .ancestor, "a small group")
+    // The nearest recorded ancestor only: a small group above it does not carry a point outside it.
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 1000, height: 800))
+    let open = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30), title: "Open")
+    let note = Node("AXStaticText", CGRect(x: 200, y: 200, width: 100, height: 20), title: "Note")
+    window.add(Node("AXGroup", small, [Node("AXGroup", CGRect(x: 5, y: 5, width: 100, height: 40), [open]), note]))
+    XCTAssertEqual(verdict(recorded(window), at: CGPoint(x: 250, y: 210), hit: open).reason, .interactiveHit, "never climbed further")
+  }
+
+  /// Rule 1: the hit is itself a recorded node, by its handle, or by #296's re-created identity while the recorded
+  /// node's own handle is gone; no looser match.
+  func testTheHitMustBeARecordedNodeByHandleOrByTheReCreatedIdentity() {
+    func page(_ change: (Overlay) -> Node) -> StalePointReason {
+      let page = Overlay()
+      let nodes = recorded(page.window)
+      return verdict(nodes, at: codePoint, hit: change(page)).reason
+    }
+    func textArea(_ frame: CGRect = CGRect(x: 100, y: 200, width: 800, height: 400), description: String? = "file content") -> Node {
+      Node("AXTextArea", frame, description: description)
+    }
+    XCTAssertEqual(page { page in
+      page.textArea.destroy()
+      let again = textArea()
+      page.main.add(again)
+      return again
+    }, .recordedHit, "re-created in place: the same role, frame and label")
+    XCTAssertEqual(page { page in
+      page.textArea.destroy()
+      let again = textArea(CGRect(x: 101, y: 201, width: 800, height: 401))
+      page.main.add(again)
+      return again
+    }, .recordedHit, "within 2 pt")
+    XCTAssertEqual(page { page in
+      page.textArea.destroy()
+      let again = textArea(CGRect(x: 103, y: 200, width: 800, height: 400))
+      page.main.add(again)
+      return again
+    }, .interactiveHit, "3 pt off")
+    XCTAssertEqual(page { page in
+      page.textArea.destroy()
+      let again = textArea(description: "comment box")
+      page.main.add(again)
+      return again
+    }, .interactiveHit, "another label")
+    XCTAssertEqual(page { page in
+      page.textArea.destroy()
+      let field = Node("AXTextField", CGRect(x: 100, y: 200, width: 800, height: 400), description: "file content")
+      page.main.add(field)
+      return field
+    }, .interactiveHit, "another role")
+    XCTAssertEqual(page { page in
+      let lookalike = textArea()
+      page.main.add(lookalike)
+      return lookalike
+    }, .interactiveHit, "a lookalike over the recorded one, whose handle still answers")
+    XCTAssertEqual(page { page in
+      let new = Node("AXButton", CGRect(x: 250, y: 250, width: 100, height: 100), title: "Sponsor")
+      page.main.add(new)
+      return new
+    }, .interactiveHit, "a new element")
+    // A hit that is a recorded handle is that node and no other: a recorded textarea from elsewhere, moved over the place
+    // of a gone lookalike, is refused.
+    let page = Overlay()
+    let spare = textArea(CGRect(x: 100, y: 650, width: 800, height: 100))
+    page.main.add(spare)
+    let nodes = recorded(page.window)
+    page.textArea.destroy()
+    spare.frame = CGRect(x: 100, y: 200, width: 800, height: 400)
+    XCTAssertEqual(verdict(nodes, at: codePoint, hit: spare).reason, .interactiveHit, "recorded elsewhere, a lookalike's place taken")
+  }
+
+  /// Rule 2 (ruling a27fc57c): the hit has not moved, its frame read now within 2 pt of the recorded one: a hit-test
+  /// that answers a recorded node's handle at its old place after it moved (Chrome's, #294), or one whose frame does not
+  /// read, is refused.
+  func testAHitThatMovedIsRefused() {
+    let page = Overlay()
+    let nodes = recorded(page.window)
+    page.textArea.frame = CGRect(x: 100, y: 700, width: 800, height: 80)
+    XCTAssertEqual(verdict(nodes, at: codePoint, hit: page.textArea).reason, .interactiveHit)
+    page.textArea.frame = nil
+    XCTAssertEqual(verdict(nodes, at: codePoint, hit: page.textArea).reason, .interactiveHit, "its frame unread")
+  }
+
+  /// Rule 2 tests the part of the recorded frame the screenshot showed: page content scrolled up under Chrome's toolbar
+  /// keeps frames there, and a hit-test that answers it at a toolbar point is refused, wholly or partly clipped.
+  func testARecordedNodeClippedOutAtThePointIsRefused() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 25, width: 620, height: 700))
+    let reload = Node("AXButton", CGRect(x: 442, y: 77, width: 34, height: 34), description: "Reload")
+    window.add(Node("AXToolbar", CGRect(x: 0, y: 70, width: 620, height: 48), [reload]))
+    let hidden = Node("AXLink", CGRect(x: 400, y: 60, width: 200, height: 40), title: "Scrolled away")
+    let partly = Node("AXLink", CGRect(x: 400, y: 80, width: 200, height: 60), title: "Half under the toolbar")
+    window.add(Node("AXWebArea", CGRect(x: 0, y: 118, width: 620, height: 607),
+                    [Node("AXGroup", CGRect(x: 0, y: -400, width: 620, height: 1100), [hidden, partly])]))
+    let nodes = recorded(window)
+    XCTAssertNil(nodes.first { $0.element === hidden }?.shown)
+    XCTAssertEqual(nodes.first { $0.element === partly }?.shown, CGRect(x: 400, y: 118, width: 200, height: 22))
+    let point = CGPoint(x: 459, y: 94)
+    XCTAssertTrue(deepestScreenshotNode(at: point, in: nodes)?.element === reload)
+    XCTAssertEqual(verdict(nodes, at: point, hit: hidden).reason, .interactiveHit, "wholly clipped out")
+    XCTAssertEqual(verdict(nodes, at: point, hit: partly).reason, .interactiveHit, "clipped out at the point")
+    XCTAssertEqual(verdict(nodes, at: CGPoint(x: 459, y: 117), hit: partly).reason, .recordedHit, "1 pt from where it showed, the toolbar chosen")
+  }
+
+  /// Every stale class #296 refused still refuses: the chosen node's own checks run first, and a hit recorded elsewhere
+  /// fails rule 2.
+  func testEveryStaleClassOf296StillRefuses() {
+    // #294: the frame read again with the same handle, and a recorded Forward that took Reload's place.
+    do {
+      let window = Node("AXWindow", CGRect(x: 0, y: 25, width: 620, height: 700))
+      let reload = Node("AXButton", CGRect(x: 442, y: 77, width: 34, height: 34), description: "Reload")
+      let forward = Node("AXButton", CGRect(x: 478, y: 77, width: 34, height: 34), description: "Forward")
+      window.add(Node("AXToolbar", CGRect(x: 0, y: 70, width: 620, height: 48), [reload, forward]))
+      let nodes = recorded(window)
+      let point = CGPoint(x: 459, y: 94)
+      reload.frame = CGRect(x: 478, y: 77, width: 34, height: 34)
+      XCTAssertEqual(verdict(nodes, at: point, hit: reload).reason, .frameMoved, "#294")
+      forward.frame = CGRect(x: 442, y: 77, width: 34, height: 34)
+      XCTAssertEqual(verdict(nodes, at: point, hit: forward).reason, .frameMoved, "#294, a recorded control there now")
+    }
+    // A moved button, a recorded neighbour slid into its place.
+    do {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200))
+      let a = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30), title: "A")
+      let b = Node("AXButton", CGRect(x: 110, y: 10, width: 80, height: 30), title: "B")
+      window.add(a)
+      window.add(b)
+      let nodes = recorded(window)
+      a.frame = CGRect(x: 10, y: 60, width: 80, height: 30)
+      b.frame = CGRect(x: 10, y: 10, width: 80, height: 30)
+      XCTAssertEqual(verdict(nodes, at: CGPoint(x: 50, y: 25), hit: b).reason, .frameMoved, "a moved button")
+    }
+    // A feed prepend: every item pushed down a row, item-8 now where item-9 was.
+    do {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 400))
+      let feed = Node("AXGroup", CGRect(x: 0, y: 0, width: 400, height: 400))
+      let items = (1...10).map { Node("AXButton", CGRect(x: 10, y: CGFloat($0) * 30, width: 300, height: 30), title: "item-\($0)") }
+      for item in items { feed.add(item) }
+      window.add(feed)
+      let nodes = recorded(window)
+      for item in items { item.frame = item.frame?.offsetBy(dx: 0, dy: 30) }
+      feed.add(Node("AXButton", CGRect(x: 10, y: 30, width: 300, height: 30), title: "item-0"))
+      let point = CGPoint(x: 50, y: 9 * 30 + 15)
+      XCTAssertEqual(verdict(nodes, at: point, hit: items[7]).reason, .frameMoved, "a feed prepend")
+    }
+    // Swapped in: a new element, or a recorded one from elsewhere; a link that replaced a button; the same role with a
+    // changed label.
+    func swapped(_ swap: (_ window: Node, _ save: Node, _ other: Node) -> Node) -> StalePointReason {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200))
+      let save = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30), title: "Save")
+      let other = Node("AXButton", CGRect(x: 10, y: 100, width: 80, height: 30), title: "Delete")
+      window.add(save)
+      window.add(other)
+      let nodes = recorded(window)
+      save.destroy()
+      return verdict(nodes, at: CGPoint(x: 50, y: 25), hit: swap(window, save, other))
+        .reason
+    }
+    XCTAssertEqual(swapped { window, _, _ in
+      let new = Node("AXCheckBox", CGRect(x: 10, y: 10, width: 80, height: 30), title: "Agree")
+      window.add(new)
+      return new
+    }, .nodeGone, "a swapped-in element")
+    XCTAssertEqual(swapped { _, _, other in
+      other.frame = CGRect(x: 10, y: 10, width: 80, height: 30)
+      return other
+    }, .nodeGone, "a recorded element swapped into its place")
+    XCTAssertEqual(swapped { window, _, _ in
+      let link = Node("AXLink", CGRect(x: 10, y: 10, width: 80, height: 30), title: "Save")
+      window.add(link)
+      return link
+    }, .nodeGone, "a link that replaced a button")
+    XCTAssertEqual(swapped { window, _, _ in
+      let delete = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30), title: "Delete")
+      window.add(delete)
+      return delete
+    }, .nodeGone, "the same role, a changed label")
+    // A recorded node recorded elsewhere, now over a node still in place (rule 2).
+    do {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 400))
+      let text = Node("AXStaticText", CGRect(x: 10, y: 10, width: 200, height: 20), description: "Draft saved")
+      let delete = Node("AXButton", CGRect(x: 10, y: 300, width: 100, height: 30), title: "Delete")
+      window.add(text)
+      window.add(delete)
+      let nodes = recorded(window)
+      delete.frame = CGRect(x: 10, y: 5, width: 100, height: 30)
+      let refused = verdict(nodes, at: CGPoint(x: 20, y: 20), hit: delete)
+      XCTAssertEqual(refused.reason, .interactiveHit, "a hit recorded elsewhere")
+      XCTAssertEqual(stalePointOutcome(refused, ms: 0, reads: reads).refusal?.message,
+                     "The screen changed since the screenshot: the AXStaticText \"Draft saved\" it showed at this point is no longer what it reaches; AXButton \"Delete\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    }
+  }
+
+  /// The element route's counterpart (#282's press, #283's focus): what it would act on, where it would be `pressedOther`,
+  /// is kept as `recordedHit` under the same three rules, and refused otherwise.
+  func testTheElementRouteKeepsARecordedNodeAtThePoint() {
+    let page = Overlay()
+    let nodes = recorded(page.window)
+    let first = verdict(nodes, at: codePoint, hit: page.lines)
+    XCTAssertEqual(first.reason, .sameElement)
+    let pressed = stalePointPressVerdict(page.textArea, first, reads: reads)
+    XCTAssertEqual(pressed.reason, .recordedHit)
+    XCTAssertFalse(pressed.refused)
+    let gate = StalePointGate(first: first, firstMs: 0.5) { verdict(nodes, at: self.codePoint, hit: page.textArea) }
+    let checked = gate.check(page.textArea, waited: true, now: { 0 }, reads: reads)
+    XCTAssertNil(checked.refusal)
+    XCTAssertEqual(checked.record.wire["reason"] as? String, "recordedHit", "after the route's wait, the recheck's reading")
+    XCTAssertEqual(stalePointPressVerdict(page.share, first, reads: reads).reason, .pressedOther, "recorded elsewhere")
+    let new = Node("AXButton", CGRect(x: 250, y: 250, width: 100, height: 100), title: "Sponsor")
+    page.main.add(new)
+    XCTAssertEqual(stalePointPressVerdict(new, first, reads: reads).reason, .pressedOther, "a new element")
+    page.share.frame = CGRect(x: 280, y: 280, width: 60, height: 30)
+    XCTAssertEqual(stalePointPressVerdict(page.share, first, reads: reads).reason, .pressedOther, "recorded elsewhere, over the point now")
+    page.textArea.frame = CGRect(x: 100, y: 700, width: 800, height: 80)
+    XCTAssertEqual(stalePointPressVerdict(page.textArea, first, reads: reads).reason, .pressedOther, "its frame read now off the point")
+  }
+}
+
 // MARK: The refusal through the pointer's delivery
 
 final class StalePointDeliveryTests: XCTestCase {

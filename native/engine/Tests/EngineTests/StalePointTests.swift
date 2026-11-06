@@ -46,23 +46,30 @@ private var reads: StalePointReads<Node> {
                                           title: { $0.title }, description: { $0.description }, same: { $0 === $1 })
 }
 
-/// The record an observation with a screenshot makes of `root`'s tree, every node walked (as `TreeWalk` emits them).
+/// The record an observation with a screenshot makes of `root`'s tree, every node walked (as `TreeWalk` emits them, its
+/// labels cut by `bounded` as ElementData cuts them).
 private func recorded(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) -> [ScreenshotNode<Node>] {
   var reads: [ScreenshotNodeRead<Node>] = []
   var next = 0
   func walk(_ node: Node, parent: Int?, depth: Int) {
     let number = next
     next += 1
-    reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.role, title: node.title,
-                                    description: node.description, frame: node.frame, actions: node.actions, childCount: node.children.count))
+    reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.role, title: node.title.map(bounded),
+                                    description: node.description.map(bounded), frame: node.frame, actions: node.actions, childCount: node.children.count))
     for child in node.children where !skipped.contains(ObjectIdentifier(child)) { walk(child, parent: number, depth: depth + 1) }
   }
   walk(root, parent: nil, depth: 0)
   return screenshotNodes(reads)
 }
 
-private func verdict(_ nodes: [ScreenshotNode<Node>], at point: CGPoint, hit: Node?) -> StalePointVerdict<Node> {
-  stalePointVerdict(at: point, nodes: nodes, hit: hit, reads: reads)
+private func verdict(_ nodes: [ScreenshotNode<Node>], at point: CGPoint, shift: CGVector = .zero, hit: Node?) -> StalePointVerdict<Node> {
+  stalePointVerdict(at: point, windowShift: shift, nodes: nodes, hit: hit, reads: reads)
+}
+
+/// Moves `node` and everything below it by `shift` (the window moved, its layout unchanged).
+private func move(_ node: Node, by shift: CGVector) {
+  node.frame = node.frame?.offsetBy(dx: shift.dx, dy: shift.dy)
+  for child in node.children { move(child, by: shift) }
 }
 
 final class StalePointTests: XCTestCase {
@@ -265,6 +272,86 @@ final class StalePointTests: XCTestCase {
     XCTAssertEqual(verdict(nodes, at: CGPoint(x: 900, y: 900), hit: nil).reason, .unrecorded)
     XCTAssertEqual(StalePointRecord(verdict(nodes, at: CGPoint(x: 900, y: 900), hit: nil), ms: 0.25).wire as NSDictionary,
                    ["verdict": "kept", "reason": "unrecorded", "ms": 0.25] as NSDictionary)
+  }
+
+  // MARK: The review of d482bcc2..a7a43b02
+
+  /// The posted point lies in the window as it is now, the record's frames where it was at the screenshot: a window moved
+  /// 100 pt with its layout unchanged keeps the node under the model's point (not the one that now lies at the posted
+  /// point's old place), and a node that really moved inside the moved window is still refused.
+  func testAMovedWindowIsComparedInTheScreenshotsSpace() {
+    func window() -> (window: Node, a: Node, b: Node) {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200))
+      let a = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30), title: "A")
+      let b = Node("AXButton", CGRect(x: 110, y: 10, width: 80, height: 30), title: "B")
+      window.add(a)
+      window.add(b)
+      return (window, a, b)
+    }
+    let shift = CGVector(dx: 100, dy: 0)
+    let posted = CGPoint(x: 130, y: 25)  // A's point in the image (30, 25), placed in the moved window
+    do {
+      let (root, a, _) = window()
+      let nodes = recorded(root)
+      move(root, by: shift)
+      let kept = verdict(nodes, at: posted, shift: shift, hit: a)
+      XCTAssertTrue(kept.node?.element === a, "A, the node the model meant")
+      XCTAssertEqual(kept.reason, .sameElement)
+      XCTAssertEqual(verdict(nodes, at: posted, hit: a).reason, .frameMoved, "without the shift: B's old place, and B has moved")
+      XCTAssertEqual(verdict(nodes, at: CGPoint(x: 520, y: 25), shift: shift, hit: nil).reason, .unrecorded,
+                     "beyond the screenshot's window, in the image's space")
+    }
+    do {
+      let (root, a, b) = window()
+      let nodes = recorded(root)
+      move(root, by: shift)
+      a.frame = a.frame?.offsetBy(dx: 40, dy: 0)  // and A itself moved inside the window
+      XCTAssertEqual(verdict(nodes, at: posted, shift: shift, hit: b).reason, .frameMoved)
+    }
+    do {
+      let (root, a, _) = window()
+      let nodes = recorded(root)
+      move(root, by: shift)
+      a.destroy()
+      let again = Node("AXButton", CGRect(x: 111, y: 10, width: 80, height: 30), title: "A")  // re-created where the window took it
+      root.add(again)
+      let kept = verdict(nodes, at: posted, shift: shift, hit: again)
+      XCTAssertEqual(kept.identity, .recreated, "matched against the recorded frame moved by the window's shift")
+      XCTAssertEqual(kept.reason, .sameElement)
+    }
+  }
+
+  /// A frameless container is never chosen, so what its walk left unrecorded counts against its nearest framed ancestor:
+  /// AXWindow, a frameless AXGroup, an AXButton the walk did not reach. The button is an unrecorded descendant, not new.
+  func testAFramelessContainersUnrecordedChildCountsAgainstItsFramedAncestor() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200))
+    let group = Node("AXGroup", nil)
+    let button = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30), title: "Send")
+    group.add(button)
+    window.add(group)
+    let nodes = recorded(window, skipping: [ObjectIdentifier(button)])
+    XCTAssertEqual(nodes.count, 1, "only the window has a frame")
+    XCTAssertEqual(nodes.first?.subtreeRecorded, false)
+    XCTAssertEqual(verdict(nodes, at: CGPoint(x: 50, y: 25), hit: button).reason, .unrecordedDescendant)
+    XCTAssertEqual(recorded(window).first { $0.element === window }?.subtreeRecorded, true, "the whole walk: complete")
+  }
+
+  /// The record keeps labels as the walk cuts them (10,000 UTF-16 units); the label read now is cut the same way, so a
+  /// control re-created with the same long label is the node.
+  func testAReCreatedControlWithALongLabelMatches() {
+    let label = String(repeating: "Terms and conditions. ", count: 600)  // 13,200 units
+    XCTAssertGreaterThan(label.utf16.count, maxValueLength)
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200))
+    let accept = Node("AXCheckBox", CGRect(x: 10, y: 10, width: 300, height: 30), title: label)
+    window.add(accept)
+    let nodes = recorded(window)
+    accept.destroy()
+    let again = Node("AXCheckBox", CGRect(x: 10, y: 10, width: 300, height: 30), title: label)
+    window.add(again)
+    let kept = verdict(nodes, at: CGPoint(x: 50, y: 25), hit: again)
+    XCTAssertEqual(kept.identity, .recreated)
+    XCTAssertEqual(kept.reason, .sameElement)
+    XCTAssertEqual(stalePointLabelsAgree(recordedTitle: bounded(label), recordedDescription: nil, title: "Terms", description: nil), false)
   }
 
   /// The record: each node's shown frame cut by its clipping ancestors, so page content scrolled up under the toolbar

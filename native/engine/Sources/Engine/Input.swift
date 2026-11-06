@@ -459,7 +459,7 @@ extension Engine {
         }
         // #296: what the screenshot showed at the point is checked against what is there now, every button and route; a
         // refusal is thrown before anything is posted (deliverPointer), except where #282 element-routes the click.
-        let stale = signposted("click.stalePoint") { stalePointGuard(at: placed.point, hit: pointerHit, app: app, context: context) }
+        let stale = signposted("click.stalePoint") { stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, hit: pointerHit, app: app, context: context) }
         meta.stalePoint = stale.record
         pointer.staleRefusal = stale.refusal
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in

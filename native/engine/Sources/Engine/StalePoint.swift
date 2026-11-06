@@ -28,8 +28,10 @@ struct ScreenshotNode<Element> {
   /// toolbar, is never taken for what the screenshot showed there.
   let shown: CGRect?
   let depth: Int
-  /// Whether the walk recorded every child of the element (no width cut, depth cap, budget or deadline, failed read): only
-  /// then can an interactive element inside it that the record lacks be taken for new.
+  /// Whether the walk recorded every child of the element (no width cut, depth cap, budget or deadline, failed read), and
+  /// every child of each frameless descendant it reaches only through frameless ones (those are never chosen at a point,
+  /// so what they lack is the nearest framed ancestor's): only then can an interactive element inside it that the record
+  /// lacks be taken for new.
   let subtreeRecorded: Bool
 }
 
@@ -50,10 +52,17 @@ struct ScreenshotNodeRead<Element> {
 /// The record of a walk's window tree (`reads` in the walk's preorder, parents before their children): each node with a
 /// frame, its shown part cut by every clipping ancestor (a scroll area, a web area, a group that scrolls by the page, a
 /// sheet, menu or popover, the window; a window, sheet, menu or popover starts the cut again at its own frame, as the
-/// vendor's visible-frame walk stops there), and whether all its children were recorded.
+/// vendor's visible-frame walk stops there), and whether all its children were recorded, a frameless node's
+/// unrecorded children counting against its nearest framed ancestor.
 func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [ScreenshotNode<Element>] {
   var recordedChildren: [Int: Int] = [:]
   for read in reads { if let parent = read.parent { recordedChildren[parent, default: 0] += 1 } }
+  // Children come after their parents, so a backward pass sees a node's whole subtree before the node.
+  var incomplete: Set<Int> = []
+  for read in reads.reversed() {
+    if (recordedChildren[read.number] ?? 0) < read.childCount { incomplete.insert(read.number) }
+    if read.frame == nil, incomplete.contains(read.number), let parent = read.parent { incomplete.insert(parent) }
+  }
   /// What each node leaves showing to its descendants: nil for no cut, `.null` for nothing.
   var bounds: [Int: CGRect?] = [:]
   var nodes: [ScreenshotNode<Element>] = []
@@ -75,7 +84,7 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
     guard let frame = own else { continue }
     let shown = cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 }
     nodes.append(ScreenshotNode(element: read.element, role: read.role, title: read.title, description: read.description, frame: frame,
-                                shown: shown, depth: read.depth, subtreeRecorded: (recordedChildren[read.number] ?? 0) >= read.childCount))
+                                shown: shown, depth: read.depth, subtreeRecorded: !incomplete.contains(read.number)))
   }
   return nodes
 }
@@ -166,19 +175,31 @@ extension StalePointReads where Element == AXUIElement {
   static var live: StalePointReads<AXUIElement> {
     StalePointReads(role: { attribute($0, kAXRoleAttribute) as? String }, frame: liveFrameRead,
                     parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead,
-                    title: { stringAttribute($0, kAXTitleAttribute) }, description: { stringAttribute($0, kAXDescriptionAttribute) },
+                    title: { liveLabel($0, kAXTitleAttribute) }, description: { liveLabel($0, kAXDescriptionAttribute) },
                     same: { CFEqual($0, $1) })
   }
 }
 
 private func liveFrameRead(_ element: AXUIElement) -> CGRect? { frame(of: element) }
 
+/// A title or description read now as the walk records it (ElementData): a string or an attributed string's text.
+private func liveLabel(_ element: AXUIElement, _ name: String) -> String? {
+  guard let value = attribute(element, name) else { return nil }
+  let type = CFGetTypeID(value)
+  if type == CFStringGetTypeID() { return value as? String }
+  if type == CFAttributedStringGetTypeID() { return (value as! NSAttributedString).string }
+  return nil
+}
+
 private func nonEmpty(_ text: String?) -> String? { text.flatMap { $0.isEmpty ? nil : $0 } }
 
 /// Whether a re-created handle's label agrees with the recorded node's (the design session's amendment, 0c0b70f0): the
 /// same title when both have one, else the same description when neither has a title and both have one. A label either
-/// side cannot read (or does not carry) never counts against the match.
+/// side cannot read (or does not carry) never counts against the match. The record holds labels as the walk keeps them,
+/// cut by `bounded` (10,000 UTF-16 units); the label read now (`title`, `description`) is cut the same way first, so a
+/// long label compares like for like.
 func stalePointLabelsAgree(recordedTitle: String?, recordedDescription: String?, title: String?, description: String?) -> Bool {
+  let title = title.map(bounded), description = description.map(bounded)
   let (oldTitle, newTitle) = (nonEmpty(recordedTitle), nonEmpty(title))
   if let oldTitle, let newTitle { return oldTitle == newTitle }
   if oldTitle == nil, newTitle == nil, let old = nonEmpty(recordedDescription), let new = nonEmpty(description) { return old == new }
@@ -229,13 +250,15 @@ private func descendants<Element>(of element: Element, _ reads: StalePointReads<
 }
 
 /// A handle re-created in place of `node` near `hit`: among the hit, its ancestors and its descendants (the bounds above),
-/// the element of the node's role whose frame lies nearest the recorded one, within `stalePointFrameTolerance`, whose
-/// label agrees (`stalePointLabelsAgree`).
-func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Element, _ reads: StalePointReads<Element>) -> (element: Element, frame: CGRect)? {
+/// the element of the node's role whose frame lies nearest the recorded one moved by `windowShift` (the window's move
+/// since the screenshot), within `stalePointFrameTolerance`, whose label agrees (`stalePointLabelsAgree`).
+func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Element, windowShift: CGVector = .zero,
+                              _ reads: StalePointReads<Element>) -> (element: Element, frame: CGRect)? {
+  let expected = node.frame.offsetBy(dx: windowShift.dx, dy: windowShift.dy)
   var best: (element: Element, frame: CGRect, distance: CGFloat)?
   for candidate in [hit] + ancestors(of: hit, reads) + descendants(of: hit, reads) {
     guard reads.role(candidate) == node.role, let frame = reads.frame(candidate) else { continue }
-    let distance = frameDistance(frame, node.frame)
+    let distance = frameDistance(frame, expected)
     guard distance <= stalePointFrameTolerance, best.map({ distance < $0.distance }) ?? true else { continue }
     guard stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description,
                                 title: reads.title(candidate), description: reads.description(candidate)) else { continue }
@@ -247,9 +270,16 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
 /// The guard at `point` (#296): the deepest recorded node there (`deepestScreenshotNode`) found now, by its own handle
 /// while its frame reads (or while the hit or one of its ancestors is it), else by a re-created handle
 /// (`recreatedHandle`), and judged against `hit`, the hit-test at the point the action already took.
-func stalePointVerdict<Element>(at point: CGPoint, nodes: [ScreenshotNode<Element>], hit: Element?,
+///
+/// `point` is where the events are posted, in the window as it lies now (`coordinatePlacement` offsets the screenshot's
+/// point by the window's current origin); the record's frames are where the window lay at the screenshot. So the node
+/// is chosen at the point moved back by `windowShift` (the window's current origin less its origin at the screenshot),
+/// the point the model meant in the image, while its frame read now is checked against the posted point, and a
+/// re-created handle is matched against the recorded frame moved by the shift. A window that only moved keeps every node.
+func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero, nodes: [ScreenshotNode<Element>], hit: Element?,
                                 reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
-  guard let node = deepestScreenshotNode(at: point, in: nodes) else { return StalePointVerdict(reason: .unrecorded) }
+  let shown = CGPoint(x: point.x - windowShift.dx, y: point.y - windowShift.dy)
+  guard let node = deepestScreenshotNode(at: shown, in: nodes) else { return StalePointVerdict(reason: .unrecorded) }
   let hitRole = hit.flatMap(reads.role)
   var verdict = StalePointVerdict(reason: .nodeGone, node: node, hitRole: hitRole)
   var currentFrame: CGRect?
@@ -257,7 +287,7 @@ func stalePointVerdict<Element>(at point: CGPoint, nodes: [ScreenshotNode<Elemen
     (verdict.current, verdict.identity, currentFrame) = (node.element, .handle, frame)
   } else if let hit, reads.same(hit, node.element) || isInside(hit, node.element, reads) {
     (verdict.current, verdict.identity) = (node.element, .handle)  // its frame unread, but the point reaches it
-  } else if let hit, let found = recreatedHandle(of: node, near: hit, reads) {
+  } else if let hit, let found = recreatedHandle(of: node, near: hit, windowShift: windowShift, reads) {
     (verdict.current, verdict.identity, currentFrame) = (found.element, .recreated, found.frame)
   }
   guard let current = verdict.current else { return verdict }
@@ -343,17 +373,21 @@ func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, hit: Elem
 }
 
 extension ConnectionState {
-  /// The nodes the screenshot coordinates are placed in recorded (`ObservedScreenshot.nodes`); none without one.
-  func screenshotNodes(app: ResolvedApp) -> [ScreenshotNode<AXUIElement>] { lineages[app.key]?.screenshot?.nodes ?? [] }
+  /// The screenshot coordinates are placed in (`ObservedScreenshot`: its recorded nodes and its window's origin then).
+  func observedScreenshot(app: ResolvedApp) -> ObservedScreenshot? { lineages[app.key]?.screenshot }
 }
 
 extension Engine {
   /// The guard at a coordinate pointer's posted point, live (`stalePointVerdict` over the Accessibility API), with `hit` the
-  /// hit-test the action already took there; its time covers the reads it adds.
-  func stalePointGuard(at point: CGPoint, hit: AXUIElement?, app: ResolvedApp, context: ExecutionContext) -> (record: StalePointRecord, refusal: EngineError?) {
+  /// hit-test the action already took there and `windowOrigin` the origin of the window the point was placed in, now; its
+  /// time covers the reads it adds.
+  func stalePointGuard(at point: CGPoint, windowOrigin: CGPoint, hit: AXUIElement?, app: ResolvedApp,
+                       context: ExecutionContext) -> (record: StalePointRecord, refusal: EngineError?) {
     let started = monotonicMilliseconds()
     let reads = StalePointReads<AXUIElement>.live
-    let verdict = stalePointVerdict(at: point, nodes: context.connection.screenshotNodes(app: app), hit: hit, reads: reads)
+    let screenshot = context.connection.observedScreenshot(app: app)
+    let shift = screenshot.map { CGVector(dx: windowOrigin.x - $0.windowOrigin.x, dy: windowOrigin.y - $0.windowOrigin.y) } ?? .zero
+    let verdict = stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], hit: hit, reads: reads)
     return stalePointOutcome(verdict, hit: hit, ms: monotonicMilliseconds() - started, reads: reads)
   }
 }

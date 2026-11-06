@@ -206,9 +206,13 @@ struct ObservedScreenshot {
   let scaleX: CGFloat
   let scaleY: CGFloat
   let nodes: [ScreenshotNode<AXUIElement>]
+  /// The window's origin (global points, top-left) when the image was captured, which the nodes' frames are relative to:
+  /// a click into the moved window is compared in the screenshot's space (StalePoint.swift `stalePointVerdict`).
+  let windowOrigin: CGPoint
 
   init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = []) {
     self.window = window
+    windowOrigin = image.frame.origin
     scaleX = CGFloat(image.width) / image.frame.width  // the capture refuses a frame under one point
     scaleY = CGFloat(image.height) / image.frame.height
     self.nodes = nodes

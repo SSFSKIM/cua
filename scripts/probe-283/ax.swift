@@ -239,7 +239,9 @@ for step in spec["place"] as? [[String: Any]] ?? [] {
     // scans the target; bounds-hit scans the hit (a contenteditable's AXStaticText, whose boxes are real where the
     // editable's own are empty) and writes the offset found on the target as it is (one text node: the same offsets).
     let scanned = kind == "bounds-hit" ? hit : target
-    let n = (attr(scanned, "AXNumberOfCharacters") as? NSNumber)?.intValue ?? (str(scanned, kAXValueAttribute)?.utf16.count ?? 0)
+    // Chromium's AXStaticText reads AXNumberOfCharacters 0: its AXValue's length counts too.
+    let n = max((attr(scanned, "AXNumberOfCharacters") as? NSNumber)?.intValue ?? 0, str(scanned, kAXValueAttribute)?.utf16.count ?? 0)
+    rec["scanCountSources"] = ["numberOfCharacters": describe(attr(scanned, "AXNumberOfCharacters")), "valueLength": str(scanned, kAXValueAttribute)?.utf16.count ?? NSNull()]
     let t0 = nowMs()
     var found: Int?, calls = 0
     for i in 0..<n {

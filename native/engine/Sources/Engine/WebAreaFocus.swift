@@ -37,13 +37,34 @@ struct WebAreaFocusTarget<Element> {
   let secure: Bool
 }
 
+/// What reading an element's AXSubrole found: a subrole, none (the attribute unsupported or without a value), or a read
+/// that failed, which the secure classification counts as a password field's.
+enum SubroleRead: Equatable {
+  case subrole(String)
+  case none
+  case failed
+}
+
+/// The element's AXSubrole as a `SubroleRead`; a value that is not a string counts as a failed read.
+func subroleRead(_ element: AXUIElement) -> SubroleRead {
+  let (value, error) = copyAttribute(element, kAXSubroleAttribute)
+  switch error {
+  case .success:
+    guard let value else { return .none }
+    return CFGetTypeID(value) == CFStringGetTypeID() ? .subrole(value as! String) : .failed
+  case .noValue, .attributeUnsupported: return .none
+  default: return .failed
+  }
+}
+
 /// The text-entry element a plain left click into a web area focuses (#283, the design session's ruling 1): the hit
 /// when it is a text-entry role (`webAreaEditableRoles`) whose AXFocused is settable, else the nearest one up its
 /// parents, reached through editable elements (an `AXEditableAncestor`) and #282's passable children only, its own
 /// parents read up to the AXWebArea. Refused at a text-entry role whose AXFocused is not settable (`notFocusable`), at
 /// any other role or the web area itself (`roleNotAllowed`), and on an ancestry it cannot read (`incompleteAncestry`).
-/// `walk` records the roles read, as #282's does.
-func webAreaFocusTarget<Element>(_ hit: Element, role: (Element) -> String?, subrole: (Element) -> String?, parent: (Element) -> Element?,
+/// `walk` records the roles read, as #282's does. Secure (focused only, nothing of it read) by its role or subrole
+/// AXSecureTextField, or when its subrole cannot be read: a password field is an AXTextField known by its subrole alone.
+func webAreaFocusTarget<Element>(_ hit: Element, role: (Element) -> String?, subrole: (Element) -> SubroleRead, parent: (Element) -> Element?,
                                  editable: (Element) -> Bool, focusSettable: (Element) -> Bool,
                                  walk: inout [String]) -> Result<WebAreaFocusTarget<Element>, WebAreaRefusal> {
   var current = hit
@@ -56,7 +77,14 @@ func webAreaFocusTarget<Element>(_ hit: Element, role: (Element) -> String?, sub
     if webAreaEditableRoles.contains(name) {
       guard focusSettable(current) else { return .failure(.notFocusable) }
       if case .failure(let why) = webAreaAncestry(above: current, role: role, parent: parent) { return .failure(why) }
-      let secure = name == "AXSecureTextField" || subrole(current) == "AXSecureTextField"
+      let secure: Bool
+      if name == "AXSecureTextField" { secure = true } else {
+        switch subrole(current) {
+        case .subrole(let found): secure = found == "AXSecureTextField"
+        case .none: secure = false
+        case .failed: secure = true
+        }
+      }
       return .success(WebAreaFocusTarget(element: current, role: name, ancestor: level > 0, secure: secure))
     }
     guard editable(current) || webAreaPassableRoles.contains(name) else { return .failure(.roleNotAllowed) }  // the AXWebArea included
@@ -69,25 +97,33 @@ func webAreaFocusTarget<Element>(_ hit: Element, role: (Element) -> String?, sub
 /// The caret offset a click at `point` places in a text of `length` UTF-16 units, from its characters' boxes
 /// (`bounds`, screen coordinates, nil or empty for a character with none) over `range`: in the box that holds the point,
 /// before the character on its left half and after it on its right; past a line's last character (to the right of every
-/// box in the line the point's height falls in), the end of that line, before its line break. An empty text is 0. Nil
-/// when no box holds the point and it is past no line's end, or the range is longer than `caretScanLimit`.
+/// box in the line the point's height falls in), the end of that line, before its line break. That end counts only
+/// once it is established: a line break's own box, or after the rightmost character read when the next offset is the
+/// text's end, a line break, or a character whose box starts below this one's (a soft wrap; read even outside
+/// `range`). Otherwise the rightmost box read need not be the line's last (a failed read, a scan cut to the visible
+/// characters). An empty text is 0. Nil when no box holds the point and it is past no established line end, or the
+/// range is longer than `caretScanLimit`.
 func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int) -> CGRect?, isLineBreak: (Int) -> Bool) -> Int? {
   if length == 0 { return 0 }
   let scanned = range.clamped(to: 0..<length)
   guard scanned.count <= caretScanLimit else { return nil }
-  var lineEnd: (offset: Int, x: CGFloat)?
+  // The rightmost line-end candidate: its offset, its x, and the box of the character it follows (nil for a line break).
+  var lineEnd: (offset: Int, x: CGFloat, after: CGRect?)?
   for index in scanned {
     guard let box = bounds(index), box.height > 0, box.minY <= point.y, point.y < box.maxY else { continue }
     if isLineBreak(index) {
       // A line break's box marks where its line ends: the caret goes before it.
-      if lineEnd.map({ box.minX >= $0.x }) ?? true { lineEnd = (index, box.minX) }
+      if lineEnd.map({ box.minX >= $0.x }) ?? true { lineEnd = (index, box.minX, nil) }
       continue
     }
     guard box.width > 0 else { continue }
     if box.minX <= point.x, point.x < box.maxX { return point.x < box.midX ? index : index + 1 }
-    if lineEnd.map({ box.maxX >= $0.x }) ?? true { lineEnd = (index + 1, box.maxX) }
+    if lineEnd.map({ box.maxX >= $0.x }) ?? true { lineEnd = (index + 1, box.maxX, box) }
   }
-  if let lineEnd, point.x >= lineEnd.x { return lineEnd.offset }
+  guard let lineEnd, point.x >= lineEnd.x else { return nil }
+  let end = lineEnd.offset
+  guard let after = lineEnd.after, end < length, !isLineBreak(end) else { return end }
+  if let next = bounds(end), next.minY >= after.maxY { return end }
   return nil
 }
 
@@ -95,6 +131,8 @@ func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int
 enum CaretNotPlaced: String, Error, Equatable {
   /// A password field: never scanned.
   case secure
+  /// The field's value could not be read as text, so no offset is known to correspond to the point.
+  case unreadable
   /// No character's box holds the point, and it is past no line's end (or the text was too long to scan).
   case pointOutsideText
   /// The caret was written, but AXSelectedTextRange read back otherwise.
@@ -155,18 +193,27 @@ func focusNote(_ app: String, _ outcome: WebAreaFocusOutcome) -> String {
   }
 }
 
-/// The caret offset a click at `point` places in a text field from its own characters' boxes (`caretOffset`): its value's
-/// UTF-16 units, scanned over its visible character range when it reads one, else over all of it.
-func fieldCaretOffset(_ field: AXUIElement, at point: CGPoint) -> Int? {
-  let text = (attribute(field, kAXValueAttribute) as? String).map { $0 as NSString } ?? ""
+/// The caret offset a click at `point` places in a field whose value read as `value`, from its characters' boxes
+/// (`caretOffset`): the value's UTF-16 units, scanned over `visible` (its visible character range) when it reads one,
+/// else over all of it. Only a value read as a string is text: anything else (a failed read, no value, another type) is
+/// `unreadable`, never an empty field.
+func textCaretOffset(at point: CGPoint, value: Any?, visible: Range<Int>?, bounds: (Int) -> CGRect?) -> Result<Int, CaretNotPlaced> {
+  guard let string = value as? String else { return .failure(.unreadable) }
+  let text = string as NSString
   let length = text.length
-  var range = 0..<length
-  if let visible = rangeWire(attribute(field, kAXVisibleCharacterRangeAttribute)), let location = visible["location"],
-     let count = visible["length"], location >= 0, count >= 0 {
-    range = location..<(location + count)
+  let found = caretOffset(at: point, length: length, range: visible ?? 0..<length, bounds: bounds,
+                          isLineBreak: { $0 < length && [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: $0)) })
+  return found.map { .success($0) } ?? .failure(.pointOutsideText)
+}
+
+/// `textCaretOffset` over a text field's own AXValue, AXVisibleCharacterRange and characters' boxes.
+func fieldCaretOffset(_ field: AXUIElement, at point: CGPoint) -> Result<Int, CaretNotPlaced> {
+  var visible: Range<Int>?
+  if let wire = rangeWire(attribute(field, kAXVisibleCharacterRangeAttribute)), let location = wire["location"],
+     let count = wire["length"], location >= 0, count >= 0 {
+    visible = location..<(location + count)
   }
-  return caretOffset(at: point, length: length, range: range, bounds: { characterBounds(field, $0) },
-                     isLineBreak: { $0 < length && [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: $0)) })
+  return textCaretOffset(at: point, value: attribute(field, kAXValueAttribute), visible: visible, bounds: { characterBounds(field, $0) })
 }
 
 /// One character's box in screen coordinates (AXBoundsForRange of {index, 1}); nil when the element gives none.

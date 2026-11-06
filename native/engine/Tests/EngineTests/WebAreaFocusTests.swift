@@ -6,11 +6,11 @@ import XCTest
 final class WebAreaFocusTests: XCTestCase {
   private final class Node {
     let role: String?
-    let subrole: String?
+    let subrole: SubroleRead
     let parent: Node?
     let editable: Bool
     let focusSettable: Bool
-    init(_ role: String?, subrole: String? = nil, parent: Node? = nil, editable: Bool = false, focusSettable: Bool = false) {
+    init(_ role: String?, subrole: SubroleRead = .none, parent: Node? = nil, editable: Bool = false, focusSettable: Bool = false) {
       (self.role, self.subrole, self.parent, self.editable, self.focusSettable) = (role, subrole, parent, editable, focusSettable)
     }
   }
@@ -61,8 +61,16 @@ final class WebAreaFocusTests: XCTestCase {
   }
 
   func testAPasswordFieldIsSecureByRoleOrSubrole() throws {
-    XCTAssertTrue(try target(Node("AXTextField", subrole: "AXSecureTextField", parent: page(), editable: true, focusSettable: true)).get().secure)
+    XCTAssertTrue(try target(Node("AXTextField", subrole: .subrole("AXSecureTextField"), parent: page(), editable: true, focusSettable: true)).get().secure)
     XCTAssertTrue(try target(Node("AXSecureTextField", parent: page(), focusSettable: true)).get().secure)
+    XCTAssertFalse(try target(Node("AXTextField", subrole: .subrole("AXSearchField"), parent: page(), editable: true, focusSettable: true)).get().secure)
+  }
+
+  /// A password field is an AXTextField known by its subrole alone: a subrole that cannot be read could be one.
+  func testAFieldWhoseSubroleReadFailsIsSecure() throws {
+    XCTAssertTrue(try target(Node("AXTextField", subrole: .failed, parent: page(), editable: true, focusSettable: true)).get().secure)
+    XCTAssertFalse(try target(Node("AXTextField", subrole: .none, parent: page(), editable: true, focusSettable: true)).get().secure,
+                   "no subrole is not a failed read")
   }
 
   // MARK: the focusing click
@@ -167,8 +175,42 @@ final class WebAreaFocusTests: XCTestCase {
                              bounds: { _ in CGRect(x: 0, y: 0, width: 1, height: 1) }, isLineBreak: { _ in false }), "too long to scan")
   }
 
+  /// The rightmost box read is not the line's last when a later character's box failed to read: the line's end is
+  /// unknown, so nothing is placed; with every box read, the point is past the text's end.
+  func testALineEndIsTakenOnlyWhereItIsEstablished() {
+    let boxes: [CGRect?] = [CGRect(x: 0, y: 0, width: 10, height: 20), CGRect(x: 10, y: 0, width: 10, height: 20),
+                            CGRect(x: 20, y: 0, width: 10, height: 20)]
+    let point = CGPoint(x: 25, y: 5)
+    XCTAssertNil(caretOffset(at: point, length: 3, range: 0..<3, bounds: { $0 == 0 ? boxes[0] : nil }, isLineBreak: { _ in false }),
+                 "only the first box readable")
+    XCTAssertEqual(caretOffset(at: point, length: 3, range: 0..<3, bounds: { boxes[$0] }, isLineBreak: { _ in false }), 3)
+    XCTAssertEqual(caretOffset(at: CGPoint(x: 90, y: 5), length: 3, range: 0..<3, bounds: { boxes[$0] }, isLineBreak: { _ in false }), 3,
+                   "the end of the text")
+    XCTAssertNil(caretOffset(at: CGPoint(x: 90, y: 5), length: 3, range: 0..<2, bounds: { boxes[$0] }, isLineBreak: { _ in false }),
+                 "a scan cut short of the line's last character")
+  }
+
+  /// "abcd" soft-wrapped after b: the next character's box starts on the line below, read even outside the scanned range.
+  func testASoftWrappedLineEndsBeforeItsNextLinesFirstCharacter() {
+    let boxes: [CGRect] = [CGRect(x: 0, y: 0, width: 10, height: 20), CGRect(x: 10, y: 0, width: 10, height: 20),
+                           CGRect(x: 0, y: 20, width: 10, height: 20), CGRect(x: 10, y: 20, width: 10, height: 20)]
+    for range in [0..<4, 0..<2] {
+      XCTAssertEqual(caretOffset(at: CGPoint(x: 90, y: 5), length: 4, range: range, bounds: { boxes[$0] }, isLineBreak: { _ in false }), 2,
+                     "\(range)")
+    }
+  }
+
   func testAnEmptyFieldIsPlacedAtZero() {
     XCTAssertEqual(caretOffset(at: CGPoint(x: 50, y: 50), length: 0, range: 0..<0, bounds: { _ in nil }, isLineBreak: { _ in false }), 0)
+    XCTAssertEqual(textCaretOffset(at: CGPoint(x: 50, y: 50), value: "", visible: nil, bounds: { _ in nil }), .success(0))
+  }
+
+  /// Only a value read as a string is text: a failed read, no value or another type is never taken for an empty field.
+  func testAFieldWhoseValueCannotBeReadIsNotPlaced() {
+    for value in [nil, 42 as Any, NSNull() as Any] {
+      XCTAssertEqual(textCaretOffset(at: CGPoint(x: 50, y: 50), value: value, visible: nil, bounds: { _ in nil }), .failure(.unreadable))
+    }
+    XCTAssertEqual(textCaretOffset(at: CGPoint(x: 50, y: 50), value: "ab", visible: nil, bounds: { _ in nil }), .failure(.pointOutsideText))
   }
 
   /// An empty line's only box is its line break: a point there goes before it.

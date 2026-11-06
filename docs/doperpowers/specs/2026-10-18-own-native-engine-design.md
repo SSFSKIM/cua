@@ -1986,20 +1986,25 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   4. **The caret** (`caretOffset`, `fieldCaretOffset`). The field's characters' boxes (AXBoundsForRange {i, 1}),
      scanned over AXVisibleCharacterRange when it reads one, up to `caretScanLimit` characters: in the box that holds
      the point the caret goes before the character on its left half and after it on its right; to the right of a line's
-     last box, the end of that line, before its break; an empty field is 0. Then AXSelectedTextRange {offset, 0} is
-     written and polled back. Not placed (`elementClick.caret`): `secure` (a password field is focused only, its value
-     and ranges never read), `pointOutsideText` (no box holds the point and it is past no line's end; never a guessed
-     offset), `selectionMismatch`, `unmapped` (the focused element is not the hit: a contenteditable region's boxes are
-     its text's, in that text's offsets).
+     last box, the end of that line, before its break, taken only where that end is established (a line break's box,
+     or the next offset being the text's end, a line break, or a character whose box starts on a lower line, read even
+     outside the scanned range), since the rightmost box read need not be the line's last; an empty field is 0. Then
+     AXSelectedTextRange {offset, 0} is written and polled back. Not placed (`elementClick.caret`): `secure` (a password
+     field is focused only, its value and ranges never read; a field whose AXSubrole read fails, as against having none,
+     counts as one), `unreadable` (AXValue did not read as a string: never taken for an empty field),
+     `pointOutsideText` (no box holds the point and it is past no established line end; never a guessed offset),
+     `selectionMismatch`, `unmapped` (the focused element is not the hit: a contenteditable region's boxes are its
+     text's, in that text's offsets).
   5. **The answer.** `elementClick {plan action, action AXFocused, reason focusField | focusedNotPlaced, pressedRole,
      pressed hit | ancestor, walk, caret}`, and the result's `note`, which the service now passes for `click` as for
      paste and type_text: placed, "focused through accessibility, with the caret at the point; no mouse event was
      sent, so the page saw no click"; not placed, typing goes to the field's existing selection or its start, use
      select_text or set_value first. A double click, a drag and focusField's fallback stay refused (#289).
-  Proven offline (`WebAreaFocusTests`, 16: the field hit, the region's text hit focusing its region, each refusal, the
-  secure field by role and subrole focused with nothing read, a write that never reads back true, a caret read back
-  elsewhere, a point in no box, the line-end and empty-line rules, the in-flight stop before any write, the record and
-  the note; the service's note test for click).
+  Proven offline (`WebAreaFocusTests`, 20: the field hit, the region's text hit focusing its region, each refusal, the
+  secure field by role, by subrole and by a failed subrole read, focused with nothing read, a write that never reads
+  back true, a caret read back elsewhere, a point in no box, an unreadable value, the line-end rule only where the end
+  is established (a failed box read, a cut scan, a soft wrap, the text's end) and the empty-line rule, the in-flight
+  stop before any write, the record and the note; the service's note test for click).
   Date/Author: 2026-11-05, cursor235 for the design session's rulings on #283.
 
 ## Outcomes & Retrospective

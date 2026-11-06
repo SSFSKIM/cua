@@ -348,7 +348,7 @@ extension Engine {
                     context: ExecutionContext) -> (inout InputMeta) throws -> Void {
     let role: (AXUIElement) -> String? = { attribute($0, kAXRoleAttribute) as? String }
     var walk: [String] = []
-    let resolution = webAreaFocusTarget(hit, role: role, subrole: { attribute($0, kAXSubroleAttribute) as? String },
+    let resolution = webAreaFocusTarget(hit, role: role, subrole: subroleRead,
                                         parent: { elementAttribute($0, kAXParentAttribute) },
                                         editable: { attribute($0, "AXEditableAncestor") != nil },
                                         focusSettable: { AXOps.live.isSettable($0, kAXFocusedAttribute) }, walk: &walk)
@@ -381,7 +381,7 @@ extension Engine {
         offset: {
           // Only the field's own characters: a contenteditable region's boxes are its text's, in other offsets.
           guard !target.ancestor else { return .failure(.unmapped) }
-          return fieldCaretOffset(field, at: point).map { .success($0) } ?? .failure(.pointOutsideText)
+          return fieldCaretOffset(field, at: point)
         },
         writeSelection: { offset in
           _ = meta.posting { _ = gatedWrite(field, kAXSelectedTextRangeAttribute, axRangeValue(CFRange(location: offset, length: 0))); return true }

@@ -1981,7 +1981,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      AXValue `alpha bravo charlie delta\necho foxtrot golf hotel india` counts the <br> as one character; a static
      text's AXNumberOfCharacters reads 0, its AXValue is its text. Its texts found in that value in order start at
      12 and 26 (a sum of lengths is one short after the <br>), and AXSelectedTextRange {start + local, 0} on the
-     region placed the caret at both measured points, typing landing there.
+     region placed the caret at both measured points, typing landing there. The live A/B at 2c016f7b (run 42152333871,
+     https://github.com/SSFSKIM/cua/actions/runs/42152333871) found two faults: a static text reads
+     AXVisibleCharacterRange {0, 0}, so a scan honoring it covered nothing and the region's caret was never placed
+     (12 of 12 cells, `noCharacterBoxes` after the full 2 s); and a fresh textarea's boxes arrive line by line, so one
+     click of 10 settled on `pointOutsideText` with the clicked line's boxes still empty.
   2. **The target** (`webAreaFocusTarget`). #282's walk stops at an editable element (`walkStopped editable`); the
      route then walks again from the hit to the nearest text-entry role (`webAreaEditableRoles`, which now holds
      AXSecureTextField) whose AXFocused is settable, through editable elements and #282's passable roles only, its own
@@ -1992,8 +1996,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      cursor at the point, AXFocused written and polled every 20 ms for up to 300 ms. A field that never reads focused
      answers `clickUnconfirmed`; the write's own answer never counts. #282's re-read gate does not apply.
   4. **The caret** (`caretOffset`, `fieldCaretOffset`, `regionTextStart`). The field's characters' boxes
-     (AXBoundsForRange {i, 1}), scanned over AXVisibleCharacterRange when it reads one (in Chromium the whole text),
-     linearly up to `caretScanLimit` characters: in the box that holds
+     (AXBoundsForRange {i, 1}), scanned linearly over the whole value up to `caretScanLimit` characters
+     (AXVisibleCharacterRange is not read: the whole text on a scrolled text field, {0, 0} on a static text): in the box that holds
      the point the caret goes before the character on its left half and after it on its right; to the right of a line's
      last box, the end of that line, before its break, taken only where that end is established (a line break's box,
      or the next offset being the text's end, a line break, or a character whose non-empty box starts on a lower line, read even
@@ -2006,7 +2010,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      field is focused only, its value and ranges never read; a field whose AXSubrole read fails, as against having none,
      counts as one), `unreadable` (AXValue did not read as a string: never taken for an empty field),
      `noCharacterBoxes` (the scan read no usable box at all, as before complete mode), `pointOutsideText` (boxes were
-     read, but none holds the point and it is past no established line end; never a guessed offset),
+     read, but none holds the point and it is past no established line end; never a guessed offset; a miss while a
+     character that should have a box had none is `boxesIncomplete` inside the scan, never recorded: item 6),
      `selectionMismatch`, `unmapped` (a region's hit that is not an AXStaticText, or whose start is not found: a value
      or a node's role or children list unreadable, a static text not found, the hit not reached, the walk's bound run out).
   5. **The answer.** `elementClick {plan action, action AXFocused, reason focusField | focusedNotPlaced, pressedRole,
@@ -2014,24 +2019,32 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      paste and type_text: placed, "focused through accessibility, with the caret at the point; no mouse event was
      sent, so the page saw no click"; not placed, typing goes to the field's existing selection or its start, use
      select_text or set_value first. A double click, a drag and focusField's fallback stay refused (#289).
-  6. **Boxes not there yet** (`caretAwaitingBoxes`; the design session's ruling 37d4c12c). Focus is written and
-     confirmed at once; then, where the caret answers `noCharacterBoxes` and the process is fresh by #282's rule
-     (`webAreaAccessibilityFresh`), the offset is computed again every 100 ms for up to 2 s
-     (`webAreaActionRereadSampleMs`, `webAreaActionRereadMs`), posting nothing, until it answers anything else; a
-     `pointOutsideText` or `unmapped` found then is the answer. Before each re-read the hit must still resolve through
+  6. **Boxes not there yet** (`caretAwaitingBoxes`; the design session's ruling 37d4c12c, widened by 9ba80c48 after
+     run 42152333871). Focus is written and confirmed at once; then, where the caret answers `noCharacterBoxes` or
+     `boxesIncomplete` (a miss while some character that should have a box had none: line breaks, whitespace, controls
+     and format characters such as U+200B, U+200C, U+200D, U+FEFF and U+00AD, combining marks and surrogate halves
+     may legitimately have none and never count, so a multi-line field's newlines never make a click wait) and the
+     process is fresh by #282's rule (`webAreaAccessibilityFresh`), the offset is computed again every 100 ms for up
+     to 2 s (`webAreaActionRereadSampleMs`, `webAreaActionRereadMs`), posting nothing, until it answers anything else;
+     a complete-miss `pointOutsideText` or `unmapped` found then, or at once, is the answer. An incomplete miss not
+     waited for (not fresh) or still incomplete at 2 s is `pointOutsideText`. Before each re-read the hit must still resolve through
      `webAreaFocusTarget` to an element CFEqual to the one focused and not secure, or the wait stops with nothing more
      read; an offset found by a re-read is written only if the field also still reads AXFocused true, is still that
      element, and its AXValue's length is the one read when the wait began. Otherwise, still empty at 2 s, or not
      fresh (no wait at all), `noCharacterBoxes`, with no range written. The secure field never
-     gets here. Limit: the first click into a fresh Chrome's text field can take up to about 2 s, as #288's does.
-  Proven offline (`WebAreaFocusTests`, 31: the field hit, the region's text hit focusing its region, each refusal, the
+     gets here. Limits: the first click into a fresh Chrome's text field can take up to about 2 s, as #288's does;
+     with AXVisibleCharacterRange dropped, the scan is bounded only by the 5,000-character cap on the value's length
+     (`caretScanLimit`; a longer value is `pointOutsideText`, #290).
+  Proven offline (`WebAreaFocusTests`, 37: the field hit, the region's text hit focusing its region, each refusal, the
   secure field by role, by subrole and by a failed subrole read, focused with nothing read, a write that never reads
   back true, a caret read back elsewhere, a point in no box against no usable box at all, an unreadable value, the
   line-end rule only where the end is established (a failed box read, a cut scan, a soft wrap, an empty next box at
   negative screen y, the text's end) and the empty-line rule, the region mapping (round 2's five-node page at both
   points, a nested group, a repeated word, each unmapped case, an unread role among them), the wait for boxes
   (appearing at 1.6 s, never by 2 s, a process not fresh, each failed re-validation, a field turned secure mid-wait
-  read no more, another answer on a re-read), the in-flight stop before any
+  read no more, another answer on a re-read; boxes arriving partly then wholly placed, an incomplete miss at 2 s and
+  when not fresh, a complete miss at once with a multi-line value's newlines, a trailing space and U+200B boxless,
+  the characters that may lack a box), a static text scanned over its whole value, the in-flight stop before any
   write, the record and the note; the service's note test for click).
   Date/Author: 2026-11-05, cursor235 for the design session's rulings on #283.
 

@@ -104,23 +104,26 @@ func webAreaFocusTarget<Element>(_ hit: Element, role: (Element) -> String?, sub
 /// box in the line the point's height falls in), the end of that line, before its line break. That end counts only
 /// once it is established: a line break's own box, or after the rightmost character read when the next offset is the
 /// text's end, a line break, or a character whose non-empty box starts below this one's (a soft wrap; read even outside
-/// `range`). Otherwise the rightmost box read need not be the line's last (a failed read, a scan cut to the visible
-/// characters). An empty text is 0. Not placed: `noCharacterBoxes` when the scan read no usable box at all (one with
+/// `range`). Otherwise the rightmost box read need not be the line's last (a failed read, a scan cut short). An empty text is 0. Not placed: `noCharacterBoxes` when the scan read no usable box at all (one with
 /// height, and width unless it is a line break's), as every box is before Chromium's complete accessibility mode;
-/// `pointOutsideText` when usable boxes were read but none holds the point and it is past no established line end, or
-/// the range is longer than `caretScanLimit`.
+/// `boxesIncomplete` when usable boxes were read but none holds the point and it is past no established line end, while
+/// some character that should have a box had none (Chromium's boxes still arriving: `mayLackBox` names those that may
+/// legitimately have none, line breaks always among them); `pointOutsideText` for such a miss with every expected box
+/// read, or a range longer than `caretScanLimit`.
 func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int) -> CGRect?,
-                 isLineBreak: (Int) -> Bool) -> Result<Int, CaretNotPlaced> {
+                 isLineBreak: (Int) -> Bool, mayLackBox: (Int) -> Bool) -> Result<Int, CaretNotPlaced> {
   if length == 0 { return .success(0) }
   let scanned = range.clamped(to: 0..<length)
   guard scanned.count <= caretScanLimit else { return .failure(.pointOutsideText) }
-  var readABox = false
+  var readABox = false, missedABox = false
   // The rightmost line-end candidate: its offset, its x, and the box of the character it follows (nil for a line break).
   var lineEnd: (offset: Int, x: CGFloat, after: CGRect?)?
   for index in scanned {
-    guard let box = bounds(index), box.height > 0 else { continue }
     let lineBreak = isLineBreak(index)
-    guard lineBreak || box.width > 0 else { continue }
+    guard let box = bounds(index), box.height > 0, lineBreak || box.width > 0 else {
+      if !lineBreak, !mayLackBox(index) { missedABox = true }
+      continue
+    }
     readABox = true
     guard box.minY <= point.y, point.y < box.maxY else { continue }
     if lineBreak {
@@ -132,12 +135,23 @@ func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int
     if lineEnd.map({ box.maxX >= $0.x }) ?? true { lineEnd = (index + 1, box.maxX, box) }
   }
   guard readABox else { return .failure(.noCharacterBoxes) }
-  guard let lineEnd, point.x >= lineEnd.x else { return .failure(.pointOutsideText) }
+  let miss = Result<Int, CaretNotPlaced>.failure(missedABox ? .boxesIncomplete : .pointOutsideText)
+  guard let lineEnd, point.x >= lineEnd.x else { return miss }
   let end = lineEnd.offset
   guard let after = lineEnd.after, end < length, !isLineBreak(end) else { return .success(end) }
   // Only a usable box (as the scan's own) shows a lower line: an empty one, such as CGRect.zero, is no box at all.
   if let next = bounds(end), next.width > 0, next.height > 0, next.minY >= after.maxY { return .success(end) }
-  return .failure(.pointOutsideText)
+  return miss
+}
+
+/// The characters whose box may legitimately be empty, so that an empty one is no sign of boxes still arriving
+/// (the design session's condition, 9ba80c48): line breaks, whitespace (a trailing space at a wrap), controls and
+/// format characters (U+200B, U+200C, U+200D, U+FEFF, U+00AD), combining marks, and either half of a surrogate pair.
+private let boxlessCharacters = CharacterSet.whitespacesAndNewlines.union(.controlCharacters).union(.nonBaseCharacters)
+
+func mayLackBox(_ unit: unichar) -> Bool {
+  guard let scalar = Unicode.Scalar(unit) else { return true }
+  return boxlessCharacters.contains(scalar)
 }
 
 /// Where a contenteditable region's static text `hit` starts in the region's own offsets (`editable`'s AXValue, UTF-16):
@@ -194,6 +208,9 @@ enum CaretNotPlaced: String, Error, Equatable {
   case noCharacterBoxes
   /// Character boxes were read, but none holds the point and it is past no line's end (or the text was too long to scan).
   case pointOutsideText
+  /// Such a miss while some boxes were still empty: the scan's and its wait's only, never recorded
+  /// (`caretAwaitingBoxes` re-reads it where fresh and answers it otherwise as `pointOutsideText`).
+  case boxesIncomplete
   /// The caret was written, but AXSelectedTextRange read back otherwise.
   case selectionMismatch
   /// The hit's text could not be mapped to the focused field's offsets: a contenteditable region's hit that is not an
@@ -239,26 +256,36 @@ func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, beforeMutating: (
 }
 
 /// The caret's offset where a focused field's boxes may not exist yet (#283, the design session's ruling 37d4c12c): before
-/// Chromium's complete accessibility mode every character box is empty (`noCharacterBoxes`). In a process whose
-/// accessibility is `fresh` (#282's rule) the offset is computed again every `webAreaActionRereadSampleMs` for up to
-/// `webAreaActionRereadMs`, posting nothing, until it answers anything else (an offset, or `pointOutsideText` or
-/// `unmapped`, which then is the answer). Each re-read waits on `sameTarget` (still the element the click focused, and
-/// not a secure one): failing, nothing more is read. An offset found by a re-read counts only if the field still reads
-/// focused, is still that element and its value's length (`valueLength`) is the one read when the wait began; otherwise, as when the boxes stay empty or the process is not fresh or that length cannot be read
-/// (no wait at all), `noCharacterBoxes`.
+/// Chromium's complete accessibility mode every character box is empty (`noCharacterBoxes`), and while they arrive some
+/// are (`boxesIncomplete`, run 42152333871; widened from 37d4c12c under 9ba80c48). In a process whose accessibility is
+/// `fresh` (#282's rule) the offset is computed again every `webAreaActionRereadSampleMs` for up to
+/// `webAreaActionRereadMs`, posting nothing, until it answers anything else (an offset, or a complete miss
+/// `pointOutsideText` or `unmapped`, which then is the answer). Each re-read waits on `sameTarget` (still the element
+/// the click focused, and not a secure one): failing, nothing more is read. An offset found by a re-read counts only
+/// if the field still reads focused, is still that element and its value's length (`valueLength`) is the one read
+/// when the wait began. Otherwise, as when the boxes stay empty or the process is not fresh or that length cannot be
+/// read (no wait at all), `noCharacterBoxes`; an incomplete miss not waited for, or still incomplete at the bound, is
+/// `pointOutsideText`.
 func caretAwaitingBoxes(fresh: Bool, offset: () -> Result<Int, CaretNotPlaced>, focused: () -> Bool?, sameTarget: () -> Bool,
                         valueLength: () -> Int?, now: () -> Double, sleep: (Double) -> Void) -> Result<Int, CaretNotPlaced> {
+  func awaited(_ answer: Result<Int, CaretNotPlaced>) -> Bool {
+    answer == .failure(.noCharacterBoxes) || answer == .failure(.boxesIncomplete)
+  }
+  // An incomplete miss that is not waited for, or still incomplete at the bound, is a miss.
+  func settled(_ answer: Result<Int, CaretNotPlaced>) -> Result<Int, CaretNotPlaced> {
+    answer == .failure(.boxesIncomplete) ? .failure(.pointOutsideText) : answer
+  }
   let first = offset()
-  guard first == .failure(.noCharacterBoxes), fresh, let length = valueLength() else { return first }
+  guard awaited(first), fresh, let length = valueLength() else { return settled(first) }
   let started = now()
   var answer = first
-  while answer == .failure(.noCharacterBoxes), now() - started < webAreaActionRereadMs {
+  while awaited(answer), now() - started < webAreaActionRereadMs {
     sleep(webAreaActionRereadSampleMs)
     // Requalified before each read: a field that became another element, or a password field, is not read again.
     guard sameTarget() else { return .failure(.noCharacterBoxes) }
     answer = offset()
   }
-  guard case .success = answer else { return answer }
+  guard case .success = answer else { return settled(answer) }
   guard focused() == true, sameTarget(), valueLength() == length else { return .failure(.noCharacterBoxes) }
   return answer
 }
@@ -281,28 +308,23 @@ func focusNote(_ app: String, _ outcome: WebAreaFocusOutcome) -> String {
 }
 
 /// The caret offset a click at `point` places in a field whose value read as `value`, from its characters' boxes
-/// (`caretOffset`): the value's UTF-16 units, scanned over `visible` (its visible character range) when it reads one,
-/// else over all of it. Only a value read as a string is text: anything else (a failed read, no value, another type) is
-/// `unreadable`, never an empty field.
-func textCaretOffset(at point: CGPoint, value: Any?, visible: Range<Int>?, bounds: (Int) -> CGRect?) -> Result<Int, CaretNotPlaced> {
+/// (`caretOffset`): all of the value's UTF-16 units, bounded only by `caretScanLimit`. Only a value read as a string is
+/// text: anything else (a failed read, no value, another type) is `unreadable`, never an empty field.
+func textCaretOffset(at point: CGPoint, value: Any?, bounds: (Int) -> CGRect?) -> Result<Int, CaretNotPlaced> {
   guard let string = value as? String else { return .failure(.unreadable) }
   let text = string as NSString
   let length = text.length
-  return caretOffset(at: point, length: length, range: visible ?? 0..<length, bounds: bounds,
-                     isLineBreak: { $0 < length && [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: $0)) })
+  return caretOffset(at: point, length: length, range: 0..<length, bounds: bounds,
+                     isLineBreak: { $0 < length && [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: $0)) },
+                     mayLackBox: { $0 < length && mayLackBox(text.character(at: $0)) })
 }
 
-/// `textCaretOffset` over an element's own AXValue, AXVisibleCharacterRange and characters' boxes: a text field, or a
-/// contenteditable region's AXStaticText (whose AXNumberOfCharacters reads 0, so its length is its value's). Chromium
-/// answers AXVisibleCharacterRange with the whole text even when the field is scrolled (round 2's probe), so the scan
-/// in practice covers all of it; it is still read, and honored, where an element gives less.
+/// `textCaretOffset` over an element's own AXValue and characters' boxes: a text field, or a contenteditable region's
+/// AXStaticText (whose AXNumberOfCharacters reads 0, so its length is its value's). AXVisibleCharacterRange is not read:
+/// Chromium answers it with the whole text on a text field even when scrolled (round 2), and {0, 0} on a static text
+/// (run 42152333871), so it never narrows the scan correctly.
 func fieldCaretOffset(_ field: AXUIElement, at point: CGPoint) -> Result<Int, CaretNotPlaced> {
-  var visible: Range<Int>?
-  if let wire = rangeWire(attribute(field, kAXVisibleCharacterRangeAttribute)), let location = wire["location"],
-     let count = wire["length"], location >= 0, count >= 0 {
-    visible = location..<(location + count)
-  }
-  return textCaretOffset(at: point, value: attribute(field, kAXValueAttribute), visible: visible, bounds: { characterBounds(field, $0) })
+  textCaretOffset(at: point, value: attribute(field, kAXValueAttribute), bounds: { characterBounds(field, $0) })
 }
 
 /// One character's box in screen coordinates (AXBoundsForRange of {index, 1}); nil when the element gives none.

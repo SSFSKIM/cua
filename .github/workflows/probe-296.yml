@@ -58,7 +58,7 @@ jobs:
       - name: Live
         env:
           P296_REP: ${{ matrix.rep }}
-          P296_CELLS: ${{ github.event.inputs.cells || '' }}
+          P296_CELLS: ${{ github.event.inputs.cells || 'chrome/shared/toolbar-reload/1s/branch,chrome/dedicated/label,chrome/dedicated/static,chrome/dedicated/recreate,safari/shared/label,safari/shared/recreate,native/shared/label,native/shared/again' }}
         run: node scripts/probe-296/ab.mjs --group ${{ matrix.group }} --branch "$RUNNER_TEMP/eng-branch/debug/cua-engine" --main "$RUNNER_TEMP/eng-main/debug/cua-engine" --app "$RUNNER_TEMP/Probe296.app/Contents/MacOS/Probe296" ${P296_CELLS:+--cells "$P296_CELLS"} --out "$RUNNER_TEMP/probe-296"
       - name: Upload
         if: always()

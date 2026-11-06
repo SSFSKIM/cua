@@ -315,7 +315,7 @@ async function cell(spec, shared) {
       if (node?.frame) break;
       await sleep(1000);
     }
-    row.observation = {ms: o.ms, sinceLaunchMs: o.at - target.launchedAt, nodes: o.sky.nodes.length, stalePointRecord: find(o.sky, 'stalePointRecord') ?? null};
+    row.observation = {ms: o.ms, sinceLaunchMs: o.at - target.launchedAt, nodes: o.sky.nodes.length, stalePointRecord: find(o.sky, 'stalePointRecordMs') ?? null, timings: find(o.sky, 'timings') ?? null};
     if (!node?.frame) { row.problem = 'no target node'; row.roles = [...new Set(o.sky.nodes.map(n => n.role))].slice(0, 40); return row; }
     row.target = {role: node.role, title: node.title, frame: node.frame};
     row.intended = targetId(node, spec);

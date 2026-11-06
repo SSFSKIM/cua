@@ -2566,14 +2566,25 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      spike that measures how often, and where the seeding would be revisited. Building this limit's test found the
      guard's record treating a strip-framed container as framed: its unrecorded children did not count against its
      parent, so at a point under it the deepest recorded node was a complete-looking web area and an interactive hit
-     there refused as `interactiveHit`, a false refusal (main has it too). `screenshotNodes` now counts a strip-framed
-     node (1 pt or less either way) that does not clip its descendants as frameless for that rule, so the point is
-     checked container-only, as stated (`testAVisibleControlUnderACollapsedContainerCanStillBeCut`). A strip that clips
-     (`clipsDescendants`, the same predicate the walk's visible-first order cuts by: a 1-pt scroll area or page-scrolling
-     group) keeps its own boundary, since its children show only inside it: its missing children make only the strip
-     incomplete, and a new interactive element elsewhere in its parent is still refused (the re-review of
-     4e73574a..b2685041 found the first form of the rule passing such a button as `unrecordedDescendant`;
-     `testAClippingStripsOmittedChildIsItsOwnNotItsParents`). Each test fails with its half of the rule removed.
+     there refused as `interactiveHit`, a false refusal (main has it too). The record cannot tell a collapsed container
+     (children shown outside its frame) from a strip that clips them (Chromium clips by layout overflow whatever the
+     role: an `overflow:hidden` list stays `AXList`), so the role decides nothing (the re-reviews of
+     4e73574a..b2685041 and b2685041..c36c3c81 found a role-based rule passing a new button elsewhere as
+     `unrecordedDescendant`, for a scroll area and then for a list). The live hit decides: `screenshotNodes` marks a
+     strip (1 pt or less either way) whose children the record lacks (`thinGap`), and keeps main's completeness rule
+     otherwise; where the verdict would refuse an interactive hit (`interactiveHit`) or an element route's target
+     (`pressedOther`), it reads that element's parents up to its window (`ancestors`, the climb the re-created search
+     makes) and, when they pass through such a strip (CFEqual), reads `unrecordedDescendant` instead: the node, which
+     passed as every node does, is all that is checked. So a hit under the collapsed container passes container-only,
+     a new button elsewhere in its parent is refused whether the strip clips or not, and a strip whose subtree the
+     record holds changes nothing. A strip re-created since the screenshot matches no hit's parents, and refuses: the
+     safe direction. **The cost:** none at a kept point, and none when the record has no such strip; otherwise one
+     AXParent read per level of the hit's depth (typically 10–30), only on a verdict that would otherwise refuse;
+     unmeasured live, of the order of #296's own re-created search (p95 about 10 ms on Chrome). Proven offline:
+     `testAVisibleControlUnderACollapsedContainerCanStillBeCut` (the hit under the strip, `unrecordedDescendant`;
+     `interactiveHit` with the check removed) and `testAStripsOmittedChildNeverStandsBehindANewButtonElsewhere` (an
+     `AXScrollArea` strip and an `AXList` strip, each with a new button elsewhere: `interactiveHit`, and `pressedOther`
+     for an element route; both `unrecordedDescendant` with the parents' test removed).
   3. **The marker** reads `[truncated: at least N elements omitted, above the visible area]`, `…, below the visible
      area]` or `…, above and below the visible area]`, the direction from where the omitted parts lie (`above` and
      `below` stay on the wire, and in the tests). A part placed neither way (beside the visible area, overlapping it,

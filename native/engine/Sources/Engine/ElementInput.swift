@@ -304,16 +304,23 @@ extension Engine {
         throw backgroundClickRefused(app.displayName)
       }
     }
-    let control = resolved.control, role = resolved.role
+    let control = resolved.control
     return { [self] meta in
       let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
-      let fresh = webAreaAccessibilityFresh(enabledAt: webAccessibility.lastEnabledAt(pid: appPid, launched: generation),
+      let fresh = webAreaAccessibilityFresh(freshSince: webAccessibility.freshSince(pid: appPid, launched: generation),
                                             now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
-      guard let action = webAreaActionRereading(role: role, first: establishedActionNames(of: control), fresh: fresh,
-                                                read: { establishedActionNames(of: control) }, now: monotonicMilliseconds,
-                                                sleep: { usleep(UInt32($0 * 1000)) }) else {
-        refused(.noAction, &meta)
-        throw backgroundClickRefusedObserveFirst(app.displayName)
+      // The action, re-read where fresh, then the control requalified as it is now, all before anything is posted.
+      let decision = webAreaPressDecision(control, walkedRole: resolved.role, fresh: fresh, actions: establishedActionNames(of:),
+                                          role: { attribute($0, kAXRoleAttribute) as? String },
+                                          parent: { elementAttribute($0, kAXParentAttribute) },
+                                          editable: { attribute($0, "AXEditableAncestor") != nil },
+                                          now: monotonicMilliseconds, sleep: { usleep(UInt32($0 * 1000)) })
+      let action: String, role: String
+      switch decision {
+      case .success(let pressed): (action, role) = (pressed.action, pressed.role)
+      case .failure(let why):
+        refused(why, &meta)
+        throw why == .noAction ? backgroundClickRefusedObserveFirst(app.displayName) : backgroundClickRefused(app.displayName)
       }
       let owner = ownerPid(of: control, fallback: appPid)
       try refuseForbiddenOwner(owner)

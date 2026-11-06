@@ -468,10 +468,10 @@ final class BackgroundPointerTests: XCTestCase {
     // A non-allowlisted role never reaches the re-read: the walk refuses it first, with no wait.
     guard case .failure(.editable) = control(Node("AXTextArea", parent: page())) else { return XCTFail("refused at once") }
     // Fresh: a recent enablement write, or no web area seen yet.
-    XCTAssertTrue(webAreaAccessibilityFresh(enabledAt: 1_000, now: 2_700, webAreaSeen: true))
-    XCTAssertFalse(webAreaAccessibilityFresh(enabledAt: 1_000, now: 1_000 + webAreaFreshEnablementMs, webAreaSeen: true))
-    XCTAssertFalse(webAreaAccessibilityFresh(enabledAt: nil, now: 5, webAreaSeen: true))
-    XCTAssertTrue(webAreaAccessibilityFresh(enabledAt: nil, now: 5, webAreaSeen: false))
+    XCTAssertTrue(webAreaAccessibilityFresh(freshSince: 1_000, now: 2_700, webAreaSeen: true))
+    XCTAssertFalse(webAreaAccessibilityFresh(freshSince: 1_000, now: 1_000 + webAreaFreshEnablementMs, webAreaSeen: true))
+    XCTAssertFalse(webAreaAccessibilityFresh(freshSince: nil, now: 5, webAreaSeen: true))
+    XCTAssertTrue(webAreaAccessibilityFresh(freshSince: nil, now: 5, webAreaSeen: false))
   }
 
   /// A checkbox or radio button whose value is unchanged after the press, through the settle, answers clickUnconfirmed;
@@ -499,9 +499,104 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertNoThrow(try run(["0", "0", "0", "1"]), "the value changed within the settle")
     XCTAssertLessThan(clock, webAreaValueSettleMs)
     XCTAssertThrowsError(try run(["1", nil]), "unreadable after a readable value: unconfirmed")
-    XCTAssertNoThrow(try run([nil]), "no value to read before: the press stands")
     XCTAssertNoThrow(try run(["0"], checks: false), "a button has no value to check")
-    XCTAssertEqual(presses, 5)
+    XCTAssertEqual(presses, 4)
+  }
+
+  /// The review of c768d2bb..1c8f2229: a value-checked role whose baseline read fails is still pressed, once, and answers
+  /// clickUnconfirmed, never success; a role with no value to check reads nothing at all.
+  func testAValueCheckedPressWhoseBaselineCannotBeReadAnswersClickUnconfirmed() {
+    var presses = 0, reads = 0
+    XCTAssertThrowsError(try pressConfirmingValue(app: "Google Chrome for Testing", checksValue: true, readValue: { reads += 1; return nil },
+                                                  now: { 0 }, sleep: { _ in XCTFail("no settle without a baseline") }) { presses += 1 }) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
+    }
+    XCTAssertEqual(presses, 1, "the press goes ahead, the model's intended action")
+    XCTAssertEqual(reads, 1)
+    reads = 0
+    XCTAssertNoThrow(try pressConfirmingValue(app: "Chrome", checksValue: false, readValue: { reads += 1; return nil },
+                                              now: { 0 }, sleep: { _ in }) { presses += 1 })
+    XCTAssertEqual(reads, 0, "no value to check: none read")
+    XCTAssertEqual(presses, 2)
+  }
+
+  /// The final hosted A/B (run 42134748488): on Chrome for Testing the enablement write fails, so freshness keyed on a
+  /// successful write never opened and the re-read never ran. The process's first observation opens the fresh window,
+  /// and so does every write attempt, failed or not; the observation reports the attempt and its AXError, value-free.
+  func testAFailedEnablementWriteStillOpensTheFreshWindowAndIsReported() {
+    let web = WebAccessibility()
+    var writes = 0
+    let access = EnablementAccess(listed: { ["AXManualAccessibility"] }, readRole: {}, read: { _ in false },
+                                  write: { _, _ in writes += 1; return .cannotComplete }, current: { true })
+    XCTAssertNil(web.freshSince(pid: 7, launched: nil), "never observed")
+    let before = monotonicMilliseconds()
+    var timings = Timings()
+    let step = web.observeEnablement(eligible: true, pid: 7, launched: nil, connection: 1, access: access, timings: &timings)
+    XCTAssertEqual(writes, 1, "the write was attempted")
+    XCTAssertNil(step?.set, "and failed")
+    XCTAssertEqual(timings.wire["enablementWrite"] as? String, "failed")
+    XCTAssertEqual(timings.wire["enablementWriteError"] as? Int, Int(AXError.cannotComplete.rawValue))
+    let since = try? XCTUnwrap(web.freshSince(pid: 7, launched: nil))
+    XCTAssertGreaterThanOrEqual(since ?? 0, before)
+    web.noteWebArea(pid: 7, launched: nil)
+    XCTAssertTrue(webAreaAccessibilityFresh(freshSince: since, now: (since ?? 0) + 1_000, webAreaSeen: true),
+                  "fresh after a failed write, the web area already seen")
+    XCTAssertFalse(webAreaAccessibilityFresh(freshSince: since, now: (since ?? 0) + webAreaFreshEnablementMs, webAreaSeen: true))
+    // A process whose attribute reads true is never written, but its first observation still opens the window.
+    let other = EnablementAccess(listed: { ["AXManualAccessibility"] }, readRole: {}, read: { _ in true },
+                                 write: { _, _ in XCTFail("not written"); return .success }, current: { true })
+    var otherTimings = Timings()
+    _ = web.observeEnablement(eligible: true, pid: 8, launched: nil, connection: 1, access: other, timings: &otherTimings)
+    XCTAssertNotNil(web.freshSince(pid: 8, launched: nil))
+    XCTAssertNil(otherTimings.wire["enablementWrite"], "no attempt, nothing reported")
+  }
+
+  /// A node that can change while the re-read waits.
+  private final class Live {
+    var role: String?
+    var editable = false
+    var actions: [String]? = []
+    let parent: Live?
+    init(_ role: String?, parent: Live? = nil) { self.role = role; self.parent = parent }
+  }
+
+  /// The review of c768d2bb..1c8f2229: the control the walk chose is requalified after the re-read and before anything is
+  /// posted. A button that, during the wait, becomes a text field or editable, moves out of the web area, or loses its
+  /// readable ancestry is refused; one still a button presses, and one now a checkbox presses as a checkbox (value checked).
+  func testTheChosenControlIsRequalifiedAfterTheReReadBeforeAnyPress() {
+    var clock: Double = 0
+    func decide(_ control: Live, during change: @escaping (Live) -> Void) -> Result<(action: String, role: String), WebAreaRefusal> {
+      var changed = false
+      return webAreaPressDecision(control, walkedRole: "AXButton", fresh: true, actions: { node in
+        if clock >= 1_600, !changed { changed = true; change(node); node.actions = ["AXPress"] }
+        return node.actions
+      }, role: { $0.role }, parent: { $0.parent }, editable: { $0.editable }, now: { clock }, sleep: { clock += $0 })
+    }
+    let web = { Live("AXWebArea", parent: Live("AXWindow")) }
+    func refusal(_ result: Result<(action: String, role: String), WebAreaRefusal>) -> WebAreaRefusal? {
+      if case .failure(let why) = result { return why }
+      return nil
+    }
+    clock = 0
+    XCTAssertEqual(refusal(decide(Live("AXButton", parent: web())) { $0.role = "AXTextField" }), .editable, "became a text field")
+    clock = 0
+    XCTAssertEqual(refusal(decide(Live("AXButton", parent: web())) { $0.editable = true }), .editable, "became editable")
+    clock = 0
+    XCTAssertEqual(refusal(decide(Live("AXButton", parent: web())) { $0.role = "AXStaticText" }), .roleNotAllowed, "no longer a control")
+    clock = 0
+    XCTAssertEqual(refusal(decide(Live("AXButton", parent: Live("AXGroup", parent: Live("AXWindow")))) { _ in }), .roleNotAllowed,
+                   "outside every web area")
+    clock = 0
+    XCTAssertEqual(refusal(decide(Live("AXButton", parent: Live("AXGroup"))) { _ in }), .incompleteAncestry, "ancestry unread")
+    clock = 0
+    let stillButton = decide(Live("AXButton", parent: Live("AXGroup", parent: web())), during: { _ in })
+    guard case .success(let same) = stillButton else { return XCTFail("still a button") }
+    XCTAssertEqual(same.action, "AXPress")
+    XCTAssertEqual(same.role, "AXButton")
+    clock = 0
+    let nowCheckbox = decide(Live("AXButton", parent: web()), during: { $0.role = "AXCheckBox" })
+    guard case .success(let toggled) = nowCheckbox else { return XCTFail("now a checkbox") }
+    XCTAssertEqual(toggled.role, "AXCheckBox", "pressed under its current role, so its value is checked")
   }
 
   // MARK: The coordinate hit-test asks the application, bounded to the window (#282, found live on the hosted runner)

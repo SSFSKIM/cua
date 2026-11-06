@@ -414,14 +414,15 @@ func webAreaAction(role: String, actions: [String]?) -> String? {
 
 /// How long a control with no action yet is re-read in a process whose accessibility is fresh (#282's hosted probe, run
 /// 42131623237: a checkbox began advertising AXPress 1.6 to 1.7 s after the engine's enablement write, with no
-/// activation at all): every 100 ms for up to 2 s, posting nothing. Fresh: the engine's last enablement write to the
-/// process is under `webAreaFreshEnablementMs` old, or no observation has seen a web area in it yet.
+/// activation at all): every 100 ms for up to 2 s, posting nothing. Fresh: under `webAreaFreshEnablementMs` since the
+/// process's first observation or the engine's last enablement write attempt, failed or not (`WebAccessibility.freshSince`;
+/// on Chrome for Testing the write fails), or no observation has seen a web area in it yet.
 let webAreaActionRereadMs: Double = 2_000
 let webAreaActionRereadSampleMs: Double = 100
 let webAreaFreshEnablementMs: Double = 10_000
 
-func webAreaAccessibilityFresh(enabledAt: Double?, now: Double, webAreaSeen: Bool) -> Bool {
-  !webAreaSeen || enabledAt.map { now - $0 < webAreaFreshEnablementMs } == true
+func webAreaAccessibilityFresh(freshSince: Double?, now: Double, webAreaSeen: Bool) -> Bool {
+  !webAreaSeen || freshSince.map { now - $0 < webAreaFreshEnablementMs } == true
 }
 
 /// The control's action, re-read every `webAreaActionRereadSampleMs` for up to `webAreaActionRereadMs` when `fresh` and
@@ -438,15 +439,53 @@ func webAreaActionRereading(role: String, first: [String]?, fresh: Bool, read: (
   return nil
 }
 
+/// Whether the control the walk chose still qualifies, read now (the review of c768d2bb..1c8f2229: a node may change
+/// during the re-read's wait): an allowlisted role, not editable, its parents read up to the AXWebArea (no window or
+/// application, no unread role or parent, within 300 levels). Answers its role now.
+func webAreaControlRequalified<Element>(_ control: Element, role: (Element) -> String?, parent: (Element) -> Element?,
+                                        editable: (Element) -> Bool) -> Result<String, WebAreaRefusal> {
+  guard let name = role(control) else { return .failure(.incompleteAncestry) }
+  if webAreaEditableRoles.contains(name) || editable(control) { return .failure(.editable) }
+  guard webAreaPressableRoles.contains(name) else { return .failure(.roleNotAllowed) }
+  var current = control
+  for _ in 0...300 {
+    guard let next = parent(current), let above = role(next) else { return .failure(.incompleteAncestry) }
+    if above == "AXWebArea" { return .success(name) }
+    if webAreaWalkStops.contains(above) { return .failure(.roleNotAllowed) }  // reached its window: outside every web area
+    current = next
+  }
+  return .failure(.incompleteAncestry)
+}
+
+/// The press of the control the walk chose (`walkedRole` its role then), decided before anything is posted: its action,
+/// re-read where the process's accessibility is fresh (`webAreaActionRereading`), then the control requalified as it is
+/// now (`webAreaControlRequalified`) and its action taken again under its current role. Answers the action and the
+/// current role, or why it is refused.
+func webAreaPressDecision<Element>(_ control: Element, walkedRole: String, fresh: Bool, actions: (Element) -> [String]?,
+                                   role: (Element) -> String?, parent: (Element) -> Element?, editable: (Element) -> Bool,
+                                   now: () -> Double, sleep: (Double) -> Void) -> Result<(action: String, role: String), WebAreaRefusal> {
+  guard webAreaActionRereading(role: walkedRole, first: actions(control), fresh: fresh, read: { actions(control) }, now: now,
+                               sleep: sleep) != nil else { return .failure(.noAction) }
+  switch webAreaControlRequalified(control, role: role, parent: parent, editable: editable) {
+  case .failure(let why): return .failure(why)
+  case .success(let current):
+    guard let action = webAreaAction(role: current, actions: actions(control)) else { return .failure(.noAction) }
+    return .success((action, current))
+  }
+}
+
 /// A web-area press whose role has a value to check (`webAreaValueCheckedRoles`): the value read before the press and
 /// polled after it for up to `webAreaValueSettleMs`; unchanged, or unreadable after a readable one, it answers
-/// clickUnconfirmed, never success. With no value to check (another role, or none readable before) the press stands as
-/// its own answer. Success means the control changed; the events Chrome itself synthesizes for the action are its own.
+/// clickUnconfirmed, never success. A role with no value to check stands on the press. A value-checked role whose
+/// baseline could not be read is still pressed (the model's intended action) and answers clickUnconfirmed, since nothing
+/// can show the control changed (the review of c768d2bb..1c8f2229). Success means the control changed; the events Chrome
+/// itself synthesizes for the action are its own.
 func pressConfirmingValue(app: String, checksValue: Bool, readValue: () -> String?, now: () -> Double, sleep: (Double) -> Void,
                           press: () throws -> Void) throws {
-  let before = checksValue ? readValue() : nil
+  guard checksValue else { return try press() }
+  let baseline = readValue()
   try press()
-  guard let before else { return }
+  guard let before = baseline else { throw pressUnconfirmed(app) }
   let started = now()
   repeat {
     if let after = readValue(), after != before { return }

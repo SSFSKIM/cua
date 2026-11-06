@@ -1866,7 +1866,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   6. **Shared mode** (the default). A left click, double click or drag so affected into a Chromium web area is never
      posted (`PointerHold.refusedWithoutActivationPointClick`, thrown as the internal `PointerRefused` before anything is
      posted, so no activation or inert click is left behind and no hold ends with its arm set). A plain left click whose
-     hit advertises AXPick or AXPress (`webAreaElementAction`, `elementClickPlan`'s choice on the hit) is carried by that
+     hit is an allowlisted control advertising AXPick or AXPress (`webAreaElementRoute`, item 13) is carried by that
      action exactly as an element click's (`elementActionClick`: the focus hold first when the app does not believe it
      has focus, then the action), its meta's `elementClick` reason `webArea`. Anything else (no action, a double
      click, a drag, focusField's fallback, which is refused and never pressed, since an action is no focusing) is
@@ -1908,14 +1908,47 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      (the element route now reachable). A hit that is itself the window, sheet or application is a coarse answer, an
      incomplete walk, never a view known to accept first mouse. The element click and focusField's fallback always hit-
      tested the owner's application (`ElementPointing`) and are unchanged.
-  Proven offline (`BackgroundPointerTests`, 18, failing before the change where they bite: shared mode's refusal of
+  13. **The element route is an allowlist** (the design session's ruling, 1ea561bc fe37aee9, on the hosted A/B, run
+     42130746324, two identical repetitions: AXPress on the page's AXTextArea answered success and did nothing, no focus
+     and no events, #282's false success again). Shared mode presses only `webAreaPressableRoles`: AXButton, AXCheckBox,
+     AXRadioButton, AXLink, AXPopUpButton, AXMenuItem, AXMenuButton, AXDisclosureTriangle and AXTab. No AXToggle:
+     Chromium's role mapping (ui/accessibility/platform/ax_platform_node_cocoa.mm `nativeRoleFromAXRole`) exposes a
+     toggle button and a switch as AXCheckBox (subroles AXToggleButton and AXSwitch), a tab as AXRadioButton (subrole
+     AXTabButton) and a select as AXPopUpButton, so no web element answers AXToggle or AXTab, and the list covers them as
+     AXCheckBox and AXRadioButton. Every other role, text entry included, and any hit with an `AXEditableAncestor`
+     (text and editing are #283's) is `backgroundClickRefused`. A checkbox's or radio button's AXValue (so a toggle's, a
+     switch's, a tab's) is read before the press and polled every 20 ms for up to 500 ms after it
+     (`pressConfirmingValue`): unchanged, or unreadable after a readable one, the click answers `clickUnconfirmed`
+     (`pressUnconfirmed`'s sentence), never success. The criterion is that the control changes exactly once: Chrome's
+     own AXPress on a checkbox synthesizes trusted pointer events in the page, which are Chrome's, not cua's posting,
+     so no claim of zero pointer events is made for the element route.
+  14. **The control, and its late action** (the hosted probe, run 42131623237; the design session's rulings, 1ea561bc
+     7a6a3638). A hit at a control's point may be its child (the label's AXStaticText), so the hit resolves to the
+     nearest allowlisted ancestor (`webAreaControl`), passing only through plain, non-interactive children
+     (`webAreaPassableRoles`: AXStaticText, AXImage, AXGroup, the last Chromium's generic container), and that one is
+     pressed. The walk refuses, as `backgroundClickRefused`, when it meets an editable element (a text-entry role or an
+     `AXEditableAncestor`), any other role (another interactive one included), or the AXWebArea before a control, and
+     when it cannot read the ancestry (a role or parent unread, or 300 levels): it never presses outside the web area.
+     The meta's `elementClick` names the control's role (`pressedRole`) and whether it was the hit or an ancestor
+     (`pressed`) and the walk itself, roles only from the hit up to where it stopped (`walk`), with why it stopped on a
+     refusal (`walkStopped`, also recorded then); its reason stays `webArea`, since `descendant` names the gate's choice of
+     synthesis. The probe showed
+     the missing AXPress was Chromium's accessibility enablement coming up, not activation: with no activation at all a
+     page checkbox began advertising AXPress 1.6 to 1.7 s after the engine's first observation (its enablementPrior
+     false). So where the process's accessibility is fresh (the engine's last enablement write to it under 10 s old,
+     `WebAccessibility.lastEnabledAt`, or no web area seen in it yet), a resolved control with no action is re-read every
+     100 ms for up to 2 s, posting nothing, before the refusal (`webAreaActionRereading`); a role the walk refuses waits
+     not at all. The refusal of a control still without an action asks for an observation first
+     (`backgroundClickRefusedObserveFirst`). **The cost:** up to 2 s of latency on the first click into a fresh Chrome
+     whose control has not yet exposed its action, and the whole 2 s when it never does.
+  Proven offline (`BackgroundPointerTests`, 23, failing before the change where they bite: shared mode's refusal of
   a click, a double click and a drag into a web area with nothing posted, no hold taken and nothing left held; a plain
-  click carried by the element route with no mouse event; a web-area pointer joining its own or another connection's
+  click carried by the element route with nothing posted by cua; a web-area pointer joining its own or another connection's
   spent hold refused with the hold untouched; an Electron-shaped activation still posting; dedicated mode's inert click
   before the down, no restore, no watch, no re-arming; `clickUnconfirmed` for an unknown view's consuming click and
   drag and for a dedicated click whose inert click could not be placed, success for a known-accept view; an unknown
   view sharing a spent hold rather than re-arming; the web-area walk, its stop at the window, and after the review an incomplete walk (a failed parent read, an unreadable role, the bound run out with the web area beyond) never known to accept, a possible web area refused or element-routed in shared mode and unconfirmed in dedicated; the
-  element route's action; the ping's per-connection mode. The service's ping and pass-through, the launch's mode,
+  element route's allowlist (the textarea and an editable-ancestor hit refused, a button passing) and its value check (an unchanged checkbox answering clickUnconfirmed); the walk (a label child pressing its button, an editable element or another interactive role in between refusing) and the re-read (a late action found at 1.6 s and pressed, a timeout refused, no wait where not fresh); the ping's per-connection mode. The service's ping and pass-through, the launch's mode,
   doctor's row and the client's ping in their JS suites). Nothing live ran: the hosted Chrome for Testing A/B of the
   ruling's acceptance is the next step.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's ruling on #282.

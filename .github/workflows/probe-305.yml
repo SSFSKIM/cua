@@ -11,14 +11,14 @@ on:
 permissions:
   contents: read
 env:
-  P305_ENGINE_REF: c4057c3a7426606c65145f3a4b16c5d3d307febb
+  P305_ENGINE_REF: 4525925e  # main after #301 (#306); c4057c3a ran in runs 42251639474 and 42256453844
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: [safari, finder]  # chrome ran at 05a0afd3 (run 42251639474); this push re-runs the two whose resets posted keys
+        group: [chrome, safari, finder]
     runs-on: macos-latest
     timeout-minutes: 60
     steps:

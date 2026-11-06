@@ -995,7 +995,10 @@ node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out 
   gnome-terminal and xterm running the recorder; the settle scenes `pages/settle-gtk3.py` and `pages/settle-qt.py`
   (a button counting presses, a pad counting moves and wheel steps, in accessible names); GTK 4's button and input
   scenes and gnome-text-editor. A kind the family's `families.rs` entry ignores on the background route is refused in
-  shared mode with nothing sent, so GTK 4's kinds and xterm's keys run in dedicated mode (the foreground route).
+  shared mode with nothing sent, so GTK 4's kinds and xterm's keys run in dedicated mode (the foreground route), and
+  so, with their windows covered, do Firefox's pointer kinds, Chrome's and Electron's drags and Qt's scroll (task 63).
+  `xprobe order-watch`, attached to the sitting's display, records the order of each foreground request's focus, the
+  window manager's raise and the press (`docs/evidence/2026-10-28-own-linux-engine/m4/foreground-raise/`).
 - **A run**: prepared outside its span (a caret put at the text's end through AT-SPI, a terminal's screen cleared,
   a key held for a `key_up`, a word copied for a `clipboard_write`), read once its scene has stopped changing, then its
   requests through the service and the reading of its effect inside one witness span. The effect is read through the

@@ -1,0 +1,10 @@
+fatal: not a git repository (or any of the parent directories): .git
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+| cell | lane | runs | misses (late / never) | streak at the end | verdict |
+|---|---|---:|---|---:|---|
+| settle-qt5 scroll dedicated | shipped | 36 | 5 (0 / 5) | 0 | not reached |
+| settle-qt6 scroll dedicated | shipped | 33 | 17 (0 / 17) | 0 | not reached |
+
+**Incomplete or failed:** settle-qt5 scroll dedicated (shipped): no 30 consecutive passing runs in 36; settle-qt6 scroll dedicated (shipped): no 30 consecutive passing runs in 33.

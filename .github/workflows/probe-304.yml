@@ -1,0 +1,59 @@
+# #304's hosted measurement (scripts/probe-304/run.mjs): visible controls under collapsed-frame containers (hole 1) and
+# visible siblings a wide shown list starves (hole 2) on cut pages, main's engine (f20a25ee) against the same engine with
+# its budgets raised, both built with scripts/probe-304/instrument.py on the runner only. The offline analysis
+# (scripts/probe-304/offline/) does not run here. Runs only on a push to probe/304-hosted (or by hand); not a ci-kit gate.
+name: probe-304
+on:
+  push:
+    branches: [probe/304-hosted]
+    paths-ignore: ['scripts/probe-304/offline/**', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: --targets (page names, comma-separated; empty for every page of the group)
+        required: false
+        default: ''
+permissions:
+  contents: read
+env:
+  P304_MAIN_REF: f20a25ee895c5aab2ebb760f6114ecaac232c732
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2]
+        group: [chrome-a, chrome-b, chrome-c, safari]
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build the engines (instrumented) and the tool
+        run: |
+          sw_vers
+          node --version
+          git worktree add "$RUNNER_TEMP/main" "$P304_MAIN_REF"
+          git worktree add "$RUNNER_TEMP/wide" "$P304_MAIN_REF"
+          echo "P304_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
+          python3 -I scripts/probe-304/instrument.py "$RUNNER_TEMP/main/native/engine/Sources/Engine"
+          python3 -I scripts/probe-304/instrument.py "$RUNNER_TEMP/wide/native/engine/Sources/Engine" --wide
+          swift build -c release --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng-main"
+          swift build -c release --package-path "$RUNNER_TEMP/wide/native/engine" --scratch-path "$RUNNER_TEMP/eng-wide"
+          swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-304/tool.swift
+      - name: Measure
+        env:
+          P304_REP: ${{ matrix.rep }}
+          P304_TARGETS: ${{ github.event.inputs.targets || '' }}
+        run: node scripts/probe-304/run.mjs --group ${{ matrix.group }} --main "$RUNNER_TEMP/eng-main/release/cua-engine" --wide "$RUNNER_TEMP/eng-wide/release/cua-engine" --tool "$RUNNER_TEMP/probe-tool" ${P304_TARGETS:+--targets "$P304_TARGETS"} --out "$RUNNER_TEMP/probe-304"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-304-${{ matrix.group }}-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-304/*.json
+            ${{ runner.temp }}/probe-304/*.gz
+          if-no-files-found: warn

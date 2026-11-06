@@ -207,10 +207,11 @@ enum WebAreaFocusOutcome: Equatable {
 /// The focusing click itself, once the target is known: `beforeMutating` (the in-flight intervention check), AXFocused
 /// written (`writeFocused`, its answer never counted) and polled (`focused`) for up to `webAreaFocusSettleMs`; still not
 /// reading true, the click answers `focusUnconfirmed`. A secure field stops there. Otherwise the caret's offset
-/// (`offset`, read once the field holds focus), written (`writeSelection`) and read back (`selection`, polled for the
-/// same settle) as {offset, 0}.
-func focusPlacingCaret(app: String, secure: Bool, beforeMutating: () throws -> Void, writeFocused: () -> Void, focused: () -> Bool?,
-                       offset: () -> Result<Int, CaretNotPlaced>, writeSelection: (Int) -> Void, selection: () -> (location: Int, length: Int)?,
+/// (`offset`, read once the field holds focus; `caretAwaitingBoxes` where it finds no character boxes yet), written
+/// (`writeSelection`) and read back (`selection`, polled for the same settle) as {offset, 0}.
+func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, beforeMutating: () throws -> Void, writeFocused: () -> Void,
+                       focused: () -> Bool?, offset: () -> Result<Int, CaretNotPlaced>, sameTarget: () -> Bool, valueLength: () -> Int?,
+                       writeSelection: (Int) -> Void, selection: () -> (location: Int, length: Int)?,
                        now: () -> Double, sleep: (Double) -> Void) throws -> WebAreaFocusOutcome {
   func settles(_ condition: () -> Bool) -> Bool {
     let started = now()
@@ -225,13 +226,37 @@ func focusPlacingCaret(app: String, secure: Bool, beforeMutating: () throws -> V
   guard settles({ focused() == true }) else { throw focusUnconfirmed(app) }
   if secure { return .notPlaced(.secure) }
   let target: Int
-  switch offset() {
+  switch caretAwaitingBoxes(fresh: fresh, offset: offset, focused: focused, sameTarget: sameTarget, valueLength: valueLength,
+                            now: now, sleep: sleep) {
   case .failure(let why): return .notPlaced(why)
   case .success(let found): target = found
   }
   try beforeMutating()
   writeSelection(target)
   return settles({ selection().map { $0.location == target && $0.length == 0 } == true }) ? .placed(target) : .notPlaced(.selectionMismatch)
+}
+
+/// The caret's offset where a focused field's boxes may not exist yet (#283, the design session's ruling 37d4c12c): before
+/// Chromium's complete accessibility mode every character box is empty (`noCharacterBoxes`). In a process whose
+/// accessibility is `fresh` (#282's rule) the offset is computed again every `webAreaActionRereadSampleMs` for up to
+/// `webAreaActionRereadMs`, posting nothing, until it answers anything else (an offset, or `pointOutsideText` or
+/// `unmapped`, which then is the answer). An offset found by a re-read counts only if the field still reads focused,
+/// is still the element the click focused (`sameTarget`) and its value's length (`valueLength`) is the one read when
+/// the wait began; otherwise, as when the boxes stay empty or the process is not fresh or that length cannot be read
+/// (no wait at all), `noCharacterBoxes`.
+func caretAwaitingBoxes(fresh: Bool, offset: () -> Result<Int, CaretNotPlaced>, focused: () -> Bool?, sameTarget: () -> Bool,
+                        valueLength: () -> Int?, now: () -> Double, sleep: (Double) -> Void) -> Result<Int, CaretNotPlaced> {
+  let first = offset()
+  guard first == .failure(.noCharacterBoxes), fresh, let length = valueLength() else { return first }
+  let started = now()
+  var answer = first
+  while answer == .failure(.noCharacterBoxes), now() - started < webAreaActionRereadMs {
+    sleep(webAreaActionRereadSampleMs)
+    answer = offset()
+  }
+  guard case .success = answer else { return answer }
+  guard focused() == true, sameTarget(), valueLength() == length else { return .failure(.noCharacterBoxes) }
+  return answer
 }
 
 /// A focusing click whose field never read focused: the write went to the app, but nothing shows it took.

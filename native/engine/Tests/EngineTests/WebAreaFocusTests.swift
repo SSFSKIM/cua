@@ -83,18 +83,85 @@ final class WebAreaFocusTests: XCTestCase {
     var writes: [String] = []
     var offsetAsked = 0
     var checks = 0
+    /// The process's accessibility is fresh (#282's rule): empty boxes are waited for.
+    var fresh = false
+    /// What the re-validation after a wait reads (the clock past 0): focus, the element, the value's length (5 before).
+    var losesFocus = false
+    var sameTarget = true
+    var lengthAfterWait: Int? = 5
+    var elapsed: Double = 0
   }
 
   private func focus(_ field: inout Field, secure: Bool = false, offset: Result<Int, CaretNotPlaced> = .success(7)) throws -> WebAreaFocusOutcome {
+    try focus(&field, secure: secure, offsetAt: { _ in offset })
+  }
+
+  /// `offsetAt` answers by the clock (ms since the focus was confirmed), so boxes can appear during the wait.
+  private func focus(_ field: inout Field, secure: Bool = false, offsetAt: @escaping (Double) -> Result<Int, CaretNotPlaced>) throws -> WebAreaFocusOutcome {
     var clock: Double = 0
+    defer { field.elapsed = clock }
     return try focusPlacingCaret(
-      app: "Chrome", secure: secure, beforeMutating: { field.checks += 1 },
+      app: "Chrome", secure: secure, fresh: field.fresh, beforeMutating: { field.checks += 1 },
       writeFocused: { field.writes.append("AXFocused"); if field.takesFocus { field.focused = true } },
-      focused: { field.focused },
-      offset: { field.offsetAsked += 1; return offset },
+      focused: { clock > 0 && field.losesFocus ? false : field.focused },
+      offset: { field.offsetAsked += 1; return offsetAt(clock) },
+      sameTarget: { field.sameTarget },
+      valueLength: { clock > 0 ? field.lengthAfterWait : 5 },
       writeSelection: { offset in field.writes.append("AXSelectedTextRange \(offset)"); if field.takesSelection { field.selection = (offset, 0) } },
       selection: { field.selection },
       now: { clock }, sleep: { clock += $0 })
+  }
+
+  // MARK: boxes not there yet (the design session's ruling 37d4c12c)
+
+  private func boxesFrom(_ ms: Double) -> (Double) -> Result<Int, CaretNotPlaced> {
+    { $0 >= ms ? .success(7) : .failure(.noCharacterBoxes) }
+  }
+
+  func testBoxesThatAppearDuringTheWaitInAFreshProcessArePlaced() throws {
+    var field = Field(fresh: true)
+    XCTAssertEqual(try focus(&field, offsetAt: boxesFrom(1_600)), .placed(7))
+    XCTAssertEqual(field.writes, ["AXFocused", "AXSelectedTextRange 7"], "focus at once, the range only once the boxes came")
+    XCTAssertEqual(field.offsetAsked, 17, "the first read and a re-read every 100 ms up to 1.6 s")
+  }
+
+  func testBoxesThatNeverAppearAreNoCharacterBoxesAtTwoSeconds() throws {
+    var field = Field(fresh: true)
+    XCTAssertEqual(try focus(&field, offsetAt: boxesFrom(.infinity)), .notPlaced(.noCharacterBoxes))
+    XCTAssertEqual(field.writes, ["AXFocused"])
+    XCTAssertEqual(field.elapsed, webAreaActionRereadMs)
+    XCTAssertEqual(field.offsetAsked, 21)
+  }
+
+  func testAProcessThatIsNotFreshIsNotWaitedFor() throws {
+    var field = Field(fresh: false)
+    XCTAssertEqual(try focus(&field, offsetAt: boxesFrom(100)), .notPlaced(.noCharacterBoxes))
+    XCTAssertEqual(field.offsetAsked, 1)
+    XCTAssertEqual(field.elapsed, 0, "no wait at all")
+  }
+
+  /// After a wait the field must still be focused, the same element, and hold a value of the same length.
+  func testAReReadOffsetThatNoLongerValidatesIsNoCharacterBoxesWithNoRangeWritten() throws {
+    for (why, change) in [("focus lost", { (f: inout Field) in f.losesFocus = true }),
+                          ("another element", { (f: inout Field) in f.sameTarget = false }),
+                          ("the value's length changed", { (f: inout Field) in f.lengthAfterWait = 6 }),
+                          ("the value unreadable", { (f: inout Field) in f.lengthAfterWait = nil })] {
+      var field = Field(fresh: true)
+      change(&field)
+      XCTAssertEqual(try focus(&field, offsetAt: boxesFrom(300)), .notPlaced(.noCharacterBoxes), why)
+      XCTAssertEqual(field.writes, ["AXFocused"], why)
+    }
+    var unchanged = Field(fresh: true, losesFocus: false)
+    XCTAssertEqual(try focus(&unchanged, offsetAt: { _ in .success(7) }), .placed(7), "no wait, no re-validation")
+  }
+
+  func testAnotherAnswerOnAReReadIsTheAnswer() throws {
+    for found in [CaretNotPlaced.pointOutsideText, .unmapped] {
+      var field = Field(fresh: true)
+      XCTAssertEqual(try focus(&field, offsetAt: { $0 >= 500 ? .failure(found) : .failure(.noCharacterBoxes) }), .notPlaced(found))
+      XCTAssertEqual(field.offsetAsked, 6, "stopped at the first answer that is not noCharacterBoxes")
+      XCTAssertEqual(field.writes, ["AXFocused"])
+    }
   }
 
   func testAFocusedFieldGetsItsCaretAtThePointAndReadsItBack() throws {
@@ -138,8 +205,10 @@ final class WebAreaFocusTests: XCTestCase {
   func testAUserEventStopsTheClickBeforeTheFirstWrite() {
     var clock: Double = 0
     var writes = 0
-    XCTAssertThrowsError(try focusPlacingCaret(app: "Chrome", secure: false, beforeMutating: { throw EngineError(name: "userIntervened", "stop") },
+    XCTAssertThrowsError(try focusPlacingCaret(app: "Chrome", secure: false, fresh: true,
+                                               beforeMutating: { throw EngineError(name: "userIntervened", "stop") },
                                                writeFocused: { writes += 1 }, focused: { true }, offset: { .success(0) },
+                                               sameTarget: { true }, valueLength: { 0 },
                                                writeSelection: { _ in writes += 1 }, selection: { (0, 0) },
                                                now: { clock }, sleep: { clock += $0 }))
     XCTAssertEqual(writes, 0)

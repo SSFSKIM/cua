@@ -342,16 +342,19 @@ extension Engine {
   /// element the hit resolves to (`webAreaFocusTarget`), refused as #282's walk is when there is none; else AXFocused
   /// written by route 1 with no activation and accepted once it reads back true, then the caret placed at the point
   /// (`caretOffset` over the field's own characters' boxes when the hit is the field; over a contenteditable region's
-  /// AXStaticText hit's boxes, mapped into the region's offsets by `regionTextStart`) and read back on the focused element, the result's note saying what was done. Records the walk, the focused role, whether it
+  /// AXStaticText hit's boxes, mapped into the region's offsets by `regionTextStart`; boxes still empty in a process
+  /// whose accessibility is fresh are re-read for up to 2 s, `caretAwaitingBoxes`) and read back on the focused element, the result's note saying what was done. Records the walk, the focused role, whether it
   /// was the hit, and the caret (`elementClick` reason `focusField` or `focusedNotPlaced`).
   func webAreaFocus(_ hit: AXUIElement, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
                     context: ExecutionContext) -> (inout InputMeta) throws -> Void {
     let role: (AXUIElement) -> String? = { attribute($0, kAXRoleAttribute) as? String }
+    func focusTarget(_ walk: inout [String]) -> Result<WebAreaFocusTarget<AXUIElement>, WebAreaRefusal> {
+      webAreaFocusTarget(hit, role: role, subrole: subroleRead, parent: { elementAttribute($0, kAXParentAttribute) },
+                         editable: { attribute($0, "AXEditableAncestor") != nil },
+                         focusSettable: { AXOps.live.isSettable($0, kAXFocusedAttribute) }, walk: &walk)
+    }
     var walk: [String] = []
-    let resolution = webAreaFocusTarget(hit, role: role, subrole: subroleRead,
-                                        parent: { elementAttribute($0, kAXParentAttribute) },
-                                        editable: { attribute($0, "AXEditableAncestor") != nil },
-                                        focusSettable: { AXOps.live.isSettable($0, kAXFocusedAttribute) }, walk: &walk)
+    let resolution = focusTarget(&walk)
     guard case .success(let target) = resolution else {
       let why: WebAreaRefusal
       if case .failure(let refusal) = resolution { why = refusal } else { why = .incompleteAncestry }
@@ -371,8 +374,11 @@ extension Engine {
       meta.elementClick = ElementClickRecord(plan: .action(kAXFocusedAttribute), reason: .focusField, pressedRole: target.role,
                                              pressedAncestor: target.ancestor, walk: walk)
       let sleep: (Double) -> Void = { usleep(UInt32($0 * 1000)) }
+      let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
+      let fresh = webAreaAccessibilityFresh(freshSince: webAccessibility.freshSince(pid: appPid, launched: generation),
+                                            now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
       let outcome = try focusPlacingCaret(
-        app: app.displayName, secure: target.secure, beforeMutating: guarding.checkInFlight,
+        app: app.displayName, secure: target.secure, fresh: fresh, beforeMutating: guarding.checkInFlight,
         writeFocused: {
           cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point))
           _ = meta.posting { _ = gatedWrite(field, kAXFocusedAttribute, kCFBooleanTrue); return true }
@@ -390,6 +396,13 @@ extension Engine {
           }
           return .success(start + offset)
         },
+        sameTarget: {
+          // The hit still resolves, as the click first resolved it, to the element focused, and still not a secure one.
+          var again: [String] = []
+          guard case .success(let now) = focusTarget(&again) else { return false }
+          return CFEqual(now.element, field) && !now.secure
+        },
+        valueLength: { (attribute(field, kAXValueAttribute) as? String).map { ($0 as NSString).length } },
         writeSelection: { offset in
           _ = meta.posting { _ = gatedWrite(field, kAXSelectedTextRangeAttribute, axRangeValue(CFRange(location: offset, length: 0))); return true }
         },

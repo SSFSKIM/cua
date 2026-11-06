@@ -2014,13 +2014,23 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      paste and type_text: placed, "focused through accessibility, with the caret at the point; no mouse event was
      sent, so the page saw no click"; not placed, typing goes to the field's existing selection or its start, use
      select_text or set_value first. A double click, a drag and focusField's fallback stay refused (#289).
-  Proven offline (`WebAreaFocusTests`, 25: the field hit, the region's text hit focusing its region, each refusal, the
+  6. **Boxes not there yet** (`caretAwaitingBoxes`; the design session's ruling 37d4c12c). Focus is written and
+     confirmed at once; then, where the caret answers `noCharacterBoxes` and the process is fresh by #282's rule
+     (`webAreaAccessibilityFresh`), the offset is computed again every 100 ms for up to 2 s
+     (`webAreaActionRereadSampleMs`, `webAreaActionRereadMs`), posting nothing, until it answers anything else; a
+     `pointOutsideText` or `unmapped` found then is the answer. An offset found by a re-read is written only if the
+     field still reads AXFocused true, the hit still resolves through `webAreaFocusTarget` to an element CFEqual to
+     the one focused (and not secure), and its AXValue's length is the one read when the wait began; otherwise, still
+     empty at 2 s, or not fresh (no wait at all), `noCharacterBoxes`, with no range written. The secure field never
+     gets here. Limit: the first click into a fresh Chrome's text field can take up to about 2 s, as #288's does.
+  Proven offline (`WebAreaFocusTests`, 30: the field hit, the region's text hit focusing its region, each refusal, the
   secure field by role, by subrole and by a failed subrole read, focused with nothing read, a write that never reads
   back true, a caret read back elsewhere, a point in no box against no usable box at all, an unreadable value, the
   line-end rule only where the end is established (a failed box read, a cut scan, a soft wrap, an empty next box at
   negative screen y, the text's end) and the empty-line rule, the region mapping (round 2's five-node page at both
-  points, a nested group, a repeated word, each unmapped case), the in-flight stop before any write, the record and
-  the note; the service's note test for click).
+  points, a nested group, a repeated word, each unmapped case), the wait for boxes (appearing at 1.6 s, never by
+  2 s, a process not fresh, each failed re-validation, another answer on a re-read), the in-flight stop before any
+  write, the record and the note; the service's note test for click).
   Date/Author: 2026-11-05, cursor235 for the design session's rulings on #283.
 
 ## Outcomes & Retrospective

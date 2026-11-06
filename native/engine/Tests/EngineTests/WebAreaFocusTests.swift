@@ -89,6 +89,9 @@ final class WebAreaFocusTests: XCTestCase {
     var losesFocus = false
     var sameTarget = true
     var lengthAfterWait: Int? = 5
+    /// From this time the field is a password field: it no longer requalifies, and no read may follow.
+    var secureFrom: Double = .infinity
+    var readsWhileSecure = 0
     var elapsed: Double = 0
   }
 
@@ -104,8 +107,12 @@ final class WebAreaFocusTests: XCTestCase {
       app: "Chrome", secure: secure, fresh: field.fresh, beforeMutating: { field.checks += 1 },
       writeFocused: { field.writes.append("AXFocused"); if field.takesFocus { field.focused = true } },
       focused: { clock > 0 && field.losesFocus ? false : field.focused },
-      offset: { field.offsetAsked += 1; return offsetAt(clock) },
-      sameTarget: { field.sameTarget },
+      offset: {
+        field.offsetAsked += 1
+        if clock >= field.secureFrom { field.readsWhileSecure += 1 }
+        return offsetAt(clock)
+      },
+      sameTarget: { field.sameTarget && clock < field.secureFrom },
       valueLength: { clock > 0 ? field.lengthAfterWait : 5 },
       writeSelection: { offset in field.writes.append("AXSelectedTextRange \(offset)"); if field.takesSelection { field.selection = (offset, 0) } },
       selection: { field.selection },
@@ -153,6 +160,16 @@ final class WebAreaFocusTests: XCTestCase {
     }
     var unchanged = Field(fresh: true, losesFocus: false)
     XCTAssertEqual(try focus(&unchanged, offsetAt: { _ in .success(7) }), .placed(7), "no wait, no re-validation")
+  }
+
+  /// A field that turns into a password field during the wait is requalified before each re-read: nothing of it is read.
+  func testAFieldThatBecomesSecureDuringTheWaitIsNotReadAgain() throws {
+    var field = Field(fresh: true, secureFrom: 500)
+    XCTAssertEqual(try focus(&field, offsetAt: boxesFrom(1_600)), .notPlaced(.noCharacterBoxes))
+    XCTAssertEqual(field.readsWhileSecure, 0)
+    XCTAssertEqual(field.offsetAsked, 5, "the first read and the re-reads at 100 to 400 ms")
+    XCTAssertEqual(field.elapsed, 500, "the wait stops there")
+    XCTAssertEqual(field.writes, ["AXFocused"])
   }
 
   func testAnotherAnswerOnAReReadIsTheAnswer() throws {
@@ -316,10 +333,10 @@ final class WebAreaFocusTests: XCTestCase {
   // MARK: a contenteditable region's text mapped into the region's offsets
 
   private final class Text {
-    let role: String
+    let role: String?
     let value: Any?
     let children: [Text]?
-    init(_ role: String, _ value: Any? = nil, _ children: [Text]? = []) { (self.role, self.value, self.children) = (role, value, children) }
+    init(_ role: String?, _ value: Any? = nil, _ children: [Text]? = []) { (self.role, self.value, self.children) = (role, value, children) }
     static func text(_ value: Any?) -> Text { Text("AXStaticText", value) }
   }
 
@@ -353,6 +370,9 @@ final class WebAreaFocusTests: XCTestCase {
   func testARegionsTextThatCannotBeMappedIsNil() {
     let hit = Text.text("bravo")
     XCTAssertNil(start(of: hit, in: Text("AXTextArea", nil, [hit])), "the region's value unreadable")
+    // The re-review's case: skipping the first go, whose role is unread, would find the hit's go at 0, not 3.
+    let second = Text.text("go")
+    XCTAssertNil(start(of: second, in: Text("AXTextArea", "go go", [Text(nil, "go"), second])), "a node's role unreadable")
     XCTAssertNil(start(of: hit, in: Text("AXTextArea", "alpha bravo", [Text.text(nil), hit])), "a text's value unreadable")
     XCTAssertNil(start(of: hit, in: Text("AXTextArea", "alpha bravo", [Text.text("zulu"), hit])), "a text not found")
     XCTAssertNil(start(of: hit, in: Text("AXTextArea", "alpha bravo", [Text("AXGroup", nil, nil), hit])), "children unreadable")

@@ -144,7 +144,7 @@ func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int
 /// the region's descendants walked depth-first in children order, each AXStaticText's value found in the region's value
 /// searching onward from where the previous one ended, and the hit's found location answered. Not a sum of lengths:
 /// a <br> has no element yet is a character of the region's value. An empty static text is skipped. Nil when the
-/// region's value or a static text's is not a string, a children list cannot be read (nil), a static text is not found,
+/// region's value or a static text's is not a string, a node's role or children list cannot be read, a static text is not found,
 /// the hit is not reached, or more than `regionWalkLimit` nodes would be walked. `same` tells the hit apart.
 func regionTextStart<Element>(of hit: Element, in editable: Element, children: (Element) -> [Element]?, role: (Element) -> String?,
                               value: (Element) -> Any?, same: (Element, Element) -> Bool) -> Int? {
@@ -157,7 +157,9 @@ func regionTextStart<Element>(of hit: Element, in editable: Element, children: (
   while let node = pending.popLast() {
     visited += 1
     guard visited <= regionWalkLimit else { return nil }
-    if role(node) == "AXStaticText" {
+    // An unread role could be a static text whose skip would cost the search its place.
+    guard let name = role(node) else { return nil }
+    if name == "AXStaticText" {
       guard let text = value(node) as? String else { return nil }
       if text.isEmpty { continue }
       let found = region.range(of: text, options: .literal, range: NSRange(location: searchFrom, length: region.length - searchFrom))
@@ -240,9 +242,9 @@ func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, beforeMutating: (
 /// Chromium's complete accessibility mode every character box is empty (`noCharacterBoxes`). In a process whose
 /// accessibility is `fresh` (#282's rule) the offset is computed again every `webAreaActionRereadSampleMs` for up to
 /// `webAreaActionRereadMs`, posting nothing, until it answers anything else (an offset, or `pointOutsideText` or
-/// `unmapped`, which then is the answer). An offset found by a re-read counts only if the field still reads focused,
-/// is still the element the click focused (`sameTarget`) and its value's length (`valueLength`) is the one read when
-/// the wait began; otherwise, as when the boxes stay empty or the process is not fresh or that length cannot be read
+/// `unmapped`, which then is the answer). Each re-read waits on `sameTarget` (still the element the click focused, and
+/// not a secure one): failing, nothing more is read. An offset found by a re-read counts only if the field still reads
+/// focused, is still that element and its value's length (`valueLength`) is the one read when the wait began; otherwise, as when the boxes stay empty or the process is not fresh or that length cannot be read
 /// (no wait at all), `noCharacterBoxes`.
 func caretAwaitingBoxes(fresh: Bool, offset: () -> Result<Int, CaretNotPlaced>, focused: () -> Bool?, sameTarget: () -> Bool,
                         valueLength: () -> Int?, now: () -> Double, sleep: (Double) -> Void) -> Result<Int, CaretNotPlaced> {
@@ -252,6 +254,8 @@ func caretAwaitingBoxes(fresh: Bool, offset: () -> Result<Int, CaretNotPlaced>, 
   var answer = first
   while answer == .failure(.noCharacterBoxes), now() - started < webAreaActionRereadMs {
     sleep(webAreaActionRereadSampleMs)
+    // Requalified before each read: a field that became another element, or a password field, is not read again.
+    guard sameTarget() else { return .failure(.noCharacterBoxes) }
     answer = offset()
   }
   guard case .success = answer else { return answer }

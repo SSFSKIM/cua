@@ -199,10 +199,10 @@ export function requestsOf(cell, sc, run) {
 }
 
 /**
- * Puts a field's caret at its text's end, with no selection, through AT-SPI (no input). GTK 4's text refuses both
+ * Puts a field's caret at `offset` (its text's end when none is given), with no selection, through AT-SPI (no input). GTK 4's text refuses both
  * (`NotSupported`); the kinds it runs (a paste, judged by the text's count of the pasted word) need neither.
  */
-function caretToEnd(ctx, node) {
+function caretAt(ctx, node, offset = null) {
   const { oracle } = ctx;
   try {
     oracle.on(node, 'org.a11y.atspi.Text', 'RemoveSelection', 'i', 0);
@@ -210,9 +210,24 @@ function caretToEnd(ctx, node) {
     // none to remove
   }
   try {
-    oracle.setCaret(node, [...oracle.text(node)].length);
+    oracle.setCaret(node, offset ?? [...oracle.text(node)].length);
   } catch (error) {
     if (!ctx.caretRefused?.has(node)) throw error;
+  }
+}
+
+/**
+ * A scene's text put back to what it opened with, through AT-SPI, where the toolkit lets the harness delete (not
+ * Chromium's): the series before grew it at its end, and a long last line keeps the view scrolled sideways, the first
+ * line out of view, whatever the caret does.
+ */
+function trimText(ctx, sc) {
+  if (!sc.baseText || !sc.field || sc.effects === 'paragraphs') return;
+  try {
+    const text = ctx.oracle.text(sc.field);
+    if (text.length > sc.baseText.length && text.startsWith(sc.baseText)) ctx.oracle.on(sc.field, 'org.a11y.atspi.EditableText', 'DeleteText', 'ii', [...sc.baseText].length, [...text].length);
+  } catch {
+    // a field that refuses: its runs are judged on the text as it is
   }
 }
 
@@ -258,7 +273,7 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
   if (['press_key', 'key_down', 'key_up'].includes(cell.kind)) {
     run.key = 'x';
     if (['field', 'editor', 'paragraphs'].includes(effects)) {
-      caretToEnd(ctx, sc.field);
+      caretAt(ctx, sc.field);
       run.key = [...ctx.oracle.text(sc.field)].length > sc.baseLength ? 'BackSpace' : 'x';
     }
     if (effects === 'screen') await clearScreen(ctx, sc);
@@ -268,9 +283,8 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
     }
   } else if (cell.kind === 'click' || cell.kind === 'key_click' || cell.kind === 'move') {
     if (effects === 'editor' || effects === 'paragraphs') {
-      // the caret parked at the end of the text (or, in Writer, of the next paragraph), so the click must move it into
-      // the first line
-      caretToEnd(ctx, sc.park);
+      // the caret parked at the first line's end (in Writer, at the next paragraph's), so the click must move it
+      caretAt(ctx, sc.park.node, sc.park.offset);
       await aimAtText();
       Object.assign(run, { point: line.point, line: line.span, node: line.node });
     } else run.point = sc.points[cell.kind === 'move' ? 'move' : 'click'][trial % 2];
@@ -289,7 +303,7 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
     if (effects === 'editor' || effects === 'paragraphs') {
       // the last drag's selection cleared and the caret parked first: a press inside a selection starts a drag and drop
       // of the selected text (GTK 3), not a new selection
-      caretToEnd(ctx, sc.park);
+      caretAt(ctx, sc.park.node, sc.park.offset);
       await aimAtText();
       Object.assign(run, { path: line.path, line: line.span, node: line.node });
     } else run.path = sc.paths[trial % 2];
@@ -297,16 +311,16 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
   } else if (cell.kind === 'type_text') {
     run.text = ctx.pasteText();
     if (effects === 'screen') await clearScreen(ctx, sc);
-    else caretToEnd(ctx, sc.field);
+    else caretAt(ctx, sc.field);
   } else if (cell.kind === 'clipboard_read' || cell.kind === 'clipboard_write') {
-    caretToEnd(ctx, sc.field);
+    caretAt(ctx, sc.field);
     if (!ctx.oracle.select(sc.field, 0, WORD.length)) throw new Error(`${sc.label} refused the selection of its first word`);
     run.word = WORD;
     if (cell.kind === 'clipboard_write') {
       const read = await settled(() => svc.handleRpc(execute('clipboard_read', { window: { id: sc.id } })));
       if (!read.ok) throw new Error(`${cellName(cell)}: the clipboard_read for its handle failed: ${read.error}`);
       run.handle = read.value;
-      caretToEnd(ctx, sc.field);
+      caretAt(ctx, sc.field);
     }
   }
   // the input page scrolled back to its top after a scroll, untimed (the pad's points assume it)
@@ -446,6 +460,7 @@ async function series(ctx, cell, sc, lane) {
   const rows = [];
   try {
     await svc.handleRpc({ type: 'setup' });
+    trimText(ctx, sc);
     arrange(ctx, cell, sc);
     await sleep(300);
     const max = ctx.need * (MAX_RUNS / CONSECUTIVE);
@@ -577,6 +592,7 @@ async function openScene(ctx, name) {
     if (!sc.field) throw new Error(`${sc.label}: no text field`);
     if (def.effects === 'field' && !oracle.text(sc.field)) await seedField(ctx, sc);
     const text = oracle.text(sc.field);
+    sc.baseText = text;
     sc.baseLength = [...text].length;
     sc.textInTree = (await fieldValue(desktop, sc)) === text;
     if (FAMILIES[def.family].gtk4) ctx.caretRefused.add(sc.field);
@@ -585,7 +601,9 @@ async function openScene(ctx, name) {
       // the text grows at its end through the runs, and a long last line scrolls the view: aimed at again each run
       sc.lineSpec = [{ node: sc.field, start: 0, end: first }, { node: sc.field, start: 10, end: first }];
       sc.lines = linesOf(ctx, sc, sc.lineSpec);
-      sc.park = sc.field;
+      // the caret parked at the first line's end: the runs grow the text at its end, and a caret parked there would
+      // scroll a long last line into view and the first line out of it
+      sc.park = { node: sc.field, offset: first };
     }
   }
   if (def.effects === 'paragraphs') {
@@ -597,7 +615,7 @@ async function openScene(ctx, name) {
     const end = [...oracle.text(sc.field)].length;
     sc.lineSpec = [{ node: sc.field, start: 0, end }, { node: sc.field, start: 10, end }];
     sc.lines = linesOf(ctx, sc, sc.lineSpec);
-    sc.park = paragraphs[1];
+    sc.park = { node: paragraphs[1], offset: null };
   }
   if (def.effects === 'screen') {
     sc.terminal = nodes.find((n) => n.role === 'terminal')?.id ?? null;

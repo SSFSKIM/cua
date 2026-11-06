@@ -8,9 +8,10 @@ import {setTimeout as sleep} from 'node:timers/promises';
 
 // Each method's settle, in ms (M4's T8, by the design session's wait rule): the smallest of the steps 0, 10, 25, 50, 75
 // and 100 at which an observation through this service, straight after the input's answer, showed the effect on every
-// cell that takes the method, 30 consecutive runs idle and at twice the gate's load (`--experiment settle`,
-// scripts/linux-engine-diff/action-settle.mjs; evidence docs/evidence/2026-10-28-own-linux-engine/m4/settle/). The
-// slowest cell sets it, named beside it. Where some cell showed its effect at no step up to 100, the method keeps the
+// cell that takes the method, 30 consecutive runs idle and at twice the gate's load, searched upward from 0 and then
+// confirmed on the values as shipped (`--experiment settle`, scripts/linux-engine-diff/action-settle.mjs; evidence
+// docs/evidence/2026-10-28-own-linux-engine/m4/settle/); a step the confirmation missed went up to the next that held
+// in a sitting of its own. The slowest cell sets it, named beside it. Where some cell showed its effect at no step up to 100, the method keeps the
 // vendor's 100: a click's element action on GTK 4 (its button answers about 250 ms later) and on Qt (about 100 ms
 // later, Qt's own animated click), and a key's release on an Electron page (60 to 150 ms later in a third of the runs,
 // at every step). launch_app's is never reached in service (src/services/sky.mjs launches) and keeps it too.
@@ -22,12 +23,12 @@ export const SETTLE_MS = Object.freeze({
   drag: 10, // Electron's page
   drag_handle: 10, // Electron's page, and gedit at twice the load
   activate_window: 10, // kate and qtcreator at twice the load
-  move: 0,
+  move: 10, // Electron's page: at 0 its tree showed a move late in 4 of 37 runs in the confirmation sitting
   move_relative: 0,
   press_key: 100, // an Electron page's key release (a key into a text field held at 25: Writer, gnome-terminal)
   key_down: 25, // Writer and gnome-terminal
   key_up: 50, // Chrome's page on the desktop route at twice the load
-  scroll: 0,
+  scroll: 10, // xterm at twice the load: at 0 its program read a wheel step late in 7 of 31 confirmation runs
   type_text: 0, // the engine confirms the paste before it answers
   launch_app: 100,
 });

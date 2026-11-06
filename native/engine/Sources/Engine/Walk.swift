@@ -259,6 +259,11 @@ final class TreeWalk {
   /// it is read first): the answer for the earliest such element stands, as when the walk read in preorder and asked
   /// once per name, whatever order the selection read in (#301). Nodes take theirs at emission.
   private var descriptions: [String: (order: ReadOrder, description: String)] = [:]
+  /// How many of the window's selected nodes take each cached description, and what the selection has charged against
+  /// the byte budget so far, each node at the descriptions it will be emitted with (`selectionBytes`, `selectionByteLimit`).
+  private var descriptionUses: [String: Int] = [:]
+  private var selectionBytes = 0
+  private var selectionByteLimit = Int.max
 
   /// Where a read element lies in the order the plain preorder walk read in: the menu bar's elements first, by
   /// position, then the window's, by their paths.
@@ -444,7 +449,8 @@ final class TreeWalk {
   private func select(_ window: AXUIElement, nodeLimit: Int, byteLimit: Int) {
     root = window
     stack = [Pending(element: window, depth: 0, clip: visibleFrame)]
-    var kept = 0, estimated = 0
+    var kept = 0
+    selectionByteLimit = byteLimit
     // The distinct elements the walk knows of, read or named as a child: a child listed by several parents counts once.
     var known: Set<ElementKey> = [ElementKey(element: window)]
     var cut = false
@@ -458,7 +464,7 @@ final class TreeWalk {
       let key = ElementKey(element: next.element)
       if selected[key] != nil || failed.contains(key) { continue }
       if cut { continue }
-      if estimated >= byteLimit { budgetHit = true; cut = true; continue }
+      if selectionBytes >= byteLimit { budgetHit = true; cut = true; continue }
       if kept >= nodeLimit { nodeCapHit = true; cut = true; continue }
       if pastDeadline() { deadlineHit = true; return }
       switch read(next, standIn: lineage.nextNumber + kept) {
@@ -472,7 +478,8 @@ final class TreeWalk {
         let item = Selected(read, next)
         selected[key] = item
         kept += 1
-        estimated += jsonBytes(read.wire) + 1
+        selectionBytes += jsonBytes(read.wire) + 1
+        for key in read.descriptionKeys { if let key { descriptionUses[key, default: 0] += 1 } }
         if chromium, seeding == nil, visibleFrame != nil {
           for child in read.children { known.insert(ElementKey(element: child)) }
           if known.count > nodeLimit { seed() }
@@ -750,12 +757,21 @@ final class TreeWalk {
   /// `Name:` describes (Derivations.swift; the renderer prints those words, and the system is not asked), else the
   /// system's description, else the action's name. Descriptions are the app's per action name, so a walk asks once per
   /// process and name (cua's; the vendor asks per element).
-  /// The system is asked again only for an element earlier in the preorder than the one whose answer is cached.
+  /// The system is asked again only for an element earlier in the preorder than the one whose answer is cached. Its
+  /// answer replaces the cached one for every node already selected with the name, so the difference is charged to the
+  /// byte budget for each of them; a replacement that would take the selection past the budget is refused, the nodes
+  /// keeping the cached answer, since bytes already selected cannot be given back. A walk the plain preorder would not
+  /// cut never refuses one: the preorder's answers fit the whole tree, so they fit any part of it.
   private func describe(action: String, of element: AXUIElement, owner: pid_t, order: ReadOrder) -> (key: String?, description: String?) {
     guard asksSystemForDescription(action) else { return (nil, nil) }
     let key = "\(owner)\u{0}\(action)"
     if let known = descriptions[key], !order.precedes(known.order) { return (key, known.description) }
     let description = source.actionDescription(element, action) ?? action
+    if let known = descriptions[key] {
+      let growth = (jsonStringBytes(description) - jsonStringBytes(known.description)) * (descriptionUses[key] ?? 0)
+      if growth > 0, selectionBytes + growth > selectionByteLimit { return (key, known.description) }
+      selectionBytes += growth
+    }
     descriptions[key] = (order, description)
     return (key, description)
   }

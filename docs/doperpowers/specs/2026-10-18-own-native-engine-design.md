@@ -2403,7 +2403,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      the read order, the system's action descriptions asked once per process and action name, keeps the preorder's: the
      answer for the earliest element in the preorder that asks stands (the system is asked again only for an element
      earlier than the cached one's), and nodes take it at emission (the review of c4057c3a..effffcee;
-     `testAnUncutWalksActionDescriptionsAreThePreordersWhateverItReadFirst`). A walk
+     `testAnUncutWalksActionDescriptionsAreThePreordersWhateverItReadFirst`). A replacement changes every node already
+     selected with the name, so its difference is charged to the byte budget for each of them, and one that would take
+     the selection past the budget is refused, the nodes keeping the cached answer: bytes already selected cannot be
+     given back, and a walk the preorder would not cut never refuses one, since the preorder's answers fit the whole
+     tree (the re-review of effffcee..ab0e019a found a 10,000-character answer growing 1,003 selected nodes to 10.3 MB,
+     past the protocol's 8 MiB; `testALaterLongerDescriptionNeverTakesTheTreePastTheByteBudget`). A walk
      with no visible frame (rooted at a recorded menu-bar item) is the plain preorder. A stated difference with no
      case on the matrix: an element reached under two parents is read under whichever occurrence the selection meets
      first, so its depth-dependent reads (the depth cap, Chromium's parent-role settability) follow that occurrence,

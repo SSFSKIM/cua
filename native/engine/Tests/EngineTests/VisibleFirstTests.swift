@@ -116,6 +116,34 @@ final class VisibleFirstTests: XCTestCase {
     XCTAssertEqual(ordered.nodes.map { $0["actionDescriptions"] as? [String] }, [[], [], ["earlier"], ["earlier"]])
   }
 
+  /// The re-review of effffcee..ab0e019a: an earlier element's longer description, replacing the cached one for nodes
+  /// already selected, is charged to the byte budget, and refused past it, so the emitted tree never exceeds the budget.
+  func testALaterLongerDescriptionNeverTakesTheTreePastTheByteBudget() {
+    let tree = FakeTree()
+    tree.extra[0] = ["AXRole": "AXWindow" as CFString]
+    tree.frames[0] = windowFrame
+    tree.children = [0: [1, 2], 1: [3], 2: Array(100..<200)]
+    tree.frames[1] = CGRect(x: 0, y: 2000, width: 100, height: 100)  // off the window: its child waits
+    tree.frames[3] = CGRect(x: 0, y: 2000, width: 100, height: 30)
+    tree.frames[2] = windowFrame
+    tree.actions[3] = ["AXCustomThing"]
+    tree.elementDescriptions[3] = ["AXCustomThing": String(repeating: "a", count: 10_000)]
+    for id in 100..<200 {
+      tree.frames[id] = CGRect(x: 0, y: Double(id - 100) * 5, width: 100, height: 5)
+      tree.actions[id] = ["AXCustomThing"]
+      tree.elementDescriptions[id] = ["AXCustomThing": "short"]
+    }
+    let limits = WalkLimits(bytes: 200_000, deadline: .infinity)
+    let walked = walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame)
+    XCTAssertLessThanOrEqual(jsonBytes(walked.nodes), limits.bytes, "the emitted tree within the byte budget")
+    XCTAssertLessThanOrEqual(walked.bytes, limits.bytes)
+    XCTAssertEqual(walked.nodes.count, 104, "every element kept")
+    XCTAssertTrue(walked.nodes.allSatisfy { ($0["actionDescriptions"] as? [String] ?? ["short"]) == ["short"] || ($0["actionDescriptions"] as? [String]) == [] },
+                  "the replacement that would not fit is refused: one answer for the name")
+    let plain = walk(tree, Lineage(), limits: limits)
+    XCTAssertTrue(plain.budgetHit, "the preorder asks the long answer first and is cut by the bytes")
+  }
+
   /// The same review: the seeding's trigger counts distinct elements, so a tree whose groups share their children, under
   /// the budget, is never seeded.
   func testSharedChildrenUnderTheBudgetNeverSeed() {

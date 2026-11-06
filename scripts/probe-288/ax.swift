@@ -317,6 +317,39 @@ case "toolbar":
   out["totalMs"] = r1(nowMs() - t0)
   emit(out)
 
+case "tbtimeline":
+  // Round 2: one sample before the role read, then the role read, then every 5 ms for 600 ms: the page point's and the
+  // toolbar point's hits, their walks, whether the hit has an AXWebArea among its descendants (2 levels), and the
+  // window's web-area search; recording each change.
+  let reload = spec["reload"] as? [String: Any] ?? [:], page = spec["page"] as? [String: Any] ?? [:]
+  func webBelow(_ e: AXUIElement) -> Bool {
+    for c in elements(attr(e, kAXChildrenAttribute)) {
+      if str(c, kAXRoleAttribute) == "AXWebArea" { return true }
+      for g in elements(attr(prepare(c), kAXChildrenAttribute)) where str(g, kAXRoleAttribute) == "AXWebArea" { return true }
+    }
+    return false
+  }
+  func probe(_ p: [String: Any]) -> [String: Any] {
+    let (hit, err) = hitTest(app, num(p, "x"), num(p, "y"))
+    guard let hit else { return ["error": err] }
+    let w = walk(hit)
+    return ["roles": w.roles, "verdict": w.verdict, "webBelow": webBelow(hit),
+            "children": elements(attr(hit, kAXChildrenAttribute)).prefix(3).map { str($0, kAXRoleAttribute) ?? "?" }]
+  }
+  let t0 = nowMs()
+  var rows: [[String: Any]] = [["t": 0, "phase": "beforeRole", "page": probe(page), "reload": probe(reload)]]
+  let rs = nowMs(); let roleErr = roleStep(app)
+  var last = ""
+  while nowMs() - rs < 600 {
+    let t = r1(nowMs() - t0)
+    let pg = probe(page), rl = probe(reload)
+    let win = elements(attr(app, kAXWindowsAttribute)).first.map { containsWebArea(prepare($0)).found } ?? false
+    let key = "\(pg["roles"] ?? "")|\(pg["webBelow"] ?? "")|\(rl["roles"] ?? "")|\(win)"
+    if key != last { rows.append(["t": t, "page": pg, "reload": rl, "windowHasWebArea": win]); last = key }
+    pause(5)
+  }
+  emit(["roleAt": r1(rs - t0), "roleError": roleErr, "changes": rows])
+
 case "locate":
   _ = roleStep(app)
   let start = nowMs()

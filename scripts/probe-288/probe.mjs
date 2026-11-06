@@ -202,6 +202,15 @@ const CELLS = [
   {label: 'e/manual+1500+obs+click', kind: 'engine', pre: 'manual', waitMs: 1500},
   {label: 'e/manual+3000+obs+click', kind: 'engine', pre: 'manual', waitMs: 3000},
   {label: 'e/eui+3000+obs+click', kind: 'engine', pre: 'eui', waitMs: 3000},
+  // Round 2: the page and toolbar hits every 5 ms after the role read in a process nothing observed; the engine's own
+  // enablement state left after its connection ends; the first click after AXEnhancedUserInterface at contact, by wait.
+  {label: 'tb/timeline-1', kind: 'tbtimeline'},
+  {label: 'tb/timeline-2', kind: 'tbtimeline'},
+  {label: 'r2/lasting', kind: 'lasting'},
+  {label: 'r2/e/none+obs+click', kind: 'engine', pre: null, waitMs: 0},
+  {label: 'r2/e/eui+0+obs+click', kind: 'engine', pre: 'eui', waitMs: 0},
+  {label: 'r2/e/eui+1000+obs+click', kind: 'engine', pre: 'eui', waitMs: 1000},
+  {label: 'r2/e/eui+2000+obs+click', kind: 'engine', pre: 'eui', waitMs: 2000},
 ].filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
 
 let toolbarPoint = null;
@@ -225,6 +234,30 @@ async function cell(spec) {
     } else if (spec.kind === 'toolbar') {
       if (!toolbarPoint) { row.problem = 'no toolbar point (tb/locate did not find Reload)'; return row; }
       row.toolbar = await ax(['toolbar', String(chrome.pid), JSON.stringify({reload: toolbarPoint, page: P.cb})]);
+    } else if (spec.kind === 'tbtimeline') {
+      if (!toolbarPoint) { row.problem = 'no toolbar point (tb/locate did not find Reload)'; return row; }
+      row.timeline = await ax(['tbtimeline', String(chrome.pid), JSON.stringify({reload: toolbarPoint, page: P.cb})]);
+    } else if (spec.kind === 'lasting') {
+      // The engine's first observation of a fresh Chrome, then its connection closed and the engine shut down (its
+      // releases run): the attribute's value and complete mode after each.
+      engine = await startEngine(spec.label);
+      const w = engine.wire;
+      await w.call('ping', {clientApiVersion: 'cua-engine-1'});
+      const state = await w.execute('get_app_state', {pid: chrome.pid});
+      const sky = state.result ?? {};
+      row.observation = {enablementPrior: sky.timings?.enablementPrior ?? null, enablementWrite: sky.timings?.enablementWrite ?? null,
+        enablementWriteError: sky.timings?.enablementWriteError ?? null, enabled: sky.timings?.enabled ?? null, error: state.error ?? null};
+      row.timingKeys = Object.keys(sky.timings ?? {});
+      row.afterObservation = await ax(['trigger', String(chrome.pid), JSON.stringify({steps: [], pollMs: 3000, sampleMs: 20, cb: P.cb, tf: P.tf})]);
+      w.close();
+      await sleep(500);
+      row.afterClose = await ax(['trigger', String(chrome.pid), JSON.stringify({steps: [], pollMs: 300, sampleMs: 20, cb: P.cb, tf: P.tf})]);
+      engine.child.kill('SIGTERM');
+      await sleep(1500);
+      row.engineExit = engine.child.exitCode ?? engine.child.signalCode;
+      row.afterEngineExit = await ax(['trigger', String(chrome.pid), JSON.stringify({steps: [], pollMs: 300, sampleMs: 20, cb: P.cb, tf: P.tf})]);
+      await sleep(3000);
+      row.later = await ax(['trigger', String(chrome.pid), JSON.stringify({steps: [], pollMs: 300, sampleMs: 20, cb: P.cb, tf: P.tf})]);
     } else if (spec.kind === 'trigger') {
       const t = spec.trigger;
       row.trigger = t;
@@ -296,6 +329,8 @@ function summary(row) {
   const tail = `front ${row.frontBefore}->${row.frontAfter} page ${JSON.stringify(row.pageDelta)}`;
   if (row.locate) return `${JSON.stringify(row.locate)} ${tail}`;
   if (row.toolbar) return `${JSON.stringify(row.toolbar)} ${tail}`;
+  if (row.timeline) return `${JSON.stringify(row.timeline)} ${tail}`;
+  if (row.afterObservation) return `obs ${JSON.stringify(row.observation)} keys ${JSON.stringify(row.timingKeys)} | afterObs eui ${JSON.stringify(row.afterObservation.before?.eui)} press@${row.afterObservation.firstPress} | afterClose eui ${JSON.stringify(row.afterClose?.before?.eui)} press@${row.afterClose?.firstPress} | afterExit(${row.engineExit}) eui ${JSON.stringify(row.afterEngineExit?.before?.eui)} press@${row.afterEngineExit?.firstPress} | later eui ${JSON.stringify(row.later?.before?.eui)} press@${row.later?.firstPress} ${tail}`;
   if (row.result) return `${firsts(row.result)} changes=${JSON.stringify(row.result.changes?.slice(0, 8))} ${tail}`;
   if (row.geom) return `${JSON.stringify(row.geom.phases.map(p => ({label: p.label, app: p.app && {eui: p.app.eui, manual: p.app.manual}, ...Object.fromEntries(['move', 'resize', 'moveBack', 'resizeBack'].map(k => [k, p[k] && [p[k].error, p[k].writeMs, p[k].settledMs, p[k].distinctFrames]]))})))} after: ${firsts(row.after)} ${tail}`;
   if (row.a) return `A ${firsts(row.a)} | A+eui ${firsts(row.aEui)} | B ${firsts(row.b)} ${tail}`;

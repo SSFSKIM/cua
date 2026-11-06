@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: [chrome, safari, finder]
+        group: [safari, finder]  # chrome ran at 05a0afd3 (run 42251639474); this push re-runs the two whose resets posted keys
     runs-on: macos-latest
     timeout-minutes: 60
     steps:

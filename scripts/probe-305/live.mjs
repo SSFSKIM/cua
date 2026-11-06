@@ -28,7 +28,7 @@ const GH = ['https://', 'git', 'hub.com'].join('');
 const KEPT = new Set(['sameElement', 'hitAboveNode', 'nonInteractiveHit']);
 
 const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>probe305 page</title><style>body{font:16px sans-serif;margin:40px}</style></head>
-<body><h1>probe305 page</h1>${Array.from({length: 30}, (_, i) => `<p>Plain paragraph ${i + 1}, text with nothing to click in it at all.</p>`).join('')}</body></html>`;
+<body><h1>probe305 page</h1><p>${Array.from({length: 6}, (_, i) => `<button onclick="return false">Inert ${i + 1}</button>`).join(' ')}</p>${Array.from({length: 30}, (_, i) => `<p>Plain paragraph ${i + 1}, text with nothing to click in it at all.</p>`).join('')}</body></html>`;
 const server = createServer((req, res) => { res.writeHead(200, {'content-type': 'text/html; charset=utf-8'}); res.end(PAGE); });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const LOCAL = `http://127.0.0.1:${server.address().port}/`;
@@ -245,13 +245,13 @@ async function runSafari() {
   await open();
   const pid = () => pidOf('Safari');
   const reset = async () => {
-    osa('tell application "System Events" to key code 53'); await sleep(300); osa('tell application "System Events" to key code 53'); await sleep(500);
+    osa('tell application "System Events" to key code 53'); await sleep(300); osa('tell application "System Events" to key code 53'); await sleep(6000);  // past the engine's 5 s intervention debounce
     const tabs = Number(osa('tell application "Safari" to count tabs of window 1').out);
     const name = osa('tell application "Safari" to get name of current tab of window 1').out;
     if (tabs !== 1 || name !== 'probe305 page') await open(); else { place('Safari'); await sleep(800); }
   };
   const effect = async () => ({title: osa('tell application "Safari" to get name of current tab of window 1').out, tabs: osa('tell application "Safari" to count tabs of window 1').out});
-  await spot({name: 'safari-toolbar', pid, effect, reset, region: (p, wf) => p.y < wf.y + 56, controlRegion: (p, wf) => p.y > wf.y + 80,
+  await spot({name: 'safari-toolbar', pid, effect, reset, region: (p, wf) => p.y < wf.y + 56, controlRegion: () => true,
     priority: p => p.hit?.role === 'AXTextField' ? 0 : 1, perClass: 3});
   osa('tell application "Safari" to quit');
 }
@@ -260,7 +260,7 @@ async function runFinder() {
   const pid = () => pidOf('Finder');
   const reset = async () => {
     // A second click on a selected name starts a rename: Escape ends it.
-    if (sh('lsappinfo', ['info', '-only', 'bundleid', sh('lsappinfo', ['front']).out]).out.includes('com.apple.finder')) { osa('tell application "System Events" to key code 53'); await sleep(300); }
+    if (sh('lsappinfo', ['info', '-only', 'bundleid', sh('lsappinfo', ['front']).out]).out.includes('com.apple.finder')) { osa('tell application "System Events" to key code 53'); await sleep(6000); }  // past the engine's 5 s intervention debounce
     const names = osa('tell application "Finder" to get name of every Finder window').out;
     if (!names.includes('PrivateFrameworks')) { sh('open', [folder]); await sleep(3000); osa('tell application "Finder" to set current view of front Finder window to list view'); await sleep(1500); }
     osa('tell application "Finder" to set collapsed of front Finder window to false');

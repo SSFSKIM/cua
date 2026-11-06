@@ -9,6 +9,8 @@
 //                    the background and frontmost; a drag start at a stale and at a still point
 //   --group safari   the pages in Safari, shared mode
 //   --group native   scripts/probe-296/app.swift's window, shared and dedicated mode
+//   --group rerun    the guard on #282's element-routed path (ruling ca82a6f4): shared-mode page cells with Chrome in
+//                    the background, a change during the route's re-read on a fresh Chrome, and regression cells
 //   node scripts/probe-296/ab.mjs --group <g> --branch <cua-engine> --main <cua-engine> --app <Probe296 binary> --out <dir> [--cells <prefix,…>]
 import {spawn, spawnSync} from 'node:child_process';
 import {createServer} from 'node:http';
@@ -237,6 +239,25 @@ if (GROUP === 'chrome') {
   for (const s of [PAGE_TP[0], PAGE_TP[3]]) add(`chrome/shared-back/${name(s)}/5s`, {...s, app: 'chrome', mode: 'shared', delay: 5, expect: 'skipped'}, true);
   for (const s of [PAGE_TP[0], PAGE_TP[3]]) add(`chrome/shared-front/${name(s)}/5s`, {...s, app: 'chrome', mode: 'shared', delay: 5, front: true, expect: 'refused'}, true);
 }
+// The re-run against the ruling ca82a6f4 (the guard on #282's element-routed path too: before the route, and again just
+// before the press after its re-read wait; the pressed element the recorded node or its allowlisted ancestor). Shared
+// mode, Chrome in the background, then regression cells from the first A/B.
+if (GROUP === 'rerun') {
+  add('chrome/shared-back/feed/5s', {...PAGE_TP[0], app: 'chrome', mode: 'shared', delay: 5, expect: 'refused/frameMoved'}, true);
+  add('chrome/shared-back/swaprole/5s', {...PAGE_TP[3], app: 'chrome', mode: 'shared', delay: 5, expect: 'refused'}, true);
+  add('chrome/shared-back/swap/5s', {...PAGE_TP[2], app: 'chrome', mode: 'shared', delay: 5, expect: 'refused/nodeGone'}, true);
+  add('chrome/shared-back/static/5s', {...W('static', {id: 'static'}), app: 'chrome', mode: 'shared', delay: 5, expect: 'kept'}, true);
+  // A fresh Chrome: the first observation's enablement makes its accessibility fresh, so a press 0.1 s later may wait
+  // in #282's re-read (up to 2–3 s) for the control's action; the page swaps the target 1 s into the click.
+  add('chrome/shared-reread/swap/0.1s', {...W('swap', {id: 'save'}), app: 'chrome', mode: 'shared', delay: 0.1, freshChrome: true,
+    midAfterClick: {ms: 1000, cmd: {op: 'swap'}}, expect: 'refused'}, true);
+  add('chrome/shared-reread/static/0.1s', {...W('static', {id: 'static'}), app: 'chrome', mode: 'shared', delay: 0.1, freshChrome: true, expect: 'kept'}, true);
+  add('chrome/shared/toolbar-reload/1s', {kind: 'toolbar', app: 'chrome', mode: 'shared', delay: 1, expect: 'kept'}, true);
+  add('chrome/shared/toolbar-reload/launch+24s', {kind: 'toolbar', app: 'chrome', mode: 'shared', clickAtLaunchMs: 24_000, expect: 'refused/frameMoved'}, true);
+  add('chrome/dedicated/recreate/1s', {...PAGE_KEPT[2], app: 'chrome', mode: 'dedicated', delay: 1, expect: 'kept'}, false);
+  add('chrome/dedicated/swap/5s', {...PAGE_TP[2], app: 'chrome', mode: 'dedicated', delay: 5}, true);
+  add('chrome/dedicated/relabel/5s', {...PAGE_LIMITS[1], app: 'chrome', mode: 'dedicated', delay: 5}, true);
+}
 if (GROUP === 'safari') {
   for (const s of PAGE_KEPT) for (const d of [1, 20]) add(`safari/shared/${name(s)}/${d}s`, {...s, app: 'safari', mode: 'shared', delay: d, expect: 'kept'}, false);
   add('safari/shared/link/1s', {...W('link', {id: 'lnk'}), app: 'safari', mode: 'shared', delay: 1, expect: 'kept'}, false);
@@ -247,7 +268,8 @@ if (GROUP === 'native') for (const mode of ['shared', 'dedicated']) {
   for (const [id, op, expect] of [['save', 'swap', 'refused/nodeGone'], ['keep', 'swaprole', 'refused'], ['move', 'move', 'refused/frameMoved'], ['like', 'like', 'refused/nodeGone'], ['relabel', 'relabel', 'kept']])
     add(`native/${mode}/${id}/5s`, {kind: 'native', app: 'native', mode, id, delay: 5, mid: {op}, expect, limit: id === 'like' ? 'i' : id === 'relabel' ? 'ii' : undefined}, true);
 }
-const RUN = CELLS.filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
+// Cells that launch their own Chrome (the toolbar's, a fresh one) run before the group's shared app is launched.
+const RUN = CELLS.filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p))).sort((a, b) => Number(!(a.kind === 'toolbar' || a.freshChrome)) - Number(!(b.kind === 'toolbar' || b.freshChrome)));
 
 // ---- the apps ------------------------------------------------------------------------------------------------------
 let navK = 0;
@@ -300,9 +322,9 @@ async function cell(spec, shared) {
   let engine, fresh;
   try {
     let target = shared;
-    if (spec.kind === 'toolbar') { fresh = await launchChrome(spec.label, 'toolbar'); target = fresh; }
+    if (spec.kind === 'toolbar' || spec.freshChrome) { fresh = await launchChrome(spec.label, spec.kind === 'toolbar' ? 'toolbar' : spec.case); target = fresh; await sleep(1500); }
     row.pid = target.pid;
-    if (spec.kind === 'web') row.navK = await nav(spec.case);
+    if (spec.kind === 'web' && !spec.freshChrome) row.navK = await nav(spec.case);
     row.front = spec.front ? await frontTarget(target.pid) : await frontTextEdit();
     if (spec.kind === 'native') { nativeCmd('reset'); await sleep(400); }
     engine = await startEngine(spec.engine, spec.label);
@@ -336,6 +358,8 @@ async function cell(spec, shared) {
     const loadsBefore = loads, logBefore = nativeLog().length, started = Date.now();
     row.clickAfterObservationMs = started - o.at;
     row.clickSinceLaunchMs = started - target.launchedAt;
+    // A change while the click runs (the element route's re-read window on a fresh Chrome).
+    if (spec.midAfterClick) setTimeout(() => { commands.push(spec.midAfterClick.cmd); row.midAfterClickAtMs = Date.now() - started; }, spec.midAfterClick.ms);
     const r = lean(spec.drag
       ? await w.execute('drag', {pid: target.pid, from_x: px.x, from_y: px.y, to_x: px.x + Math.round(100 * scale), to_y: px.y})
       : await w.execute('click', {pid: target.pid, x: px.x, y: px.y}));
@@ -387,7 +411,7 @@ const rows = [];
 const save = () => writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, cells: rows}, null, 1));
 let shared = null;
 for (const spec of RUN) {
-  if (spec.kind !== 'toolbar' && !shared) {
+  if (spec.kind !== 'toolbar' && !spec.freshChrome && !shared) {
     shared = spec.app === 'chrome' ? await launchChrome('pages', 'static') : spec.app === 'safari' ? await launchSafari() : await launchNative();
     log(`${spec.app} launched pid ${shared.pid}`);
     if (spec.app === 'chrome') { const left = shared.launchedAt + 25_000 - Date.now(); if (left > 0) await sleep(left); }  // past the toolbar's re-layout

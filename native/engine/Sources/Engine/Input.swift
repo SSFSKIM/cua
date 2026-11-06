@@ -456,6 +456,13 @@ extension Engine {
         }
         meta.stalePoint = stale.record
         pointer.staleRefusal = stale.refusal
+        // The guard may have recovered a hit the first hit-test missed (a node mid-replacement, `stalePointRehits`): the
+        // route and the view it is classified by are read from that one.
+        if case .recovered(let recovered) = stalePointRouteHit(pointerHit, stale.verdict, same: { CFEqual($0, $1) }) {
+          pointerHit = recovered
+          if route == .activation, button == .left { pointer = pointerTarget(hit: recovered, app: app, appPid: appPid) }
+          pointer.staleRefusal = stale.refusal
+        }
         if pointer.view.mayBeWebArea, let hit = pointerHit {
           // A kept point's element route presses only the node or its control, the guard run again after any wait.
           let gate = StalePointGate(first: stale.verdict, firstMs: stale.record.ms) { [self] in

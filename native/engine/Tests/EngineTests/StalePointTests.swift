@@ -462,6 +462,135 @@ final class StalePointTests: XCTestCase {
     XCTAssertEqual(after.record.ms, 2.25, "both checks' time")
   }
 
+  // MARK: The re-review of c8f37a93..7f79ca34, and the design session's ruling 0a14b51f
+
+  /// Shared mode, a background Chromium page, the first hit-test empty mid-replacement: the guard's re-hit recovers the
+  /// re-created button, and the route is built from it (its view a web area, its control that button, the gate
+  /// keeping it), where the empty first hit would have made a possible web area with no route at all.
+  func testTheElementRouteIsBuiltFromTheGuardsRecoveredHit() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let webArea = Node("AXWebArea", CGRect(x: 0, y: 50, width: 600, height: 350))
+    let button = Node("AXButton", CGRect(x: 100, y: 100, width: 120, height: 30), title: "Again")
+    webArea.add(button)
+    window.add(webArea)
+    let nodes = recorded(window)
+    button.destroy()
+    let again = Node("AXButton", CGRect(x: 100, y: 100, width: 120, height: 30), title: "Again")
+    let point = CGPoint(x: 150, y: 115)
+    var answers: [Node?] = [again]
+    let verdict = stalePointVerdict(at: point, nodes: nodes, hit: nil, rehit: {
+      webArea.add(again)
+      return answers.removeFirst()
+    }, reads: reads)
+    XCTAssertEqual(verdict.identity, .recreated)
+    guard case .recovered(let recovered) = stalePointRouteHit(nil, verdict, same: { $0 === $1 }) else { return XCTFail("not recovered") }
+    XCTAssertTrue(recovered === again)
+    func view(_ hit: Node?) -> PointerView {
+      pointerView(chromium: true, webAreaSeen: true, hit: hit, role: { $0.role }, parent: { $0.parent }, children: { $0.children })
+    }
+    XCTAssertEqual(view(nil), .possibleWebArea, "the first hit's view: no route to build")
+    XCTAssertEqual(view(recovered), .webArea)
+    guard case .success(let control) = webAreaControl(recovered, role: { $0.role }, parent: { $0.parent }, editable: { _ in false }) else {
+      return XCTFail("no control")
+    }
+    XCTAssertTrue(control.control === again, "the route presses the recovered button")
+    let gate = StalePointGate(first: verdict, firstMs: 0) { verdict }
+    XCTAssertNil(gate.check(control.control, waited: false, now: { 0 }, reads: reads).refusal)
+    if case .recovered = stalePointRouteHit(again, verdict, same: { $0 === $1 }) { XCTFail("the same hit is unchanged") }
+  }
+
+  /// A background app that does not believe it has focus: the route's focus hold runs (its activation guard polls) after
+  /// the early check, so the final check runs at the perform, after the hold; a feed prepend during the hold's wait is
+  /// refused there, nothing pressed, and the meta and the sentence say the activation ran. With no hold the early verdict
+  /// stands and nothing is read again.
+  func testAChangeDuringTheFocusHoldsWaitIsRefusedAtTheFinalCheck() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200))
+    let item = Node("AXButton", CGRect(x: 10, y: 10, width: 200, height: 30), title: "item-9")
+    window.add(item)
+    let nodes = recorded(window)
+    let point = CGPoint(x: 50, y: 25)
+    let gate = StalePointGate(first: verdict(nodes, at: point, hit: item), firstMs: 1) { verdict(nodes, at: point, hit: item) }
+    XCTAssertNil(gate.check(item, waited: false, now: { 0 }, reads: reads).refusal, "the early check passes")
+    var steps: [String] = []
+    var record: StalePointRecord?
+    XCTAssertThrowsError(try pressAfterFinalCheck(holds: true, hold: {
+      steps.append("hold")
+      item.frame = CGRect(x: 10, y: 40, width: 200, height: 30)  // a prepend during the activation guard's poll
+    }, finalCheck: { afterHold in
+      steps.append("check")
+      let checked = gate.check(item, waited: afterHold, afterActivation: afterHold, now: { 0 }, reads: reads)
+      record = checked.record
+      if let refusal = checked.refusal { throw refusal }
+    }, perform: { steps.append("perform") })) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "screenChangedSinceScreenshot")
+      XCTAssertEqual(($0 as? EngineError)?.message,
+                     "The screen changed since the screenshot: the AXButton \"item-9\" it showed at this point has moved away from it. The app was activated in the background, but nothing was pressed. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    }
+    XCTAssertEqual(steps, ["hold", "check"], "nothing pressed")
+    XCTAssertEqual(record?.reason, .frameMoved)
+    XCTAssertEqual(record?.wire["afterActivation"] as? Bool, true)
+    XCTAssertEqual(record?.wire["rechecked"] as? Bool, true)
+    steps = []
+    try? pressAfterFinalCheck(holds: false, hold: { steps.append("hold") }, finalCheck: { afterHold in
+      steps.append(afterHold ? "recheck" : "check")
+    }, perform: { steps.append("perform") })
+    XCTAssertEqual(steps, ["check", "perform"])
+  }
+
+  /// Ruling 0a14b51f: inside a node the record holds incompletely (a budget-cut subtree), a post or a press goes through
+  /// only while that container itself passes the guard (its identity, its frame read now holding the point, its label
+  /// where both read), and its reason says it went unguarded inside (`unrecordedDescendant`, or `unrecorded` at a point
+  /// no recorded node holds), on the coordinate path and the element route alike.
+  func testATruncatedContainerPassesOnlyWhileItPassesTheGuardItself() {
+    func page() -> (window: Node, list: Node, row: Node, text: Node) {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let list = Node("AXGroup", CGRect(x: 0, y: 50, width: 600, height: 300), title: "Results")
+      let row = Node("AXButton", CGRect(x: 10, y: 60, width: 300, height: 30), title: "Open")
+      let text = Node("AXStaticText", CGRect(x: 20, y: 65, width: 100, height: 20))
+      row.add(text)
+      list.add(row)
+      window.add(list)
+      return (window, list, row, text)
+    }
+    let point = CGPoint(x: 50, y: 75)
+    // In place: kept, the reason naming the unguarded inside, for an interactive hit, a plain one and a press.
+    do {
+      let (window, _, row, text) = page()
+      let nodes = recorded(window, skipping: [ObjectIdentifier(row)])
+      XCTAssertEqual(verdict(nodes, at: point, hit: row).reason, .unrecordedDescendant)
+      let plain = verdict(nodes, at: point, hit: text)
+      XCTAssertEqual(plain.reason, .unrecordedDescendant, "a plain hit inside too: unguarded, and said so")
+      XCTAssertFalse(plain.refused)
+      XCTAssertEqual(stalePointPressVerdict(row, plain, reads: reads).reason, .unrecordedDescendant, "the element route's press")
+      XCTAssertEqual(StalePointRecord(plain, ms: 0).wire["reason"] as? String, "unrecordedDescendant")
+      XCTAssertEqual(stalePointPressVerdict(row, verdict(nodes, at: CGPoint(x: 900, y: 900), hit: row), reads: reads).reason, .unrecorded)
+    }
+    // The container moved: refused, on both paths.
+    do {
+      let (window, list, row, _) = page()
+      let nodes = recorded(window, skipping: [ObjectIdentifier(row)])
+      move(list, by: CGVector(dx: 0, dy: 200))
+      let moved = verdict(nodes, at: point, hit: row)
+      XCTAssertEqual(moved.reason, .frameMoved)
+      XCTAssertTrue(stalePointPressVerdict(row, moved, reads: reads).refused)
+    }
+    // Relabelled in place: refused, on both paths; a container without a label to compare passes.
+    do {
+      let (window, list, row, _) = page()
+      let nodes = recorded(window, skipping: [ObjectIdentifier(row)])
+      list.title = "Ads"
+      let relabelled = verdict(nodes, at: point, hit: row)
+      XCTAssertEqual(relabelled.reason, .relabelled)
+      XCTAssertEqual(stalePointOutcome(relabelled, ms: 0, reads: reads).refusal?.message,
+                     "The screen changed since the screenshot: the AXGroup \"Results\" it showed at this point has changed; AXButton \"Open\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+      let first = verdict(nodes, at: point, hit: nil)
+      XCTAssertEqual(first.reason, .noHit, "no hit: nothing inside to vouch for")
+      XCTAssertEqual(stalePointPressVerdict(row, first, reads: reads).reason, .relabelled)
+      list.title = nil
+      XCTAssertEqual(verdict(nodes, at: point, hit: row).reason, .unrecordedDescendant)
+    }
+  }
+
   /// The record: each node's shown frame cut by its clipping ancestors, so page content scrolled up under the toolbar
   /// (its frame above the web area's) is never the node at a toolbar point; the deepest node, the later of two at a depth.
   func testTheRecordCutsFramesByClippingAncestorsAndTakesTheDeepestNode() {

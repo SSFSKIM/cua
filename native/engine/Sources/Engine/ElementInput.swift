@@ -362,6 +362,7 @@ extension Engine {
         refused(why, &meta)
         throw why == .noAction ? backgroundClickRefusedObserveFirst(app.displayName) : backgroundClickRefused(app.displayName)
       }
+      // The early check, after the action's re-read; the final one runs at the perform, after any focus hold.
       try checkStalePoint(stalePoint, pressing: control, waited: waited, meta: &meta)
       let owner = ownerPid(of: control, fallback: appPid)
       try refuseForbiddenOwner(owner)
@@ -372,7 +373,14 @@ extension Engine {
                                readValue: { attribute(control, kAXValueAttribute).map { "\($0)" } }, now: monotonicMilliseconds,
                                sleep: { usleep(UInt32($0 * 1000)) }) {
         try elementActionClick(control, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
-                               point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+                               point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context,
+                               finalCheck: stalePoint.map { gate in { afterHold, meta in
+                                 // Only a hold can have waited since the early check: re-read then, else the early verdict stands.
+                                 guard afterHold else { return }
+                                 let checked = gate.check(control, waited: true, afterActivation: true, now: monotonicMilliseconds, reads: .live)
+                                 meta.stalePoint = checked.record
+                                 if let refusal = checked.refusal { throw refusal }
+                               } }, meta: &meta)
       }
     }
   }
@@ -485,13 +493,18 @@ extension Engine {
   /// An element click by its own action (route 1; route 3's held activation first, `route` .activation, when the app does
   /// not believe it has focus, FocusHold.swift): the in-flight check, the agent cursor at `point` as the action goes
   /// out, and the action, refused as actionFailed when the element does not accept it.
+  ///
+  /// `finalCheck` (#296, a coordinate click's element route): the stale-point guard's last check, just before the action
+  /// and after the focus hold (`pressAfterFinalCheck`), told whether the hold ran.
   func elementActionClick(_ element: AXUIElement, owner: pid_t, action: String, route: InputRoute, point: CGPoint?, windowID: CGWindowID?,
-                          app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext, meta: inout InputMeta) throws {
-    if route == .activation {
+                          app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
+                          finalCheck: ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? = nil, meta: inout InputMeta) throws {
+    try pressAfterFinalCheck(holds: route == .activation, hold: {
       try holdElementFocus(element: element, owner: owner, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
-    }
-    try guarding.checkInFlight()
-    if let point { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point)) }
-    try deliverAction(action, route: route, perform: { gatedPerform(element, $0) }, meta: &meta)
+    }, finalCheck: { afterHold in try finalCheck?(afterHold, &meta) }, perform: {
+      try guarding.checkInFlight()
+      if let point { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point)) }
+      try deliverAction(action, route: route, perform: { gatedPerform(element, $0) }, meta: &meta)
+    })
   }
 }

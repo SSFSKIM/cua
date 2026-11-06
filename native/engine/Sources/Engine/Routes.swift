@@ -647,9 +647,16 @@ func pressUnconfirmed(_ app: String) -> EngineError {
 private let clippingRoles: Set<String> = ["AXScrollArea", "AXWebArea", "AXWindow", "AXSheet", "AXMenu", "AXPopover"]
 /// Where the walk ends after clipping (FUN_10078eb38), and where it ends without (the application).
 private let boundaryRoles: Set<String> = ["AXWindow", "AXSheet", "AXMenu", "AXPopover"]
+/// `boundaryRoles` for the stale-point record (StalePoint.swift), which cuts the recorded tree's frames by the same rule.
+var clipBoundaryRoles: Set<String> { boundaryRoles }
 /// A group clips when it can scroll by the page (the vendor's `hasScrollAction`, not decompiled; read as the
 /// UIElementAction cases that scroll, E §5).
 private let pageScrollActions: Set<String> = ["AXScrollUpByPage", "AXScrollDownByPage", "AXScrollLeftByPage", "AXScrollRightByPage"]
+
+/// Whether an element of `role` with `actions` cuts what of its descendants shows (`visibleFrame`'s clipping ancestors).
+func clipsDescendants(role: String, actions: @autoclosure () -> [String]) -> Bool {
+  clippingRoles.contains(role) || (role == "AXGroup" && !pageScrollActions.isDisjoint(with: actions()))
+}
 
 /// The part of an element that shows: its frame cut by the frame of every clipping ancestor up to its window, sheet,
 /// menu or popover (the vendor's visible-frame walk, FUN_10078e49c). Nil when the element has no frame or nothing of it
@@ -669,8 +676,7 @@ func visibleFrame<Element>(of element: Element, frame: (Element) -> CGRect?, rol
     let nodeRole = role(node) ?? ""
     if nodeRole == "AXApplication" { break }
     if level > 0 {
-      let clips = clippingRoles.contains(nodeRole) || (nodeRole == "AXGroup" && !pageScrollActions.isDisjoint(with: actions(node)))
-      if clips {
+      if clipsDescendants(role: nodeRole, actions: actions(node)) {
         guard let bounds = frame(node) else { return nil }
         visible = visible.intersection(bounds)
         guard !visible.isNull, visible.width >= 1, visible.height >= 1 else { return nil }

@@ -94,9 +94,11 @@ const AGENT_CURSOR = 'While you act in an app, a cursor labelled with this sessi
 // background clicks into a Chromium web page, which cua's macOS engine element-routes, focuses, refuses or leaves
 // unconfirmed, in the same macOS-only document.
 const BACKGROUND_CLICKS = '\nA web page in a Chromium-based app (Chrome, Electron apps) that is in the background does not take a pointer: unless this Mac is a dedicated desktop, a left click, double click or drag there is refused with "<App>\'s web page does not accept a background click; bring <App> forward or use a dedicated desktop", and nothing is sent. A plain click there on a button, checkbox, radio button, link, pop-up button or menu item goes through the accessibility action of that element instead, and one on a checkbox or radio button whose state does not change fails with `clickUnconfirmed`. A plain click there into a text field, text area or editable region gives it keyboard focus through accessibility instead, with no mouse event, so the page sees no click; the result\'s text says whether the caret was put at the point, and when it was not, typing goes to the field\'s existing selection or its start, so use select_text or set_value first if the position matters. A field that does not report focus fails with `clickUnconfirmed`. A click or drag that fails with `clickUnconfirmed` was sent but may only have activated the window: observe the app before any retry.\n';
+// The third (the surface inventory's "Table 3 addition (2026-11-06, #296)"): the stale-point guard's refusal.
+const STALE_POINT = '\nA click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, or has given way to another control, it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it.\n';
 
 test('agent-cursor.md is the Table 3 additions\' paragraphs, and the core carries it only where the facade asks for it', async () => {
-  assert.equal(read(DOCS, 'agent-cursor.md'), AGENT_CURSOR + BACKGROUND_CLICKS);
+  assert.equal(read(DOCS, 'agent-cursor.md'), AGENT_CURSOR + BACKGROUND_CLICKS + STALE_POINT);
   const read_ = async name => `<${name}>`;
   assert.equal(await create_documentation(read_).read_core(), '<core-cua-repl>\n<confirmations>');
   assert.equal(await create_documentation(read_, {agentCursor: () => false}).read_core(), '<core-cua-repl>\n<confirmations>');

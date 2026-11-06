@@ -568,6 +568,30 @@ test('#288: a click\'s establishment of a page tree not yet seen rides as cua/po
   assert.deepEqual(meta['cua/pointerEstablish'], record);
 });
 
+test('#296: the stale-point guard\'s verdict rides as cua/stalePoint, and its refusal reaches the model with its sentence, name and meta', async t => {
+  const kept = {verdict: 'kept', reason: 'nonInteractiveHit', identity: 'handle', recordedRole: 'AXButton', hitRole: 'AXStaticText', ms: 0.912};
+  const refused = {verdict: 'refused', reason: 'frameMoved', identity: 'handle', recordedRole: 'AXButton', hitRole: 'AXButton', ms: 0.4};
+  const sentence = 'The screen changed since the screenshot: the AXButton "Reload" it showed at this point has moved away from it. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.';
+  let refuse = false;
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => {
+    if (refuse) throw new EngineFailure(-10005, sentence, 'screenChangedSinceScreenshot', {meta: {...INPUT_META, startedAt: null, endedAt: null, stalePoint: refused}});
+    return {meta: {...INPUT_META, stalePoint: kept}};
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.click([120, 168]));
+  assert.deepEqual(meta['cua/stalePoint'], kept);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/stalePoint'], null, 'reset by the next call');
+  refuse = true;
+  await assert.rejects(call(() => app.click([918, 188])), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${sentence}`, 'the whole sentence');
+    assert.equal(error.errorName, 'screenChangedSinceScreenshot');
+    return true;
+  });
+  assert.deepEqual(meta['cua/stalePoint'], refused);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null}, 'nothing posted');
+});
+
 test('a control build\'s variant rides in cua/nativeEngine, on its results and its input errors alike', async t => {
   const {getApp, call, meta} = await session(t, {identity: {engineVersion: '0.1.0', build: 'b1', variant: 'control-no-inert-click'},
     handlers: {'execute:press_key': () => { throw new EngineFailure(-10005, 'activationFailed', 'activationFailed', {meta: INPUT_META}); }}});

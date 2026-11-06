@@ -140,6 +140,9 @@ final class TreeWalk {
   private(set) var nodeCapHit = false
   private(set) var failures = 0
   private(set) var markdownFetches = 0
+  /// The window's nodes as the stale-point record takes them (StalePoint.swift `screenshotNodes`), in the walk's order;
+  /// the menu bar's are not in a window's screenshot.
+  private(set) var screenshotReads: [ScreenshotNodeRead<AXUIElement>] = []
   /// Nodes whose element is a title, with the elements it serves, mapped to tokens once the walk is done.
   private var titles: [(inMenu: Bool, position: Int, targets: [AXUIElement])] = []
   /// The action descriptions the system was asked for in this walk (its answer, else the action's name), by process
@@ -382,6 +385,11 @@ final class TreeWalk {
     }
     if pending.inMenu { menuBar.append(node) } else { nodes.append(node) }
     revision.entries[number] = LineageEntry(element: read.element, identity: ElementIdentity(read.data, pid: read.owner), actions: read.actions, frame: read.data.frame)
+    if !pending.inMenu {
+      screenshotReads.append(ScreenshotNodeRead(element: read.element, number: number, parent: pending.parent, depth: pending.depth, role: read.data.role,
+                                                title: read.data.title, description: read.data.description, frame: read.data.frame,
+                                                actions: read.actions, childCount: read.data.children.count))
+    }
     attach(number, pending)
     return number
   }

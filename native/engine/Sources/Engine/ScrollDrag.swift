@@ -15,7 +15,9 @@ import Foundation
 // drag: the vendor's five events (down, dragged at the start, the midpoint and the end, up), all aimed at the start
 // point's window, posted to the process serving the start point; into a background app by route 3's activation like a
 // synthesized click, never ⌘ (route 4 under the owner's override). The vendor's AXPress on a menu under the start point
-// is not built, as a coordinate click's is not.
+// is not built, as a coordinate click's is not. The start point passes #296's stale-point guard as a coordinate click's
+// point does (StalePoint.swift); a scroll at a point does not, since it presses nothing and the model's next scroll at
+// the same point follows the content the last one moved.
 
 enum ScrollDirection: String {
   case up, down, left, right
@@ -157,7 +159,12 @@ extension Engine {
       let activation = route == .activation
         ? FakeActivation(pid: owner, appPid: appPid, window: start.window, windowFrame: start.windowFrame, windowID: windowID) : nil
       // Where the drag's own down goes (#282): in shared mode one starting in a Chromium web area is refused, nothing posted.
-      let pointer = route == .activation ? pointerTarget(hit: hit, app: app, appPid: appPid, noun: "drag") : .acceptingFirstMouse
+      var pointer = route == .activation ? pointerTarget(hit: hit, app: app, appPid: appPid, noun: "drag") : .acceptingFirstMouse
+      // #296: the start point, where the drag presses, checked against the screenshot (the end is where it drops).
+      let stale = stalePointGuard(at: start.point, windowOrigin: start.windowFrame.origin, hit: hit,
+                                  rehit: { hitTest(window: start.window, pid: appPid, at: start.point) }, app: app, context: context)
+      meta.stalePoint = stale.record
+      pointer.staleRefusal = stale.refusal
       try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
         try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
           try deliverPointer(to: owner, route: route, activation: activation, activations: heldActivations, postsLeftMouseDown: true,

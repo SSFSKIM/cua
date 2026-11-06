@@ -102,6 +102,8 @@ struct InputMeta {
   var coordinateClick: CoordinateClickRecord?
   /// #288's establishment of a page tree not yet seen, before a left click's walk (Routes.swift `establishedPointerView`).
   var pointerEstablish: PointerEstablishRecord?
+  /// #296's stale-point guard at a coordinate pointer's point (StalePoint.swift): kept or refused and why, rechecked after an element route's wait.
+  var stalePoint: StalePointRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -158,6 +160,7 @@ struct InputMeta {
     if let elementClick { wire["elementClick"] = elementClick.wire }
     if let coordinateClick { wire["coordinateClick"] = coordinateClick.wire }
     if let pointerEstablish { wire["pointerEstablish"] = pointerEstablish.wire }
+    if let stalePoint { wire["stalePoint"] = stalePoint.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }
@@ -198,6 +201,9 @@ struct PointerTarget {
   let app: String
   var noun = "click"
   var elementRoute: ((inout InputMeta) throws -> Void)? = nil
+  /// #296's refusal of a stale point (StalePoint.swift), thrown before anything is posted on every path that would post
+  /// the pointer's events; nil when the guard kept the point or did not run (an element's own point).
+  var staleRefusal: EngineError? = nil
 
   /// The unit tests' default: a view known to accept first mouse, where a pointer's path is the one before #282.
   static var acceptingFirstMouse: PointerTarget { PointerTarget(view: .acceptsFirstMouse, app: "the app") }
@@ -222,15 +228,20 @@ struct PointerTarget {
 /// arm's inert click goes early, no hold is re-armed, and the events go out with no delivery guard and no after-action
 /// watch: the window may come forward and stays so. Everywhere, events whose own mouse down consumed the arm into a view
 /// not known to accept first mouse answer `clickUnconfirmed` once they are out.
+///
+/// #296: a pointer whose point the stale-point guard refused (`pointer.staleRefusal`) throws that refusal before anything
+/// is posted, activated, withdrawn or pressed, #282's element route included (the design session's ruling 1ea561bc
+/// ca82a6f4); a kept point's element route checks again what it presses (StalePoint.swift `StalePointGate`).
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
                     postsLeftMouseDown: Bool = true, foreground: ForegroundAssist? = nil, pointer: PointerTarget = .acceptingFirstMouse,
                     beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
                     post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
+  if let stale = pointer.staleRefusal { throw stale }
+  let shared = meta.context.connection.desktop == .shared
   // An earlier action's after-action watch ends before anything of this one happens (its activation included).
   let watches = meta.context.connection.afterAction
   watches.cancel()
-  let shared = meta.context.connection.desktop == .shared
   var release: (() -> Bool)?
   var standing: FakeActivation?
   var reportsArm = false
@@ -343,7 +354,9 @@ extension Engine {
   /// posts nothing; any other click on a menu-bar item or the menu bar is refused before anything is posted. A
   /// successful element click clears the app's menu record. A coordinate click is in the pixels of the last screenshot
   /// of the app's primary window on this connection, refused (`noScreenshotForCoordinates`, nothing posted) when there
-  /// is none, and goes by route 3. Route 4 takes route 3's place for an app the owner's override names. The process
+  /// is none, and goes by route 3; it is refused, nothing posted, when what that screenshot showed at the point has gone,
+  /// moved off it, or given way to another interactive element (`screenChangedSinceScreenshot`, #296, StalePoint.swift);
+  /// where #282 element-routes it, the element pressed must be that node or its control, checked again after any wait. Route 4 takes route 3's place for an app the owner's override names. The process
   /// serving the target receives the input, after the forbidden list has been checked against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
@@ -426,16 +439,37 @@ extension Engine {
         // What a left click by route 3 points into (#282): in shared mode a Chromium web area's plain click takes the hit's
         // own action when it has one, any other is refused, before anything is posted.
         var pointer = PointerTarget.acceptingFirstMouse
+        var pointerHit = hit
         if route == .activation, button == .left {
-          let (established, pointerHit) = signposted("click.pointerView") {
+          let established: PointerTarget
+          (established, pointerHit) = signposted("click.pointerView") {
             clickPointerTarget(hit: hit, window: placed.window, rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) },
                                app: app, appPid: appPid, meta: &meta)
           }
           pointer = established
-          if pointer.view.mayBeWebArea, let hit = pointerHit {
-            pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
-                                                appPid: appPid, guarding: guarding, context: context)
+        }
+        // #296: what the screenshot showed at the point is checked against what is there now, every button and route; a
+        // refusal is thrown before anything is posted or pressed (deliverPointer), #282's element route included.
+        let stale = signposted("click.stalePoint") {
+          stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, hit: pointerHit,
+                          rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app, context: context)
+        }
+        meta.stalePoint = stale.record
+        pointer.staleRefusal = stale.refusal
+        // The guard may have recovered a hit the first hit-test missed (a node mid-replacement, `stalePointRehits`): the
+        // route and the view it is classified by are read from that one.
+        if case .recovered(let recovered) = stalePointRouteHit(pointerHit, stale.verdict, same: { CFEqual($0, $1) }) {
+          pointerHit = recovered
+          if route == .activation, button == .left { pointer = pointerTarget(hit: recovered, app: app, appPid: appPid) }
+          pointer.staleRefusal = stale.refusal
+        }
+        if pointer.view.mayBeWebArea, let hit = pointerHit {
+          // A kept point's element route presses only the node or its control, the guard run again after any wait.
+          let gate = StalePointGate(first: stale.verdict, firstMs: stale.record.ms) { [self] in
+            stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, appPid: appPid, app: app, context: context)
           }
+          pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
+                                              appPid: appPid, guarding: guarding, context: context, stalePoint: gate)
         }
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
           try recordingRouteAdvice(route, app: app, meta: &meta) { meta in

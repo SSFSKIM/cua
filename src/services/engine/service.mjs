@@ -48,8 +48,10 @@
 //   whether it reached the hold's cap and left a raise, when the events were posted; a paste's too), cua/elementClick (an
 //   element click's plan, the ladder's reason and the hit-test's answer, #188), cua/coordinateClick (a coordinate
 //   click's placement, #259: the screenshot point, the window-local point, the posted global and window locations, the
-//   window frame used and the one read just before the events, numbers only), and cua/pointerEstablish (#288: a left
-//   click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}). cua/afterActionRepairs rides on
+//   window frame used and the one read just before the events, numbers only), cua/pointerEstablish (#288: a left
+//   click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}), and cua/stalePoint (#296: the
+//   stale-point guard at a coordinate click's or drag's point, {verdict "kept" | "refused", reason, identity?,
+//   recordedRole?, hitRole?, ms, rechecked?, afterActivation?}, roles only). cua/afterActionRepairs rides on
 //   input results and on observations alike once the connection's after-action watch has repaired (#200: the repairs
 //   route 3's watch made after an action had answered, the connection's total and the last actions', each keyed by its
 //   delivery's postedAt). cua/serviceMs is the wrapper's (src/services/sky.mjs).
@@ -73,6 +75,11 @@
 //   double click or drag into a Chromium web page that would not take it (`backgroundClickRefused`, nothing posted) or
 //   carries a plain click by the hit element's own action; in `dedicated` mode it lets the window come forward. A
 //   pointer that may only have activated its window answers `clickUnconfirmed`. Both are input errors with the meta.
+// - The stale point (#296): in either mode the engine refuses a coordinate click or drag, nothing posted, when what the
+//   screenshot its coordinates came from showed at the point is gone, has moved off it, or has given way to another
+//   interactive element (`screenChangedSinceScreenshot`, an input error with the meta, its sentence asking for a new
+//   screenshot); a background page click #282 carries by an element's action is refused the same way, nothing pressed,
+//   and presses only what the screenshot showed there.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
@@ -102,7 +109,7 @@ const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
-  'cua/pointerEstablish': null,
+  'cua/pointerEstablish': null, 'cua/stalePoint': null,
 };
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
 // background web page's text field that focused it instead, #283), and its bound.
@@ -111,9 +118,10 @@ const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
 // value-free diagnostics, #187; `elementClick`: an element click's plan, the ladder's reason and the hit-test's answer,
 // #188; `coordinateClick`: a coordinate click's placement from the screenshot point to the posted events, #259;
-// `pointerEstablish`: a left click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}, #288).
+// `pointerEstablish`: a left click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}, #288;
+// `stalePoint`: the stale-point guard's verdict at a coordinate pointer's point, #296).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
-  'elementClick', 'coordinateClick', 'pointerEstablish'];
+  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application

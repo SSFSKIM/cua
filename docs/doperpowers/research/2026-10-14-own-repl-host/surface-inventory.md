@@ -726,3 +726,13 @@ a plain click into a background Chromium web page's text field is no longer refu
 accessibility, and the model has to know that the page saw no click and where typing will go. The paragraph now reads:
 
 > A web page in a Chromium-based app (Chrome, Electron apps) that is in the background does not take a pointer: unless this Mac is a dedicated desktop, a left click, double click or drag there is refused with "<App>'s web page does not accept a background click; bring <App> forward or use a dedicated desktop", and nothing is sent. A plain click there on a button, checkbox, radio button, link, pop-up button or menu item goes through the accessibility action of that element instead, and one on a checkbox or radio button whose state does not change fails with `clickUnconfirmed`. A plain click there into a text field, text area or editable region gives it keyboard focus through accessibility instead, with no mouse event, so the page sees no click; the result's text says whether the caret was put at the point, and when it was not, typing goes to the field's existing selection or its start, so use select_text or set_value first if the position matters. A field that does not report focus fails with `clickUnconfirmed`. A click or drag that fails with `clickUnconfirmed` was sent but may only have activated the window: observe the app before any retry.
+
+### Table 3 addition (2026-11-06, #296)
+
+The design session's rulings on #296 (the native engine spec's Decision Log, the #296 entry) add an engine refusal the
+model has to know how to answer: a coordinate click or drag whose point no longer holds what the screenshot showed
+there fails with `screenChangedSinceScreenshot`, nothing sent, and the remedy is a new screenshot. It is true wherever
+the agent cursor's paragraph is (cua's macOS engine, in either device mode), so it is a third paragraph of
+`docs/cua-api/agent-cursor.md`, after a blank line; `core.md`'s port is untouched. The paragraph:
+
+> A click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, or has given way to another control, it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it.

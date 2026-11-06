@@ -379,7 +379,8 @@ test('#187: pasteUnconfirmed and its type_text count reach the model in the mess
   assert.equal(meta['cua/paste'], null, 'none left standing after a call off the paste route');
 });
 
-test('#187: a paste or type_text success the engine could not confirm puts its note in the tool result\'s text; a confirmed one adds nothing', async t => {
+test('#187, #283: a paste or type_text success the engine could not confirm, and a focusing click, put their note in the tool result\'s text; a confirmed paste adds nothing', async t => {
+  const focusNote = 'Chrome\'s text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click.';
   const pasteNote = 'Pasted, unconfirmed: the app read the text after ⌘V, but this field can\'t be read back, so the change couldn\'t be seen. Observe the field if the next step depends on it.';
   const typedNote = '3 lines pasted, 1 unconfirmed: the app read each after ⌘V, but this field can\'t be read back, so the change couldn\'t be seen. Observe the field if the next step depends on it.';
   const unconfirmed = {line: 1, lines: 1, notificationSource: 'none', baselineEmpty: true, readWait: 'handedOver', readAfterPostMs: 2, effectWait: 'noChannel',
@@ -390,7 +391,8 @@ test('#187: a paste or type_text success the engine could not confirm puts its n
       ? {meta: {...INPUT_META, inputRoute: 'paste', paste: {...unconfirmed, effectWait: 'reading', confirmed: true, unconfirmedLines: undefined}}}
       : {meta: {...INPUT_META, inputRoute: 'paste', paste: unconfirmed}, note: pasteNote}),
     'execute:type_text': () => ({meta: {...INPUT_META, inputRoute: 'paste', entered: 8, paste: {...unconfirmed, line: 3, lines: 3, confirmed: true}}, note: typedNote}),
-    'execute:click': () => ({meta: INPUT_META, note: 'not a paste'}),
+    'execute:click': () => ({meta: INPUT_META, note: focusNote}),
+    'execute:press_key': () => ({meta: INPUT_META, note: 'not a noted method'}),
   }});
   const {app} = await getApp('TextEdit');
   await call(() => app.paste('x'));
@@ -402,8 +404,10 @@ test('#187: a paste or type_text success the engine could not confirm puts its n
   assert.equal(meta['cua/entered'], 8);
   confirmedPaste = true;
   await call(() => app.paste('y'));
-  await call(() => app.click(1));
+  await call(() => app.pressKey('a'));
   assert.deepEqual(record.items, [pasteNote, typedNote], 'nothing for a confirmed paste, nor for another method');
+  await call(() => app.click(1));
+  assert.deepEqual(record.items, [pasteNote, typedNote, focusNote], 'a focusing click\'s note (#283)');
 });
 
 test('intervention, entered and routeAdvice ride as cua/ meta on results and on the userIntervened error that stopped a type_text; the next call starts over', async t => {

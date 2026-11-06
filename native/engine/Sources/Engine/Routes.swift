@@ -55,7 +55,9 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
 struct ElementClickRecord: Equatable {
   /// `webArea` (#282): a left pointer into a Chromium web area in shared mode, carried by the action of the element the
   /// pointer's point hits instead of a posted click (a coordinate click's record too).
-  enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea }
+  /// `focusField` and `focusedNotPlaced` (#283): a plain left click into a web area's text field, carried by
+  /// AXFocused, with the caret placed at the point or not (`caret` says why not).
+  enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea, focusField, focusedNotPlaced }
   let plan: ElementClickPlan
   let reason: Reason
   var hit: HitRelation?
@@ -67,6 +69,9 @@ struct ElementClickRecord: Equatable {
   /// why it stopped (`walkStopped`, a `WebAreaRefusal` case name).
   var walk: [String]? = nil
   var walkStopped: String? = nil
+  /// `focusField` and `focusedNotPlaced` only: the caret's offset placed (`placed`), or why it was not (a
+  /// `CaretNotPlaced` case name).
+  var caret: String? = nil
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["reason": reason.rawValue]
@@ -79,6 +84,7 @@ struct ElementClickRecord: Equatable {
     if let pressedAncestor { wire["pressed"] = pressedAncestor ? "ancestor" : "hit" }
     if let walk { wire["walk"] = walk }
     if let walkStopped { wire["walkStopped"] = walkStopped }
+    if let caret { wire["caret"] = caret }
     return wire
   }
 }
@@ -356,8 +362,9 @@ let webAreaValueSampleMs: Double = 20
 /// control's plain, non-interactive children, its label's text, an icon, a wrapping group (Chromium's generic
 /// containers arrive as AXGroup). Any other role on the way up refuses.
 let webAreaPassableRoles: Set<String> = ["AXStaticText", "AXImage", "AXGroup"]
-/// The roles that make an element editable whatever its attributes say (text entry; text and editing are #283's).
-let webAreaEditableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
+/// The roles that make an element editable whatever its attributes say: text entry, which a plain click focuses
+/// instead (#283, WebAreaFocus.swift).
+let webAreaEditableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField", "AXSecureTextField"]
 
 /// Why shared mode refuses a plain left click in a web area rather than pressing a control (#282).
 enum WebAreaRefusal: String, Error, Equatable {
@@ -372,6 +379,8 @@ enum WebAreaRefusal: String, Error, Equatable {
   case incompleteAncestry
   /// The control advertises neither AXPick nor AXPress, after the re-read where the process's accessibility is fresh.
   case noAction
+  /// The focus route (#283): the text-entry element the walk reached does not let its AXFocused be set.
+  case notFocusable
 }
 
 /// The control a plain left click in a web area presses (#282, the design session's bounds): the hit when it is an
@@ -447,10 +456,16 @@ func webAreaControlRequalified<Element>(_ control: Element, role: (Element) -> S
   guard let name = role(control) else { return .failure(.incompleteAncestry) }
   if webAreaEditableRoles.contains(name) || editable(control) { return .failure(.editable) }
   guard webAreaPressableRoles.contains(name) else { return .failure(.roleNotAllowed) }
-  var current = control
+  return webAreaAncestry(above: control, role: role, parent: parent).map { name }
+}
+
+/// Whether `element`'s parents read up to an AXWebArea: no window, sheet or application first (`roleNotAllowed`: outside
+/// every web area), no unread role or parent and within 300 levels (`incompleteAncestry`).
+func webAreaAncestry<Element>(above element: Element, role: (Element) -> String?, parent: (Element) -> Element?) -> Result<Void, WebAreaRefusal> {
+  var current = element
   for _ in 0...300 {
     guard let next = parent(current), let above = role(next) else { return .failure(.incompleteAncestry) }
-    if above == "AXWebArea" { return .success(name) }
+    if above == "AXWebArea" { return .success(()) }
     if webAreaWalkStops.contains(above) { return .failure(.roleNotAllowed) }  // reached its window: outside every web area
     current = next
   }

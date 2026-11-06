@@ -96,6 +96,8 @@ struct InputMeta {
   var paste: PasteDiagnostics?
   /// An element click's plan, the ladder's reason and the hit-test's answer (#188, Routes.swift ElementClickRecord).
   var elementClick: ElementClickRecord?
+  /// The sentence a success carries to the model beside the meta (the result's `note`; a focusing click's, #283).
+  var note: String? = nil
   /// A coordinate click's placement, from the screenshot point to the posted events (#259, Routes.swift).
   var coordinateClick: CoordinateClickRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
@@ -440,7 +442,9 @@ extension Engine {
           }
         }
       }
-      return ["meta": meta.wire]
+      var result: [String: Any] = ["meta": meta.wire]
+      if let note = meta.note { result["note"] = note }
+      return result
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }

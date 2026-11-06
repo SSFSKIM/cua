@@ -102,8 +102,9 @@ const PER_CALL = {
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
 };
-// The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187), and its bound.
-const NOTED_METHODS = new Set(['paste', 'type_text']);
+// The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
+// background web page's text field that focused it instead, #283), and its bound.
+const NOTED_METHODS = new Set(['paste', 'type_text', 'click']);
 const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
 // value-free diagnostics, #187; `elementClick`: an element click's plan, the ladder's reason and the hit-test's answer,

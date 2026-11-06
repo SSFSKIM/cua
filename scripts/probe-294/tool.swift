@@ -156,12 +156,54 @@ case "hidclick":
   let t0 = nowMs()
   CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
   usleep(80_000)
-  CGEvent(mouseEventSource: src, mouseType: .leftMouseDown, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
-  usleep(60_000)
-  CGEvent(mouseEventSource: src, mouseType: .leftMouseUp, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
+  for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+    let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: p, mouseButton: .left)
+    e?.setIntegerValueField(.mouseEventClickState, value: 1)
+    e?.post(tap: .cghidEventTap)
+    if type == .leftMouseDown { usleep(60_000) }
+  }
   usleep(400_000)
   CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: orig, mouseButton: .left)?.post(tap: .cghidEventTap)
   emit(["orig": ["x": orig.x, "y": orig.y], "at": ["x": p.x, "y": p.y], "ms": r1(nowMs() - t0)])
+
+case "eui":
+  // tool eui <pid> <toggle|manual>: AXEnhancedUserInterface written false then true, or AXManualAccessibility true.
+  let pid = pid_t(args[2])!
+  let app = prepare(AXUIElementCreateApplication(pid))
+  let t0 = nowMs()
+  var out: [String: Any] = ["prior": boolValue(attr(app, "AXEnhancedUserInterface"))]
+  if args[3] == "manual" {
+    out["manual"] = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue).rawValue
+  } else {
+    out["false"] = AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse).rawValue
+    usleep(100_000)
+    out["true"] = AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue).rawValue
+  }
+  out["after"] = boolValue(attr(app, "AXEnhancedUserInterface"))
+  out["ms"] = r1(nowMs() - t0)
+  emit(out)
+
+case "windows":
+  // tool windows <pid> [ax]: the pid's on-screen CG windows (no AX), and with "ax" its AX windows too.
+  let pid = pid_t(args[2])!
+  let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+  let cg: [[String: Any]] = list.compactMap { info in
+    guard (info[kCGWindowOwnerPID as String] as? Int).map(pid_t.init) == pid else { return nil }
+    return ["n": info[kCGWindowNumber as String] ?? NSNull(), "layer": info[kCGWindowLayer as String] ?? NSNull(),
+            "bounds": info[kCGWindowBounds as String] ?? NSNull(), "name": info[kCGWindowName as String] ?? NSNull(),
+            "alpha": info[kCGWindowAlpha as String] ?? NSNull()]
+  }
+  var out: [String: Any] = ["cg": cg, "total": list.count]
+  if args.count > 3 && args[3] == "ax" {
+    let app = prepare(AXUIElementCreateApplication(pid))
+    out["ax"] = elements(attr(app, kAXWindowsAttribute)).map { w -> [String: Any] in
+      let w = prepare(w)
+      return ["role": attr(w, kAXRoleAttribute) as? String ?? NSNull(), "subrole": attr(w, kAXSubroleAttribute) as? String ?? NSNull(),
+              "title": (attr(w, kAXTitleAttribute) as? String).map { String($0.prefix(40)) } ?? NSNull(),
+              "main": boolValue(attr(w, kAXMainAttribute)), "focused": boolValue(attr(w, kAXFocusedAttribute))]
+    }
+  }
+  emit(out)
 
 case "cursor":
   let c = CGEvent(source: nil)?.location ?? .zero

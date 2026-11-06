@@ -199,6 +199,26 @@ for (const s of [1, 25]) CELLS.push({label: `x/tap-${s}s`, tap: true, state: tru
 CELLS.push({label: 's/hid-25s', route: 'hid', waitMs: 25_000});
 CELLS.push({label: 'x/hid-tap-25s', route: 'hid', tap: true, waitMs: 25_000});
 for (const s of [1, 25]) CELLS.push({label: `safari/reload-${s}s`, app: 'safari', waitMs: s * 1000});
+// Wave 2 (run 42173188779: the events reach Chrome alike at 1 s and 25 s; the element click delivered at 25 s, the
+// re-observation and the read at 24 s did not rescue, a real HID click at 25 s was lost too, 30 s idle before the
+// first observation did not matter):
+//   b/noeng-hid-<s>s       no engine at all: a real HID click on Reload <s> s after TextEdit came front
+//   b/hid-1s               the HID click 1 s after an observation (the HID control, its up now with click state 1)
+//   b/eui-toggle-24        AXEnhancedUserInterface written false then true at 24 s, route 3 at 25 s
+//   b/manual-24            AXManualAccessibility written true at 24 s, route 3 at 25 s
+//   b/reobs-then-click-25  a re-observation (no screenshot) at 25 s and route 3 at once after it
+//   b/element-tap-25s      the element click at 25 s under the pid tap
+//   b/coord-then-element-25  route 3's coordinate click at 25 s, then the element click 1.5 s later
+//   b/timeline-25          Chrome's CG windows every second and two region captures (2 s, 24 s) while idle; route 3
+//                          at 25 s; its AX windows after
+for (const s of [3, 25]) CELLS.push({label: `b/noeng-hid-${s}s`, noEngine: true, route: 'hid', tap: true, waitMs: s * 1000});
+CELLS.push({label: 'b/hid-1s', route: 'hid', tap: true, waitMs: 1000});
+CELLS.push({label: 'b/eui-toggle-24', between: {at: 24_000, do: 'eui-toggle'}, waitMs: 25_000});
+CELLS.push({label: 'b/manual-24', between: {at: 24_000, do: 'manual'}, waitMs: 25_000});
+CELLS.push({label: 'b/reobs-then-click-25', between: {at: 25_000, do: 'reobs-noshot'}, waitMs: 25_000});
+CELLS.push({label: 'b/element-tap-25s', route: 'element', tap: true, waitMs: 25_000});
+CELLS.push({label: 'b/coord-then-element-25', then: {route: 'element', afterMs: 1500}, waitMs: 25_000});
+CELLS.push({label: 'b/timeline-25', timeline: true, waitMs: 25_000});
 const RUN = CELLS.filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
 
 async function cell(spec) {
@@ -214,6 +234,25 @@ async function cell(spec) {
     row.textEditFrontAt = Date.now();
     const userPid = pidOf('TextEdit');
     if (spec.preMs) await sleep(spec.preMs);
+    if (spec.noEngine) {
+      // Reload's point at the window's fixed place (every observed cell found its frame at 442,77 34x34).
+      const screen = {x: 459, y: 94};
+      const wait = row.textEditFrontAt + spec.waitMs - Date.now(); if (wait > 0) await sleep(wait);
+      const tap = tool(['tap', String(pid), '4000'], 30_000, true);
+      await Promise.race([tap.ready, sleep(2000)]);
+      row.frontBefore = frontmost();
+      const loadsBefore = loads, started = Date.now();
+      row.clickAfterTextEditFrontMs = started - row.textEditFrontAt;
+      row.click = {hid: await tool(['hidclick', String(screen.x), String(screen.y)]).done};
+      row.clickMs = Date.now() - started;
+      await sleep(3000);
+      row.loadsDelta = loads - loadsBefore;
+      row.frontAfter = frontmost();
+      row.pageEvents = pageEvents(started - 50, Date.now());
+      row.tap = await tap.done;
+      if (row.tap?.clocks) row.tapClickT = started - row.tap.clocks.wall;
+      return row;
+    }
     engine = await startEngine(spec.label);
     const w = engine.wire;
     const ping = {clientApiVersion: 'cua-engine-1'};
@@ -228,9 +267,24 @@ async function cell(spec) {
     const screen = centre(node);
     const px = pixel(sky, screen);
     row.pixel = px;
+    if (spec.timeline) {
+      row.timeline = [];
+      const shot = name => sh('screencapture', ['-x', `-R${400},${30},${620},${140}`, join(OUT, `${fileName(spec.label)}-${name}.png`)]).status;
+      while (Date.now() < o.at + spec.waitMs - 1100) {
+        const at = Date.now() - o.at;
+        const wnd = await tool(['windows', String(pid)]).done;
+        const entry = {at, cg: wnd.cg?.map(x => ({n: x.n, layer: x.layer, b: x.bounds, name: x.name, alpha: x.alpha})), total: wnd.total};
+        if (at >= 2000 && !row.shot2) { row.shot2 = true; entry.shot = shot('2s'); }
+        if (at >= 23_500 && !row.shot24) { row.shot24 = true; entry.shot = shot('24s'); }
+        row.timeline.push(entry);
+        await sleep(1000);
+      }
+    }
     if (spec.between) {
       const wait = o.at + spec.between.at - Date.now(); if (wait > 0) await sleep(wait);
       if (spec.between.do === 'read') row.between = await tool(['read', String(pid)]).done;
+      else if (spec.between.do === 'eui-toggle') row.between = await tool(['eui', String(pid), 'toggle']).done;
+      else if (spec.between.do === 'manual') row.between = await tool(['eui', String(pid), 'manual']).done;
       else {
         const o2 = await observe(w, pid, `${spec.label}-2`, spec.between.do === 'reobs');
         row.between = {ms: o2.ms, lineage: o2.sky.lineage ?? null};
@@ -258,8 +312,16 @@ async function cell(spec) {
       row.click = r.error ? {error: r.error} : {meta: r.result?.meta ?? r.result};
     }
     row.clickMs = Date.now() - started;
+    if (spec.then) {
+      await sleep(spec.then.afterMs);
+      row.firstLoadsDelta = loads - loadsBefore;
+      const at = Date.now();
+      const r = lean(await w.execute('click', {pid, element: (findReload(sky) ?? node).token}, {lineage: sky.lineage}));
+      row.second = {afterObservationMs: at - o.at, click: r.error ? {error: r.error} : {meta: r.result?.meta ?? r.result}};
+    }
     await sleep(3000);
     row.loadsDelta = loads - loadsBefore;
+    if (spec.timeline) row.windowsAfter = await tool(['windows', String(pid), 'ax']).done;
     row.frontAfter = frontmost();
     row.pageEvents = pageEvents(started - 50, Date.now());
     const after = latestTick(Date.now());
@@ -295,7 +357,10 @@ function summary(r) {
   const meta = m ? JSON.stringify({route: m.inputRoute, join: m.activationJoin, kind: m.activationClickKind, ac: m.activationClick, el: m.elementClick?.reason ?? m.elementClick?.route, restores: m.delivery?.restores, capped: m.delivery?.capped}) : '';
   const err = r.click?.error ? `ERROR ${r.click.error.name ?? ''} ${String(r.click.error.message ?? '').slice(0, 120)}` : '';
   const states = r.state?.changes ? ` state ${JSON.stringify(r.state.changes.map(c => [c.t, c.front, c.key, c.main, c.winMain, c.winFocused, c.userFront]))}` : '';
-  return `click@${r.clickAfterObservationMs}ms(teFront+${r.clickAfterTextEditFrontMs}) ${r.clickMs}ms ${err}${meta} LOADS+${r.loadsDelta} page ${JSON.stringify(r.pageEvents)} before ${JSON.stringify(r.pageBefore && {hasFocus: r.pageBefore.hasFocus, vis: r.pageBefore.vis})} idle ${JSON.stringify(r.idleTicks)} front ${r.frontBefore}->${r.frontAfter}${states}${tapLine(r)}`;
+  const extra = [r.between ? ` between ${JSON.stringify(r.between).slice(0, 200)}` : '',
+    r.second ? ` firstLoads+${r.firstLoadsDelta} second@${r.second.afterObservationMs} ${JSON.stringify(r.second.click?.error?.name ?? r.second.click?.meta?.elementClick ?? null)}` : '',
+    r.timeline ? ` timeline ${JSON.stringify([...new Set(r.timeline.map(e => JSON.stringify(e.cg)))])} axAfter ${JSON.stringify(r.windowsAfter?.ax ?? null)}` : ''].join('');
+  return `${extra} click@${r.clickAfterObservationMs}ms(teFront+${r.clickAfterTextEditFrontMs}) ${r.clickMs}ms ${err}${meta} LOADS+${r.loadsDelta} page ${JSON.stringify(r.pageEvents)} before ${JSON.stringify(r.pageBefore && {hasFocus: r.pageBefore.hasFocus, vis: r.pageBefore.vis})} idle ${JSON.stringify(r.idleTicks)} front ${r.frontBefore}->${r.frontAfter}${states}${tapLine(r)}`;
 }
 
 const config = {

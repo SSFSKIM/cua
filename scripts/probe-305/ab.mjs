@@ -266,8 +266,14 @@ function sweepPicks(sky) {
 /// The control again in a fresh observation: by role and label and a frame within 4 pt, else by role and frame within 2 pt.
 function refind(sky, p) {
   const near = (a, b, t) => a && b && Math.abs(a.x - b.x) <= t && Math.abs(a.y - b.y) <= t && Math.abs(a.width - b.width) <= t && Math.abs(a.height - b.height) <= t;
+  const dist = n => Math.abs(n.frame.x - p.frame.x) + Math.abs(n.frame.y - p.frame.y);
+  const nearest = ns => ns.filter(n => n.frame).sort((a, b) => dist(a) - dist(b))[0];
+  // A page that shifted a little between re-sets (a banner, a list re-opened) still gives a still page at the click,
+  // which follows its own observation: the same role and label at the nearest frame, else the same role within 40 pt.
   return sky.nodes.find(n => n.role === p.role && (n.title ?? null) === (p.title ?? null) && (n.description ?? null) === (p.description ?? null) && near(n.frame, p.frame, 4))
-    ?? sky.nodes.find(n => n.role === p.role && near(n.frame, p.frame, 2));
+    ?? sky.nodes.find(n => n.role === p.role && near(n.frame, p.frame, 2))
+    ?? ((p.title || p.description) ? nearest(sky.nodes.filter(n => n.role === p.role && (n.title ?? null) === (p.title ?? null) && (n.description ?? null) === (p.description ?? null))) : null)
+    ?? nearest(sky.nodes.filter(n => n.role === p.role && n.frame && dist(n) <= 40));
 }
 function shownOf(sky, n) {
   for (const [role, , , frame, sh] of sky.probeRecord ?? []) if (role === n.role && frame && sh && Math.abs(frame.x - n.frame.x) < 0.5 && Math.abs(frame.y - n.frame.y) < 0.5 && Math.abs(frame.width - n.frame.width) < 0.5 && Math.abs(frame.height - n.frame.height) < 0.5) return sh;
@@ -392,23 +398,28 @@ async function runSafari() {
   let page = LOCAL;
   const open = async () => { osa('tell application "Safari" to quit'); await sleep(2000); sh('open', ['-a', 'Safari', page]); await sleep(page === LOCAL ? 7000 : 14000); place('Safari'); await sleep(2000); };
   const pid = () => pidOf('Safari');
-  const state = () => ({tabs: Number(osa('tell application "Safari" to count tabs of window 1').out), url: osa('tell application "Safari" to get URL of current tab of window 1').out});
+  // Safari's own AppleScript answers nothing on the runner (run 42269993080): the window's title, through System Events,
+  // says whether a click navigated or opened something; a re-set re-opens only then.
+  const title = () => osa('tell application "System Events" to get name of window 1 of process "Safari"').out;
+  const state = () => ({title: title(), windows: osa('tell application "System Events" to count windows of process "Safari"').out});
+  let expected = null;
+  const reopen = async () => { await open(); expected = state(); };
   const reset = async function () {
     if (this?.dirty) { await escape(); this.dirty = false; }
     const st = state();
-    if (st.tabs !== 1 || !st.url.startsWith(page)) await open(); else { place('Safari'); await sleep(800); }
+    if (!expected || st.title !== expected.title || st.windows !== expected.windows) await reopen(); else { place('Safari'); await sleep(800); }
   };
   const effect = async () => state();
   if (PARTS.includes('spots')) {
-    page = LOCAL; await open();
+    page = LOCAL; await reopen();
     const s = {name: 'safari-toolbar', pid, effect, region: (p, wf) => p.y < wf.y + 56, controlRegion: () => true, priority: p => p.hit?.role === 'AXTextField' ? 0 : 1, perClass: 3,
       after: async c => { if (c.result?.ok) s.dirty = true; }};
     s.reset = reset.bind(s);
     await spot(s);
   }
   if (PARTS.includes('sweep')) {
-    page = 'https://en.wikipedia.org/wiki/Hacker_News'; await open();
-    const s = {name: 'sweep-safari', pid, effect};
+    page = 'https://en.wikipedia.org/wiki/Hacker_News'; await reopen();
+    const s = {name: 'sweep-safari', pid, effect, alwaysDirty: true};
     s.reset = reset.bind(s);
     await sweep(s);
   }

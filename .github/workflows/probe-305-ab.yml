@@ -19,9 +19,12 @@ jobs:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: [chrome, safari, finder, textedit, s296-chrome, s296-final, s296-safari-final, s296-native-final]
+        # The full A/B ran at 198bfa09 (run 42269993080: chrome, safari, finder, textedit and #296's s296-* groups). This
+        # push re-runs Safari split in two (its job timed out at 120 min) and the Chrome and Finder sweeps (a re-find
+        # that skipped controls on a shifted page); a group <app>-<part> runs one part of scripts/probe-305/ab.mjs.
+        group: [safari-spots, safari-sweep, chrome-sweep, finder-sweep]
     runs-on: macos-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -64,6 +67,7 @@ jobs:
           main="$RUNNER_TEMP/eng-main/release/cua-engine"
           branch="$RUNNER_TEMP/eng-branch/release/cua-engine"
           case "$GROUP" in
+            *-spots|*-sweep|*-popover) node scripts/probe-305/ab.mjs --group "${GROUP%-*}" --parts "${GROUP##*-}" --main "$main" --branch "$branch" --tool "$RUNNER_TEMP/probe-tool" --out "$RUNNER_TEMP/probe-305" ;;
             s296-*) node scripts/probe-296/ab.mjs --group "${GROUP#s296-}" --branch "$branch" --main "$main" --app "$RUNNER_TEMP/Probe296.app/Contents/MacOS/Probe296" --out "$RUNNER_TEMP/probe-305" ;;
             *) node scripts/probe-305/ab.mjs --group "$GROUP" --main "$main" --branch "$branch" --tool "$RUNNER_TEMP/probe-tool" --out "$RUNNER_TEMP/probe-305" ;;
           esac

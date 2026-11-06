@@ -65,6 +65,19 @@ test('Chromium takes background drags only with the path in view, Gecko every po
   assert.equal(at('gtk4-button', 'click_element').route, 'background', 'an element action takes effect on GTK 4 in shared mode');
 });
 
+test('every family the foreground route carries pointer input for has its covered cells in dedicated mode (task 63)', () => {
+  const dedicated = (scene, kind) => CELLS.find((c) => c.scene === scene && c.kind === kind && c.route === 'dedicated');
+  const cells = [
+    ...['click', 'move', 'scroll', 'drag'].map((kind) => ['gtk4-input', kind]),
+    ...['click', 'right_click', 'move', 'scroll', 'drag'].map((kind) => ['firefox-input', kind]),
+    ['chrome-input', 'drag'],
+    ['electron-input', 'drag'],
+    ['settle-qt5', 'scroll'],
+    ['settle-qt6', 'scroll'],
+  ];
+  for (const [scene, kind] of cells) assert.equal(dedicated(scene, kind)?.occlusion, 'covered', `${scene} ${kind}`);
+});
+
 test('--family and --kinds and --routes choose cells; an unknown name is refused', () => {
   const gedit = cellsFor({ families: ['gedit'] });
   assert.ok(gedit.length > 0 && gedit.every((c) => c.scene === 'gedit'));

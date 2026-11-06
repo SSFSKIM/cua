@@ -132,8 +132,9 @@ const editorCells = (scene, extra = []) => ['press_key', 'key_down', 'click', ..
 /**
  * The cells, family by family. A kind a family's entry in families.rs lists as ignored on the background route is
  * refused in shared mode with nothing sent, so it has nothing to settle there: GTK 4's pointer and key kinds run in
- * dedicated mode instead (the foreground route), xterm's keys likewise; Qt's scroll and the paste of a family with no
- * verified route (xterm) are left out. A kind whose usual effect is another window (an editor's right click or context
+ * dedicated mode instead (the foreground route), xterm's keys and Qt's scroll likewise, and so do the kinds Gecko and
+ * Chromium take only unobscured, with their windows covered; the paste of a family with no verified route (xterm) is
+ * left out. A kind whose usual effect is another window (an editor's right click or context
  * action opens a menu) is measured where the page's handler shows it in the window's own tree instead.
  */
 export const CELLS = [
@@ -183,6 +184,13 @@ export const CELLS = [
   cell('settle-qt6', 'move'),
   cell('gtk4-button', 'click_element'),
   ...['press_key', 'click', 'move', 'scroll', 'drag'].map((kind) => cell('gtk4-input', kind, 'dedicated')),
+  // the other families the foreground route carries pointer input for in dedicated mode, the window covered: Gecko's
+  // pointer kinds, Chromium's drags along a covered path, Qt's scroll (task 63: each waits for its window's raise)
+  ...['click', 'right_click', 'move', 'scroll', 'drag'].map((kind) => cell('firefox-input', kind, 'dedicated')),
+  cell('chrome-input', 'drag', 'dedicated'),
+  cell('electron-input', 'drag', 'dedicated'),
+  cell('settle-qt5', 'scroll', 'dedicated'),
+  cell('settle-qt6', 'scroll', 'dedicated'),
   cell('gnome-text-editor', 'type_text', 'dedicated'),
   cell('gnome-text-editor', 'activate_window'),
 ];

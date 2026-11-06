@@ -43,6 +43,8 @@
 //!   pointer, until stdin closes (`crossing.rs`).
 //! - `xprobe cursor-watch`: every change of the displayed cursor with its theme name, through XFixes, until stdin
 //!   closes (`cursor.rs`).
+//! - `xprobe order-watch`: the focus transitions, activation requests, root restacks with their geometry and every
+//!   pointer button press and release, in the server's order, until stdin closes (`order.rs`; task 63).
 //! - `xprobe record-run --ours <pid>`: every client's requests that can change a window, for a whole harness run,
 //!   each client attributed to the harness or not, through RECORD, until stdin closes (`whole.rs`); only on a private
 //!   display marked `CUA171_PRIVATE_DISPLAY` (task 41: RECORD can freeze X.Org 21.1, so never on a person's display).
@@ -57,6 +59,7 @@ mod crossing;
 mod cursor;
 mod dnd;
 mod focus;
+mod order;
 mod record;
 mod requests;
 mod restack;
@@ -108,9 +111,10 @@ fn main() {
         Some("request-watch") if args.len() == 1 => requests::request_watch(),
         Some("crossing-watch") if args.len() == 1 => crossing::crossing_watch(),
         Some("cursor-watch") if args.len() == 1 => cursor::cursor_watch(),
+        Some("order-watch") if args.len() == 1 => order::order_watch(),
         Some("record-run") => whole::record_run(&args[1..]),
         Some("watchdog") => watchdog::watchdog(&args[1..]),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | snap <window> <out.jpg> | close <window> | record <x> <y> <w> <h> [focus] [managed <title>] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | ancestry <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch | crossing-watch | cursor-watch | record-run --ours <pid> [--exe <name>,...] | watchdog --display <d> [--interval-ms N] [--bound-ms N] [--grace-ms N] [--stop <pid>]".into()),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | snap <window> <out.jpg> | close <window> | record <x> <y> <w> <h> [focus] [managed <title>] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | ancestry <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch | crossing-watch | cursor-watch | order-watch | record-run --ours <pid> [--exe <name>,...] | watchdog --display <d> [--interval-ms N] [--bound-ms N] [--grace-ms N] [--stop <pid>]".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");

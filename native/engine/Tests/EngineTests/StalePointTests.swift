@@ -537,10 +537,12 @@ final class StalePointTests: XCTestCase {
     XCTAssertEqual(steps, ["check", "perform"])
   }
 
-  /// Ruling 0a14b51f: inside a node the record holds incompletely (a budget-cut subtree), a post or a press goes through
-  /// only while that container itself passes the guard (its identity, its frame read now holding the point, its label
-  /// where both read), and its reason says it went unguarded inside (`unrecordedDescendant`, or `unrecorded` at a point
-  /// no recorded node holds), on the coordinate path and the element route alike.
+  /// Rulings 0a14b51f and 2db3ba75: inside a node the record holds incompletely (a budget-cut subtree), a post or a press
+  /// goes through only while that container passes the guard as every node does (its live handle's frame read now
+  /// holding the point, no label compared; or a handle re-created by role, frame and label), whatever the point reaches
+  /// inside it (a hit under it, the container itself, nothing), and its reason says it went unguarded inside
+  /// (`unrecordedDescendant`, or `unrecorded` at a point no recorded node holds), on the coordinate path and the element
+  /// route alike.
   func testATruncatedContainerPassesOnlyWhileItPassesTheGuardItself() {
     func page() -> (window: Node, list: Node, row: Node, text: Node) {
       let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
@@ -565,29 +567,45 @@ final class StalePointTests: XCTestCase {
       XCTAssertEqual(StalePointRecord(plain, ms: 0).wire["reason"] as? String, "unrecordedDescendant")
       XCTAssertEqual(stalePointPressVerdict(row, verdict(nodes, at: CGPoint(x: 900, y: 900), hit: row), reads: reads).reason, .unrecorded)
     }
-    // The container moved: refused, on both paths.
+    // The container itself, or nothing, at the point: still its unrecorded interior, kept and said so.
+    do {
+      let (window, list, row, _) = page()
+      let nodes = recorded(window, skipping: [ObjectIdentifier(row)])
+      XCTAssertEqual(verdict(nodes, at: point, hit: list).reason, .unrecordedDescendant, "a container-level hit")
+      XCTAssertEqual(verdict(nodes, at: point, hit: nil).reason, .unrecordedDescendant, "an empty hit")
+    }
+    // The container moved: refused, with a hit inside it, a container-level hit and an empty hit, on both paths.
     do {
       let (window, list, row, _) = page()
       let nodes = recorded(window, skipping: [ObjectIdentifier(row)])
       move(list, by: CGVector(dx: 0, dy: 200))
-      let moved = verdict(nodes, at: point, hit: row)
-      XCTAssertEqual(moved.reason, .frameMoved)
-      XCTAssertTrue(stalePointPressVerdict(row, moved, reads: reads).refused)
+      for (name, hit) in [("a hit inside", row), ("a container-level hit", list), ("an empty hit", nil)] as [(String, Node?)] {
+        let moved = verdict(nodes, at: point, hit: hit)
+        XCTAssertEqual(moved.reason, .frameMoved, name)
+        XCTAssertTrue(stalePointPressVerdict(row, moved, reads: reads).refused, name)
+      }
     }
-    // Relabelled in place: refused, on both paths; a container without a label to compare passes.
+    // A live container relabelled in place (a web area's page title gaining a count): kept, its interior unguarded, as
+    // #298's blind spot keeps any live node.
     do {
       let (window, list, row, _) = page()
       let nodes = recorded(window, skipping: [ObjectIdentifier(row)])
-      list.title = "Ads"
-      let relabelled = verdict(nodes, at: point, hit: row)
-      XCTAssertEqual(relabelled.reason, .relabelled)
-      XCTAssertEqual(stalePointOutcome(relabelled, ms: 0, reads: reads).refusal?.message,
-                     "The screen changed since the screenshot: the AXGroup \"Results\" it showed at this point has changed; AXButton \"Open\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
-      let first = verdict(nodes, at: point, hit: nil)
-      XCTAssertEqual(first.reason, .noHit, "no hit: nothing inside to vouch for")
-      XCTAssertEqual(stalePointPressVerdict(row, first, reads: reads).reason, .relabelled)
-      list.title = nil
+      list.title = "(3) Results"
       XCTAssertEqual(verdict(nodes, at: point, hit: row).reason, .unrecordedDescendant)
+      XCTAssertEqual(verdict(nodes, at: point, hit: list).reason, .unrecordedDescendant)
+      XCTAssertEqual(stalePointPressVerdict(row, verdict(nodes, at: point, hit: nil), reads: reads).reason, .unrecordedDescendant)
+    }
+    // A container re-created with another title: not the node, refused; with the same title it passes.
+    for (title, refused) in [("Ads", true), ("Results", false)] {
+      let (window, list, row, _) = page()
+      let nodes = recorded(window, skipping: [ObjectIdentifier(row)])
+      list.destroy()
+      let again = Node("AXGroup", CGRect(x: 0, y: 50, width: 600, height: 300), title: title)
+      again.add(row)
+      window.add(again)
+      let judged = verdict(nodes, at: point, hit: row)
+      XCTAssertEqual(judged.refused, refused, title)
+      XCTAssertEqual(judged.reason, refused ? .nodeGone : .unrecordedDescendant, title)
     }
   }
 

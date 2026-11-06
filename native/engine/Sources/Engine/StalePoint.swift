@@ -143,7 +143,8 @@ enum StalePointReason: String, Equatable {
   case hitAboveNode
   /// Kept, unguarded inside (a stated limit, the design session's ruling 0a14b51f): the hit (or the element a route acts
   /// on) lies inside the node, whose children the record does not all hold, so the screenshot may have shown it; only the
-  /// node itself is guarded (its identity, its frame read now, its label where both read: `stalePointContainerReason`).
+  /// node itself is guarded, as every node is (its own handle with its frame read now holding the point, no label
+  /// compared; or one re-created by role, frame and label): the hit inside it, the node itself or no hit at all.
   case unrecordedDescendant
   /// Refused: no handle of the node answers, and none re-created in place was found.
   case nodeGone
@@ -154,13 +155,8 @@ enum StalePointReason: String, Equatable {
   /// Refused: #282's element route (or #283's focus) would act on an element that is neither the node nor an ancestor
   /// of it (its control), nor inside a node whose children the record does not all hold.
   case pressedOther
-  /// Refused: the point lies inside a node the record holds incompletely, whose own handle reads another title (or
-  /// description) now (ruling 0a14b51f: a truncated region passes only inside a container that itself passes).
-  case relabelled
 
-  var refuses: Bool {
-    self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther || self == .relabelled
-  }
+  var refuses: Bool { self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther }
 }
 
 /// How the recorded node was found now: its own handle, or one re-created in place.
@@ -328,28 +324,19 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
     StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: hitRole, hit: hit)
   }
-  // Judged in order: the node's frame, then the hit (the reasons name what was read, kept or refused).
+  // Judged in order: the node's identity (above) and its frame, then the hit (the reasons name what was read, kept or
+  // refused). A node the record holds incompletely has passed as every node passes by here (the design session's
+  // ruling 2db3ba75), and whatever the point reaches inside it (no hit, the node itself, anything under it) is its
+  // unrecorded interior, kept unguarded and said so.
   if let currentFrame, !holdsPoint(currentFrame, point) { return judged(.frameMoved) }
+  if !node.subtreeRecorded, hit.map({ reads.same($0, current) || isInside($0, current, reads) }) ?? true {
+    return judged(.unrecordedDescendant)
+  }
   guard let hit else { return judged(.noHit) }
   if reads.same(hit, current) { return judged(.sameElement) }
-  // Inside a node the record holds incompletely, whatever the hit's role, only the node itself can be checked.
-  if !node.subtreeRecorded, isInside(hit, current, reads) {
-    return judged(stalePointContainerReason(node, current: current, identity: verdict.identity, reads: reads))
-  }
   guard let hitRole, stalePointInteractiveRoles.contains(hitRole) else { return judged(.nonInteractiveHit) }
   if isInside(current, hit, reads) { return judged(.hitAboveNode) }
   return judged(.interactiveHit)
-}
-
-/// The verdict on a point inside a node the record holds incompletely (ruling 0a14b51f): the node has passed the guard
-/// itself so far (the same handle or one re-created by role, frame and label; its frame read now holding the point), and
-/// its own handle's title, or description where neither has a title, must still agree with the record's where both read
-/// (a re-created one's agreed already): `unrecordedDescendant`, kept and unguarded inside, else `relabelled`.
-func stalePointContainerReason<Element>(_ node: ScreenshotNode<Element>, current: Element, identity: StalePointIdentity?,
-                                        reads: StalePointReads<Element>) -> StalePointReason {
-  guard identity == .handle else { return .unrecordedDescendant }
-  return stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, title: reads.title(current),
-                               description: reads.description(current)) ? .unrecordedDescendant : .relabelled
 }
 
 /// The meta's `stalePoint` (#296): what the guard decided ("kept" | "refused"), why, how it found the node, the recorded
@@ -393,16 +380,15 @@ struct StalePointRecord: Equatable {
 /// What an element route (#282's press, #283's focus) may act on at a kept point (the design session's ruling 1ea561bc
 /// ca82a6f4): the node the screenshot showed there as found now, or an ancestor of it (the control the walk reached
 /// from the hit through plain children), or anything inside a node whose children the record does not all hold and
-/// which itself still passes (the `unrecordedDescendant` limit, its reason then that one; `relabelled` when the node's
-/// label changed), or anything at a point no recorded node holds (`unrecorded`). Otherwise the verdict becomes
-/// `pressedOther`, refused.
+/// which itself passed (the `unrecordedDescendant` limit, its reason then that one), or anything at a point no
+/// recorded node holds (`unrecorded`). Otherwise the verdict becomes `pressedOther`, refused.
 func stalePointPressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVerdict<Element>,
                                      reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
   guard !verdict.refused, let node = verdict.node, let current = verdict.current else { return verdict }
   if reads.same(pressed, current) || isInside(current, pressed, reads) { return verdict }
   if !node.subtreeRecorded, isInside(pressed, current, reads) {
-    return StalePointVerdict(reason: stalePointContainerReason(node, current: current, identity: verdict.identity, reads: reads), node: node,
-                               identity: verdict.identity, current: current, hitRole: reads.role(pressed), hit: pressed)
+    return StalePointVerdict(reason: .unrecordedDescendant, node: node, identity: verdict.identity, current: current,
+                             hitRole: reads.role(pressed), hit: pressed)
   }
   return StalePointVerdict(reason: .pressedOther, node: node, identity: verdict.identity, current: current, hitRole: reads.role(pressed),
                            hit: pressed)
@@ -470,7 +456,6 @@ func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: St
   switch reason {
   case .frameMoved: change = "has moved away from it"
   case .interactiveHit, .pressedOther: change = "is no longer what it reaches"
-  case .relabelled: change = "has changed"
   default: change = "is gone"
   }
   let there = now.map { "; \($0) is there now" } ?? ""

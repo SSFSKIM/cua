@@ -58,10 +58,12 @@ impl Rect {
 /// resource-id base: the application's own popups and menus, which take its input as the window would).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Above {
+    pub id: u32,
     pub rect: Rect,
     pub viewable: bool,
     pub input_only: bool,
     pub own: bool,
+    pub override_redirect: bool,
 }
 
 /// One level of the window's ancestry: the parent's inside rectangle, which clips its children (the root's is the
@@ -141,18 +143,28 @@ pub fn reach(window: Rect, levels: &[Level], points: &[(i32, i32)]) -> Reach {
     }
 }
 
-/// Whether `window` is on top over its visible area (task 63, `activate_window`): no other client's window stacked
-/// above it or an ancestor overlaps the part of it inside every ancestor and the screen, InputOnly windows included,
-/// as `reach` judges each point. A window with nothing on the screen has nothing to cover; no stacking is doubt.
-pub fn on_top(window: Rect, levels: &[Level]) -> bool {
+/// The windows that may hold `activate_window`'s answer (task 63): every window stacked above `window` or an ancestor
+/// that overlaps the part of it inside every ancestor and the screen and could be a managed window of another client:
+/// viewable, InputOutput, not override-redirect (a notification bubble's or a menu's), not the window's own. Which of
+/// them is in the normal layer is the window manager's to say (`X11::on_top`). A window with nothing on the screen has
+/// nothing to cover; None is doubt (no stacking read).
+pub fn covers(window: Rect, levels: &[Level]) -> Option<Vec<Above>> {
     if levels.is_empty() {
-        return false;
+        return None;
     }
     let visible = levels.iter().fold(window, |r, level| r.intersection(&level.clip));
-    visible.is_empty()
-        || !levels
+    if visible.is_empty() {
+        return Some(Vec::new());
+    }
+    let managed = |a: &&Above| takes_input(a) && !a.input_only && !a.override_redirect;
+    Some(
+        levels
             .iter()
-            .any(|level| level.above.iter().any(|a| takes_input(a) && a.rect.overlaps(&visible)))
+            .flat_map(|level| level.above.iter().filter(managed))
+            .filter(|a| a.rect.overlaps(&visible))
+            .copied()
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -172,10 +184,12 @@ mod tests {
 
     fn above(r: Rect) -> Above {
         Above {
+            id: 0,
             rect: r,
             viewable: true,
             input_only: false,
             own: false,
+            override_redirect: false,
         }
     }
 
@@ -461,34 +475,61 @@ mod tests {
     }
 
     #[test]
-    fn a_window_is_on_top_when_no_other_client_s_window_overlaps_its_visible_area() {
+    fn the_activation_waits_only_for_managed_windows_overlapping_the_part_on_the_screen() {
+        let ids = |c: Option<Vec<Above>>| c.map(|c| c.iter().map(|a| a.id).collect::<Vec<_>>());
         let (w, levels) = framed(rect(0, 20, 1000, 780), vec![]);
-        assert!(on_top(w, &levels), "nothing above it");
-        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![above(rect(990, 700, 50, 50))]);
-        assert!(!on_top(w, &levels), "a corner of it covered");
+        assert_eq!(ids(covers(w, &levels)), Some(vec![]), "nothing above it");
+        let corner = Above {
+            id: 7,
+            ..above(rect(990, 700, 50, 50))
+        };
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![corner]);
+        assert_eq!(
+            ids(covers(w, &levels)),
+            Some(vec![7]),
+            "a corner of it covered: its layer decides"
+        );
         let (w, levels) = framed(rect(0, 20, 1000, 780), vec![above(rect(1010, 0, 200, 200))]);
-        assert!(on_top(w, &levels), "a window above that does not overlap it");
-        let menu = Above {
-            own: true,
-            ..above(rect(250, 50, 100, 100))
-        };
-        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![menu]);
-        assert!(on_top(w, &levels), "its own popup over it");
-        let input_only = Above {
-            input_only: true,
-            ..above(rect(250, 50, 100, 100))
-        };
-        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![input_only]);
-        assert!(!on_top(w, &levels), "an InputOnly window over it takes its input");
+        assert_eq!(
+            ids(covers(w, &levels)),
+            Some(vec![]),
+            "a window above that does not overlap it"
+        );
+        // none of these is a managed window: its own popup, another client's override-redirect window (a notification
+        // bubble, a menu), an InputOnly window
+        let over = |a: Above| framed(rect(0, 20, 1000, 780), vec![a]);
+        for (a, what) in [
+            (
+                Above {
+                    own: true,
+                    ..above(rect(250, 50, 100, 100))
+                },
+                "its own popup",
+            ),
+            (
+                Above {
+                    override_redirect: true,
+                    ..above(rect(250, 50, 100, 100))
+                },
+                "another client's override-redirect window",
+            ),
+            (
+                Above {
+                    input_only: true,
+                    ..above(rect(250, 50, 100, 100))
+                },
+                "an InputOnly window",
+            ),
+        ] {
+            let (w, levels) = over(a);
+            assert_eq!(ids(covers(w, &levels)), Some(vec![]), "{what}");
+        }
         // only the part on the screen counts: a window above the off-screen part covers nothing
         let (w, mut levels) = on_root(rect(800, 20, 600, 400));
         levels[0].above.push(above(rect(1280, 20, 200, 200)));
-        assert!(on_top(w, &levels), "above its off-screen part only");
+        assert_eq!(ids(covers(w, &levels)), Some(vec![]), "above its off-screen part only");
         let (w, levels) = on_root(rect(1300, 20, 600, 400));
-        assert!(
-            on_top(w, &levels),
-            "wholly off the screen: nothing of it can be covered"
-        );
-        assert!(!on_top(rect(0, 0, 10, 10), &[]), "no stacking read: doubt");
+        assert_eq!(ids(covers(w, &levels)), Some(vec![]), "wholly off the screen");
+        assert_eq!(ids(covers(rect(0, 0, 10, 10), &[])), None, "no stacking read: doubt");
     }
 }

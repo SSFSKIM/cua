@@ -65,6 +65,9 @@ const ATOM_NAMES: &[&str] = &[
     "_GTK_APPLICATION_ID",
     "_NET_WM_STATE",
     "_NET_WM_STATE_MODAL",
+    "_NET_WM_STATE_ABOVE",
+    "_NET_WM_WINDOW_TYPE_DOCK",
+    "_NET_WM_WINDOW_TYPE_NOTIFICATION",
     "_NET_WM_PID",
     "AT_SPI_BUS",
     "XdndSelection",
@@ -757,12 +760,39 @@ impl X11 {
         Ok(crate::cover::reach(rect, &levels, &points))
     }
 
-    /// Whether `window` is on top over its visible area now (`cover.rs` `on_top`): the X errors of the stacking read are
-    /// the caller's.
+    /// Whether `window` is on top over its visible area now, as `activate_window` waits for it (task 63; the design
+    /// session's ruling, 2026-11-06): no window in the window manager's normal layer covers it. Of the windows
+    /// `cover::covers` finds, one whose client the window manager keeps in another layer neither holds the wait nor fails
+    /// it: `_NET_WM_STATE_ABOVE`, or `_NET_WM_WINDOW_TYPE` DOCK or NOTIFICATION, read on the client a frame holds, else on the window. A
+    /// covering window gone before its properties are read covers nothing. The X errors of the stacking read are the
+    /// caller's.
     pub fn on_top(&self, window: Window) -> Result<bool> {
         let geometry = self.conn.get_geometry(window)?.reply()?;
         let (rect, levels) = self.cover(window, &geometry)?;
-        Ok(crate::cover::on_top(rect, &levels))
+        let Some(covers) = crate::cover::covers(rect, &levels) else {
+            return Ok(false);
+        };
+        for cover in covers {
+            if self.normal_layer(cover.id).unwrap_or(false) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Whether a window stacked above is in the window manager's normal layer, from what its client says: not
+    /// `_NET_WM_STATE_ABOVE`, and of no `_NET_WM_WINDOW_TYPE` DOCK or NOTIFICATION.
+    fn normal_layer(&self, window: Window) -> Result<bool> {
+        // the client a frame holds (the window with `WM_STATE` in it), else the window itself (no window manager)
+        let client = self.client_in(window, 0).unwrap_or(window);
+        let states = self.property(client, self.atom("_NET_WM_STATE"))?;
+        let types = self.property(client, self.atom("_NET_WM_WINDOW_TYPE"))?;
+        let (states, types) = (values32(&states.reply()?), values32(&types.reply()?));
+        let other = [
+            self.atom("_NET_WM_WINDOW_TYPE_DOCK"),
+            self.atom("_NET_WM_WINDOW_TYPE_NOTIFICATION"),
+        ];
+        Ok(!states.contains(&self.atom("_NET_WM_STATE_ABOVE")) && !types.iter().any(|t| other.contains(t)))
     }
 
     /// Whether `window` is fully unobscured now (`cover.rs`); any X error is doubt, and doubt is obscured.
@@ -819,6 +849,7 @@ impl X11 {
                 let (attributes, g) = (attributes.reply()?, geometry.reply()?);
                 let border = 2 * g.border_width as i32;
                 level.above.push(Above {
+                    id: w,
                     rect: Rect {
                         x: px + g.x as i32,
                         y: py + g.y as i32,
@@ -828,6 +859,7 @@ impl X11 {
                     viewable: attributes.map_state == MapState::VIEWABLE,
                     input_only: attributes.class == WindowClass::INPUT_ONLY,
                     own: w & !mask == window & !mask,
+                    override_redirect: attributes.override_redirect,
                 });
             }
             levels.push(level);

@@ -22,11 +22,14 @@ impl Engine {
     /// `_NET_ACTIVE_WINDOW` (source indication 1, the application), a raise, and the input focus, in that order;
     /// no prior validation (behaviour §14). The vendor checks each with a round trip of its own; here the three go out
     /// together and are checked in order, so the server sees the same requests in the same order and the first failure
-    /// is the answer, at the cost of one round trip. Then, where the vendor answers at once, the answer waits until the
-    /// window is on top over its visible area (`cover::on_top`), at most [`ON_TOP_WAIT`]: the window manager raises it
-    /// after the requests, and pointer input sent on the answer would otherwise reach the window still covering it,
-    /// on a shared desktop the person's (the design session's ruling on task 63, 2026-11-06). Still covered at the
-    /// bound, it answers an error saying the window was not brought to the front.
+    /// is the answer, at the cost of one round trip. Then, where the vendor answers at once, the answer waits until no
+    /// window in the window manager's normal layer covers the window's visible area (`X11::on_top`), at most
+    /// [`ON_TOP_WAIT`]: the window manager raises it after the requests, and pointer input sent on the answer would
+    /// otherwise reach the window still covering it, on a shared desktop the person's (the design session's rulings on
+    /// task 63, 2026-11-06). Windows kept above the normal layer (ABOVE, docks, notifications, other clients'
+    /// override-redirect windows) neither hold the answer nor fail it, and the answer says nothing of what they cover:
+    /// a later click there is decided by its own route's rules. Still covered by a normal window at the bound, it
+    /// answers an error.
     pub(super) fn activate_window(&mut self, input: Option<Value>) -> Result<Value> {
         let input: WindowInput = parse_input(input)?;
         let window = input.window.id;
@@ -63,12 +66,12 @@ impl Engine {
     }
 }
 
-/// `activate_window`'s answer when the window is still covered at [`ON_TOP_WAIT`]: the activation was asked for, the
-/// window is not in front, and nothing else went to it.
+/// `activate_window`'s answer when a normal-layer window still covers the window at [`ON_TOP_WAIT`]: the activation
+/// was requested (and may still take effect), a normal window covers it, and nothing else went to it.
 fn not_in_front(window: Window) -> String {
     format!(
-        "window {window} was not brought to the front: another window still covered it {} ms after its activation was \
-         requested; nothing else was sent",
+        "the activation of window {window} was requested, but a normal window still covered it after {} ms; nothing \
+         else was sent",
         ON_TOP_WAIT.as_millis()
     )
 }
@@ -165,8 +168,8 @@ mod tests {
     fn a_window_still_covered_at_the_bound_is_said_not_to_be_in_front_with_nothing_else_sent() {
         assert_eq!(
             not_in_front(0x60_0003),
-            "window 6291459 was not brought to the front: another window still covered it 1000 ms after its activation \
-             was requested; nothing else was sent"
+            "the activation of window 6291459 was requested, but a normal window still covered it after 1000 ms; \
+             nothing else was sent"
         );
     }
 

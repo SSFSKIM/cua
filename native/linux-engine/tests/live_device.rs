@@ -1851,7 +1851,8 @@ fn a_real_pointer_motion_in_the_press_window_answers_that_the_drag_may_not_have_
 /// client's restack of a top-level window comes to it as a `ConfigureRequest`. It carries out `slow`'s only `delay`
 /// later (never, with None), as a window manager under load raises an activated window after the engine's own focus
 /// request has already given it the focus, and every other request at once. The engine's activation request reaches
-/// it too, and asks nothing more of it. Dropped, it lets the redirect go.
+/// it too, and asks nothing more of it. `keeping` windows it keeps on top as a window manager keeps its ABOVE, dock and
+/// notification layers: each is raised again after every restack it carries out. Dropped, it lets the redirect go.
 struct SlowRaises {
     stop: mpsc::Sender<()>,
     thread: Option<std::thread::JoinHandle<()>>,
@@ -1859,6 +1860,10 @@ struct SlowRaises {
 
 impl SlowRaises {
     fn start(slow: Window, delay: Option<Duration>) -> SlowRaises {
+        SlowRaises::keeping(slow, delay, Vec::new())
+    }
+
+    fn keeping(slow: Window, delay: Option<Duration>, keep: Vec<Window>) -> SlowRaises {
         use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConfigureRequestEvent};
         let (stop, stopped) = mpsc::channel();
         let (ready, started) = mpsc::channel();
@@ -1876,6 +1881,9 @@ impl SlowRaises {
             let carry_out = |e: &ConfigureRequestEvent| {
                 let aux = ConfigureWindowAux::from_configure_request(e);
                 let _ = conn.configure_window(e.window, &aux);
+                for &w in &keep {
+                    let _ = conn.configure_window(w, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE));
+                }
                 let _ = conn.flush();
             };
             let mut pending: Vec<(Instant, ConfigureRequestEvent)> = Vec::new();
@@ -2079,8 +2087,8 @@ fn activate_window_answers_once_its_window_is_on_top_so_a_pipelined_click_lands_
         assert_eq!(
             refused,
             Err(format!(
-                "window {} was not brought to the front: another window still covered it 1000 ms after its activation \
-                 was requested; nothing else was sent",
+                "the activation of window {} was requested, but a normal window still covered it after 1000 ms; \
+                 nothing else was sent",
                 firefox.id
             )),
             "{mode}"
@@ -2107,4 +2115,75 @@ fn a_foreground_click_into_the_window_s_own_popup_is_not_held_back() {
     assert!(firefox.has_focus(), "the foreground route: its own popup over it");
     let _ = firefox.conn.destroy_window(menu);
     let _ = firefox.conn.flush();
+}
+
+/// The window's `_NET_WM_STATE` or `_NET_WM_WINDOW_TYPE` set to these atoms, as its client would set them.
+fn set_atoms(probe: &Probe, property: &str, values: &[&str]) {
+    let atom = |name: &str| {
+        probe
+            .conn
+            .intern_atom(false, name.as_bytes())
+            .unwrap()
+            .reply()
+            .unwrap()
+            .atom
+    };
+    let values: Vec<u32> = values.iter().map(|v| atom(v)).collect();
+    probe
+        .conn
+        .change_property32(PropMode::REPLACE, probe.id, atom(property), AtomEnum::ATOM, &values)
+        .unwrap();
+    probe.conn.sync().unwrap();
+}
+
+/// `activate_window` waits only for windows of the window manager's normal layer (the design session's ruling on task
+/// 63, 2026-11-06): with an ABOVE window and a dock strip kept over part of the window, it answers once the normal
+/// window covering it is lowered, in both modes. Its success says nothing of what they cover: a click at a point under
+/// the strip is decided by the click's own rules, refused in shared mode (Gecko takes no click while covered) and in
+/// dedicated mode held to the foreground route's bound and refused, never sent to the strip or the window.
+#[test]
+fn activation_waits_for_no_window_kept_above_the_normal_layer_and_a_click_under_one_is_not_sent() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let cover = Probe::open("Cover", (0, 0, 400, 300));
+    let above = Probe::open("Above", (250, 40, 120, 60));
+    set_atoms(&above, "_NET_WM_STATE", &["_NET_WM_STATE_ABOVE"]);
+    let dock = Probe::open("Dock", (0, 170, 640, 40));
+    set_atoms(&dock, "_NET_WM_WINDOW_TYPE", &["_NET_WM_WINDOW_TYPE_DOCK"]);
+    for mode in ["shared", "dedicated"] {
+        let mut engine = Engine::start_with(&["--desktop", mode]);
+        let refusal = format!("{}{SENTENCE}", app_of(&mut engine, firefox.id));
+        firefox.unfocus();
+        cover.raise();
+        above.raise();
+        dock.raise();
+        let raises = SlowRaises::keeping(firefox.id, Some(Duration::from_millis(50)), vec![above.id, dock.id]);
+        let started = Instant::now();
+        engine
+            .request("activate_window", json!({"window": firefox.target()}))
+            .expect("the ABOVE window and the dock neither hold nor fail the activation");
+        let took = started.elapsed();
+        assert!(
+            took < Duration::from_millis(500),
+            "{mode}: answered at the raise ({took:?})"
+        );
+        assert!(firefox.above(&cover), "{mode}: raised over the normal window");
+        assert!(
+            dock.above(&firefox) && above.above(&firefox),
+            "{mode}: the layers kept above it"
+        );
+        let clicked = engine.request("click", json!({"window": firefox.target(), "x": 100, "y": 185}));
+        drop(raises);
+        match mode {
+            "shared" => assert_eq!(clicked, Err(refusal), "shared: covered, so refused"),
+            _ => assert!(
+                clicked.as_ref().is_err_and(
+                    |e| e.starts_with(&format!("window {} was still covered at the input's point", firefox.id))
+                ),
+                "dedicated: held to the bound and refused: {clicked:?}"
+            ),
+        }
+        assert_eq!(dock.inputs(), vec![], "{mode}: nothing sent to the strip");
+        assert_eq!(firefox.inputs(), vec![], "{mode}: nor to the window under it");
+        assert_eq!(cover.inputs(), vec![], "{mode}");
+    }
 }

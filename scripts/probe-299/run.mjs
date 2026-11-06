@@ -24,7 +24,7 @@ const CFT = '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google C
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const log = (...a) => console.log('probe-299:', ...a);
 const STEP = 20;
-const WIN = {x: 80, y: 40, w: 1280, h: 900};
+const WIN = {x: 0, y: 40, w: 1024, h: 728};  // the hosted runner's one screen is 1024 x 768
 const GH = ['https://', 'git', 'hub.com'].join('');
 
 // ---- the targets -------------------------------------------------------------------------------------------------
@@ -111,7 +111,7 @@ const pidOf = name => Number(sh('pgrep', ['-x', name]).out.split('\n')[0]) || nu
 const place = proc => osa(`tell application "System Events"\ntell process "${proc}"\nset position of window 1 to {${WIN.x}, ${WIN.y}}\nset size of window 1 to {${WIN.w}, ${WIN.h}}\nend tell\nend tell`);
 
 async function startEngine(bin, name) {
-  const dir = join(OUT, 'sock'); mkdirSync(dir, {recursive: true, mode: 0o700});
+  const dir = join(OUT, `sock-${name}`); mkdirSync(dir, {recursive: true, mode: 0o700});
   const socket = join(dir, `${name}.sock`);
   const child = spawn(bin, [], {env: {...process.env, CUA_ENGINE_SOCKET: socket}, stdio: ['ignore', 'pipe', 'pipe']});
   let stderr = '';

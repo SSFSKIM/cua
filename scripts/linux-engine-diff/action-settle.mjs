@@ -248,7 +248,13 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
   // the desktop route aims at the screen: the window's place read again, since the window manager may have moved it
   // since the scene opened (the points are the window's own)
   if (cell.route === 'desktop') sc.origin = (await ctx.desktop.state(sc)).window;
-  const line = sc.lines?.[trial % 2];
+  // where a click or a drag goes in the text, read once the caret is parked (`aimAtText`): the view may have scrolled
+  let line = null;
+  const aimAtText = async () => {
+    sc.origin = (await ctx.desktop.state(sc)).window;
+    sc.lines = linesOf(ctx, sc, sc.lineSpec);
+    line = sc.lines[trial % 2];
+  };
   if (['press_key', 'key_down', 'key_up'].includes(cell.kind)) {
     run.key = 'x';
     if (['field', 'editor', 'paragraphs'].includes(effects)) {
@@ -265,6 +271,7 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
       // the caret parked at the end of the text (or, in Writer, of the next paragraph), so the click must move it into
       // the first line
       caretToEnd(ctx, sc.park);
+      await aimAtText();
       Object.assign(run, { point: line.point, line: line.span, node: line.node });
     } else run.point = sc.points[cell.kind === 'move' ? 'move' : 'click'][trial % 2];
     if (effects === 'screen') await clearScreen(ctx, sc);
@@ -283,6 +290,7 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
       // the last drag's selection cleared and the caret parked first: a press inside a selection starts a drag and drop
       // of the selected text (GTK 3), not a new selection
       caretToEnd(ctx, sc.park);
+      await aimAtText();
       Object.assign(run, { path: line.path, line: line.span, node: line.node });
     } else run.path = sc.paths[trial % 2];
     run.handle = `settle-${trial}`;
@@ -574,7 +582,9 @@ async function openScene(ctx, name) {
     if (FAMILIES[def.family].gtk4) ctx.caretRefused.add(sc.field);
     if (def.effects === 'editor' && !FAMILIES[def.family].gtk4) {
       const first = text.indexOf('\n');
-      sc.lines = linesOf(ctx, sc, [{ node: sc.field, start: 0, end: first }, { node: sc.field, start: 10, end: first }]);
+      // the text grows at its end through the runs, and a long last line scrolls the view: aimed at again each run
+      sc.lineSpec = [{ node: sc.field, start: 0, end: first }, { node: sc.field, start: 10, end: first }];
+      sc.lines = linesOf(ctx, sc, sc.lineSpec);
       sc.park = sc.field;
     }
   }
@@ -585,7 +595,8 @@ async function openScene(ctx, name) {
     sc.baseLength = [...oracle.text(sc.field)].length;
     sc.textInTree = false;
     const end = [...oracle.text(sc.field)].length;
-    sc.lines = linesOf(ctx, sc, [{ node: sc.field, start: 0, end }, { node: sc.field, start: 10, end }]);
+    sc.lineSpec = [{ node: sc.field, start: 0, end }, { node: sc.field, start: 10, end }];
+    sc.lines = linesOf(ctx, sc, sc.lineSpec);
     sc.park = paragraphs[1];
   }
   if (def.effects === 'screen') {

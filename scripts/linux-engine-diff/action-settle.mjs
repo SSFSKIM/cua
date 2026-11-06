@@ -277,7 +277,9 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
     if (effects === 'screen') await clearScreen(ctx, sc);
   } else if (cell.kind === 'drag' || cell.kind === 'drag_handle') {
     if (effects === 'editor' || effects === 'paragraphs') {
-      // no caret put through AT-SPI between drags (Writer then selects nothing): each drag's selection replaces the last
+      // the last drag's selection cleared and the caret parked first: a press inside a selection starts a drag and drop
+      // of the selected text (GTK 3), not a new selection
+      caretToEnd(ctx, sc.park);
       Object.assign(run, { path: line.path, line: line.span, node: line.node });
     } else run.path = sc.paths[trial % 2];
     run.handle = `settle-${trial}`;

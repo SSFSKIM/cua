@@ -72,6 +72,12 @@ private func preorder(_ tree: FakeTree) -> [Int] {
 
 private let budget = WalkLimits(nodes: 150, deadline: .infinity)
 
+/// A walk's whole payload, window nodes then menu bar, as the engine serializes it (keys sorted).
+private func payload(_ walk: TreeWalk) -> String {
+  let data = try! JSONSerialization.data(withJSONObject: ["nodes": walk.nodes, "menuBar": walk.menuBar], options: [.sortedKeys])
+  return String(decoding: data, as: UTF8.self)
+}
+
 final class VisibleFirstTests: XCTestCase {
   func testAWalkNothingCutsEmitsExactlyThePlainPreorder() {
     for chromium in [false, true] {
@@ -83,11 +89,51 @@ final class VisibleFirstTests: XCTestCase {
       XCTAssertEqual(ids(ordered), ids(plain))
       XCTAssertEqual(ordered.nodes.map { $0["token"] as! String }, plain.nodes.map { $0["token"] as! String }, "tokens allocated in the document's order")
       XCTAssertEqual(ordered.nodes.map { $0["depth"] as! Int }, plain.nodes.map { $0["depth"] as! Int })
+      XCTAssertEqual(payload(ordered), payload(plain), "the whole payload")
       XCTAssertEqual(ordered.omitted, 0)
       XCTAssertTrue(source.reads.values.allSatisfy { $0 == 1 }, "each element read once")
       XCTAssertNil(ordered.seeding, "no seeding when the budget does not cut")
       XCTAssertEqual(source.hitTests, 0)
     }
+  }
+
+  /// The review of c4057c3a..effffcee: an action's description is the system's answer for the earliest element in
+  /// the preorder that asks, as when the walk read in preorder, though the selection reads a visible sibling first.
+  func testAnUncutWalksActionDescriptionsAreThePreordersWhateverItReadFirst() {
+    let tree = FakeTree()
+    tree.extra[0] = ["AXRole": "AXWindow" as CFString]
+    tree.frames[0] = windowFrame
+    tree.children = [0: [1, 2], 1: [3]]
+    tree.frames[1] = CGRect(x: 0, y: 2000, width: 100, height: 100)  // off the window: its child waits
+    tree.frames[3] = CGRect(x: 0, y: 2000, width: 100, height: 30)
+    tree.frames[2] = CGRect(x: 0, y: 100, width: 100, height: 30)
+    tree.actions = [3: ["AXCustomThing"], 2: ["AXCustomThing"]]
+    tree.elementDescriptions = [3: ["AXCustomThing": "earlier"], 2: ["AXCustomThing": "later"]]
+    let ordered = walk(tree, Lineage(), menuBar: 89, menu: [88, 90], visibleFrame: windowFrame)
+    let plain = walk(tree, Lineage(), menuBar: 89, menu: [88, 90])
+    XCTAssertEqual(ids(plain), [0, 1, 3, 2])
+    XCTAssertEqual(payload(ordered), payload(plain))
+    XCTAssertEqual(ordered.nodes.map { $0["actionDescriptions"] as? [String] }, [[], [], ["earlier"], ["earlier"]])
+  }
+
+  /// The same review: the seeding's trigger counts distinct elements, so a tree whose groups share their children, under
+  /// the budget, is never seeded.
+  func testSharedChildrenUnderTheBudgetNeverSeed() {
+    let tree = FakeTree()
+    tree.extra[0] = ["AXRole": "AXWindow" as CFString]
+    tree.frames[0] = windowFrame
+    tree.children[0] = Array(1...40)
+    for group in 1...40 {
+      tree.children[group] = Array(1000..<1100)
+      tree.frames[group] = CGRect(x: 0, y: Double(group) * 10, width: 1000, height: 10)
+    }
+    tree.hit = { _ in 1000 }
+    let source = FakeSource(tree)
+    let walked = walk(tree, Lineage(), limits: WalkLimits(nodes: 150, deadline: .infinity), visibleFrame: windowFrame, source: source, chromium: true)
+    XCTAssertFalse(walked.nodeCapHit)
+    XCTAssertEqual(walked.nodes.count, 141)
+    XCTAssertNil(walked.seeding)
+    XCTAssertEqual(source.hitTests, 0)
   }
 
   func testTheBudgetIsSpentOnWhatTheWindowShowsAndTheTreeStaysInTheDocumentsOrder() {

@@ -2398,8 +2398,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      "later sibling draws above" rule need in document order) all keep the document's order.
   3. **No cut, no change.** When no budget cuts, the selection reads exactly the elements the plain preorder reads, each
      once, and the emission emits them in the same order with the same tokens
-     (`testAWalkNothingCutsEmitsExactlyThePlainPreorder`, WebKit-like and Chromium-like frames): the vendor's tree, and
-     repl-parity's, are unchanged. A walk
+     (`testAWalkNothingCutsEmitsExactlyThePlainPreorder`, WebKit-like and Chromium-like frames, the whole payload
+     compared): the vendor's tree, and repl-parity's, are unchanged. The one per-walk cache whose answer depended on
+     the read order, the system's action descriptions asked once per process and action name, keeps the preorder's: the
+     answer for the earliest element in the preorder that asks stands (the system is asked again only for an element
+     earlier than the cached one's), and nodes take it at emission (the review of c4057c3a..effffcee;
+     `testAnUncutWalksActionDescriptionsAreThePreordersWhateverItReadFirst`). A walk
      with no visible frame (rooted at a recorded menu-bar item) is the plain preorder. A stated difference with no
      case on the matrix: an element reached under two parents is read under whichever occurrence the selection meets
      first, so its depth-dependent reads (the depth cap, Chromium's parent-role settability) follow that occurrence,
@@ -2412,8 +2416,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling on #301.
 
 - Decision (#301, 2026-11-06, the same branch; the ruling's item 1, question 1 of the build: when to seed): **a
-  Chromium walk seeds once it knows the node budget will cut: when the elements it has read plus the children they name
-  exceed the budget.** Every read names its children, so that count is a floor on the tree's size. It reaches the
+  Chromium walk seeds once it knows the node budget will cut: when the distinct elements it has read or seen named as a
+  child exceed the budget.** Every read names its children, so that count is a floor on the tree's size; it counts
+  handles (CFEqual), since a child listed by several parents (a table's cells under both its rows and its columns) is
+  one element (the review of c4057c3a..effffcee found the count of child references seeding a 141-node tree under the
+  budget, `testSharedChildrenUnderTheBudgetNeverSeed`). It reaches the
   budget at the earliest moment the walk can know, which on a long page is a few hundred reads in (a body's paragraphs,
   a table's rows): during the visible pass, long before the budget is spent.
   1. **What the seeds reuse.** The seeds steer the walk in place, and nothing is read twice. A seed already read and set

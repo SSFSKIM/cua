@@ -31,6 +31,8 @@ final class FakeTree {
   var hit: (CGPoint) -> Int? = { _ in nil }
   /// How long reading an element takes, in microseconds, by id (unset: at once).
   var slow: [Int: UInt32] = [:]
+  /// An element's own description of an action, by id then action name, over `descriptions`.
+  var elementDescriptions: [Int: [String: String]] = [:]
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
   /// An element's parent by id: the node whose children list it.
@@ -84,7 +86,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   override func document(_ element: AXUIElement) -> String? { tree.documents[tree.id(element)] }
   override func actionDescription(_ element: AXUIElement, _ action: String) -> String? {
     descriptionCalls[action, default: 0] += 1
-    return tree.descriptions[action]
+    return tree.elementDescriptions[tree.id(element)]?[action] ?? tree.descriptions[action]
   }
   override func readListed(_ element: AXUIElement) -> ElementData? {
     let id = tree.id(element)

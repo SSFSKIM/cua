@@ -255,8 +255,22 @@ final class TreeWalk {
   /// Nodes whose element is a title, with the elements it serves, mapped to tokens once the walk is done.
   private var titles: [(inMenu: Bool, position: Int, targets: [AXUIElement])] = []
   /// The action descriptions the system was asked for in this walk (its answer, else the action's name), by process
-  /// and action name: one description call each.
-  private var descriptions: [String: String] = [:]
+  /// and action name, each with where the element it was asked for lies in the walk's preorder (the menu bar first, as
+  /// it is read first): the answer for the earliest such element stands, as when the walk read in preorder and asked
+  /// once per name, whatever order the selection read in (#301). Nodes take theirs at emission.
+  private var descriptions: [String: (order: ReadOrder, description: String)] = [:]
+
+  /// Where a read element lies in the order the plain preorder walk read in: the menu bar's elements first, by
+  /// position, then the window's, by their paths.
+  private struct ReadOrder {
+    let inMenu: Bool
+    let path: [Int]
+
+    func precedes(_ other: ReadOrder) -> Bool {
+      if inMenu != other.inMenu { return inMenu }
+      return documentPrecedes(path, other.path)
+    }
+  }
 
   /// What the seeding did (#301): its time, the points it hit-tested (and those that answered), the ancestor chains it
   /// joined to the walk, the seeds they gave, the read elements they brought forward, and whether its cap cut it.
@@ -291,6 +305,8 @@ final class TreeWalk {
     let owner: pid_t
     let actions: [String]
     let actionDescriptions: [String?]
+    /// The description cache's key for each action (nil where the system is not asked), which emission resolves.
+    let descriptionKeys: [String?]
     let flags: NodeFlags
     let url: String?
     let valueMarkdown: String?
@@ -370,7 +386,8 @@ final class TreeWalk {
     let menuElements = menuBarElements(bar: menuBar, items: menuItems)
     let menuInherited = previous.map { matchSiblings(old: $0.siblings(of: nil, menu: true), new: menuElements) } ?? Array(repeating: nil, count: menuElements.count)
     let menuPending = menuElements.enumerated().map { position, element in
-      Pending(element: element, depth: position == 0 ? 0 : 1, parentRole: position == 0 ? nil : kAXMenuBarRole, listedRead: true, inMenu: true)
+      Pending(element: element, depth: position == 0 ? 0 : 1, parentRole: position == 0 ? nil : kAXMenuBarRole, listedRead: true, inMenu: true,
+              path: [position])
     }
     var menuReads: [(Read, inherited: Int?)] = []
     var menuUnread: [Int?] = []
@@ -427,7 +444,9 @@ final class TreeWalk {
   private func select(_ window: AXUIElement, nodeLimit: Int, byteLimit: Int) {
     root = window
     stack = [Pending(element: window, depth: 0, clip: visibleFrame)]
-    var kept = 0, estimated = 0, known = 1
+    var kept = 0, estimated = 0
+    // The distinct elements the walk knows of, read or named as a child: a child listed by several parents counts once.
+    var known: Set<ElementKey> = [ElementKey(element: window)]
     var cut = false
     while true {
       guard let next = stack.popLast() else {
@@ -454,8 +473,10 @@ final class TreeWalk {
         selected[key] = item
         kept += 1
         estimated += jsonBytes(read.wire) + 1
-        known += read.children.count
-        if chromium, seeding == nil, visibleFrame != nil, known > nodeLimit { seed() }
+        if chromium, seeding == nil, visibleFrame != nil {
+          for child in read.children { known.insert(ElementKey(element: child)) }
+          if known.count > nodeLimit { seed() }
+        }
         // The seeding may have taken this element up already: a hit's chain can pass through it.
         if item.expanded { continue }
         if read.children.isEmpty { item.expanded = true }
@@ -667,7 +688,9 @@ final class TreeWalk {
     if pastDeadline() { return .deadline }
     let owner = source.owner(element)
     let actions = source.actions(element)
-    let actionDescriptions = actions.map { describe(action: $0, of: element, owner: owner) }
+    let order = ReadOrder(inMenu: pending.inMenu, path: pending.path)
+    let described = actions.map { describe(action: $0, of: element, owner: owner, order: order) }
+    let actionDescriptions = described.map(\.description)
     if pastDeadline() { return .deadline }
     // FUN_10074cb90's full-UI-context flags (Derivations.swift).
     var flags = NodeFlags()
@@ -691,7 +714,8 @@ final class TreeWalk {
     }
     let (children, shown, recordable) = choose(element, data, pending)
     if pastDeadline() { return .deadline }
-    var read = Read(element: element, data: data, owner: owner, actions: actions, actionDescriptions: actionDescriptions, flags: flags,
+    var read = Read(element: element, data: data, owner: owner, actions: actions, actionDescriptions: actionDescriptions,
+                    descriptionKeys: described.map(\.key), flags: flags,
                     url: url, valueMarkdown: valueMarkdown, children: children, shown: shown, recordable: recordable)
     read.wire = wire(read, number: standIn, depth: pending.depth)
     return .read(read)
@@ -706,7 +730,7 @@ final class TreeWalk {
     let actions = source.actions(element)
     let (children, shown, recordable) = choose(element, data, pending)
     if pastDeadline() { return .deadline }
-    return .read(Read(element: element, data: data, owner: 0, actions: actions, actionDescriptions: [], flags: NodeFlags(), url: nil,
+    return .read(Read(element: element, data: data, owner: 0, actions: actions, actionDescriptions: [], descriptionKeys: [], flags: NodeFlags(), url: nil,
                       valueMarkdown: nil, children: children, shown: shown, recordable: recordable))
   }
 
@@ -726,13 +750,14 @@ final class TreeWalk {
   /// `Name:` describes (Derivations.swift; the renderer prints those words, and the system is not asked), else the
   /// system's description, else the action's name. Descriptions are the app's per action name, so a walk asks once per
   /// process and name (cua's; the vendor asks per element).
-  private func describe(action: String, of element: AXUIElement, owner: pid_t) -> String? {
-    guard asksSystemForDescription(action) else { return nil }
+  /// The system is asked again only for an element earlier in the preorder than the one whose answer is cached.
+  private func describe(action: String, of element: AXUIElement, owner: pid_t, order: ReadOrder) -> (key: String?, description: String?) {
+    guard asksSystemForDescription(action) else { return (nil, nil) }
     let key = "\(owner)\u{0}\(action)"
-    if let known = descriptions[key] { return known }
+    if let known = descriptions[key], !order.precedes(known.order) { return (key, known.description) }
     let description = source.actionDescription(element, action) ?? action
-    descriptions[key] = description
-    return description
+    descriptions[key] = (order, description)
+    return (key, description)
   }
 
   private func wire(_ read: Read, number: Int, depth: Int) -> [String: Any] {
@@ -756,6 +781,9 @@ final class TreeWalk {
     var node = read.wire
     node["token"] = elementToken(number)
     node["depth"] = depth
+    node["actionDescriptions"] = zip(read.descriptionKeys, read.actionDescriptions).map { key, read in
+      key.flatMap { descriptions[$0]?.description } ?? read ?? NSNull() as Any
+    }
     bytes += jsonBytes(node) + 1
     if let targets = read.data.servesAsTitleFor, !targets.isEmpty {
       titles.append((inMenu, inMenu ? menuBar.count : nodes.count, targets))

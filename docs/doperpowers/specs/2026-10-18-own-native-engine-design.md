@@ -1960,6 +1960,47 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   doctor's row and the client's ping in their JS suites). Nothing live ran: the hosted Chrome for Testing A/B of the
   ruling's acceptance is the next step.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's ruling on #282.
+- Decision (#283, 2026-11-05, `fix/283-web-text-focus`; the design session's rulings, 1ea561bc a9607cd9, on the
+  proposal b93055dd:293; amends #282's entry above): **in shared mode a plain left click into a background Chromium
+  web area's text field is carried by AXFocused, accepted only once it reads back true, with the caret placed at the
+  point where the field's own character boxes locate it; the result's note says the field was focused, not clicked.**
+  1. **The measurement** (#283's hosted probe, `probe/283-hosted`, runs 42146016617, 42147887133 and 42148369195;
+     Chrome for Testing 156 on macOS 26.6.2 and 26.7.2, every rep alike). AXFocused on the field focuses an input, a
+     textarea and a contenteditable region before Chromium's complete accessibility mode as after it, with no pointer
+     event, TextEdit frontmost and Chrome's window order unchanged (102 cells); AX reads it true 65 to 142 ms after the
+     write. A contenteditable region's hit is its AXStaticText, whose AXFocused is not settable and whose write answers
+     success while doing nothing. AXPress does nothing before complete mode and, after it, makes Chrome play trusted
+     pointer events into an input and a region: not this route. Focus alone puts the caret at the field's existing
+     selection, else at its start. AXRangeForPosition answers {0,0} for every point and AXTextMarkerForPosition
+     answers no value; AXSelectedTextRange {k, 0} after focus puts the caret at k on all three kinds, and type_text
+     then lands there by route 2′.
+  2. **The target** (`webAreaFocusTarget`). #282's walk stops at an editable element (`walkStopped editable`); the
+     route then walks again from the hit to the nearest text-entry role (`webAreaEditableRoles`, which now holds
+     AXSecureTextField) whose AXFocused is settable, through editable elements and #282's passable roles only, its own
+     ancestry read up to the AXWebArea (`webAreaAncestry`, shared with the control's requalification). A text-entry
+     role whose AXFocused is not settable refuses (`notFocusable`), as do another role, the web area and an unread
+     ancestry; each refusal records the walk, as #282's does.
+  3. **The focus** (`focusPlacingCaret`). Route 1 (`inputRoute action`), no activation: the in-flight check, the
+     cursor at the point, AXFocused written and polled every 20 ms for up to 300 ms. A field that never reads focused
+     answers `clickUnconfirmed`; the write's own answer never counts. #282's re-read gate does not apply.
+  4. **The caret** (`caretOffset`, `fieldCaretOffset`). The field's characters' boxes (AXBoundsForRange {i, 1}),
+     scanned over AXVisibleCharacterRange when it reads one, up to `caretScanLimit` characters: in the box that holds
+     the point the caret goes before the character on its left half and after it on its right; to the right of a line's
+     last box, the end of that line, before its break; an empty field is 0. Then AXSelectedTextRange {offset, 0} is
+     written and polled back. Not placed (`elementClick.caret`): `secure` (a password field is focused only, its value
+     and ranges never read), `pointOutsideText` (no box holds the point and it is past no line's end; never a guessed
+     offset), `selectionMismatch`, `unmapped` (the focused element is not the hit: a contenteditable region's boxes are
+     its text's, in that text's offsets).
+  5. **The answer.** `elementClick {plan action, action AXFocused, reason focusField | focusedNotPlaced, pressedRole,
+     pressed hit | ancestor, walk, caret}`, and the result's `note`, which the service now passes for `click` as for
+     paste and type_text: placed, "focused through accessibility, with the caret at the point; no mouse event was
+     sent, so the page saw no click"; not placed, typing goes to the field's existing selection or its start, use
+     select_text or set_value first. A double click, a drag and focusField's fallback stay refused (#289).
+  Proven offline (`WebAreaFocusTests`, 16: the field hit, the region's text hit focusing its region, each refusal, the
+  secure field by role and subrole focused with nothing read, a write that never reads back true, a caret read back
+  elsewhere, a point in no box, the line-end and empty-line rules, the in-flight stop before any write, the record and
+  the note; the service's note test for click).
+  Date/Author: 2026-11-05, cursor235 for the design session's rulings on #283.
 
 ## Outcomes & Retrospective
 

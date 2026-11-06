@@ -234,14 +234,17 @@ for step in spec["place"] as? [[String: Any]] ?? [] {
   if kind == "known" {
     // The offset the page says is under the point, written straight: does the write itself place the caret?
     writeRange((step["expect"] as? NSNumber)?.intValue ?? 0)
-  } else if kind == "bounds" {
-    // The offset found from AXBoundsForRange: the character whose box holds the point, its left half before it.
-    let n = (attr(target, "AXNumberOfCharacters") as? NSNumber)?.intValue ?? 0
+  } else if kind == "bounds" || kind == "bounds-hit" {
+    // The offset found from AXBoundsForRange: the character whose box holds the point, its left half before it. bounds
+    // scans the target; bounds-hit scans the hit (a contenteditable's AXStaticText, whose boxes are real where the
+    // editable's own are empty) and writes the offset found on the target as it is (one text node: the same offsets).
+    let scanned = kind == "bounds-hit" ? hit : target
+    let n = (attr(scanned, "AXNumberOfCharacters") as? NSNumber)?.intValue ?? (str(scanned, kAXValueAttribute)?.utf16.count ?? 0)
     let t0 = nowMs()
     var found: Int?, calls = 0
     for i in 0..<n {
       calls += 1
-      guard let r = rect(param(target, "AXBoundsForRange", rangeValue(i, 1)).0) else { continue }
+      guard let r = rect(param(scanned, "AXBoundsForRange", rangeValue(i, 1)).0) else { continue }
       if r.insetBy(dx: 0, dy: -0.5).contains(p) || (p.x >= r.minX && p.x < r.maxX && p.y >= r.minY && p.y <= r.maxY) {
         found = p.x < r.midX ? i : i + 1
         break
@@ -303,6 +306,7 @@ for step in spec["place"] as? [[String: Any]] ?? [] {
   usleep(400_000)
   rec["selectedAfter"] = describe(attr(target, "AXSelectedTextRange"))
   rec["focusedAfter"] = describe(attr(target, "AXFocused"))
+  rec["endMs"] = nowMs()
   steps.append(rec)
 }
 out["place"] = steps

@@ -18,9 +18,10 @@
 //   prior-<pre|post>/<kind>/…     the same on ?prior=<kind>
 //   <pre|post>/<kind>/select@editable, …/focus+select@editable   AXSelectedTextRange {k1, 0} alone, or after AXFocused
 //   place/<kind>/focus@editable   post focus, then the caret placed in turn: {k1, 0} written straight (known); k2 found by
-//                                 scanning AXBoundsForRange for the box holding its point (bounds); AXRangeForPosition at
-//                                 k1's point (range); AXTextMarkerForPosition (or AXStartTextMarkerForBounds) at k2's
-//                                 point + AXSelectedTextMarkerRange (marker)
+//                                 scanning the target's AXBoundsForRange for the box holding its point (bounds); k1 the same
+//                                 way on the hit (bounds-hit: ce's AXStaticText); AXRangeForPosition at k2's point (range);
+//                                 AXTextMarkerForPosition (or AXStartTextMarkerForBounds) at k1's point +
+//                                 AXSelectedTextMarkerRange (marker)
 // Blink sends no focus event to a field focused while its window is inactive, so the page beacons its active element's
 // change (polled every 4 ms) as its focus signal.
 // Every write cell then types a marker with type_text (shared mode) and reads where it landed.
@@ -310,7 +311,8 @@ async function cell(spec) {
     const before = latest();
     row.before = {active: before?.active, hasFocus: before?.hasFocus, caret: caret(before, kind)};
     const place = spec.place ? [{kind: 'known', x: P1.x, y: P1.y, expect: f.k1}, {kind: 'bounds', x: P2.x, y: P2.y, expect: f.k2},
-      {kind: 'range', x: P1.x, y: P1.y, expect: f.k1}, {kind: 'marker', x: P2.x, y: P2.y, expect: f.k2}] : [];
+      {kind: 'bounds-hit', x: P1.x, y: P1.y, expect: f.k1}, {kind: 'range', x: P2.x, y: P2.y, expect: f.k2},
+      {kind: 'marker', x: P1.x, y: P1.y, expect: f.k1}] : [];
     const act = await ax(['act', String(chrome.pid), String(P1.x), String(P1.y),
       JSON.stringify({route: spec.route, target: spec.target, pollMs: spec.phase === 'pre' ? 3500 : 1500, dump: 'after', place, placeDelayMs: 600, expect, selectLoc: f.k1})]);
     row.act = act;
@@ -331,8 +333,7 @@ async function cell(spec) {
       axFocusedFirstMs: act.poll?.find(p => p.focused === true)?.t ?? null, axAppFocusFirstMs: act.poll?.find(p => p.appFocusIsTarget)?.t ?? null,
       axPressFirstMs: act.poll?.find(p => p.press)?.t ?? null};
     row.placeResults = (act.place ?? []).map((s, i) => {
-      const next = act.place[i + 1]?.writeAtMs;
-      const b = next ? at(next - 1) : latest();
+      const b = at(s.endMs);
       return {kind: s.kind, expect: s.expect, wrote: s.writeLoc ?? null, ax: s.scan ?? s.rangeForPosition ?? (s.markerSource ? {source: s.markerSource, tries: s.markerTries, index: s.indexForTextMarker, element: s.markerElement} : null),
         writes: s.writes ?? s.writeError ?? null,
         axSelectedAfter: s.selectedAfter, page: caret(b, kind), pageLanding: classify(caret(b, kind), f, null), bounds: s.bounds ?? null};

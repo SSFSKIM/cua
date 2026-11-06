@@ -255,6 +255,8 @@ if (GROUP === 'rerun') {
   add('chrome/shared/toolbar-reload/1s', {kind: 'toolbar', app: 'chrome', mode: 'shared', delay: 1, expect: 'kept'}, true);
   add('chrome/shared/toolbar-reload/launch+24s', {kind: 'toolbar', app: 'chrome', mode: 'shared', clickAtLaunchMs: 24_000, expect: 'refused/frameMoved'}, true);
   add('chrome/dedicated/recreate/1s', {...PAGE_KEPT[2], app: 'chrome', mode: 'dedicated', delay: 1, expect: 'kept'}, false);
+  // The last run's one wrong refusal (a rebuild between its two elements, the hit empty): three more per runner.
+  for (const n of [1, 2, 3]) add(`chrome/dedicated/recreate/20s#${n}`, {...PAGE_KEPT[2], app: 'chrome', mode: 'dedicated', delay: 20, expect: 'kept'}, false);
   add('chrome/dedicated/swap/5s', {...PAGE_TP[2], app: 'chrome', mode: 'dedicated', delay: 5}, true);
   add('chrome/dedicated/relabel/5s', {...PAGE_LIMITS[1], app: 'chrome', mode: 'dedicated', delay: 5}, true);
 }

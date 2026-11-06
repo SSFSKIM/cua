@@ -52,7 +52,12 @@ const TARGETS = {
   ],
 }[GROUP];
 if (!TARGETS) { console.error(`unknown group ${GROUP}`); process.exit(2); }
-const positions = t => t.deep ? [0, 1, 2, 10] : [0, 1, 2];
+// The top and a screen or two down; on a long target also well past where the walk's node budget cuts (#299's first
+// run, 42201089541: at ten screens every Chrome target was still inside the first 4,000 nodes), by page fraction where
+// Chrome scrolls by script and by screens where the engine scrolls.
+const positions = t => [{name: 'top', screens: 0}, {name: 's1', screens: 1}, {name: 's2', screens: 2},
+  ...(!t.deep ? [] : GROUP.startsWith('chrome') ? [{name: 'f25', frac: 0.25}, {name: 'f50', frac: 0.5}, {name: 'f90', frac: 0.9}]
+    : [{name: 'd20', screens: 20}, {name: 'd60', screens: 60}])].map((p, index) => ({...p, index}));
 
 // The local table: 3,000 rows of six cells, each row with a link and a button.
 const TABLE = (() => {
@@ -206,16 +211,26 @@ function summarize(sky) {
   if (stats.widthVisible) fired.push(`width-visible×${stats.widthVisible}`);
   if (stats.widthOmitted) fired.push(`width-omitted×${stats.widthOmitted}`);
   if (t.fetchFailures) fired.push(`failures×${t.fetchFailures}`);
+  // Where the content lies (a scroll check that needs no page script): the web area, or the first scroll area, and the
+  // topmost frame among its first 300 descendants; and the walk's last node (where a global cut fell).
+  const host = sky.nodes.findIndex(n => n.role === 'AXWebArea') >= 0 ? sky.nodes.findIndex(n => n.role === 'AXWebArea') : sky.nodes.findIndex(n => n.role === 'AXScrollArea');
+  let contentTop = null;
+  if (host >= 0) for (let j = host + 1; j < Math.min(sky.nodes.length, host + 300) && sky.nodes[j].depth > sky.nodes[host].depth; j++) {
+    const f = sky.nodes[j].frame; if (f && f.height > 1 && (contentTop === null || f.y < contentTop)) contentTop = Math.round(f.y);
+  }
+  const last = sky.nodes[sky.nodes.length - 1];
   return {recs, stops, summary: {fired, truncated: sky.truncated, ...stats, anomalies, menuBarNodes: sky.menuBar?.length ?? 0,
+    host: host >= 0 ? {role: sky.nodes[host].role, frame: sky.nodes[host].frame, contentTop} : null, lastNode: last && {role: last.role, depth: last.depth, frame: last.frame},
     walkMs: t.walkMs, totalMs: t.totalMs, estimatedBytes: t.estimatedBytes, nodesTiming: t.nodes, fetchFailures: t.fetchFailures,
     stalePointRecordMs: t.stalePointRecordMs, window: sky.window?.frame, timings: t}};
 }
 const results = [];
 const save = () => writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, results}, null, 1));
 
-async function measure(ctx, target, pos, pageInfo) {
-  const label = `${GROUP}/${target.name}/pos${pos}`;
-  const row = {label, target: target.name, pos, pageInfo};
+async function measure(ctx, target, at, pageInfo) {
+  const pos = at.name;
+  const label = `${GROUP}/${target.name}/${pos}`;
+  const row = {label, target: target.name, pos, posIndex: at.index, pageInfo};
   try {
     const obs = {};
     const main = await observe(ctx.main, ctx.pid, label);
@@ -240,7 +255,7 @@ async function measure(ctx, target, pos, pageInfo) {
     }
     row.obs = obs;
     row.vwalk = await ctx.tool.ask({op: 'vwalk', pid: ctx.pid, window, prune: true, cap: 200_000, deadlineMs: 60_000});
-    if (pos === 0) row.fullWalk = await ctx.tool.ask({op: 'vwalk', pid: ctx.pid, window, prune: false, cap: 150_000, deadlineMs: 90_000});
+    if (pos === 'top') row.fullWalk = await ctx.tool.ask({op: 'vwalk', pid: ctx.pid, window, prune: false, cap: 150_000, deadlineMs: 90_000});
     // The descent at up to 15 of main's container-only clickable points (else 15 spread grid points).
     let pts = row.descendPoints ?? [];
     if (pts.length > 15) pts = Array.from({length: 15}, (_, i) => pts[Math.floor(i * pts.length / 15)]);
@@ -288,7 +303,7 @@ async function runChrome(ctx) {
     await sleep(5000);
     const left = launchedAt + 25_000 - Date.now(); if (left > 0) await sleep(left);  // past Chrome for Testing's toolbar re-layout
     for (const pos of positions(target)) {
-      await cdp.eval(`window.scrollTo(0, ${pos} * innerHeight)`);
+      await cdp.eval(pos.frac != null ? `window.scrollTo(0, ${pos.frac} * (document.documentElement.scrollHeight - innerHeight))` : `window.scrollTo(0, ${pos.screens} * innerHeight)`);
       await sleep(2500);
       const info = await cdp.eval(PAGE_INFO).catch(e => ({error: String(e)}));
       const row = await measure(ctx, target, pos, info);
@@ -309,7 +324,7 @@ async function runSafari(ctx) {
     let scrolled = 0;
     for (const pos of positions(target)) {
       const scroll = [];
-      while (scrolled < pos) { scroll.push(await engineScroll(ctx, 1)); scrolled += 1; await sleep(400); }
+      while (scrolled < pos.screens) { const step = Math.min(5, pos.screens - scrolled); scroll.push(await engineScroll(ctx, step)); scrolled += step; await sleep(400); }
       await sleep(2000);
       const row = await measure(ctx, target, pos, {safariTitle: osa('tell application "Safari" to get name of current tab of window 1').out, scroll});
       results.push(row); save();
@@ -339,7 +354,7 @@ async function runNative(ctx) {
     let scrolled = 0;
     for (const pos of positions(target)) {
       const scroll = [];
-      while (scrolled < pos) { scroll.push(await engineScroll(ctx, 1)); scrolled += 1; await sleep(400); }
+      while (scrolled < pos.screens) { const step = Math.min(5, pos.screens - scrolled); scroll.push(await engineScroll(ctx, step)); scrolled += step; await sleep(400); }
       await sleep(1500);
       const row = await measure(ctx, target, pos, {...info, scroll});
       results.push(row); save();

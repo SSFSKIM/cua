@@ -21,7 +21,7 @@ for (const k of [...new Set(rows.map(key))]) {
   console.log(`\n### ${k}\n`);
   console.log('| pos | rep | engine | fired | nodes | depth | bytes | walk ms | clickable pts | checked % | container-only % | unrecorded % | container-only reasons (clickable pts) | missed | vis-walk nodes/ms | full tree | descend p50/p95 ms |');
   console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
-  for (const r of rows.filter(r => key(r) === k).sort((a, b) => a.pos - b.pos || a.rep - b.rep)) {
+  for (const r of rows.filter(r => key(r) === k).sort((a, b) => (a.posIndex ?? 0) - (b.posIndex ?? 0) || a.rep - b.rep)) {
     if (r.exception || r.mainError) { console.log(`| ${r.pos} | ${r.rep} | - | PROBLEM ${(r.mainError?.name ?? r.exception ?? '').split('\n')[0].slice(0, 80)} |`); continue; }
     for (const e of ['main', 'wide']) {
       const o = r.obs?.[e];
@@ -37,10 +37,10 @@ for (const k of [...new Set(rows.map(key))]) {
 }
 // The whole-window (unweighted) shares, for reference.
 console.log('\n### all points (unweighted), main engine\n');
-console.log('| target | pos | rep | n | checked % | container-only % | unrecorded % | page |');
-console.log('|---|---|---|---|---|---|---|---|');
+console.log('| target | pos | rep | n | checked % | container-only % | unrecorded % | page | content top | last node |');
+console.log('|---|---|---|---|---|---|---|---|---|---|');
 for (const r of rows) {
   const a = r.obs?.main?.guard?.all;
   if (!a) continue;
-  console.log(`| ${key(r)} | ${r.pos} | ${r.rep} | ${a.n} | ${a.checked} | ${a.containerOnly} | ${a.unrecorded} | ${JSON.stringify(r.pageInfo?.scrollY != null ? {y: r.pageInfo.scrollY, h: r.pageInfo.scrollHeight} : r.pageInfo?.scroll?.length ?? '')} |`);
+  console.log(`| ${key(r)} | ${r.pos} | ${r.rep} | ${a.n} | ${a.checked} | ${a.containerOnly} | ${a.unrecorded} | ${JSON.stringify(r.pageInfo?.scrollY != null ? {y: r.pageInfo.scrollY, h: r.pageInfo.scrollHeight} : r.pageInfo?.scroll?.length ?? '')} | ${r.obs.main.host?.contentTop ?? '-'} | ${r.obs.main.lastNode ? `${r.obs.main.lastNode.role}@${Math.round(r.obs.main.lastNode.frame?.y ?? NaN)}` : '-'} |`);
 }

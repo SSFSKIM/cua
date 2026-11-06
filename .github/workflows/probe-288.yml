@@ -1,0 +1,57 @@
+# #288's hosted probe (scripts/probe-288/probe.mjs): how soon a background Chrome for Testing reaches Chromium's complete
+# accessibility mode, by trigger, behind a frontmost TextEdit; the side effects of AXEnhancedUserInterface on the window's
+# scripted move and resize; what a click-time step establishes about Chrome's toolbar in a process nothing observed; and
+# origin/main's engine's first click after each trigger at first contact. Two repetitions on two runners. Runs only on a
+# push to probe/288-hosted (or by hand); not a ci-kit gate.
+name: probe-288
+on:
+  push:
+    branches: [probe/288-hosted]
+  workflow_dispatch:
+    inputs:
+      cells:
+        description: probe.mjs --cells (label prefixes, comma-separated; empty for all)
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2]
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: TCC rows for the services the engine needs
+        run: |
+          sw_vers
+          for db in "/Library/Application Support/com.apple.TCC/TCC.db" "$HOME/Library/Application Support/com.apple.TCC/TCC.db"; do
+            echo "== $db"
+            sudo sqlite3 "$db" "select service, client, auth_value from access where service in ('kTCCServiceAccessibility','kTCCServicePostEvent','kTCCServiceScreenCapture','kTCCServiceListenEvent') order by service, client" || true
+          done
+      - name: Build origin/main's engine
+        run: |
+          git worktree add "$RUNNER_TEMP/main" origin/main
+          echo "P288_ENGINE_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
+          swift build --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+      - name: Build the AX tool
+        run: swiftc -O -o "$RUNNER_TEMP/p288-ax" scripts/probe-288/ax.swift
+      - name: Probe
+        env:
+          P288_REP: ${{ matrix.rep }}
+          P288_CELLS: ${{ github.event.inputs.cells || '' }}
+        run: node scripts/probe-288/probe.mjs --engine "$RUNNER_TEMP/eng/debug/cua-engine" --ax "$RUNNER_TEMP/p288-ax" --cells "$P288_CELLS" --out "$RUNNER_TEMP/probe-288"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-288-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-288/*.json
+          if-no-files-found: warn

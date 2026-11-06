@@ -467,14 +467,16 @@ final class TreeWalk {
 
   /// The guard's record-only reads (#301 item 4), only once the tree's selection is done, so they never take time or
   /// budget from the printed tree: under each read element the width rule shows none of, in the document's order, the
-  /// children whose frames meet the window and what of their subtrees shows, within `recordOnlyBudget` and the deadline
-  /// (which cuts the record, not the tree).
+  /// children whose frames meet what its ancestors leave showing of the window, and what of their subtrees shows, within
+  /// `recordOnlyBudget` and the deadline (which cuts the record, not the tree). An element whose ancestors leave nothing
+  /// showing (a list in a scroll area scrolled off) is not searched, so hidden rows never spend the record's budget.
   private func selectForRecord() {
-    guard let visibleFrame else { return }
+    guard visibleFrame != nil else { return }
     let expired = { [self] in pastDeadline() }
     func find(_ item: Selected) {
+      guard let area = childClip(item), showsBeyondStrip(area, in: area) else { return }
       let children = item.read.data.children
-      let positions = recordedChildPositions(children, frame: { self.source.frame($0) }, window: visibleFrame,
+      let positions = recordedChildPositions(children, frame: { self.source.frame($0) }, window: area,
                                              limit: recordOnlyBudget, expired: expired)
       item.recordChildren = positions.map { children[$0] }
     }

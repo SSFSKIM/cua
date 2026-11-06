@@ -2502,7 +2502,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   element the width rule shows none of (more than 499 children, no visible subset) keeps, in the guard's record only,
   the children whose frames meet the window, with their subtrees; the printed tree keeps the vendor's omission.** #299
   found this branch cutting Safari's HN thread to the table container (45–71% checked).
-  1. **When.** Only an observation that returns a screenshot reads them, since the record exists only then.
+  1. **When.** Only an observation that returns a screenshot reads them, since the record exists only then. "The
+     window" is what the element's ancestors leave showing of it (the walk's clip), and an element they leave nothing
+     of (a list in a scroll area scrolled off) is not searched (the re-review of e474396e found hidden rows, whose own
+     frames overlapped the window, spending the record's budget before a shown list's).
   2. **Finding them.** Reading every child's frame would cost what #299's click-time re-read measured on Safari's wide
      tables (up to 1.1 s). So the children are taken to lie in order along the axis on which the first and last framed
      children differ (a list's rows, a page's blocks). The first child not wholly before the window is found by

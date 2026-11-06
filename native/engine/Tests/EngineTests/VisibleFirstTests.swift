@@ -234,6 +234,29 @@ final class VisibleFirstTests: XCTestCase {
     XCTAssertEqual(recording.recordOnlyReads, 0, "the slow row finished past the deadline: the record stops there")
   }
 
+  /// The re-review of e474396e: a wide list its ancestors hide (in a scroll area scrolled off) is not searched, so its
+  /// rows, whose own frames overlap the window, never spend the record's budget before a shown list's.
+  func testAHiddenWideListSpendsNothingOfTheRecordsBudget() {
+    let tree = FakeTree()
+    tree.extra[0] = ["AXRole": "AXWindow" as CFString]
+    tree.frames[0] = windowFrame
+    // 1: a scroll area off the window holding list 2; 3: a shown list. Both lists' 600 rows overlap the window.
+    tree.extra[1] = ["AXRole": "AXScrollArea" as CFString]
+    tree.frames[1] = CGRect(x: 0, y: 2000, width: 1000, height: 800)
+    tree.children = [0: [1, 3], 1: [2], 2: Array(100..<700), 3: Array(1100..<1700)]
+    tree.frames[2] = windowFrame
+    tree.frames[3] = windowFrame
+    for i in 0..<600 {
+      tree.frames[100 + i] = CGRect(x: 0, y: Double(i - 200) * 20, width: 1000, height: 20)
+      tree.frames[1100 + i] = CGRect(x: 0, y: Double(i - 200) * 20, width: 1000, height: 20)
+    }
+    let source = FakeSource(tree)
+    let recording = walk(tree, Lineage(), visibleFrame: windowFrame, source: source, recordsScreenshot: true)
+    let recorded = Set(recording.screenshotReads.filter { $0.number < 0 }.map { tree.id($0.element) })
+    XCTAssertEqual(recorded, Set(1300..<1340), "the shown list's rows, none of the hidden list's")
+    XCTAssertTrue((100..<700).allSatisfy { source.reads[$0] == nil }, "the hidden rows are never read")
+  }
+
   func testOmittedPartsArePlacedByTheEdgeTheirElementLiesPast() {
     XCTAssertEqual(omittedPlace(frame: CGRect(x: 0, y: 0, width: 10, height: 50), visible: viewport), .above)
     XCTAssertEqual(omittedPlace(frame: CGRect(x: 0, y: 100, width: 10, height: 1), visible: viewport), .above, "a strip at the top edge")

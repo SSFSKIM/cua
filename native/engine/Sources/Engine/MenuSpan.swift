@@ -151,6 +151,22 @@ struct ActivationHolder: Equatable {
   var menuSpan = false
 }
 
+/// How a holder that posts its own left mouse down (a left click, a drag, focusField's fallback) takes a process's
+/// activation (#282's device mode; Routes.swift).
+struct PointerHold: Equatable {
+  /// Its own mouse down consumes the arm of an activation it runs, so no inert click goes early
+  /// (`FakeActivation.defersArmClick`; shared mode). False in dedicated mode: the inert click goes right after subtype 1,
+  /// and the down meets a key window.
+  var defersArmClick = true
+  /// It re-arms its own connection's hold whose arm was spent early (#261's hold join): only for a shared-mode pointer
+  /// into a view known to accept first mouse, where the new arm's consuming down is delivered with no ordering.
+  var rearmsSpentArm = true
+  /// It is refused (`PointerRefused`, nothing posted) wherever the activation it meets clicks no activation point: a new
+  /// one whose click plan is not the activation point's, or a held one that clicked none (shared mode, a Chromium web
+  /// area).
+  var refusedWithoutActivationPointClick = false
+}
+
 /// How an acquire or `refresh` of `HeldActivations` came by the process's activation (the input meta's `activationJoin`;
 /// absent when the request reached no held activation). Recorded before any activation runs, so a failed guard's meta
 /// names the path too.
@@ -185,7 +201,10 @@ enum ActivationJoin: String, Equatable {
 /// A pointer holder (`postsLeftMouseDown`) joining an activation whose arm an earlier holder spent early re-arms it, when
 /// every holder is of its own connection and none is a recorded menu's span (the Decision Log's "#261's hold join",
 /// 2026-11-05): its own mouse down would otherwise meet a key window of an app that believes itself active, an ordering
-/// click (#200's raise). The activation is withdrawn and a new one run in its place, the holders kept.
+/// click (#200's raise). The activation is withdrawn and a new one run in its place, the holders kept. Since #282 only a
+/// shared-mode pointer into a view known to accept first mouse re-arms (`PointerHold.rearmsSpentArm`): into any other
+/// view the new arm's consuming down may be taken as the window's activating click and lost, and the spent arm's key
+/// window delivers it, the raise left to the delivery guard; shared mode refuses a Chromium web area's before either.
 ///
 /// Each acquire and `refresh` that reaches a held activation records how it did in its meta (`activationJoin`).
 final class HeldActivations: @unchecked Sendable {
@@ -259,12 +278,14 @@ final class HeldActivations: @unchecked Sendable {
 
   /// Runs a new activation, its guard time and click into `meta` (a failed guard's too); a failed guard throws with it
   /// undone, unless a real event already withdrew it (the undoing posts the kept inert click first, so its click kind is
-  /// read after it). `postsLeftMouseDown`: the holder posts its own left mouse down (`FakeActivation.defersArmClick`).
-  private func run(_ make: () -> FakeActivation, postsLeftMouseDown: Bool = false, meta: inout InputMeta) throws -> FakeActivation {
+  /// read after it). `pointer`: the holder posts its own left mouse down (`FakeActivation.defersArmClick`, and its
+  /// refusal before subtype 1, #282); nil for one that does not.
+  private func run(_ make: () -> FakeActivation, pointer: PointerHold? = nil, meta: inout InputMeta) throws -> FakeActivation {
     let activation = make()
     let pid = activation.pid
     activation.realEpoch = { [self] in epoch(pid) }
-    activation.defersArmClick = postsLeftMouseDown
+    activation.defersArmClick = pointer?.defersArmClick ?? false
+    activation.refusesPointerWithoutActivationPointClick = pointer?.refusedWithoutActivationPointClick ?? false
     defer {
       meta.activationGuardMs = activation.guardMs ?? meta.activationGuardMs
       meta.activationClick = activation.click ?? meta.activationClick
@@ -293,37 +314,48 @@ final class HeldActivations: @unchecked Sendable {
   /// deactivates when the last holder releases; it answers false only when that deactivation could not post. A pointer
   /// holder's release that leaves only holders with no mouse down of their own posts the kept inert click when the arm is
   /// still set (its events never went), so the holds that remain never hold a set arm.
-  func acquire(pid: pid_t, holder: ActivationHolder, postsLeftMouseDown: Bool = false, beforeActivating: () throws -> Void,
+  ///
+  /// `pointer` (#282) says how a holder with its own left mouse down takes the activation; nil for one with none. One that
+  /// does not defer the arm's click (dedicated mode) joins as a no-click holder does, consuming a set arm first; only one
+  /// that `rearmsSpentArm` re-arms; and one `refusedWithoutActivationPointClick` is refused (`PointerRefused`) before
+  /// anything is posted, withdrawn or run, when the held activation it would join clicked no activation point, as a new
+  /// one is before its subtype 1 (`FakeActivation.activate`).
+  func acquire(pid: pid_t, holder: ActivationHolder, pointer: PointerHold? = nil, beforeActivating: () throws -> Void,
                make: () -> FakeActivation, meta: inout InputMeta) throws -> () -> Bool {
     lock.lock()
     defer { lock.unlock() }
     try beforeActivating()
+    let defers = pointer?.defersArmClick ?? false
     if var entry = held[pid] {
       if isSpent(entry) {
         meta.activationJoin = .replacedSpent
-        entry.activation = try run(make, postsLeftMouseDown: postsLeftMouseDown, meta: &meta)
+        entry.activation = try run(make, pointer: pointer, meta: &meta)
         entry.withdrawn = false
-      } else if postsLeftMouseDown, rearms(entry, for: holder), entry.activation.deactivate() {
-        meta.activationJoin = .rearmed
-        do {
-          entry.activation = try run(make, postsLeftMouseDown: true, meta: &meta)
-        } catch {
-          held[pid]?.withdrawn = true
-          throw error
-        }
       } else {
-        meta.activationJoin = .shared
-        if !postsLeftMouseDown, entry.activation.consumeArm(.early) { meta.activationClickKind = entry.activation.clickKind }
+        let rearming = pointer?.rearmsSpentArm == true && rearms(entry, for: holder)
+        meta.activationJoin = rearming ? .rearmed : .shared
+        if pointer?.refusedWithoutActivationPointClick == true, entry.activation.activatedWithoutActivationPointClick { throw PointerRefused() }
+        if rearming, entry.activation.deactivate() {
+          do {
+            entry.activation = try run(make, pointer: pointer, meta: &meta)
+          } catch {
+            held[pid]?.withdrawn = true
+            throw error
+          }
+        } else {
+          meta.activationJoin = .shared
+          if !defers, entry.activation.consumeArm(.early) { meta.activationClickKind = entry.activation.clickKind }
+        }
       }
       shares += 1
       entry.holders[shares] = holder
-      if postsLeftMouseDown { entry.pointers.insert(shares) }
+      if defers { entry.pointers.insert(shares) }
       held[pid] = entry
     } else {
       meta.activationJoin = .fresh
-      let activation = try run(make, postsLeftMouseDown: postsLeftMouseDown, meta: &meta)
+      let activation = try run(make, pointer: pointer, meta: &meta)
       shares += 1
-      held[pid] = Entry(activation: activation, holders: [shares: holder], pointers: postsLeftMouseDown ? [shares] : [])
+      held[pid] = Entry(activation: activation, holders: [shares: holder], pointers: defers ? [shares] : [])
     }
     let share = shares
     let once = NSLock()

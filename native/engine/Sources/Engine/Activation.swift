@@ -32,7 +32,10 @@ import Foundation
 // (`activationClickPlan`), right after subtype 1 for a route with no left mouse down of its own (and for such a holder
 // joining an unconsumed hold), else before subtype 2 when the route's own left mouse down never went; it replaced the
 // paste slot's outside-frame lift and its engine.json switch. A route with its own left mouse down joining a hold of its
-// connection whose arm was spent early re-arms it (`HeldActivations.acquire`, the Decision Log's "#261's hold join").
+// connection whose arm was spent early re-arms it (`HeldActivations.acquire`, the Decision Log's "#261's hold join"),
+// since #282 only into a view known to accept first mouse. #282's device mode (Routes.swift) decides, per connection,
+// whether a left pointer defers the inert click (shared) or takes it early (dedicated), and whether one into a Chromium
+// web area is refused before subtype 1 (`refusesPointerWithoutActivationPointClick`).
 
 /// How long the screen-update hold may last: well under the guard's 1 s poll, and above the guards the sittings
 /// measured (37–58 ms, a coordinate click into TextEdit 82), so a guard of the usual length holds as the vendor's does.
@@ -158,6 +161,11 @@ func frontWindowNumber(of pid: pid_t) -> CGWindowID? {
   }
   return nil
 }
+
+/// Thrown, with nothing posted, for a pointer holder its hold refuses (#282, `PointerHold.refusedWithoutActivationPointClick`):
+/// the activation it would meet clicks no activation point. Never reaches the wire: its caller answers the refusal, or
+/// takes the element route instead (`deliverPointer`).
+struct PointerRefused: Error {}
 
 /// Route 3's refusal (Interfaces, input errors): the action's own events were never posted.
 func activationFailed(_ detail: String) -> EngineError {
@@ -334,6 +342,10 @@ final class FakeActivation {
   /// inert click is kept for the release (`consumeArm`) rather than posted early; a click at an inert activation point
   /// is posted as ever.
   var defersArmClick = false
+  /// Set by the registry before the activation runs (#282, `PointerHold`): its holder's own left mouse down may not meet
+  /// an arm left by an activation that clicks no activation point, so `activate` throws `PointerRefused` there before
+  /// anything is posted.
+  var refusesPointerWithoutActivationPointClick = false
   /// The arm's state, behind its own lock (a holder joining on another connection may consume it): set from subtype 1
   /// until a mouse down to the process, and the inert click kept for it. `armClaimed`: a pointer holder's events, which
   /// open with its own left mouse down, are going out (`postAction`); an inert click waits until they are out.
@@ -357,13 +369,19 @@ final class FakeActivation {
   /// guarded so the user's app stays frontmost with its window on top. A throw after the pair (the guard's failure)
   /// leaves the activation in place — every caller's `defer { deactivate() }` undoes it on all of its own paths, so
   /// nothing here may undo it too, or a successful pair is undone before the caller's events are posted.
+  ///
+  /// The click's plan is read before subtype 1 (the activation point and the hit-test there are window geometry, which
+  /// subtype 1 does not move), so a holder refused for it (`refusesPointerWithoutActivationPointClick`, #282) is refused
+  /// with nothing posted and no screen-update hold taken.
   func activate() throws {
     guard !system.believesItHasFocus(pid) else {
       epoch = realEpoch?()
       return
     }
+    let planned = planClick()
+    if refusesPointerWithoutActivationPointClick, planned.kind != .activationPoint { throw PointerRefused() }
     guard let user = system.frontmost(), user != pid else {
-      postActivation()
+      postActivation(planned)
       return
     }
     let system = system
@@ -374,7 +392,7 @@ final class FakeActivation {
     var keepsHold = false
     defer { if !keepsHold { release() } }
     system.schedule(activationHoldCapMs) { release() }
-    postActivation()
+    postActivation(planned)
     let started = system.now()
     defer { guardMs = ((system.now() - started) * 1000).rounded() / 1000 }
     let needed = holdsThroughDelivery ? activationGuardStableSamplesBeforeDelivery : activationGuardStableSamples
@@ -574,26 +592,45 @@ final class FakeActivation {
   /// posts it only when no mouse down consumed the arm. No click only where none can be stamped and placed safely. The
   /// click goes to the process alone: the agent cursor is told of an action's own events by its route (`announce`),
   /// never of this one.
-  private func postActivation() {
+  private func postActivation(_ planned: PlannedClick) {
     post(subtype: NSEvent.EventSubtype.applicationActivated.rawValue)
     activated = true
     epoch = realEpoch?()  // right after subtype 1: a real event from here on supersedes this activation
     activatedAt = system.now()
+    pointPlace = activationPointPlace(planned.activationPoint, windowFrame: windowFrame)
+    click = planned.decision
+    if case .inertOutside(let place, _) = planned.kind, defersArmClick, let point = planned.point {
+      armLock.withLock { (armSet, kind, keptInert) = (true, nil, (point, place)) }
+      return
+    }
+    armLock.withLock { (armSet, kind, keptInert) = (planned.point == nil, planned.kind, nil) }  // a skip leaves the arm set
+    guard let point = planned.point else { return }
+    postClick(at: point)
+  }
+
+  /// What the activation will click after subtype 1, read from the window's AXActivationPoint and the hit-test there.
+  private struct PlannedClick {
+    let activationPoint: CGPoint?
+    let decision: ActivationClick
+    let kind: ActivationClickKind
+    let point: CGPoint?
+  }
+
+  private func planClick() -> PlannedClick {
     let activationPoint = system.activationPoint(window)
     let system = system, pid = pid
     let decision = activationClickDecision(activationPoint, windowFrame: windowFrame, sparing: sparing) {
       activationPoint.flatMap { system.hitAt(pid, $0) }
     }
-    pointPlace = activationPointPlace(activationPoint, windowFrame: windowFrame)
-    click = decision
     let plan = activationClickPlan(decision, activationPoint: activationPoint, windowFrame: windowFrame, windowID: windowID, sparing: sparing)
-    if case .inertOutside(let place, _) = plan.kind, defersArmClick, let point = plan.point {
-      armLock.withLock { (armSet, kind, keptInert) = (true, nil, (point, place)) }
-      return
-    }
-    armLock.withLock { (armSet, kind, keptInert) = (plan.point == nil, plan.kind, nil) }  // a skip leaves the arm set
-    guard let point = plan.point else { return }
-    postClick(at: point)
+    return PlannedClick(activationPoint: activationPoint, decision: decision, kind: plan.kind, point: plan.point)
+  }
+
+  /// Whether this activation ran and clicked no AXActivationPoint (its arm consumed by an inert click or a holder's own
+  /// mouse down, or still set): a pointer joining it meets its arm or a window that click made key, never one the
+  /// activation point's click prepared (#282).
+  var activatedWithoutActivationPointClick: Bool {
+    activated && armLock.withLock { kind } != .activationPoint
   }
 
   private func postClick(at point: CGPoint) {

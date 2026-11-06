@@ -102,7 +102,7 @@ struct EnablementAccess: @unchecked Sendable {
   var listed: () -> [String]?
   var readRole: () -> Void
   var read: (String) -> Bool?
-  var write: (String, Bool) -> Bool
+  var write: (String, Bool) -> AXError
   var current: () -> Bool
 
   /// The application element of process `pid`, of generation `launched` (`processGeneration`).
@@ -119,7 +119,7 @@ struct EnablementAccess: @unchecked Sendable {
         _ = AXUIElementCopyMultipleAttributeValues(application, names, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
       },
       read: { bool(attribute(application, $0)) },
-      write: { gatedWrite(application, $0, ($1 ? kCFBooleanTrue : kCFBooleanFalse)!) == .success },
+      write: { gatedWrite(application, $0, ($1 ? kCFBooleanTrue : kCFBooleanFalse)!) },
       current: {
         NSRunningApplication(processIdentifier: pid).map { !$0.isTerminated && processGeneration(launchDate: $0.launchDate, pid: pid) == launched } ?? false
       })
@@ -181,6 +181,8 @@ final class WebAccessibility: @unchecked Sendable {
   /// Per process, the writes the engine made to its attribute, true or false, by any connection; kept past the
   /// entry's retirement (`enablements`).
   private var writes: [String: UInt64] = [:]
+  /// Per process, its first observation's time, moved to every write attempt's (monotonic ms; `freshSince`).
+  private var freshSinceByProcess: [String: Double] = [:]
   /// Told (a bounded, value-free line) when a reset of the attribute the engine set fails; it stays owned.
   private let releaseFailed: (String) -> Void
 
@@ -205,6 +207,17 @@ final class WebAccessibility: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return writes[Self.process(pid, launched)] ?? 0
+  }
+
+  /// Since when the process's accessibility may still be coming up (monotonic ms), or nil when no observation reached
+  /// its enablement: the later of its first observation by any connection and the engine's last attempt to write its
+  /// attribute, successful or not (#282's hosted runs: a page checkbox's AXPress came 1.6 to 1.7 s after the first
+  /// observation, and on Chrome for Testing the write fails while Chrome reaches its complete mode anyway, 1.1 to 1.6 s
+  /// after the observation).
+  func freshSince(pid: pid_t, launched: Date?) -> Double? {
+    lock.lock()
+    defer { lock.unlock() }
+    return freshSinceByProcess[Self.process(pid, launched)]
   }
 
   func hasSeenWebArea(pid: pid_t, launched: Date?) -> Bool {
@@ -264,7 +277,14 @@ final class WebAccessibility: @unchecked Sendable {
     guard eligible else { return nil }
     let access = access()
     timings.time("appRoleRead") { access.readRole() }
-    return timings.time("enable") { enableReporting(pid: pid, launched: launched, connection: connection, access: access) }
+    let enabling = timings.time("enable") { enableReporting(pid: pid, launched: launched, connection: connection, access: access) }
+    // Whether this observation attempted the write, and how it failed (#282: on Chrome for Testing it fails), value-free:
+    // `enablementWrite` "success" | "failed", with the AXError's code as `enablementWriteError`.
+    if let written = enabling.write {
+      timings.set("enablementWrite", written == .success ? "success" : "failed")
+      if written != .success { timings.set("enablementWriteError", Int(written.rawValue)) }
+    }
+    return (enabling.set, enabling.prior)
   }
 
   /// An observation of an eligible process by `connection`: the connection is recorded as observing it, and the one
@@ -277,30 +297,41 @@ final class WebAccessibility: @unchecked Sendable {
 
   /// `enable`, also answering what the attribute read before this call touched it (`.owned` when the engine owns it
   /// and read nothing; nil when none is listed, or the names cannot be read yet), which the observation reports as
-  /// `timings.enablementPrior`.
-  func enableReporting(pid: pid_t, launched: Date?, connection: Int, access: EnablementAccess) -> (set: String?, prior: EnablementPrior?) {
+  /// `timings.enablementPrior`, and the write's AXError when this call attempted one (`write`, nil when it did not). The
+  /// process's first observation, and every write attempt, successful or not, moves its `freshSince`.
+  func enableReporting(pid: pid_t, launched: Date?, connection: Int, access: EnablementAccess)
+    -> (set: String?, prior: EnablementPrior?, write: AXError?) {
     let key = Self.process(pid, launched)
     lock.lock()
     let entry = processes[key] ?? EnabledProcess(access: access, generationKnown: launched != nil)
     processes[key] = entry
     observers[key, default: []].insert(connection)
+    if freshSinceByProcess[key] == nil { freshSinceByProcess[key] = monotonicMilliseconds() }
     lock.unlock()
 
     entry.io.lock()
     defer { entry.io.unlock() }
     if entry.listed == nil, let names = entry.access.listed() { entry.listed = .some(enablementAttribute(listed: names)) }
-    guard let listed = entry.listed, let name = listed else { return (nil, nil) }
+    guard let listed = entry.listed, let name = listed else { return (nil, nil, nil) }
     // Written once per owned process generation (#244): until the release writes it back, or the process ends.
-    if entry.owned != nil { return (nil, .owned) }
+    if entry.owned != nil { return (nil, .owned, nil) }
     let read = entry.access.read(name)
     let prior = EnablementPrior(read)
     lock.lock()
     let reEnabling = writtenBack.contains(key)
     lock.unlock()
-    guard read != true || reEnabling, entry.access.write(name, true) else {
+    guard read != true || reEnabling else {
       // Not written: on only when it read true and that is not AppKit's readback after the engine's own write-back.
       entry.on = read == true && !reEnabling
-      return (nil, prior)
+      return (nil, prior, nil)
+    }
+    let written = entry.access.write(name, true)
+    lock.lock()
+    freshSinceByProcess[key] = monotonicMilliseconds()
+    lock.unlock()
+    guard written == .success else {
+      entry.on = false
+      return (nil, prior, written)
     }
     entry.on = true
     lock.lock()
@@ -312,7 +343,7 @@ final class WebAccessibility: @unchecked Sendable {
       writtenBack.remove(key)
     }
     lock.unlock()
-    return (name, prior)
+    return (name, prior, written)
   }
 
   /// `connection` closed: every process it observed that no other connection observes is released.
@@ -352,7 +383,7 @@ final class WebAccessibility: @unchecked Sendable {
       if !entry.access.current() {
         entry.owned = nil  // the process ended (its pid may be another launch's): nothing to write back
         entry.on = false
-      } else if entry.access.write(owned, false) {
+      } else if entry.access.write(owned, false) == .success {
         entry.owned = nil
         entry.on = false
         reset = true

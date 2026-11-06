@@ -369,6 +369,10 @@ final class FocusHoldTests: XCTestCase {
   }
 
   // MARK: #261's hold join (the Decision Log's 2026-11-05 entry): a pointer re-arms its own connection's spent hold
+  //
+  // Since #282 only a shared-mode pointer into a view known to accept first mouse re-arms: these clicks take
+  // deliverClick's default `PointerTarget.acceptingFirstMouse` (Chrome's toolbar after ⌘L). An unknown view and dedicated
+  // mode share the hold instead (BackgroundPointerTests).
 
   private let outside = CGPoint(x: -1, y: 1441)
 
@@ -440,7 +444,7 @@ final class FocusHoldTests: XCTestCase {
   func testANoClickJoinerStillConsumesEarlyAndNeverReArms() throws {
     let seam = GuardSeam(frontmost: user)
     var pointerMeta = meta()
-    let pointer = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), postsLeftMouseDown: true, beforeActivating: {},
+    let pointer = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), pointer: PointerHold(), beforeActivating: {},
                                           make: { self.chrome(seam) }, meta: &pointerMeta)
     XCTAssertEqual(mouseKinds(seam), [.appKit(1)], "the pointer holder's arm, unconsumed")
     let connection = connection()
@@ -596,7 +600,7 @@ final class FocusHoldTests: XCTestCase {
     var keys = meta()
     try holdChrome(connection, seam, meta: &keys)
     var pointerMeta = meta()
-    let pointer = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), postsLeftMouseDown: true, beforeActivating: {},
+    let pointer = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), pointer: PointerHold(), beforeActivating: {},
                                           make: { self.chrome(seam) }, meta: &pointerMeta)
     XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2), .appKit(1)], "re-armed, the arm set")
     XCTAssertEqual(pointerMeta.activationJoin, .rearmed)
@@ -620,7 +624,7 @@ final class FocusHoldTests: XCTestCase {
     var keys = meta()
     try holdChrome(connection, seam, meta: &keys)
     var pointerMeta = meta()
-    let pointer = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), postsLeftMouseDown: true, beforeActivating: {},
+    let pointer = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), pointer: PointerHold(), beforeActivating: {},
                                           make: { self.chrome(seam) }, meta: &pointerMeta)
     let armed = seam.posts.count
     var underLock = false

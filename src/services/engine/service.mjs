@@ -67,6 +67,11 @@
 //   CUA_CURSOR=0 for off), goes to the engine on every connection the client opens (./client.mjs); a turn-ended hook
 //   (end_task) hides the cursor on the live connection. An engine without the method answers methodNotFound and the
 //   session goes on without a cursor.
+// - The device mode (#282): the session's CUA_DESKTOP_MODE (desktopMode), named in every connection's ping, so the
+//   engine applies it to this session's connection alone. In `shared` mode the engine refuses a background left click,
+//   double click or drag into a Chromium web page that would not take it (`backgroundClickRefused`, nothing posted) or
+//   carries a plain click by the hit element's own action; in `dedicated` mode it lets the window come forward. A
+//   pointer that may only have activated its window answers `clickUnconfirmed`. Both are input errors with the meta.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
@@ -109,13 +114,14 @@ const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activation
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application
 // element's role read before enablement (its cost, #244), what web enablement read before it touched the attribute and
-// which attribute it set, whether the web area was seen or waited for (and how long), and each settle's status,
+// which attribute it set, whether it attempted the write and the AXError's code when it failed (#282: it fails on Chrome
+// for Testing), whether the web area was seen or waited for (and how long), and each settle's status,
 // duration and counts, and why the focus read named no element (`focusRead`: an AXError, notAnElement or outsideTheWalk).
 // A bounded whitelist of scalars (a string of at most 64 characters), and the notification counts as at most 16 names
 // to integers; never the text, the tree or the timings of every phase. Beside them the service adds the focus every
 // observation read (./observations.mjs focus: the focused element's index and role, #188), which the trailer's selected
 // text masks for the model and the harness.
-const OBSERVATION_DIAGNOSTICS = ['launched', 'reopened', 'webShaped', 'appRoleReadMs', 'enablementPrior', 'enabled', 'chromium', 'webAreaSeen', 'webAreaFound', 'webAreaWaitMs',
+const OBSERVATION_DIAGNOSTICS = ['launched', 'reopened', 'webShaped', 'appRoleReadMs', 'enablementPrior', 'enabled', 'enablementWrite', 'enablementWriteError', 'chromium', 'webAreaSeen', 'webAreaFound', 'webAreaWaitMs',
   ...['openSettle', 'settle'].flatMap(prefix => ['', 'Ms', 'Notifications', 'NotificationCounts', 'BusyWalks', 'BusyVetoes', 'Observed', 'QuietAtMs'].map(part => prefix + part)),
   'settleTreeReused', 'focusRead'];
 const DIAGNOSTIC_STRING_CHARS = 64, DIAGNOSTIC_COUNTS = 16;
@@ -136,6 +142,15 @@ export function cursorParams(env) {
   const label = typeof env?.CUA_CURSOR_LABEL === 'string' && env.CUA_CURSOR_LABEL ? env.CUA_CURSOR_LABEL : null;
   const color = typeof env?.CUA_CURSOR_COLOR === 'string' && /^#[0-9a-fA-F]{6}$/.test(env.CUA_CURSOR_COLOR) ? env.CUA_CURSOR_COLOR : null;
   return {...(label ? {label} : {}), ...(color ? {color} : {}), enabled: env?.CUA_CURSOR !== '0'};
+}
+// The session's device mode (#282; the native engine's spec, the Decision Log's #282 entry): CUA_DESKTOP_MODE, which the
+// launcher resolves as on Linux (src/runtime/launch.mjs desktopModeFor), `shared` when the launch names none; any
+// other value fails the session's first engine-bound call, as the Linux service's start does.
+const DESKTOP_MODES = ['shared', 'dedicated'];
+export function desktopMode(env) {
+  const desktop = env?.CUA_DESKTOP_MODE || 'shared';
+  if (!DESKTOP_MODES.includes(desktop)) throw new Error(`cua: CUA_DESKTOP_MODE must be ${DESKTOP_MODES.join(' or ')} [invalid_setting]`);
+  return desktop;
 }
 // How long end_task's hook may take (it writes two frames and waits on nothing).
 const TURN_ENDED_MS = 2_000;
@@ -168,7 +183,7 @@ export function createService({nodeRepl, client = null}) {
     if (typeof appPath !== 'string' || !appPath.startsWith('/')) {
       throw new Error('cua: the native engine is not configured for this runtime: CUA_ENGINE_APP must name the engine bundle by absolute path [engine_not_configured]');
     }
-    return (client = createEngineClient({nodeRepl, appPath, cursor: cursorParams(nodeRepl?.env)}));
+    return (client = createEngineClient({nodeRepl, appPath, cursor: cursorParams(nodeRepl?.env), desktop: desktopMode(nodeRepl?.env)}));
   };
   // end_task: the cursor fades and the engine connection closes, if this session's client ever reached the engine; the
   // next engine-bound request reconnects (client.mjs `release`, #237). Nothing here waits on the engine.

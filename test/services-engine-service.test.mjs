@@ -465,7 +465,7 @@ test('cua/afterActionRepairs rides on a later input result and on an observation
 
 // The engine's observation diagnostics (Skyshot timings) as Chromium and Electron rows need them: enablement, the web
 // area's wait and the settle.
-const DIAGNOSED_TIMINGS = {totalMs: 1, walkMs: 3.5, nodes: 40, webShaped: true, appRoleReadMs: 0.375, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true,
+const DIAGNOSED_TIMINGS = {totalMs: 1, walkMs: 3.5, nodes: 40, webShaped: true, appRoleReadMs: 0.375, enablementPrior: 'false', enabled: 'AXManualAccessibility', enablementWrite: 'failed', enablementWriteError: -25204, chromium: true, webAreaSeen: true,
   webAreaFound: true, webAreaWaitMs: 12.25, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
   settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true, focusRead: 'notAnElement', enableMs: 0.5};
 
@@ -490,7 +490,7 @@ test('the observation\'s diagnostics ride only as cua/observation meta, a bounde
   const {assembleResult} = await import('../src/repl-host/results.mjs');
   const output = JSON.parse(diagnosed.service).text;
   assert.deepEqual(assembleResult({ok: true, output, responseMeta: {...meta}}).content, assembleResult({ok: true, output, responseMeta: plain.meta}).content);
-  assert.deepEqual(meta['cua/observation'], {webShaped: true, appRoleReadMs: 0.375, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true, webAreaFound: true,
+  assert.deepEqual(meta['cua/observation'], {webShaped: true, appRoleReadMs: 0.375, enablementPrior: 'false', enabled: 'AXManualAccessibility', enablementWrite: 'failed', enablementWriteError: -25204, chromium: true, webAreaSeen: true, webAreaFound: true,
     webAreaWaitMs: 12.25, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
     settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true, focusRead: 'notAnElement', focusedIndex: null},
   'the whitelist only: no phase timing, node count or unknown key, nothing nested beyond the notification counts');
@@ -711,6 +711,34 @@ test('the service tells the engine its session\'s cursor at connect, and end_tas
   assert.deepEqual(engine.received.slice(4).map(r => r.method), ['ping', 'cursor', 'execute']);
   await turnEnded();
   await until(() => engine.sockets.size === 0);
+});
+
+test('the service names its session\'s device mode in the ping (#282): CUA_DESKTOP_MODE, shared when the launch names none', async t => {
+  for (const [env, desktop] of [[{}, 'shared'], [{CUA_DESKTOP_MODE: ''}, 'shared'], [{CUA_DESKTOP_MODE: 'dedicated'}, 'dedicated']]) {
+    const {service, engine} = await ownService(t, {CUA_CURSOR: '0', ...env});
+    await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]});
+    assert.deepEqual(engine.received[0], {...engine.received[0], method: 'ping', params: {clientApiVersion: 'cua-engine-1', desktop}}, JSON.stringify(env));
+  }
+  const {service, engine} = await ownService(t, {CUA_DESKTOP_MODE: 'kiosk'});
+  await assert.rejects(service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]}), {message: 'cua: CUA_DESKTOP_MODE must be shared or dedicated [invalid_setting]'});
+  assert.equal(engine.received.length, 0, 'nothing reaches the engine in a mode it was not given');
+});
+
+test('#282: the engine\'s background-click refusal and clickUnconfirmed reach the model with their sentence, name and meta', async t => {
+  const refusal = "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop";
+  const unconfirmed = 'The click could not be confirmed: it was sent to Example in the background, but it may only have activated the window without reaching what is under the pointer. Observe the app with get_app_state before any retry, and never retry blindly.';
+  for (const [name, message, meta] of [['backgroundClickRefused', refusal, {...INPUT_META, startedAt: null, endedAt: null, activationJoin: 'fresh'}],
+    ['clickUnconfirmed', unconfirmed, {...INPUT_META, activationClickKind: {kind: 'action', when: 'consumedByAction'}}]]) {
+    const {getApp, call, meta: seen} = await session(t, {handlers: {'execute:click': () => { throw new EngineFailure(-10005, message, name, {meta}); }}});
+    const {app} = await getApp('TextEdit');
+    await assert.rejects(call(() => app.click([10, 20])), error => {
+      assert.equal(error.message, `Computer Use server error -10005: ${message}`, 'the whole sentence');
+      assert.equal(error.errorName, name);
+      return true;
+    });
+    assert.equal(seen['cua/inputRoute'], meta.inputRoute, name);
+    assert.deepEqual(seen['cua/actionInterval'], {startedAt: meta.startedAt, endedAt: meta.endedAt}, `the interval says whether anything was posted: ${name}`);
+  }
 });
 
 test('against an engine without the cursor method the session goes on, and end_task still closes the connection, sending nothing', async t => {

@@ -53,10 +53,20 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
 /// text field says whether an AXPress (which keeps the field's selection) or a posted click (which places a caret)
 /// carried it. Value-free: action names and enumeration words only.
 struct ElementClickRecord: Equatable {
-  enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced }
+  /// `webArea` (#282): a left pointer into a Chromium web area in shared mode, carried by the action of the element the
+  /// pointer's point hits instead of a posted click (a coordinate click's record too).
+  enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea }
   let plan: ElementClickPlan
   let reason: Reason
   var hit: HitRelation?
+  /// `webArea` only: the role of the control pressed, and whether it was the hit itself or an ancestor the walk reached
+  /// through the hit's plain children (`webAreaControl`); `pressed` "hit" | "ancestor" on the wire.
+  var pressedRole: String? = nil
+  var pressedAncestor: Bool? = nil
+  /// `webArea` only: the roles the walk read from the hit up to where it stopped (`webAreaControl`), and on a refusal
+  /// why it stopped (`walkStopped`, a `WebAreaRefusal` case name).
+  var walk: [String]? = nil
+  var walkStopped: String? = nil
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["reason": reason.rawValue]
@@ -65,6 +75,10 @@ struct ElementClickRecord: Equatable {
     case .synthesized: wire["plan"] = "synthesized"
     }
     if let hit { wire["hit"] = "\(hit)"; wire["hitTest"] = "application" }
+    if let pressedRole { wire["pressedRole"] = pressedRole }
+    if let pressedAncestor { wire["pressed"] = pressedAncestor ? "ancestor" : "hit" }
+    if let walk { wire["walk"] = walk }
+    if let walkStopped { wire["walkStopped"] = walkStopped }
     return wire
   }
 }
@@ -233,6 +247,279 @@ func hitRelation<Element>(_ hit: Element?, to target: Element, parent: (Element)
   if landsOnStrictDescendant(hit, of: target, parent: parent, same: same) { return .descendant }
   if landsOnStrictDescendant(target, of: hit, parent: parent, same: same) { return .ancestor }
   return .other
+}
+
+// MARK: A background pointer into a view that refuses first mouse (#282)
+//
+// Route 3's left pointer actions (a click, a drag, focusField's fallback) post their own left mouse down into an app that
+// subtype 1 made believe it is active. Where its activation clicked no AXActivationPoint (Chrome's lies outside its frame),
+// that down meets the activation's arm (AppKit's `_mouseActivationInProgress`), makes the window key, and reaches a view
+// only if the view accepts first mouse; or, joining a hold whose arm an inert click spent, it meets a key window and
+// orders it front (#200's raise). Chromium's web content (`RenderWidgetHostViewCocoa acceptsFirstMouse:`) refuses first
+// mouse below the popup levels, so the first loses the click silently and the second raises the window. The owner's
+// ruling for that class (the Linux engine's device mode): on a shared desktop cua refuses input an app ignores, and a
+// dedicated desktop may bring the window forward. So, per connection (its ping's `desktop`):
+// - shared (the default): a left pointer into a Chromium web area, where the activation it meets clicked no activation
+//   point, is never posted: a plain click takes the hit element's own action when it advertises one (the element route),
+//   anything else is refused (`backgroundClickRefused`), with nothing posted;
+// - dedicated: the inert click goes right after subtype 1 for left pointers too, so their own down meets a key window and
+//   is delivered, and nothing puts the person's window order back for that action (nobody is at the desktop);
+// - everywhere: a pointer whose own down consumed the arm, into a view not known to accept first mouse, answers
+//   `clickUnconfirmed`, never plain success.
+
+/// The device mode a connection runs in (#282), as its ping names it (the service passes the session's
+/// `CUA_DESKTOP_MODE`, which src/runtime/launch.mjs resolves); shared when it names none.
+enum DesktopMode: String {
+  case shared, dedicated
+}
+
+/// What a left pointer action's point hits, as #282's rules read it.
+enum PointerView: Equatable {
+  /// Known to accept first mouse: a Chromium process's native views (its toolbar; `BridgedContentView acceptsFirstMouse:`
+  /// answers YES), the one rule cua knows. A down that consumes the arm there is delivered.
+  case acceptsFirstMouse
+  /// A Chromium web area or inside one, whose view refuses first mouse.
+  case webArea
+  /// A Chromium hit not established outside every web area (no hit, an incomplete walk, a page tree not yet seen):
+  /// treated as a web area in shared mode, since the owner's rule refuses input the app may ignore (#282's review).
+  case possibleWebArea
+  /// Anything else: an app with no known rule.
+  case unknown
+
+  /// Whether shared mode refuses a pointer here (or carries a plain click by the hit's action).
+  var mayBeWebArea: Bool { self == .webArea || self == .possibleWebArea }
+}
+
+/// The roles a web-area walk stops at: the hit's window, or anything above one.
+private let webAreaWalkStops: Set<String> = ["AXWindow", "AXSheet", "AXApplication"]
+
+/// What the walk from a hit up its parents established about a web area.
+enum WebAreaWalk: Equatable {
+  /// The hit is an AXWebArea or lies inside one.
+  case inside
+  /// Established outside one: the walk reached the hit's window, sheet or application with every role and parent read.
+  case outside
+  /// Neither: a role or a parent could not be read before a stop, or the bound ran out; an AXWebArea may lie beyond. And
+  /// a hit that is itself the window, sheet or application: a coarse answer, which says nothing of the view at the point.
+  case incomplete
+}
+
+/// Whether `hit` is an AXWebArea or lies inside one, its parents walked up to 300 levels (the gate's bound) and no
+/// further than its window. Only a walk from an element below a stop that reached one with every role read says
+/// `outside` (#282's review).
+func webAreaWalk<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?) -> WebAreaWalk {
+  var current = hit
+  for level in 0...300 {
+    guard let name = role(current) else { return .incomplete }
+    if name == "AXWebArea" { return .inside }
+    if webAreaWalkStops.contains(name) { return level == 0 ? .incomplete : .outside }
+    guard let next = parent(current) else { return .incomplete }
+    current = next
+  }
+  return .incomplete
+}
+
+/// The view a left pointer's point hits in a process: in a Chromium-family process (`chromiumFamily`, Enablement.swift),
+/// a web area when the hit is or lies inside an AXWebArea; a native view known to accept first mouse only when the walk
+/// established the hit outside every web area and an observation has seen a web area in the process (`webAreaSeen`: its
+/// page's tree is exposed, so a page point would have answered inside one); otherwise, in a Chromium process, a possible
+/// web area (no hit, an incomplete walk, or a page tree not yet seen), and `unknown` outside one.
+func pointerView<Element>(chromium: Bool, webAreaSeen: Bool, hit: Element?, role: (Element) -> String?,
+                          parent: (Element) -> Element?) -> PointerView {
+  guard chromium else { return .unknown }
+  guard let hit else { return .possibleWebArea }
+  switch webAreaWalk(hit, role: role, parent: parent) {
+  case .inside: return .webArea
+  case .outside: return webAreaSeen ? .acceptsFirstMouse : .possibleWebArea
+  case .incomplete: return .possibleWebArea
+  }
+}
+
+/// The roles whose action in a Chromium web area has a known effect, the only ones shared mode's element route presses
+/// (the design session's ruling on #282, 1ea561bc fe37aee9; the hosted A/B found AXPress on a page's AXTextArea answering
+/// success and doing nothing). Chromium's role mapping (ui/accessibility/platform/ax_platform_node_cocoa.mm
+/// `nativeRoleFromAXRole`) exposes a toggle button and a switch as AXCheckBox (subroles AXToggleButton, AXSwitch), a tab
+/// as AXRadioButton (subrole AXTabButton), a select as AXPopUpButton, and a summary as AXDisclosureTriangle or AXButton:
+/// no web element answers AXToggle, so it is not listed, and AXTab is kept for the ruling's list though Chrome's tabs
+/// arrive as AXRadioButton.
+let webAreaPressableRoles: Set<String> = ["AXButton", "AXCheckBox", "AXRadioButton", "AXLink", "AXPopUpButton", "AXMenuItem",
+                                          "AXMenuButton", "AXDisclosureTriangle", "AXTab"]
+/// The roles whose AXValue says whether their press took effect (a checkbox's and a radio button's state, so a toggle's,
+/// a switch's and a tab's): read before and after it (`pressConfirmingValue`).
+let webAreaValueCheckedRoles: Set<String> = ["AXCheckBox", "AXRadioButton"]
+/// The settle a value-checked press waits for its value to change: polled every 20 ms for up to 500 ms (Chromium posts the
+/// action to the renderer and updates the tree from it, a round trip of tens of ms).
+let webAreaValueSettleMs: Double = 500
+let webAreaValueSampleMs: Double = 20
+
+/// The roles the walk from a hit to its control may pass through (the design session's bounds, 1ea561bc 7a6a3638): a
+/// control's plain, non-interactive children, its label's text, an icon, a wrapping group (Chromium's generic
+/// containers arrive as AXGroup). Any other role on the way up refuses.
+let webAreaPassableRoles: Set<String> = ["AXStaticText", "AXImage", "AXGroup"]
+/// The roles that make an element editable whatever its attributes say (text entry; text and editing are #283's).
+let webAreaEditableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
+
+/// Why shared mode refuses a plain left click in a web area rather than pressing a control (#282).
+enum WebAreaRefusal: String, Error, Equatable {
+  /// Another button or count.
+  case notPlainLeft
+  /// The hit, or an element on the way up to a control, is neither an allowlisted control nor a passable child; or the
+  /// walk reached the AXWebArea before any control.
+  case roleNotAllowed
+  /// The walk met an editable element (text entry, or one with an `AXEditableAncestor`) before a control.
+  case editable
+  /// The ancestry could not be read to a control: a role or parent unread, or the bound ran out.
+  case incompleteAncestry
+  /// The control advertises neither AXPick nor AXPress, after the re-read where the process's accessibility is fresh.
+  case noAction
+}
+
+/// The control a plain left click in a web area presses (#282, the design session's bounds): the hit when it is an
+/// allowlisted control, else its nearest allowlisted ancestor reached through passable children only
+/// (`webAreaPassableRoles`), never past the AXWebArea; refused when the walk meets an editable element, another role,
+/// the web area itself or an ancestry it cannot read (up to 300 levels). `ancestor`: the control is not the hit.
+func webAreaControl<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?,
+                             editable: (Element) -> Bool) -> Result<(control: Element, role: String, ancestor: Bool), WebAreaRefusal> {
+  var walk: [String] = []
+  return webAreaControl(hit, role: role, parent: parent, editable: editable, walk: &walk)
+}
+
+/// `webAreaControl`, recording in `walk` the roles it read from the hit up to where it stopped, the pressed control's
+/// or the one it refused at (`unreadable` for a role it could not read): the meta's `elementClick.walk`, value-free.
+func webAreaControl<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?, editable: (Element) -> Bool,
+                             walk: inout [String]) -> Result<(control: Element, role: String, ancestor: Bool), WebAreaRefusal> {
+  var current = hit
+  for level in 0...300 {
+    guard let name = role(current) else {
+      walk.append("unreadable")
+      return .failure(.incompleteAncestry)
+    }
+    walk.append(name)
+    if webAreaEditableRoles.contains(name) || editable(current) { return .failure(.editable) }
+    if webAreaPressableRoles.contains(name) { return .success((current, name, level > 0)) }
+    guard webAreaPassableRoles.contains(name) else { return .failure(.roleNotAllowed) }  // the AXWebArea included
+    guard let next = parent(current) else { return .failure(.incompleteAncestry) }
+    current = next
+  }
+  return .failure(.incompleteAncestry)
+}
+
+/// The action an element click on a control would take (`elementClickPlan`'s: AXPick else AXPress); nil when it
+/// advertises neither, or its actions could not be read.
+func webAreaAction(role: String, actions: [String]?) -> String? {
+  guard let actions, case .action(let action)? = try? elementClickPlan(forced: nil, button: .left, count: 1, role: role, actions: actions,
+                                                                     landsOnDescendant: { false }) else { return nil }
+  return action
+}
+
+/// How long a control with no action yet is re-read in a process whose accessibility is fresh (#282's hosted probe, run
+/// 42131623237: a checkbox began advertising AXPress 1.6 to 1.7 s after the engine's enablement write, with no
+/// activation at all): every 100 ms for up to 2 s, posting nothing. Fresh: under `webAreaFreshEnablementMs` since the
+/// process's first observation or the engine's last enablement write attempt, failed or not (`WebAccessibility.freshSince`;
+/// on Chrome for Testing the write fails), or no observation has seen a web area in it yet.
+let webAreaActionRereadMs: Double = 2_000
+let webAreaActionRereadSampleMs: Double = 100
+let webAreaFreshEnablementMs: Double = 10_000
+
+func webAreaAccessibilityFresh(freshSince: Double?, now: Double, webAreaSeen: Bool) -> Bool {
+  !webAreaSeen || freshSince.map { now - $0 < webAreaFreshEnablementMs } == true
+}
+
+/// The control's action, re-read every `webAreaActionRereadSampleMs` for up to `webAreaActionRereadMs` when `fresh` and
+/// the first read found none; nil when none came (or the process was not fresh: no wait at all).
+func webAreaActionRereading(role: String, first: [String]?, fresh: Bool, read: () -> [String]?, now: () -> Double,
+                            sleep: (Double) -> Void) -> String? {
+  if let action = webAreaAction(role: role, actions: first) { return action }
+  guard fresh else { return nil }
+  let started = now()
+  while now() - started < webAreaActionRereadMs {
+    sleep(webAreaActionRereadSampleMs)
+    if let action = webAreaAction(role: role, actions: read()) { return action }
+  }
+  return nil
+}
+
+/// Whether the control the walk chose still qualifies, read now (the review of c768d2bb..1c8f2229: a node may change
+/// during the re-read's wait): an allowlisted role, not editable, its parents read up to the AXWebArea (no window or
+/// application, no unread role or parent, within 300 levels). Answers its role now.
+func webAreaControlRequalified<Element>(_ control: Element, role: (Element) -> String?, parent: (Element) -> Element?,
+                                        editable: (Element) -> Bool) -> Result<String, WebAreaRefusal> {
+  guard let name = role(control) else { return .failure(.incompleteAncestry) }
+  if webAreaEditableRoles.contains(name) || editable(control) { return .failure(.editable) }
+  guard webAreaPressableRoles.contains(name) else { return .failure(.roleNotAllowed) }
+  var current = control
+  for _ in 0...300 {
+    guard let next = parent(current), let above = role(next) else { return .failure(.incompleteAncestry) }
+    if above == "AXWebArea" { return .success(name) }
+    if webAreaWalkStops.contains(above) { return .failure(.roleNotAllowed) }  // reached its window: outside every web area
+    current = next
+  }
+  return .failure(.incompleteAncestry)
+}
+
+/// The press of the control the walk chose (`walkedRole` its role then), decided before anything is posted: its action,
+/// re-read where the process's accessibility is fresh (`webAreaActionRereading`), then the control requalified as it is
+/// now (`webAreaControlRequalified`) and its action taken again under its current role. Answers the action and the
+/// current role, or why it is refused.
+func webAreaPressDecision<Element>(_ control: Element, walkedRole: String, fresh: Bool, actions: (Element) -> [String]?,
+                                   role: (Element) -> String?, parent: (Element) -> Element?, editable: (Element) -> Bool,
+                                   now: () -> Double, sleep: (Double) -> Void) -> Result<(action: String, role: String), WebAreaRefusal> {
+  guard webAreaActionRereading(role: walkedRole, first: actions(control), fresh: fresh, read: { actions(control) }, now: now,
+                               sleep: sleep) != nil else { return .failure(.noAction) }
+  switch webAreaControlRequalified(control, role: role, parent: parent, editable: editable) {
+  case .failure(let why): return .failure(why)
+  case .success(let current):
+    guard let action = webAreaAction(role: current, actions: actions(control)) else { return .failure(.noAction) }
+    return .success((action, current))
+  }
+}
+
+/// A web-area press whose role has a value to check (`webAreaValueCheckedRoles`): the value read before the press and
+/// polled after it for up to `webAreaValueSettleMs`; unchanged, or unreadable after a readable one, it answers
+/// clickUnconfirmed, never success. A role with no value to check stands on the press. A value-checked role whose
+/// baseline could not be read is still pressed (the model's intended action) and answers clickUnconfirmed, since nothing
+/// can show the control changed (the review of c768d2bb..1c8f2229). Success means the control changed; the events Chrome
+/// itself synthesizes for the action are its own.
+func pressConfirmingValue(app: String, checksValue: Bool, readValue: () -> String?, now: () -> Double, sleep: (Double) -> Void,
+                          press: () throws -> Void) throws {
+  guard checksValue else { return try press() }
+  let baseline = readValue()
+  try press()
+  guard let before = baseline else { throw pressUnconfirmed(app) }
+  let started = now()
+  repeat {
+    if let after = readValue(), after != before { return }
+    sleep(webAreaValueSampleMs)
+  } while now() - started < webAreaValueSettleMs
+  if let after = readValue(), after != before { return }
+  throw pressUnconfirmed(app)
+}
+
+/// Shared mode's refusal of a left pointer into a Chromium web area (#282), in the Linux engine's form (the cause, then
+/// the remedy): nothing was posted.
+func backgroundClickRefused(_ app: String) -> EngineError {
+  EngineError(name: "backgroundClickRefused", "\(app)'s web page does not accept a background click; bring \(app) forward or use a dedicated desktop")
+}
+
+/// The refusal of a control whose action the page has not exposed yet (`WebAreaRefusal.noAction`): its accessibility may
+/// still be coming up, so observing the app first may let the next click through.
+func backgroundClickRefusedObserveFirst(_ app: String) -> EngineError {
+  EngineError(name: "backgroundClickRefused",
+    "\(app)'s web page does not accept a background click, and the control there exposes no action yet; observe \(app) with get_app_state first and click again, or bring \(app) forward or use a dedicated desktop")
+}
+
+/// The answer of a pointer whose own mouse down consumed route 3's activation arm in a view not known to accept first
+/// mouse (#282): posted, but AppKit may have taken it as the window's activating click and passed it to no view.
+func clickUnconfirmed(_ app: String, noun: String = "click") -> EngineError {
+  EngineError(name: "clickUnconfirmed",
+    "The \(noun) could not be confirmed: it was sent to \(app) in the background, but it may only have activated the window without reaching what is under the pointer. Observe the app with get_app_state before any retry, and never retry blindly.")
+}
+
+/// `clickUnconfirmed` for shared mode's element route (#282): the control's action was performed, but the value that
+/// shows its effect did not change within the settle.
+func pressUnconfirmed(_ app: String) -> EngineError {
+  EngineError(name: "clickUnconfirmed",
+    "The click could not be confirmed: it was carried by the control's accessibility action in \(app)'s background web page, but the control's value did not change. Observe the app with get_app_state before any retry, and never retry blindly.")
 }
 
 /// The roles whose frame clips what of an element shows: the vendor's (FUN_10078e49c intersects the frames of the

@@ -157,11 +157,13 @@ function within(promise, ms, message) {
 
 // `nodeRepl` is the trusted worker's (nativePipe, launchServices, withSuspendedTimeout); `expected` the bundle's
 // {engineVersion, build} or a function reading them (bundleIdentity by default, read at each connect, so a replaced
-// bundle is seen); `cursor` the session's cursor request params, or null for none; `log` the worker's diagnostics
-// (its stderr), told of a cursor request that failed other than as an older engine's methodNotFound.
+// bundle is seen); `cursor` the session's cursor request params, or null for none; `desktop` the session's device mode
+// ('shared' | 'dedicated', #282), which every connection's ping names so the engine applies it to that connection alone
+// (one engine serves sessions of either mode), or null to name none (the engine takes shared); `log` the worker's
+// diagnostics (its stderr), told of a cursor request that failed other than as an older engine's methodNotFound.
 export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFor(appPath), expected = () => bundleIdentity(appPath),
   firstConnectMs = FIRST_CONNECT_MS, launchWaitMs = LAUNCH_WAIT_MS, deadlineGraceMs = DEADLINE_GRACE_MS, cursor = null, cursorWaitMs = CURSOR_MS,
-  log = line => process.stderr.write(`cua engine client: ${line}\n`)}) {
+  desktop = null, log = line => process.stderr.write(`cua engine client: ${line}\n`)}) {
   let connection = null;
   let identity = null;
   let connecting = null;
@@ -206,7 +208,7 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
       else if (pipe) {
         const candidate = new Connection(pipe);
         try {
-          const answer = await candidate.call('ping', {clientApiVersion: CLIENT_API_VERSION}, PING_MS);
+          const answer = await candidate.call('ping', {clientApiVersion: CLIENT_API_VERSION, ...(desktop ? {desktop} : {})}, PING_MS);
           const checked = check(answer, want);
           releasedSince(born);  // a ping answered after release: the socket closes, nothing is published
           connection = candidate;

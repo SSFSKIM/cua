@@ -117,9 +117,9 @@ private final class FakeApplication: @unchecked Sendable {
         self.duringWrite(name, value)
         self.calls.append("write \(name)=\(value)")
         self.writes.append((name, value))
-        guard !self.failWrites else { return false }
+        guard !self.failWrites else { return .cannotComplete }
         self.values[name] = value
-        return true
+        return .success
       },
       current: { self.current })
   }

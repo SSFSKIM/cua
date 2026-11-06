@@ -67,9 +67,10 @@
 //   CUA_ENGINE_BIN                           computer surface, linux, cua's engine selected: cua-engine, installed under
 //                                            <home>/engine/linux or named by CUA_LINUX_ENGINE_BIN (its canonical path,
 //                                            the selection's), which cua's Linux service spawns as a child over stdio
-//   CUA_DESKTOP_MODE                         computer surface, linux, cua's engine selected: the device mode
-//                                            (desktopModeFor: shared or dedicated), which cua's Linux service passes to
-//                                            the engine as --desktop
+//   CUA_DESKTOP_MODE                         computer surface, cua's engine selected: the device mode (desktopModeFor:
+//                                            shared or dedicated), which cua's Linux service passes to the engine as
+//                                            --desktop, and cua's macOS service names in its connection's ping (#282:
+//                                            one macOS engine serves many sessions, so the mode is per connection)
 //   CUA_ENGINE_APP                           computer surface, darwin, cua's engine selected: the approved engine bundle
 //                                            (src/runtime/engine.mjs installedEngine), which cua's service connects to at
 //                                            the engine.sock beside it and launches when nothing answers there
@@ -324,7 +325,8 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
         ? {CUA_SKY_SERVICE: LINUX_ENGINE_SERVICE, CUA_ENGINE_BIN: linuxEngine.path, CUA_DESKTOP_MODE: desktopModeFor({env: ambient}).mode}
         : {OAI_SKY_LINUX_BIN: p.skyLinuxBin, CUA_SKY_SERVICE: p.skyVendorService});
     } else {
-      Object.assign(env, cuaEngine ? {CUA_SKY_SERVICE: ENGINE_SERVICE, CUA_ENGINE_APP: cuaEngine.bundlePath, ...cursorEnv(cursor ?? cursorContext({env: ambient}))}
+      Object.assign(env, cuaEngine ? {CUA_SKY_SERVICE: ENGINE_SERVICE, CUA_ENGINE_APP: cuaEngine.bundlePath, CUA_DESKTOP_MODE: desktopModeFor({env: ambient}).mode,
+        ...cursorEnv(cursor ?? cursorContext({env: ambient}))}
         : {SKY_CUA_SERVICE_PATH: p.skyServiceApp, CUA_SKY_SERVICE: p.skyVendorService});
       env.CUA_ENGINE_SCREENSHOTS = join(cwd, 'screenshots');
     }
@@ -526,11 +528,11 @@ function canonicalEngine(lookup, source) {
   return {path, lookup, source};
 }
 
-// The device mode cua's engine runs in on Linux (#171, Design "Device mode") -> {mode: 'shared' | 'dedicated', reason:
-// 'explicit' | 'settings' | 'default'}: CUA_DESKTOP_MODE in `env` (unset or empty: not set), else `desktop` in
-// ~/.config/cua/engine.json, else shared. Any other value is refused (invalid_setting), as is an engine.json that cannot
-// be read. Doctor reports it; a launch with cua's engine names it to cua's own service (CUA_DESKTOP_MODE), which passes
-// it to the engine (M3).
+// The device mode cua's engine runs in, on Linux (#171, Design "Device mode") and on macOS (#282) -> {mode: 'shared' |
+// 'dedicated', reason: 'explicit' | 'settings' | 'default'}: CUA_DESKTOP_MODE in `env` (unset or empty: not set), else
+// `desktop` in ~/.config/cua/engine.json, else shared. Any other value is refused (invalid_setting), as is an engine.json
+// that cannot be read. Doctor reports it; a launch with cua's engine names it to cua's own service (CUA_DESKTOP_MODE),
+// which passes it to the engine: on Linux as the engine's --desktop (M3), on macOS in each connection's ping.
 const DESKTOP_MODES = ['shared', 'dedicated'];
 export function desktopModeFor({env, config = () => readEngineSettings({env})}) {
   const value = env.CUA_DESKTOP_MODE;

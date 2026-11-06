@@ -706,3 +706,15 @@ host with the vendor engine), so the paragraph appears exactly where it is true,
 browser-only session or Linux. The rule above is otherwise unchanged. The paragraph:
 
 > While you act in an app, a cursor labelled with this session's name shows the user where each action lands, unless the user has turned it off, and fades a few seconds after your last action. Your actions do not wait for it, it is not the user's pointer, and your screenshots do not show it.
+
+### Table 3 addition (2026-11-05, #282)
+
+The design session's ruling on #282 (`docs/doperpowers/specs/2026-10-18-own-native-engine-design.md`, the Decision Log's
+#282 entry) asks the first-call document for the sentence of the engine's new refusal. cua's macOS engine refuses a
+background left click, double click or drag into a Chromium web page unless the device is a dedicated desktop, carries
+a plain click on a pressable control there (a button, checkbox, radio button, link, pop-up button, menu item) by its own action, and answers `clickUnconfirmed` where a posted
+pointer may only have activated its window. That is true exactly where the agent cursor's paragraph is (a macOS
+computer surface, served only by cua's engine), so it is a second paragraph of `docs/cua-api/agent-cursor.md`, after a
+blank line, rather than a document of its own; `core.md`'s port is untouched. The paragraph:
+
+> A web page in a Chromium-based app (Chrome, Electron apps) that is in the background does not take a pointer: unless this Mac is a dedicated desktop, a left click, double click or drag there is refused with "<App>'s web page does not accept a background click; bring <App> forward or use a dedicated desktop", and nothing is sent. A plain click there on a button, checkbox, radio button, link, pop-up button or menu item goes through the accessibility action of that element instead, and one on a checkbox or radio button whose state does not change fails with `clickUnconfirmed`; a click into a text field there is refused. A click or drag that fails with `clickUnconfirmed` was sent but may only have activated the window: observe the app before any retry.

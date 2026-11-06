@@ -54,6 +54,9 @@ final class ConnectionState: @unchecked Sendable {
   /// Route 3's after-action watch and the repairs it made (#200, Activation.swift); the one member another thread (the
   /// watch's) touches, under its own lock.
   let afterAction = AfterActionWatches()
+  /// The device mode this connection's session runs in, as its ping named it (#282; Routes.swift): shared until one says
+  /// otherwise. Per connection, never the engine's: one engine serves sessions of either mode.
+  var desktop: DesktopMode = .shared
 
   init(id: Int, fd: Int32, peerPid: pid_t? = nil, menuSpan: ActivationSpan = ActivationSpan(),
        focusHold: ActivationSpan = ActivationSpan(label: "focus", idleMs: focusHoldIdleMs)) {

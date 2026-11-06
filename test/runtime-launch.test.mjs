@@ -1096,6 +1096,27 @@ test('with cua\'s engine the launch names cua\'s service and the approved bundle
   assert.equal(launchWith({host: 'cua', reason: 'browser_only', node: NODE24}, BROWSER).nativeEngine, null);
 });
 
+// #282: a macOS session on cua's engine runs in a device mode resolved as Linux resolves it (desktopModeFor:
+// CUA_DESKTOP_MODE, else engine.json's `desktop`, else shared), which the worker gets as CUA_DESKTOP_MODE for cua's service
+// to name in its connection's ping; the vendor engine never gets it.
+test('with cua\'s engine on macOS the launch names the device mode: CUA_DESKTOP_MODE, else engine.json\'s desktop, else shared', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const user = scratchUserHome(t);
+  const cuaEngine = {engine: 'cua', reason: 'explicit', status: 'pass', app: {bundlePath: APP.bundlePath, engineVersion: APP.engineVersion, build: APP.build}};
+  const launchWith = (ambient, engine = cuaEngine) => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, HOME: user, ...ambient}, surfaces: COMPUTER,
+    replHost: {host: 'cua', reason: 'cua_engine', node: NODE24, engine}, services: {sky: SKY_SERVICE}});
+  assert.equal(launchWith({}).env.CUA_DESKTOP_MODE, 'shared', 'the default');
+  assert.equal(launchWith({CUA_DESKTOP_MODE: 'dedicated'}).env.CUA_DESKTOP_MODE, 'dedicated');
+  mkdirSync(join(user, '.config', 'cua'), {recursive: true});
+  writeFileSync(join(user, '.config', 'cua', 'engine.json'), JSON.stringify({desktop: 'dedicated'}));
+  assert.equal(launchWith({}).env.CUA_DESKTOP_MODE, 'dedicated', 'engine.json\'s');
+  assert.equal(launchWith({CUA_DESKTOP_MODE: 'shared'}).env.CUA_DESKTOP_MODE, 'shared', 'the variable wins');
+  assert.throws(() => launchWith({CUA_DESKTOP_MODE: 'kiosk'}), {code: 'invalid_setting'});
+  const vendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, HOME: user, CUA_DESKTOP_MODE: 'dedicated'}, surfaces: COMPUTER,
+    replHost: {host: 'vendor', reason: 'macos_native_peer_requires_vendor', engine: {engine: 'vendor', reason: 'default', status: 'pass'}}, services: {sky: SKY_SERVICE}});
+  assert.equal('CUA_DESKTOP_MODE' in vendor.env, false, 'never for the vendor engine');
+});
+
 // The agent cursor (#235's spec, "Lifecycle and identity"): with cua's engine, the worker gets the session's three cursor
 // variables, the connection's resolved context or, given none, MAWS's from the caller's environment with the project
 // folder's name and the hash colour; with the vendor's engine, none.

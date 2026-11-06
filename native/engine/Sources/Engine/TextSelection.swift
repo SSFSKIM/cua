@@ -163,7 +163,7 @@ extension Engine {
       if actionRoute(for: target, app: app, connection: context.connection) == .activation {
         try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
       }
-      try focusField(target, app: app, appPid: appPid, guarding: guarding, connection: context.connection, meta: &meta)
+      try focusField(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
       try guarding.checkInFlight()
       var written = AXError.failure
       cursor.afterElementAction(connection: context.connection.id, app: app.key, element: target.element, storedFrame: target.entry.frame) {

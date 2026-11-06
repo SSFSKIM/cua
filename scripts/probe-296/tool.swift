@@ -121,19 +121,27 @@ case "guard":
       var out: [String: Any] = ["hitErr": hitErr]
       var found: (AXUIElement, Double, CGRect)?
       var method = "none"
+      // The engine's node by its title too, when it has one: the page may change between the engine's walk and this
+      // record (a feed's prepend during the observation put another item of the same role at the same frame).
+      let want = (cmd["title"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(60)) }
+      let titled = { (list: [AXUIElement]) in want == nil ? list : list.filter { str($0, kAXTitleAttribute) == want } }
+      var chain: [AXUIElement] = []
       if let hit {
         out["hit"] = describe(hit)
-        let chain = [hit] + ancestors(hit) + descendants(hit, limit: 300)
-        if let n = nearest(chain, role: recordedRole, frame: recordedFrame), n.1 <= 8 { found = n; method = "hitChain" }
+        chain = [hit] + ancestors(hit) + descendants(hit, limit: 300)
+        if let n = nearest(titled(chain), role: recordedRole, frame: recordedFrame), n.1 <= 8 { found = n; method = "hitChain" }
       }
       if found == nil {
-        var queue = [app], head = 0
+        var queue = [app], head = 0, matches: [AXUIElement] = []
         while head < queue.count && head < 8000 {
           let e = queue[head]; head += 1
-          if role(e) == recordedRole, let fr = frame(e).0, diff(fr, recordedFrame) <= 0.75 { found = (e, diff(fr, recordedFrame), fr); method = "appWalk"; break }
+          if role(e) == recordedRole { matches.append(e) }
           queue.append(contentsOf: elements(attr(e, kAXChildrenAttribute)).map(prepare))
         }
+        if want != nil, let n = nearest(titled(matches), role: recordedRole, frame: recordedFrame) { found = n; method = "appWalkTitle" }
+        else if let n = nearest(matches, role: recordedRole, frame: recordedFrame), n.1 <= 0.75 { found = n; method = "appWalk" }
       }
+      if found == nil, let n = nearest(chain, role: recordedRole, frame: recordedFrame), n.1 <= 8 { found = n; method = "hitChainUntitled" }
       recorded = found?.0
       out["method"] = method
       out["distance"] = found.map { r2($0.1) } ?? NSNull()

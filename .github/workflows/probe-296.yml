@@ -22,7 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: [chrome, safari, native]
+        group: [chrome, safari]
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -54,7 +54,7 @@ jobs:
       - name: Live
         env:
           P296_REP: ${{ matrix.rep }}
-          P296_CELLS: ${{ github.event.inputs.cells || '' }}
+          P296_CELLS: ${{ github.event.inputs.cells || 'chrome/dedicated/feed,safari/shared/feed,safari/shared/scroll' }}
         run: node scripts/probe-296/live.mjs --group ${{ matrix.group }} --engine "$RUNNER_TEMP/eng/debug/cua-engine" --tool "$RUNNER_TEMP/p296-tool" --app "$RUNNER_TEMP/Probe296.app/Contents/MacOS/Probe296" ${P296_CELLS:+--cells "$P296_CELLS"} --out "$RUNNER_TEMP/probe-296"
       - name: Upload
         if: always()

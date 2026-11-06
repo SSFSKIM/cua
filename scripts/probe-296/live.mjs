@@ -38,8 +38,8 @@ const BODY = {
   spinner: `<p><span class="spinner"></span> <button id="beside" class="p296-beside">Beside</button></p>`,
   counter: `<p><span id="counter" class="g"></span> <button id="nextto" class="p296-nextto">Next to</button></p>`,
   label: `<p><button id="label" class="p296-label g">Elapsed 0.0 s</button></p>`,
-  feed: `<div id="feedbox" class="p296-feedbox"></div>`,
-  scroll: `<div id="scrollbox" class="p296-scrollbox"></div>`,
+  feed: `<div id="feedbox" class="p296-feedbox" role="group" aria-label="Feed box"></div>`,
+  scroll: `<div id="scrollbox" class="p296-scrollbox" role="group" aria-label="Scroll box"></div>`,
   recreate: `<p id="wrap"></p>`,
   swap: `<p><button id="save" class="p296-save fixed">Save</button></p>`,
   swaprole: `<p><button id="keep" class="p296-keep fixed">Keep</button></p>`,
@@ -329,7 +329,7 @@ async function cell(spec, shared) {
     row.recorded = slim(rec);
     guard = guardTool(target.pid);
     const f = rec.frame;
-    row.record = await guard.ask({op: 'record', x: point.x, y: point.y, role: rec.role, frame: [f.x, f.y, f.width, f.height]});
+    row.record = await guard.ask({op: 'record', x: point.x, y: point.y, role: rec.role, title: rec.title ?? '', frame: [f.x, f.y, f.width, f.height]});
     row.recordAfterObservationMs = Date.now() - o.at;
     const navBefore = beacons.length;
     if (spec.mid) {
@@ -370,10 +370,11 @@ async function cell(spec, shared) {
 function judge(row) {
   if (!row.check || row.check.error || !row.effect) return;
   const hitIds = [row.check.hit?.domId, row.check.hit?.id, ...(row.check.hitUp ?? []).flatMap(e => [e.domId, e.id])].filter(Boolean);
-  const reloadHit = /reload/i.test(`${row.check.hit?.desc ?? ''} ${row.check.hit?.title ?? ''}`);
   let under, source;
   if (row.effect.hit.length) { under = row.effect.hit.includes(row.intended); source = 'effect'; }
-  else { under = row.spec.kind === 'toolbar' ? reloadHit : hitIds.includes(row.intended); source = 'hit'; }
+  // Reload's effect is its GET: none means the click missed it (run 42179036967: Chrome's hit-test at the old point still
+  // answered Reload, its frame already 36 pt right, and the click was lost).
+  else { under = row.spec.kind === 'toolbar' ? false : hitIds.includes(row.intended); source = 'hit'; }
   row.truth = {targetUnder: under, source, hitIds};
   const refuse = row.check.verdict === 'refuse';
   row.outcome = refuse ? (under ? 'FP' : 'correct-refuse') : (under ? 'correct-pass' : 'FN');

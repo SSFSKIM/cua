@@ -760,8 +760,9 @@ final class TreeWalk {
   /// The system is asked again only for an element earlier in the preorder than the one whose answer is cached. Its
   /// answer replaces the cached one for every node already selected with the name, so the difference is charged to the
   /// byte budget for each of them; a replacement that would take the selection past the budget is refused, the nodes
-  /// keeping the cached answer, since bytes already selected cannot be given back. A walk the plain preorder would not
-  /// cut never refuses one: the preorder's answers fit the whole tree, so they fit any part of it.
+  /// keeping the cached answer, since bytes already selected cannot be given back. The limit (the spec's #301 entry,
+  /// `tech-debt-tracker.md`): each replacement is judged when it comes, so near the budget a growth refused before
+  /// another name's shrink frees the room stays refused, and the walk shows the later-in-preorder answer for it.
   private func describe(action: String, of element: AXUIElement, owner: pid_t, order: ReadOrder) -> (key: String?, description: String?) {
     guard asksSystemForDescription(action) else { return (nil, nil) }
     let key = "\(owner)\u{0}\(action)"

@@ -2405,10 +2405,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      earlier than the cached one's), and nodes take it at emission (the review of c4057c3a..effffcee;
      `testAnUncutWalksActionDescriptionsAreThePreordersWhateverItReadFirst`). A replacement changes every node already
      selected with the name, so its difference is charged to the byte budget for each of them, and one that would take
-     the selection past the budget is refused, the nodes keeping the cached answer: bytes already selected cannot be
-     given back, and a walk the preorder would not cut never refuses one, since the preorder's answers fit the whole
-     tree (the re-review of effffcee..ab0e019a found a 10,000-character answer growing 1,003 selected nodes to 10.3 MB,
-     past the protocol's 8 MiB; `testALaterLongerDescriptionNeverTakesTheTreePastTheByteBudget`). A walk
+     the selection past the budget is refused, the nodes keeping the cached answer, since bytes already selected cannot
+     be given back (the re-review of effffcee..ab0e019a found a 10,000-character answer growing 1,003 selected nodes to
+     10.3 MB, past the protocol's 8 MiB; `testALaterLongerDescriptionNeverTakesTheTreePastTheByteBudget`). **The exact
+     limit** (the re-review of ab0e019a..9bbbacc0; the coordinator's ruling stops the code there and logs the fix in
+     `tech-debt-tracker.md`): an uncut walk matches the preorder unless the same action names in one process answer
+     differently per element and, near the byte budget, one name's growth must wait for another's shrink. Each
+     replacement is judged when it comes, so a growth refused before a later shrink frees the room is never reconsidered,
+     and the cached, later-in-preorder answer shows (the probe, at 1.2 MB: `[5, 5]` where the preorder shows
+     `[10000, 5]`). A walk
      with no visible frame (rooted at a recorded menu-bar item) is the plain preorder. A stated difference with no
      case on the matrix: an element reached under two parents is read under whichever occurrence the selection meets
      first, so its depth-dependent reads (the depth cap, Chromium's parent-role settability) follow that occurrence,

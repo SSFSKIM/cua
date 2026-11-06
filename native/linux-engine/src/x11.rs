@@ -778,6 +778,7 @@ impl X11 {
             w: geometry.width as i32,
             h: geometry.height as i32,
         };
+        let mask = self.conn.setup().resource_id_mask;
         let mut levels = Vec::new();
         let mut current = window;
         while current != self.root {
@@ -806,7 +807,7 @@ impl X11 {
                 },
                 above: Vec::with_capacity(pending.len()),
             };
-            for (attributes, geometry) in pending {
+            for (&w, (attributes, geometry)) in above.iter().zip(pending) {
                 let (attributes, g) = (attributes.reply()?, geometry.reply()?);
                 let border = 2 * g.border_width as i32;
                 level.above.push(Above {
@@ -818,6 +819,7 @@ impl X11 {
                     },
                     viewable: attributes.map_state == MapState::VIEWABLE,
                     input_only: attributes.class == WindowClass::INPUT_ONLY,
+                    own: w & !mask == window & !mask,
                 });
             }
             levels.push(level);

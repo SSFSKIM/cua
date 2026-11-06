@@ -2018,3 +2018,21 @@ fn foreground_pointer_input_is_refused_with_nothing_sent_when_its_window_is_not_
     assert_eq!(firefox.inputs(), vec![], "nothing reached the window");
     assert_eq!(cover.inputs(), vec![], "nor the window covering it");
 }
+
+/// A point under the window's own popup (an override-redirect window of its own X client, as a menu it opened) is the
+/// application's: the foreground click goes to it at once, as it did before the wait, and is not refused.
+#[test]
+fn a_foreground_click_into_the_window_s_own_popup_is_not_held_back() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let menu = override_redirect(&firefox.conn, (80, 80, 60, 60));
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    firefox.unfocus();
+    let started = Instant::now();
+    dedicated
+        .request("click", json!({"window": firefox.target(), "x": 100, "y": 100}))
+        .expect("its own popup's point is the application's");
+    assert!(started.elapsed() < Duration::from_millis(500), "not held to the bound");
+    assert!(firefox.has_focus(), "the foreground route: its own popup over it");
+    let _ = firefox.conn.destroy_window(menu);
+    let _ = firefox.conn.flush();
+}

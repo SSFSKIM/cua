@@ -40,12 +40,14 @@ impl Rect {
 }
 
 /// A sibling stacked above the window or one of its ancestors: its outer rectangle (border included), whether it
-/// is viewable, and whether it is InputOnly (which draws nothing).
+/// is viewable, whether it is InputOnly (which draws nothing), and whether it belongs to the window's own X client (its
+/// resource-id base: the application's own popups and menus, which take its input as the window would).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Above {
     pub rect: Rect,
     pub viewable: bool,
     pub input_only: bool,
+    pub own: bool,
 }
 
 /// One level of the window's ancestry: the parent's inside rectangle, which clips its children (the root's is the
@@ -94,9 +96,10 @@ pub fn points_unobscured(window: Rect, levels: &[Level], points: &[(i32, i32)]) 
 pub enum Reach {
     /// Every point lies in the window and under no window above it: the input reaches the window.
     Window,
-    /// A point lies under a window stacked above it or above an ancestor, judged by outer rectangles as
-    /// `points_unobscured` judges a drag's path, and InputOnly windows count, since they take pointer input though
-    /// they draw nothing. A window manager's raise can still change this.
+    /// A point lies under another client's window stacked above it or above an ancestor, judged by outer rectangles
+    /// as `points_unobscured` judges a drag's path, InputOnly windows included, since they take pointer input though
+    /// they draw nothing. The window's own client's windows (its popups and menus) take the input for the application
+    /// and do not count. A window manager's raise can still change this.
     Covered,
     /// A point lies outside the window, or outside an ancestor or the screen, or there is no point or no stacking to
     /// judge by: no raise makes input there reach the window.
@@ -110,9 +113,12 @@ pub fn reach(window: Rect, levels: &[Level], points: &[(i32, i32)]) -> Reach {
         return Reach::Outside;
     }
     let under_another = |p| {
-        levels
-            .iter()
-            .any(|level| level.above.iter().any(|a| a.viewable && a.rect.contains_point(p)))
+        levels.iter().any(|level| {
+            level
+                .above
+                .iter()
+                .any(|a| a.viewable && !a.own && a.rect.contains_point(p))
+        })
     };
     if points.iter().any(|&p| under_another(p)) {
         Reach::Covered
@@ -141,6 +147,7 @@ mod tests {
             rect: r,
             viewable: true,
             input_only: false,
+            own: false,
         }
     }
 
@@ -366,6 +373,26 @@ mod tests {
         };
         let (w, levels) = framed(rect(0, 20, 1000, 780), vec![unmapped]);
         assert_eq!(reach(w, &levels, &[(300, 100)]), Reach::Window);
+    }
+
+    #[test]
+    fn the_window_s_own_popup_above_it_takes_the_input_for_the_application() {
+        let menu = Above {
+            own: true,
+            ..above(rect(250, 50, 100, 100))
+        };
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![menu, above(rect(600, 50, 100, 100))]);
+        assert!(!points_unobscured(w, &levels, &[(300, 100)]), "its pixels are covered");
+        assert_eq!(
+            reach(w, &levels, &[(300, 100)]),
+            Reach::Window,
+            "a menu item of its own"
+        );
+        assert_eq!(
+            reach(w, &levels, &[(650, 100)]),
+            Reach::Covered,
+            "another client's window"
+        );
     }
 
     #[test]

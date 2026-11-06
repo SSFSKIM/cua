@@ -507,7 +507,7 @@ func waitForWebArea(under window: AXUIElement) -> Bool {
   }
 }
 
-private func containsWebArea(_ window: AXUIElement) -> Bool {
+func containsWebArea(_ window: AXUIElement) -> Bool {
   let attributes = [kAXRoleAttribute, kAXChildrenAttribute] as CFArray
   var queue = [window]
   var head = 0

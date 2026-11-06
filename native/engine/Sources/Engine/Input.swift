@@ -100,6 +100,8 @@ struct InputMeta {
   var note: String? = nil
   /// A coordinate click's placement, from the screenshot point to the posted events (#259, Routes.swift).
   var coordinateClick: CoordinateClickRecord?
+  /// #288's establishment of a page tree not yet seen, before a left click's walk (Routes.swift `establishedPointerView`).
+  var pointerEstablish: PointerEstablishRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -155,6 +157,7 @@ struct InputMeta {
     if let paste { wire["paste"] = paste.wire }
     if let elementClick { wire["elementClick"] = elementClick.wire }
     if let coordinateClick { wire["coordinateClick"] = coordinateClick.wire }
+    if let pointerEstablish { wire["pointerEstablish"] = pointerEstablish.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }
@@ -424,8 +427,12 @@ extension Engine {
         // own action when it has one, any other is refused, before anything is posted.
         var pointer = PointerTarget.acceptingFirstMouse
         if route == .activation, button == .left {
-          pointer = signposted("click.pointerView") { pointerTarget(hit: hit, app: app, appPid: appPid) }
-          if pointer.view.mayBeWebArea, let hit {
+          let (established, pointerHit) = signposted("click.pointerView") {
+            clickPointerTarget(hit: hit, window: placed.window, rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) },
+                               app: app, appPid: appPid, meta: &meta)
+          }
+          pointer = established
+          if pointer.view.mayBeWebArea, let hit = pointerHit {
             pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
                                                 appPid: appPid, guarding: guarding, context: context)
           }

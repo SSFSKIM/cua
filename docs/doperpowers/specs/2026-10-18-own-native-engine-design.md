@@ -2103,6 +2103,31 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Nothing live ran: the hosted check (EUI reads false after end_task, a checkbox loses AXPress, the window moves
   without animation) is the next step.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #292.
+- Decision (#288, 2026-11-05, `fix/288-fresh-chrome`; the design session's rulings; amends #282's items 3 and 4):
+  **a left click by route 3 into a Chromium process where no web area has been seen establishes the page tree before
+  its walk decides, and an element with an AXWebArea child is never outside.**
+  1. **The measurement** (#288's hosted spike, `probe/288-hosted`, runs 42161269408 and 42162367095; Chrome for Testing
+     156). Before any role read a page point hit-tests to a coarse AXScrollArea that walks to the AXWindow, which
+     #282's walk took for outside (then, with no web area seen, a possible web area). After the application's role read
+     (Basic mode) a search of the window finds the AXWebArea in 11 to 29 ms, but for 40 to 350 ms more the page point
+     can answer Chrome's web-contents AXScrollArea, whose child is the AXWebArea, before it resolves inside the page.
+     The toolbar's Reload resolves to an AXButton whose walk reaches the AXWindow with no web area.
+  2. **The container rule** (`pointerView`, every pointer, seen or not): a hit, or any element on its walk below the
+     stop, with an AXWebArea among its children is `aboveWebArea`, a possible web area, never outside.
+  3. **The establishment** (`establishedPointerView`, the coordinate click and the element click's synthesized path,
+     route 3, left button, a Chromium process with `hasSeenWebArea` false): the application's AXRole read, the target
+     window searched for an AXWebArea (as `containsWebArea`, bounded by 1,000 nodes; `noteWebArea` when found), and
+     the point hit-tested again by the click's own hit-test; a hit that is such a container is hit-tested again every
+     25 ms for up to 500 ms until it is something else, the waits ending by 600 ms after the step began. The walk then
+     decides on the last hit, with the search's answer as `webAreaSeen`; the element route walks that hit. Nothing is
+     activated or posted during it, and the intervention check before the activation is unchanged. Recorded as
+     `pointerEstablish {ms, webAreaFound, rehits}` in the input meta (`cua/pointerEstablish`). A drag keeps the walk
+     without the establishment.
+  Proven offline (`PointerEstablishTests`, 7: the container rule, the toolbar button resolved outside, a container
+  re-hit until the page control, the bound with a fast and a slow search, no web area found, no establishment where
+  seen or outside Chromium, the record's wire; the service's pass-through). Nothing live ran: the first-click latency
+  and the pre-observation toolbar limits stand until the hosted kit measures them.
+  Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #288.
 
 ## Outcomes & Retrospective
 

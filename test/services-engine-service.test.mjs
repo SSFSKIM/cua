@@ -550,6 +550,24 @@ test('a coordinate click\'s placement rides as cua/coordinateClick on its result
   assert.equal(meta['cua/coordinateClick'], null, 'reset by the next call');
 });
 
+test('#288: a click\'s establishment of a page tree not yet seen rides as cua/pointerEstablish, on a refusal too', async t => {
+  const record = {ms: 312.5, webAreaFound: true, rehits: 9};
+  const refusal = "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop";
+  let refuse = false;
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => {
+    if (refuse) throw new EngineFailure(-10005, refusal, 'backgroundClickRefused', {meta: {...INPUT_META, pointerEstablish: record}});
+    return {meta: {...INPUT_META, pointerEstablish: record}};
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.click([120, 168]));
+  assert.deepEqual(meta['cua/pointerEstablish'], record);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/pointerEstablish'], null, 'reset by the next call');
+  refuse = true;
+  await assert.rejects(call(() => app.click([120, 168])));
+  assert.deepEqual(meta['cua/pointerEstablish'], record);
+});
+
 test('a control build\'s variant rides in cua/nativeEngine, on its results and its input errors alike', async t => {
   const {getApp, call, meta} = await session(t, {identity: {engineVersion: '0.1.0', build: 'b1', variant: 'control-no-inert-click'},
     handlers: {'execute:press_key': () => { throw new EngineFailure(-10005, 'activationFailed', 'activationFailed', {meta: INPUT_META}); }}});

@@ -669,3 +669,154 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertEqual(first.desktop, .shared)
   }
 }
+
+/// #288: a hit, or an element on its walk, with an AXWebArea child is never outside; a left click into a Chromium
+/// process with no web area seen establishes the page tree (role read, window search, hit-test again) before the walk
+/// decides, re-hitting a web-area container every 25 ms for up to 500 ms, the whole step bounded.
+final class PointerEstablishTests: XCTestCase {
+  /// An accessibility tree node with its children, as Chrome's window exposes them.
+  private final class Tree {
+    let role: String
+    weak var parent: Tree?
+    var children: [Tree] = []
+    init(_ role: String, _ children: [Tree] = []) {
+      self.role = role
+      self.children = children
+      for child in children { child.parent = self }
+    }
+  }
+
+  /// Chrome's window: a toolbar with Reload, and the web contents' AXScrollArea holding the AXWebArea and a scroll bar.
+  private struct Chrome {
+    let window: Tree, reload: Tree, contents: Tree, scrollBar: Tree, webArea: Tree, pageButton: Tree
+    init() {
+      reload = Tree("AXButton")
+      pageButton = Tree("AXButton")
+      webArea = Tree("AXWebArea", [Tree("AXGroup", [pageButton])])
+      scrollBar = Tree("AXScrollBar")
+      contents = Tree("AXScrollArea", [webArea, scrollBar])
+      window = Tree("AXWindow", [Tree("AXGroup", [Tree("AXToolbar", [Tree("AXGroup", [reload])]), Tree("AXGroup", [contents])])])
+    }
+  }
+
+  private func view(_ hit: Tree?, seen: Bool = true) -> PointerView {
+    pointerView(chromium: true, webAreaSeen: seen, hit: hit, role: { $0.role }, parent: { $0.parent }, children: { $0.children })
+  }
+
+  func testAnElementWithAWebAreaChildIsAPossibleWebAreaNeverOutside() {
+    let chrome = Chrome()
+    XCTAssertEqual(view(chrome.contents), .possibleWebArea, "the web contents' scroll area: its child is the page")
+    XCTAssertEqual(pointerView(chromium: true, webAreaSeen: true, hit: chrome.contents, role: { $0.role }, parent: { $0.parent }),
+                   .acceptsFirstMouse, "what the walk said before #288")
+    XCTAssertEqual(view(chrome.scrollBar), .possibleWebArea, "an element whose walk passes the container")
+    XCTAssertEqual(view(chrome.contents, seen: false), .possibleWebArea, "seen or not")
+    XCTAssertEqual(view(chrome.reload), .acceptsFirstMouse, "the toolbar's walk has no web area child")
+    XCTAssertEqual(view(chrome.pageButton), .webArea)
+    XCTAssertEqual(webAreaWalk(chrome.contents, role: { $0.role }, parent: { $0.parent },
+                               webAreaChild: { hasWebAreaChild($0, children: { $0.children }, role: { $0.role }) }), .aboveWebArea)
+    XCTAssertFalse(hasWebAreaChild(chrome.contents, children: { _ in nil }, role: { $0.role }), "unread children: not known to")
+  }
+
+  /// The establishment's seams over a fake clock: each call recorded, `rehits` answered in turn (the last repeated).
+  private final class Establishment {
+    var now: Double = 0
+    var calls: [String] = []
+    var sleeps: [Double] = []
+    var found = true
+    var searchMs: Double = 20
+    var rehits: [Tree?] = []
+
+    func seams() -> PointerEstablishing<Tree> {
+      PointerEstablishing(
+        readAppRole: { self.calls.append("role") },
+        windowHasWebArea: { self.calls.append("search"); self.now += self.searchMs; return self.found },
+        noteWebArea: { self.calls.append("note") },
+        rehit: {
+          self.calls.append("hit")
+          return self.rehits.count > 1 ? self.rehits.removeFirst() : self.rehits.first ?? nil
+        },
+        now: { self.now },
+        sleep: { self.sleeps.append($0); self.now += $0 })
+    }
+  }
+
+  private func established(_ hit: Tree?, _ seams: PointerEstablishing<Tree>?, seen: Bool = false, chromium: Bool = true)
+    -> (view: PointerView, hit: Tree?, record: PointerEstablishRecord?) {
+    establishedPointerView(chromium: chromium, webAreaSeen: seen, hit: hit, role: { $0.role }, parent: { $0.parent },
+                           children: { $0.children }, establish: seams)
+  }
+
+  func testTheEstablishmentResolvesAToolbarButtonOutside() {
+    let chrome = Chrome()
+    let fake = Establishment()
+    fake.rehits = [chrome.reload]
+    // Before any role read the point answered a coarse element that walks to the window.
+    let result = established(chrome.window.children[0], fake.seams())
+    XCTAssertEqual(result.view, .acceptsFirstMouse, "a web area found, and the new hit's walk reaches the window with none")
+    XCTAssertTrue(result.hit === chrome.reload)
+    XCTAssertEqual(fake.calls, ["role", "search", "note", "hit"])
+    XCTAssertEqual(result.record, PointerEstablishRecord(ms: 20, webAreaFound: true, rehits: 1))
+    XCTAssertTrue(fake.sleeps.isEmpty)
+  }
+
+  func testTheEstablishmentReHitsAContainerUntilItResolvesInsideThePage() {
+    let chrome = Chrome()
+    let fake = Establishment()
+    fake.rehits = [chrome.contents, chrome.contents, chrome.contents, chrome.contents, chrome.pageButton]
+    let result = established(nil, fake.seams())
+    XCTAssertEqual(result.view, .webArea, "the page control, so the element route walks it")
+    XCTAssertTrue(result.hit === chrome.pageButton)
+    XCTAssertEqual(fake.sleeps, [25, 25, 25, 25])
+    XCTAssertEqual(result.record, PointerEstablishRecord(ms: 120, webAreaFound: true, rehits: 5))
+  }
+
+  func testTheReHitsAreBoundedAndAStillContainerStaysAPossibleWebArea() {
+    let chrome = Chrome()
+    let fake = Establishment()
+    fake.rehits = [chrome.contents]
+    let result = established(nil, fake.seams())
+    XCTAssertEqual(result.view, .possibleWebArea, "still the container at the bound: as today")
+    XCTAssertEqual(result.record?.rehits, 21, "the first, then every 25 ms for 500 ms")
+    XCTAssertEqual(result.record?.ms, 520)
+    // A slow search leaves the re-hits the rest of the step's 600 ms bound.
+    let slow = Establishment()
+    slow.rehits = [chrome.contents]
+    slow.searchMs = 150
+    let bounded = established(nil, slow.seams())
+    XCTAssertEqual(bounded.record?.ms, 600, "the whole step ends by 600 ms")
+    XCTAssertEqual(bounded.record?.rehits, 19)
+    XCTAssertLessThanOrEqual(slow.sleeps.max() ?? 0, 25)
+  }
+
+  func testNoWebAreaFoundLeavesTheToolbarAPossibleWebArea() {
+    let chrome = Chrome()
+    let fake = Establishment()
+    fake.found = false
+    fake.rehits = [chrome.reload]
+    let result = established(nil, fake.seams())
+    XCTAssertEqual(result.view, .possibleWebArea, "no page tree seen: a page point may still answer outside one")
+    XCTAssertEqual(fake.calls, ["role", "search", "hit"], "nothing noted")
+    XCTAssertEqual(result.record?.webAreaFound, false)
+  }
+
+  func testASeenProcessOrAnotherAppRunsNoEstablishment() {
+    let chrome = Chrome()
+    let fake = Establishment()
+    fake.rehits = [chrome.pageButton]
+    let seen = established(chrome.reload, fake.seams(), seen: true)
+    XCTAssertEqual(seen.view, .acceptsFirstMouse)
+    XCTAssertTrue(seen.hit === chrome.reload, "the click's own hit")
+    XCTAssertNil(seen.record)
+    let other = established(chrome.reload, fake.seams(), chromium: false)
+    XCTAssertEqual(other.view, .unknown)
+    XCTAssertNil(other.record)
+    let none = established(chrome.reload, nil)
+    XCTAssertEqual(none.view, .possibleWebArea, "no seams given: the walk as before")
+    XCTAssertTrue(fake.calls.isEmpty)
+  }
+
+  func testTheRecordsWire() {
+    XCTAssertEqual(PointerEstablishRecord(ms: 312.12345, webAreaFound: true, rehits: 9).wire as NSDictionary,
+                   ["ms": 312.123, "webAreaFound": true, "rehits": 9] as NSDictionary)
+  }
+}

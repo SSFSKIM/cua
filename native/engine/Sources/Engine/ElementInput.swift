@@ -223,8 +223,14 @@ extension Engine {
       throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
     }
     meta.pointUnconfirmed = pointing.relation.unconfirmed
-    var pointer = route == .activation && button == .left ? pointerTarget(hit: pointing.hitElement, app: app, appPid: appPid) : .acceptingFirstMouse
-    if webAreaElementRoute, pointer.view.mayBeWebArea, let hit = pointing.hitElement {
+    var pointer = PointerTarget.acceptingFirstMouse
+    var pointerHit = pointing.hitElement
+    if route == .activation && button == .left {
+      let owner = pointing.owner
+      (pointer, pointerHit) = clickPointerTarget(hit: pointing.hitElement, window: pointing.window, rehit: { hitTest(application: owner, at: point) },
+                                                 app: app, appPid: appPid, meta: &meta)
+    }
+    if webAreaElementRoute, pointer.view.mayBeWebArea, let hit = pointerHit {
       pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: point, windowID: pointing.windowID, app: app,
                                           appPid: appPid, guarding: guarding, context: context)
     }
@@ -274,8 +280,31 @@ extension Engine {
     let chromium = webAccessibility.isChromiumFamily(app.appPath)
     let seen = chromium && webAccessibility.hasSeenWebArea(pid: appPid, launched: processGeneration(launchDate: app.running?.launchDate, pid: appPid))
     let view = pointerView(chromium: chromium, webAreaSeen: seen, hit: hit, role: { attribute($0, kAXRoleAttribute) as? String },
-                           parent: { elementAttribute($0, kAXParentAttribute) })
+                           parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead)
     return PointerTarget(view: view, app: app.displayName, noun: noun)
+  }
+
+  /// `pointerTarget` for a left click by route 3, with #288's establishment first (Routes.swift `establishedPointerView`)
+  /// in a Chromium process where no web area has been seen: the application's role read, `window` searched for an
+  /// AXWebArea, and the point hit-tested again by `rehit` (the caller's own hit-test). Answers the target and the hit
+  /// it was read from, which the element route walks; the establishment's record goes in the meta.
+  func clickPointerTarget(hit: AXUIElement?, window: AXUIElement?, rehit: @escaping () -> AXUIElement?, app: ResolvedApp, appPid: pid_t,
+                          meta: inout InputMeta) -> (target: PointerTarget, hit: AXUIElement?) {
+    let chromium = webAccessibility.isChromiumFamily(app.appPath)
+    let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
+    let seen = chromium && webAccessibility.hasSeenWebArea(pid: appPid, launched: generation)
+    let application = prepare(AXUIElementCreateApplication(appPid))
+    let searched = window ?? primaryWindow(of: application)
+    let establish = PointerEstablishing<AXUIElement>(
+      readAppRole: { _ = attribute(application, kAXRoleAttribute) },
+      windowHasWebArea: { searched.map(containsWebArea) ?? false },
+      noteWebArea: { [webAccessibility] in webAccessibility.noteWebArea(pid: appPid, launched: generation) },
+      rehit: rehit, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
+    let established = establishedPointerView(chromium: chromium, webAreaSeen: seen, hit: hit, role: { attribute($0, kAXRoleAttribute) as? String },
+                                             parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead,
+                                             establish: establish)
+    if let record = established.record { meta.pointerEstablish = record }
+    return (PointerTarget(view: established.view, app: app.displayName), established.hit)
   }
 
   /// The element route a plain left click refused in a web area takes (#282): the control the hit resolves to

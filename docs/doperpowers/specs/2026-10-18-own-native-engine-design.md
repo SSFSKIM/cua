@@ -2138,6 +2138,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   at its bound, in their JS suites.) Nothing live ran: the hosted check (EUI reads
   false after end_task and after 30 s idle, a checkbox loses AXPress, the window moves without animation) is the next
   step.
+  Proven live (`docs/evidence/2026-11-06-eui-release/`; hosted run 42168334138 at 63926945 and 42167787338 at
+  96c6f093, Chrome for Testing 156, 2 reps each, all alike). At end_task, `endTask` answered `{released: 1}` in 2 ms and EUI
+  read false 12–15 ms later, with the checkbox's AXPress and the text boxes gone; a window move then settled in 2 frames
+  (8–55 ms) where main's stayed animated (4–6 frames, 94–159 ms). SIGTERM released in 27 ms. An idle connection was
+  released 31.7 s after its last observation, and a re-observation at 20 s moved the release to 32 s after it. The grace
+  fires 1.5–2.1 s past the nominal 30 s, every rep: the utility-QoS timer's coalescing, likely. A click 1.6 s after a
+  release, with no re-observation, re-enabled EUI and was element-routed (AXPress, the checkbox changed once) in
+  2.4 s, inside the 3 s cap. Main never released.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #292.
 - Decision (#288, 2026-11-05, `fix/288-fresh-chrome`; the design session's rulings; amends #282's items 3 and 4):
   **a left click by route 3 into a Chromium process where no web area has been seen establishes the page tree before
@@ -2167,6 +2175,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   re-hit until the page control, the bound with a fast and a slow search, no web area found, no establishment where
   seen or outside Chromium, the record's wire; the service's pass-through). Nothing live ran: the first-click latency
   and the pre-observation toolbar limits stand until the hosted kit measures them.
+  Proven live (the same evidence). A first contact with no observation cannot reach this step: a coordinate click
+  needs the connection's screenshot (`noScreenshotForCoordinates`), and element tokens come only from get_app_state. So
+  the state with no web area seen arises after a grace release, which clears it. There the step ran in 10–24 ms
+  (`pointerEstablish {webAreaFound true, rehits 1}`): Chrome's Reload walked outside every web area and was posted by
+  route 3, and page text was refused with nothing posted. The posted Reload did not reload the page, on main as on
+  the branch, after the window sat idle 20 s or more (it did at 1 s): that is #294, not this step. The first quick
+  click's latency, re-stated: 1.7–2.0 s for a checkbox press and 1.7–1.9 s for a textarea focus, 0.1 s after the first
+  observation, on both engines.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #288.
 
 ## Outcomes & Retrospective

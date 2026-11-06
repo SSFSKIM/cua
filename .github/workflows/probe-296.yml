@@ -16,14 +16,14 @@ permissions:
   contents: read
 env:
   P296_MAIN_REF: d482bcc2e8b6ca21bb8cddf79f137356a9a48d97
-  P296_BRANCH_REF: 7f79ca34a265fc4ade3608fdd93c0b6304084d54
+  P296_BRANCH_REF: 2fdb9c98e58492007036f6d51f2996495d150ea3
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: [rerun]
+        group: [final, safari-final, native-final]
     runs-on: macos-latest
     timeout-minutes: 75
     steps:

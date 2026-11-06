@@ -11,6 +11,8 @@
 //   --group native   scripts/probe-296/app.swift's window, shared and dedicated mode
 //   --group rerun    the guard on #282's element-routed path (ruling ca82a6f4): shared-mode page cells with Chrome in
 //                    the background, a change during the route's re-read on a fresh Chrome, and regression cells
+//   --group final    the rerun group, the re-read-window swap at 0.3, 0.6 and 1 s, #294's case in dedicated mode, and a
+//                    removed target under another window (no hit); safari-final and native-final: regression sets
 //   node scripts/probe-296/ab.mjs --group <g> --branch <cua-engine> --main <cua-engine> --app <Probe296 binary> --out <dir> [--cells <prefix,…>]
 import {spawn, spawnSync} from 'node:child_process';
 import {createServer} from 'node:http';
@@ -44,6 +46,7 @@ const BODY = {
   like: `<p><button id="like" class="p296-like fixed">Like (12)</button></p>`,
   relabel: `<p><button id="relabel" class="p296-relabel fixed">Save</button></p>`,
   link: `<p><a id="lnk" class="p296-lnk" href="#">Read the full article</a></p>`,
+  vanish: `<p><button id="vanish" class="p296-vanish fixed">Archive</button></p>`,
 };
 const page = c => `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe296 ${c}</title>
 <style>body{margin:8px;font:14px sans-serif}button{font:14px sans-serif;padding:6px 12px}.g{font-family:Georgia,serif}
@@ -71,6 +74,7 @@ const run = c => {
   else if (c.op === 'swaprole') { const a = mk('a', 'remove', 'Remove', 'p296-remove fixed'); a.href = '#'; $('keep').replaceWith(a); send('changed'); }
   else if (c.op === 'like') { const b = mk('button', 'like', 'Like (13)', 'p296-like fixed'); b.dataset.gen = 1; $('like').replaceWith(b); send('changed'); }
   else if (c.op === 'relabel') { $('relabel').textContent = 'Delete'; send('changed'); }
+  else if (c.op === 'vanish') { $('vanish').remove(); send('changed'); }
 };
 setInterval(async () => { try { const r = await fetch('/cmd'); for (const c of await r.json()) run(c); } catch {} }, 100);
 addEventListener('load', () => send('load')); })();</script></body></html>`;
@@ -242,7 +246,7 @@ if (GROUP === 'chrome') {
 // The re-run against the ruling ca82a6f4 (the guard on #282's element-routed path too: before the route, and again just
 // before the press after its re-read wait; the pressed element the recorded node or its allowlisted ancestor). Shared
 // mode, Chrome in the background, then regression cells from the first A/B.
-if (GROUP === 'rerun') {
+if (GROUP === 'rerun' || GROUP === 'final') {
   add('chrome/shared-back/feed/5s', {...PAGE_TP[0], app: 'chrome', mode: 'shared', delay: 5, expect: 'refused/frameMoved'}, true);
   add('chrome/shared-back/swaprole/5s', {...PAGE_TP[3], app: 'chrome', mode: 'shared', delay: 5, expect: 'refused'}, true);
   add('chrome/shared-back/swap/5s', {...PAGE_TP[2], app: 'chrome', mode: 'shared', delay: 5, expect: 'refused/nodeGone'}, true);
@@ -259,6 +263,27 @@ if (GROUP === 'rerun') {
   for (const n of [1, 2, 3]) add(`chrome/dedicated/recreate/20s#${n}`, {...PAGE_KEPT[2], app: 'chrome', mode: 'dedicated', delay: 20, expect: 'kept'}, false);
   add('chrome/dedicated/swap/5s', {...PAGE_TP[2], app: 'chrome', mode: 'dedicated', delay: 5}, true);
   add('chrome/dedicated/relabel/5s', {...PAGE_LIMITS[1], app: 'chrome', mode: 'dedicated', delay: 5}, true);
+}
+// The final A/B (2fdb9c98): the re-read-window swap at 0.3, 0.6 and 1 s into the click, three per runner each, branch
+// only (how often a swap Chrome's tree has caught up with is refused at the final check, and how often a late one slips
+// past on the old handle); #294's case in dedicated mode; a removed target whose point TextEdit then covers, so the hit
+// is none (the sentence's no-hit wording); and the regression sets of Safari and the native window in their own groups.
+if (GROUP === 'final') {
+  for (const ms of [300, 600, 1000]) for (const n of [1, 2, 3])
+    add(`chrome/shared-reread/swap-at-${ms}ms/0.1s#${n}`, {...W('swap', {id: 'save'}), app: 'chrome', mode: 'shared', delay: 0.1, freshChrome: true,
+      midAfterClick: {ms, cmd: {op: 'swap'}}, expect: 'refused'}, false);
+  add('chrome/dedicated/toolbar-reload/launch+24s', {kind: 'toolbar', app: 'chrome', mode: 'dedicated', clickAtLaunchMs: 24_000, expect: 'refused/frameMoved'}, true);
+  add('chrome/dedicated/vanish-covered/5s', {...W('vanish', {id: 'vanish', mid: {op: 'vanish', cover: true}}), app: 'chrome', mode: 'dedicated', delay: 5, expect: 'refused/nodeGone'}, true);
+}
+if (GROUP === 'safari-final') {
+  add('safari/shared/feed/5s', {...PAGE_TP[0], app: 'safari', mode: 'shared', delay: 5, expect: 'refused/frameMoved'}, true);
+  add('safari/shared/swap/5s', {...PAGE_TP[2], app: 'safari', mode: 'shared', delay: 5, expect: 'refused/nodeGone'}, true);
+  add('safari/shared/label/20s', {...PAGE_KEPT[0], app: 'safari', mode: 'shared', delay: 20, expect: 'kept'}, false);
+}
+if (GROUP === 'native-final') for (const mode of ['shared', 'dedicated']) {
+  for (const [id, op, expect] of [['save', 'swap', 'refused/nodeGone'], ['move', 'move', 'refused/frameMoved'], ['like', 'like', 'refused/nodeGone']])
+    add(`native/${mode}/${id}/5s`, {kind: 'native', app: 'native', mode, id, delay: 5, mid: {op}, expect, limit: id === 'like' ? 'i' : undefined}, true);
+  add(`native/${mode}/vanish-covered/5s`, {kind: 'native', app: 'native', mode, id: 'vanish', delay: 5, mid: {op: 'vanish', cover: true}, expect: 'refused/nodeGone'}, true);
 }
 if (GROUP === 'safari') {
   for (const s of PAGE_KEPT) for (const d of [1, 20]) add(`safari/shared/${name(s)}/${d}s`, {...s, app: 'safari', mode: 'shared', delay: d, expect: 'kept'}, false);
@@ -353,6 +378,8 @@ async function cell(spec, shared) {
     if (spec.mid) {
       const at = o.at + Math.max(300, spec.delay * 500) - Date.now(); if (at > 0) await sleep(at);
       if (spec.kind === 'native') nativeCmd(spec.mid.op); else commands.push(spec.mid);
+      // Another app's window over the point once the target is gone: the hit there is none (Decision Log, limit iii).
+      if (spec.mid.cover) { await sleep(300); row.cover = osa(`tell application "System Events"\ntell process "TextEdit"\nset position of window 1 to {${Math.round(row.point.x - 150)}, ${Math.round(row.point.y - 100)}}\nset size of window 1 to {300, 200}\nend tell\nend tell`).status; }
       row.midAtMs = Date.now() - o.at;
     }
     const clickAt = spec.clickAtLaunchMs ? target.launchedAt + spec.clickAtLaunchMs : o.at + spec.delay * 1000;

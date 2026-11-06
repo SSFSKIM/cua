@@ -10,6 +10,7 @@
 //   move     moved 140 pt right on "move"
 //   like     replaced, on "like", by a new "Like (13)" button of the same frame (the A/B's limit i)
 //   relabel  retitled "Delete" in place on "relabel" (the A/B's limit ii)
+//   vanish   removed on "vanish", nothing in its place (the final A/B's no-hit cell)
 //   "reset" puts every one back.
 import AppKit
 
@@ -77,6 +78,10 @@ var like = button("like", "Like (12)", likeFrame)
 root.addSubview(like)
 let relabel = button("relabel", "Save", relabelFrame)
 root.addSubview(relabel)
+// The final A/B's no-hit cell: "vanish" removed on "vanish", nothing put in its place.
+let vanishFrame = NSRect(x: 340, y: 20, width: W, height: H)
+var vanish = button("vanish", "Archive", vanishFrame)
+root.addSubview(vanish)
 
 let started = Date()
 let formatter = DateFormatter()
@@ -100,6 +105,7 @@ func reset() {
   move.setFrameOrigin(moveFrame.origin)
   let l = button("like", "Like (12)", likeFrame); root.replaceSubview(like, with: l); like = l
   relabel.title = "Save"
+  if vanish.superview == nil { vanish = button("vanish", "Archive", vanishFrame); root.addSubview(vanish) }
 }
 var lastNonce = ""
 Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
@@ -113,6 +119,7 @@ Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
   case "move": move.setFrameOrigin(NSPoint(x: moveFrame.minX + 140, y: moveFrame.minY))
   case "like": let l = button("like", "Like (13)", likeFrame, gen: 1); root.replaceSubview(like, with: l); like = l
   case "relabel": relabel.title = "Delete"
+  case "vanish": vanish.removeFromSuperview()
   case "reset": reset()
   default: break
   }

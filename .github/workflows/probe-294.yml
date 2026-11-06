@@ -1,0 +1,57 @@
+# #294's hosted measurement spike (scripts/probe-294/live.mjs): why a route-3 click on a background Chrome for Testing's
+# Reload is lost after about 20 s of inactivity. origin/main's engine, two repetitions on two runners. Runs only on a
+# push to probe/294-hosted (or by hand); not a ci-kit gate.
+name: probe-294
+on:
+  push:
+    branches: [probe/294-hosted]
+  workflow_dispatch:
+    inputs:
+      cells:
+        description: --cells (label prefixes, comma-separated; empty for every cell)
+        required: false
+        default: ''
+permissions:
+  contents: read
+env:
+  P294_ENGINE_REF: 50f3312d3f6a8c7a40d6842746ee50e08d9a47ee
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2]
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: TCC rows for the services the probe needs
+        run: |
+          sw_vers
+          for db in "/Library/Application Support/com.apple.TCC/TCC.db" "$HOME/Library/Application Support/com.apple.TCC/TCC.db"; do
+            echo "== $db"
+            sudo sqlite3 "$db" "select service, client, auth_value from access where service in ('kTCCServiceAccessibility','kTCCServicePostEvent','kTCCServiceScreenCapture','kTCCServiceListenEvent') order by service, client" || true
+          done
+      - name: Build main's engine
+        run: |
+          git worktree add "$RUNNER_TEMP/main" "$P294_ENGINE_REF"
+          echo "P294_ENGINE_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
+          swift build --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+      - name: Build the side tool
+        run: swiftc -O -o "$RUNNER_TEMP/p294-tool" scripts/probe-294/tool.swift
+      - name: Live
+        env:
+          P294_REP: ${{ matrix.rep }}
+          P294_CELLS: ${{ github.event.inputs.cells || '' }}
+        run: node scripts/probe-294/live.mjs --engine "$RUNNER_TEMP/eng/debug/cua-engine" --tool "$RUNNER_TEMP/p294-tool" ${P294_CELLS:+--cells "$P294_CELLS"} --out "$RUNNER_TEMP/probe-294"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-294-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-294/*.json
+          if-no-files-found: warn

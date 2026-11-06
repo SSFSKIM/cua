@@ -293,6 +293,49 @@ func wide(_ req: [String: Any]) -> [String: Any] {
   return ["candidates": candidates.count, "scanned": head, "wide": out]
 }
 
+/// Handles kept across requests (`handles`): each AXTable of the window found breadth-first, its AXColumns and AXChildren.
+var keptTables: [(table: AXUIElement, columns: [AXUIElement], children: [AXUIElement], roles: [String])] = []
+
+/// `{"op":"handles","pid","window","mode":"snap"|"check"}`: snap keeps every table's column and child handles; check
+/// re-reads each table's AXColumns and says, per kept column, whether a column now at its index is CFEqual to it, and,
+/// per role of the kept children, how many of their handles still read (AXRole) and with which errors.
+func handles(_ req: [String: Any]) -> [String: Any] {
+  guard let pid = (req["pid"] as? NSNumber)?.int32Value, let window = rectArg(req["window"]) else { return ["error": "bad handles args"] }
+  if (req["mode"] as? String) == "snap" {
+    guard let root = findWindow(pid: pid, frame: window) else { return ["error": "no window"] }
+    keptTables = []
+    var queue = [root], head = 0
+    while head < queue.count, head < 60_000 {
+      let e = queue[head]; head += 1
+      let v = multi(e, [kAXRoleAttribute, kAXChildrenAttribute])
+      let children = asElements(v[1])
+      if (v[0] as? String) == "AXTable" {
+        let columns = asElements(multi(e, [kAXColumnsAttribute])[0])
+        keptTables.append((e, columns, children, children.map { (multi($0, [kAXRoleAttribute])[0] as? String) ?? "?" }))
+        continue
+      }
+      queue.append(contentsOf: children)
+    }
+    return ["tables": keptTables.map { ["columns": $0.columns.count, "children": $0.children.count] }, "scanned": head]
+  }
+  var out: [[String: Any]] = []
+  for t in keptTables {
+    let now = asElements(multi(t.table, [kAXColumnsAttribute])[0])
+    let columnsEqual = t.columns.enumerated().map { i, c in i < now.count && CFEqual(c, now[i]) }
+    let nowChildren = asElements(multi(t.table, [kAXChildrenAttribute])[0])
+    var byRole: [String: [String: Int]] = [:]
+    for (i, c) in t.children.enumerated() {
+      var value: CFTypeRef?
+      let error = AXUIElementCopyAttributeValue(c, kAXRoleAttribute as CFString, &value)
+      let same = i < nowChildren.count && CFEqual(c, nowChildren[i])
+      let k = error == .success ? (same ? "readsSameHandle" : "readsOtherHandle") : "error\(error.rawValue)"
+      byRole[t.roles[i], default: [:]][k, default: 0] += 1
+    }
+    out.append(["columnsKept": t.columns.count, "columnsNow": now.count, "columnHandlesEqual": columnsEqual.filter { $0 }.count, "childrenNow": nowChildren.count, "children": byRole])
+  }
+  return ["tables": out]
+}
+
 let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
 while let line = readLine() {
   guard let data = line.data(using: .utf8), let req = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -308,6 +351,7 @@ while let line = readLine() {
   case "vwalk": emit(vwalk(req))
   case "descend": emit(descend(req))
   case "wide": emit(wide(req))
+  case "handles": emit(handles(req))
   default: emit(["error": "unknown op"])
   }
 }

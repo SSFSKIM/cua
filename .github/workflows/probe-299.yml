@@ -24,7 +24,9 @@ jobs:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: [chrome-a, chrome-b, safari, native]
+        # The A/B's groups (chrome-a, chrome-b, safari, native) ran at 8b740b92, run 42231389508; this push runs only the
+        # AXColumn question (scripts/probe-299/col.mjs).
+        group: [columns]
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -49,7 +51,12 @@ jobs:
         env:
           P299_REP: ${{ matrix.rep }}
           P299_TARGETS: ${{ github.event.inputs.targets || '' }}
-        run: node scripts/probe-299/ab.mjs --group ${{ matrix.group }} --main "$RUNNER_TEMP/eng-main/release/cua-engine" --branch "$RUNNER_TEMP/eng-branch/release/cua-engine" --tool "$RUNNER_TEMP/probe299-tool" ${P299_TARGETS:+--targets "$P299_TARGETS"} --out "$RUNNER_TEMP/probe-299"
+        run: |
+          if [ "${{ matrix.group }}" = columns ]; then
+            node scripts/probe-299/col.mjs --main "$RUNNER_TEMP/eng-main/release/cua-engine" --branch "$RUNNER_TEMP/eng-branch/release/cua-engine" --tool "$RUNNER_TEMP/probe299-tool" --out "$RUNNER_TEMP/probe-299"
+            exit 0
+          fi
+          node scripts/probe-299/ab.mjs --group ${{ matrix.group }} --main "$RUNNER_TEMP/eng-main/release/cua-engine" --branch "$RUNNER_TEMP/eng-branch/release/cua-engine" --tool "$RUNNER_TEMP/probe299-tool" ${P299_TARGETS:+--targets "$P299_TARGETS"} --out "$RUNNER_TEMP/probe-299"
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

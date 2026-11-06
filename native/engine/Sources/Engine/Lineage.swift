@@ -437,21 +437,24 @@ extension ConnectionState {
 
 /// The elements an observation would emit now (the window's tree within its depth, width and node caps and its deadline,
 /// what the window shows first as the walk spends its budget (#301, `TreeWalk.select`, unseeded: a subtree that shows
-/// beyond a strip is walked first, the rest in the document's order), then the menu-bar elements, read through the
+/// beyond a strip in what its clipping ancestors leave of the window is walked first, the rest in the document's order),
+/// then the menu-bar elements, read through the
 /// attributes they list and without a Debug item, as the walk reads them) whose eleven attributes equal the identity's,
 /// whichever process serves them.
 private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: AXUIElement?, menuItems: [AXUIElement],
                       source: ElementSource) -> [AXUIElement] {
-  struct Pending { let element: AXUIElement; let depth: Int; let descend: Bool; let path: [Int] }
+  struct Pending { let element: AXUIElement; let depth: Int; let descend: Bool; let path: [Int]; var clip: CGRect? = nil }
   var found: [AXUIElement] = []
   // Menu-bar elements are matched but never walked into, as the observation does.
   var stack: [Pending] = menuItems.reversed().map { Pending(element: prepare($0), depth: 0, descend: false, path: []) }
-  if let window { stack.append(Pending(element: prepare(window), depth: 0, descend: true, path: [])) }
   let windowFrame = window.flatMap { source.frame($0) }
+  if let window { stack.append(Pending(element: prepare(window), depth: 0, descend: true, path: [], clip: windowFrame)) }
   // Read elements whose children wait because nothing of them shows, latest in the document's order first.
-  var deferred: [(path: [Int], depth: Int, children: [AXUIElement])] = []
-  func push(_ children: [AXUIElement], depth: Int, path: [Int]) {
-    for (position, child) in children.enumerated().reversed() { stack.append(Pending(element: prepare(child), depth: depth, descend: true, path: path + [position])) }
+  var deferred: [(path: [Int], depth: Int, clip: CGRect?, children: [AXUIElement])] = []
+  func push(_ children: [AXUIElement], depth: Int, path: [Int], clip: CGRect?) {
+    for (position, child) in children.enumerated().reversed() {
+      stack.append(Pending(element: prepare(child), depth: depth, descend: true, path: path + [position], clip: clip))
+    }
   }
   var visited = 0
   var seen = Set<ElementKey>()
@@ -459,7 +462,7 @@ private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: 
   while visited < maxObservedNodes, monotonicMilliseconds() < deadline {
     guard let next = stack.popLast() else {
       guard let resumed = deferred.popLast() else { break }
-      push(resumed.children, depth: resumed.depth, path: resumed.path)
+      push(resumed.children, depth: resumed.depth, path: resumed.path, clip: resumed.clip)
       continue
     }
     guard seen.insert(ElementKey(element: next.element)).inserted,
@@ -469,15 +472,20 @@ private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: 
     if ElementIdentity(data, pid: identity.pid).matches(identity, ignoringValue: ignoringValue) { found.append(next.element) }
     guard next.descend && next.depth < maxDepth else { continue }
     let children = chooseChildren(of: next.element, data: data, source: source, visibleFrame: windowFrame).children
-    if next.depth == 0 || windowFrame == nil || data.frame.map({ showsBeyondStrip($0, in: windowFrame!) }) ?? true {
-      push(children, depth: next.depth + 1, path: next.path)
+    // What it leaves showing to its children: the walk's clipping rule (`TreeWalk.childClip`).
+    var clip = next.clip
+    if let shown = clip, let frame = data.frame, clipsDescendants(role: data.role, actions: source.actions(next.element)) {
+      clip = shown.intersection(frame)
+    }
+    if next.depth == 0 || next.clip == nil || data.frame.map({ showsBeyondStrip($0, in: next.clip!) }) ?? true {
+      push(children, depth: next.depth + 1, path: next.path, clip: clip)
     } else {
       var low = 0, high = deferred.count
       while low < high {
         let middle = (low + high) / 2
         if documentPrecedes(next.path, deferred[middle].path) { low = middle + 1 } else { high = middle }
       }
-      deferred.insert((next.path, next.depth + 1, children), at: low)
+      deferred.insert((next.path, next.depth + 1, clip, children), at: low)
     }
   }
   return found

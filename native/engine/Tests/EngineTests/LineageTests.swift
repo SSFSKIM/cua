@@ -116,6 +116,37 @@ final class TokenResolutionTests: XCTestCase {
     XCTAssertTrue(CFEqual(try lineage.resolve(token, resolver: fake.resolver).element, Engine.element(9999)))
   }
 
+  /// #301, the review of 1abb734d: the re-fetch cuts frames by their clipping ancestors as the walk does, so it does not
+  /// spend its budget on what a scroll area hides and miss what the observation kept.
+  func testTheRefetchSkipsWhatAScrollAreaHidesAsTheObservationDoes() throws {
+    let tree = FakeTree()
+    let window = CGRect(x: 0, y: 0, width: 1000, height: 800)
+    tree.extra[0] = ["AXRole": "AXWindow" as CFString]
+    tree.frames[0] = window
+    tree.children[0] = [1, 2]
+    tree.extra[1] = ["AXRole": "AXScrollArea" as CFString]
+    tree.frames[1] = CGRect(x: 0, y: 0, width: 1000, height: 100)
+    tree.children[1] = Array(100..<150)
+    for j in 0..<50 {
+      tree.frames[100 + j] = CGRect(x: 0, y: 200, width: 1000, height: 100)
+      tree.children[100 + j] = (0..<99).map { 1000 + 100 * j + $0 }
+      for k in 0..<99 { tree.frames[1000 + 100 * j + k] = CGRect(x: Double(k) * 10, y: 200, width: 10, height: 100) }
+    }
+    tree.extra[2] = ["AXRole": "AXButton" as CFString, "AXTitle": "Target" as CFString]
+    tree.frames[2] = CGRect(x: 0, y: 400, width: 100, height: 30)
+    let lineage = Lineage()
+    let observation = walk(tree, lineage, visibleFrame: window)
+    XCTAssertTrue(observation.nodeCapHit)
+    let token = try XCTUnwrap(observation.token(of: Engine.element(2)))
+    tree.unreadable = [2]
+    tree.children[0] = [1, 9999]
+    tree.extra[9999] = tree.extra[2]
+    tree.frames[9999] = tree.frames[2]
+    let fake = FakeResolution(tree)
+    fake.invalidated = true
+    XCTAssertTrue(CFEqual(try lineage.resolve(token, resolver: fake.resolver).element, Engine.element(9999)))
+  }
+
   func testAReplacedElementOfAnotherProcessIsRefetchedByItsElevenAttributes() throws {
     let (tree, lineage) = observed()
     // The panel service redrew its button: the old handle is gone, a new one (4) carries the same attributes, and the

@@ -2404,8 +2404,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      case on the matrix: an element reached under two parents is read under whichever occurrence the selection meets
      first, so its depth-dependent reads (the depth cap, Chromium's parent-role settability) follow that occurrence,
      while it is printed at its first occurrence in document order.
-  4. **The re-fetch** (`matching`, Lineage.swift) walks in the same order, unseeded: what shows beyond a strip in the
-     window first, the rest in document order, within the same caps. Without this, an element the observation kept past
+  4. **The re-fetch** (`matching`, Lineage.swift) walks in the same order, unseeded: what shows beyond a strip in what
+     its clipping ancestors leave of the window first (the same clipping rule; the review of 1abb734d found a window-only
+     test spending the budget on a scroll area's hidden content), the rest in document order, within the same caps. Without this, an element the observation kept past
      where the preorder's budget runs out could never be re-fetched after an invalidation
      (`testTheRefetchReachesWhatTheWindowShowsPastThePreordersBudget`, which fails under the preorder).
   Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling on #301.
@@ -2506,14 +2507,19 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      tables (up to 1.1 s). So the children are taken to lie in order along the axis on which the first and last framed
      children differ (a list's rows, a page's blocks). The first child not wholly before the window is found by
      bisection, a frameless child judged by the next framed one within 8. Children are then taken forward until one
-     lies wholly past the window: about log2(N) frame reads, plus the shown rows'. Children with no such order (first
-     and last framed alike, or none framed) give none, which is the container-only record of before.
+     lies wholly past the window: about log2(N) frame reads, plus the shown rows', at most 1,000 read after the
+     bisection, and none once the deadline has passed. Children with no such order (first and last framed alike, or none
+     framed) give none, which is the container-only record of before.
   3. **Their subtrees** are read for the record alone (role, labels, frame, actions, children; `readForRecord`), under
-     their own budget of 1,000 elements (`recordOnlyBudget`), outside the node budget, so the printed tree is the same
-     with or without a screenshot. Their record entries carry negative numbers, outside the lineage, and no tokens.
+     their own budget of 1,000 elements (`recordOnlyBudget`), outside the node budget. The search and the reads run only
+     once the tree's selection is done (`selectForRecord`), so the printed tree is the same with or without a
+     screenshot: a deadline they meet cuts the record, not the tree, and does not mark it truncated (the review of
+     1abb734d found the search and the reads interleaved with the tree's, a slow row costing the button after its
+     list). Their record entries carry negative numbers, outside the lineage, and no tokens.
   Proven offline: `testAWidthRuleOmittedListKeepsItsShownRowsInTheGuardsRecordOnly` (a 600-row list scrolled 200 rows
   down: the tree prints the list alone, and the record holds its 40 shown rows and their 80 cells, the point's cell
-  fully recorded) and `testRecordedChildPositionsBisectAnOrderedListAndGiveNoneWithoutAnOrder`.
+  fully recorded), `testRecordedChildPositionsBisectAnOrderedListAndGiveNoneWithoutAnOrder` (with the deadline and the
+  read bound), and `testTheRecordsReadsNeverTakeTheTreesTime`.
   **What the hosted A/B must still measure, before and after on #299's pages** (the ruling's condition, unit tests
   cannot): the guard's checked share at 0, 25, 50 and 90% down; `walkMs`; the seeding's real cost (`seedMs` p50 and
   p95, `seedCapped`'s rate); whether Chrome clamps offscreen boxes to the web area's edges, as the strip placement

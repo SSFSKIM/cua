@@ -171,13 +171,15 @@ func seedPoints(in window: CGRect, spacing: CGFloat = seedGridSpacing) -> [CGPoi
 /// whose frames meet `window`, for the guard's record alone (#301 item 4). The children are taken to lie in order along
 /// the axis on which the first and the last framed child differ (a list's rows, a page's blocks): the first child not
 /// wholly before the window is found by bisection, then children are taken forward until one lies wholly past it, at most
-/// `limit`. Children with no order to bisect (first and last framed alike, or none framed) give none, as before.
-func recordedChildPositions(_ children: [AXUIElement], frame: (AXUIElement) -> CGRect?, window: CGRect, limit: Int) -> [Int] {
+/// `limit` of them read. Children with no order to bisect (first and last framed alike, or none framed) give none, as
+/// before. Once `expired` answers true no frame is read: what was found by then is kept.
+func recordedChildPositions(_ children: [AXUIElement], frame: (AXUIElement) -> CGRect?, window: CGRect, limit: Int,
+                            expired: () -> Bool = { false }) -> [Int] {
   let probe = 8
   func framed(from start: Int, by step: Int) -> CGRect? {
     var position = start
     for _ in 0..<probe {
-      guard children.indices.contains(position) else { return nil }
+      guard children.indices.contains(position), !expired() else { return nil }
       if let found = frame(children[position]) { return found }
       position += step
     }
@@ -194,9 +196,11 @@ func recordedChildPositions(_ children: [AXUIElement], frame: (AXUIElement) -> C
     // A frameless child is judged by the next framed one; none within the probe counts as before.
     if framed(from: middle, by: 1).map(before) ?? true { low = middle + 1 } else { high = middle }
   }
+  guard !expired() else { return [] }
   var kept: [Int] = []
   var position = max(0, low - 1)
-  while position < children.count, kept.count < limit {
+  let end = min(children.count, position + limit)
+  while position < end, !expired() {
     if let rect = frame(children[position]) {
       if past(rect) { break }
       if !before(rect), rect.intersects(window) { kept.append(position) }
@@ -292,8 +296,9 @@ final class TreeWalk {
     let valueMarkdown: String?
     let children: [AXUIElement]
     let shown: Shown?
-    /// The guard's record-only children (`recordedChildPositions`), past `children` in the document's order.
-    let recordChildren: [AXUIElement]
+    /// Whether the guard's record looks for this element's shown children itself (`recordedChildPositions`): the width
+    /// rule shows none of them, and the walk keeps the record.
+    let recordable: Bool
     /// Its node, with a stand-in token the emission replaces (empty for a record-only read).
     var wire: [String: Any] = [:]
   }
@@ -313,6 +318,9 @@ final class TreeWalk {
     let clip: CGRect?
     let recordOnly: Bool
     var expanded = false
+    /// The guard's record-only children (`recordedChildPositions`), past the read's children in the document's order,
+    /// found once the tree's selection is done.
+    var recordChildren: [AXUIElement] = []
 
     init(_ read: Read, _ pending: Pending) {
       self.read = read
@@ -429,30 +437,20 @@ final class TreeWalk {
         continue
       }
       let key = ElementKey(element: next.element)
-      if selected[key] != nil || recorded[key] != nil || failed.contains(key) { continue }
-      if next.recordOnly {
-        if recordOnlyReads >= recordOnlyBudget { continue }
-      } else {
-        if cut { continue }
-        if estimated >= byteLimit { budgetHit = true; cut = true; continue }
-        if kept >= nodeLimit { nodeCapHit = true; cut = true; continue }
-      }
-      if pastDeadline() { deadlineHit = true; break }
-      switch next.recordOnly ? readForRecord(next) : read(next, standIn: lineage.nextNumber + kept) {
+      if selected[key] != nil || failed.contains(key) { continue }
+      if cut { continue }
+      if estimated >= byteLimit { budgetHit = true; cut = true; continue }
+      if kept >= nodeLimit { nodeCapHit = true; cut = true; continue }
+      if pastDeadline() { deadlineHit = true; return }
+      switch read(next, standIn: lineage.nextNumber + kept) {
       case .failed:
-        if !next.recordOnly { failures += 1 }
+        failures += 1
         failed.insert(key)
       case .deadline:
         deadlineHit = true
         return
       case .read(let read):
         let item = Selected(read, next)
-        if next.recordOnly {
-          recorded[key] = item
-          recordOnlyReads += 1
-          if enters(item, key) { expand(item) }
-          continue
-        }
         selected[key] = item
         kept += 1
         estimated += jsonBytes(read.wire) + 1
@@ -460,8 +458,46 @@ final class TreeWalk {
         if chromium, seeding == nil, visibleFrame != nil, known > nodeLimit { seed() }
         // The seeding may have taken this element up already: a hit's chain can pass through it.
         if item.expanded { continue }
-        if read.children.isEmpty && read.recordChildren.isEmpty { item.expanded = true }
+        if read.children.isEmpty { item.expanded = true }
         else if enters(item, key) { expand(item) } else { setAside(item) }
+      }
+    }
+    selectForRecord()
+  }
+
+  /// The guard's record-only reads (#301 item 4), only once the tree's selection is done, so they never take time or
+  /// budget from the printed tree: under each read element the width rule shows none of, in the document's order, the
+  /// children whose frames meet the window and what of their subtrees shows, within `recordOnlyBudget` and the deadline
+  /// (which cuts the record, not the tree).
+  private func selectForRecord() {
+    guard let visibleFrame else { return }
+    let expired = { [self] in pastDeadline() }
+    func find(_ item: Selected) {
+      let children = item.read.data.children
+      let positions = recordedChildPositions(children, frame: { self.source.frame($0) }, window: visibleFrame,
+                                             limit: recordOnlyBudget, expired: expired)
+      item.recordChildren = positions.map { children[$0] }
+    }
+    let wide = selected.values.filter { $0.read.recordable }.sorted { documentPrecedes($0.path, $1.path) }
+    stack = []
+    for item in wide {
+      guard !expired() else { return }
+      find(item)
+      let clip = childClip(item)
+      for (offset, child) in item.recordChildren.enumerated().reversed() {
+        stack.append(Pending(element: child, depth: item.depth + 1, parentRole: item.read.data.role,
+                             path: item.path + [item.read.children.count + offset], clip: clip, recordOnly: true))
+      }
+      while let next = stack.popLast() {
+        let key = ElementKey(element: next.element)
+        if selected[key] != nil || recorded[key] != nil || failed.contains(key) { continue }
+        guard recordOnlyReads < recordOnlyBudget else { stack = []; return }
+        guard !expired(), case .read(let read) = readForRecord(next) else { continue }
+        let record = Selected(read, next)
+        recorded[key] = record
+        recordOnlyReads += 1
+        if read.recordable, !expired() { find(record) }
+        if enters(record, key) { expand(record) }
       }
     }
   }
@@ -485,7 +521,7 @@ final class TreeWalk {
   private func expand(_ item: Selected) {
     item.expanded = true
     let clip = childClip(item)
-    let children = item.read.children + item.read.recordChildren
+    let children = item.read.children + item.recordChildren
     for position in children.indices.reversed() {
       stack.append(Pending(element: children[position], depth: item.depth + 1, parentRole: item.read.data.role, path: item.path + [position],
                            clip: clip, recordOnly: item.recordOnly || position >= item.read.children.count))
@@ -582,7 +618,7 @@ final class TreeWalk {
         continue
       }
       let number = emit(item.read, depth: visit.depth, parent: visit.parent, inherited: visit.inherited, inMenu: false)
-      emitRecord(item.read.recordChildren, parent: number, depth: visit.depth + 1)
+      emitRecord(item.recordChildren, parent: number, depth: visit.depth + 1)
       let children = item.read.children
       // A node that kept its token has its children matched against the previous revision's; a new node's are new.
       let inherited: [Int?]
@@ -609,7 +645,7 @@ final class TreeWalk {
       screenshotReads.append(ScreenshotNodeRead(element: item.read.element, number: number, parent: parent, depth: depth, role: data.role,
                                                 title: data.title, description: data.description, frame: data.frame,
                                                 actions: item.read.actions, childCount: data.children.count))
-      emitRecord(item.read.children + item.read.recordChildren, parent: number, depth: depth + 1)
+      emitRecord(item.read.children + item.recordChildren, parent: number, depth: depth + 1)
     }
   }
 
@@ -651,10 +687,10 @@ final class TreeWalk {
         markdownFetches += 1
       }
     }
-    let (children, shown, recordChildren) = choose(element, data, pending)
+    let (children, shown, recordable) = choose(element, data, pending)
     if pastDeadline() { return .deadline }
     var read = Read(element: element, data: data, owner: owner, actions: actions, actionDescriptions: actionDescriptions, flags: flags,
-                    url: url, valueMarkdown: valueMarkdown, children: children, shown: shown, recordChildren: recordChildren)
+                    url: url, valueMarkdown: valueMarkdown, children: children, shown: shown, recordable: recordable)
     read.wire = wire(read, number: standIn, depth: pending.depth)
     return .read(read)
   }
@@ -666,24 +702,22 @@ final class TreeWalk {
     guard let data = source.data(element) else { return .failed }
     if pastDeadline() { return .deadline }
     let actions = source.actions(element)
-    let (children, shown, recordChildren) = choose(element, data, pending)
+    let (children, shown, recordable) = choose(element, data, pending)
     if pastDeadline() { return .deadline }
     return .read(Read(element: element, data: data, owner: 0, actions: actions, actionDescriptions: [], flags: NodeFlags(), url: nil,
-                      valueMarkdown: nil, children: children, shown: shown, recordChildren: recordChildren))
+                      valueMarkdown: nil, children: children, shown: shown, recordable: recordable))
   }
 
   /// The children the width rule keeps (none in the menu bar, none past the depth cap), and, where it keeps none of more
   /// than 499 and the walk keeps the guard's record, the ones whose frames meet the window, for the record alone.
-  private func choose(_ element: AXUIElement, _ data: ElementData, _ pending: Pending) -> ([AXUIElement], Shown?, [AXUIElement]) {
-    guard !pending.inMenu else { return ([], nil, []) }
+  private func choose(_ element: AXUIElement, _ data: ElementData, _ pending: Pending) -> ([AXUIElement], Shown?, Bool) {
+    guard !pending.inMenu else { return ([], nil, false) }
     guard pending.depth < limits.depth else {
       if !data.children.isEmpty, !pending.recordOnly { depthHit = true }
-      return ([], nil, [])
+      return ([], nil, false)
     }
     let (children, shown) = chooseChildren(of: element, data: data, source: source, visibleFrame: visibleFrame)
-    guard recordsScreenshot, shown?.subset == "omitted", let visibleFrame else { return (children, shown, []) }
-    let positions = recordedChildPositions(data.children, frame: { self.source.frame($0) }, window: visibleFrame, limit: recordOnlyBudget)
-    return (children, shown, positions.map { data.children[$0] })
+    return (children, shown, recordsScreenshot && visibleFrame != nil && shown?.subset == "omitted")
   }
 
   /// An action's description, FUN_1007816a0 as FUN_1007515a8 pairs it: nil for an action the fixed table or a custom

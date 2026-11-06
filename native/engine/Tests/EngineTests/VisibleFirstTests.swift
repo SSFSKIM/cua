@@ -216,6 +216,24 @@ final class VisibleFirstTests: XCTestCase {
     XCTAssertEqual(plain.recordOnlyReads, 0)
   }
 
+  /// The review of 1abb734d: the record's reads come after the tree's, so a deadline they run into cuts the record and
+  /// never the printed tree.
+  func testTheRecordsReadsNeverTakeTheTreesTime() {
+    let tree = FakeTree()
+    tree.slow = [300: 300_000]  // a shown row takes 300 ms to read
+    tree.extra[0] = ["AXRole": "AXWindow" as CFString]
+    tree.frames[0] = windowFrame
+    tree.children = [0: [1, 2], 1: Array(100..<700)]
+    tree.frames[1] = windowFrame
+    tree.frames[2] = CGRect(x: 0, y: 700, width: 100, height: 30)
+    for i in 0..<600 { tree.frames[100 + i] = CGRect(x: 0, y: Double(i - 200) * 20, width: 1000, height: 20) }
+    let recording = walk(tree, Lineage(), limits: WalkLimits(deadline: monotonicMilliseconds() + 150), visibleFrame: windowFrame,
+                         recordsScreenshot: true)
+    XCTAssertEqual(ids(recording), [0, 1, 2], "the button after the list is printed")
+    XCTAssertFalse(recording.deadlineHit, "the deadline cut the record, not the tree")
+    XCTAssertEqual(recording.recordOnlyReads, 0, "the slow row finished past the deadline: the record stops there")
+  }
+
   func testOmittedPartsArePlacedByTheEdgeTheirElementLiesPast() {
     XCTAssertEqual(omittedPlace(frame: CGRect(x: 0, y: 0, width: 10, height: 50), visible: viewport), .above)
     XCTAssertEqual(omittedPlace(frame: CGRect(x: 0, y: 100, width: 10, height: 1), visible: viewport), .above, "a strip at the top edge")
@@ -236,7 +254,18 @@ final class VisibleFirstTests: XCTestCase {
     let window = CGRect(x: 0, y: 5000, width: 100, height: 100)
     let kept = recordedChildPositions(rows, frame: vertical, window: window, limit: 1000)
     XCTAssertEqual(kept, (500..<510).filter { $0 % 7 != 3 })
-    XCTAssertEqual(recordedChildPositions(rows, frame: vertical, window: window, limit: 3).count, 3)
+    XCTAssertEqual(recordedChildPositions(rows, frame: vertical, window: window, limit: 3), [501],
+                   "the limit bounds the children read past the bisection (499 before, 500 frameless), not only those kept")
+    var reads = 0
+    let counted = { (element: AXUIElement) -> CGRect? in reads += 1; return vertical(element) }
+    XCTAssertEqual(recordedChildPositions(rows, frame: counted, window: window, limit: 1000, expired: { reads >= 5 }), [],
+                   "no frame read once the deadline has passed, and nothing kept from a search it cut")
+    XCTAssertLessThanOrEqual(reads, 5)
+    // Rows inside the window's height but beside it: read up to the limit, none kept.
+    reads = 0
+    let beside = { (element: AXUIElement) -> CGRect? in reads += 1; return CGRect(x: 500, y: Double(Int(pid(of: element)) - 60_000) * 0.01, width: 10, height: 1) }
+    XCTAssertEqual(recordedChildPositions(rows, frame: beside, window: CGRect(x: 0, y: 0, width: 100, height: 100), limit: 50), [])
+    XCTAssertLessThan(reads, 50 + 40)
     let horizontal = { (element: AXUIElement) -> CGRect? in CGRect(x: Double(Int(pid(of: element)) - 60_000) * 10, y: 0, width: 10, height: 10) }
     XCTAssertEqual(recordedChildPositions(rows, frame: horizontal, window: CGRect(x: 95, y: 0, width: 30, height: 10), limit: 1000), [9, 10, 11, 12])
     let stacked = { (_: AXUIElement) -> CGRect? in CGRect(x: 0, y: 0, width: 10, height: 10) }

@@ -29,6 +29,8 @@ final class FakeTree {
   var listed: [Int: Set<String>] = [:]
   /// What the window's application answers at a global point (the seeding's hit-test, #301), by id.
   var hit: (CGPoint) -> Int? = { _ in nil }
+  /// How long reading an element takes, in microseconds, by id (unset: at once).
+  var slow: [Int: UInt32] = [:]
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
   /// An element's parent by id: the node whose children list it.
@@ -55,6 +57,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   override func read(_ element: AXUIElement) -> ElementData? {
     let id = tree.id(element)
     reads[id, default: 0] += 1
+    if let delay = tree.slow[id] { usleep(delay) }
     if tree.unreadable.contains(id) { return nil }
     var values: [String: CFTypeRef] = ["AXRole": "AXGroup" as CFString, "AXTitle": "node \(id)" as CFString,
                                        "AXChildren": (tree.children[id] ?? []).map(Engine.element) as CFArray]

@@ -51,7 +51,7 @@
 //   window frame used and the one read just before the events, numbers only), cua/pointerEstablish (#288: a left
 //   click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}), and cua/stalePoint (#296: the
 //   stale-point guard at a coordinate click's or drag's point, {verdict "kept" | "refused", reason, identity?,
-//   recordedRole?, hitRole?, ms, rechecked?}, roles only). cua/afterActionRepairs rides on
+//   recordedRole?, hitRole?, ms, rechecked?, afterActivation?}, roles only). cua/afterActionRepairs rides on
 //   input results and on observations alike once the connection's after-action watch has repaired (#200: the repairs
 //   route 3's watch made after an action had answered, the connection's total and the last actions', each keyed by its
 //   delivery's postedAt). cua/serviceMs is the wrapper's (src/services/sky.mjs).

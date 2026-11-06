@@ -531,9 +531,10 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     (the window's frame read again just before the events; null when the click stopped before them or it was unread)}
   stalePoint: #296's stale-point guard at a coordinate click's point or a drag's start, on its result and its errors once the
     point is placed: {verdict ("kept" | "refused"), reason ("unrecorded" | "sameElement" | "noHit" | "nonInteractiveHit" |
-    "hitAboveNode" | "unrecordedDescendant" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther"), identity?
-    ("handle" | "recreated"), recordedRole?, hitRole?, ms, rechecked? (true: #282's or #283's route waited and the guard
-    ran again before the press; the verdict is that check's, ms both checks')}; roles only, never a title
+    "hitAboveNode" | "unrecordedDescendant" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther" |
+    "relabelled"), identity? ("handle" | "recreated"), recordedRole?, hitRole?, ms, rechecked? (true: #282's or #283's
+    route waited and the guard ran again before the press; the verdict is that check's, ms both checks'), afterActivation?
+    (true: that check ran after the route's focus hold had activated the app)}; roles only, never a title
   note: on a paste or type_text result that pasted a line with no channel to see it, read after ⌘V (#187): the sentence
     the service adds to the tool result's content
   pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): ⌘V was sent and the text
@@ -2242,7 +2243,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      `unrecordedDescendant` reading, anything inside a node the record holds incompletely, or anything at a point no
      recorded node holds; anything else is refused as `pressedOther` (`stalePointPressVerdict`); (c) when the route waited
      (#282's action re-read, up to `webAreaRereadDeadline`'s 3 s), the guard runs once more just before the press with a
-     fresh hit-test, on the element about to be pressed (`StalePointGate`, meta `rechecked`). #283's focus route checks
+     fresh hit-test, on the element about to be pressed (`StalePointGate`, meta `rechecked`); (d) the route is built from
+     the hit the guard judged, so when its re-hit recovered a node the first hit-test missed (item 4), that hit is
+     walked and the view is classified again from it (`stalePointRouteHit`; the re-review of c8f37a93..7f79ca34: an
+     empty first hit had made a possible web area with no route, and a dead one was walked); (e) the final check runs at
+     the real boundary, just before the action is performed (`pressAfterFinalCheck`): a background app that does not
+     believe it has focus takes the route's focus hold first, whose activation guard polls, so after the hold the guard
+     runs again with a fresh hit-test; without a hold nothing can have waited since the early check, whose verdict
+     stands. A refusal there presses nothing, but the activation ran: the meta says `afterActivation`, the sentence says
+     "The app was activated in the background, but nothing was pressed." in place of "Nothing was sent.", and the hold
+     is left as every refusal after it leaves it (FocusHold.swift's lifecycle withdraws it). #283's focus route checks
      its field by (b) before the focus write, which no wait precedes; its waits (the focus settle, the boxes' re-read)
      come after that write, so the second check runs before the caret's write, and a changed page there places no caret
      (`CaretNotPlaced.screenChanged`, the result's note asking for a new screenshot before typing) rather than refusing
@@ -2284,7 +2294,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      node whose children the record
      does not all hold (`unrecordedDescendant`: a subtree cut by the width rule, the depth cap, the node or byte budget
      or the deadline, where the screenshot may have shown it and the tree could not). A point no recorded node holds is
-     kept (`unrecorded`).
+     kept (`unrecorded`). **Both are stated limits** (the design session's ruling 0a14b51f), the first on a condition:
+     inside a node the record holds incompletely, a post or a press goes through, whatever the hit's role, only while that
+     container itself passes the guard (the same handle, or one re-created by role, a frame within 2 pt and an agreeing
+     label; its frame read now holding the point; its own handle's title, or description where neither has one,
+     agreeing with the record's where both read, else `relabelled`, refused), on the coordinate path and the element
+     route alike. A truncated region inside a container that moved or was swapped is refused. The meta's reason then
+     names `unrecordedDescendant` (or `unrecorded`), so every post or press that went through unguarded inside says so.
   6. **The error** `screenChangedSinceScreenshot` (-10005), an input error with the meta, startedAt/endedAt null: `The
      screen changed since the screenshot: the <role "title"> it showed at this point <is gone | has moved away from it |
      is no longer what it reaches>[; <role "title"> is there now]. Nothing was sent. Call getScreenshot for a new
@@ -2313,7 +2329,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      (Save to Delete on one element) passes: its identity and its frame are unchanged, and refusing a label change on a
      live handle would refuse every control whose label ticks (#298). (iii) A hit in another window over the point (a
      menu, a popover) reads as no hit, and passes while the node is in place. (iv) cua refuses where the vendor posts.
-  Proven offline (`StalePointTests`, 15, and `StalePointDeliveryTests`, 4; #294's test fails with the frame check removed,
+     (v) The guarantee does not cover a point the observation could not record: inside a budget-, width-, depth- or
+     deadline-cut subtree only the container is checked (`unrecordedDescendant`), and a point in no recorded node is
+     not checked at all (`unrecorded`); a container whose title changes (a web area's page title among them) refuses
+     what lies inside it. How often either arises is #299's to measure.
+  Proven offline (`StalePointTests`, 18, and `StalePointDeliveryTests`, 4; #294's test fails with the frame check removed,
   the delivery's with the early refusal removed, and the A/B round's with the re-hit or the pressed-element rule removed): the frame re-read with the same handle
   refusing (#294); the non-interactive child hit passing; the bounded re-created search (the 299th descendant found, the
   301st not, the hit's ancestor found, more than 2 pt off not); the changed label refused and an absent or unreadable
@@ -2324,7 +2344,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   13,200-unit label matched; and, after the A/B (run 42184616121), an empty hit mid-replacement re-hit and kept as
   re-created on the second attempt, one that stays empty refused after 3 × 50 ms with no "there now", the pressed element
   the node or its control kept and another link refused `pressedOther`, and a change during the route's wait refused at
-  the second check (`rechecked`, both checks' time). Through the delivery: a refusal with nothing posted, activated or
+  the second check (`rechecked`, both checks' time); after the re-review of c8f37a93..7f79ca34, the route built from
+  the guard's recovered hit (an empty first hit, a re-created button recovered and pressed) and a change during the focus
+  hold's wait refused at the final check (`afterActivation`, nothing performed); and by ruling 0a14b51f a truncated
+  container that moved refusing a click inside it on both paths, an in-place one keeping it with the reason
+  `unrecordedDescendant` (a plain hit inside too), and a relabelled one refused (`relabelled`). Through the delivery: a refusal with nothing posted, activated or
   held for a native view, an unknown app, a right click, a dedicated web area, a forced route and a drag; a stale
   web-area click refused before the element route, nothing pressed, and a kept one element-routed as before; a web-area
   click that would have been posted refused before subtype 1 (an activation point's click, the app believing it has

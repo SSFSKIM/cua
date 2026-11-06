@@ -5,6 +5,8 @@
 // Cells (CELLS below), each on a fresh Chrome (its own user-data directory), a fresh engine process and connection:
 //   a-main/textarea          origin/main's engine, a coordinate click on the textarea
 //   b-shared/checkbox        the branch, shared mode, a coordinate click on the checkbox (AXPress-capable)
+//   b-shared/checkbox-immediate   the same with no wait after the observation
+//   b-noobs/checkbox         the same with no observation on the connection before the click
 //   b-shared/button          the branch, shared mode, the Apply button (AXPress-capable)
 //   b-shared/textarea        the branch, shared mode, the textarea
 //   c-dedicated/textarea     the branch, `ping {desktop: "dedicated"}`, the textarea
@@ -178,6 +180,11 @@ const TARGETS = {
 const CELLS = [
   {label: 'a-main/textarea', engine: 'main', target: 'textarea'},
   {label: 'b-shared/checkbox', engine: 'branch', target: 'checkbox'},
+  {label: 'b-shared/checkbox-immediate', engine: 'branch', target: 'checkbox', immediate: true},
+  // No observation on the connection before the click: the checkbox's point from this page's fixed layout (screenshot
+  // pixel (19, 203) of the 620 x 679 window at scale 1), since a coordinate click places its point in an observation's
+  // screenshot.
+  {label: 'b-noobs/checkbox', engine: 'branch', noObservation: {x: 19, y: 203}},
   {label: 'b-shared/button', engine: 'branch', target: 'button'},
   {label: 'b-shared/textarea', engine: 'branch', target: 'textarea'},
   {label: 'c-dedicated/textarea', engine: 'branch', desktop: 'dedicated', target: 'textarea'},
@@ -209,6 +216,19 @@ async function cell(spec) {
     const w = engine.wire;
     row.status = (await w.call('status')).result;
     row.ping = await w.call('ping', spec.desktop ? {clientApiVersion: 'cua-engine-1', desktop: spec.desktop} : {clientApiVersion: 'cua-engine-1'});
+    if (spec.noObservation) {
+      row.frontBefore = frontmost();
+      await sleep(800);
+      row.before = counters();
+      const started = Date.now();
+      row.click = lean(await w.execute('click', {pid: chrome.pid, ...spec.noObservation}));
+      row.clickMs = Date.now() - started;
+      await sleep(2500);
+      row.after = counters();
+      row.delta = delta(row.before, row.after);
+      row.frontAfter = frontmost();
+      return row;
+    }
     const shots = join(OUT, `shots-${fileName(label)}`);
     mkdirSync(shots, {recursive: true});
     const observedFrom = Date.now();
@@ -278,8 +298,9 @@ async function cell(spec) {
     if (spec.waitMs) { const wait = observedAt + spec.waitMs - Date.now(); if (wait > 0) await sleep(wait); row.waitedAfterObservationMs = Date.now() - observedAt; }
     row.hit = json(sh(HIT, [String(chrome.pid), String(row.point.screen.x), String(row.point.screen.y)]));
     row.frontBefore = frontmost();
-    await sleep(800);
+    if (!spec.immediate) await sleep(800);
     row.before = counters();
+    row.clickAfterObservationMs = Date.now() - observedAt;
     if (spec.keysFirst) row.keys = lean(await w.execute('press_key', {pid: chrome.pid, key: spec.keysFirst}));
     const started = Date.now();
     row.click = lean(await w.execute('click', {pid: chrome.pid, x, y}));
@@ -315,7 +336,7 @@ function verdict(row) {
   if (!c) return `no click (${JSON.stringify(row.problem ?? row.exception ?? '').slice(0, 300)})`;
   const meta = c.error ? c.error.meta : c.result?.meta;
   const answer = c.error ? `error ${c.error.errorName ?? c.error.code}` : 'success';
-  return `${answer} route=${meta?.inputRoute} elementClick=${JSON.stringify(meta?.elementClick ?? null)} activationClickKind=${JSON.stringify(meta?.activationClickKind ?? null)}`;
+  return `${answer} ms=${row.clickMs} afterObs=${row.clickAfterObservationMs ?? '-'} route=${meta?.inputRoute} elementClick=${JSON.stringify(meta?.elementClick ?? null)} activationClickKind=${JSON.stringify(meta?.activationClickKind ?? null)}`;
 }
 
 const config = {

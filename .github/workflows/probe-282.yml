@@ -40,8 +40,8 @@ jobs:
       - name: Probe
         env:
           P282_REP: ${{ matrix.rep }}
-          # The cells this push runs (probe.mjs --cells): the button's AXPress timeline.
-          P282_CELLS: btn-timeline
+          # The cells this push runs (probe.mjs --cells; empty for all).
+          P282_CELLS: ''
         run: node scripts/probe-282/probe.mjs --main "$RUNNER_TEMP/eng-main/debug/cua-engine" --branch "$RUNNER_TEMP/eng-branch/debug/cua-engine" --hit "$RUNNER_TEMP/p282-hit" --cells "$P282_CELLS" --out "$RUNNER_TEMP/probe-282"
       - name: Upload
         if: always()

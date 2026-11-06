@@ -17,16 +17,17 @@ permissions:
   contents: read
 env:
   P299_MAIN_REF: c4057c3a7426606c65145f3a4b16c5d3d307febb
-  P299_BRANCH_REF: ab0e019a
+  P299_BRANCH_REF: b2685041
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        # The A/B's groups (chrome-a, chrome-b, safari, native) ran at 8b740b92, run 42231389508; this push runs only the
-        # AXColumn question (scripts/probe-299/col.mjs).
-        group: [columns]
+        # The A/B's groups (chrome-a, chrome-b, safari, native) ran against ab0e019a at 8b740b92 (run 42231389508), the
+        # AXColumn question (columns, scripts/probe-299/col.mjs) at 32a1d585 (run 42243553112); this push re-runs only
+        # the Chrome pages the budget cuts against b2685041, the seeding dropped (ruling 66f90453).
+        group: [chrome-cut]
     runs-on: macos-latest
     timeout-minutes: 120
     steps:

@@ -124,6 +124,44 @@ export function classify(recs, points) {
     containerOnlyClickablePoints};
 }
 
+/// `stalePointVerdict`'s reason at each point over the engine's own record, nothing changed since the observation (the
+/// node's handle and frame as recorded, the hit as the grid read it): `unrecorded`; `unrecordedDescendant` (the node
+/// incomplete and the hit inside it, or no hit); `noHit`; `sameElement`; `nonInteractiveHit`; `hitAboveNode` (the hit
+/// matches an ancestor of the node in the record); else `interactiveHit`, a refusal, which on a still page is false.
+/// `strip` counts the points whose node has a child framed as a strip (1 pt or less), the guard change's case.
+export function verdicts(probeRecord, points) {
+  const r = f => f && {x: f.x, y: f.y, w: f.width, h: f.height};
+  const nodes = probeRecord.map(([role, depth, complete, frame, shown]) => ({role, depth, complete, frame: r(frame), shownRect: r(shown), parent: null, stripChild: false}));
+  const stack = [];
+  nodes.forEach((n, i) => {
+    while (stack.length && nodes[stack[stack.length - 1]].depth >= n.depth) stack.pop();
+    if (stack.length) { n.parent = stack[stack.length - 1]; if (n.frame && (n.frame.w <= 1 || n.frame.h <= 1)) nodes[n.parent].stripChild = true; }
+    stack.push(i);
+  });
+  const framed = nodes.map((n, i) => [n, i]).filter(([n]) => n.shownRect);
+  const all = {}, click = {}, strip = {};
+  const add = (t, k) => { t[k] = (t[k] ?? 0) + 1; };
+  for (const p of points) {
+    const chain = p.chain ?? null;
+    let best = null, bi = -1;
+    for (const [n, i] of framed) if (holds(n.shownRect, p) && (!best || n.depth >= best.depth)) { best = n; bi = i; }
+    let v;
+    if (!best) v = 'unrecorded';
+    else if (!best.complete && (!chain || chain.some(x => x[0] === best.role && near(best.frame, x)))) v = 'unrecordedDescendant';
+    else if (!chain) v = 'noHit';
+    else if (chain[0][0] === best.role && near(best.frame, chain[0])) v = 'sameElement';
+    else if (!INTERACTIVE.has(chain[0][0])) v = 'nonInteractiveHit';
+    else {
+      v = 'interactiveHit';
+      for (let a = best.parent; a !== null; a = nodes[a].parent) if (nodes[a].frame && nodes[a].role === chain[0][0] && near(nodes[a].frame, chain[0])) { v = 'hitAboveNode'; break; }
+    }
+    add(all, v);
+    if (clickable(chain)) add(click, v);
+    if (best?.stripChild) add(strip, v);
+  }
+  return {all, clickable: click, underStripParent: strip};
+}
+
 /// The same reading over the engine's own record (`probeRecord`, the probe build's instrumentation of
 /// `lineage.screenshot.nodes`: [role, depth, subtreeRecorded, frame, shown] per node in the record's order), so nodes the
 /// record holds beyond the printed tree (#301's record-only rows) count.

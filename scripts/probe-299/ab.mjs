@@ -14,7 +14,7 @@ import {mkdirSync, writeFileSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {gzipSync} from 'node:zlib';
-import {record, classify, classifyRecord, treeStats} from './classify.mjs';
+import {record, classify, classifyRecord, treeStats, verdicts} from './classify.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-299 ab: runs only on a GitHub-hosted runner'); process.exit(2); }
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -35,6 +35,13 @@ const TARGETS = {
     {name: 'wiki-table', url: 'https://en.wikipedia.org/wiki/List_of_countries_and_dependencies_by_population', deep: true},
     {name: 'local-table', local: '/', deep: true},
     {name: 'local-list', local: '/list', deep: true},
+  ],
+  // #301's re-run after the seeding was dropped (ruling 66f90453): the Chrome pages the budget cuts, at 0 / 25 / 50 / 90 %.
+  'chrome-cut': [
+    {name: 'wiki-article', url: 'https://en.wikipedia.org/wiki/United_States', deep: true},
+    {name: 'wiki-table', url: 'https://en.wikipedia.org/wiki/List_of_countries_and_dependencies_by_population', deep: true},
+    {name: 'local-table', local: '/', deep: true},
+    {name: 'hn-thread', url: 'https://news.ycombinator.com/item?id=13541679', deep: true},
   ],
   'chrome-b': [
     {name: 'hn-front', url: 'https://news.ycombinator.com/news'},
@@ -57,7 +64,9 @@ const TARGETS = {
 if (!TARGETS) { console.error(`unknown group ${GROUP}`); process.exit(2); }
 // The top, a screen or two, and well past the node budget's cut; `adjacent` positions lie one screen past the one before
 // and reuse its connections (token stability across a scroll).
-const positions = t => [{name: 'top', screens: 0}, {name: 's1', screens: 1}, {name: 's2', screens: 2},
+const positions = t => GROUP === 'chrome-cut'
+  ? [{name: 'top', screens: 0}, {name: 'f25', frac: 0.25}, {name: 'f50', frac: 0.5}, {name: 'f90', frac: 0.9}].map((p, index) => ({...p, index}))
+  : [{name: 'top', screens: 0}, {name: 's1', screens: 1}, {name: 's2', screens: 2},
   ...(!t.deep ? [] : GROUP.startsWith('chrome')
     ? [{name: 'f25', frac: 0.25}, {name: 'f50', frac: 0.5}, {name: 'f50+1', frac: 0.5, plus: 1, adjacent: true}, {name: 'f90', frac: 0.9}]
     : [{name: 'd20', screens: 20}, {name: 'd20+1', screens: 21, adjacent: true}, {name: 'd60', screens: 60}])].map((p, index) => ({...p, index}));
@@ -227,11 +236,16 @@ function summarize(sky, points) {
   const marker = tr?.count != null ? {count: tr.count, above: tr.above ?? null, below: tr.below ?? null,
     elsewhere: tr.above != null ? tr.count - tr.above - tr.below : null} : null;
   const emulated = classify(recs, points);
+  // The marker the service prints (src/services/engine/render.mjs at feat/301-visible-first b2685041, `truncationMarkers`).
+  const direction = tr?.count && Number.isInteger(tr.above) && Number.isInteger(tr.below)
+    ? (tr.above > 0 ? (tr.below > 0 ? ', above and below the visible area' : ', above the visible area') : tr.below > 0 ? ', below the visible area' : '') : null;
+  const markerLine = tr?.count ? (direction !== null ? `[truncated: at least ${tr.count} elements omitted${direction}]` : `[truncated: ${tr.count} elements omitted]`) : null;
+  const verdict = sky.probeRecord ? verdicts(sky.probeRecord, points) : null;
   const own = sky.probeRecord ? classifyRecord(sky.probeRecord, points) : null;
   return {fired, nodes: sky.nodes.length, maxDepth: stats.maxDepth, widthOmitted: stats.widthOmitted, bytes: t.estimatedBytes, walkMs: t.walkMs, totalMs: t.totalMs,
     truncated: marker, seed: t.seedMs != null ? {ms: t.seedMs, points: t.seedPoints, hits: t.seedHits, chains: t.seedChains, seeds: t.seeds, promoted: t.seedPromoted, capped: Boolean(t.seedCapped)} : null,
     recordOnlyNodes: t.recordOnlyNodes ?? 0, stalePointRecordMs: t.stalePointRecordMs, contentTop: contentTop(sky),
-    guard: own?.clickable ?? null, guardAll: own?.all ?? null, recordNodes: own?.recordNodes ?? null, guardEmulated: emulated.clickable};
+    markerLine, verdicts: verdict, guard: own?.clickable ?? null, guardAll: own?.all ?? null, recordNodes: own?.recordNodes ?? null, guardEmulated: emulated.clickable};
 }
 const slim = sky => ({window: sky.window, truncated: sky.truncated, timings: sky.timings, probeRecord: sky.probeRecord,
   nodes: sky.nodes.map(n => [n.depth, n.role, n.frame ? [n.frame.x, n.frame.y, n.frame.width, n.frame.height] : null, n.children,
@@ -245,8 +259,13 @@ function stability(a, b, dy = 0) {
     const web = webIndex(sky);
     const webDepth = web >= 0 ? sky.nodes[web].depth : Infinity;
     let inWeb = false;
+    const stack = [];
     sky.nodes.forEach((n, i) => {
       if (i === web) inWeb = true; else if (inWeb && n.depth <= webDepth) inWeb = false;
+      while (stack.length && sky.nodes[stack[stack.length - 1]].depth >= n.depth) stack.pop();
+      const parentRole = stack.length ? sky.nodes[stack[stack.length - 1]].role : null;
+      stack.push(i);
+      if (n.role === 'AXColumn' || (n.role === 'AXGroup' && parentRole === 'AXTable')) return;
       const f = n.frame;
       if (!f || f.width <= 1 || f.height <= 1) return;
       const k = `${n.role}|${n.title ?? ''}|${n.description ?? ''}|${Math.round(f.x)}|${Math.round(f.y + (inWeb && i !== web ? shift : 0))}|${Math.round(f.width)}|${Math.round(f.height)}`;
@@ -331,7 +350,7 @@ function line(r) {
   if (r.exception || r.mainError) return `PROBLEM ${JSON.stringify(r.mainError ?? '')} ${r.exception ?? ''}`;
   const part = (name, o) => !o ? `${name}: ${JSON.stringify(r[`${name}Error`] ?? 'none')}` :
     `${name}: fired=[${o.fired.join(',')}] nodes=${o.nodes} bytes=${o.bytes} walk=${o.walkMs}ms guard=${pct(o.guard)} (emulated ${pct(o.guardEmulated)}) record=${o.recordNodes} ` +
-    `truncated=${JSON.stringify(o.truncated)} seed=${JSON.stringify(o.seed)} recordOnly=${o.recordOnlyNodes}`;
+    `truncated=${JSON.stringify(o.truncated)} marker=${JSON.stringify(o.markerLine)} verdicts=${JSON.stringify(o.verdicts?.clickable)} underStrip=${JSON.stringify(o.verdicts?.underStripParent)} recordOnly=${o.recordOnlyNodes}`;
   const st = r.samePosition ? `same=${JSON.stringify({m: r.samePosition.main?.changedToken + '/' + r.samePosition.main?.matched, b: r.samePosition.branch?.changedToken + '/' + r.samePosition.branch?.matched})}` : '';
   const adj = r.adjacent ? `adjacent dy=${r.adjacent.dy} ${JSON.stringify({m: r.adjacent.main.changedToken + '/' + r.adjacent.main.matched, b: r.adjacent.branch?.changedToken + '/' + r.adjacent.branch?.matched})}` : '';
   const wide = r.wide?.wide?.length ? `wide=${JSON.stringify(r.wide.wide.map(w => ({n: w.children, vis: w.visibleChildren + w.visibleRows, brute: w.brute, bisected: w.bisected, missing: w.missing, extra: w.extra, ordered: `${w.orderedPairs}/${w.pairs}`, reads: w.bisectReads})))}` : '';

@@ -294,10 +294,9 @@ extension Engine {
     let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
     let seen = chromium && webAccessibility.hasSeenWebArea(pid: appPid, launched: generation)
     let application = prepare(AXUIElementCreateApplication(appPid))
-    let searched = window ?? primaryWindow(of: application)
     let establish = PointerEstablishing<AXUIElement>(
       readAppRole: { _ = attribute(application, kAXRoleAttribute) },
-      windowHasWebArea: { searched.map(containsWebArea) ?? false },
+      windowHasWebArea: { (window ?? primaryWindow(of: application)).map(containsWebArea) ?? false },
       noteWebArea: { [webAccessibility] in webAccessibility.noteWebArea(pid: appPid, launched: generation) },
       rehit: rehit, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
     let established = establishedPointerView(chromium: chromium, webAreaSeen: seen, hit: hit, role: { attribute($0, kAXRoleAttribute) as? String },

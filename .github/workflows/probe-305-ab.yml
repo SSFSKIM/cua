@@ -1,0 +1,78 @@
+# #305's hosted A/B of the recorded-hit fix (fix/305-recorded-hit, ruling 45f5e5be) against main 4525925e: the still-page
+# spots, sweep and hidden-popover cell (scripts/probe-305/ab.mjs) and #296's stale suite (scripts/probe-296/ab.mjs, every
+# cell on both heads), both engines built with scripts/probe-299/instrument.py. Runs only on a push to probe/305-ab (or
+# by hand); not a ci-kit gate.
+name: probe-305-ab
+on:
+  push:
+    branches: [probe/305-ab]
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  P305_MAIN_REF: 4525925ec0bf8b00388022e7fc37ca4188231efe
+  # The kit's own test: main against itself until the fix's head is given.
+  P305_BRANCH_REF: 4525925ec0bf8b00388022e7fc37ca4188231efe
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1]
+        group: [chrome, safari, finder, textedit, s296-chrome, s296-final, s296-safari-final, s296-native-final]
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build both engines (instrumented), the tool and the native app
+        run: |
+          sw_vers
+          git fetch --no-tags origin main fix/305-recorded-hit || git fetch --no-tags origin main
+          git worktree add "$RUNNER_TEMP/main" "$P305_MAIN_REF"
+          git worktree add "$RUNNER_TEMP/branch" "$P305_BRANCH_REF"
+          echo "P305_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "P305_BRANCH_COMMIT=$(git -C "$RUNNER_TEMP/branch" rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "P296_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "P296_BRANCH_COMMIT=$(git -C "$RUNNER_TEMP/branch" rev-parse HEAD)" >> "$GITHUB_ENV"
+          python3 -I scripts/probe-299/instrument.py "$RUNNER_TEMP/main/native/engine/Sources/Engine"
+          python3 -I scripts/probe-299/instrument.py "$RUNNER_TEMP/branch/native/engine/Sources/Engine"
+          swift build -c release --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng-main"
+          swift build -c release --package-path "$RUNNER_TEMP/branch/native/engine" --scratch-path "$RUNNER_TEMP/eng-branch"
+          swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-299/tool.swift
+          app="$RUNNER_TEMP/Probe296.app/Contents"
+          mkdir -p "$app/MacOS"
+          swiftc -O -o "$app/MacOS/Probe296" scripts/probe-296/app.swift
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict>' \
+            '<key>CFBundleIdentifier</key><string>com.ssfskim.probe296</string>' \
+            '<key>CFBundleName</key><string>Probe296</string>' \
+            '<key>CFBundleExecutable</key><string>Probe296</string>' \
+            '<key>CFBundlePackageType</key><string>APPL</string>' \
+            '<key>NSPrincipalClass</key><string>NSApplication</string>' \
+            '</dict></plist>' > "$app/Info.plist"
+      - name: Live
+        env:
+          P305_REP: ${{ matrix.rep }}
+          P296_REP: ${{ matrix.rep }}
+          GROUP: ${{ matrix.group }}
+        run: |
+          main="$RUNNER_TEMP/eng-main/release/cua-engine"
+          branch="$RUNNER_TEMP/eng-branch/release/cua-engine"
+          case "$GROUP" in
+            s296-*) node scripts/probe-296/ab.mjs --group "${GROUP#s296-}" --branch "$branch" --main "$main" --app "$RUNNER_TEMP/Probe296.app/Contents/MacOS/Probe296" --out "$RUNNER_TEMP/probe-305" ;;
+            *) node scripts/probe-305/ab.mjs --group "$GROUP" --main "$main" --branch "$branch" --tool "$RUNNER_TEMP/probe-tool" --out "$RUNNER_TEMP/probe-305" ;;
+          esac
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-305-ab-${{ matrix.group }}-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-305/*.json
+            ${{ runner.temp }}/probe-305/*.jsonl
+            ${{ runner.temp }}/probe-305/*.gz
+          if-no-files-found: warn

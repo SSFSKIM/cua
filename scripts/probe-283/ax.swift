@@ -183,8 +183,13 @@ let route = spec["route"] as? String ?? "none"
 if route != "none" {
   for op in route.split(separator: "+") {
     let t = nowMs()
-    let err = op == "focus" ? AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-                            : AXUIElementPerformAction(target, kAXPressAction as CFString)
+    let err: AXError
+    switch op {
+    case "focus": err = AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+    case "select": err = AXUIElementSetAttributeValue(target, "AXSelectedTextRange" as CFString,
+                                                      rangeValue((spec["selectLoc"] as? NSNumber)?.intValue ?? 0, 0))
+    default: err = AXUIElementPerformAction(target, kAXPressAction as CFString)
+    }
     writes.append(["op": String(op), "atMs": t, "error": err.rawValue, "tookMs": nowMs() - t])
   }
 }
@@ -219,25 +224,67 @@ for step in spec["place"] as? [[String: Any]] ?? [] {
   let kind = step["kind"] as? String ?? "range"
   var rec: [String: Any] = ["kind": kind, "x": p.x, "y": p.y, "expect": step["expect"] ?? NSNull(),
                             "selectedBefore": describe(attr(target, "AXSelectedTextRange"))]
-  if kind == "range" {
-    let (r, err) = param(target, "AXRangeForPosition", pointValue(p))
-    rec["rangeForPosition"] = describe(r); rec["rangeForPositionError"] = err
-    if let cr = cfRange(r) {
-      let t = nowMs()
-      rec["writeAtMs"] = t
-      rec["writeError"] = AXUIElementSetAttributeValue(target, "AXSelectedTextRange" as CFString, rangeValue(cr.location, 0)).rawValue
-      rec["bounds"] = boundsCheck(target, cr.location, p)
+  func writeRange(_ loc: Int) {
+    let t = nowMs()
+    rec["writeAtMs"] = t
+    rec["writeLoc"] = loc
+    rec["writeError"] = AXUIElementSetAttributeValue(target, "AXSelectedTextRange" as CFString, rangeValue(loc, 0)).rawValue
+    rec["bounds"] = boundsCheck(target, loc, p)
+  }
+  if kind == "known" {
+    // The offset the page says is under the point, written straight: does the write itself place the caret?
+    writeRange((step["expect"] as? NSNumber)?.intValue ?? 0)
+  } else if kind == "bounds" {
+    // The offset found from AXBoundsForRange: the character whose box holds the point, its left half before it.
+    let n = (attr(target, "AXNumberOfCharacters") as? NSNumber)?.intValue ?? 0
+    let t0 = nowMs()
+    var found: Int?, calls = 0
+    for i in 0..<n {
+      calls += 1
+      guard let r = rect(param(target, "AXBoundsForRange", rangeValue(i, 1)).0) else { continue }
+      if r.insetBy(dx: 0, dy: -0.5).contains(p) || (p.x >= r.minX && p.x < r.maxX && p.y >= r.minY && p.y <= r.maxY) {
+        found = p.x < r.midX ? i : i + 1
+        break
+      }
     }
+    rec["scan"] = ["characters": n, "calls": calls, "ms": nowMs() - t0, "found": found ?? NSNull()]
+    if let found { writeRange(found) }
+  } else if kind == "range" {
+    // AXRangeForPosition answered {0, 0} once in run 1: ask three times, 150 ms apart, in case it answers from a cache.
+    var answers: [Any] = [], last: CFRange?
+    for i in 0..<3 {
+      if i > 0 { usleep(150_000) }
+      let (r, err) = param(target, "AXRangeForPosition", pointValue(p))
+      answers.append(r != nil ? describe(r) : "error \(err)")
+      last = cfRange(r)
+    }
+    rec["rangeForPosition"] = answers
+    if let cr = last { writeRange(cr.location) }
   } else {
-    var source = "target", (m, err) = param(target, "AXTextMarkerForPosition", pointValue(p))
-    rec["markerError"] = err
+    var source = "target", m: CFTypeRef?, err: Int32 = 0, tries: [Any] = []
+    for i in 0..<3 where m == nil {
+      if i > 0 { usleep(150_000) }
+      (m, err) = param(target, "AXTextMarkerForPosition", pointValue(p))
+      tries.append(m != nil ? "ok" : "error \(err)")
+    }
+    rec["markerTries"] = tries
     if m == nil, let webArea { (m, err) = param(webArea, "AXTextMarkerForPosition", pointValue(p)); source = "webArea"; rec["markerErrorWebArea"] = err }
-    rec["markerSource"] = source
+    if m == nil {
+      // The other position-to-marker route the elements list: the start marker of a 1-point box at the point.
+      var box = CGRect(x: p.x, y: p.y - 0.5, width: 1, height: 1)
+      let boxValue = AXValueCreate(.cgRect, &box)!
+      (m, err) = param(target, "AXStartTextMarkerForBounds", boxValue)
+      source = "startForBounds"; rec["startForBoundsError"] = err
+      if m == nil, let webArea { (m, err) = param(webArea, "AXStartTextMarkerForBounds", boxValue); source = "startForBoundsWebArea"; rec["startForBoundsWebAreaError"] = err }
+    }
+    rec["markerSource"] = m == nil ? "none" : source
     if let m {
       rec["marker"] = describe(m)
-      let from = source == "target" ? target : webArea!
-      let (index, indexErr) = param(target, "AXIndexForTextMarker", m)
+      let from = source == "target" || source == "startForBounds" ? target : webArea!
+      let (index, indexErr) = param(webArea ?? target, "AXIndexForTextMarker", m)
       rec["indexForTextMarker"] = index != nil ? describe(index) : "error \(indexErr)"
+      let (owner, _) = param(from, "AXUIElementForTextMarker", m)
+      rec["markerElement"] = describe(owner)
       let (range, rangeErr) = param(from, "AXTextMarkerRangeForUnorderedTextMarkers", [m, m] as CFArray)
       rec["markerRangeError"] = rangeErr
       if let range {

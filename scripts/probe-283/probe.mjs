@@ -16,8 +16,13 @@
 //   <pre|post>/<kind>/<route>@<target>   pre: the write right after the observation; post: 3 s after it. route focus
 //                                 (AXFocused true) or press (AXPress); target the hit, or its AXEditableAncestor
 //   prior-<pre|post>/<kind>/…     the same on ?prior=<kind>
-//   place/<kind>/focus@editable   post focus, then the caret placed at k1 by AXRangeForPosition + AXSelectedTextRange and
-//                                 at k2 by AXTextMarkerForPosition + AXSelectedTextMarkerRange
+//   <pre|post>/<kind>/select@editable, …/focus+select@editable   AXSelectedTextRange {k1, 0} alone, or after AXFocused
+//   place/<kind>/focus@editable   post focus, then the caret placed in turn: {k1, 0} written straight (known); k2 found by
+//                                 scanning AXBoundsForRange for the box holding its point (bounds); AXRangeForPosition at
+//                                 k1's point (range); AXTextMarkerForPosition (or AXStartTextMarkerForBounds) at k2's
+//                                 point + AXSelectedTextMarkerRange (marker)
+// Blink sends no focus event to a field focused while its window is inactive, so the page beacons its active element's
+// change (polled every 4 ms) as its focus signal.
 // Every write cell then types a marker with type_text (shared mode) and reads where it landed.
 //
 //   node scripts/probe-283/probe.mjs --engine <cua-engine> --ax <ax> --out <dir> [--cells <prefix,…>]
@@ -99,6 +104,10 @@ addEventListener('load', () => {
   if (prior === 'ce') { getSelection().collapse(F.ce.firstChild, 5); priorNote = {activeAfterCollapse: document.activeElement && (document.activeElement.id || document.activeElement.tagName)}; if (document.activeElement === F.ce) { F.ce.blur(); priorNote.blurred = true; } }
   document.fonts.ready.then(() => { navigator.sendBeacon('/layout', JSON.stringify(layout())); send('load', {prior, priorNote}); });
   setInterval(() => send('tick'), 250);
+  // Blink sends no focus event to a field focused while its window is inactive: the active element's change is the
+  // page's own focus signal, read every 4 ms.
+  let was = document.activeElement;
+  setInterval(() => { if (document.activeElement !== was) { const from = was; was = document.activeElement; send('active', {from: from && (from.id || from.tagName), to: was && (was.id || was.tagName)}); } }, 4);
 }); })();</script></body></html>`;
 
 let beacons = [], layoutData = null;
@@ -243,6 +252,8 @@ for (const phase of ['pre', 'post']) for (const kind of KINDS) for (const route 
   CELLS.push({label: `${phase}/${kind}/${route}@${target}`, kind, phase, route, target});
 for (const phase of ['pre', 'post']) for (const kind of KINDS) CELLS.push({label: `prior-${phase}/${kind}/focus@editable`, kind, phase, route: 'focus', target: 'editable', prior: true});
 for (const kind of KINDS) CELLS.push({label: `prior-post/${kind}/press@editable`, kind, phase: 'post', route: 'press', target: 'editable', prior: true});
+for (const phase of ['pre', 'post']) for (const kind of KINDS) for (const route of ['select', 'focus+select'])
+  CELLS.push({label: `${phase}/${kind}/${route}@editable`, kind, phase, route, target: 'editable', select: true});
 for (const kind of KINDS) CELLS.push({label: `place/${kind}/focus@editable`, kind, phase: 'post', route: 'focus', target: 'editable', place: true});
 const RUN = CELLS.filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
 
@@ -298,9 +309,10 @@ async function cell(spec) {
     row.frontBefore = frontmost();
     const before = latest();
     row.before = {active: before?.active, hasFocus: before?.hasFocus, caret: caret(before, kind)};
-    const place = spec.place ? [{kind: 'range', x: P1.x, y: P1.y, expect: f.k1}, {kind: 'marker', x: P2.x, y: P2.y, expect: f.k2}] : [];
+    const place = spec.place ? [{kind: 'known', x: P1.x, y: P1.y, expect: f.k1}, {kind: 'bounds', x: P2.x, y: P2.y, expect: f.k2},
+      {kind: 'range', x: P1.x, y: P1.y, expect: f.k1}, {kind: 'marker', x: P2.x, y: P2.y, expect: f.k2}] : [];
     const act = await ax(['act', String(chrome.pid), String(P1.x), String(P1.y),
-      JSON.stringify({route: spec.route, target: spec.target, pollMs: spec.phase === 'pre' ? 3500 : 1500, dump: 'after', place, placeDelayMs: 600, expect})]);
+      JSON.stringify({route: spec.route, target: spec.target, pollMs: spec.phase === 'pre' ? 3500 : 1500, dump: 'after', place, placeDelayMs: 600, expect, selectLoc: f.k1})]);
     row.act = act;
     const writeAt = act.writes?.[0]?.atMs;
     row.writeAfterObservationMs = writeAt ? writeAt - observedAt : null;
@@ -309,10 +321,11 @@ async function cell(spec) {
     // The page's view: the first focus event on the field after the write, and the field's state after the write's poll
     // (before any placement).
     const focusEv = beacons.find(b => b.ev === `focus:${kind}` && b.t >= (writeAt ?? 0) - 5);
+    const activeEv = beacons.find(b => b.ev === 'active' && b.to === `field-${kind}` && b.t >= (writeAt ?? 0) - 5);
     const anyFocus = beacons.filter(b => b.ev?.startsWith('focus:') && b.t >= (writeAt ?? 0) - 5).map(b => ({ev: b.ev, dt: b.t - writeAt}));
     const firstPlace = act.place?.[0]?.writeAtMs;
     const settled = firstPlace ? at(firstPlace - 1) : latest();
-    row.focus = {event: focusEv ? {dtMs: focusEv.t - writeAt, caretAtEvent: caret(focusEv, kind)} : null, anyFocusEvents: anyFocus,
+    row.focus = {activeChangeMs: activeEv ? activeEv.t - writeAt : null, event: focusEv ? {dtMs: focusEv.t - writeAt, caretAtEvent: caret(focusEv, kind)} : null, anyFocusEvents: anyFocus,
       active: settled?.active, hasFocus: settled?.hasFocus, caret: caret(settled, kind),
       landing: classify(caret(settled, kind), f, spec.prior ? f.prior : null),
       axFocusedFirstMs: act.poll?.find(p => p.focused === true)?.t ?? null, axAppFocusFirstMs: act.poll?.find(p => p.appFocusIsTarget)?.t ?? null,
@@ -320,7 +333,8 @@ async function cell(spec) {
     row.placeResults = (act.place ?? []).map((s, i) => {
       const next = act.place[i + 1]?.writeAtMs;
       const b = next ? at(next - 1) : latest();
-      return {kind: s.kind, expect: s.expect, ax: s.rangeForPosition ?? s.indexForTextMarker ?? null, writes: s.writes ?? s.writeError ?? null,
+      return {kind: s.kind, expect: s.expect, wrote: s.writeLoc ?? null, ax: s.scan ?? s.rangeForPosition ?? (s.markerSource ? {source: s.markerSource, tries: s.markerTries, index: s.indexForTextMarker, element: s.markerElement} : null),
+        writes: s.writes ?? s.writeError ?? null,
         axSelectedAfter: s.selectedAfter, page: caret(b, kind), pageLanding: classify(caret(b, kind), f, null), bounds: s.bounds ?? null};
     });
     row.orderWrite = {before: act.orderBefore, after: act.orderAfter};
@@ -338,7 +352,7 @@ async function cell(spec) {
     row.frontAfterType = frontmost();
     row.orderAfterType = await ax(['order', String(chrome.pid)]);
     row.pageDeltaAll = pointerDelta(before, afterType);
-    row.events = beacons.filter(b => b.ev !== 'tick' && b.t >= (writeAt ?? 0) - 5).map(b => ({dt: b.t - writeAt, ev: b.ev, target: b.target, key: b.key, active: b.active, caret: caret(b, kind)}));
+    row.events = beacons.filter(b => b.ev !== 'tick' && b.t >= (writeAt ?? 0) - 5).map(b => ({dt: b.t - writeAt, ev: b.ev, target: b.target, key: b.key, trusted: b.trusted, to: b.to, active: b.active, caret: caret(b, kind)}));
     try { await w.call('shutdown', {}, 5000); } catch {}
     w.close();
   } catch (e) {
@@ -358,9 +372,9 @@ function summary(row) {
   const a = row.act ?? {};
   const typed = row.type?.error ? `error ${row.type.error.errorName ?? row.type.error.code}` : `ok route=${row.type?.result?.meta?.inputRoute}`;
   return [`write +${row.writeAfterObservationMs}ms hit=${a.hit?.role}#${a.hit?.dom} target=${a.target?.role}#${a.target?.dom} isHit=${a.target?.isHit} hitActions=${JSON.stringify(a.hit?.actions)}`,
-    `errors=${JSON.stringify(a.writes?.map(x => x.error))} pageFocus=${row.focus?.event ? row.focus.event.dtMs + 'ms' : 'none'} active=${row.focus?.active} landing=${row.focus?.landing} axFocused@${row.focus?.axFocusedFirstMs} appFocus@${row.focus?.axAppFocusFirstMs} press@${row.focus?.axPressFirstMs}`,
+    `errors=${JSON.stringify(a.writes?.map(x => x.error))} pageFocus=${row.focus?.event ? row.focus.event.dtMs + 'ms' : 'none'} active@${row.focus?.activeChangeMs} active=${row.focus?.active} landing=${row.focus?.landing} axFocused@${row.focus?.axFocusedFirstMs} appFocus@${row.focus?.axAppFocusFirstMs} press@${row.focus?.axPressFirstMs}`,
     `front ${row.frontBefore} -> ${row.frontAfterWrite} -> ${row.frontAfterType}; order chrome ${a.orderBefore?.pidIndex}->${a.orderAfter?.pidIndex} textEdit ${a.orderBefore?.textEditIndex}->${a.orderAfter?.textEditIndex}; pointer ${JSON.stringify(row.pageDeltaWrite)}`,
-    row.placeResults?.length ? `place ${JSON.stringify(row.placeResults.map(p => [p.kind, p.expect, p.ax, p.writes, p.pageLanding, p.bounds?.containsPoint]))}` : null,
+    row.placeResults?.length ? `place ${JSON.stringify(row.placeResults.map(p => [p.kind, p.expect, p.wrote, p.ax, p.writes, p.pageLanding, p.bounds?.containsPoint]))}` : null,
     `type ${typed} markAt=${row.afterType?.markAt} value=${JSON.stringify(row.afterType?.value)} delta=${JSON.stringify(row.afterType?.pageDelta)} others=${JSON.stringify(row.afterType?.otherFieldsChanged)}`].filter(Boolean).join('\n    ');
 }
 

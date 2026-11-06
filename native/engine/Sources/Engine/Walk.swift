@@ -458,6 +458,8 @@ final class TreeWalk {
         estimated += jsonBytes(read.wire) + 1
         known += read.children.count
         if chromium, seeding == nil, visibleFrame != nil, known > nodeLimit { seed() }
+        // The seeding may have taken this element up already: a hit's chain can pass through it.
+        if item.expanded { continue }
         if read.children.isEmpty && read.recordChildren.isEmpty { item.expanded = true }
         else if enters(item, key) { expand(item) } else { setAside(item) }
       }

@@ -714,7 +714,32 @@ final class PointerEstablishTests: XCTestCase {
     XCTAssertEqual(view(chrome.pageButton), .webArea)
     XCTAssertEqual(webAreaWalk(chrome.contents, role: { $0.role }, parent: { $0.parent },
                                webAreaChild: { hasWebAreaChild($0, children: { $0.children }, role: { $0.role }) }), .aboveWebArea)
-    XCTAssertFalse(hasWebAreaChild(chrome.contents, children: { _ in nil }, role: { $0.role }), "unread children: not known to")
+    XCTAssertNil(hasWebAreaChild(chrome.contents, children: { _ in nil }, role: { $0.role }), "unread children: unknown")
+    XCTAssertEqual(hasWebAreaChild(chrome.reload, children: { $0.children }, role: { $0.role }), false, "none: known")
+  }
+
+  /// The review of d2568c76..96c6f093: children that cannot be read, or a child whose role cannot, are unknown, and
+  /// unknown is a possible web area, never outside, even with a web area seen.
+  func testUnreadableChildrenAreAPossibleWebAreaNeverOutside() {
+    let chrome = Chrome()
+    let unreadable = { (hit: Tree, children: @escaping (Tree) -> [Tree]?, role: @escaping (Tree) -> String?) in
+      pointerView(chromium: true, webAreaSeen: true, hit: hit, role: role, parent: { $0.parent }, children: children)
+    }
+    XCTAssertEqual(unreadable(chrome.contents, { $0 === chrome.contents ? nil : $0.children }, { $0.role }), .possibleWebArea,
+                   "the web contents' scroll area whose children read failed")
+    XCTAssertEqual(unreadable(chrome.contents, { $0.children }, { $0 === chrome.webArea ? nil : $0.role }), .possibleWebArea,
+                   "its child's role unread")
+    XCTAssertEqual(unreadable(chrome.reload, { $0.role == "AXToolbar" ? nil : $0.children }, { $0.role }), .possibleWebArea,
+                   "an ancestor's children unread: fail closed")
+    XCTAssertEqual(webAreaWalk(chrome.contents, role: { $0.role }, parent: { $0.parent }, webAreaChild: { _ in nil }), .incomplete)
+    // The establishment keeps re-hitting an unknown hit, and at the bound it is still a possible web area.
+    var clock: Double = 0
+    let seams = PointerEstablishing<Tree>(readAppRole: {}, windowHasWebArea: { true }, noteWebArea: {}, rehit: { chrome.contents },
+                                          now: { clock }, sleep: { clock += $0 })
+    let result = establishedPointerView(chromium: true, webAreaSeen: false, hit: nil, role: { $0.role }, parent: { $0.parent },
+                                        children: { $0 === chrome.contents ? nil : $0.children }, establish: seams)
+    XCTAssertEqual(result.view, .possibleWebArea)
+    XCTAssertEqual(result.record?.rehits, 21)
   }
 
   /// The establishment's seams over a fake clock: each call recorded, `rehits` answered in turn (the last repeated).

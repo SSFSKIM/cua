@@ -316,24 +316,39 @@ enum WebAreaWalk: Equatable {
 
 /// Whether `hit` is an AXWebArea or lies inside one, its parents walked up to 300 levels (the gate's bound) and no
 /// further than its window. Only a walk from an element below a stop that reached one with every role read, none of
-/// the elements below the stop having an AXWebArea child (`webAreaChild`), says `outside` (#282's review; #288).
+/// the elements below the stop having an AXWebArea child, or children that could not be read (`webAreaChild` nil),
+/// says `outside` (#282's review; #288).
 func webAreaWalk<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?,
-                          webAreaChild: (Element) -> Bool = { _ in false }) -> WebAreaWalk {
+                          webAreaChild: (Element) -> Bool? = { _ in false }) -> WebAreaWalk {
   var current = hit
   for level in 0...300 {
     guard let name = role(current) else { return .incomplete }
     if name == "AXWebArea" { return .inside }
     if webAreaWalkStops.contains(name) { return level == 0 ? .incomplete : .outside }
-    if webAreaChild(current) { return .aboveWebArea }
+    switch webAreaChild(current) {
+    case true?: return .aboveWebArea
+    case nil: return .incomplete  // unknown: an AXWebArea may be among them
+    case false?: break
+    }
     guard let next = parent(current) else { return .incomplete }
     current = next
   }
   return .incomplete
 }
 
-/// Whether `element` has an AXWebArea among its children (`children` nil, unread: not known to).
-func hasWebAreaChild<Element>(_ element: Element, children: (Element) -> [Element]?, role: (Element) -> String?) -> Bool {
-  children(element)?.contains { role($0) == "AXWebArea" } ?? false
+/// Whether `element` has an AXWebArea among its children: nil (unknown) when its children, or a child's role, could
+/// not be read, which the walk takes for a possible web area, never for outside (the review of d2568c76..96c6f093).
+func hasWebAreaChild<Element>(_ element: Element, children: (Element) -> [Element]?, role: (Element) -> String?) -> Bool? {
+  guard let list = children(element) else { return nil }
+  var unknown = false
+  for child in list {
+    guard let name = role(child) else {
+      unknown = true
+      continue
+    }
+    if name == "AXWebArea" { return true }
+  }
+  return unknown ? nil : false
 }
 
 /// The view a left pointer's point hits in a process: in a Chromium-family process (`chromiumFamily`, Enablement.swift),
@@ -343,7 +358,7 @@ func hasWebAreaChild<Element>(_ element: Element, children: (Element) -> [Elemen
 /// web area (no hit, an incomplete walk, a page tree not yet seen, or a hit or element on its walk with an AXWebArea
 /// child, #288), and `unknown` outside one.
 func pointerView<Element>(chromium: Bool, webAreaSeen: Bool, hit: Element?, role: (Element) -> String?,
-                          parent: (Element) -> Element?, children: (Element) -> [Element]? = { _ in nil }) -> PointerView {
+                          parent: (Element) -> Element?, children: (Element) -> [Element]? = { _ in [] }) -> PointerView {
   guard chromium else { return .unknown }
   guard let hit else { return .possibleWebArea }
   switch webAreaWalk(hit, role: role, parent: parent, webAreaChild: { hasWebAreaChild($0, children: children, role: role) }) {
@@ -355,7 +370,8 @@ func pointerView<Element>(chromium: Bool, webAreaSeen: Bool, hit: Element?, role
 
 /// #288's establishment, at click time, of a Chromium process's page tree no observation has seen: the application's
 /// role read (Basic mode), a bounded search of the target window for an AXWebArea (`noteWebArea` when found), then the
-/// point hit-tested again; a hit that is itself a container of the web area (`hasWebAreaChild`) is hit-tested again
+/// point hit-tested again; a hit that is itself a container of the web area, or whose children cannot be read
+/// (`hasWebAreaChild` true or nil), is hit-tested again
 /// every `pointerEstablishSampleMs` for up to `pointerEstablishRehitMs` until it is something else, the waits ending
 /// by `pointerEstablishBoundMs` after the step began. Measured (#288's hosted spike, runs 42161269408 and 42162367095):
 /// before any role read a page point answers a coarse AXScrollArea that walks to the window; after it the window's
@@ -402,7 +418,7 @@ func establishedPointerView<Element>(chromium: Bool, webAreaSeen: Bool, hit: Ele
   var current = establish.rehit()
   var rehits = 1
   let end = min(establish.now() + pointerEstablishRehitMs, started + pointerEstablishBoundMs)
-  while let container = current, hasWebAreaChild(container, children: children, role: role) {
+  while let container = current, hasWebAreaChild(container, children: children, role: role) != false {  // a container, or unknown
     let remaining = end - establish.now()
     guard remaining > 0 else { break }
     establish.sleep(min(pointerEstablishSampleMs, remaining))

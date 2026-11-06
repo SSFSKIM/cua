@@ -271,10 +271,12 @@ test('cua\'s truncation markers follow the tree', () => {
     'Window: "W", App: Example.\n0 standard window W, Secondary Actions: Raise\n\t1 button A\n[truncated: elements deeper than 200 levels omitted]\n[truncated: 12 elements omitted]\n');
 });
 
-test('#301: a cut walk of the window says how many omitted parts lie above the visible area, below it and elsewhere', () => {
+test('#301: a cut walk of the window says how many elements it omitted and which way they lie', () => {
   const marker = truncated => { const shot = skyshot(win([button('a', 1, 'A')]), {truncated}); return render(shot, advanceNumbering(null, shot)).split('\n').at(-2); };
-  assert.equal(marker({count: 1234, above: 812, below: 403}), '[truncated: at least 1234 elements omitted: 812 above the visible area, 403 below it, 19 elsewhere]');
-  assert.equal(marker({count: 30, above: 0, below: 30}), '[truncated: at least 30 elements omitted: 0 above the visible area, 30 below it]', 'nothing elsewhere: not named');
+  assert.equal(marker({count: 1234, above: 812, below: 403}), '[truncated: at least 1234 elements omitted, above and below the visible area]');
+  assert.equal(marker({count: 30, above: 30, below: 0}), '[truncated: at least 30 elements omitted, above the visible area]');
+  assert.equal(marker({count: 31, above: 0, below: 30}), '[truncated: at least 31 elements omitted, below the visible area]', 'parts placed neither way: in the total');
+  assert.equal(marker({count: 7, above: 0, below: 0}), '[truncated: at least 7 elements omitted]', 'none placed: no direction');
   assert.equal(marker({count: 5}), '[truncated: 5 elements omitted]', 'a walk with no visible area to place them by (a menu-bar root)');
 });
 

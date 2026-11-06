@@ -99,7 +99,7 @@ const STALE_POINT = '\nA click or drag at coordinates is checked against the scr
 
 // The fourth (the surface inventory's "Table 3 addition (2026-11-06, #301)"): the truncation marker of a walk the
 // node budget cut, which keeps what the window shows first.
-const TRUNCATION = '\nWhen a window holds more than its accessibility tree can list, the tree lists what the window shows first, in its usual order, and ends with a line such as `[truncated: at least 1234 elements omitted: 812 above the visible area, 403 below it, 19 elsewhere]`, every count a lower bound. To reach an element the tree does not list, scroll toward it and call `getAXState()` again. In a Chromium-based app the tree finds what the window shows by probing points 80 pt apart, so a control smaller than that can occasionally be missing from the list while it shows.\n';
+const TRUNCATION = '\nWhen a window holds more than its accessibility tree can list, the tree lists what the window shows first, in its usual order, and ends with a line such as `[truncated: at least 1234 elements omitted, above and below the visible area]`, the count a lower bound and the words saying which way the omitted elements lie. To reach an element the tree does not list, scroll toward it and call `getAXState()` again. A visible control inside a container that reports a collapsed frame can still be left out. In a Chromium-based app, a table\'s column and header elements take new element IDs at every observation.\n';
 
 test('agent-cursor.md is the Table 3 additions\' paragraphs, and the core carries it only where the facade asks for it', async () => {
   assert.equal(read(DOCS, 'agent-cursor.md'), AGENT_CURSOR + BACKGROUND_CLICKS + STALE_POINT + TRUNCATION);

@@ -1,7 +1,7 @@
-# #296's hosted false-positive spike (scripts/probe-296/live.mjs): the stale-point guard emulated outside the engine on
-# Chrome for Testing (its toolbar, and dynamic pages in dedicated mode), Safari (shared mode) and a native AppKit window
-# (both modes), origin/main's engine, two repetitions on separate runners. Runs only on a push to probe/296-hosted (or by
-# hand); not a ci-kit gate.
+# #296's hosted probes. Now the A/B of the built stale-point guard (scripts/probe-296/ab.mjs): fix/296-stale-point's
+# engine against main's on Chrome for Testing, Safari and a native AppKit window, two repetitions on separate runners.
+# The false-positive spike before it (scripts/probe-296/live.mjs) ran from this file at 40c8a4b8 and 6e1c5788.
+# Runs only on a push to probe/296-hosted (or by hand); not a ci-kit gate.
 name: probe-296
 on:
   push:
@@ -15,30 +15,34 @@ on:
 permissions:
   contents: read
 env:
-  P296_ENGINE_REF: 50f3312d3f6a8c7a40d6842746ee50e08d9a47ee
+  P296_MAIN_REF: d482bcc2e8b6ca21bb8cddf79f137356a9a48d97
+  P296_BRANCH_REF: a7a43b02a69aba31a74fcdb8825af2c44e4606a7
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: [chrome, safari]
+        group: [chrome, safari, native]
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Build main's engine
+      - name: Build both engines
         run: |
           sw_vers
-          git worktree add "$RUNNER_TEMP/main" "$P296_ENGINE_REF"
-          echo "P296_ENGINE_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
-          swift build --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng"
-      - name: Build the side tool and the native app
+          git fetch --no-tags origin fix/296-stale-point main
+          git worktree add "$RUNNER_TEMP/main" "$P296_MAIN_REF"
+          git worktree add "$RUNNER_TEMP/branch" "$P296_BRANCH_REF"
+          echo "P296_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "P296_BRANCH_COMMIT=$(git -C "$RUNNER_TEMP/branch" rev-parse HEAD)" >> "$GITHUB_ENV"
+          swift build --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng-main"
+          swift build --package-path "$RUNNER_TEMP/branch/native/engine" --scratch-path "$RUNNER_TEMP/eng-branch"
+      - name: Build the native app
         run: |
-          swiftc -O -o "$RUNNER_TEMP/p296-tool" scripts/probe-296/tool.swift
           app="$RUNNER_TEMP/Probe296.app/Contents"
           mkdir -p "$app/MacOS"
           swiftc -O -o "$app/MacOS/Probe296" scripts/probe-296/app.swift
@@ -54,13 +58,13 @@ jobs:
       - name: Live
         env:
           P296_REP: ${{ matrix.rep }}
-          P296_CELLS: ${{ github.event.inputs.cells || 'chrome/dedicated/feed,safari/shared/feed,safari/shared/scroll' }}
-        run: node scripts/probe-296/live.mjs --group ${{ matrix.group }} --engine "$RUNNER_TEMP/eng/debug/cua-engine" --tool "$RUNNER_TEMP/p296-tool" --app "$RUNNER_TEMP/Probe296.app/Contents/MacOS/Probe296" ${P296_CELLS:+--cells "$P296_CELLS"} --out "$RUNNER_TEMP/probe-296"
+          P296_CELLS: ${{ github.event.inputs.cells || '' }}
+        run: node scripts/probe-296/ab.mjs --group ${{ matrix.group }} --branch "$RUNNER_TEMP/eng-branch/debug/cua-engine" --main "$RUNNER_TEMP/eng-main/debug/cua-engine" --app "$RUNNER_TEMP/Probe296.app/Contents/MacOS/Probe296" ${P296_CELLS:+--cells "$P296_CELLS"} --out "$RUNNER_TEMP/probe-296"
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: probe-296-${{ matrix.group }}-rep${{ matrix.rep }}
+          name: probe-296-ab-${{ matrix.group }}-rep${{ matrix.rep }}
           path: |
             ${{ runner.temp }}/probe-296/*.json
             ${{ runner.temp }}/probe-296/*.jsonl

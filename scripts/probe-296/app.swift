@@ -8,6 +8,8 @@
 //   save     replaced, on "swap", by a "Delete" button of the same frame (the same role)
 //   keep     replaced, on "swaprole", by a "Remove" checkbox of the same frame
 //   move     moved 140 pt right on "move"
+//   like     replaced, on "like", by a new "Like (13)" button of the same frame (the A/B's limit i)
+//   relabel  retitled "Delete" in place on "relabel" (the A/B's limit ii)
 //   "reset" puts every one back.
 import AppKit
 
@@ -68,6 +70,13 @@ var keep = button("keep", "Keep", keepFrame)
 root.addSubview(keep)
 let move = button("move", "Move", moveFrame)
 root.addSubview(move)
+// The A/B's limits: "like" replaced on "like" by a new button titled 'Like (13)' at the same frame (limit i), and
+// "relabel" retitled 'Delete' in place on "relabel", one surviving element (limit ii, #298).
+let likeFrame = NSRect(x: 180, y: 220, width: W, height: H), relabelFrame = NSRect(x: 180, y: 270, width: W, height: H)
+var like = button("like", "Like (12)", likeFrame)
+root.addSubview(like)
+let relabel = button("relabel", "Save", relabelFrame)
+root.addSubview(relabel)
 
 let started = Date()
 let formatter = DateFormatter()
@@ -89,6 +98,8 @@ func reset() {
   let s = button("save", "Save", saveFrame); root.replaceSubview(save, with: s); save = s
   let k = button("keep", "Keep", keepFrame); root.replaceSubview(keep, with: k); keep = k
   move.setFrameOrigin(moveFrame.origin)
+  let l = button("like", "Like (12)", likeFrame); root.replaceSubview(like, with: l); like = l
+  relabel.title = "Save"
 }
 var lastNonce = ""
 Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
@@ -100,6 +111,8 @@ Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
   case "swap": let d = button("delete", "Delete", saveFrame); root.replaceSubview(save, with: d); save = d
   case "swaprole": let c = button("remove", "Remove", keepFrame, checkbox: true); root.replaceSubview(keep, with: c); keep = c
   case "move": move.setFrameOrigin(NSPoint(x: moveFrame.minX + 140, y: moveFrame.minY))
+  case "like": let l = button("like", "Like (13)", likeFrame, gen: 1); root.replaceSubview(like, with: l); like = l
+  case "relabel": relabel.title = "Delete"
   case "reset": reset()
   default: break
   }

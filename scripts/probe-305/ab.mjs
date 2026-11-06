@@ -163,6 +163,9 @@ async function click(w, pid, sky, point) {
   const out = {px, posted, emulated: {v: emu.v, node: emu.node, hit: emu.hit}, stalePoint: findKey(r.error ?? r.result, 'stalePoint') ?? null,
     result: r.error ? {error: name, message: String(r.error.message ?? '').slice(0, 300)} : {ok: true}};
   out.refused = r.error ? /screenChangedSinceScreenshot/.test(`${name} ${r.error.message}`) : false;
+  // Where the click went (#305's ancestor passes): the app's focused element and selected rows, read 600 ms after.
+  out.hitAtClick = ch.chain?.[0] ?? null;
+  if (!r.error) { await sleep(600); out.focus = await ask({op: 'focus', pid}); }
   // The hit's own entries in the record (by role and a frame within 1 pt): whether the screenshot showed it whole, or
   // clipped (its shown part), and whether the posted point lies in that shown part widened by 2 pt (#305's rule 2).
   const h = ch.chain?.[0];

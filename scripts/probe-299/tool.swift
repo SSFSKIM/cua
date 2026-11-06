@@ -418,6 +418,22 @@ func mech(_ req: [String: Any]) -> [String: Any] {
   return out
 }
 
+/// `{"op":"focus","pid"}` (#305): where a click went, as the app tells it: its focused element, and the selected rows of
+/// that element or of its nearest outline, table or list ancestor (each described).
+func focus(_ req: [String: Any]) -> [String: Any] {
+  guard let pid = (req["pid"] as? NSNumber)?.int32Value else { return ["error": "bad focus args"] }
+  let app = prepare(AXUIElementCreateApplication(pid))
+  guard let f = asElement(multi(app, [kAXFocusedUIElementAttribute])[0]) else { return ["focused": NSNull()] }
+  var out: [String: Any] = ["focused": describeFully(f)]
+  for e in [f] + parentsOf(f, limit: 8) {
+    let role = (multi(e, [kAXRoleAttribute])[0] as? String) ?? ""
+    guard ["AXOutline", "AXTable", "AXList"].contains(role) else { continue }
+    out["selectedRows"] = asElements(multi(e, [kAXSelectedRowsAttribute])[0]).prefix(5).map(describeFully)
+    break
+  }
+  return out
+}
+
 let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
 while let line = readLine() {
   guard let data = line.data(using: .utf8), let req = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -436,6 +452,7 @@ while let line = readLine() {
   case "handles": emit(handles(req))
   case "chains": emit(chains(req))
   case "mech": emit(mech(req))
+  case "focus": emit(focus(req))
   default: emit(["error": "unknown op"])
   }
 }

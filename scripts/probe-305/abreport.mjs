@@ -55,6 +55,17 @@ const by = {}; for (const c of rh) by[c.stalePoint.probeRecordedHitBy ?? 'unknow
 const clip = {}; for (const c of rh) { const e = c.hitRecord?.[0]; const k = !e ? 'hit not in record by role+frame' : `${e.clipped ? 'clipped' : 'unclipped'}${e.pointInShown ? '' : ', point outside shown+2'}`; clip[`${c.spot}: ${k}`] = (clip[`${c.spot}: ${k}`] ?? 0) + 1; }
 console.log(`\n### recordedHit (branch): ${rh.length} clicks; stalePoint.ms p50 ${q(rh.map(c => c.stalePoint.ms), 0.5)} p95 ${q(rh.map(c => c.stalePoint.ms), 0.95)} max ${q(rh.map(c => c.stalePoint.ms), 1)}; matched by ${fmt(by)}`);
 for (const [k, v] of Object.entries(clip)) console.log(`- ${k} ×${v}`);
+// Which frame carried each recordedHit (the meta's recordedHitBy, ruling a27fc57c), and for an ancestor's whether the
+// click went where it was aimed: the app's focus on the live hit, or a selected row holding the point.
+const carried = {}; for (const c of rh) carried[c.stalePoint.recordedHitBy ?? 'none'] = (carried[c.stalePoint.recordedHitBy ?? 'none'] ?? 0) + 1;
+console.log(`- carried by: ${fmt(carried)}`);
+const near1 = (f, h) => f && h && Math.abs(f[0] - h[1]) <= 1 && Math.abs(f[1] - h[2]) <= 1 && Math.abs(f[2] - h[3]) <= 1 && Math.abs(f[3] - h[4]) <= 1;
+const holdsP = (f, p) => f && p.x >= f[0] && p.x <= f[0] + f[2] && p.y >= f[1] && p.y <= f[1] + f[3];
+for (const c of rh.filter(c => c.stalePoint.recordedHitBy === 'ancestor')) {
+  const focusOn = c.focus?.focused && c.hitAtClick && c.focus.focused.role === c.hitAtClick[0] && near1(c.focus.focused.frame, c.hitAtClick);
+  const rowHolds = (c.focus?.selectedRows ?? []).some(r => holdsP(r.frame, c.posted));
+  console.log(`  - ancestor pass ${c.spot} (${c.posted?.x},${c.posted?.y}) hit ${c.hitAtClick?.[0]} ${JSON.stringify(c.hitAtClick?.slice(1))}: landed ${focusOn ? 'yes (focus on the hit)' : rowHolds ? 'yes (a selected row holds the point)' : 'not shown'}; focused ${JSON.stringify(c.focus?.focused ?? null).slice(0, 160)}${c.effect ? `; effect ${JSON.stringify(c.effect).slice(0, 100)}` : ''}`);
+}
 
 console.log('\n### #296 stale suite\n');
 console.log('| cell | expect | main (rep1, rep2) | branch (rep1, rep2) | branch meets expect |');

@@ -11,8 +11,9 @@ permissions:
   contents: read
 env:
   P305_MAIN_REF: 4525925ec0bf8b00388022e7fc37ca4188231efe
-  # The fix (fix/305-recorded-hit), its build alone also instrumented by scripts/probe-305/instrument-hit.py.
-  P305_BRANCH_REF: 62e9f026
+  # The fix (fix/305-recorded-hit) at 700bcf99 (ruling a27fc57c; the meta carries recordedHitBy itself). 62e9f026 ran in runs
+  # 42269993080, 42294564231 and 42299375682, its build also instrumented by scripts/probe-305/instrument-hit.py.
+  P305_BRANCH_REF: 700bcf99
 jobs:
   probe:
     strategy:
@@ -22,7 +23,7 @@ jobs:
         # The full A/B ran at 198bfa09 (run 42269993080: chrome, safari, finder, textedit and #296's s296-* groups). This
         # push re-runs Safari split in two (its job timed out at 120 min) and the Chrome and Finder sweeps (a re-find
         # that skipped controls on a shifted page); a group <app>-<part> runs one part of scripts/probe-305/ab.mjs.
-        group: [finder-sweep]  # wave 3: list view restored before every click; safari-spots, safari-sweep and chrome-sweep ran at d4a1da2e (run 42294564231)
+        group: [safari-spots, finder-spots, safari-sweep, s296-chrome, s296-final, s296-safari-final, s296-native-final]
     runs-on: macos-latest
     timeout-minutes: 180
     steps:
@@ -42,7 +43,6 @@ jobs:
           echo "P296_BRANCH_COMMIT=$(git -C "$RUNNER_TEMP/branch" rev-parse HEAD)" >> "$GITHUB_ENV"
           python3 -I scripts/probe-299/instrument.py "$RUNNER_TEMP/main/native/engine/Sources/Engine"
           python3 -I scripts/probe-299/instrument.py "$RUNNER_TEMP/branch/native/engine/Sources/Engine"
-          python3 -I scripts/probe-305/instrument-hit.py "$RUNNER_TEMP/branch/native/engine/Sources/Engine"
           swift build -c release --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng-main"
           swift build -c release --package-path "$RUNNER_TEMP/branch/native/engine" --scratch-path "$RUNNER_TEMP/eng-branch"
           swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-299/tool.swift

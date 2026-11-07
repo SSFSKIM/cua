@@ -96,7 +96,9 @@ const VARIANTS = [
   {name: 'F1w frame-first (lists > 100, bisected)', opts: {frameFirst: {wide: 100}}},
   {name: 'F1w20 frame-first (lists > 20, bisected)', opts: {frameFirst: {wide: 20}}},
   {name: 'F2 non-web chrome first', opts: {webLast: true}},
-  {name: 'F4 strips in view peeked (1 level)', opts: {stripPeek: {depth: 1}}},
+  {name: 'F7 columns not taken up', opts: {skipColumns: true}},
+  {name: 'F7+F1w', opts: {skipColumns: true, frameFirst: {wide: 100}}},
+  {name: 'F7+F2', opts: {skipColumns: true, webLast: true}},
   {name: 'F4d strips in view peeked (3 levels)', opts: {stripPeek: {depth: 3}}},
   {name: 'F4e every strip peeked (3 levels)', opts: {stripPeek: {edge: true, depth: 3}}},
   {name: 'F4o every strip, oracle', opts: {stripPeek: 'oracle'}},
@@ -135,7 +137,10 @@ function simulate(wideSky, points, m, price) {
   const wideCut = Boolean(wt.nodeCapHit || wt.budgetHit || wt.deadlineHit);
   const frameMs = price?.frameMean ?? 0.1, childMs = price?.childrenMean ?? 0.1;
   const out = {wideNodes: T.rs.length, wideCut, wideWalkMs: wt.walkMs, variants: {}};
-  let baseWalk = null, baseRec = null;
+  let baseWalk = null, baseRec = null, baseCo = null;
+  // The base replay's container-only points that each fix turns checked, by main's attribution of the same point.
+  out.fixedByHole = {};
+  const holeAt = new Map(m.coPoints.map(c => [`${c.x},${c.y}`, c.hole]));
   for (const v of VARIANTS) {
     const walk = select(T, v.opts);
     let extra = [], seedMs = 0, seeds = 0;
@@ -145,29 +150,19 @@ function simulate(wideSky, points, m, price) {
       for (const p of pts) { seedMs += p.ms ?? 0; const found = chainNodes(T, p.chain); if (found.length) extra.push(found[found.length - 1]); }
     }
     const {rec, added} = recordOf(T, walk, extra);
-    if (v.name === 'base') { baseWalk = walk; baseRec = rec; }
     const g = shares(rec, points);
-    const dReads = walk.kept - (baseWalk?.kept ?? walk.kept);
-    const ms = dReads * m.msPerRead + walk.frames * frameMs + seedMs + added * childMs;
-    const msBisect = dReads * m.msPerRead + walk.framesBisect * frameMs + seedMs + added * childMs;
-    out.variants[v.name] = {checked: g.checked, containerOnly: g.containerOnly, unrecorded: g.unrecorded, n: g.n, coCount: g.counts.containerOnly,
-      kept: walk.kept, cut: walk.cut, frames: walk.frames, framesBisect: walk.framesBisect, seeds, added, ms: Math.round(ms), msBisect: Math.round(msBisect)};
-  }
-  // The base replay's container-only points that each fix turns checked, by main's attribution of the same point.
-  out.fixedByHole = {};
-  const baseCo = new Set(shares(baseRec, points).per.filter(x => x.c === 'containerOnly').map(x => `${x.p.x},${x.p.y}`));
-  const holeAt = new Map(m.coPoints.map(c => [`${c.x},${c.y}`, c.hole]));
-  for (const v of VARIANTS.slice(1)) {
-    const walk = select(T, v.opts);
-    let extra = [];
-    if (v.seed) for (const p of seedPoints(points, baseRec, v.seed)) { const f = chainNodes(T, p.chain); if (f.length) extra.push(f[f.length - 1]); }
-    const {rec} = recordOf(T, walk, extra);
+    if (v.name === 'base') { baseWalk = walk; baseRec = rec; baseCo = new Set(g.per.filter(x => x.c === 'containerOnly').map(x => `${x.p.x},${x.p.y}`)); }
     const fixed = {};
-    for (const x of shares(rec, points).per) {
+    for (const x of g.per) {
       const k = `${x.p.x},${x.p.y}`;
       if (baseCo.has(k) && x.c === 'checked') { const h = holeAt.get(k) ?? 'sim-only'; fixed[h] = (fixed[h] ?? 0) + 1; }
     }
     out.fixedByHole[v.name] = fixed;
+    const dReads = walk.kept - baseWalk.kept;
+    const ms = dReads * m.msPerRead + walk.frames * frameMs + seedMs + added * childMs;
+    const msBisect = dReads * m.msPerRead + walk.framesBisect * frameMs + seedMs + added * childMs;
+    out.variants[v.name] = {checked: g.checked, containerOnly: g.containerOnly, unrecorded: g.unrecorded, n: g.n, coCount: g.counts.containerOnly,
+      kept: walk.kept, cut: walk.cut, frames: walk.frames, framesBisect: walk.framesBisect, seeds, added, ms: Math.round(ms), msBisect: Math.round(msBisect)};
   }
   return out;
 }

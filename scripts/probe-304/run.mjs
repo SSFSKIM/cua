@@ -46,6 +46,7 @@ const PAGES = {
   'local-overlay': {local: '/overlay', hole: 1},
   'local-table': {local: '/', hole: 2},
   'local-table-bar': {local: '/bar', hole: 2},
+  'local-table-6k': {local: '/bar6k', hole: 2},
   'wiki-table': {url: 'https://en.wikipedia.org/wiki/List_of_countries_and_dependencies_by_population', hole: 2},
   'hn-thread': {url: 'https://news.ycombinator.com/item?id=13541679', hole: 2},
   'iana-media': {url: 'https://www.iana.org/assignments/media-types/media-types.xhtml', hole: 2},
@@ -59,6 +60,9 @@ const GROUPS = {
   // The fixtures again after run 42313992098 (the float wrapper given a role, the overlay page added).
   'chrome-fix': ['local-float', 'local-overlay', 'local-table-bar'],
   'safari-fix': ['local-float', 'local-overlay'],
+  // A table longer than the node budget; Safari's docs.python.org with the width-omitted body's children read (run 42313992098).
+  'chrome-big': ['local-table-6k'],
+  'safari-diag': ['py-docs'],
 };
 const TARGETS = GROUPS[GROUP]?.map(name => ({name, ...PAGES[name]}));
 if (!TARGETS) { console.error(`unknown group ${GROUP}`); process.exit(2); }
@@ -68,14 +72,16 @@ const POSITIONS = [{name: 'top', frac: 0}, {name: 'f25', frac: 0.25}, {name: 'f5
 // `/`: #299's 3,000-row table. `/bar`: the same table with a fixed toolbar of buttons after it in the document's order
 // (a visible sibling after a wide shown list). `/float`: 50 sections of 60 paragraphs, each section with a row of
 // floated buttons in an unclear'd wrapper (Chromium frames the wrapper as a collapsed strip while its buttons show).
-const TABLE_ROWS = (() => {
+// `/bar6k`: the barred table at 6,000 rows, more rows than the node budget.
+const tableRows = count => {
   const rows = [];
-  for (let i = 1; i <= 3000; i++) rows.push(`<tr><td>${i}</td><td><a href="#r${i}">Row ${i}</a></td><td>Name ${i}</td><td>${(i * 7919) % 10007}</td><td>Item ${i % 97}</td><td><button>Act ${i}</button></td></tr>`);
+  for (let i = 1; i <= count; i++) rows.push(`<tr><td>${i}</td><td><a href="#r${i}">Row ${i}</a></td><td>Name ${i}</td><td>${(i * 7919) % 10007}</td><td>Item ${i % 97}</td><td><button>Act ${i}</button></td></tr>`);
   return rows.join('');
-})();
-const TABLE = bar => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>probe304 table</title><style>body{font:14px sans-serif}td{padding:2px 8px;border-bottom:1px solid #ddd}
+};
+const TABLE_ROWS = tableRows(3000), TABLE_ROWS_6K = tableRows(6000);
+const TABLE = (bar, rows = TABLE_ROWS) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>probe304 table</title><style>body{font:14px sans-serif}td{padding:2px 8px;border-bottom:1px solid #ddd}
 #bar{position:fixed;left:0;right:0;bottom:0;background:#eee;padding:6px;border-top:1px solid #999}#bar button{margin-right:8px}</style></head>
-<body><h1>probe304 table</h1><table><thead><tr><th>#</th><th>Link</th><th>Name</th><th>Value</th><th>Group</th><th>Action</th></tr></thead><tbody>${TABLE_ROWS}</tbody></table>
+<body><h1>probe304 table</h1><table><thead><tr><th>#</th><th>Link</th><th>Name</th><th>Value</th><th>Group</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>
 ${bar ? `<div id="bar" role="toolbar">${Array.from({length: 10}, (_, i) => `<button>Tool ${i + 1}</button>`).join('')}</div>` : ''}</body></html>`;
 const FLOAT = (() => {
   const sections = [];
@@ -105,7 +111,7 @@ const OVERLAY = (() => {
 })();
 const server = createServer((req, res) => {
   res.writeHead(200, {'content-type': 'text/html; charset=utf-8'});
-  res.end(req.url.startsWith('/float') ? FLOAT : req.url.startsWith('/overlay') ? OVERLAY : req.url.startsWith('/bar') ? TABLE(true) : TABLE(false));
+  res.end(req.url.startsWith('/float') ? FLOAT : req.url.startsWith('/overlay') ? OVERLAY : req.url.startsWith('/bar6k') ? TABLE(true, TABLE_ROWS_6K) : req.url.startsWith('/bar') ? TABLE(true) : TABLE(false));
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const LOCAL = `http://127.0.0.1:${server.address().port}`;
@@ -288,12 +294,15 @@ async function measure(ctx, target, at, pageInfo) {
     row.main = {rpcMs: m.ms, ...summarize(m.sky, points)};
     writeFileSync(join(OUT, `obs-${fileName(label)}-main.json.gz`), gzipSync(JSON.stringify(slim(m.sky))));
     wide = await ctx.wide.connect();
-    const w = await observe(wide, ctx.pid, label, 'wide', 150_000);
+    const w = await observe(wide, ctx.pid, label, 'wide', 240_000);
     if (w.error) row.wideError = w.error;
     else {
       row.wide = {rpcMs: w.ms, ...summarize(w.sky, points)};
       writeFileSync(join(OUT, `obs-${fileName(label)}-wide.json.gz`), gzipSync(JSON.stringify(slim(w.sky))));
     }
+    // An element the width rule showed none of (more than 499 children, no visible subset): what its children's frames
+    // gave the record-only bisection.
+    if ((m.sky.probeReads ?? []).some(r => r[5] > 499 && r[6] === 0 && !r[12])) row.kids = await ctx.tool.ask({op: 'kids', pid: ctx.pid, window});
     if (at.name === 'top' || !ctx.priced?.[target.name]) {
       row.price = await ctx.tool.ask({op: 'price', pid: ctx.pid, window, cap: 1500});
       (ctx.priced ??= {})[target.name] = true;

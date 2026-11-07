@@ -172,6 +172,32 @@ func price(_ req: [String: Any]) -> [String: Any] {
           "childrenMean": mean(childMs), "childrenP50": pctl(childMs, 0.5), "hitMean": mean(hitMs), "hitP50": pctl(hitMs, 0.5), "hitP95": pctl(hitMs, 0.95)]
 }
 
+/// The first element of the window (depth first) with more than `over` children, and its children's roles and frames at
+/// the first and last 16 positions and every 25th between: what the guard's record-only bisection (#301 item 4,
+/// `recordedChildPositions`) had to work with.
+func kids(_ req: [String: Any]) -> [String: Any] {
+  guard let pid = (req["pid"] as? NSNumber)?.int32Value, let window = rectArg(req["window"]) else { return ["error": "bad kids args"] }
+  guard let root = findWindow(pid: pid, frame: window) else { return ["error": "no window"] }
+  let over = (req["over"] as? Int) ?? 499
+  var stack = [root]
+  var visited = 0
+  while let e = stack.popLast(), visited < 20_000 {
+    visited += 1
+    let v = multi(e, [kAXRoleAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXChildrenAttribute])
+    let children = asElements(v[3])
+    if children.count > over {
+      var sample: [[Any]] = []
+      for (i, c) in children.enumerated() where i < 16 || i >= children.count - 16 || i % 25 == 0 {
+        let w = multi(c, [kAXRoleAttribute, kAXPositionAttribute, kAXSizeAttribute])
+        sample.append([i, (w[0] as? String) ?? "", wire(rect(w[1], w[2]))])
+      }
+      return ["role": (v[0] as? String) ?? "", "frame": wire(rect(v[1], v[2])), "children": children.count, "sample": sample, "visited": visited]
+    }
+    for c in children.reversed() { stack.append(c) }
+  }
+  return ["none": true, "visited": visited]
+}
+
 func axscroll(_ req: [String: Any]) -> [String: Any] {
   guard let pid = (req["pid"] as? NSNumber)?.int32Value, let window = rectArg(req["window"]), let frac = (req["frac"] as? NSNumber)?.doubleValue else {
     return ["error": "bad axscroll args"]
@@ -219,6 +245,7 @@ while let line = readLine() {
   case "grid": emit(grid(req))
   case "price": emit(price(req))
   case "axscroll": emit(axscroll(req))
+  case "kids": emit(kids(req))
   default: emit(["error": "unknown op"])
   }
 }

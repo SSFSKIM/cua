@@ -44,10 +44,10 @@ patch('Skyshot.swift', '    if let settleMarker { skyshot["settle"] = settleMark
       '    skyshot["probeReads"] = walk.probeRows\n'
       '    skyshot["probeMenu"] = walk.menuBar.count\n')
 if wide:
-    patch('Walk.swift', 'let maxObservedNodes = 4_000\n', 'let maxObservedNodes = 60_000\n')
-    patch('Walk.swift', 'let observationDeadlineMs: Int64 = 10_000\n', 'let observationDeadlineMs: Int64 = 90_000\n')
-    patch('Walk.swift', 'let skyshotByteBudget = 6 * 1024 * 1024\n', 'let skyshotByteBudget = 96 * 1024 * 1024\n')
-    patch('Protocol.swift', 'let maxFrameSize = 8 * 1024 * 1024\n', 'let maxFrameSize = 256 * 1024 * 1024\n')
+    patch('Walk.swift', 'let maxObservedNodes = 4_000\n', 'let maxObservedNodes = 150_000\n')
+    patch('Walk.swift', 'let observationDeadlineMs: Int64 = 10_000\n', 'let observationDeadlineMs: Int64 = 180_000\n')
+    patch('Walk.swift', 'let skyshotByteBudget = 6 * 1024 * 1024\n', 'let skyshotByteBudget = 384 * 1024 * 1024\n')
+    patch('Protocol.swift', 'let maxFrameSize = 8 * 1024 * 1024\n', 'let maxFrameSize = 768 * 1024 * 1024\n')
 else:
     patch('Protocol.swift', 'let maxFrameSize = 8 * 1024 * 1024\n', 'let maxFrameSize = 64 * 1024 * 1024\n')
 print('instrumented', src, 'wide' if wide else 'main')

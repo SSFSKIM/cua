@@ -24,6 +24,22 @@ export function tree(probeReads, probeMenu = 0) {
     parent[i] = p ?? null;
     if (p != null) (r.recordOnly ? recKids : kids)[p].push(i);
   });
+  // A table's column lists the cells its rows list: the wide walk emitted each cell under its row, so a column's
+  // children are rebuilt as the cells at its position in each of the table's rows (main reads them again under the
+  // column, charging those it has not read under their rows, run 42313992098's local table).
+  rs.forEach((r, i) => {
+    if (r.role !== 'AXColumn' || kids[i].length >= r.chosen || parent[i] == null) return;
+    const table = parent[i];
+    const columns = kids[table].filter(c => rs[c].role === 'AXColumn');
+    const j = columns.indexOf(i);
+    const cells = [];
+    for (const row of kids[table]) {
+      if (rs[row].role !== 'AXRow') continue;
+      const rowCells = kids[row].filter(c => rs[c].role === 'AXCell');
+      if (rowCells[j] != null) cells.push(rowCells[j]);
+    }
+    kids[i] = cells.slice(0, r.chosen);
+  });
   return {rs, kids, recKids, parent, menu: probeMenu, window: rs[0]?.frame};
 }
 
@@ -45,8 +61,10 @@ class MinHeap {
 ///                   beyond a strip waits unread (every expanded node's children, or only a node's with more than K)
 ///   webLast         the window's non-web part first: a web area's children wait until nothing else showing is left
 ///   stripPeek       a strip set aside inside its clip (not at its edge) has its children's frames read, and is entered
-///                   when one shows (or has no frame); 'oracle' enters a strip whenever anything below it shows
-///   stripsFirst     the deferred strips inside their clip are taken up before the other deferred elements
+///                   when one shows (or has no frame), through strip children {depth} levels ({edge: true}: a strip
+///                   anywhere); 'oracle' enters any strip whenever anything below it shows
+///   stripsFirst     the deferred strips inside their clip ({edge: true}: anywhere) are taken up before the other deferred
+///   skipColumns     a table column's children (the cells its rows list) are not taken up
 export function select(T, opts = {}) {
   const {rs, kids} = T;
   const n = rs.length;
@@ -162,7 +180,7 @@ export function select(T, opts = {}) {
     if (sel[i] || cut) continue;
     if (bytes >= byteLimit || kept >= nodeLimit) { cut = true; continue; }
     sel[i] = 1; kept += 1; bytes += rs[i].bytes || 1; order.push(i);
-    if (!kids[i].length) { expanded[i] = 1; continue; }
+    if (!kids[i].length || (opts.skipColumns && rs[i].role === 'AXColumn')) { expanded[i] = 1; continue; }
     if (enters(i)) {
       if (!webDone && rs[i].role === 'AXWebArea') webQ.push(i); else expand(i);
     } else setAside(i);

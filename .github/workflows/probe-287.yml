@@ -24,7 +24,7 @@ jobs:
       matrix:
         rep: [1, 2]
         # A push runs the groups named here.
-        group: ${{ fromJSON(github.event.inputs.groups || '["firefox-recon"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-s296","chrome-s305","chrome-cov-a","chrome-cov-b","chrome-cov-c","firefox-a","firefox-s296","firefox-s305","firefox-cov","vscode-a","vscode-s305"]') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:

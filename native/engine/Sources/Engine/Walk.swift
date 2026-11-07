@@ -233,13 +233,66 @@ func recordedChildPositions(_ children: [AXUIElement], frame: @escaping (AXUIEle
 /// axis's, none charged to the node budget. Nil when the children have no axis or `expired` cut the search.
 func shownChildRun(_ children: [AXUIElement], frame: @escaping (AXUIElement) -> CGRect?, window: CGRect,
                    expired: @escaping () -> Bool = { false }) -> Range<Int>? {
-  let frames = ChildFrames(children: children, frame: frame, expired: expired)
+  bisectedRun(ChildFrames(children: children, frame: frame, expired: expired), window: window)?.run
+}
+
+/// `shownChildRun`, with the order its places were judged by.
+private func bisectedRun(_ frames: ChildFrames, window: CGRect) -> (run: Range<Int>, order: ListOrder)? {
   guard let vertical = frames.axis() else { return nil }
   let order = ListOrder(vertical: vertical, window: window, edge: 1)
-  let low = frames.bisect(children.indices, unframed: false) { !order.before($0) }
-  let high = frames.bisect(low..<children.count, unframed: true) { order.past($0) }
-  guard !expired() else { return nil }
-  return low..<high
+  let low = frames.bisect(frames.children.indices, unframed: false) { !order.before($0) }
+  let high = frames.bisect(low..<frames.children.count, unframed: true) { order.past($0) }
+  guard !frames.expired() else { return nil }
+  return (low..<high, order)
+}
+
+/// Up to this many children a wide list's are each judged by their own frame (`shownChildPositions`): about 31 ms of
+/// frame reads at 0.06 ms each, #304's price on the hosted runner.
+let classifyEveryChildUpTo = 512
+/// How many children a longer list's sampling reads at each end, and spread through the rest.
+let wideListSamples = 32
+
+/// The children of a wide list (more than 100) the selection reads first (#304, the design session's rulings 7b2a5a70
+/// and f1a7589f): every one that shows, so the rule never leaves unread a shown child the plain read of every child
+/// would have read before the cut. Sorted positions, or nil to take every child up in order (main's behaviour).
+/// - Up to `classifyEveryChildUpTo` children, each child is judged by its own frame: one that shows beyond a strip in
+///   `window`, or has no frame, is read first, wherever it lies (a list in two CSS columns shows two runs: Wikipedia's
+///   references, a single AXList whose children run down one column and start again at the top of the next).
+/// - Above that, the run that shows is bisected (`shownChildRun`) and checked against samples: the first and the last
+///   `wideListSamples` children, and as many spread evenly between them. An end sample outside the run that shows, or
+///   has no frame, is read with it (a fixed or sticky toolbar as a long body's last child). A middle sample that does
+///   not lie where its place says (before the window ahead of the run, across it in the run, past it after the run;
+///   a frameless one says nothing) means the children are not one run in order, and the list is taken up as on main.
+/// No axis, or the deadline, takes the list up as on main too.
+func shownChildPositions(_ children: [AXUIElement], frame: @escaping (AXUIElement) -> CGRect?, window: CGRect,
+                         expired: @escaping () -> Bool = { false }) -> [Int]? {
+  func shows(_ position: Int) -> Bool { frame(children[position]).map { showsBeyondStrip($0, in: window) } ?? true }
+  if children.count <= classifyEveryChildUpTo {
+    var shown: [Int] = []
+    for position in children.indices {
+      guard !expired() else { return nil }
+      if shows(position) { shown.append(position) }
+    }
+    return shown
+  }
+  guard let bisected = bisectedRun(ChildFrames(children: children, frame: frame, expired: expired), window: window) else { return nil }
+  let (run, order) = bisected
+  let count = children.count
+  var first = Set(run)
+  for position in Array(0..<wideListSamples) + Array((count - wideListSamples)..<count) where !run.contains(position) {
+    guard !expired() else { return nil }
+    if shows(position) { first.insert(position) }
+  }
+  let span = count - 2 * wideListSamples
+  for k in 0..<wideListSamples {
+    let position = wideListSamples + k * span / wideListSamples
+    guard !expired() else { return nil }
+    guard let rect = frame(children[position]) else { continue }
+    let place = order.before(rect) ? 0 : order.past(rect) ? 2 : 1
+    let expected = position < run.lowerBound ? 0 : position < run.upperBound ? 1 : 2
+    if place != expected { return nil }
+  }
+  return first.sorted()
 }
 
 final class TreeWalk {
@@ -258,6 +311,9 @@ final class TreeWalk {
   /// Whether the walk keeps the guard's record beyond the tree (an observation that returns a screenshot): the children of
   /// an element the width rule shows none of whose frames meet the window, and their subtrees (#301 item 4).
   let recordsScreenshot: Bool
+  /// Whether #304's wide-list rules apply (`shownChildPositions`, the columns' children last); off only in tests, which
+  /// compare a walk with main's selection.
+  let wideListRules: Bool
 
   private(set) var nodes: [[String: Any]] = []
   private(set) var menuBar: [[String: Any]] = []
@@ -395,7 +451,7 @@ final class TreeWalk {
   private var lastly: [Waiting] = []
 
   init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, chromium: Bool = false,
-       visibleFrame: CGRect?, recordsScreenshot: Bool = false) {
+       visibleFrame: CGRect?, recordsScreenshot: Bool = false, wideListRules: Bool = true) {
     self.source = source
     self.lineage = lineage
     previous = lineage.current
@@ -405,6 +461,7 @@ final class TreeWalk {
     self.chromium = chromium
     self.visibleFrame = visibleFrame
     self.recordsScreenshot = recordsScreenshot
+    self.wideListRules = wideListRules
     revision = Revision()
   }
 
@@ -474,14 +531,15 @@ final class TreeWalk {
   /// ancestors leave showing of the window (`showsBeyondStrip`) or when it has no frame; any other element is read but
   /// its children wait (`deferred`). Once nothing showing is left, the waiting children are taken up in the document's
   /// order, each again showing first. Two rules keep a wide list from spending the budget on what it does not show
-  /// (#304, the design session's ruling 7b2a5a70): of an element taken up with more than 100 children, the run that shows
-  /// is found by frames alone (`shownChildRun`) and read first, the rest waiting unread in the document's order with
-  /// everything else that waits; and an AXColumn's children, the cells Chromium lists again under their rows, wait until
+  /// (#304, the design session's rulings 7b2a5a70 and f1a7589f): of an element taken up with more than 100 children,
+  /// the children that show are found by frames alone (`shownChildPositions`) and read first, the rest waiting unread in
+  /// the document's order with everything else that waits; and an AXColumn's children, the cells Chromium lists again under their rows, wait until
   /// nothing else is left. So a walk nothing cuts reads every element and emits what the plain preorder does, and one the
   /// budget cuts has spent it on what the screenshot shows. The limits: a visible control under a container that reports
   /// a collapsed (1-pt) frame waits with it, so the budget can still cut it, and the guard checks it container-only (#304
-  /// measured none in 234 observations: Chromium gives a collapsed wrapper its descendants' union bounds); and a wide
-  /// list whose shown run, with what precedes it, takes the whole budget still starves what follows it.
+  /// measured none in 234 observations: Chromium gives a collapsed wrapper its descendants' union bounds); a wide list
+  /// whose shown children, with what precedes them, take the whole budget still starve what follows; and in a list of
+  /// more than 512 children, a shown child in the middle, outside the bisected run, that the samples miss waits.
   private func select(_ window: AXUIElement, nodeLimit: Int, byteLimit: Int) {
     stack = [Pending(element: window, depth: 0, clip: visibleFrame)]
     var kept = 0
@@ -493,7 +551,7 @@ final class TreeWalk {
         guard let resumed = nextDeferred() else { break }
         switch resumed {
         case .children(let item): expand(item)
-        case .unread(let item, let positions): push(item, positions)
+        case .unread(let item, let positions): push(item, Array(positions))
         }
         continue
       }
@@ -517,7 +575,7 @@ final class TreeWalk {
         selectionBytes += jsonBytes(read.wire) + 1
         for key in read.descriptionKeys { if let key { descriptionUses[key, default: 0] += 1 } }
         if read.children.isEmpty { item.expanded = true }
-        else if item.clip != nil, read.data.role == kAXColumnRole { insertInOrder(.children(item), into: &lastly) }
+        else if wideListRules, item.clip != nil, read.data.role == kAXColumnRole { insertInOrder(.children(item), into: &lastly) }
         else if enters(item, key) { expand(item) } else { insertInOrder(.children(item), into: &deferred) }
       }
     }
@@ -564,6 +622,15 @@ final class TreeWalk {
     }
   }
 
+  /// For #304's invariant check (`WideListInvariantTests`): of an element the selection read for the tree, its children as
+  /// the width rule kept them, the clip they are judged in, whether it is taken up at once (`enters`) and whether its
+  /// children were taken up by the time the walk stopped.
+  func selectionFacts(of element: AXUIElement) -> (children: [AXUIElement], childClip: CGRect?, enters: Bool, takenUp: Bool)? {
+    let key = ElementKey(element: element)
+    guard let item = selected[key] else { return nil }
+    return (item.read.children, childClip(item), enters(item, key), item.expanded)
+  }
+
   /// Whether a read element's children are taken up now: the root, an element with no frame or no visible frame to meet,
   /// or one that shows beyond a strip.
   private func enters(_ item: Selected, _ key: ElementKey) -> Bool {
@@ -580,24 +647,27 @@ final class TreeWalk {
   }
 
   /// Takes up a read element's children (then its record-only ones), the first to be read next. In the tree's selection,
-  /// a list of more than 100 whose clip shows has only the run that shows taken up (`shownChildRun`); the children before
-  /// and after it wait, unread, in `deferred` (#304). Without a run (no axis to bisect, or the deadline) all are taken up.
+  /// a list of more than 100 whose clip shows has the children that show taken up (`shownChildPositions`); the runs of
+  /// the others wait, unread, in `deferred` (#304). Without them (main's behaviour for that list) all are taken up.
   private func expand(_ item: Selected) {
     item.expanded = true
     let count = item.read.children.count + item.recordChildren.count
     // The record's selection (`selectForRecord`) drains the stack alone, so it takes every child up.
-    if !item.recordOnly, item.read.children.count > widthThreshold, let area = childClip(item), showsBeyondStrip(area, in: area),
-       let run = shownChildRun(item.read.children, frame: { self.source.frame($0) }, window: area, expired: { [self] in pastDeadline() }) {
-      if run.lowerBound > 0 { insertInOrder(.unread(item, 0..<run.lowerBound), into: &deferred) }
-      if run.upperBound < count { insertInOrder(.unread(item, run.upperBound..<count), into: &deferred) }
-      push(item, run)
+    if wideListRules, !item.recordOnly, item.read.children.count > widthThreshold, let area = childClip(item), showsBeyondStrip(area, in: area),
+       let first = shownChildPositions(item.read.children, frame: { self.source.frame($0) }, window: area, expired: { [self] in pastDeadline() }) {
+      var start = 0
+      for position in first + [count] {
+        if position > start { insertInOrder(.unread(item, start..<position), into: &deferred) }
+        start = position + 1
+      }
+      push(item, first)
     } else {
-      push(item, 0..<count)
+      push(item, Array(0..<count))
     }
   }
 
   /// Puts the children of a read element at `positions` (its record-only ones past its own) on the stack, the first on top.
-  private func push(_ item: Selected, _ positions: Range<Int>) {
+  private func push(_ item: Selected, _ positions: [Int]) {
     let clip = childClip(item)
     let children = item.read.children + item.recordChildren
     for position in positions.reversed() {

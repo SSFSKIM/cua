@@ -107,9 +107,10 @@ extension Engine {
 
 func walk(_ tree: FakeTree, _ lineage: Lineage, window: Int = 0, menuBar: Int? = nil, menu: [Int] = [],
           limits: WalkLimits = WalkLimits(deadline: .infinity), visibleFrame: CGRect? = nil, source: FakeSource? = nil,
-          interactionFlags: Bool = true, chromium: Bool = false, recordsScreenshot: Bool = false) -> TreeWalk {
+          interactionFlags: Bool = true, chromium: Bool = false, recordsScreenshot: Bool = false, wideListRules: Bool = true) -> TreeWalk {
   let walk = TreeWalk(source: source ?? FakeSource(tree), lineage: lineage, limits: limits, markdown: false,
-                      interactionFlags: interactionFlags, chromium: chromium, visibleFrame: visibleFrame, recordsScreenshot: recordsScreenshot)
+                      interactionFlags: interactionFlags, chromium: chromium, visibleFrame: visibleFrame, recordsScreenshot: recordsScreenshot,
+                      wideListRules: wideListRules)
   walk.run(window: element(window), menuBar: menuBar.map(element), menuItems: menu.map(element))
   lineage.commit(walk.revision)
   return walk

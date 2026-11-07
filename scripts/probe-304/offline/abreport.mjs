@@ -108,10 +108,12 @@ for (const r of rows) for (const c of r.compare ?? []) {
   if (!c.uncut) continue;
   const t = tally[c.same ? 'same' : 'cross'];
   t.n += 1; if (c.printed) t.printed += 1; if (c.record) t.record += 1; if (c.nodes) t.nodes += 1;
-  if (!c.same && (c.printed || c.record)) {
+  // The raw nodes count too: they carry the action descriptions (`actionDescriptions`), which the fix's
+  // describeAtPreorderPlaces settles, and an uncut walk must match main's exactly.
+  if (!c.same && (c.printed || c.record || c.nodes)) {
     const control = (r.compare ?? []).filter(x => x.same && x.uncut);
-    const moved = control.some(x => x.printed || x.record);
-    crossDiffs.push({label: `${r.label} rep${r.rep}`, slots: c.slots, moved, printed: c.printed, record: c.record});
+    const moved = control.some(x => x.printed || x.record || x.nodes);
+    crossDiffs.push({label: `${r.label} rep${r.rep}`, slots: c.slots, moved, printed: c.printed, record: c.record, nodes: c.nodes});
   }
 }
 for (const k of ['cross', 'same']) console.log(`- ${k === 'cross' ? 'A vs B' : 'a head vs itself'}: ${tally[k].n} uncut pairs; printed differs ${tally[k].printed}, record differs ${tally[k].record}, raw nodes differ ${tally[k].nodes}`);
@@ -125,6 +127,7 @@ for (const x of crossDiffs) {
   console.log(`  - ${x.label} slots ${x.slots.join('-')}${x.moved ? ' (the page moved: its control differs too)' : ' **HEAD DIFFERENCE**'}`);
   if (x.printed) console.log(`    printed: ${x.printed.differing} lines differ (of ${x.printed.lines.join(', ')}), first at ${x.printed.first}: ${JSON.stringify(x.printed.a?.path)} vs ${JSON.stringify(x.printed.b?.path)}`);
   if (x.record) console.log(`    record: ${x.record.differing} entries differ (of ${x.record.entries.join(', ')}), first at ${x.record.first}: ${JSON.stringify(x.record.a?.path)} vs ${JSON.stringify(x.record.b?.path)}`);
+  if (x.nodes) console.log(`    raw nodes: ${x.nodes.differing} differ (of ${x.nodes.nodes.join(', ')}), first at ${x.nodes.first}: ${x.nodes.a} vs ${x.nodes.b}`);
 }
 
 // ---- 4. cut flags -----------------------------------------------------------------------------------------------------

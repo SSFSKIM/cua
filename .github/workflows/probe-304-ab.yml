@@ -18,19 +18,17 @@ on:
 permissions:
   contents: read
 env:
-  # Phase 1, the noise floor and the kit's check: A = B = main f20a25ee.
+  # Phase 1 (runs 42326533862 and 42328384133) ran A = B = main f20a25ee, the noise floor and the kit's check. Phase 3:
+  # B = fix/304-wide-list 566e3612 (its last code commit 839c1507).
   P304_A_REF: f20a25ee895c5aab2ebb760f6114ecaac232c732
-  P304_B_REF: f20a25ee895c5aab2ebb760f6114ecaac232c732
+  P304_B_REF: 566e3612
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        # Every group: chrome-a, chrome-b, chrome-c, safari, sweep-chrome, sweep-safari, sweep-finder, sweep-textedit,
-        # s296-chrome, s296-final, s296-safari-final, s296-native-final. Run 42326533862 (kit 021a062d) ran them all on
-        # A = B = main; this push re-runs the coverage groups only, with eight timed observations per position.
-        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-a","chrome-b","chrome-c","safari"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-a","chrome-b","chrome-c","safari","sweep-chrome","sweep-safari","sweep-finder","sweep-textedit","s296-chrome","s296-final","s296-safari-final","s296-native-final"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:

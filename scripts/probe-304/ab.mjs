@@ -46,6 +46,7 @@ const PAGES = {
   'osm': {url: 'https://www.openstreetmap.org/#map=12/51.5/-0.1'},
   'local-float': {local: '/float'},
   'local-overlay': {local: '/overlay'},
+  'local-fixed-tail': {local: '/fixedtail'},
   'local-table': {local: '/'},
   'local-table-bar': {local: '/bar'},
   'local-table-6k': {local: '/bar6k'},
@@ -56,9 +57,9 @@ const PAGES = {
 };
 const GROUPS = {
   'chrome-a': ['py-docs', 'mdn-float', 'rust-vec', 'go-http', 'k8s-docs', 'npm-react'],
-  'chrome-b': ['wiki-article', 'bbc-news', 'guardian', 'w3s-float', 'osm', 'local-float', 'local-overlay'],
+  'chrome-b': ['wiki-article', 'bbc-news', 'guardian', 'w3s-float', 'osm', 'local-float', 'local-overlay', 'local-fixed-tail'],
   'chrome-c': ['local-table', 'local-table-bar', 'local-table-6k', 'wiki-table', 'hn-thread', 'iana-media', 'gh-issues'],
-  safari: ['py-docs', 'wiki-article', 'bbc-news', 'mdn-float', 'local-table', 'local-float', 'local-overlay'],
+  safari: ['py-docs', 'wiki-article', 'bbc-news', 'mdn-float', 'local-table', 'local-float', 'local-overlay', 'local-fixed-tail'],
 };
 const TARGETS = GROUPS[GROUP]?.map(name => ({name, ...PAGES[name]}));
 if (!TARGETS) { console.error(`unknown group ${GROUP}`); process.exit(2); }
@@ -98,9 +99,15 @@ const OVERLAY = (() => {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>probe304 overlay</title><style>body{font:14px sans-serif}p{margin:4px 0}</style></head>
 <body><h1>probe304 overlay</h1>${sections.join('')}</body></html>`;
 })();
+// `/fixedtail`: the fix's stated limit (a child that shows but lies outside a wide list's bisected run waits in the
+// deferred queue): a body of 2,500 paragraphs, each with a link (more nodes than the budget), whose last child is a
+// toolbar fixed to the viewport's bottom.
+const FIXED_TAIL = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>probe304 fixed tail</title><style>body{font:14px sans-serif}p{margin:4px 0}
+#tail{position:fixed;left:0;right:0;bottom:0;background:#eee;padding:6px;border-top:1px solid #999}#tail button{margin-right:8px}</style></head>
+<body>${Array.from({length: 2500}, (_, i) => `<p>Paragraph ${i + 1} with <a href="#p${i + 1}">link ${i + 1}</a> in it.</p>`).join('')}<div id="tail" role="toolbar" aria-label="Tail">${Array.from({length: 8}, (_, i) => `<button>Tail ${i + 1}</button>`).join('')}</div></body></html>`;
 const server = createServer((req, res) => {
   res.writeHead(200, {'content-type': 'text/html; charset=utf-8'});
-  res.end(req.url.startsWith('/float') ? FLOAT : req.url.startsWith('/overlay') ? OVERLAY : req.url.startsWith('/bar6k') ? TABLE(true, TABLE_ROWS_6K) : req.url.startsWith('/bar') ? TABLE(true) : TABLE(false));
+  res.end(req.url.startsWith('/fixedtail') ? FIXED_TAIL : req.url.startsWith('/float') ? FLOAT : req.url.startsWith('/overlay') ? OVERLAY : req.url.startsWith('/bar6k') ? TABLE(true, TABLE_ROWS_6K) : req.url.startsWith('/bar') ? TABLE(true) : TABLE(false));
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const LOCAL = `http://127.0.0.1:${server.address().port}`;

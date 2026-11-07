@@ -32,3 +32,9 @@ for (const [k, v] of [...rows].sort()) {
   console.log(`${k.padEnd(30)} cft ${cell(v.cft).padEnd(44)} stable ${cell(v.stable).padEnd(44)} ${v.firefox ? 'firefox ' + cell(v.firefox) : ''} ${d !== null ? 'Δchecked ' + d : ''}`);
 }
 console.log(`rows with |Δchecked| >= 5 points: ${diffs}`);
+const walk = [...rows.values()].filter(v => v.cft && v.stable).map(v => v.stable.walk - v.cft.walk).sort((a, b) => a - b);
+const cutWalk = [...rows.values()].filter(v => v.cft && v.stable && v.cft.cut !== '-').map(v => v.stable.walk - v.cft.walk).sort((a, b) => a - b);
+const q = (a, f) => a.length ? a[Math.min(a.length - 1, Math.floor(f * a.length))] : null;
+console.log(`walk ms, stable - CfT per row: n ${walk.length} p50 ${q(walk, 0.5)} p10 ${q(walk, 0.1)} p90 ${q(walk, 0.9)}; cut walks n ${cutWalk.length} p50 ${q(cutWalk, 0.5)}`);
+const cuts = [...rows.values()].filter(v => v.cft && v.stable && v.cft.cut !== v.stable.cut).length;
+console.log(`rows whose cut flags differ: ${cuts}`);

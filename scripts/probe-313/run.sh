@@ -29,8 +29,8 @@ for h in $heads; do
       if [ "$h" = "${heads%% *}" ]; then for b in safari firefox; do export P287_BROWSER="$b"; stamp "$b raw"; node scripts/probe-313/raw.mjs --engine "$E" --ax283 "$T/p283-ax" --out "$OUT/raw/$b"; done; fi ;;
     safari-caret)
       # The Safari by-token cells alone, the textarea filled so the caret's place is checkable (P313_FILLED).
-      export P287_BROWSER=safari P313_FILLED=1
-      stamp "$h safari caret"; node scripts/probe-313/web.mjs --engine "$E" --ax "$AX" --out "$OUT/$h/safari/web" ;;
+      export P287_BROWSER=safari P313_FILLED="${P313_FILLED:-1}"
+      stamp "$h safari caret"; node scripts/probe-313/web.mjs --engine "$E" --ax "$AX" --cells "${P313_CELLS:-}" --out "$OUT/$h/safari/web" ;;
     latency)
       # Firefox's focus read-back after AXPress (main's route), on A only.
       if [ "$h" = a ]; then export P287_BROWSER=firefox; stamp "a firefox latency"; node scripts/probe-313/latency.mjs --engine "$E" --ax "$AX" --poll "$T/p313-poll" --n 20 --out "$OUT/a/firefox/latency"; fi ;;

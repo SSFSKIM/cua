@@ -74,6 +74,9 @@ jobs:
         env:
           GROUP: ${{ matrix.group }}
           REP: ${{ matrix.rep }}
+          # safari-caret: the textarea's text (1: eight lines, top: two at its top) and the cells (prefixes; empty for all).
+          P313_FILLED: 'top'
+          P313_CELLS: ''
         run: bash scripts/probe-313/run.sh
       - name: Upload
         if: always()

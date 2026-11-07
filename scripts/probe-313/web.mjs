@@ -28,8 +28,12 @@ const log = (...a) => console.log('probe-313 web:', ...a);
 const MARK = 'QZ';
 // P313_FILLED=1: the textarea holds eight monospace lines, so a caret placed at its centre has a non-zero offset the
 // page can predict (expectedOffset: the line and column under the centre, from the font's measured width).
-const FILLED = process.env.P313_FILLED === '1';
-const LINES = Array.from({length: 8}, (_, i) => `line${i} ` + 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWX'.slice(0, 54));
+// P313_FILLED=top: two short lines at its top only, so the hit at its centre is the textarea itself, not its text (a
+// filled textarea's centre hits its AXStaticText, and the click goes by the synthesized path); the point lies below
+// the text (expected.outside).
+const FILLED = ['1', 'top'].includes(process.env.P313_FILLED);
+const LINES = process.env.P313_FILLED === 'top' ? ['first line', 'second line']
+  : Array.from({length: 8}, (_, i) => `line${i} ` + 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWX'.slice(0, 54));
 const NOTES = FILLED ? `<textarea id="notes" aria-label="Probe notes" spellcheck="false" wrap="off" style="font:16px/20px Menlo,monospace;padding:4px;border:1px solid #888;width:480px;height:160px;resize:none;overflow:hidden;white-space:pre">${LINES.join('\n')}</textarea>`
   : '<textarea id="notes" aria-label="Probe notes" rows="8" cols="60" spellcheck="false"></textarea>';
 
@@ -43,7 +47,7 @@ let seq = 0; const load = Math.random().toString(36).slice(2, 10);
 const notes = document.getElementById('notes'), field = document.getElementById('field'), option = document.getElementById('option'), apply = document.getElementById('apply');
 const expected = () => { const cs = getComputedStyle(notes); const cx = document.createElement('canvas').getContext('2d'); cx.font = cs.font;
   const cw = cx.measureText('abcdefghij').width / 10, lh = parseFloat(cs.lineHeight), pl = parseFloat(cs.paddingLeft) + notes.clientLeft, pt = parseFloat(cs.paddingTop) + notes.clientTop;
-  const lines = notes.value.split('\\n'); const line = Math.min(lines.length - 1, Math.floor((notes.offsetHeight / 2 - pt) / lh));
+  const lines = notes.value.split('\\n'); const raw = Math.floor((notes.offsetHeight / 2 - pt) / lh); if (raw >= lines.length) return {outside: true, line: raw, length: notes.value.length}; const line = raw;
   const col = Math.min(lines[line].length, Math.round((notes.offsetWidth / 2 - pl) / cw)); return {line, col, offset: lines.slice(0, line).reduce((n, l) => n + l.length + 1, 0) + col}; };
 const send = () => { seq += 1; navigator.sendBeacon('/counters', JSON.stringify({load, seq, counts: c, checked: option.checked, notes: notes.value, field: field.value, notesSel: [notes.selectionStart, notes.selectionEnd], fieldSel: [field.selectionStart, field.selectionEnd], expected: expected(), focused: document.hasFocus(), active: document.activeElement ? document.activeElement.id || document.activeElement.tagName : null})); };
 for (const k of ['pointerdown', 'mousedown', 'mouseup', 'click', 'input', 'keydown']) document.addEventListener(k, () => { c[k] += 1; send(); }, true);

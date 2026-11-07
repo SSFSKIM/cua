@@ -1,7 +1,7 @@
 #!/bin/bash
 # #313's hosted A/B: one group's cells on A (main, $RUNNER_TEMP/eng-a) and B (the fix, $RUNNER_TEMP/eng-b), one engine
 # process per cell and head, the heads' order alternating by repetition (odd: A first).
-#   GROUP=<safari|firefox|safari-x|firefox-x|native|native-x|raw|latency|safari-caret|p321|chrome> REP=<n> scripts/probe-313/run.sh
+#   GROUP=<safari|firefox|safari-x|firefox-x|native|native-x|raw|latency|safari-caret|p321|p321b|chrome> REP=<n> scripts/probe-313/run.sh
 set -u
 T="$RUNNER_TEMP"; OUT="$T/probe-313"; AX="$T/p313-ax"
 mkdir -p "$OUT"
@@ -34,6 +34,10 @@ for h in $heads; do
     p321)
       # #321: the rate, step and timing of Safari's window rising over TextEdit's, on A only (scripts/probe-321/rate.mjs).
       if [ "$h" = a ]; then export P287_BROWSER=safari; stamp "a safari 321"; node scripts/probe-321/rate.mjs --engine "$E" --win "$T/p321-win" --raw "$T/p321-raw" --batches 2 --clicks 5 --raw-batches 2 --raw-clicks 3 --out "$OUT/a/safari/p321"; fi ;;
+    p321b)
+      # #321 again: #313's kit's conditions (the click 1 s after its observation, also on a fresh Safari and engine per
+      # click), and raw orders of the hold's events.
+      if [ "$h" = a ]; then export P287_BROWSER=safari; stamp "a safari 321b"; node scripts/probe-321/rate.mjs --engine "$E" --win "$T/p321-win" --raw "$T/p321-raw" --batches 2 --clicks 5 --raw-batches 2 --raw-clicks 3 --cells engine/shared/token-textarea-gap,engine/shared/fresh-token-textarea-gap,raw/armout,raw/arm0,raw/twodown,raw/full,raw/downup --out "$OUT/a/safari/p321"; fi ;;
     latency)
       # Firefox's focus read-back after AXPress (main's route), on A only.
       if [ "$h" = a ]; then export P287_BROWSER=firefox; stamp "a firefox latency"; node scripts/probe-313/latency.mjs --engine "$E" --ax "$AX" --poll "$T/p313-poll" --n 20 --out "$OUT/a/firefox/latency"; fi ;;

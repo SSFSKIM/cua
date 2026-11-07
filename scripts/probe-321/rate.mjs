@@ -68,7 +68,7 @@ async function freshTextEdit() {
   await frontTextEdit();
 }
 async function watch(pid) {
-  const child = spawn(WIN, ['watch', String(pid), '3000', '5'], {stdio: ['pipe', 'pipe', 'ignore']});
+  const child = spawn(WIN, ['watch', String(pid), '4500', '5'], {stdio: ['pipe', 'pipe', 'ignore']});
   child.stdin.on('error', () => {});
   const lines = createInterface({input: child.stdout});
   const queue = [], waiters = [];
@@ -120,10 +120,13 @@ const say = row => log(`${row.label}: ${row.answer?.answer ?? row.raw?.steps?.ma
 
 const ENGINE_CELLS = [];
 for (const desktop of ['shared', 'dedicated']) for (const kind of ['token-textarea', 'coord-textarea', 'token-block']) ENGINE_CELLS.push({cell: `engine/${desktop}/${kind}`, desktop, kind});
-const RAW_CELLS = ['activate', 'down', 'downup', 'full', 'ax'].map(step => ({cell: `raw/${step}`, step}));
+// #313's kit's conditions: the click 1 s after its observation (gap), and that on a fresh Safari and engine per click.
+ENGINE_CELLS.push({cell: 'engine/shared/token-textarea-gap', desktop: 'shared', kind: 'token-textarea', gapMs: 1000});
+ENGINE_CELLS.push({cell: 'engine/shared/fresh-token-textarea-gap', desktop: 'shared', kind: 'token-textarea', gapMs: 1000, batches: 10, clicks: 1});
+const RAW_CELLS = ['activate', 'down', 'downup', 'full', 'ax', 'armout', 'arm0', 'twodown'].map(step => ({cell: `raw/${step}`, step}));
 const on = c => !ONLY || ONLY.some(p => c.cell.startsWith(p));
 
-for (const spec of ENGINE_CELLS.filter(on)) for (let b = 1; b <= BATCHES; b++) {
+for (const spec of ENGINE_CELLS.filter(on)) for (let b = 1; b <= (spec.batches ?? BATCHES); b++) {
   let browser, engine;
   try {
     await freshTextEdit();
@@ -135,7 +138,7 @@ for (const spec of ENGINE_CELLS.filter(on)) for (let b = 1; b <= BATCHES; b++) {
     engine = await startEngine(ENGINE, join(OUT, 's'), `${spec.kind}-${spec.desktop}`);
     const w = engine.wire;
     await w.call('ping', spec.desktop === 'dedicated' ? {clientApiVersion: 'cua-engine-1', desktop: 'dedicated'} : {clientApiVersion: 'cua-engine-1'});
-    for (let i = 1; i <= CLICKS; i++) {
+    for (let i = 1; i <= (spec.clicks ?? CLICKS); i++) {
       const row = {label: `${spec.cell}/b${b}#${i}`, cell: spec.cell, desktop: spec.desktop, kind: spec.kind, batch: b, i};
       try {
         await click(browser.pid, row, async () => {
@@ -152,6 +155,7 @@ for (const spec of ENGINE_CELLS.filter(on)) for (let b = 1; b <= BATCHES; b++) {
             const wf = sky.window.frame, scale = sky.screenshot.width / wf.width, p = centre(node.frame);
             args = {pid: browser.pid, x: Math.round((p.x - wf.x) * scale), y: Math.round((p.y - wf.y) * scale)};
           } else args = {pid: browser.pid, element: node.token};
+          if (spec.gapMs) await sleep(spec.gapMs);
           row.clickSentAt = Date.now();
           const r = await w.execute('click', args, {lineage: sky.lineage});
           row.answeredAt = Date.now();

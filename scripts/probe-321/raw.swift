@@ -9,6 +9,10 @@
 //     downup     a left mouse down and up, back to back
 //     full       subtype 1, 50 ms, down and up, 150 ms, subtype 2 (the hold's order, without its guard)
 //     ax         AXPress on the element the application answers at the point
+//     armout     subtype 1, 50 ms, a down and up just outside the window's frame (the hold's inert click), 50 ms, down
+//                and up at the point, 150 ms, subtype 2 (the engine's order when the inert click consumes the arm)
+//     arm0       subtype 1 and at once a down and up at the point, 150 ms, subtype 2
+//     twodown    a down and up at the point, 100 ms, another (no subtype)
 import AppKit
 import ApplicationServices
 import Foundation
@@ -40,7 +44,8 @@ func subtype(_ s: Int16, _ name: String) {
   e.postToPid(pid)
   steps.append(["step": name, "atMs": unixMs()])
 }
-func mouse(_ type: NSEvent.EventType, _ name: String, number: Int) {
+func mouse(_ type: NSEvent.EventType, _ name: String, number: Int, at: CGPoint? = nil) {
+  let point = at ?? point
   guard let e = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: windowID, context: nil,
                                    eventNumber: number, clickCount: 1, pressure: 1.0)?.cgEvent else { steps.append(["step": name, "made": false]); return }
   e.location = point
@@ -73,6 +78,21 @@ case "ax":
     AXUIElementCopyAttributeValue(hit, kAXRoleAttribute as CFString, &role)
     steps.append(["step": "AXPress", "atMs": t, "error": err.rawValue, "role": (role as? String) ?? "?"])
   } else { steps.append(["step": "AXPress", "hit": false]) }
+case "armout":
+  let outside = CGPoint(x: frame.maxX + 2, y: frame.minY + 2)
+  subtype(1, "subtype1"); usleep(50_000)
+  mouse(.leftMouseDown, "inertDown", number: number + 1, at: outside); mouse(.leftMouseUp, "inertUp", number: number + 1, at: outside)
+  usleep(50_000)
+  mouse(.leftMouseDown, "down", number: number); mouse(.leftMouseUp, "up", number: number)
+  usleep(150_000); subtype(2, "subtype2")
+case "arm0":
+  subtype(1, "subtype1")
+  mouse(.leftMouseDown, "down", number: number); mouse(.leftMouseUp, "up", number: number)
+  usleep(150_000); subtype(2, "subtype2")
+case "twodown":
+  mouse(.leftMouseDown, "down", number: number); mouse(.leftMouseUp, "up", number: number)
+  usleep(100_000)
+  mouse(.leftMouseDown, "down2", number: number + 1); mouse(.leftMouseUp, "up2", number: number + 1)
 default: emit(["usage": true]); exit(2)
 }
 emit(["windowID": windowID, "frame": [frame.minX, frame.minY, frame.width, frame.height], "steps": steps])

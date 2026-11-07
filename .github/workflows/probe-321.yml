@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: ${{ fromJSON(github.event.inputs.variants || '["a", "b"]') }}
+        variant: ${{ fromJSON(github.event.inputs.variants || '["hold"]') }}
         part: ${{ fromJSON(github.event.inputs.parts || '["k282-1", "k282-2", "page-1", "page-2", "ctl-chrome", "ctl-ff-native"]') }}
     runs-on: macos-latest
     timeout-minutes: 120

@@ -6,7 +6,8 @@
 #      is bypassed, so the click is measured, not refused.
 #   b  both modes: the activation-point click is replaced by the inert down/up just outside the window's frame, posted
 #      right after subtype 1 (never deferred); #282's refusal bypassed the same way.
-#   python3 -I patch.py <a|b> <native/engine/Sources/Engine>
+#   hold  the hold fallback (below); main's clicks otherwise
+#   python3 -I patch.py <a|b|hold> <native/engine/Sources/Engine>
 import sys
 
 variant, root = sys.argv[1], sys.argv[2]
@@ -37,6 +38,25 @@ elif variant == 'b':
     edit("  var defersArmClick = false\n", "  var defersArmClick = false\n  /// #321 candidate b: the activation-point click was replaced by the early inert click.\n  var p321Replaced = false\n")
     edit("    if case .inertOutside(let place, _) = planned.kind, defersArmClick, let point = planned.point {",
          "    if case .inertOutside(let place, _) = planned.kind, defersArmClick, !p321Replaced, let point = planned.point {")
+elif variant == 'hold':
+    # The hold fallback (ruling e48e53de): screen updates held until the window order is verified, re-read before
+    # release, capped at 200 ms. The cap goes from 100 to 200; the delivery guard keeps sampling 150 ms after the events
+    # (60 before), inside the hold; and the order is read once more just before the hold's release, a raise found then
+    # restored and counted (`restores`). The activation-point click and #282's refusal are main's.
+    edit("let activationHoldCapMs: Double = 100", "let activationHoldCapMs: Double = 200  // #321 hold fallback (main: 100)")
+    edit("let deliveryGuardMinimumMs: Double = 60", "let deliveryGuardMinimumMs: Double = 150  // #321 hold fallback (main: 60)")
+    edit("    outcome.guardMs = round(system.now() - posted)\n",
+         "    // #321 hold fallback: the order re-read before the release, and a raise found then restored inside the hold.\n"
+         "    if !capPassed(), !targetFront, let targetWindow, let window = hold.user.window, system.frontmost() == hold.user.pid,\n"
+         "       system.isInFront(targetWindow, window.id) {\n"
+         "      window.restore()\n"
+         "      outcome.restores += 1\n"
+         "      targetAbove = system.isInFront(targetWindow, window.id)\n"
+         "    }\n"
+         "    outcome.guardMs = round(system.now() - posted)\n")
+    open(path, 'w').write(text)
+    print(f'patched {path} for the hold fallback')
+    sys.exit(0)
 else:
     sys.exit(f'unknown variant {variant}')
 edit("    if refusesPointerWithoutActivationPointClick, planned.kind != .activationPoint { throw PointerRefused() }",

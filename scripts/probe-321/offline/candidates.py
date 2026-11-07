@@ -23,8 +23,31 @@ def k282_delivered(c):
         return answer, answer == 'success' and d.get('loads', 0) >= 1
     own = {'checkbox': d.get('optionChange') == 1, 'button': d.get('applyClick') == 1, 'textarea': d.get('textFocus') == 1}
     target = 'checkbox' if 'checkbox' in label else 'button' if 'button' in label else 'textarea'
-    ok = answer == 'success' and all(d.get(p) == 1 for p in POINTER) and own[target]
+    # A click on the checkbox's label also clicks the box (two click events), as in deliver_ok.
+    ok = answer == 'success' and all(d.get(p) == 1 for p in POINTER[:3]) and d.get('click', 0) >= 1 and own[target]
     return answer, ok
+
+
+def rejudge(w, delivery, cover_bundle, cover_name):
+    """watch.mjs's judge again, against the cover's front window (aboveFront): #282's kit opens a new document per
+    repetition, and TextEdit restores the earlier ones behind Safari, so aboveAny counts those."""
+    changes = (w or {}).get('changes') or []
+    if not changes:
+        return None
+    hold_start = (delivery or {}).get('holdStartedAt')
+    hold_end = hold_start + (delivery.get('screenHoldMs') or 0) if hold_start is not None else None
+    inside = after = False
+    for i, c in enumerate(changes):
+        if not c.get('aboveFront'):
+            continue
+        end = changes[i + 1]['atMs'] if i + 1 < len(changes) else float('inf')
+        if hold_end is None or end > hold_end:
+            after = True
+        if hold_start is not None and c['atMs'] < hold_end:
+            inside = True
+    return {'raisedInsideHold': inside, 'raisedAfterHold': after, 'stuck': bool(changes[-1].get('aboveFront')),
+            'frontHeld': all(c.get('frontmost') == cover_bundle for c in changes),
+            'keyHeld': all((c.get('key') or '').startswith(cover_name + ':') for c in changes)}
 
 
 def deliver_ok(c):
@@ -52,13 +75,15 @@ for top in sys.argv[1:]:
             if 'p321' in c or c.get('label') == 'geometry':  # #282's kit
                 key = (variant, 'safari-282', c['label'])
                 answer, ok = k282_delivered(c)
-                j = (c.get('p321') or {}).get('judged')
+                p = c.get('p321') or {}
+                j = rejudge(p.get('watch'), p.get('delivery'), 'com.apple.TextEdit', 'TextEdit')
                 kind = (((c.get('click') or {}).get('result') or (c.get('click') or {}).get('error') or {}).get('meta') or {}).get('activationClickKind')
             elif 'judged' in c or 'delivered' in c:
                 key = (variant, data['config'].get('browser'), c['cell'])
                 answer = (c.get('answer') or {}).get('answer', 'none')
                 ok = deliver_ok(c)
-                j = c.get('judged')
+                native = data['config'].get('browser') == 'native'
+                j = rejudge(c.get('watch'), c.get('delivery'), 'com.ssfskim.probe313' if native else 'com.apple.TextEdit', 'Probe313' if native else 'TextEdit')
                 kind = (c.get('answer') or {}).get('activationClickKind')
             else:
                 continue

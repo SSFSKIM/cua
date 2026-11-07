@@ -21,7 +21,7 @@ case "$GROUP" in
   recon)
     node scripts/probe-287/recon.mjs --engine "$ENG" --ax "$T/axrecon" --out "$OUT/recon" ;;
   firefox-recon)
-    node scripts/probe-287/recon.mjs --engine "$ENG" --ax "$T/axrecon" --targets firefox,firefox-force,safari,chrome --timeline --out "$OUT/recon" ;;
+    node scripts/probe-287/recon.mjs --engine "$ENG" --ax "$T/axrecon" --targets firefox,firefox-force,firefox-big,chrome-big,safari,chrome --timeline --out "$OUT/recon" ;;
   chrome-a)
     for b in $(chromes); do
       export P287_BROWSER=chrome P287_CHROME="$(bin_of "$b")"

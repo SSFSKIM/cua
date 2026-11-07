@@ -36,10 +36,13 @@ const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>
 <body><p><b>probe287 page</b></p><p><label><input id="option" type="checkbox"> Probe option</label> <button id="apply" type="button">Apply</button></p>
 <p><textarea id="notes" aria-label="Probe notes" rows="6" cols="50"></textarea></p><p>Ready</p>
 <script>addEventListener('load', () => navigator.sendBeacon('/ready'));</script></body></html>`;
+// A big page (#304's /fixedtail shape: 2,500 paragraphs, each with a link): run 42382030666's Firefox observations of it
+// had an AXWebArea with no children at all.
+const BIG = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>probe287 big</title></head><body><p><label><input id="option" type="checkbox"> Probe option</label></p>${Array.from({length: 2500}, (_, i) => `<p>Paragraph ${i + 1} with <a href="#p${i + 1}">link ${i + 1}</a> in it.</p>`).join('')}<script>addEventListener('load', () => navigator.sendBeacon('/ready'));</script></body></html>`;
 let ready = false;
 const server = createServer((req, res) => {
   if (req.method === 'POST') { if (req.url === '/ready') ready = true; req.resume(); res.writeHead(204); res.end(); return; }
-  res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'}); res.end(PAGE);
+  res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'}); res.end(req.url.startsWith('/big') ? BIG : PAGE);
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const URL_ = `http://127.0.0.1:${server.address().port}/`;
@@ -118,6 +121,8 @@ const TARGETS = {
   }},
   firefox: {app: '/Applications/Firefox.app', launch: async () => spawn(FIREFOX, ['-profile', firefoxProfile(join(OUT, 'p-ff'), false), '-no-remote', '-new-instance', URL_], {stdio: 'ignore'})},
   'firefox-force': {app: '/Applications/Firefox.app', launch: async () => spawn(FIREFOX, ['-profile', firefoxProfile(join(OUT, 'p-ff-force'), true), '-no-remote', '-new-instance', URL_], {stdio: 'ignore'})},
+  'firefox-big': {app: '/Applications/Firefox.app', launch: async () => spawn(FIREFOX, ['-profile', firefoxProfile(join(OUT, 'p-ff-big'), false), '-no-remote', '-new-instance', `${URL_}big`], {stdio: 'ignore'})},
+  'chrome-big': {app: '/Applications/Google Chrome.app', launch: async () => spawn(CHROME, chromeArgs(join(OUT, 'p-chrome-big'), `${URL_}big`), {stdio: 'ignore'})},
   vscode: {app: CODE_APP, noPage: true, launch: async () => {
     const dir = join(OUT, 'vscode-work'); mkdirSync(dir, {recursive: true}); writeFileSync(join(dir, 'notes.md'), '# probe287\n\nA file for the recon.\n');
     const bin = `${CODE_APP}/Contents/MacOS/${plist(CODE_APP, 'CFBundleExecutable')}`;

@@ -18,6 +18,7 @@ if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-2
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
 const OUT = arg('out'), ENGINE = arg('engine'), AX = arg('ax');
 const ONLY = arg('targets') ? arg('targets').split(',').filter(Boolean) : null;
+const TIMELINE = process.argv.includes('--timeline');
 mkdirSync(OUT, {recursive: true});
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const log = (...a) => console.log('probe-287 recon:', ...a);
@@ -160,12 +161,20 @@ for (const [name, t] of Object.entries(TARGETS)) {
     const obs = (o, ms) => o.error ? {error: o.error} : {ms, nodes: o.result.nodes.length, roles: Object.fromEntries([...new Set(o.result.nodes.map(n => n.role))].map(r => [r, o.result.nodes.filter(n => n.role === r).length])),
       checkbox: o.result.nodes.find(n => n.role === 'AXCheckBox')?.actions ?? null, webAreas: o.result.nodes.filter(n => n.role === 'AXWebArea').length, timings: o.result.timings, truncated: o.result.truncated ?? null};
     row.obs1 = obs(o1, at - from);
+    if (!o1.error) row.obs1WebAreaFrame = o1.result.nodes.find(n => n.role === 'AXWebArea')?.frame ?? null;
     if (!o1.error) row.obs1Nodes = o1.result.nodes.slice(0, 80).map(n => `${'  '.repeat(Math.min(n.depth ?? 0, 12))}${n.role}${n.subrole ? '/' + n.subrole : ''} ${JSON.stringify((n.title ?? n.description ?? n.value ?? '').toString().slice(0, 50))}`);
     row.samples = [];
+    // #287 wave 3 (--timeline): the web area's own frame every 500 ms for 30 s after the first observation (Firefox's
+    // AXWebArea answered a zero frame in run 42376953140's fresh-launch cells), and a re-observation's record then.
+    if (TIMELINE) {
+      row.frames = [];
+      for (let k = 1; k <= 60; k++) { const due = at + k * 500 - Date.now(); if (due > 0) await sleep(due); const s = ax('state', child.pid); row.frames.push([Date.now() - at, s.webAreaFrame ?? null, s.webAreaElements ?? null]); }
+    }
     for (let k = 1; k <= 8; k++) { const due = at + k * 500 - Date.now(); if (due > 0) await sleep(due); const s = ax('state', child.pid); row.samples.push({t: Date.now() - at, eui: s.eui, manual: s.manual, checkbox: s.checkboxActions, webAreaElements: s.webAreaElements ?? null, walked: s.walked}); }
     const from2 = Date.now();
     const o2 = await w.execute('get_app_state', {pid: child.pid});
     row.obs2 = obs(o2, Date.now() - from2);
+    if (!o2.error) row.obs2WebAreaFrame = o2.result.nodes.find(n => n.role === 'AXWebArea')?.frame ?? null;
     const endAt = Date.now();
     row.endTask = await w.call('endTask', {}, 5000).catch(e => ({exception: String(e)}));
     await sleep(300);
@@ -188,7 +197,7 @@ for (const [name, t] of Object.entries(TARGETS)) {
     `obs1 ${o ? JSON.stringify({ms: o.ms, nodes: o.nodes, webAreas: o.webAreas, checkbox: o.checkbox, t: o.timings && {enabled: o.timings.enabled, prior: o.timings.enablementPrior, write: o.timings.enablementWrite, err: o.timings.enablementWriteError, chromium: o.timings.chromium, webShaped: o.timings.webShaped, webAreaFound: o.timings.webAreaFound}, error: o.error}) : '-'} ` +
     `samples ${JSON.stringify(row.samples?.map(s => [s.t, s.eui, s.manual, Array.isArray(s.checkbox) && s.checkbox.includes('AXPress'), s.webAreaElements]))} ` +
     `obs2 ${JSON.stringify(row.obs2 && {nodes: row.obs2.nodes, checkbox: row.obs2.checkbox, write: row.obs2.timings?.enablementWrite})} endTask ${JSON.stringify(row.endTask?.result ?? row.endTask?.error ?? row.endTask)} ` +
-    `title ${JSON.stringify(row.pre?.[1]?.windowTitle)} ` +
+    `title ${JSON.stringify(row.pre?.[1]?.windowTitle)} webArea obs1 ${JSON.stringify(row.obs1WebAreaFrame)} obs2 ${JSON.stringify(row.obs2WebAreaFrame)} frames ${JSON.stringify((row.frames ?? []).filter((f, i, a) => i === 0 || JSON.stringify(f[1]) !== JSON.stringify(a[i - 1][1])))} ` +
     `after ${JSON.stringify(row.after?.map(p => [p?.eui, p?.manual, p?.webAreaElements ?? null, p?.checkboxActions]))} ${row.exception ? 'EXCEPTION ' + row.exception : ''}`);
 }
 writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, results}, null, 1));

@@ -24,7 +24,7 @@ jobs:
       matrix:
         rep: [1, 2]
         # A push runs the groups named here.
-        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-cov-a","chrome-cov-b","chrome-cov-c","firefox-cov","chrome-s305","vscode-s305"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["firefox-recon","vscode-a"]') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -88,6 +88,7 @@ jobs:
           path: |
             ${{ runner.temp }}/probe-287/**/results.json
             ${{ runner.temp }}/probe-287/**/skyshot-*.json
+            ${{ runner.temp }}/probe-287/**/nodes-*.json
             ${{ runner.temp }}/probe-287/**/*.gz
             ${{ runner.temp }}/probe-287/*.txt
             ${{ runner.temp }}/probe-287/*.log

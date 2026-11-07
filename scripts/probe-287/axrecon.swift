@@ -80,6 +80,10 @@ case "state":
     out["webAreaDepth"] = webAreaDepth ?? NSNull()
     out["checkboxActions"] = checkboxActions
     if let webArea {
+      var r = CGRect.zero
+      if let v = attr(prepare(webArea), "AXFrame"), CFGetTypeID(v) == AXValueGetTypeID(), AXValueGetValue(v as! AXValue, .cgRect, &r) {
+        out["webAreaFrame"] = [Double(r.origin.x), Double(r.origin.y), Double(r.size.width), Double(r.size.height)]
+      }
       var n = 0
       var q = [webArea], h = 0
       while h < q.count && h < 4000 { let e = prepare(q[h]); h += 1; n += 1; q.append(contentsOf: elements(attr(e, kAXChildrenAttribute))) }

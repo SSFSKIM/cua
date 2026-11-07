@@ -58,7 +58,7 @@ for (const [a, adir] of artifacts()) {
     const res = JSON.parse(readFileSync(f, 'utf8'));
     console.log(`### ${a} ${browser} ${kit} ${res.config?.browserVersion ?? res.config?.chrome ?? ''}`);
     const cells = res.cells ?? res.results ?? [];
-    const fn = LINES[kit.replace(/-(chrome|final)$/, '')] ?? (r => JSON.stringify(r).slice(0, 300));
+    const fn = LINES[kit.replace(/-(chrome|final)$/, '').replace(/^282x$/, '282')] ?? (r => JSON.stringify(r).slice(0, 300));
     for (const r of cells) console.log(`  ${r.label ?? r.spot}: ${fn(r)}`);
   }
 }

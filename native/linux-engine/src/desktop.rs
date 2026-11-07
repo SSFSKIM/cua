@@ -14,12 +14,21 @@ use x11rb::protocol::xtest::ConnectionExt as _;
 use crate::input::Keys;
 use crate::x11::X11;
 
-/// The pause between the points of a desktop pointer path: none. The vendor's 8 ms (behaviour §10.2) changed no effect
-/// the harness reads on any family when removed, idle or at twice the load (M4's T9, the wait rule; evidence
-/// `m4/waits/`). The points stay the vendor's, the leading one at the pointer's own position included: the server
-/// delivers a motion there as it does any other (task 64's motion listener), so leaving it out, as the newest build
-/// does, would change what an application receives. `--path-step-ms` sets it for measurement only.
-pub const PATH_STEP: Duration = Duration::ZERO;
+/// The pause between two positions of a desktop pointer path: the vendor's 8 ms (behaviour §10.2), kept. Shorter, an
+/// Electron page's move misses the service's move settle (0 to 6 ms missed idle, 7 held one step from them; M4's
+/// T9, evidence `m4/waits/`), and the service's settle was set at 8. The points stay
+/// the vendor's, the leading one at the pointer's own position included: the server delivers a motion there as it
+/// does any other (task 64's motion listener), so leaving it out, as the newest build does, would change what an
+/// application receives. What goes is the pause after it ([`paused_before`]). `--path-step-ms` sets the pause for
+/// measurement only.
+pub const PATH_STEP: Duration = Duration::from_millis(8);
+
+/// Whether a path pauses before its point `i` (> 0): not after a leading motion at the pointer's own position
+/// (`pointer`, where the path began), which moves nothing, so no two positions are closer in time than the step, and a
+/// one-step move answers at once as the newest build's does (M4's T9, closing M1a's declared gap).
+pub fn paused_before(points: &[(i16, i16)], pointer: (i16, i16), i: usize) -> bool {
+    !(i == 1 && points.first() == Some(&pointer))
+}
 
 /// The points a desktop move visits from `start` to `end` (behaviour §10.2): none to interpolate when already there
 /// (one motion to the end); else n = ⌈distance / 160 × 10⌉ clamped to 1–10, the points start + d·i/n for i = 0…n
@@ -159,9 +168,10 @@ impl Desktop {
     /// [`Desktop::move_path`]'s points with `step` between them: a held `drag_handle` move, paced by its family.
     pub fn move_path_paced(x: &X11, rx: i16, ry: i16, step: Duration) -> Result<()> {
         let pointer = x.conn.query_pointer(x.root)?.reply()?;
-        let points = path_points((pointer.root_x, pointer.root_y), (rx, ry));
+        let start = (pointer.root_x, pointer.root_y);
+        let points = path_points(start, (rx, ry));
         for (i, &(px, py)) in points.iter().enumerate() {
-            if i > 0 && !step.is_zero() {
+            if i > 0 && !step.is_zero() && paused_before(&points, start, i) {
                 std::thread::sleep(step);
             }
             Self::motion(x, px, py)?;
@@ -194,6 +204,23 @@ mod tests {
             "13.33 and 26.67 round to the nearest"
         );
         assert_eq!(path_points((0, 0), (1, 1)), vec![(0, 0), (1, 1)]);
+    }
+
+    #[test]
+    fn a_path_pauses_between_two_positions_but_not_after_the_motion_at_the_pointer_s_own_position() {
+        let start = (640, 400);
+        let points = path_points(start, (1260, 790));
+        let paused: Vec<bool> = (1..points.len()).map(|i| paused_before(&points, start, i)).collect();
+        assert_eq!(
+            paused,
+            [false, true, true, true, true, true, true, true, true, true],
+            "nine pauses for the ten steps: none after the leading motion, which moves nothing"
+        );
+        // a short move: the leading motion, then the point, at once (the newest build's one motion and no pause)
+        let short = path_points((300, 300), (310, 300));
+        assert!(!paused_before(&short, (300, 300), 1));
+        // the leading motion counts as the pointer's own position only when it is
+        assert!(paused_before(&[(0, 0), (5, 5)], (9, 9), 1));
     }
 
     #[test]

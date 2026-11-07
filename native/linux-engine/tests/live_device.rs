@@ -2188,9 +2188,9 @@ fn activation_waits_for_no_window_kept_above_the_normal_layer_and_a_click_under_
     }
 }
 
-/// The motions a window of the test's own receives (core `MotionNotify`, root positions) until told to stop: an
-/// override-redirect window over `rect`, selecting pointer motion only.
-fn motion_listener(rect: (i16, i16, u16, u16)) -> (mpsc::Sender<()>, std::thread::JoinHandle<Vec<(i16, i16)>>) {
+/// The motions a window of the test's own receives (core `MotionNotify`: root position and server time) until told to
+/// stop: an override-redirect window over `rect`, selecting pointer motion only.
+fn motion_listener(rect: (i16, i16, u16, u16)) -> (mpsc::Sender<()>, std::thread::JoinHandle<Vec<(i16, i16, u32)>>) {
     let (conn, _) = x11rb::connect(None).expect("an X connection");
     let window = override_redirect(&conn, rect);
     conn.change_window_attributes(
@@ -2207,7 +2207,7 @@ fn motion_listener(rect: (i16, i16, u16, u16)) -> (mpsc::Sender<()>, std::thread
             conn.sync().unwrap();
             while let Some(event) = conn.poll_for_event().unwrap() {
                 if let Event::MotionNotify(e) = event {
-                    motions.push((e.root_x, e.root_y));
+                    motions.push((e.root_x, e.root_y, e.time));
                 }
             }
             if done {
@@ -2222,23 +2222,36 @@ fn motion_listener(rect: (i16, i16, u16, u16)) -> (mpsc::Sender<()>, std::thread
 }
 
 /// A desktop `move` visits the pinned build's points, its leading motion at the pointer's own position included (the
-/// server delivers a motion there, task 64's listener), with no pause between them: the vendor's 8 ms a point is gone
-/// (M4's T9), so a ten-step path answers in a few milliseconds where it took at least 80.
+/// server delivers a motion there, task 64's listener), with the vendor's 8 ms between two positions but none after
+/// that leading motion, which moves nothing (M4's T9): a one-step move answers at once, as the newest build's does.
+/// Read from the motions' server times, which the engine's own timing cannot blur.
 #[test]
-fn a_desktop_move_visits_the_pinned_build_s_points_with_no_pause_between_them() {
+fn a_desktop_move_pauses_between_two_positions_and_not_after_the_pointer_s_own() {
     let mut engine = Engine::start();
     engine.request("move", json!({"x": 10, "y": 10})).unwrap();
     let (stop, listening) = motion_listener((0, 0, 400, 300));
-    let started = Instant::now();
     engine.request("move", json!({"x": 330, "y": 250})).unwrap();
-    let took = started.elapsed();
+    engine.request("move", json!({"x": 340, "y": 250})).unwrap();
     stop.send(()).unwrap();
     let motions = listening.join().unwrap();
-    // (10, 10) → (330, 250): 400 px, ten steps of (32, 24), the start included (behaviour §10.2)
-    let expected: Vec<(i16, i16)> = (0..=10).map(|i| (10 + 32 * i, 10 + 24 * i)).collect();
-    assert_eq!(motions, expected, "the pinned build's points, in order");
+    let points: Vec<(i16, i16)> = motions.iter().map(|&(x, y, _)| (x, y)).collect();
+    // (10, 10) → (330, 250): 400 px, ten steps of (32, 24), the start included; then (330, 250) → (340, 250), one step
+    // (behaviour §10.2)
+    let mut expected: Vec<(i16, i16)> = (0..=10).map(|i| (10 + 32 * i, 10 + 24 * i)).collect();
+    expected.extend([(330, 250), (340, 250)]);
+    assert_eq!(points, expected, "the pinned build's points, in order");
+    let gap = |i: usize| motions[i].2.wrapping_sub(motions[i - 1].2);
     assert!(
-        took < Duration::from_millis(40),
-        "no pause between the points ({took:?})"
+        gap(1) < 8,
+        "no pause after the long path's leading motion ({} ms)",
+        gap(1)
     );
+    for i in 2..=10 {
+        assert!(
+            gap(i) >= 7,
+            "the vendor's 8 ms between two positions (step {i}: {} ms)",
+            gap(i)
+        );
+    }
+    assert!(gap(12) < 8, "a one-step move pauses nowhere ({} ms)", gap(12));
 }

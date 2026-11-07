@@ -392,19 +392,15 @@ mod tests {
     }
 
     #[test]
-    fn a_desktop_path_has_no_pause_between_its_points_unless_measured() {
+    fn a_desktop_path_keeps_the_vendor_s_step_unless_measured() {
         let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
             panic!()
         };
-        assert_eq!(cfg.pacing.path, Duration::ZERO, "M4's T9");
-        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--path-step-ms", "8"])) else {
+        assert_eq!(cfg.pacing.path, Duration::from_millis(8), "the vendor's (M4's T9)");
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--path-step-ms", "0"])) else {
             panic!()
         };
-        assert_eq!(
-            cfg.pacing.path,
-            Duration::from_millis(8),
-            "the vendor's, for measurement"
-        );
+        assert_eq!(cfg.pacing.path, Duration::ZERO, "for measurement");
     }
 
     #[test]

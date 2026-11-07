@@ -699,7 +699,7 @@ async function openScene(ctx, name) {
   const { desktop, oracle } = ctx;
   const def = SCENES[name];
   // the family's own size asked for, so a browser opens at it and not maximized (families.mjs: Firefox's first window)
-  const sc = await openFamily(desktop, oracle, def.family, `settle-${name}`, { geometry: FAMILIES[def.family].geometry, ...(def.page ? { page: def.page } : {}) });
+  const sc = await openFamily(desktop, oracle, def.family, `settle-${name}`, { geometry: def.geometry ?? FAMILIES[def.family].geometry, ...(def.page ? { page: def.page } : {}) });
   Object.assign(sc, { name, effects: def.effects });
   const state = await desktop.state(sc);
   sc.origin = state.window;

@@ -658,11 +658,20 @@ func clipsDescendants(role: String, actions: @autoclosure () -> [String]) -> Boo
   clippingRoles.contains(role) || (role == "AXGroup" && !pageScrollActions.isDisjoint(with: actions()))
 }
 
+/// Whether a clipping element's frame is unknown rather than a place (#312): {0, 0, 0, 0}, the answer an app gives for
+/// bounds it has not computed yet. Firefox's AXWebArea answers it on the observation that turns Gecko's accessibility
+/// on, its descendants' frames already real, and its own read real by the first sample, 0.55 s after that observation
+/// answered (#287). Such a frame cuts
+/// nothing, so what its descendants show is what the clipping ancestors above it leave (Firefox's: its scroll area). A
+/// frame of no size anywhere else (a scroll area collapsed at its place) is a place, and still hides what it holds.
+func unplacedFrame(_ frame: CGRect) -> Bool { frame == .zero }
+
 /// The part of an element that shows: its frame cut by the frame of every clipping ancestor up to its window, sheet,
 /// menu or popover (the vendor's visible-frame walk, FUN_10078e49c). Nil when the element has no frame or nothing of it
 /// shows, so a row scrolled out of its list or web content scrolled out of its page is not clicked through whatever
 /// covers its content position. A clipping ancestor whose frame cannot be read leaves nothing known to show (nil, as the
-/// vendor's walk answers there); an ancestor of another role without a frame does not clip. A menu-bar item, whose
+/// vendor's walk answers there), and one whose frame is unplaced (`unplacedFrame`, #312) cuts nothing; an ancestor of
+/// another role without a frame does not clip. A menu-bar item, whose
 /// ancestors are the menu bar and the application, keeps its whole frame. Three departures from the vendor: the point
 /// is the shown part's midpoint (the vendor takes the frame's midpoint only when the region contains it, FUN_10078cbb0);
 /// with no clipping ancestor at all the frame is kept (the vendor answers nil); and nothing is scrolled into view (the
@@ -678,8 +687,10 @@ func visibleFrame<Element>(of element: Element, frame: (Element) -> CGRect?, rol
     if level > 0 {
       if clipsDescendants(role: nodeRole, actions: actions(node)) {
         guard let bounds = frame(node) else { return nil }
-        visible = visible.intersection(bounds)
-        guard !visible.isNull, visible.width >= 1, visible.height >= 1 else { return nil }
+        if !unplacedFrame(bounds) {
+          visible = visible.intersection(bounds)
+          guard !visible.isNull, visible.width >= 1, visible.height >= 1 else { return nil }
+        }
       }
     }
     if boundaryRoles.contains(nodeRole) { break }

@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       groups:
-        description: the groups, a JSON list (empty for the push default; all are safari, firefox, safari-x, firefox-x, native, native-x, raw, latency, chrome)
+        description: the groups, a JSON list (empty for the push default; all are safari, firefox, safari-x, firefox-x, native, native-x, raw, latency, safari-caret, chrome)
         required: false
         default: ''
 permissions:
@@ -17,14 +17,14 @@ permissions:
 env:
   # Quoted: YAML reads an all-digit-and-e SHA as a float.
   P313_A_REF: 'b27ceb36cd7914241ae69092c781d0f096f0b127'
-  P313_B_REF: '8d1025c1eee1f1f758c9b5db9863dd1c2b1a8c06'
+  P313_B_REF: 'e29191c262bc1bddc1099b0bab14a326f2d2b7ad'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: ${{ fromJSON(github.event.inputs.groups || '["safari", "firefox", "native", "chrome"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["safari-caret"]') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:

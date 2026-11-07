@@ -26,17 +26,29 @@ mkdirSync(OUT, {recursive: true});
 const ax = axTool(AX);
 const log = (...a) => console.log('probe-313 web:', ...a);
 const MARK = 'QZ';
+// P313_FILLED=1: the textarea holds eight monospace lines, so a caret placed at its centre has a non-zero offset the
+// page can predict (expectedOffset: the line and column under the centre, from the font's measured width).
+const FILLED = process.env.P313_FILLED === '1';
+const LINES = Array.from({length: 8}, (_, i) => `line${i} ` + 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWX'.slice(0, 54));
+const NOTES = FILLED ? `<textarea id="notes" aria-label="Probe notes" spellcheck="false" wrap="off" style="font:16px/20px Menlo,monospace;padding:4px;border:1px solid #888;width:480px;height:160px;resize:none;overflow:hidden;white-space:pre">${LINES.join('\n')}</textarea>`
+  : '<textarea id="notes" aria-label="Probe notes" rows="8" cols="60" spellcheck="false"></textarea>';
 
 // #282's page with a text field beside the textarea; the beacons carry both fields' values.
 const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe313 page</title></head>
 <body><p><b>probe313 page</b></p><p><label><input id="option" type="checkbox"> Probe option</label> <button id="apply" type="button">Apply</button></p>
 <p><input id="field" type="text" aria-label="Probe field" size="40" spellcheck="false" autocomplete="off" value="alpha"></p>
-<p><textarea id="notes" aria-label="Probe notes" rows="8" cols="60" spellcheck="false"></textarea></p><p id="status">Ready</p>
+<p>${NOTES}</p><p id="status">Ready</p>
 <script>(() => { const c = {pointerdown: 0, mousedown: 0, mouseup: 0, click: 0, textFocus: 0, fieldFocus: 0, input: 0, keydown: 0, optionChange: 0, applyClick: 0, windowFocus: 0, windowBlur: 0};
 let seq = 0; const load = Math.random().toString(36).slice(2, 10);
 const notes = document.getElementById('notes'), field = document.getElementById('field'), option = document.getElementById('option'), apply = document.getElementById('apply');
-const send = () => { seq += 1; navigator.sendBeacon('/counters', JSON.stringify({load, seq, counts: c, checked: option.checked, notes: notes.value, field: field.value, focused: document.hasFocus(), active: document.activeElement ? document.activeElement.id || document.activeElement.tagName : null})); };
+const expected = () => { const cs = getComputedStyle(notes); const cx = document.createElement('canvas').getContext('2d'); cx.font = cs.font;
+  const cw = cx.measureText('abcdefghij').width / 10, lh = parseFloat(cs.lineHeight), pl = parseFloat(cs.paddingLeft) + notes.clientLeft, pt = parseFloat(cs.paddingTop) + notes.clientTop;
+  const lines = notes.value.split('\\n'); const line = Math.min(lines.length - 1, Math.floor((notes.offsetHeight / 2 - pt) / lh));
+  const col = Math.min(lines[line].length, Math.round((notes.offsetWidth / 2 - pl) / cw)); return {line, col, offset: lines.slice(0, line).reduce((n, l) => n + l.length + 1, 0) + col}; };
+const send = () => { seq += 1; navigator.sendBeacon('/counters', JSON.stringify({load, seq, counts: c, checked: option.checked, notes: notes.value, field: field.value, notesSel: [notes.selectionStart, notes.selectionEnd], fieldSel: [field.selectionStart, field.selectionEnd], expected: expected(), focused: document.hasFocus(), active: document.activeElement ? document.activeElement.id || document.activeElement.tagName : null})); };
 for (const k of ['pointerdown', 'mousedown', 'mouseup', 'click', 'input', 'keydown']) document.addEventListener(k, () => { c[k] += 1; send(); }, true);
+document.addEventListener('selectionchange', () => send());
+for (const el of [notes, field]) el.addEventListener('select', () => send());
 notes.addEventListener('focus', () => { c.textFocus += 1; send(); });
 field.addEventListener('focus', () => { c.fieldFocus += 1; send(); });
 option.addEventListener('change', () => { c.optionChange += 1; send(); });
@@ -59,7 +71,7 @@ const server = createServer((req, res) => {
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const URL_ = `http://127.0.0.1:${server.address().port}/`;
 const COUNTS = ['pointerdown', 'mousedown', 'mouseup', 'click', 'textFocus', 'fieldFocus', 'input', 'keydown', 'optionChange', 'applyClick', 'windowFocus', 'windowBlur'];
-const counters = () => (latest ? {load: latest.load, ...latest.counts, checked: latest.checked, notes: latest.notes, field: latest.field, focused: latest.focused, active: latest.active, loads} : {loads});
+const counters = () => (latest ? {load: latest.load, ...latest.counts, checked: latest.checked, notes: latest.notes, field: latest.field, notesSel: latest.notesSel, fieldSel: latest.fieldSel, expected: latest.expected, focused: latest.focused, active: latest.active, loads} : {loads});
 const delta = (before, after) => Object.fromEntries([...COUNTS.map(k => [k, (after[k] ?? 0) - (after.load === before.load ? before[k] ?? 0 : 0)]), ['loads', after.loads - before.loads]]);
 
 const TEXT_DOC = join(OUT, 'front.txt');
@@ -131,6 +143,10 @@ async function cell(spec) {
       await sleep(1500);
       const now = counters();
       row.typed.notes = now.notes; row.typed.field = now.field; row.typed.active = now.active;
+      // Where the marker went against the selection the click left (row.after) and the page's prediction for the point.
+      const value = now[TEXT[spec.target]] ?? '', at = value.indexOf(MARK), sel = row.after?.[`${TEXT[spec.target]}Sel`] ?? null;
+      row.typed.markAt = at; row.typed.selectionAfterClick = sel; row.typed.expected = spec.target === 'textarea' ? row.after?.expected ?? null : null;
+      row.typed.atSelection = sel ? at === sel[0] : null;
       row.typed.landedInTarget = (now[TEXT[spec.target]] ?? '').includes(MARK);
       row.typed.landedElsewhere = Object.entries(TEXT).some(([t, k]) => t !== spec.target && (now[k] ?? '').includes(MARK));
       row.typed.frontAfter = frontmost();

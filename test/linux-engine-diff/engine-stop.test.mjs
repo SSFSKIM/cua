@@ -6,12 +6,13 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { CASES, PATHS, casesOf, controlLabel, engineStopVerdict, enginesUnder, runPasses, stoppedProcesses } from '../../scripts/linux-engine-diff/engine-stop.mjs';
+import { BURSTS, CASES, PATHS, burstCode, casesOf, controlLabel, controlShows, engineStopVerdict, enginesUnder, runPasses, stoppedProcesses } from '../../scripts/linux-engine-diff/engine-stop.mjs';
 
 const hold = (over = {}) => ({ case: 'hold', engines: 1, held_before: true, keys_after: [], stopped_left: [], ...over });
 const burst = (over = {}) => ({ case: 'burst', engines: 1, in_order: true, stopped_left: [], ...over });
 const handle = (over = {}) => ({ case: 'handle', engines: 1, handle: { start: { x: 60, y: 60 }, end: { x: 140, y: 90 } }, buttons_before: [1], buttons_after: [], pointer_after: [140, 90], stopped_left: [], ...over });
-const ofCase = { hold, burst, handle };
+const pairs = (over = {}) => ({ ...burst(over), case: 'pairs', ...over });
+const ofCase = { hold, burst, pairs, handle };
 
 test('a hold passes only when the key was down before the stop and nothing is down after it; a burst only when every key landed in order', () => {
   assert.equal(runPasses(hold()), true);
@@ -59,9 +60,9 @@ const rows = ({ drain = () => ({}), kill = () => ({}), paths = PATHS, cut = fals
     paths.flatMap((path) =>
       casesOf(path, CASES).flatMap((kind) =>
         [0, 1].map((trial) => {
-          const base = { lane, path, case: kind, trial, engine_after_stop_ms: 400, engine_after_answer_ms: 420 };
+          const base = { lane, path, case: kind, trial, engine_after_stop_ms: 400, engine_after_answer_ms: 420, ...(BURSTS.includes(kind) ? { browser: 'chrome' } : {}) };
           const pass = ofCase[kind](base);
-          const control = { hold: { ...pass, keys_after: [50] }, handle: { ...pass, buttons_after: [1] }, burst: { ...pass, in_order: !(cut && trial === 0) } }[kind];
+          const control = { hold: { ...pass, keys_after: [50] }, handle: { ...pass, buttons_after: [1] }, burst: { ...pass, in_order: !(cut && trial === 0) }, pairs: { ...pass, in_order: !(cut && trial === 0) } }[kind];
           return lane === 'drain' ? { ...pass, ...drain(path, kind, trial) } : { ...control, ...kill(path, kind, trial) };
         }),
       ),
@@ -77,7 +78,7 @@ test('the verdict passes when every drain run passes and the control leaves the 
 
 test('one failed drain run fails the verdict, naming its path and case', () => {
   const { failed } = engineStopVerdict(rows({ drain: (path, kind, trial) => (path === 'signal' && kind === 'burst' && trial === 1 ? { in_order: false } : {}) }));
-  assert.deepEqual(failed, ['drain signal burst: 1 of 2 failed']);
+  assert.deepEqual(failed, ['drain signal burst chrome: 1 of 2 failed']);
 });
 
 test('a control whose hold was released fails the verdict: then the check could not see a missing release', () => {
@@ -87,7 +88,7 @@ test('a control whose hold was released fails the verdict: then the check could 
 
 test('a lane, path or case with no run fails the verdict', () => {
   const { failed } = engineStopVerdict(rows().filter((r) => !(r.lane === 'drain' && r.path === 'eof')));
-  assert.deepEqual(failed, ['drain eof hold: no run', 'drain eof burst: no run', 'drain eof handle: no run']);
+  assert.deepEqual(failed, ['drain eof hold: no run', 'drain eof burst chrome: no run', 'drain eof pairs chrome: no run', 'drain eof handle: no run']);
 });
 
 test('a control that never reached its failure fails the verdict: a run that errored is not the held-input failure it stands for', () => {
@@ -95,7 +96,8 @@ test('a control that never reached its failure fails the verdict: a run that err
   const probe = { error: 'initialize failed; no input was sent', engines: 0, held_before: undefined, keys_after: null, in_order: undefined };
   const { failed } = engineStopVerdict(rows({ kill: () => probe }));
   assert.ok(failed.includes("kill idle hold: 2 of 2 did not leave the key down (the control's failure): 2 errored"), failed.join('\n'));
-  assert.ok(failed.includes('kill idle burst: 2 of 2 errored'), failed.join('\n'));
+  assert.ok(failed.includes('kill idle burst chrome: 2 of 2 errored'), failed.join('\n'));
+  assert.ok(failed.includes('kill idle pairs chrome: 2 of 2 errored'), failed.join('\n'));
   assert.ok(failed.includes("kill idle handle: 2 of 2 did not leave the drag's button down (the control's failure): 2 errored"), failed.join('\n'));
   const { failed: one } = engineStopVerdict(rows({ kill: (path, kind, trial) => (path === 'eof' && kind === 'hold' && trial === 1 ? { keys_after: [] } : {}) }));
   assert.deepEqual(one, ["kill eof hold: 1 of 2 did not leave the key down (the control's failure)"]);
@@ -111,22 +113,23 @@ test('through the production paths the burst is judged by the drain alone: the c
   // stop's own latency follows, so even an immediate SIGKILL lands every burst; under load as well as idle
   const { failed, md } = engineStopVerdict(rows());
   assert.deepEqual(failed, []);
-  assert.ok(md.includes("The control's bursts: 0 of 8 cut (reported, not required: through the production paths the service spaces each window input 100 ms behind the previous key, so the control cannot fail there)."), md.join('\n'));
-  assert.ok(engineStopVerdict(rows({ cut: true })).md.some((l) => l.startsWith("The control's bursts: 4 of 8 cut")));
+  assert.ok(md.includes("The control's press_key bursts: 0 of 8 cut (reported, not required: through the production paths the service holds each window input behind the previous one's settle, and the stop's own latency follows the last answer, so the control need not fail there)."), md.join('\n'));
+  assert.ok(md.some((l) => l.startsWith("The control's key_down/key_up pair bursts: 0 of 8 cut")), md.join('\n'));
+  assert.ok(engineStopVerdict(rows({ cut: true })).md.some((l) => l.startsWith("The control's press_key bursts: 4 of 8 cut")));
 });
 
 test('where the burst must show the cut (T8, once the service spaces its input less), a control that lost no key fails the verdict, and one that cut passes it', () => {
   const { failed, md } = engineStopVerdict(rows(), { burstControl: 'cut' });
-  assert.deepEqual(failed, PATHS.filter((path) => casesOf(path, CASES).includes('burst')).map((path) => `kill ${path} burst: the control cut no burst (0 of 2): no pending burst was shown`));
+  assert.deepEqual(failed, PATHS.filter((path) => casesOf(path, CASES).includes('burst')).flatMap((path) => BURSTS.map((kind) => `kill ${path} ${kind} chrome: the control cut no burst (0 of 2): no pending burst was shown`)));
   assert.deepEqual(engineStopVerdict(rows({ cut: true }), { burstControl: 'cut' }).failed, []);
-  assert.match(md.join('\n'), /\| kill \| idle \| burst \| 2 \| 2 \|/);
+  assert.match(md.join('\n'), /\| kill \| idle \| burst chrome \| 2 \| 2 \|/);
 });
 
 test('a stopped process left by any run, the control\'s included, fails the verdict', () => {
   const left = [{ pid: 7, comm: 'codex-linux-san', state: 'T' }];
   const { failed } = engineStopVerdict(rows({ drain: (path, kind, trial) => (path === 'eof' && kind === 'hold' && trial === 0 ? { stopped_left: left } : {}),
     kill: (path, kind, trial) => (path === 'idle' && kind === 'burst' && trial === 1 ? { stopped_left: left } : {}) }));
-  assert.deepEqual(failed, ['drain eof hold: 1 of 2 failed', 'drain eof hold: 1 of 2 left a stopped process', 'kill idle burst: 1 of 2 errored', 'kill idle burst: 1 of 2 left a stopped process']);
+  assert.deepEqual(failed, ['drain eof hold: 1 of 2 failed', 'drain eof hold: 1 of 2 left a stopped process', 'kill idle burst chrome: 1 of 2 errored', 'kill idle burst chrome: 1 of 2 left a stopped process']);
 });
 
 test('held back past upstream escalation: hold only; the control fails sandboxed, and with the sandbox disabled it is reported, not required', () => {
@@ -165,4 +168,24 @@ test("a session's engine is the descendant running the engine's executable, neve
   assert.deepEqual(enginesUnder(100, bin, { proc }), [130]);
   assert.deepEqual(enginesUnder(120, bin, { proc }), [130]);
   assert.deepEqual(enginesUnder(130, bin, { proc }), []);
+});
+
+test('the pair burst is key_down then key_up for each key, in order; it passes, and its control shows a cut, as the press_key burst does', () => {
+  assert.deepEqual(BURSTS, ['burst', 'pairs']);
+  assert.ok(CASES.includes('pairs'));
+  assert.equal(burstCode('burst', ['a', 'shift+b']), 'for (const key of ["a","shift+b"]) await cua.computer.press_key({window: w, key});');
+  assert.equal(burstCode('pairs', ['a', 'shift+b']), 'for (const key of ["a","shift+b"]) { await cua.computer.key_down({window: w, key}); await cua.computer.key_up({window: w, key}); }');
+  assert.equal(runPasses(pairs()), true);
+  assert.equal(runPasses(pairs({ in_order: false })), false);
+  assert.equal(controlShows(pairs({ in_order: false })), true);
+});
+
+test('the bursts run on each browser the sitting names, each judged on its own', () => {
+  const both = rows().flatMap((r) => (BURSTS.includes(r.case) ? [r, { ...r, browser: 'electron', ...(r.lane === 'kill' && r.path === 'eof' && r.case === 'pairs' ? { in_order: false } : {}) }] : [r]));
+  const { failed, md } = engineStopVerdict(both, { browsers: ['chrome', 'electron'], burstControl: 'cut' });
+  assert.ok(md.some((l) => l.startsWith('| drain | idle | burst electron |')), md.join('\n'));
+  // the electron pair control cut on eof only: every other path and burst is named
+  assert.ok(!failed.includes('kill eof pairs electron: the control cut no burst (0 of 2): no pending burst was shown'));
+  assert.ok(failed.includes('kill eof pairs chrome: the control cut no burst (0 of 2): no pending burst was shown'));
+  assert.deepEqual(engineStopVerdict(rows(), { browsers: ['chrome', 'electron'] }).failed.filter((f) => f.includes('electron')).length, 16, 'no electron run in either lane on 4 paths × 2 bursts');
 });

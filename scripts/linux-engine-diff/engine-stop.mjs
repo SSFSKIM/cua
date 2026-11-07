@@ -17,7 +17,9 @@
 //     key across requests (read before the stop, the case's positive control); after the stop its keymap is empty;
 //   - burst: press_key requests one after another (`BURST`) into the run's own Chrome on the keys page (pages/keys.html),
 //     covered by the front window, so the background route and the window's redirect: straight after their last answer,
-//     the stop; every key lands, in order, at the field's caret;
+//     the stop; every key lands, in order, at the field's caret; `pairs` the same keys as key_down then key_up requests,
+//     whose settles are shorter than press_key's; `--browsers chrome,electron` runs both bursts in Electron's window as
+//     well;
 //   - handle: a drag_handle started on the xterm and moved, not ended: the X server holds button 1 across requests (read
 //     before the stop); after the stop no button is down, and the pointer is where the model left it.
 // Lanes: `drain`, the REPL host of this checkout, must pass every run; `kill`, the same with the REPL host of
@@ -51,7 +53,11 @@ import { startPrivateServer, xdotool, xprobe } from './xtools.mjs';
 import { LIVE_RUN, assertReachable, xExecFileSync, xSpawn } from './xspawn.mjs';
 
 export const PATHS = ['idle', 'eof', 'signal', 'remote', 'held-back'];
-export const CASES = ['hold', 'burst', 'handle'];
+export const CASES = ['hold', 'burst', 'pairs', 'handle'];
+/** The burst cases: press_key requests one after another, and key_down/key_up pairs (T8's fix wave: their settles differ). */
+export const BURSTS = ['burst', 'pairs'];
+/** The browsers a burst can run in, each its own window on the keys page (pages/keys.html). */
+export const BROWSERS = ['chrome', 'electron'];
 export const LANES = ['drain', 'kill'];
 /** Runs of each lane, path and case (`--trials` sets another count). */
 export const RUNS = 10;
@@ -101,6 +107,7 @@ const leftNothingStopped = (row) => Array.isArray(row.stopped_left) && row.stopp
 /** A run's verdict: the drain lane's runs must pass, the kill lane's are counted. */
 export function runPasses(row) {
   if (!valid(row)) return false;
+  if (BURSTS.includes(row.case)) return row.in_order === true;
   if (row.case === 'hold') return row.held_before === true && Array.isArray(row.keys_after) && row.keys_after.length === 0;
   if (row.case === 'handle') {
     const released = Array.isArray(row.buttons_before) && row.buttons_before.includes(1) && Array.isArray(row.buttons_after) && row.buttons_after.length === 0;
@@ -108,7 +115,15 @@ export function runPasses(row) {
     const end = row.handle?.end;
     return released && Array.isArray(row.pointer_after) && row.pointer_after[0] === end?.x && row.pointer_after[1] === end?.y;
   }
-  return row.in_order === true;
+  return false;
+}
+
+/** A burst case's cell code: each key a press_key, or a key_down then its key_up, one request after another. */
+export function burstCode(kind, keys) {
+  const list = JSON.stringify(keys);
+  return kind === 'pairs'
+    ? `for (const key of ${list}) { await cua.computer.key_down({window: w, key}); await cua.computer.key_up({window: w, key}); }`
+    : `for (const key of ${list}) await cua.computer.press_key({window: w, key});`;
 }
 
 /**
@@ -120,7 +135,7 @@ export function controlShows(row) {
   if (!valid(row)) return false;
   if (row.case === 'hold') return row.held_before === true && Array.isArray(row.keys_after) && row.keys_after.length > 0;
   if (row.case === 'handle') return Array.isArray(row.buttons_before) && row.buttons_before.includes(1) && Array.isArray(row.buttons_after) && row.buttons_after.includes(1);
-  return row.in_order === false;
+  return BURSTS.includes(row.case) && row.in_order === false;
 }
 
 /**
@@ -135,50 +150,54 @@ const CONTROL_FAILURE = { hold: 'did not leave the key down', handle: "did not l
 /**
  * The experiment's verdict from its rows: every drain run passes on every path and case; the control (the kill lane)
  * shows its failure on every hold and handle run, so the check can see a missing release, and none of its runs failed
- * on its way; no run of either lane left a process stopped.
+ * on its way; no run of either lane left a process stopped. Each burst case is judged per browser (`browsers`).
  * Its bursts are reported (`burstControl` 'report', the design session's ruling, M4 T7b): through the production paths
- * cua's service spaces each window input 100 ms behind the previous key, and the stop's own latency follows, so even
- * an immediate kill lands every burst, and the burst half is judged by the drain's effect alone. With 'cut'
- * (`--require-burst-cut`, for T8 once that spacing shrinks) at least one cut on each path is required, else the sitting
- * showed no pending burst.
+ * cua's service holds each window input behind the previous one's settle, and the stop's own latency follows the last
+ * answer, so even an immediate kill may land every burst, and the burst half is judged by the drain's effect alone.
+ * With 'cut' (`--require-burst-cut`, T8's) at least one cut on each path, burst case and browser is required, else the
+ * sitting showed no pending burst.
  */
-export function engineStopVerdict(rows, { paths = PATHS, cases = CASES, lanes = LANES, sandbox = 'scoped', burstControl = 'report' } = {}) {
+export function engineStopVerdict(rows, { paths = PATHS, cases = CASES, lanes = LANES, sandbox = 'scoped', burstControl = 'report', browsers = ['chrome'] } = {}) {
   const failed = [];
-  const controlBursts = [];
+  const controlBursts = Object.fromEntries(BURSTS.map((kind) => [kind, []]));
   const md = ['| lane | path | case | runs | pass | engine after the stop, median ms | after the last answer, median ms |', '|---|---|---|---:|---:|---:|---:|'];
   for (const lane of lanes) {
     for (const path of paths) {
       for (const kind of casesOf(path, cases)) {
-        const runs = rows.filter((r) => r.lane === lane && r.path === path && r.case === kind);
-        const passed = runs.filter(runPasses).length;
-        const ms = (key) => tenth(median(runs.map((r) => r[key]).filter(Number.isFinite))) ?? '-';
-        md.push(`| ${lane} | ${path} | ${kind} | ${runs.length} | ${passed} | ${ms('engine_after_stop_ms')} | ${ms('engine_after_answer_ms')} |`);
-        const label = `${lane} ${path} ${kind}`;
-        if (!runs.length) {
-          failed.push(`${label}: no run`);
-          continue;
+        for (const browser of BURSTS.includes(kind) ? browsers : [null]) {
+          const runs = rows.filter((r) => r.lane === lane && r.path === path && r.case === kind && (browser === null || (r.browser ?? 'chrome') === browser));
+          const passed = runs.filter(runPasses).length;
+          const ms = (key) => tenth(median(runs.map((r) => r[key]).filter(Number.isFinite))) ?? '-';
+          const label = `${lane} ${path} ${kind}${browser ? ` ${browser}` : ''}`;
+          md.push(`| ${lane} | ${path} | ${kind}${browser ? ` ${browser}` : ''} | ${runs.length} | ${passed} | ${ms('engine_after_stop_ms')} | ${ms('engine_after_answer_ms')} |`);
+          if (!runs.length) {
+            failed.push(`${label}: no run`);
+            continue;
+          }
+          const stoppedLeft = runs.filter((r) => !leftNothingStopped(r)).length;
+          if (lane === 'drain') {
+            if (passed < runs.length) failed.push(`${label}: ${runs.length - passed} of ${runs.length} failed`);
+          } else {
+            const errored = runs.filter((r) => !valid(r)).length;
+            const shown = runs.filter(controlShows).length;
+            if (BURSTS.includes(kind)) controlBursts[kind].push(...runs);
+            if (kind in CONTROL_FAILURE && controlLeavesHold(path, sandbox)) {
+              if (shown < runs.length) failed.push(`${label}: ${runs.length - shown} of ${runs.length} ${CONTROL_FAILURE[kind]} (the control's failure)${errored ? `: ${errored} errored` : ''}`);
+            } else if (errored) failed.push(`${label}: ${errored} of ${runs.length} errored`);
+            else if (BURSTS.includes(kind) && burstControl === 'cut' && shown === 0) failed.push(`${label}: the control cut no burst (0 of ${runs.length}): no pending burst was shown`);
+          }
+          if (stoppedLeft) failed.push(`${label}: ${stoppedLeft} of ${runs.length} left a stopped process`);
         }
-        const stoppedLeft = runs.filter((r) => !leftNothingStopped(r)).length;
-        if (lane === 'drain') {
-          if (passed < runs.length) failed.push(`${label}: ${runs.length - passed} of ${runs.length} failed`);
-        } else {
-          const errored = runs.filter((r) => !valid(r)).length;
-          const shown = runs.filter(controlShows).length;
-          if (kind === 'burst') controlBursts.push(...runs);
-          if (kind in CONTROL_FAILURE && controlLeavesHold(path, sandbox)) {
-            if (shown < runs.length) failed.push(`${label}: ${runs.length - shown} of ${runs.length} ${CONTROL_FAILURE[kind]} (the control's failure)${errored ? `: ${errored} errored` : ''}`);
-          } else if (errored) failed.push(`${label}: ${errored} of ${runs.length} errored`);
-          else if (kind === 'burst' && burstControl === 'cut' && shown === 0) failed.push(`${label}: the control cut no burst (0 of ${runs.length}): no pending burst was shown`);
-        }
-        if (stoppedLeft) failed.push(`${label}: ${stoppedLeft} of ${runs.length} left a stopped process`);
       }
     }
   }
-  if (controlBursts.length) {
-    const cut = controlBursts.filter(controlShows).length;
+  const names = { burst: 'press_key bursts', pairs: 'key_down/key_up pair bursts' };
+  for (const [kind, runs] of Object.entries(controlBursts)) {
+    if (!runs.length) continue;
+    const cut = runs.filter(controlShows).length;
     md.push('', burstControl === 'cut'
-      ? `The control's bursts: ${cut} of ${controlBursts.length} cut (required on each path).`
-      : `The control's bursts: ${cut} of ${controlBursts.length} cut (reported, not required: through the production paths the service spaces each window input 100 ms behind the previous key, so the control cannot fail there).`);
+      ? `The control's ${names[kind]}: ${cut} of ${runs.length} cut (required on each path and browser).`
+      : `The control's ${names[kind]}: ${cut} of ${runs.length} cut (reported, not required: through the production paths the service holds each window input behind the previous one's settle, and the stop's own latency follows the last answer, so the control need not fail there).`);
   }
   return { md, failed };
 }
@@ -507,17 +526,18 @@ const findWindow = (id) => `const w = (await cua.computer.list_windows({})).find
  * One run: a fresh session of the lane's checkout, its case's input, then the path's stop straight after the last
  * answer; the engine's exit awaited and the effect read once it has gone. Returns the run's row.
  */
-async function oneRun(ctx, lane, path, kind, scenes, trial) {
+async function oneRun(ctx, lane, path, kind, scenes, trial, browser = null) {
   const { desktop, oracle } = ctx;
   const root = lane === 'drain' ? REPO : ctx.controlRoot;
-  const scene = kind === 'burst' ? scenes.chrome : scenes.xterm;
+  const bursting = BURSTS.includes(kind);
+  const scene = bursting ? scenes[browser] : scenes.xterm;
   const asked = [];
   // the handle acts on the desktop (its approval names no app: "(desktop)"), the other cases on their window's app
   const answer = approvals(kind === 'handle' ? DESKTOP_APPROVAL : scene.app, asked);
-  const row = { kind: 'engine-stop-run', lane, path, case: kind, sandbox: ctx.sandbox, trial };
+  const row = { kind: 'engine-stop-run', lane, path, case: kind, ...(bursting ? { browser } : {}), sandbox: ctx.sandbox, trial };
   let read = null;
   let before = null;
-  if (kind === 'burst') {
+  if (bursting) {
     desktop.arrangeFront('covered');
     read = () => textAndCaret(desktop, oracle, scene);
     const { tail } = await cleanStart(ctx, scene, read);
@@ -544,7 +564,8 @@ async function oneRun(ctx, lane, path, kind, scenes, trial) {
     if (!/found/.test(text(setup))) throw new Error(`the session's first cell: ${text(setup).slice(-400)}`);
     const code = {
       hold: `${findWindow(scene.id)} await cua.computer.key_down({window: w, key: ${JSON.stringify(HELD)}}); nodeRepl.write('held');`,
-      burst: `${findWindow(scene.id)} for (const key of ${JSON.stringify(keysOf(BURST))}) await cua.computer.press_key({window: w, key}); nodeRepl.write('sent');`,
+      burst: `${findWindow(scene.id)} ${burstCode('burst', keysOf(BURST))} nodeRepl.write('sent');`,
+      pairs: `${findWindow(scene.id)} ${burstCode('pairs', keysOf(BURST))} nodeRepl.write('sent');`,
       // started and moved, never ended: the handle's button 1 held across requests
       handle: `const h = cua.computer.drag_handle(); await h.start(${JSON.stringify(row.handle?.start)}); await h.move_to(${JSON.stringify(handleEnd)}); nodeRepl.write('held');`,
     }[kind];
@@ -614,19 +635,25 @@ async function oneRun(ctx, lane, path, kind, scenes, trial) {
   return row;
 }
 
-/** The run's scenes: an xterm (the hold's) and the run's own Chrome on the keys page (the burst's), with their apps. */
-async function openScenes(ctx) {
+/**
+ * The run's scenes: an xterm (the hold's) and each burst browser's own window on the keys page (the bursts'), with their
+ * apps.
+ */
+async function openScenes(ctx, browsers) {
   const { desktop, oracle } = ctx;
-  const xterm = await openFamily(desktop, oracle, 'xterm', 'stop-hold');
-  const chrome = await openFamily(desktop, oracle, 'chrome', 'stop-burst', { page: KEYS_PAGE });
-  chrome.field ??= preorder((await desktop.state(chrome)).ax_tree).find((n) => n.role === 'entry' && n.name === 'Field')?.id ?? null;
-  if (!chrome.field) throw new Error('the keys page has no field the harness can read');
+  const scenes = { xterm: await openFamily(desktop, oracle, 'xterm', 'stop-hold') };
+  for (const browser of browsers) {
+    const scene = await openFamily(desktop, oracle, browser, 'stop-burst', { page: KEYS_PAGE });
+    scene.field ??= preorder((await desktop.state(scene)).ax_tree).find((n) => n.role === 'entry' && n.name === 'Field')?.id ?? null;
+    if (!scene.field) throw new Error(`${browser}'s keys page has no field the harness can read`);
+    scenes[browser] = scene;
+  }
   const listed = await desktop.listWindows();
-  for (const scene of [xterm, chrome]) {
+  for (const scene of Object.values(scenes)) {
     scene.app = listed.find((w) => w.id === scene.id)?.app ?? null;
     if (!scene.app) throw new Error(`${scene.label} is not listed with an app`);
   }
-  return { xterm, chrome };
+  return scenes;
 }
 
 function useDisplay(display) {
@@ -640,7 +667,8 @@ export async function runEngineStop(args, { emit, run, startLoad }) {
   const paths = args.paths?.length ? args.paths : PATHS;
   const cases = args.cases?.length ? args.cases : CASES;
   const lanes = args.lanes?.length ? args.lanes : LANES;
-  for (const [named, known] of [[paths, PATHS], [cases, CASES], [lanes, LANES]]) {
+  const browsers = args.browsers?.length ? args.browsers : ['chrome'];
+  for (const [named, known] of [[paths, PATHS], [cases, CASES], [lanes, LANES], [browsers, BROWSERS]]) {
     const unknown = named.filter((n) => !known.includes(n));
     if (unknown.length) throw new Error(`unknown ${unknown.join(', ')}: the experiment knows ${known.join(', ')}`);
   }
@@ -653,7 +681,7 @@ export async function runEngineStop(args, { emit, run, startLoad }) {
   const server = await startPrivateServer({ out: args.out });
   useDisplay(server.display);
   emit({ kind: 'engine-stop-display', display: server.display, cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), control_label: controlLabel(args.controlRoot),
-    sandbox, load_factor: args.load ? (args.loadFactor ?? 1) : 0, burst_control: burstControl });
+    sandbox, load_factor: args.load ? (args.loadFactor ?? 1) : 0, burst_control: burstControl, browsers });
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   const runs = args.samplesTrials ?? RUNS;
   const rows = [];
@@ -668,12 +696,14 @@ export async function runEngineStop(args, { emit, run, startLoad }) {
     desktop.oracle = oracle;
     await desktop.openFront('covered');
     const ctx = { desktop, oracle, emit, cua: args.cua, controlRoot: args.controlRoot, sandbox };
-    const scenes = await openScenes(ctx);
+    const scenes = await openScenes(ctx, cases.some((c) => BURSTS.includes(c)) ? browsers : []);
     load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
     // the control last: the keys a killed engine cuts reach the window only with a later FocusIn
     for (const lane of lanes) {
       for (const path of paths) {
-        for (const kind of casesOf(path, cases)) for (let i = 0; i < runs; i++) rows.push(await oneRun(ctx, lane, path, kind, scenes, i));
+        for (const kind of casesOf(path, cases)) {
+          for (const browser of BURSTS.includes(kind) ? browsers : [null]) for (let i = 0; i < runs; i++) rows.push(await oneRun(ctx, lane, path, kind, scenes, i, browser));
+        }
       }
     }
   } finally {
@@ -689,7 +719,7 @@ export async function runEngineStop(args, { emit, run, startLoad }) {
     watched = await server.stop();
   }
   const ending = desktopEnding(desktop.ending);
-  const { md, failed } = engineStopVerdict(rows, { paths, cases, lanes, sandbox, burstControl });
+  const { md, failed } = engineStopVerdict(rows, { paths, cases, lanes, sandbox, burstControl, browsers });
   for (const f of ending.foreign) failed.push(`a window the experiment did not open was changed: ${f}`);
   if (!watched.clean) failed.push(`the private display's watchdog: ${watched.reason}`);
   if (failed.length) md.push('', `**Incomplete or failed:** ${failed.join('; ')}.`);

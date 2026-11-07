@@ -559,8 +559,10 @@ final class TreeWalk {
         if cut { break }
         guard let resumed = nextDeferred() else { break }
         switch resumed.waiting {
-        // `lastly`'s columns come up only once nothing else waits: their children are taken up in order, unjudged.
-        case .children(let item): expand(item, judging: !resumed.lastly)
+        // A column from `lastly` whose children have all been read (Chromium's, through their rows) is taken up unjudged:
+        // nothing of it is left to read first. One with children no other parent lists is judged as any list is.
+        case .children(let item):
+          expand(item, judging: !(resumed.lastly && item.read.children.allSatisfy { selected[ElementKey(element: $0)] != nil }))
         case .unread(let item, let positions): push(item, Array(positions))
         }
         continue

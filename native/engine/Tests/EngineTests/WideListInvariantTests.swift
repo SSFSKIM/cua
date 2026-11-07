@@ -338,6 +338,29 @@ final class WideListInvariantTests: XCTestCase {
     }
   }
 
+  /// The review of dc4b5f34..aab236fb: a column whose children no other parent lists (250, items 200–234 in view) still
+  /// has them judged when it comes up last, behind a visible group of 100 later in the document; so its shown items are
+  /// read within a 250-node budget, as main read them, and not its offscreen prefix.
+  func testAColumnTakenUpLastWithChildrenOfItsOwnIsStillJudged() {
+    let tree = FakeTree()
+    for (id, role) in [0: "AXWindow", 1: "AXWebArea", 90: "AXColumn"] { tree.extra[id] = ["AXRole": role as CFString] }
+    tree.frames = [0: windowFrame, 1: viewport, 90: CGRect(x: 0, y: -3900, width: 500, height: 5000), 2: CGRect(x: 500, y: 100, width: 500, height: 700)]
+    tree.children = [0: [1], 1: [90, 2], 90: (0..<250).map { 100_000 + $0 }, 2: (0..<100).map { 300_000 + $0 }]
+    tree.visible[90] = tree.children[90]
+    for i in 0..<250 {
+      let y = viewport.minY + Double(i - 200) * 20
+      tree.frames[100_000 + i] = y + 20 <= viewport.minY ? CGRect(x: 0, y: viewport.minY, width: 500, height: 1)
+        : y >= viewport.maxY ? CGRect(x: 0, y: viewport.maxY - 1, width: 500, height: 1) : CGRect(x: 0, y: y, width: 500, height: 20)
+    }
+    for k in 0..<100 { tree.frames[300_000 + k] = CGRect(x: 500, y: 100 + Double(k % 35) * 20, width: 500, height: 20) }
+    let limits = WalkLimits(nodes: 250, deadline: .infinity)
+    let shown = Set((200..<235).map { 100_000 + $0 })
+    XCTAssertTrue(shown.isSubset(of: Set(ids(walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true, wideListRules: false)))),
+                  "main reads them")
+    XCTAssertTrue(shown.isSubset(of: Set(ids(walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true)))))
+    XCTAssertEqual(wideListInvariantViolations(tree, window: windowFrame, limits: limits, chromium: true), [])
+  }
+
   /// The move charges nothing: the walk with it and the walk without it stop at the same node count, the one reading the
   /// shown child where the other reads the section's next leaf, their bytes apart by those two nodes alone.
   func testTheMoveChargesNoBudget() {

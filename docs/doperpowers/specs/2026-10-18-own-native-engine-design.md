@@ -2752,8 +2752,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      rows Chromium has not laid out near the viewport. The corrected model: a judged list costs its read count (as
      above) times the page's live price per frame read, which is about 0.06 ms in ordinary lists and up to about 1.5
      ms in Chromium's large tables, so about 100–180 ms per such table per observation. What changed for it: a column
-     taken up from `lastly`, once nothing else waits, is no longer judged (its cells are already read through their
-     rows; on an uncut 3,000-row table that was about 120 reads per column), and the walk's timings count the rule's
+     taken up from `lastly` whose children have all been read (Chromium's cells, through their rows) is no longer
+     judged, since nothing of it is left to read first (on an uncut 3,000-row table that was about 120 reads per
+     column); one with children no other parent lists is judged as any list is (the review of dc4b5f34..aab236fb found
+     the first version skipping every column, so a column of 250 own children behind a visible group of 100 lost its 35
+     shown children at 250 nodes, which main read), and the walk's timings count the rule's
      own reads apart (`wideLists`, `wideListFrames`, `wideListMs`, inside `widthMs`; `frameReads` all of them), so the
      next run can tell the rule's reads from the width rule's and price each.
      The children read first go on the stack; each run of the others waits, unread, as an entry of `deferred`, placed in
@@ -2845,7 +2848,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      miss (it lies between two of them, which are where their places say) waits with its run of unshown neighbours, so
      a cut can still leave it unread. (iv) The move to an earlier place happens only when the selection meets the
      element there before the cut; an earlier place it never reaches leaves the children waiting at the later one.
-  Proven offline (`WideListTests`, 10, and `WideListInvariantTests`, 12; `swift test`; removing each rule, each bound,
+  Proven offline (`WideListTests`, 10, and `WideListInvariantTests`, 13; `swift test`; removing each rule, each bound,
   each sample check, the frameless rules, the preorder pass, its deadline and its places' propagation to a subtree
   fails at least one test, by mutation,
   `~/.local/share/187/mutate-304.py`): the uncut walk equal to the plain preorder over a 300-row table of 3 columns, a
@@ -2864,7 +2867,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   place checked alone, every frame read up to 512 children and fewer than 200 for 513, a frameless child read first,
   the two parents' case (the earlier place winning, no loss at 620 nodes, the element emitted once at its preorder
   place, the move charging nothing; an element that shows at the earlier place taken up at once there, main not
-  moving it), a list of 6,000 within its stated frame reads uncut and cut, its columns taken up last unjudged, the
+  moving it), a list of 6,000 within its stated frame reads uncut and cut, its columns taken up last unjudged, a
+  column of its own children taken up last still judged, the
   uncut walk over a waiting alias with a shown child, and the loader flagging a dump that
   lost an alias as alias-incomplete.
   The invariant check over the spike's trees: `CUA_304_TREES=$HOME/.local/share/probe-304 swift test --filter

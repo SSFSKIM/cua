@@ -65,6 +65,12 @@ const GROUPS = {
   'safari-diag': ['py-docs'],
   // The column-skip fix (F7) built and checked live against main on the pages whose tables cut the walk.
   'chrome-f7': ['local-table-bar', 'local-table-6k', 'iana-media', 'hn-thread', 'wiki-table'],
+  // The wide trees again with each row's chosen children as element identities (scripts/probe-304/instrument-ids.py),
+  // for the fix's invariant check (WideListInvariantTests): the pages whose shared elements (a table's cells, under
+  // their rows and columns) the spike's dumps could not rebuild.
+  'chrome-ids-a': ['local-table', 'local-table-bar', 'local-table-6k', 'iana-media'],
+  'chrome-ids-b': ['wiki-article', 'wiki-table', 'py-docs', 'local-float', 'mdn-float', 'w3s-float', 'local-overlay'],
+  'safari-ids': ['mdn-float', 'wiki-article'],
 };
 const TARGETS = GROUPS[GROUP]?.map(name => ({name, ...PAGES[name]}));
 if (!TARGETS) { console.error(`unknown group ${GROUP}`); process.exit(2); }
@@ -315,7 +321,7 @@ async function measure(ctx, target, at, pageInfo) {
     // An element the width rule showed none of (more than 499 children, no visible subset): what its children's frames
     // gave the record-only bisection.
     if ((m.sky.probeReads ?? []).some(r => r[5] > 499 && r[6] === 0 && !r[12])) row.kids = await ctx.tool.ask({op: 'kids', pid: ctx.pid, window});
-    if (at.name === 'top' || !ctx.priced?.[target.name]) {
+    if (!process.env.P304_NO_PRICE && (at.name === 'top' || !ctx.priced?.[target.name])) {
       row.price = await ctx.tool.ask({op: 'price', pid: ctx.pid, window, cap: 1500});
       (ctx.priced ??= {})[target.name] = true;
     }

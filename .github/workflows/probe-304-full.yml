@@ -1,0 +1,53 @@
+# #304's wide trees with element identities (scripts/probe-304/run.mjs, the spike's measurement, on the pages whose
+# shared elements its dumps could not rebuild): main's engine observes and the tool hit-tests as in the spike, and the
+# wide engine (budgets raised, scripts/probe-304/instrument.py --wide) also writes each probeReads row's chosen children
+# as the numbers of the rows they were emitted as (scripts/probe-304/instrument-ids.py), for the fix's invariant check
+# (WideListInvariantTests on fix/304-wide-list). One rep. Runs only on a push to probe/304-full; not a ci-kit gate.
+name: probe-304-full
+on:
+  push:
+    branches: [probe/304-full]
+permissions:
+  contents: read
+env:
+  P304_MAIN_REF: f20a25ee895c5aab2ebb760f6114ecaac232c732
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1]
+        group: [chrome-ids-a, chrome-ids-b, safari-ids]
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build the engines (instrumented) and the tool
+        run: |
+          sw_vers
+          git worktree add "$RUNNER_TEMP/main" "$P304_MAIN_REF"
+          git worktree add "$RUNNER_TEMP/wide" "$P304_MAIN_REF"
+          echo "P304_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
+          python3 -I scripts/probe-304/instrument.py "$RUNNER_TEMP/main/native/engine/Sources/Engine"
+          python3 -I scripts/probe-304/instrument.py "$RUNNER_TEMP/wide/native/engine/Sources/Engine" --wide
+          python3 -I scripts/probe-304/instrument-ids.py "$RUNNER_TEMP/wide/native/engine/Sources/Engine"
+          swift build -c release --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng-main"
+          swift build -c release --package-path "$RUNNER_TEMP/wide/native/engine" --scratch-path "$RUNNER_TEMP/eng-wide"
+          swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-304/tool.swift
+      - name: Measure
+        env:
+          P304_REP: ${{ matrix.rep }}
+          P304_NO_PRICE: '1'
+        run: node scripts/probe-304/run.mjs --group ${{ matrix.group }} --main "$RUNNER_TEMP/eng-main/release/cua-engine" --wide "$RUNNER_TEMP/eng-wide/release/cua-engine" --tool "$RUNNER_TEMP/probe-tool" --out "$RUNNER_TEMP/probe-304"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-304-${{ matrix.group }}-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-304/*.json
+            ${{ runner.temp }}/probe-304/*.gz
+          if-no-files-found: warn

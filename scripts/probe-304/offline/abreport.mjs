@@ -73,6 +73,17 @@ for (const {app, target} of pages) for (const pos of POS) {
 }
 console.log(`\ncoverage differing between the heads: ${coverageDiffs.length ? `\n- ${coverageDiffs.join('\n- ')}` : 'none'}`);
 
+// The share counts `interactiveHit` as checked, but on a still page it is the guard's refusal (an interactive hit that is
+// not the recorded node): a head that leaves a shown control unrecorded turns kept points into refused ones there.
+console.log('\n### Still-page refusals the guard would make (`interactiveHit` grid points), where the heads differ (per rep, each head\'s median)\n');
+let refusalDiffs = 0;
+for (const r of rows) {
+  const m = h => median(slotsOf(r, h).map(s => s.obs?.guard?.reasons?.interactiveHit ?? 0));
+  const [ia, ib] = [m('a'), m('b')];
+  if (ia !== ib) { refusalDiffs += 1; console.log(`- ${r.label} rep${r.rep}: A ${ia}, B ${ib}; A ${JSON.stringify(slotsOf(r, 'a')[0]?.obs?.guard?.reasons)}; B ${JSON.stringify(slotsOf(r, 'b')[0]?.obs?.guard?.reasons)}`); }
+}
+if (!refusalDiffs) console.log('none');
+
 // ---- 2. walk ms -----------------------------------------------------------------------------------------------------
 console.log('\n### Walk ms (timed observations only; paired = per position, B\'s median less A\'s)\n');
 console.log('| app | page | n A, B | A p50 / p95 | B p50 / p95 | B−A p50 / p95 | paired median / p95 abs / range | cut |');

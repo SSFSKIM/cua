@@ -19,9 +19,10 @@ permissions:
   contents: read
 env:
   # Phase 1 (runs 42326533862 and 42328384133) ran A = B = main f20a25ee, the noise floor and the kit's check. Phase 3:
-  # B = fix/304-wide-list 566e3612 (its last code commit 839c1507).
+  # B = fix/304-wide-list 566e3612 ran in run 42338126530; now bc4d395f (rule B amended: every shown child of a list of
+  # 101-512 read first, a sampled check of the bisected run above 512).
   P304_A_REF: f20a25ee895c5aab2ebb760f6114ecaac232c732
-  P304_B_REF: '566e36124a851e91d0f7e30fa779a93b72eebfe9'  # quoted: YAML reads 566e3612 as a float (run 42329756049)
+  P304_B_REF: 'bc4d395fd4eea509d9331161f752b9b00d4c12e2'  # quoted: YAML read an unquoted 566e3612 as a float (run 42329756049)
 jobs:
   probe:
     strategy:

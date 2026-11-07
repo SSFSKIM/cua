@@ -17,7 +17,7 @@
 import {spawn, spawnSync} from 'node:child_process';
 import {createServer} from 'node:http';
 import {createConnection} from 'node:net';
-import {mkdirSync, writeFileSync, readFileSync, existsSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, writeFileSync, readFileSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-296 ab: runs only on a GitHub-hosted runner'); process.exit(2); }
@@ -166,9 +166,11 @@ async function frontTarget(pid) {
   await sleep(1000);
   return frontmost();
 }
+// #287: the sockets in a short directory of the run's own (a deeper output directory put the path past the 103-byte
+// limit, run 42376953140).
+let SOCKDIR = null;
 async function startEngine(which, label) {
-  const dir = join(OUT, 'sock');
-  mkdirSync(dir, {recursive: true, mode: 0o700});
+  const dir = SOCKDIR ??= mkdtempSync('/tmp/s296-');
   const socket = join(dir, `${fileName(label).slice(-60)}.sock`);
   const child = spawn(ENGINES[which], [], {env: {...process.env, CUA_ENGINE_SOCKET: socket}, stdio: ['ignore', 'pipe', 'pipe']});
   let stderr = '';

@@ -14,27 +14,27 @@ import {setTimeout as sleep} from 'node:timers/promises';
 // observation through this service, straight after the input's answer, showed the complete effect on every cell that
 // takes it, 30 consecutive runs idle and at twice the gate's load, searched upward from 0 and then confirmed on the
 // values as shipped (`--experiment settle`, scripts/linux-engine-diff/action-settle.mjs; evidence
-// docs/evidence/2026-10-28-own-linux-engine/m4/settle/). The slowest cell sets it, named beside it. Where some cell
-// showed its effect at no step up to 100, the method keeps the vendor's 100: a key's release on an Electron page (60
-// to 150 ms later in a third of the runs, at every step; #302). launch_app's is never reached in service
-// (src/services/sky.mjs launches) and keeps it too.
+// docs/evidence/2026-10-28-own-linux-engine/m4/settle/, its fix wave in fix/). The slowest cell sets it, named beside
+// it. Where some cell showed its effect at no step up to 100, the method keeps the vendor's 100: a key's release on an
+// Electron page (60 to 150 ms later in a third of the runs, at every step; #302). launch_app's is never reached in
+// service (src/services/sky.mjs launches) and keeps it too.
 export const SETTLE_MS = Object.freeze({
-  perform_secondary_action: 10, // Electron's page
-  click: 25, // a coordinate click
-  click_element: 100, // an element's primary action, in a family that does not animate it
-  animated_gtk4: 100, // GTK 4's button
-  animated_qt: 100, // Qt's animated click
+  perform_secondary_action: 0, // a named action other than an animated primary one: every page held at 0
+  click: 25, // a coordinate click: gnome-terminal's screen at twice the load
+  click_element: 0, // an element's primary action, in a family that does not animate it: every family held at 0
+  animated_gtk4: 250, // GTK 4's button, idle and at twice the load
+  animated_qt: 125, // Qt's animated click: Qt 6 at twice the load (Qt 5 held at 100)
   clipboard_read: 0,
-  clipboard_write: 0,
-  drag: 10, // Electron's page
-  drag_handle: 10, // Electron's page, and gedit at twice the load
-  activate_window: 10, // kate and qtcreator at twice the load
-  move: 10, // Electron's page: at 0 its tree showed a move late in 4 of 37 runs in the confirmation sitting
+  clipboard_write: 0, // the engine confirms the paste before it answers
+  drag: 10, // Electron's page and gedit; gedit and xterm at twice the load
+  drag_handle: 10, // Electron's page; gedit at twice the load
+  activate_window: 10, // every family whose window manager's activation it reads but GTK 3's scene, idle and loaded
+  move: 75, // Electron's page through the desktop route: its last motion, idle and at twice the load
   move_relative: 0,
-  press_key: 100, // an Electron page's key release (a key into a text field held at 25: Writer, gnome-terminal)
+  press_key: 100, // an Electron page's key release (#302; a key into a text field held at 25: Writer, gnome-terminal)
   key_down: 25, // Writer and gnome-terminal
   key_up: 50, // Chrome's page on the desktop route at twice the load
-  scroll: 10, // xterm at twice the load: at 0 its program read a wheel step late in 7 of 31 confirmation runs
+  scroll: 75, // Electron's page: its every wheel step, idle and at twice the load
   type_text: 0, // the engine confirms the paste before it answers
   launch_app: 100,
 });
@@ -42,7 +42,7 @@ export const SETTLE_MS = Object.freeze({
 // The settle of an element's primary action in a family whose toolkit animates it, by the family's name as cua-engine
 // answers it (`{animated_action: <family>}`; native/linux-engine/src/families.rs `animates_primary_action`): the action
 // takes effect after DoAction answers (GTK 4's button about 250 ms later, as its keyboard activation does; Qt about
-// 100 ms later, its animated click).
+// 100 ms later, its animated click; each family's value measured from 100 by 25 ms).
 export const ANIMATED_ACTION = Object.freeze({'GTK 4': 'animated_gtk4', Qt: 'animated_qt'});
 
 // The settle for `family`'s animated action: its own, or for a family this service does not know, the longest of them.

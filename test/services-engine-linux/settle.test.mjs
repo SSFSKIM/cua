@@ -35,8 +35,8 @@ test('an animated action settles by its family\'s own constant; a family the ser
 
 test('the constants are T8\'s measured steps; where no step up to 100 showed every effect, the vendor\'s 100', () => {
   assert.deepEqual({...SETTLE_MS}, {
-    perform_secondary_action: 10, click: 25, click_element: 100, animated_gtk4: 100, animated_qt: 100, clipboard_read: 0, clipboard_write: 0, drag: 10, drag_handle: 10,
-    activate_window: 10, move: 10, move_relative: 0, press_key: 100, key_down: 25, key_up: 50, scroll: 10, type_text: 0, launch_app: 100,
+    perform_secondary_action: 0, click: 25, click_element: 0, animated_gtk4: 250, animated_qt: 125, clipboard_read: 0, clipboard_write: 0, drag: 10, drag_handle: 10,
+    activate_window: 10, move: 75, move_relative: 0, press_key: 100, key_down: 25, key_up: 50, scroll: 75, type_text: 0, launch_app: 100,
   });
 });
 

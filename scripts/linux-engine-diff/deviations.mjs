@@ -298,19 +298,10 @@ export function lineAsReported(shown, truncated) {
  * The declared speed gaps: a request time slower than the faster vendor build's that is known, explained and owned by
  * the milestone its `section` names. A gap turns only its own operation's, route's and series' failing speed verdict
  * into "declared gap", which the summary lists apart and never counts as a pass; any other loss still fails.
- * `[{op, route, series, reason, section}]`.
+ * `[{op, route, series, reason, section}]`. None is declared: M1a's one, desktop `move`'s later requests, closed when
+ * M4's T9 removed the vendor's 8 ms between a desktop path's points (Decision Log, T9).
  */
-export const SPEED_GAPS = [
-  {
-    // m1a4-events-gate: desktop `move` later steps 8.45 ms against the newest build's 6.05, interval [2.27, 2.59]
-    op: 'move',
-    route: 'desktop',
-    series: 'later',
-    reason:
-      "cua sends the pinned build's motions, the first at the pointer's own position, with the vendor's 8 ms path wait after each; the newest build leaves that first motion out, so a short move waits 8 ms less. M4 shortens the wait",
-    section: 'M4',
-  },
-];
+export const SPEED_GAPS = [];
 
 /** The speed gap that declares this verdict's loss, or null. */
 export function declaredSpeedGap({ op, route, series }, list = SPEED_GAPS) {

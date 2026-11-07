@@ -185,6 +185,14 @@ export const CELLS = [
   cell('gedit', 'clipboard_read'),
   cell('gedit', 'clipboard_write'),
   ...desktopCells('gedit', ['press_key', 'click', 'drag', 'drag_handle']),
+  // the desktop route's pointer input on the matrix's other families, each window in front and active (M4's T9: a
+  // desktop path's points go with no pause between them, and the wait rule asks every family)
+  ...desktopCells('kate', ['click', 'drag']),
+  ...desktopCells('qtcreator', ['click', 'drag']),
+  ...desktopCells('writer', ['click']),
+  ...desktopCells('gnome-terminal', ['click', 'scroll']),
+  ...desktopCells('xterm', ['click', 'scroll', 'drag']),
+  ...['settle-gtk3', 'settle-qt5', 'settle-qt6'].map((scene) => cell(scene, 'move', 'desktop')),
   // Qt's paste lands and is never confirmed (focus-timer.mjs PASTE_UNCONFIRMED): its answer is an error, which defers
   // nothing, so a Qt editor has no paste to settle
   ...editorCells('kate', ['key_click']),

@@ -173,7 +173,7 @@ for (const [name, t] of Object.entries(TARGETS)) {
     // AXWebArea answered a zero frame in run 42376953140's fresh-launch cells), and a re-observation's record then.
     if (TIMELINE) {
       row.frames = [];
-      for (let k = 1; k <= 60; k++) { const due = at + k * 500 - Date.now(); if (due > 0) await sleep(due); const s = ax('state', child.pid); row.frames.push([Date.now() - at, s.webAreaFrame ?? null, s.webAreaElements ?? null]); }
+      for (let k = 1; k <= 60; k++) { const due = at + k * 500 - Date.now(); if (due > 0) await sleep(due); const s = ax('state', child.pid); row.frames.push([Date.now() - at, s.webAreaFrame ?? null, s.webAreaElements ?? null, s.webAreaChildren ?? null, s.webAreaVisibleChildren ?? null, s.webAreaListsVisibleChildren ?? null]); }
     }
     for (let k = 1; k <= 8; k++) { const due = at + k * 500 - Date.now(); if (due > 0) await sleep(due); const s = ax('state', child.pid); row.samples.push({t: Date.now() - at, eui: s.eui, manual: s.manual, checkbox: s.checkboxActions, webAreaElements: s.webAreaElements ?? null, walked: s.walked}); }
     const from2 = Date.now();

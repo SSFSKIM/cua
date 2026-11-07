@@ -79,6 +79,8 @@ jobs:
         env:
           GROUP: ${{ matrix.group }}
           REP: ${{ matrix.rep }}
+          # The electron cells this push runs (prefixes; empty for all).
+          P287_CELLS: 'c/'
         run: bash scripts/probe-287/run.sh
       - name: Upload
         if: always()

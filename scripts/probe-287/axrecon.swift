@@ -84,6 +84,12 @@ case "state":
       if let v = attr(prepare(webArea), "AXFrame"), CFGetTypeID(v) == AXValueGetTypeID(), AXValueGetValue(v as! AXValue, .cgRect, &r) {
         out["webAreaFrame"] = [Double(r.origin.x), Double(r.origin.y), Double(r.size.width), Double(r.size.height)]
       }
+      // The width rule's inputs on the web area: its child count and whether it answers a visible subset.
+      let wa = prepare(webArea)
+      out["webAreaChildren"] = elements(attr(wa, kAXChildrenAttribute)).count
+      let (vis, visErr) = copy(wa, "AXVisibleChildren")
+      out["webAreaVisibleChildren"] = vis != nil ? elements(vis).count as Any : "error \(visErr)"
+      out["webAreaListsVisibleChildren"] = names(wa).contains("AXVisibleChildren")
       var n = 0
       var q = [webArea], h = 0
       while h < q.count && h < 4000 { let e = prepare(q[h]); h += 1; n += 1; q.append(contentsOf: elements(attr(e, kAXChildrenAttribute))) }

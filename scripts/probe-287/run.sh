@@ -68,7 +68,7 @@ case "$GROUP" in
     export P287_BROWSER=firefox P287_SLOTS=2
     stamp "firefox 304"; node scripts/probe-304/ab.mjs --group firefox --a "$ENG" --b "$ENG" --tool "$T/probe-tool" --out "$OUT/firefox/304" ;;
   vscode-a)
-    stamp "vscode electron"; P287_REP="$REP" node scripts/probe-287/electron.mjs --engine "$ENG" --ax "$T/axrecon" --out "$OUT/vscode/electron" ;;
+    stamp "vscode electron"; P287_REP="$REP" node scripts/probe-287/electron.mjs --engine "$ENG" --ax "$T/axrecon" --cells "${P287_CELLS:-}" --out "$OUT/vscode/electron" ;;
   vscode-s305)
     export P287_HEADS=branch
     stamp "vscode 305"; node scripts/probe-305/ab.mjs --group vscode --parts sweep --main "$ENG" --branch "$ENG" --tool "$T/probe-tool" --out "$OUT/vscode/305" ;;

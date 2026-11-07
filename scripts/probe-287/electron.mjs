@@ -90,6 +90,7 @@ async function launchCode(label) {
   const n = ++launchN;
   const dir = join(OUT, `work-${n}`); mkdirSync(dir, {recursive: true});
   writeFileSync(join(dir, 'notes.md'), '# probe287 notes\n\nThe first line of the editor is the heading above.\nA second paragraph line.\n');
+  writeFileSync(join(dir, 'other.txt'), 'another file\n');
   const child = spawn(BIN, [`--user-data-dir=${join(OUT, `user-${n}`)}`, `--extensions-dir=${join(OUT, `ext-${n}`)}`, '--disable-extensions', '--skip-welcome',
     '--skip-release-notes', '--disable-workspace-trust', '--disable-telemetry', '--new-window', dir, join(dir, 'notes.md')], {stdio: 'ignore'});
   const launchedAt = Date.now();
@@ -123,6 +124,7 @@ const CELLS = [
   {label: 'c/shared/explorer-fresh', kind: 'click', target: 'explorer'},
   {label: 'c/dedicated/explorer', kind: 'click', target: 'explorer', waitMs: 3000, desktop: 'dedicated'},
   {label: 'c/dedicated/editor', kind: 'click', target: 'editor', waitMs: 3000, desktop: 'dedicated'},
+  {label: 'c/dedicated/button', kind: 'click', target: 'button', waitMs: 3000, desktop: 'dedicated'},
 ].filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
 
 const rows = [];
@@ -169,8 +171,9 @@ for (const spec of CELLS) {
         const within = n => n.frame && n.frame.width > 4 && n.frame.height > 4 && n.frame.x >= sky.window.frame.x && n.frame.y >= sky.window.frame.y;
         const deepest = ns => ns.filter(within).sort((a, b) => b.depth - a.depth)[0];
         const node = spec.target === 'explorer' ? deepest(sky.nodes.filter(n => /other\.txt/.test(text(n)) && n.role !== 'AXWindow'))
-          : spec.target === 'editor' ? deepest(sky.nodes.filter(n => /first line of the editor/.test(text(n))))
-          : spec.target === 'button' ? deepest(sky.nodes.filter(n => n.role === 'AXButton' && /new file/i.test(text(n))))
+          // Monaco's text area (its lines are not in the tree outside screen-reader mode), the editor's, not the chat's.
+          : spec.target === 'editor' ? sky.nodes.filter(n => n.role === 'AXTextArea' && within(n) && n.frame.x < 820).sort((a, b) => a.frame.y - b.frame.y)[0]
+          : spec.target === 'button' ? deepest(sky.nodes.filter(n => n.role === 'AXCheckBox' && /Toggle Panel/.test(text(n))))
           : null;
         row.titleBefore = osa(`tell application "System Events" to get name of window 1 of (first process whose unix id is ${code.pid})`).out;
         if (!node?.frame) { row.problem = `no ${spec.target} node`; row.roles = [...new Set(sky.nodes.map(n => n.role))]; }
@@ -191,6 +194,9 @@ for (const spec of CELLS) {
           const later = await w.execute('get_app_state', {pid: code.pid});
           const f = later.result?.nodes?.find(n => n.token === later.result.focused);
           row.focusedAfter = f ? {role: f.role, title: f.title, description: f.description} : null;
+          const same = later.result?.nodes?.find(n => n.role === node.role && `${n.title ?? ''} ${n.description ?? ''}` === `${node.title ?? ''} ${node.description ?? ''}`);
+          row.targetAfter = same ? {value: same.value ?? null, frame: same.frame} : null;
+          row.targetBefore = {value: node.value ?? null};
         }
       }
       if (spec.kind !== 'sigterm') { try { await w.call('shutdown', {}, 5000); } catch {} w.close(); }
@@ -203,6 +209,6 @@ for (const spec of CELLS) {
   }
   writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, cells: rows}, null, 1));
   const line = s => (s ?? []).map(x => `${x.t}:${x.webArea ?? '-'}/${x.walked ?? '-'}`).join(' ');
-  log(`${row.label}: front=${row.front} pre=${JSON.stringify(row.pre)} write=${JSON.stringify(row.write ?? null)} obs=${JSON.stringify(row.obs ?? null)}\n    samples ${line(row.samples)}\n    before ${line(row.before)}\n    end ${JSON.stringify(row.endTask?.result ?? row.endTask?.error ?? null)} after ${line(row.after)}\n    idle ${line(row.idle)}\n    click ${row.clickMs ?? '-'}ms ${JSON.stringify(row.click ?? null).slice(0, 900)} front=${row.frontAfter ?? '-'} title ${JSON.stringify(row.titleBefore ?? null)} -> ${JSON.stringify(row.titleAfter ?? null)} focused=${JSON.stringify(row.focusedAfter ?? null)} target=${JSON.stringify(row.target ?? null)} ${row.problem ?? ''} ${row.exception ?? ''}`);
+  log(`${row.label}: front=${row.front} pre=${JSON.stringify(row.pre)} write=${JSON.stringify(row.write ?? null)} obs=${JSON.stringify(row.obs ?? null)}\n    samples ${line(row.samples)}\n    before ${line(row.before)}\n    end ${JSON.stringify(row.endTask?.result ?? row.endTask?.error ?? null)} after ${line(row.after)}\n    idle ${line(row.idle)}\n    click ${row.clickMs ?? '-'}ms ${JSON.stringify(row.click ?? null).slice(0, 900)} front=${row.frontAfter ?? '-'} title ${JSON.stringify(row.titleBefore ?? null)} -> ${JSON.stringify(row.titleAfter ?? null)} focused=${JSON.stringify(row.focusedAfter ?? null)} value ${JSON.stringify(row.targetBefore?.value ?? null)} -> ${JSON.stringify(row.targetAfter?.value ?? null)} target=${JSON.stringify(row.target ?? null)} ${row.problem ?? ''} ${row.exception ?? ''}`);
 }
 process.exit(0);

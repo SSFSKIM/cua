@@ -67,6 +67,15 @@ func chromiumFamily(info: [String: Any]) -> Bool {
   return principal == "AtomApplication" || principal == "BrowserCrApplication"
 }
 
+/// Whose web engine an app's pages are, by its Info.plist's principal class (#313): Chromium's (`chromiumFamily`),
+/// Gecko's (Firefox's `GeckoNSApplication`, #287's recon), or neither, where a page is WebKit's (Safari, a WKWebView).
+enum PageEngine: Equatable { case chromium, gecko, other }
+
+func pageEngineOf(info: [String: Any]) -> PageEngine {
+  if chromiumFamily(info: info) { return .chromium }
+  return info["NSPrincipalClass"] as? String == "GeckoNSApplication" ? .gecko : .other
+}
+
 /// Whether an app is enabled at all: web-shaped, or one of the bundles the vendor enables by name (F §1.9).
 func enablementEligible(bundleIdentifier: String?, webShaped: Bool) -> Bool {
   if webShaped { return true }
@@ -187,6 +196,7 @@ final class WebAccessibility: @unchecked Sendable {
   private let lock = NSLock()
   private var webShapedByPath: [String: Bool] = [:]
   private var chromiumByPath: [String: Bool] = [:]
+  private var pageEngineByPath: [String: PageEngine] = [:]
   private var webAreaSeen: Set<String> = []
   private var writtenBack: Set<String> = []
   private var processes: [String: EnabledProcess] = [:]
@@ -283,6 +293,17 @@ final class WebAccessibility: @unchecked Sendable {
     let chromium = chromiumFamily(info: info)
     chromiumByPath[appPath] = chromium
     return chromium
+  }
+
+  /// `pageEngine` of the app at `appPath`, read once per path.
+  func pageEngine(_ appPath: String) -> PageEngine {
+    lock.lock()
+    defer { lock.unlock() }
+    if let known = pageEngineByPath[appPath] { return known }
+    let info = (NSDictionary(contentsOfFile: appPath + "/Contents/Info.plist") as? [String: Any]) ?? [:]
+    let engine = pageEngineOf(info: info)
+    pageEngineByPath[appPath] = engine
+    return engine
   }
 
   /// Whether the process's enablement holds now (#187): its attribute owned by the engine, or written or read true at

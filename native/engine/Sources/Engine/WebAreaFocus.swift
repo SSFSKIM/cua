@@ -355,3 +355,171 @@ func characterBounds(_ element: AXUIElement, _ index: Int) -> CGRect? {
   var rect = CGRect.zero
   return AXValueGetValue(result as! AXValue, .cgRect, &rect) ? rect : nil
 }
+
+// MARK: An element click on text entry (#313)
+//
+// #287's hosted cells (Safari 27.2, run 42379297174, 2 of 2): an element click by token on a page's AXTextArea took the
+// ladder's AXPress, which WebKit answers with success while the focus stays on the web area, so the click answered
+// success having done nothing. The hosted A/B of the first fix (run 42402098567, kit probe/313-ab) found #283's AXFocused
+// write wrong outside Chromium: WebKit takes it by activating Safari (frontmost, its window over TextEdit within 0 to
+// 240 ms, a bare write alike), and a background Firefox ignores it. Measured behind a frontmost TextEdit: an
+// AXSelectedTextRange write focuses Safari's textarea without raising Safari, and type_text lands; AXPress focuses
+// Safari's text field (not its textarea) and Firefox's fields. The design session's ruling c4108490: outside Chromium an
+// element click on a text field never writes AXFocused; its action goes, its focus is read back, and on a WebKit page
+// a field still unfocused gets its caret written and its focus read back again; success only on a read of true.
+
+/// How long a text field's focus is read back after each step (#313, the ruling c4108490: 300 ms until Firefox's
+/// measured latency sets it, capped at 1 s), sampled every `webAreaFocusSampleMs`.
+let textEntryFocusSettleMs: Double = 300
+
+/// How an element click the ladder gave an action (route 1, AXPick or AXPress) is carried (#313).
+enum TextEntryClickRoute: Equatable {
+  /// Not a text-entry role: the action alone, as before.
+  case press
+  /// A text-entry role (`webAreaEditableRoles`): the action, then the element's focus read back (`readingFocus`).
+  /// `selecting`, a field in a WebKit page (a web area outside Chromium and Gecko): still unfocused, its caret is
+  /// written (AXSelectedTextRange) and its focus read back again.
+  case pressConfirmingFocus(selecting: Bool)
+}
+
+/// The route of an element click whose ladder chose an action (#313). Only a text-entry role reads anything here: in a
+/// WebKit process (`engine` .other), its parents up to an AXWebArea (`webAreaAncestry`), which a native field lacks.
+func textEntryClickRoute<Element>(_ element: Element, role: String, engine: PageEngine, roleOf: (Element) -> String?,
+                                  parent: (Element) -> Element?) -> TextEntryClickRoute {
+  guard webAreaEditableRoles.contains(role) else { return .press }
+  guard engine == .other else { return .pressConfirmingFocus(selecting: false) }
+  if case .success = webAreaAncestry(above: element, role: roleOf, parent: parent) { return .pressConfirmingFocus(selecting: true) }
+  return .pressConfirmingFocus(selecting: false)
+}
+
+/// What a text field's focus read-back found (`elementClick.focus`).
+enum FocusReadback: String, Equatable {
+  /// The element read focused.
+  case readBack
+  /// It read unfocused within the settle and never focused: the click answers clickUnconfirmed.
+  case notReadBack
+  /// No read within the settle answered a boolean (the attribute unsupported, a messaging failure, an element gone): the
+  /// click answers clickUnconfirmed too, since nothing shows the field took focus.
+  case unread
+}
+
+/// `step`, then the element's AXFocused read (#313): true at once costs one read and no wait; anything else (false or no
+/// boolean) is polled every `webAreaFocusSampleMs` for up to `textEntryFocusSettleMs`. Only a read of true is success.
+func readingFocus(after step: () throws -> Void, focused: () -> Bool?, now: () -> Double, sleep: (Double) -> Void) throws -> FocusReadback {
+  try step()
+  var read = focused()
+  if read == true { return .readBack }
+  var readFalse = read == false
+  let started = now()
+  repeat {
+    sleep(webAreaFocusSampleMs)
+    read = focused()
+    if read == true { return .readBack }
+    if read == false { readFalse = true }
+  } while now() - started < textEntryFocusSettleMs
+  return readFalse ? .notReadBack : .unread
+}
+
+/// Where a WebKit page's field's caret is after its write (#313), claimed only as far as AXSelectedTextRange read back.
+enum CaretPlacement: Equatable {
+  /// The point's offset, written and read back.
+  case atPoint(Int)
+  /// The point gave no offset (why), so {0, 0} was written, and read back.
+  case atStart(CaretNotPlaced)
+  /// Not confirmed: the range read back otherwise or not at all (`selectionMismatch`, #283's word), or a password field,
+  /// whose ranges are never read (`secure`).
+  case unconfirmed(CaretNotPlaced)
+}
+
+/// What a text field's element click did (#313): the last read-back's answer, which step focused it, and, where its
+/// caret was written, where it is and the write's AXError when it was not success.
+struct TextEntryFocusRecord: Equatable {
+  enum Step: String { case press, selection }
+  let focus: FocusReadback
+  let step: Step
+  var caret: CaretPlacement? = nil
+  var caretWriteError: Int32? = nil
+}
+
+/// Whether the field's selection reads back as the caret at `offset`, {offset, 0}: polled every `webAreaFocusSampleMs`
+/// for up to `textEntryFocusSettleMs`, true at once on the first read that matches.
+func readingCaret(_ offset: Int, selection: () -> (location: Int, length: Int)?, now: () -> Double, sleep: (Double) -> Void) -> Bool {
+  func matches() -> Bool { selection().map { $0.location == offset && $0.length == 0 } == true }
+  if matches() { return true }
+  let started = now()
+  repeat {
+    sleep(webAreaFocusSampleMs)
+    if matches() { return true }
+  } while now() - started < textEntryFocusSettleMs
+  return false
+}
+
+/// An element click whose ladder chose an action, carried by its route (#313): the action alone, or the action with its
+/// focus read back and, on a WebKit page's field still unfocused, its caret written (`writeSelection`, at `caretOffset`
+/// where that computes one, else at 0; its AXError kept) and its focus read back again. Once focused that way, the caret
+/// counts as placed only where `selection` reads it back (`readingCaret`); a password field's range is never read.
+/// `noted` records what was done; a field that has not read focused by the last step's settle answers clickUnconfirmed
+/// (`textEntryFocusUnconfirmed`). Nothing writes AXFocused.
+func carryActionClick(_ route: TextEntryClickRoute, app: String, press: () throws -> Void, focused: () -> Bool?,
+                      caretOffset: () -> Result<Int, CaretNotPlaced>, writeSelection: (Int) throws -> AXError,
+                      selection: () -> (location: Int, length: Int)?,
+                      noted: (TextEntryFocusRecord) -> Void, now: () -> Double, sleep: (Double) -> Void) throws {
+  guard case .pressConfirmingFocus(let selecting) = route else { return try press() }
+  var record = TextEntryFocusRecord(focus: try readingFocus(after: press, focused: focused, now: now, sleep: sleep), step: .press)
+  if record.focus != .readBack, selecting {
+    let caret = caretOffset()
+    let offset = (try? caret.get()) ?? 0
+    var written = AXError.success
+    let found = try readingFocus(after: { written = try writeSelection(offset) }, focused: focused, now: now, sleep: sleep)
+    record = TextEntryFocusRecord(focus: found, step: .selection, caretWriteError: written == .success ? nil : written.rawValue)
+    if found == .readBack {
+      switch caret {
+      case .failure(.secure): record.caret = .unconfirmed(.secure)
+      case _ where !readingCaret(offset, selection: selection, now: now, sleep: sleep): record.caret = .unconfirmed(.selectionMismatch)
+      case .success: record.caret = .atPoint(offset)
+      case .failure(let why): record.caret = .atStart(why)
+      }
+    }
+  }
+  noted(record)
+  if record.focus != .readBack { throw textEntryFocusUnconfirmed(app, selected: record.step == .selection) }
+}
+
+/// A text field's element click that left it unfocused (#313): its action performed (and, `selected`, its caret written),
+/// but the field does not report focus.
+func textEntryFocusUnconfirmed(_ app: String, selected: Bool) -> EngineError {
+  EngineError(name: "clickUnconfirmed",
+    "The click could not be confirmed: it was carried by the text field's accessibility action in \(app)\(selected ? ", then by placing its caret" : ""), but the field does not report focus. Observe the app with get_app_state before any retry, and never retry blindly.")
+}
+
+/// The note of a WebKit page's field focused by its caret's write (#313): no mouse event, and where typing goes, claimed
+/// only where the caret read back.
+func caretFocusNote(_ app: String, _ caret: CaretPlacement) -> String {
+  switch caret {
+  case .atPoint:
+    return "\(app)'s text field was focused through accessibility by placing its caret at the point. No mouse event was sent, so the page saw no click."
+  case .atStart:
+    return "\(app)'s text field was focused through accessibility with its caret at the start, since the caret's place at the point could not be found. Use select_text or set_value first if the position matters. No mouse event was sent, so the page saw no click."
+  case .unconfirmed:
+    return "\(app)'s text field was focused through accessibility, but where its caret is could not be confirmed: typing may go elsewhere in the field or replace a selection. Use select_text or set_value first if the position matters. No mouse event was sent, so the page saw no click."
+  }
+}
+
+/// The offset a WebKit page's field's caret is written at (#313): a password field first (`secure`, so nothing of it is
+/// read, whatever its point), then no clickable point (`pointOutsideText`), then #283's box scan at the point (`offset`).
+func textEntryCaretOffset(point: CGPoint?, secure: () -> Bool, offset: (CGPoint) -> Result<Int, CaretNotPlaced>) -> Result<Int, CaretNotPlaced> {
+  if secure() { return .failure(.secure) }
+  guard let point else { return .failure(.pointOutsideText) }
+  return offset(point)
+}
+
+/// Whether a text field is a password field, whose value and ranges are never read (#283's rule): its role or subrole
+/// AXSecureTextField, or a subrole that cannot be read.
+func secureTextField(role: String?, subrole: SubroleRead) -> Bool {
+  if role == "AXSecureTextField" { return true }
+  switch subrole {
+  case .subrole(let found): return found == "AXSecureTextField"
+  case .none: return false
+  case .failed: return true
+  }
+}

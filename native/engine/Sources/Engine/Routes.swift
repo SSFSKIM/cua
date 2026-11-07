@@ -70,8 +70,15 @@ struct ElementClickRecord: Equatable {
   var walk: [String]? = nil
   var walkStopped: String? = nil
   /// `focusField` and `focusedNotPlaced` only: the caret's offset placed (`placed`), or why it was not (a
-  /// `CaretNotPlaced` case name).
+  /// `CaretNotPlaced` case name). #313, a WebKit page's field whose caret was written: `placed` (read back at the point),
+  /// why the point gave no offset (read back at 0), or `selectionMismatch` / `secure` (not confirmed).
   var caret: String? = nil
+  /// #313, a text-entry element's action (`advertised`): what its last focus read-back found (a `FocusReadback` case
+  /// name), and after which step (`focusStep` "press" | "selection", the caret's write on a WebKit page).
+  var focus: String? = nil
+  var focusStep: String? = nil
+  /// #313, the caret's AXSelectedTextRange write when it did not answer success: its AXError.
+  var caretWriteError: Int32? = nil
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["reason": reason.rawValue]
@@ -85,6 +92,9 @@ struct ElementClickRecord: Equatable {
     if let walk { wire["walk"] = walk }
     if let walkStopped { wire["walkStopped"] = walkStopped }
     if let caret { wire["caret"] = caret }
+    if let focus { wire["focus"] = focus }
+    if let focusStep { wire["focusStep"] = focusStep }
+    if let caretWriteError { wire["caretWriteError"] = Int(caretWriteError) }
     return wire
   }
 }

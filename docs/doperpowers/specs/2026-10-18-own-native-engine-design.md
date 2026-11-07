@@ -2955,6 +2955,115 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   mode, delivered in dedicated); the observation's `totalMs` against main's; a second observation pays nothing new
   (no `clipReread`); and Chrome for Testing's, stable Chrome's and Safari's first observations carry neither key.
   Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #312.
+- Decision (#313, 2026-11-07, `fix/313-safari-textarea`; the design session's ruling cb252e88 on #287's findings, issue
+  comment 6709964394, as amended by ruling c4108490 on the hosted A/B, run 42402098567, kit `probe/313-ab`; amends #282's
+  item 13 for an element click): **an element click whose ladder chose an action on a text-entry element answers
+  success only once the field reads focused. Outside Chromium it never writes AXFocused: the action goes and its focus
+  is read back, and on a WebKit page a field still unfocused gets its caret written and its focus read back again.
+  Otherwise the answer is `clickUnconfirmed`.**
+  1. **The defect** (#287's hosted cells, run 42379297174 `keys-x`, `e-shared/textarea-element`, Safari 27.2, 2 of 2).
+     The page's AXTextArea records AXPress, AXShowMenu and AXScrollToVisible, so the ladder took AXPress
+     (`elementClick {plan action, action AXPress, reason advertised, hit element}`) behind route 3's held activation.
+     WebKit answered success, the page saw no event (pointerdown 0, textFocus 0), and the app's focused element stayed
+     the AXWebArea. Chromium's record of the textarea advertises no AXPress, so on both Chromes the same cell went by
+     the synthesized path into #283's route; on Firefox 159 the AXPress focused it.
+  2. **The first build, and the A/B that overturned it** (2c37097d and 06c90356 against main, run 42402098567). The
+     first build gave a page's field outside Chromium #283's AXFocused route. It found two regressions:
+     - **Safari:** WebKit takes the AXFocused write by activating Safari: Safari goes frontmost and its window rises
+       over TextEdit within 0 to 240 ms. A bare write with no engine action does the same, which is likely why the
+       vendor's focusFieldIfNeeded never writes AXFocused on a Safari element exposing AXDOMClassList and posts a click
+       instead. It also regressed Safari's text field, which main's AXPress focused cleanly;
+     - **Firefox:** the AXFocused write does nothing in a background Firefox, so 10 text cells that main focused with
+       AXPress answered `clickUnconfirmed`.
+     Chromium and native were identical to main, 68 of 68 Chromium cells. No native field advertised AXPress, so every
+     one took the synthesized click. Measured behind a frontmost TextEdit:
+     - **Safari:** an AXSelectedTextRange write on the textarea focuses it without raising Safari, and type_text lands.
+       AXPress focuses Safari's text field but not its textarea;
+     - **Firefox:** AXPress through the engine focuses, with TextEdit kept in front. In shared mode its focus sometimes
+       reads late.
+  3. **The rule** (ruling c4108490; WebAreaFocus.swift `textEntryClickRoute`, `carryActionClick`, `readingFocus`;
+     Input.swift `click`). It applies only where the ladder chose the action (a plain left click, the element
+     advertising AXPick or AXPress, no forced route), to #283's text-entry roles (`webAreaEditableRoles`: AXTextField,
+     AXTextArea, AXSearchField, AXComboBox, AXSecureTextField), in both device modes:
+     - **The action, then the read-back.** The action goes as before. Then the element's AXFocused is read. Only a
+       read of true is success (`elementClick.focus` `readBack`, `focusStep` `press`). Anything else, false or no
+       boolean, is polled every 20 ms for up to `textEntryFocusSettleMs`, 300 ms for now. Firefox's latency is being
+       measured, and the settle will become its p99, capped at 1 s.
+     - **WebKit's caret step.** A field in a WebKit page that has not read focused by then gets its caret written:
+       AXSelectedTextRange {offset, 0}, at the element's clickable point where #283's box scan (`fieldCaretOffset`)
+       finds an offset, else {0, 0}. A password field's value is never read, so its caret goes at 0. Its focus is then
+       read back again within the same settle. A WebKit page is a web area (`webAreaAncestry`) in a process that is
+       neither Chromium's nor Gecko's (`pageEngine`, by the principal class; Firefox's is `GeckoNSApplication`, #287's
+       recon). The meta records `focusStep` `selection`.
+     - **The caret is claimed only as far as it reads back** (the review of 06c90356..8d1025c1, one P2: the write's
+       AXError was discarded and only focus was checked, so a failed write, or an app that takes the focus but keeps its
+       own range, still claimed a place). Once the field reads focused, AXSelectedTextRange is read and polled within
+       the settle (`readingCaret`) for {offset, 0}. The record's `caret` is `placed` (the point's offset, read back), or
+       why the point gave no offset (read back at 0), or, as #283 words it, `selectionMismatch` when the range never
+       read back so. A password field's range is never read, so its caret is `secure`, unconfirmed. Security is
+       classified before anything else about the caret (`textEntryCaretOffset`: then the point, then the box scan), so
+       a password field with no clickable point is `secure` too, not read and not claimed at the start (the re-review of
+       8d1025c1..d3fa1779, one P2). The result's note
+       says the field was focused by placing its caret at the point, or at its start, only when that read back; an
+       unconfirmed caret's note claims no place and says typing may go elsewhere or replace a selection. The focus
+       success stands either way. A write that does not answer success is recorded as `caretWriteError`, its AXError.
+     - **The answer.** A field that has not read true by its last step's settle answers `clickUnconfirmed`, with
+       `focus` `notReadBack` when a read answered false and `unread` when none answered a boolean. The live read
+       discards every AX error, so no boolean may be a messaging failure or an invalidated element, not only a field
+       without the attribute (the review of b27ceb36..2c37097d, one P1).
+     - **Nothing writes AXFocused here.** #283's AXFocused route stays for Chromium only, unchanged, through the
+       synthesized path. That is measured, not assumed: Chromium was never raised in #283's cells (its own evidence,
+       `docs/evidence/2026-11-05-web-text-focus/`), and its 68 cells in this A/B were identical to main's.
+     - **Every other element** is unchanged, and nothing is read for it.
+  4. **The decisions.**
+     - **The settle is one named constant** (`textEntryFocusSettleMs`), used after the action and after the caret's
+       write. A WebKit field that neither step focuses costs two settles, about 600 ms, before `clickUnconfirmed`.
+     - **AXComboBox is included.** Clicking one means focusing it. A combo box whose AXPress only opens its list would
+       answer `clickUnconfirmed`. No native one advertised AXPress in the A/B.
+     - **The cost of the strict read-back:** a text field that never exposes AXFocused answers `clickUnconfirmed` after
+       the settle (`focus` `unread`), where its action alone answered success.
+     - **Native fields and Chromium's AXPress path** get the read-back but no caret step, since neither is a WebKit
+       page. A native field whose AXPress focuses it costs one AXFocused read and no wait.
+     - **The contenteditable case of the first build is dropped.** Only text-entry roles are routed; a plain node inside
+       editable content keeps its action, with no read-back.
+  5. **Recorded, no action.** On Firefox, after a `clickUnconfirmed` (its focus reading late), a following type_text
+     still landed in the intended field.
+  6. **Not done** (each named, none built):
+     - a synthesized element click or a coordinate click on a text field is not read back. #283 covers Chromium's,
+       Safari delivers its posted click (34 of 34), and the ruling scoped coordinate clicks out;
+     - outside a Chromium web area, an element click's AXPress on a checkbox or radio button is not value-checked, as
+       #282's element route checks it (`pressConfirmingValue`). Safari's and Firefox's by-token checkbox changed;
+     - editable content that is not a text-entry role (a contenteditable region's text, clicked by its token).
+  7. **Model-facing text.** `docs/cua-api/agent-cursor.md` is unchanged. Its paragraph describes Chromium's pages, and
+     the new answers carry their own sentence (`clickUnconfirmed`, naming the caret step when it ran) and note.
+  Proven offline (`TextEntryClickTests`, 22, over Safari's page as a fake tree, with a mock that fails the test on any
+  AXFocused write):
+  - no text-entry role outside Chromium (WebKit and Gecko, a page's field and a native one) is written AXFocused;
+  - Safari's textarea, whose AXPress does nothing, is focused by the caret step at the point, after the press's settle;
+  - a caret the point cannot place is written at 0, and the note says so;
+  - a caret write that fails while the focus reads true (the press focusing late) claims no place and records its
+    AXError; a range the app does not keep claims no place, after the range's settle; a range arriving within the
+    settle is read back, and a selection is no caret; a password field's range is never read, with a point or
+    without one, by the live callback's order;
+  - Safari's text field is focused by its press alone, on one read with no wait and no write;
+  - a WebKit field that neither step focuses answers `clickUnconfirmed`, naming the caret step, after two settles;
+  - a native field in a WebKit app (no web area above it) gets no caret step;
+  - Firefox's fields are focused by their press, read 200 ms late, with no caret step and nothing walked;
+  - a Firefox field its press leaves unfocused answers `clickUnconfirmed`;
+  - Chromium is pressed and read back with nothing walked;
+  - a native field focused by its action costs one read and no wait;
+  - a field whose focus never reads answers `clickUnconfirmed`, recorded `unread`, and unread samples are polled like
+    unfocused ones;
+  - the settle's value, other roles pressed with nothing read, the page engine by principal class, the password
+    classification, and the record's `focus`, `focusStep` and `caretWriteError`.
+  #283's `WebAreaFocusTests` and #282's `BackgroundPointerTests` pass unchanged. Each of 43 rules and bounds
+  removed in turn (`~/.local/share/187/mutate-313.py`) fails a test.
+  **What the hosted check must verify** (`probe/313-ab`'s cells, 2 reps, against main):
+  - **Safari 27.2:** the textarea by token answers `focus` `readBack` with `focusStep` `selection` and `caret`
+    `placed` (with no `caretWriteError`), and the text field with `focusStep` `press`. Safari stays behind TextEdit, pointerdown is 0, and type_text lands at the caret;
+  - **Firefox 159:** the text cells main focused answer `readBack` (`press`), and Firefox stays behind;
+  - **native and Chromium:** identical to main.
+  Date/Author: 2026-11-07, cursor235's implementer for the design session's rulings cb252e88 and c4108490 on #313.
 
 - Decision (#287, 2026-11-07, `docs/287-measured`; the design session's ruling cb252e88 on #287's findings, issue
   comment 6709964394; the spike on hosted macOS, main's engine at 51b473fc, 2 reps, kit `probe/287-hosted` f50fe37b,

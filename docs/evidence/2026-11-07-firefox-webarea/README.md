@@ -44,11 +44,16 @@ Chrome for Testing, stable Chrome and Safari carried none of the keys, 6 of 6. T
 
 ## The poll (ruling 9d97e82a)
 
-**Run:** _(to fill)_. The fix at _(commit)_ against main 51b473fc.
+**Run:** https://github.com/SSFSKIM/cua/actions/runs/42398170213 (kit 5c9880d4). The fix at 2fda5e7f against main 51b473fc, 2 reps, Firefox 159.0 (158.0.1 again not offered).
 
 | | A | B (poll) |
 |---|---|---|
-| `clipReread` | absent | _(to fill)_ |
-| `clipRereadReads` | – | _(to fill)_ |
-| `clipRereadMs` | – | _(to fill)_ |
-| `totalMs`, median | _(to fill)_ | _(to fill)_ |
+| `clipReread` | absent | `real` in 18/18 |
+| `clipRereadReads` | – | 1 in 18/18 |
+| `clipRereadMs` | – | 103–281 ms, median about 155 |
+| `totalMs`, median | about 211 ms | about 266 ms |
+
+- B minus A on `totalMs` is about +55 ms at the median, against +860 ms with the single read at the 1 s point.
+- The page cells are as in the first run: A refuses all 14 as `interactiveHit`. B answers the 8 shared ones `clickUnconfirmed` and delivers the 6 dedicated ones.
+- The second observation and the controls (Chrome for Testing, stable Chrome and Safari) carry none of the four keys.
+- The frame was real at the first poll every time, so the multi-read and unplaced paths went unexercised live.

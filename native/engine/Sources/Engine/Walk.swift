@@ -7,10 +7,10 @@ import Foundation
 // omitted above 499, carried on the node as `shown`); and cua's own node budget (4,000), per-value cut (10,000
 // characters, AX.swift), a 6 MiB budget for the serialized tree and a traversal deadline, the last three counted in
 // `truncated.count`, with how many of the omitted lie above and below what the window shows. The budgets are spent on
-// what the window shows first (#301, the design session's ruling aed3f041; `TreeWalk.select`): a walk nothing cuts
-// reads and emits exactly what the plain preorder does. Each node carries the lineage's token for its element
-// (Lineage.swift): inherited sibling-structurally from the previous revision, a new element taking a new token. The
-// engine numbers nothing for the model; the service does.
+// what the window shows first (#301, the design session's ruling aed3f041; a wide list's shown run first, #304's ruling
+// 7b2a5a70; `TreeWalk.select`): a walk nothing cuts reads and emits exactly what the plain preorder does. Each node
+// carries the lineage's token for its element (Lineage.swift): inherited sibling-structurally from the previous
+// revision, a new element taking a new token. The engine numbers nothing for the model; the service does.
 
 let maxDepth = 200
 let maxObservedNodes = 4_000
@@ -139,47 +139,107 @@ func omittedPlace(frame: CGRect?, visible: CGRect?) -> OmittedPlace {
   return .elsewhere
 }
 
-/// The positions among `children` (an element the width rule shows none of: more than 499 children, no visible subset)
-/// whose frames meet `window`, for the guard's record alone (#301 item 4). The children are taken to lie in order along
-/// the axis on which the first and the last framed child differ (a list's rows, a page's blocks): the first child not
-/// wholly before the window is found by bisection, then children are taken forward until one lies wholly past it, at most
-/// `limit` of them read. Children with no order to bisect (first and last framed alike, or none framed) give none, as
-/// before. Once `expired` answers true no frame is read: what was found by then is kept.
-func recordedChildPositions(_ children: [AXUIElement], frame: (AXUIElement) -> CGRect?, window: CGRect, limit: Int,
-                            expired: () -> Bool = { false }) -> [Int] {
-  let probe = 8
-  func framed(from start: Int, by step: Int) -> CGRect? {
-    var position = start
-    for _ in 0..<probe {
-      guard children.indices.contains(position), !expired() else { return nil }
-      if let found = frame(children[position]) { return found }
-      position += step
+/// A long list's children read by their frames alone, for the bisections that find what of them shows (#301 item 4,
+/// #304): no frame is read once `expired` answers true.
+struct ChildFrames {
+  let children: [AXUIElement]
+  let frame: (AXUIElement) -> CGRect?
+  let expired: () -> Bool
+  /// How far a frameless child is judged by the next framed one.
+  static let probe = 8
+  /// How many children from the end are tried for one that lies wholly past the first (`axis`).
+  static let endProbe = 32
+
+  func framed(from start: Int) -> (position: Int, frame: CGRect)? {
+    for position in start..<min(children.count, start + Self.probe) {
+      guard !expired() else { return nil }
+      if let found = frame(children[position]) { return (position, found) }
     }
     return nil
   }
-  guard let first = framed(from: 0, by: 1), let last = framed(from: children.count - 1, by: -1) else { return [] }
-  let vertical: Bool
-  if last.minY > first.minY { vertical = true } else if last.minX > first.minX { vertical = false } else { return [] }
-  func before(_ rect: CGRect) -> Bool { vertical ? rect.maxY <= window.minY : rect.maxX <= window.minX }
-  func past(_ rect: CGRect) -> Bool { vertical ? rect.minY >= window.maxY : rect.minX >= window.maxX }
-  var low = 0, high = children.count
-  while low < high {
-    let middle = (low + high) / 2
-    // A frameless child is judged by the next framed one; none within the probe counts as before.
-    if framed(from: middle, by: 1).map(before) ?? true { low = middle + 1 } else { high = middle }
+
+  /// The axis the children lie in order along (a list's rows, a page's blocks; true for vertical), from the first framed
+  /// child and a framed child near the end: vertical when the end child's top lies below the first's, horizontal when it
+  /// lies wholly to the right of the first. An end child that does neither says nothing, and the next one back is tried,
+  /// over `endProbe` children from the last (#309: Safari frames the last child of docs.python.org's body, a 10-pt
+  /// group, at the body's top; Chromium lists a table's columns, each from the table's top and overlapping its first
+  /// row, after the rows). Nil when no child is framed or none of those says: no order to bisect.
+  func axis() -> Bool? {
+    guard let first = framed(from: 0) else { return nil }
+    var position = children.count - 1
+    while position > first.position, position >= children.count - Self.endProbe, !expired() {
+      if let last = frame(children[position]) {
+        if last.minY > first.frame.minY { return true }
+        if last.minX >= first.frame.maxX { return false }
+      }
+      position -= 1
+    }
+    return nil
   }
+
+  /// The first position in `range` from which `holds` is taken to hold on (the children lie in order), a frameless child
+  /// judged by the next framed one within `probe`, and one with none by `unframed`.
+  func bisect(_ range: Range<Int>, unframed: Bool, _ holds: (CGRect) -> Bool) -> Int {
+    var low = range.lowerBound, high = range.upperBound
+    while low < high {
+      let middle = (low + high) / 2
+      if framed(from: middle).map({ holds($0.frame) }) ?? unframed { high = middle } else { low = middle + 1 }
+    }
+    return low
+  }
+}
+
+/// Before and past `window` along a list's axis, a frame reaching at most `edge` into it counting as outside.
+private struct ListOrder {
+  let vertical: Bool
+  let window: CGRect
+  let edge: CGFloat
+
+  func before(_ rect: CGRect) -> Bool { vertical ? rect.maxY <= window.minY + edge : rect.maxX <= window.minX + edge }
+  func past(_ rect: CGRect) -> Bool { vertical ? rect.minY >= window.maxY - edge : rect.minX >= window.maxX - edge }
+}
+
+/// The positions among `children` (an element the width rule shows none of: more than 499 children, no visible subset)
+/// whose frames meet `window`, for the guard's record alone (#301 item 4). The children are taken to lie in order along
+/// their axis (`ChildFrames.axis`): the first child not wholly before the window is found by bisection, then children are
+/// taken forward until one lies wholly past it, at most `limit` of them read. Children with no order to bisect give none,
+/// as before #301. Once `expired` answers true no frame is read: what was found by then is kept.
+func recordedChildPositions(_ children: [AXUIElement], frame: @escaping (AXUIElement) -> CGRect?, window: CGRect, limit: Int,
+                            expired: @escaping () -> Bool = { false }) -> [Int] {
+  let frames = ChildFrames(children: children, frame: frame, expired: expired)
+  guard let vertical = frames.axis() else { return [] }
+  let order = ListOrder(vertical: vertical, window: window, edge: 0)
+  // A frameless child is judged by the next framed one; none within the probe counts as before.
+  let low = frames.bisect(children.indices, unframed: false) { !order.before($0) }
   guard !expired() else { return [] }
   var kept: [Int] = []
   var position = max(0, low - 1)
   let end = min(children.count, position + limit)
   while position < end, !expired() {
     if let rect = frame(children[position]) {
-      if past(rect) { break }
-      if !before(rect), rect.intersects(window) { kept.append(position) }
+      if order.past(rect) { break }
+      if !order.before(rect), rect.intersects(window) { kept.append(position) }
     }
     position += 1
   }
   return kept
+}
+
+/// The run of a wide list's children that shows in `window` (#304), for the selection to read first: from the first
+/// child not wholly before the window to the first wholly past it along the list's axis (`ChildFrames.axis`), each found
+/// by bisection, a frame reaching at most 1 pt into the window counting as outside (Chromium reports an offscreen box as
+/// a 1-pt strip at the viewport's edge). A frameless child is judged by the next framed one; one with none within the
+/// probe counts as before the window at the run's start and past it at its end. About 2 log2(N) frame reads plus the
+/// axis's, none charged to the node budget. Nil when the children have no axis or `expired` cut the search.
+func shownChildRun(_ children: [AXUIElement], frame: @escaping (AXUIElement) -> CGRect?, window: CGRect,
+                   expired: @escaping () -> Bool = { false }) -> Range<Int>? {
+  let frames = ChildFrames(children: children, frame: frame, expired: expired)
+  guard let vertical = frames.axis() else { return nil }
+  let order = ListOrder(vertical: vertical, window: window, edge: 1)
+  let low = frames.bisect(children.indices, unframed: false) { !order.before($0) }
+  let high = frames.bisect(low..<children.count, unframed: true) { order.past($0) }
+  guard !expired() else { return nil }
+  return low..<high
 }
 
 final class TreeWalk {
@@ -309,14 +369,30 @@ final class TreeWalk {
     }
   }
 
-  /// The selection's state: what it read, for the tree and for the record, what failed, and its two queues: `stack`, the
-  /// elements to read next (depth first), and `deferred`, read elements whose children wait because nothing of them shows,
-  /// latest in the document's order first.
+  /// What waits in the selection's deferred queues: a read element's children, or the children of a wide list outside
+  /// the run that shows (#304), unread. Its place in the document's order is the first such child's.
+  private enum Waiting {
+    case children(Selected)
+    case unread(Selected, Range<Int>)
+
+    var path: [Int] {
+      switch self {
+      case .children(let item): return item.path
+      case .unread(let item, let positions): return item.path + [positions.lowerBound]
+      }
+    }
+  }
+
+  /// The selection's state: what it read, for the tree and for the record, what failed, and its queues: `stack`, the
+  /// elements to read next (depth first); `deferred`, what waits because nothing of it shows (`Waiting`); and `lastly`,
+  /// the children of AXColumn elements, taken up only once nothing else is left (#304). Each queue is latest in the
+  /// document's order first.
   private var selected: [ElementKey: Selected] = [:]
   private var recorded: [ElementKey: Selected] = [:]
   private var failed: Set<ElementKey> = []
   private var stack: [Pending] = []
-  private var deferred: [Selected] = []
+  private var deferred: [Waiting] = []
+  private var lastly: [Waiting] = []
 
   init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, chromium: Bool = false,
        visibleFrame: CGRect?, recordsScreenshot: Bool = false) {
@@ -397,10 +473,15 @@ final class TreeWalk {
   /// 66f90453). Depth first from the root, an element's children are taken up when something of it shows in what its
   /// ancestors leave showing of the window (`showsBeyondStrip`) or when it has no frame; any other element is read but
   /// its children wait (`deferred`). Once nothing showing is left, the waiting children are taken up in the document's
-  /// order, each again showing first. So a walk nothing cuts reads every element, as the plain preorder does, and one the
-  /// budget cuts has spent it on what the screenshot shows. The limit: a visible control under a container that reports
-  /// a collapsed (1-pt) frame waits with it, so the budget can still cut it, and the guard checks it container-only
-  /// (#304 measures how often).
+  /// order, each again showing first. Two rules keep a wide list from spending the budget on what it does not show
+  /// (#304, the design session's ruling 7b2a5a70): of an element taken up with more than 100 children, the run that shows
+  /// is found by frames alone (`shownChildRun`) and read first, the rest waiting unread in the document's order with
+  /// everything else that waits; and an AXColumn's children, the cells Chromium lists again under their rows, wait until
+  /// nothing else is left. So a walk nothing cuts reads every element and emits what the plain preorder does, and one the
+  /// budget cuts has spent it on what the screenshot shows. The limits: a visible control under a container that reports
+  /// a collapsed (1-pt) frame waits with it, so the budget can still cut it, and the guard checks it container-only (#304
+  /// measured none in 234 observations: Chromium gives a collapsed wrapper its descendants' union bounds); and a wide
+  /// list whose shown run, with what precedes it, takes the whole budget still starves what follows it.
   private func select(_ window: AXUIElement, nodeLimit: Int, byteLimit: Int) {
     stack = [Pending(element: window, depth: 0, clip: visibleFrame)]
     var kept = 0
@@ -410,7 +491,10 @@ final class TreeWalk {
       guard let next = stack.popLast() else {
         if cut { break }
         guard let resumed = nextDeferred() else { break }
-        expand(resumed)
+        switch resumed {
+        case .children(let item): expand(item)
+        case .unread(let item, let positions): push(item, positions)
+        }
         continue
       }
       let key = ElementKey(element: next.element)
@@ -433,7 +517,8 @@ final class TreeWalk {
         selectionBytes += jsonBytes(read.wire) + 1
         for key in read.descriptionKeys { if let key { descriptionUses[key, default: 0] += 1 } }
         if read.children.isEmpty { item.expanded = true }
-        else if enters(item, key) { expand(item) } else { setAside(item) }
+        else if item.clip != nil, read.data.role == kAXColumnRole { insertInOrder(.children(item), into: &lastly) }
+        else if enters(item, key) { expand(item) } else { insertInOrder(.children(item), into: &deferred) }
       }
     }
     selectForRecord()
@@ -493,30 +578,50 @@ final class TreeWalk {
     return clip.intersection(frame)
   }
 
-  /// Takes up a read element's children (then its record-only ones), the first to be read next.
+  /// Takes up a read element's children (then its record-only ones), the first to be read next. In the tree's selection,
+  /// a list of more than 100 whose clip shows has only the run that shows taken up (`shownChildRun`); the children before
+  /// and after it wait, unread, in `deferred` (#304). Without a run (no axis to bisect, or the deadline) all are taken up.
   private func expand(_ item: Selected) {
     item.expanded = true
+    let count = item.read.children.count + item.recordChildren.count
+    // The record's selection (`selectForRecord`) drains the stack alone, so it takes every child up.
+    if !item.recordOnly, item.read.children.count > widthThreshold, let area = childClip(item), showsBeyondStrip(area, in: area),
+       let run = shownChildRun(item.read.children, frame: { self.source.frame($0) }, window: area, expired: { [self] in pastDeadline() }) {
+      if run.lowerBound > 0 { insertInOrder(.unread(item, 0..<run.lowerBound), into: &deferred) }
+      if run.upperBound < count { insertInOrder(.unread(item, run.upperBound..<count), into: &deferred) }
+      push(item, run)
+    } else {
+      push(item, 0..<count)
+    }
+  }
+
+  /// Puts the children of a read element at `positions` (its record-only ones past its own) on the stack, the first on top.
+  private func push(_ item: Selected, _ positions: Range<Int>) {
     let clip = childClip(item)
     let children = item.read.children + item.recordChildren
-    for position in children.indices.reversed() {
+    for position in positions.reversed() {
       stack.append(Pending(element: children[position], depth: item.depth + 1, parentRole: item.read.data.role, path: item.path + [position],
                            clip: clip, recordOnly: item.recordOnly || position >= item.read.children.count))
     }
   }
 
-  /// Sets a read element's children aside, in the document's order.
-  private func setAside(_ item: Selected) {
-    var low = 0, high = deferred.count
+  /// Sets what waits aside in `queue`, in the document's order.
+  private func insertInOrder(_ waiting: Waiting, into queue: inout [Waiting]) {
+    let path = waiting.path
+    var low = 0, high = queue.count
     while low < high {
       let middle = (low + high) / 2
-      if documentPrecedes(item.path, deferred[middle].path) { low = middle + 1 } else { high = middle }
+      if documentPrecedes(path, queue[middle].path) { low = middle + 1 } else { high = middle }
     }
-    deferred.insert(item, at: low)
+    queue.insert(waiting, at: low)
   }
 
-  /// The earliest element in the document's order whose children wait.
-  private func nextDeferred() -> Selected? {
-    while let candidate = deferred.popLast() { if !candidate.expanded { return candidate } }
+  /// The earliest in the document's order of what waits, `lastly`'s only once `deferred` is empty.
+  private func nextDeferred() -> Waiting? {
+    while let candidate = deferred.popLast() ?? lastly.popLast() {
+      if case .children(let item) = candidate, item.expanded { continue }
+      return candidate
+    }
     return nil
   }
 

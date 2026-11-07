@@ -17,7 +17,8 @@ for (const d of readdirSync(dir).sort()) {
   const f = join(dir, d, 'results.json');
   if (!existsSync(f)) continue;
   const j = JSON.parse(readFileSync(f, 'utf8'));
-  if (!['chrome-a', 'chrome-b', 'chrome-c', 'safari'].includes(j.config.group)) continue;
+  // Coverage jobs only (scripts/probe-304/ab.mjs's config names aCommit; the sweep's Safari job is also group `safari`).
+  if (!('aCommit' in j.config)) continue;
   heads.add(`A ${(j.config.aCommit ?? '').slice(0, 8)} / B ${(j.config.bCommit ?? '').slice(0, 8)}`);
   if (j.config.exception) console.log(`${d}: EXCEPTION ${j.config.exception.split('\n')[0]}`);
   const app = j.config.group === 'safari' ? 'safari' : 'chrome';

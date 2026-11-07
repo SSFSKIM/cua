@@ -1,7 +1,7 @@
 #!/bin/bash
 # #313's hosted A/B: one group's cells on A (main, $RUNNER_TEMP/eng-a) and B (the fix, $RUNNER_TEMP/eng-b), one engine
 # process per cell and head, the heads' order alternating by repetition (odd: A first).
-#   GROUP=<safari|firefox|native|chrome> REP=<n> scripts/probe-313/run.sh
+#   GROUP=<safari|firefox|safari-x|firefox-x|native|chrome> REP=<n> scripts/probe-313/run.sh
 set -u
 T="$RUNNER_TEMP"; OUT="$T/probe-313"; AX="$T/p313-ax"
 mkdir -p "$OUT"
@@ -18,6 +18,12 @@ for h in $heads; do
       export P287_BROWSER="$GROUP"
       stamp "$h $GROUP web"; node scripts/probe-313/web.mjs --engine "$E" --ax "$AX" --out "$OUT/$h/$GROUP/web"
       stamp "$h $GROUP 282"; node scripts/probe-282/probe.mjs --main "$E" --branch "$E" --hit "$T/p282-hit" --cells e-shared/textarea-element --out "$OUT/$h/$GROUP/282" ;;
+    safari-x|firefox-x)
+      # A coordinate click on the textarea (unchanged by the fix) for its effect on the window order, and once per job
+      # the raw writes (raw.mjs) that say which accessibility write focuses the field and which raises the browser.
+      export P287_BROWSER="${GROUP%-x}"
+      stamp "$h ${GROUP%-x} 282 coordinate"; node scripts/probe-282/probe.mjs --main "$E" --branch "$E" --hit "$T/p282-hit" --cells b-shared/textarea,c-dedicated/textarea --out "$OUT/$h/${GROUP%-x}/282"
+      if [ "$h" = "${heads%% *}" ]; then stamp "${GROUP%-x} raw"; node scripts/probe-313/raw.mjs --engine "$E" --ax283 "$T/p283-ax" --out "$OUT/raw/${GROUP%-x}"; fi ;;
     native)
       stamp "$h native"; node scripts/probe-313/native.mjs --engine "$E" --ax "$AX" --app "$T/Probe313.app/Contents/MacOS/Probe313" --out "$OUT/$h/native" ;;
     chrome)

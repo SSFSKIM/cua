@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       groups:
-        description: the groups, a JSON list (empty for all)
+        description: the groups, a JSON list (empty for the push default; all are safari, firefox, safari-x, firefox-x, native, chrome)
         required: false
         default: ''
 permissions:
@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: ${{ fromJSON(github.event.inputs.groups || '["safari", "firefox", "native", "chrome"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["safari-x", "firefox-x"]') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -38,7 +38,7 @@ jobs:
         run: |
           case "$GROUP" in
             chrome) bash scripts/probe-287/install.sh chrome ;;
-            firefox) bash scripts/probe-287/install.sh firefox ;;
+            firefox*) bash scripts/probe-287/install.sh firefox ;;
             *) bash scripts/probe-287/install.sh ;;
           esac
       - name: Build A, B and the tools

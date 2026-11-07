@@ -13,6 +13,9 @@
 //                and up at the point, 150 ms, subtype 2 (the engine's order when the inert click consumes the arm)
 //     arm0       subtype 1 and at once a down and up at the point, 150 ms, subtype 2
 //     twodown    a down and up at the point, 100 ms, another (no subtype)
+//     armpoint   subtype 1, a down and up at the window's AXActivationPoint (the engine's activation click), 50 ms, down
+//                and up at the point, 150 ms, subtype 2 (route 3's order in the engine's runs)
+//     pointonly  subtype 1, the activation-point click, 200 ms, subtype 2 (no click at the point)
 import AppKit
 import ApplicationServices
 import Foundation
@@ -89,6 +92,22 @@ case "arm0":
   subtype(1, "subtype1")
   mouse(.leftMouseDown, "down", number: number); mouse(.leftMouseUp, "up", number: number)
   usleep(150_000); subtype(2, "subtype2")
+case "armpoint", "pointonly":
+  let app = AXUIElementCreateApplication(pid)
+  var windows: CFTypeRef?, ap: CFTypeRef?
+  AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windows)
+  var activation = CGPoint(x: frame.midX, y: frame.minY + 10)
+  if let w = (windows as? [AXUIElement])?.first, AXUIElementCopyAttributeValue(w, "AXActivationPoint" as CFString, &ap) == .success, let ap,
+     CFGetTypeID(ap) == AXValueGetTypeID() { AXValueGetValue(ap as! AXValue, .cgPoint, &activation) }
+  steps.append(["step": "activationPoint", "x": activation.x, "y": activation.y])
+  subtype(1, "subtype1")
+  mouse(.leftMouseDown, "activationDown", number: number + 1, at: activation); mouse(.leftMouseUp, "activationUp", number: number + 1, at: activation)
+  if a[1] == "armpoint" {
+    usleep(50_000)
+    mouse(.leftMouseDown, "down", number: number); mouse(.leftMouseUp, "up", number: number)
+    usleep(150_000)
+  } else { usleep(200_000) }
+  subtype(2, "subtype2")
 case "twodown":
   mouse(.leftMouseDown, "down", number: number); mouse(.leftMouseUp, "up", number: number)
   usleep(100_000)

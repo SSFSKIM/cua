@@ -123,7 +123,7 @@ for (const desktop of ['shared', 'dedicated']) for (const kind of ['token-textar
 // #313's kit's conditions: the click 1 s after its observation (gap), and that on a fresh Safari and engine per click.
 ENGINE_CELLS.push({cell: 'engine/shared/token-textarea-gap', desktop: 'shared', kind: 'token-textarea', gapMs: 1000});
 ENGINE_CELLS.push({cell: 'engine/shared/fresh-token-textarea-gap', desktop: 'shared', kind: 'token-textarea', gapMs: 1000, batches: 10, clicks: 1});
-const RAW_CELLS = ['activate', 'down', 'downup', 'full', 'ax', 'armout', 'arm0', 'twodown'].map(step => ({cell: `raw/${step}`, step}));
+const RAW_CELLS = ['activate', 'down', 'downup', 'full', 'ax', 'armout', 'arm0', 'twodown', 'armpoint', 'pointonly'].map(step => ({cell: `raw/${step}`, step}));
 const on = c => !ONLY || ONLY.some(p => c.cell.startsWith(p));
 
 for (const spec of ENGINE_CELLS.filter(on)) for (let b = 1; b <= (spec.batches ?? BATCHES); b++) {

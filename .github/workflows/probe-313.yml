@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       groups:
-        description: the groups, a JSON list (empty for the push default; all are safari, firefox, safari-x, firefox-x, native, native-x, raw, latency, safari-caret, p321, p321b, chrome)
+        description: the groups, a JSON list (empty for the push default; all are safari, firefox, safari-x, firefox-x, native, native-x, raw, latency, safari-caret, p321, p321b, p321c, chrome)
         required: false
         default: ''
 permissions:
@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: ${{ fromJSON(github.event.inputs.groups || '["p321b"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["p321c"]') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:

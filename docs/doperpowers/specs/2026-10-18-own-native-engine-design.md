@@ -2881,6 +2881,66 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   `wideListMs` and `wideListFrames` against `widthMs`, to price the rule's reads on Chromium's large tables and see
   whether the stale columns and header group carry them; and repl-parity's and the docs-oracle's lanes unchanged.
   Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling 7b2a5a70 on #304 and #309.
+- Decision (#312, 2026-11-07, `fix/312-firefox-webarea`; the design session's ruling cb252e88 on #287's findings, issue
+  comment 6709964394): **a clipping frame that reads {0, 0, 0, 0} is unknown, not a place: it cuts nothing, and on the
+  observation that enabled the process's accessibility it is read once more first.**
+  1. **The mechanism** (#287's hosted runs: 42379297174 and 42376953140, the cells; 42386958490 and 42388802262, the
+     timeline; Firefox 159.0 and 158.0.1). Gecko's accessibility comes on at the engine's first contact, with nothing
+     written (its AXEnhancedUserInterface then reads true, `enablementPrior` "true"). On that observation the AXWebArea
+     reads {0, 0, 0, 0} while its scroll area and every page node read real frames; the first sample after the
+     observation answered (0.55 s later, 0.83 s and 1.26 s after it began) read the web area real, {400, 104, 620,
+     607} under a {400, 104, 620, 606} scroll area, and so did every observation with `accessibility.force_disabled`
+     −1. AXWebArea is a clipping role (`clippingRoles`), so the record left no page node a shown part, its deepest node
+     at a page point was the scroll area, and the live hit there, a control, was `interactiveHit`: every page click
+     from that screenshot refused, 4 of 4 first observations. The walk's selection deferred the page too, since a zero
+     frame shows nothing.
+  2. **The rule** (`unplacedFrame`, Routes.swift). A clipping element whose frame is exactly {0, 0, 0, 0} cuts nothing:
+     in the record (`screenshotNodes`), the element route's live `visibleFrame`, the walk's selection (`enters`,
+     `childClip`) and the token re-fetch's order (Lineage.swift `matching`). What its descendants show is what the
+     clipping ancestors above it leave; on Firefox the scroll area clips the page to within a point of the real web
+     area. The element itself is never chosen at a point (no size). This holds on every observation, at no cost.
+  3. **The re-read** (`TreeWalk.settleUnplacedClip`). On an observation whose enablement step set the process's
+     `freshSince` (its first observation by the engine, or a write), the first clipping frame the walk reads unplaced
+     waits until `clipRereadAfterMs` (1 s) after that step and is read once more, uncached; a real frame replaces the
+     first read in the tree, the record and the selection alike. A clipping frame met after that wait was read after
+     it, so it gets none: one wait and one re-read per observation. The wait ends no later than halfway from its start
+     to the walk's deadline (`clipRereadDue`), so a short request deadline is never spent on it, and the walk's own time
+     counts toward the second. An observation that enabled
+     nothing, or met no unplaced clipping frame, waits for nothing and reads nothing more.
+  4. **The meta** (the observation's timings, and `cua/observation` through the service's whitelist): `unplacedClips`,
+     how many clipping frames stayed unplaced and cut nothing; `clipReread`, "real" or "unplaced", with `clipRereadMs`,
+     the wait and the read, when the re-read ran.
+  5. **The scope, and why.** The ruling's generalization is any clipping ancestor (a scroll area, a web area, a
+     page-scrolling group, a sheet, menu or popover) whose frame reads zero-size while its descendants have real
+     frames. The rule takes the exact {0, 0, 0, 0} only: an element laid out has a place, so a frame of no size
+     anywhere else (a scroll area collapsed at its place, {x, y, w, 0}) is a place, and still hides what it holds. The
+     descendants' frames are not consulted, since they cannot change the outcome: with none real, nothing under the
+     element is choosable anyway. Non-clipping elements are untouched (they cut nothing already; a collapsed one still
+     makes its children wait, #301's stated limit). Not re-read: an element click's live `visibleFrame` and the
+     re-fetch, which are not observations.
+  6. **Limits.** A 1 s wait is set from the timeline's bounds, not its arrival: the samples came every 500 ms, so the
+     frame arrived somewhere between the web area's read and the first sample. In the slower run it could have come
+     as late as 1.26 s; a re-read still unplaced falls back to item 2, which on Firefox loses only the web area's own
+     frame. Firefox's first observation pays up to 1 s more, less the time from its enablement step to the web area's
+     read (on #287's runs its whole walk took 0.15–0.57 s). A
+     clipping element truly laid out as a 0 × 0 box at the screen's origin is taken for unknown: possible only in a
+     window whose own frame starts there (a full-screen window), and with nothing it hides then shown.
+  Proven offline (`UnplacedClipTests`, 7, and `ClipRereadDueTests`, 1, over #287's Firefox window as a fake tree): the
+  re-read finding the real frame, so Apply's point holds Apply and a click on it is kept (`sameElement`), failing
+  without the fix; the frame still unplaced cutting nothing, the scroll area still hiding a link past its edge, the
+  element route's visible frame alike, and the meta; no wait or re-read when the frame is real, for a non-clipping
+  group's {0, 0, 0, 0}, or when no wait is given; at most one re-read, a second unplaced clip counted; a collapsed clip
+  at its place ({x, y, w, 0}, {x, y, 0, 0}, {0, 0, w, 0}) hiding Apply in the record, the element route and the
+  selection; an unplaced web area's children taken up at once, before a busy sibling the budget then cuts, and the
+  re-fetch finding a re-rendered text area below a page group there; and the due time's bounds. Each of 26 rules and
+  bounds removed in turn (`~/.local/share/187/mutate-312.py`) fails a test.
+  **What the hosted check must verify on real Firefox** (159 and 158.0.1, fresh launch, #287's `firefox-a` cells and
+  timeline): the first observation answers `clipReread` "real" with `clipRereadMs` and the web area's printed frame
+  real, or "unplaced" with `unplacedClips` 1; either way #282's page cells from that screenshot are no longer refused
+  as `interactiveHit` (Apply, the checkbox and the textarea kept, then lost honestly as `clickUnconfirmed` in shared
+  mode, delivered in dedicated); the observation's `totalMs` against main's; a second observation pays nothing new
+  (no `clipReread`); and Chrome for Testing's, stable Chrome's and Safari's first observations carry neither key.
+  Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #312.
 
 ## Outcomes & Retrospective
 

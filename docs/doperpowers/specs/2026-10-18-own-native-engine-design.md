@@ -2981,9 +2981,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        (`webAreaFocusing`, `awaitsBoxes` false), since that wait is for Chromium's complete mode. No AXPress is sent.
      - **Any other text entry** (a native field, a Chromium page's field whose record does advertise AXPress, a page
        field the walk refuses, an element with no point): the action as before, then the element's AXFocused read
-       (`pressReadingFocus`). True is success (`elementClick.focus` `readBack`). False is polled every 20 ms for up to
-       300 ms (#283's settle); never true, the answer is `clickUnconfirmed` (`notReadBack`, `pressFocusUnconfirmed`'s
-       sentence). A first read that gives no boolean leaves nothing to check, so the action stands (`unread`).
+       (`pressReadingFocus`). Only a read of true is success (`elementClick.focus` `readBack`). Anything else is polled
+       every 20 ms for up to 300 ms (#283's settle), and a field that has not read true by then answers
+       `clickUnconfirmed` (`pressFocusUnconfirmed`'s sentence). The record tells the two failures apart: `notReadBack`
+       when a read answered false, `unread` when none answered a boolean. The review of b27ceb36..2c37097d (one P1)
+       found that the first build let an unread first read stand as success; the live read (`attribute`) discards
+       every AX error, so no boolean covers a messaging failure or an invalidated element as well as a field without
+       the attribute.
      - **Every other element**: unchanged, and nothing is read for it. The one exception is a plain node in a page
        outside Chromium, which costs its `AXEditableAncestor` read.
      The rule holds in both device modes, because the defect is in the action, not in the background.
@@ -2992,6 +2996,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        would now answer `clickUnconfirmed`, which costs an observation (unmeasured).
      - **Firefox moves from AXPress to AXFocused:** it is outside Chromium, which is the ruling's scope. Its AXPress
        focused 6 of 6; the read-back keeps any failure of the write honest.
+     - **The cost of the strict read-back:** a text field that never exposes AXFocused now answers `clickUnconfirmed`
+       after the 300 ms settle (`focus` `unread`), where its action alone answered success. No text-entry role is
+       known to lack it; the hosted check shows whether a native one does.
      - **Native fields keep their action, and gain the read-back.** Most native fields advertise no AXPress, so the
        ladder synthesizes their click, unchanged. Where one does and its AXPress focuses it, the click costs one AXFocused
        read and no wait, after the walk that shows it lies in no web area: the AXFocused settable query and one role and
@@ -3005,13 +3012,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - outside a Chromium web area, an element click's AXPress on a checkbox or radio button is not value-checked, as
        #282's element route checks it (`pressConfirmingValue`). Safari's and Firefox's by-token checkbox changed;
      - editable content whose walk finds no focusable field (a contenteditable region exposed as AXGroup, should WebKit
-       expose one so) keeps its action, unread.
+       expose one so) keeps its action, with no read-back.
      The vendor's focusFieldIfNeeded sends a Safari element exposing AXDOMClassList straight to a posted click and never
      writes AXFocused on it. That suggests WebKit's write may not be enough there. The read-back turns any such miss
      into `clickUnconfirmed`, and the hosted check decides whether Safari needs the posted click instead.
   5. **Model-facing text.** `docs/cua-api/agent-cursor.md` is unchanged. Its paragraph describes Chromium's pages, and
      the new answers carry their own sentence (`clickUnconfirmed`) and note (#283's).
-  Proven offline (`TextEntryClickTests`, 13, over Safari's page as a fake tree: a WebKit textarea whose AXPress
+  Proven offline (`TextEntryClickTests`, 14, over Safari's page as a fake tree: a WebKit textarea whose AXPress
   succeeds and leaves the focus on the web area). Each test fails without the fix:
   - the textarea is focused by AXFocused and reads back, with no AXPress sent;
   - an AXFocused write that does not read back answers `clickUnconfirmed`, with no caret written;
@@ -3021,10 +3028,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - a native field whose AXPress focuses it answers success on one read with no wait and no write, and so does one
     focused 100 ms later;
   - a native field left unfocused answers `clickUnconfirmed` after the 300 ms settle;
-  - a field whose focus cannot be read keeps its action's answer;
+  - a field whose focus never reads answers `clickUnconfirmed` after the settle, recorded `unread`; an unread sample
+    is polled like an unfocused one (true after two unread reads is success; false, then nothing, is `notReadBack`);
   - other roles are pressed with nothing read, and editable content with no focusable field is pressed alone;
   - the record's `focus` word.
-  #283's `WebAreaFocusTests` and #282's `BackgroundPointerTests` pass unchanged. Each of 20 rules and bounds
+  #283's `WebAreaFocusTests` and #282's `BackgroundPointerTests` pass unchanged. Each of 23 rules and bounds
   removed in turn (`~/.local/share/187/mutate-313.py`) fails a test.
   **What the hosted check must verify** (#287's `keys-x` element cells and #282's page, 2 reps, with main for
   comparison):
@@ -3035,7 +3043,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - **Firefox 159:** the textarea by token is focused by AXFocused (`focusField`), as AXPress did, 6 of 6;
   - **native:** TextEdit's text area and Finder's rename field by token answer as on main. A native field whose record
     advertises AXPress (a search field, a combo box) answers `focus` `readBack`, or `clickUnconfirmed` where it truly
-    took no focus;
+    took no focus. Any `focus` `unread` on a native field is a field without AXFocused, the strict read-back's cost;
   - **Chromium** (Chrome for Testing, stable Chrome): `e-shared/textarea-element` and #283's 17 cells are identical to
     main's.
   Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #313.

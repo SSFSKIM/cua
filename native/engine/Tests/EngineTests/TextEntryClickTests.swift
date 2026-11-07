@@ -203,13 +203,41 @@ final class TextEntryClickTests: XCTestCase {
     XCTAssertEqual(app.clock, webAreaFocusSettleMs)
   }
 
-  func testAFieldWhoseFocusCannotBeReadKeepsItsActionsAnswer() throws {
+  /// The live read discards every AX error, so no boolean may be a messaging failure or a gone element as well as a field
+  /// without the attribute: nothing shows the field took focus, so the click is unconfirmed, recorded `unread`.
+  func testAFieldWhoseFocusNeverReadsAnswersClickUnconfirmedRecordedUnread() {
     let field = Node("AXTextField", parent: Node("AXWindow"), focusSettable: true)
     let app = App(focused: nil)
     app.focusReadable = false
-    XCTAssertEqual(try click(field, route: route(field, app: app), app: app), .unread)
-    XCTAssertEqual(app.focusReads, 1)
-    XCTAssertEqual(app.sleeps, 0)
+    var noted: FocusReadback?
+    XCTAssertThrowsError(try carryActionClick(route(field, app: app), app: "TextEdit", press: { app.presses += 1 }, focus: { _, _ in },
+                                              focused: { app.focusReads += 1; return nil }, noted: { noted = $0 },
+                                              now: { app.clock }, sleep: { app.sleeps += 1; app.clock += $0 })) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "clickUnconfirmed")
+    }
+    XCTAssertEqual(noted, .unread)
+    XCTAssertEqual(app.presses, 1)
+    XCTAssertEqual(app.clock, webAreaFocusSettleMs, "polled for the settle")
+    XCTAssertGreaterThan(app.focusReads, 1)
+  }
+
+  /// A read that fails once (a transient messaging error) and then reads true is success; one that reads false and then
+  /// nothing is the field read unfocused.
+  func testAnUnreadSampleIsPolledLikeAnUnfocusedOne() throws {
+    var clock: Double = 0
+    var reads: [Bool?] = [nil, nil, true]
+    XCTAssertEqual(try pressReadingFocus(focused: { reads.isEmpty ? nil : reads.removeFirst() }, now: { clock },
+                                         sleep: { clock += $0 }, press: {}), .readBack)
+    XCTAssertEqual(clock, 2 * webAreaFocusSampleMs)
+    clock = 0
+    reads = [false]
+    XCTAssertEqual(try pressReadingFocus(focused: { reads.isEmpty ? nil : reads.removeFirst() }, now: { clock },
+                                         sleep: { clock += $0 }, press: {}), .notReadBack)
+    XCTAssertEqual(clock, webAreaFocusSettleMs)
+    clock = 0
+    reads = [nil, false]
+    XCTAssertEqual(try pressReadingFocus(focused: { reads.isEmpty ? nil : reads.removeFirst() }, now: { clock },
+                                         sleep: { clock += $0 }, press: {}), .notReadBack, "a false read after an unread one")
   }
 
   // MARK: everything else

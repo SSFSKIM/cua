@@ -371,7 +371,7 @@ enum TextEntryClickRoute<Element> {
   /// field `webAreaFocusTarget` resolves, the caret at the element's clickable point.
   case focus(WebAreaFocusTarget<Element>, walk: [String])
   /// A text-entry role anywhere else (a native field, a Chromium page's, a page's field the walk refused): the action,
-  /// then the element's focus read back (`pressReadingFocus`).
+  /// then the element's focus read back (`pressReadingFocus`): success only on a read of true.
   case pressConfirmingFocus
   /// Any other element: the action alone, as before.
   case press
@@ -404,29 +404,33 @@ func textEntryClickRoute<Element>(_ element: Element, role: String, chromium: Bo
 enum FocusReadback: String, Equatable {
   /// The element read focused.
   case readBack
-  /// It never read focused within the settle: the click answers clickUnconfirmed.
+  /// It read unfocused within the settle and never focused: the click answers clickUnconfirmed.
   case notReadBack
-  /// Its first read answered no boolean (the attribute unsupported or unreadable): nothing to check, the action stands.
+  /// No read within the settle answered a boolean (the attribute unsupported, a messaging failure, an element gone): the
+  /// click answers clickUnconfirmed too, since nothing shows the field took focus.
   case unread
 }
 
-/// The action, then the element's AXFocused read (#313): true at once costs one read and no wait; false is polled every
-/// `webAreaFocusSampleMs` for up to `webAreaFocusSettleMs`.
+/// The action, then the element's AXFocused read (#313): true at once costs one read and no wait; anything else (false or
+/// no boolean) is polled every `webAreaFocusSampleMs` for up to `webAreaFocusSettleMs`. Only a read of true is success.
 func pressReadingFocus(focused: () -> Bool?, now: () -> Double, sleep: (Double) -> Void, press: () throws -> Void) throws -> FocusReadback {
   try press()
-  guard let first = focused() else { return .unread }
-  if first { return .readBack }
+  var read = focused()
+  if read == true { return .readBack }
+  var readFalse = read == false
   let started = now()
   repeat {
     sleep(webAreaFocusSampleMs)
-    if focused() == true { return .readBack }
+    read = focused()
+    if read == true { return .readBack }
+    if read == false { readFalse = true }
   } while now() - started < webAreaFocusSettleMs
-  return .notReadBack
+  return readFalse ? .notReadBack : .unread
 }
 
 /// An element click whose ladder chose an action, carried by its route (#313): the focus route (`focus`, #283's), the
-/// action with its focus read back (recorded by `noted`; a field that never reads focused answers clickUnconfirmed,
-/// `pressFocusUnconfirmed`), or the action alone.
+/// action with its focus read back (recorded by `noted`; a field that does not read focused within the settle, read
+/// unfocused or not read at all, answers clickUnconfirmed, `pressFocusUnconfirmed`), or the action alone.
 func carryActionClick<Element>(_ route: TextEntryClickRoute<Element>, app: String, press: () throws -> Void,
                                focus: (WebAreaFocusTarget<Element>, [String]) throws -> Void, focused: () -> Bool?,
                                noted: (FocusReadback) -> Void, now: () -> Double, sleep: (Double) -> Void) throws {
@@ -436,7 +440,7 @@ func carryActionClick<Element>(_ route: TextEntryClickRoute<Element>, app: Strin
   case .pressConfirmingFocus:
     let found = try pressReadingFocus(focused: focused, now: now, sleep: sleep, press: press)
     noted(found)
-    if found == .notReadBack { throw pressFocusUnconfirmed(app) }
+    if found != .readBack { throw pressFocusUnconfirmed(app) }
   case .press:
     try press()
   }

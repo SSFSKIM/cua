@@ -17,6 +17,9 @@ on:
         default: ''
 permissions:
   contents: read
+env:
+  # #312's fix head for the ab312 group, quoted (YAML reads an all-digit-and-e SHA as a float).
+  P287_B_REF: '93c2b2085cd660cdac32e4633532f8a4b7d8c16e'
 jobs:
   probe:
     strategy:
@@ -24,12 +27,13 @@ jobs:
       matrix:
         rep: [1, 2]
         # A push runs the groups named here.
-        group: ${{ fromJSON(github.event.inputs.groups || '["firefox-recon","vscode-a"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["ab312"]') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Browsers
         env:
@@ -40,7 +44,7 @@ jobs:
             chrome-*) bash scripts/probe-287/install.sh chrome ;;
             firefox-*) bash scripts/probe-287/install.sh firefox ;;
             vscode*) bash scripts/probe-287/install.sh vscode ;;
-            keys-*) bash scripts/probe-287/install.sh chrome firefox ;;
+            keys-*|ab312) bash scripts/probe-287/install.sh chrome firefox ;;
             *) bash scripts/probe-287/install.sh ;;
           esac
       - name: Build main's engine and the tools
@@ -75,6 +79,11 @@ jobs:
           swiftc -O -o "$RUNNER_TEMP/p288-ax" scripts/probe-288/ax.swift
           swiftc -O -o "$RUNNER_TEMP/p294-tool" scripts/probe-294/tool.swift
           swift build -c release --package-path native/engine --scratch-path "$RUNNER_TEMP/eng"
+          if [ "$GROUP" = ab312 ]; then
+            git worktree add "$RUNNER_TEMP/b" "$P287_B_REF"
+            git -C "$RUNNER_TEMP/b" log -1 --format='B %H %s'
+            swift build -c release --package-path "$RUNNER_TEMP/b/native/engine" --scratch-path "$RUNNER_TEMP/eng-b"
+          fi
       - name: Measure
         env:
           GROUP: ${{ matrix.group }}

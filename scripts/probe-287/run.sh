@@ -78,6 +78,17 @@ case "$GROUP" in
       case "$b" in cft|stable) export P287_BROWSER=chrome P287_CHROME="$(bin_of "$b")" ;; *) export P287_BROWSER="$b" ;; esac
       stamp "$b 282 x"; node scripts/probe-282/probe.mjs --main "$ENG" --branch "$ENG" --hit "$T/p282-hit" --cells x-,e-,b-shared/cmdL --out "$OUT/$b/282x"
     done ;;
+  ab312)
+    # #312's hosted check: A = main (this checkout's engine) against B = fix/312-firefox-webarea ($T/eng-b), one engine
+    # process per head, fresh launches only, the heads' order alternating by repetition.
+    if [ $((REP % 2)) -eq 1 ]; then heads="a b"; else heads="b a"; fi
+    for h in $heads; do
+      if [ "$h" = a ]; then E="$ENG"; else E="$T/eng-b/release/cua-engine"; fi
+      export P287_BROWSER=firefox
+      stamp "$h firefox 282"; node scripts/probe-282/probe.mjs --main "$E" --branch "$E" --hit "$T/p282-hit" --cells b-shared/checkbox,b-shared/button,b-shared/textarea,c- --out "$OUT/$h/firefox/282"
+      unset P287_BROWSER
+      stamp "$h recon"; node scripts/probe-287/recon.mjs --engine "$E" --ax "$T/axrecon" --targets firefox,firefox-big,cft,chrome,safari --out "$OUT/$h/recon"
+    done ;;
   *) echo "unknown group $GROUP"; exit 2 ;;
 esac
 stamp done

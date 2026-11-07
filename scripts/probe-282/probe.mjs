@@ -189,6 +189,9 @@ const CELLS = [
   {label: 'b-shared/button', engine: 'branch', target: 'button'},
   {label: 'b-shared/textarea', engine: 'branch', target: 'textarea'},
   {label: 'c-dedicated/textarea', engine: 'branch', desktop: 'dedicated', target: 'textarea'},
+  // #312's check: the page's other controls in dedicated mode.
+  {label: 'c-dedicated/checkbox', engine: 'branch', desktop: 'dedicated', target: 'checkbox'},
+  {label: 'c-dedicated/button', engine: 'branch', desktop: 'dedicated', target: 'button'},
   {label: 'b-shared/toolbar-reload', engine: 'branch', target: 'reload'},
   {label: 'b-shared/cmdL+checkbox', engine: 'branch', keysFirst: 'cmd+l', target: 'checkbox'},
   {label: 'b-shared/cmdL+button', engine: 'branch', keysFirst: 'cmd+l', target: 'button'},
@@ -252,7 +255,10 @@ async function cell(spec) {
     row.window = sky.window; row.screenshot = sky.screenshot;
     row.observation = {chromium: sky.timings?.chromium, webAreaFound: sky.timings?.webAreaFound, webShaped: sky.timings?.webShaped,
       enabled: sky.timings?.enabled ?? null, enablementPrior: sky.timings?.enablementPrior ?? null,
-      enablementWrite: sky.timings?.enablementWrite ?? null, enablementWriteError: sky.timings?.enablementWriteError ?? null};
+      enablementWrite: sky.timings?.enablementWrite ?? null, enablementWriteError: sky.timings?.enablementWriteError ?? null,
+      // #312's check: the clip re-read's keys, the observation's cost and the printed web area's frame.
+      unplacedClips: sky.timings?.unplacedClips ?? null, clipReread: sky.timings?.clipReread ?? null, clipRereadMs: sky.timings?.clipRereadMs ?? null,
+      totalMs: sky.timings?.totalMs ?? null, webAreaFrame: sky.nodes?.find(n => n.role === 'AXWebArea')?.frame ?? null};
     if (spec.buttonTimeline) {
       const n = sky.nodes.find(TARGETS.button);
       row.buttonNode = {title: n.title, actions: n.actions, frame: n.frame};
@@ -327,6 +333,9 @@ async function cell(spec) {
     const later = await w.execute('get_app_state', {pid: chrome.pid});
     // The observation's `focused` is a node's token.
     const f = later.result?.nodes?.find(n => n.token === later.result.focused);
+    const lt = later.result?.timings ?? {};
+    row.laterObservation = {unplacedClips: lt.unplacedClips ?? null, clipReread: lt.clipReread ?? null, clipRereadMs: lt.clipRereadMs ?? null, totalMs: lt.totalMs ?? null,
+      webAreaFrame: later.result?.nodes?.find(n => n.role === 'AXWebArea')?.frame ?? null};
     row.focusedAfter = f ? {role: f.role, title: f.title, description: f.description} : (later.error ?? later.result?.focused ?? null);
     try { await w.call('shutdown', {}, 5000); } catch {}
     w.close();

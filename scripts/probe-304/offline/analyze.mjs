@@ -31,7 +31,8 @@ function stripPlace(rec, strip) {
 /// recorded strip whose children the record lacks, or the deepest recorded node on its chain is such a strip), `hole1b`
 /// (that node was set aside with a frame showing nothing beyond a strip, its child showing), `hole2` (that node was
 /// entered and the node budget cut its children, a quarter or more of the walk's charged reads having gone to elements
-/// that showed nothing), `budget` (cut otherwise), `width` (the width rule left the child out), `other`.
+/// that showed nothing: a table's offscreen rows, the cells its columns list again), `budget` (cut otherwise), `width`
+/// (the width rule left the child out), `other`.
 function attribute(rec, reads, verdict, chain, ctx) {
   if (verdict.via === 'gap') return stripPlace(rec, verdict.gap);
   const N = verdict.node;
@@ -69,11 +70,10 @@ function mainReading(sky, points) {
     recorded.set(r.parent, (recorded.get(r.parent) ?? 0) + 1);
     if (!r.frame) { if (!frameless.has(r.parent)) frameless.set(r.parent, []); frameless.get(r.parent).push(r); }
   }
-  // The reads the walk spent before it took up anything set aside, on elements that showed nothing: a node is read in
-  // that first pass when every ancestor's children were taken up at once.
-  const first = new Map(), rowOf = new Map(reads.map(r => [r.number, r]));
-  for (const r of reads) { const p = r.parent != null ? rowOf.get(r.parent) : null; first.set(r.number, !p || (first.get(p.number) && p.enters)); }
-  const offscreen = charged.filter(r => !r.enters && first.get(r.number)).length;
+  // The charged reads of elements that showed nothing. A showing element the budget left unread was still pending when
+  // the walk stopped, and the walk takes up nothing set aside while anything showing is pending: so when the budget cut
+  // a showing element, every charged read came before it, these included.
+  const offscreen = charged.filter(r => !r.enters).length;
   const ctx = {index, recorded, frameless, cut, offscreenShare: charged.length ? offscreen / charged.length : 0};
   const holes = {};
   const coPoints = [];
@@ -137,6 +137,16 @@ function simulate(wideSky, points, m, price) {
   const wideCut = Boolean(wt.nodeCapHit || wt.budgetHit || wt.deadlineHit);
   const frameMs = price?.frameMean ?? 0.1, childMs = price?.childrenMean ?? 0.1;
   const out = {wideNodes: T.rs.length, wideCut, wideWalkMs: wt.walkMs, variants: {}};
+  // Hole 1's exposure, whether or not the budget cut: clickable points whose hit (over the whole tree) has a strip
+  // ancestor (1 pt or less either way), the structure a cut can leave container-only; and how many of them main's own
+  // walk reached.
+  const thinAt = i => { const f = T.rs[i].frame; return f && (f.w <= 1 || f.h <= 1); };
+  out.stripExposure = 0;
+  for (const p of points) {
+    if (!clickable(p.chain)) continue;
+    const path = chainNodes(T, p.chain);
+    if (path.slice(0, -1).some(thinAt)) out.stripExposure += 1;
+  }
   let baseWalk = null, baseRec = null, baseCo = null;
   // The base replay's container-only points that each fix turns checked, by main's attribution of the same point.
   out.fixedByHole = {};
@@ -202,7 +212,7 @@ if (jsonOut) writeFileSync(jsonOut, JSON.stringify(all.map(r => ({...r, coPoints
 const fmt = g => g ? `${g.checked}/${g.containerOnly}/${g.unrecorded}` : '-';
 const ok = all.filter(r => !r.problem);
 console.log(`observations ${all.length}, problems ${all.length - ok.length}: ${JSON.stringify(all.filter(r => r.problem).map(r => `${r.group}/${r.target}/${r.pos}/rep${r.rep}: ${r.problem}`))}`);
-console.log('\n| browser | page | pos | rep | cut | guard checked/container-only/unrecorded % (n) | container-only pts: hole1 edge / hole1 in view / hole1b / hole2 / budget / width / other | under-strip pts (verdicts) | walk ms | reads (offscreen share) | sim base checked (main) |');
+console.log('\n| browser | page | pos | rep | cut | guard checked/container-only/unrecorded % (n) | container-only pts: hole1 edge / hole1 in view / hole1b / hole2 / budget / width / other | strip-exposed pts (whole tree) / under a gap strip in the record | walk ms | reads (offscreen share) | sim base checked (main) |');
 console.log('|---|---|---|---|---|---|---|---|---|---|---|');
 const order = ['top', 'f25', 'f50', 'f90'];
 ok.sort((a, b) => a.group.localeCompare(b.group) || a.target.localeCompare(b.target) || order.indexOf(a.pos) - order.indexOf(b.pos) || a.rep - b.rep);
@@ -210,20 +220,20 @@ for (const r of ok) {
   const h = r.holes ?? {};
   const hs = ['hole1e', 'hole1v', 'hole1b', 'hole2', 'budget', 'width', 'other'].map(k => h[k] ?? 0).join(' / ');
   const sv = Object.entries(r.stripVerdicts ?? {}).map(([k, v]) => `${k.replace('unrecordedDescendant', 'uD')} ${v}`).join(', ');
-  console.log(`| ${r.group === 'safari' ? 'Safari' : 'Chrome'} | ${r.target} | ${r.pos} | ${r.rep} | ${r.stops.map(s => s.replace('Hit', '')).join('+') || '-'} | ${fmt(r.guard)} (${r.guard.n}) | ${hs} | ${r.underStrip}${sv ? ` (${sv})` : ''} | ${r.walkMs} | ${r.reads} (${r.offscreenShare}) | ${r.sim ? `${r.sim.variants.base.checked} (${r.guard.checked})${r.sim.wideCut ? ' wide cut' : ''}` : '-'} |`);
+  console.log(`| ${r.group.startsWith('safari') ? 'Safari' : 'Chrome'} | ${r.target} | ${r.pos} | ${r.rep} | ${r.stops.map(s => s.replace('Hit', '')).join('+') || '-'} | ${fmt(r.guard)} (${r.guard.n}) | ${hs} | ${r.sim?.stripExposure ?? '-'} / ${r.underStrip}${sv ? ` (${sv})` : ''} | ${r.walkMs} | ${r.reads} (${r.offscreenShare}) | ${r.sim ? `${r.sim.variants.base.checked} (${r.guard.checked})${r.sim.wideCut ? ' wide cut' : ''}` : '-'} |`);
 }
 
 // Occurrence: observations (and pages) with at least one clickable container-only point of each hole.
 console.log('\nHole occurrence (observations with >= 1 clickable container-only point so attributed; pages with any):');
 for (const k of ['hole1e', 'hole1v', 'hole1b', 'hole2', 'budget', 'width', 'other']) {
   const obs = ok.filter(r => (r.holes?.[k] ?? 0) > 0);
-  const pages = new Set(obs.map(r => `${r.group === 'safari' ? 'S' : 'C'}:${r.target}`));
+  const pages = new Set(obs.map(r => `${r.group.startsWith('safari') ? 'S' : 'C'}:${r.target}`));
   const pts = ok.reduce((s, r) => s + (r.holes?.[k] ?? 0), 0);
   const ptsAll = ok.reduce((s, r) => s + r.guard.n, 0);
   console.log(`  ${k}: ${obs.length}/${ok.length} observations, ${pages.size} pages [${[...pages].join(', ')}], ${pts} of ${ptsAll} clickable points (${(100 * pts / ptsAll).toFixed(2)}%)`);
 }
 const cutObs = ok.filter(r => r.stops.length);
-console.log(`  cut observations: ${cutObs.length}/${ok.length}; under-strip clickable points anywhere: ${ok.reduce((s, r) => s + r.underStrip, 0)}`);
+console.log(`  cut observations: ${cutObs.length}/${ok.length}; under-strip clickable points in the record: ${ok.reduce((s, r) => s + r.underStrip, 0)}; strip-exposed clickable points over the whole tree: ${ok.reduce((s, r) => s + (r.sim?.stripExposure ?? 0), 0)} in ${ok.filter(r => r.sim?.stripExposure).length} observations (${[...new Set(ok.filter(r => r.sim?.stripExposure).map(r => r.target))].join(", ")})`);
 
 // The simulation's validity and the fixes.
 const simmed = ok.filter(r => r.sim && !r.sim.wideCut);

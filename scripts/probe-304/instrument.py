@@ -7,17 +7,24 @@
 #                bytes the selection charged, selection order (-1 record-only), entered at once, expanded, recordOnly];
 #   probeMenu    the menu bar's node count (the selection's node limit is the budget less it).
 # `--wide` also raises the walk's node, byte and deadline budgets (as #299's wide engine did), so an observation holds
-# the window's whole tree for the offline simulation.
-#   python3 -I scripts/probe-304/instrument.py <engine sources dir> [--wide]
+# the window's whole tree for the offline simulation. `--skip-columns` is the replay's leading fix (F7) built for a live
+# check: the selection does not take up a table column's children (the cells its rows list).
+#   python3 -I scripts/probe-304/instrument.py <engine sources dir> [--wide | --skip-columns]
 import sys, os
 src = sys.argv[1]
 wide = '--wide' in sys.argv[2:]
+skip_columns = '--skip-columns' in sys.argv[2:]
 
 def patch(name, old, new):
     path = os.path.join(src, name)
     text = open(path).read()
     assert text.count(old) == 1, (name, old)
     open(path, 'w').write(text.replace(old, new))
+
+if skip_columns:
+    patch('Walk.swift', '        else if enters(item, key) { expand(item) } else { setAside(item) }\n',
+          '        else if read.data.role == "AXColumn" { item.expanded = true }\n'
+          '        else if enters(item, key) { expand(item) } else { setAside(item) }\n')
 
 patch('Walk.swift', '  private(set) var recordOnlyReads = 0\n',
       '  private(set) var recordOnlyReads = 0\n'

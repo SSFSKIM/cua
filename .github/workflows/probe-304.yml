@@ -47,11 +47,17 @@ jobs:
           swift build -c release --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng-main"
           swift build -c release --package-path "$RUNNER_TEMP/wide/native/engine" --scratch-path "$RUNNER_TEMP/eng-wide"
           swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-304/tool.swift
+          if [ "${{ matrix.group }}" = chrome-f7 ]; then
+            git worktree add "$RUNNER_TEMP/variant" "$P304_MAIN_REF"
+            python3 -I scripts/probe-304/instrument.py "$RUNNER_TEMP/variant/native/engine/Sources/Engine" --skip-columns
+            swift build -c release --package-path "$RUNNER_TEMP/variant/native/engine" --scratch-path "$RUNNER_TEMP/eng-variant"
+            echo "P304_VARIANT=$RUNNER_TEMP/eng-variant/release/cua-engine" >> "$GITHUB_ENV"
+          fi
       - name: Measure
         env:
           P304_REP: ${{ matrix.rep }}
           P304_TARGETS: ${{ github.event.inputs.targets || '' }}
-        run: node scripts/probe-304/run.mjs --group ${{ matrix.group }} --main "$RUNNER_TEMP/eng-main/release/cua-engine" --wide "$RUNNER_TEMP/eng-wide/release/cua-engine" --tool "$RUNNER_TEMP/probe-tool" ${P304_TARGETS:+--targets "$P304_TARGETS"} --out "$RUNNER_TEMP/probe-304"
+        run: node scripts/probe-304/run.mjs --group ${{ matrix.group }} --main "$RUNNER_TEMP/eng-main/release/cua-engine" --wide "$RUNNER_TEMP/eng-wide/release/cua-engine" --tool "$RUNNER_TEMP/probe-tool" ${P304_TARGETS:+--targets "$P304_TARGETS"} ${P304_VARIANT:+--variant "$P304_VARIANT"} --out "$RUNNER_TEMP/probe-304"
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

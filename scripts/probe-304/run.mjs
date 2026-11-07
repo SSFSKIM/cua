@@ -5,7 +5,7 @@
 // observation also returns the guard's own record and the walk's raw reads. Once per page the tool prices a frame read,
 // a children read and a bare hit-test. The reading of each point and the candidate fixes' simulation are offline
 // (scripts/probe-304/offline/). No click is posted; Safari is positioned through its scroll bar's AXValue.
-//   node scripts/probe-304/run.mjs --group <chrome-a|chrome-b|chrome-c|safari> --main <bin> --wide <bin> --tool <bin> --out <dir>
+//   node scripts/probe-304/run.mjs --group <group> --main <bin> --wide <bin> --tool <bin> --out <dir> [--variant <bin>]
 import {spawn, spawnSync} from 'node:child_process';
 import {createServer} from 'node:http';
 import {createConnection} from 'node:net';
@@ -17,7 +17,7 @@ import {rows, buildRecord, shares, checkPort, underStrip, clickable} from './gua
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-304: runs only on a GitHub-hosted runner'); process.exit(2); }
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
-const OUT = arg('out'), MAIN = arg('main'), WIDE = arg('wide'), TOOL = arg('tool'), GROUP = arg('group');
+const OUT = arg('out'), MAIN = arg('main'), WIDE = arg('wide'), TOOL = arg('tool'), GROUP = arg('group'), VARIANT = arg('variant');
 const ONLY = arg('targets') ? arg('targets').split(',').filter(Boolean) : null;
 if (!OUT || !MAIN || !WIDE || !TOOL || !GROUP) { console.error('usage: run.mjs --group <g> --main <bin> --wide <bin> --tool <bin> --out <dir>'); process.exit(2); }
 mkdirSync(OUT, {recursive: true});
@@ -63,6 +63,8 @@ const GROUPS = {
   // A table longer than the node budget; Safari's docs.python.org with the width-omitted body's children read (run 42313992098).
   'chrome-big': ['local-table-6k'],
   'safari-diag': ['py-docs'],
+  // The column-skip fix (F7) built and checked live against main on the pages whose tables cut the walk.
+  'chrome-f7': ['local-table-bar', 'local-table-6k', 'iana-media', 'hn-thread', 'wiki-table'],
 };
 const TARGETS = GROUPS[GROUP]?.map(name => ({name, ...PAGES[name]}));
 if (!TARGETS) { console.error(`unknown group ${GROUP}`); process.exit(2); }
@@ -280,7 +282,7 @@ const pct = g => g ? `${g.checked}/${g.containerOnly}/${g.unrecorded}` : '-';
 async function measure(ctx, target, at, pageInfo) {
   const label = `${GROUP}/${target.name}/${at.name}`;
   const row = {label, group: GROUP, target: target.name, hole: target.hole, pos: at.name, pageInfo};
-  let main = null, wide = null;
+  let main = null, wide = null, variant = null;
   try {
     main = await ctx.main.connect();
     const m = await observe(main, ctx.pid, label, 'main', 60_000);
@@ -300,6 +302,16 @@ async function measure(ctx, target, at, pageInfo) {
       row.wide = {rpcMs: w.ms, ...summarize(w.sky, points)};
       writeFileSync(join(OUT, `obs-${fileName(label)}-wide.json.gz`), gzipSync(JSON.stringify(slim(w.sky))));
     }
+    if (ctx.variant) {
+      // The leading fix built (`--variant`), read at the same grid over its own record.
+      variant = await ctx.variant.connect();
+      const v = await observe(variant, ctx.pid, label, 'variant', 60_000);
+      if (v.error) row.variantError = v.error;
+      else {
+        row.variant = {rpcMs: v.ms, ...summarize(v.sky, points)};
+        writeFileSync(join(OUT, `obs-${fileName(label)}-variant.json.gz`), gzipSync(JSON.stringify(slim(v.sky))));
+      }
+    }
     // An element the width rule showed none of (more than 499 children, no visible subset): what its children's frames
     // gave the record-only bisection.
     if ((m.sky.probeReads ?? []).some(r => r[5] > 499 && r[6] === 0 && !r[12])) row.kids = await ctx.tool.ask({op: 'kids', pid: ctx.pid, window});
@@ -310,7 +322,7 @@ async function measure(ctx, target, at, pageInfo) {
   } catch (e) {
     row.exception = String(e?.stack || e).slice(0, 3000);
   } finally {
-    main?.close(); wide?.close();
+    main?.close(); wide?.close(); variant?.close();
   }
   return row;
 }
@@ -319,7 +331,7 @@ function line(r) {
   const part = (name, o) => !o ? `${name}: ${JSON.stringify(r[`${name}Error`] ?? 'none')}` :
     `${name}: stops=[${o.stops}] nodes=${o.nodes} reads=${o.reads} (offscreen charged ${o.offscreenCharged}, record-only ${o.recordOnly}) walk=${o.walkMs}ms ` +
     `guard=${pct(o.guard)} n=${o.guard.n} gap=${o.gapPoints} underStrip=${o.underStripPoints} port=${o.port ? `${o.port.differ}/${o.port.nodes}` : '-'} reasons=${JSON.stringify(o.guard.reasons)}`;
-  return `page=${JSON.stringify(r.pageInfo)} grid=${r.grid?.points}pts p50=${r.grid?.p50}\n    ${part('main', r.main)}\n    ${part('wide', r.wide)}${r.price ? `\n    price=${JSON.stringify(r.price)}` : ''}`;
+  return `page=${JSON.stringify(r.pageInfo)} grid=${r.grid?.points}pts p50=${r.grid?.p50}\n    ${part('main', r.main)}\n    ${part('wide', r.wide)}${r.variant ? `\n    ${part('variant', r.variant)}` : ''}${r.price ? `\n    price=${JSON.stringify(r.price)}` : ''}`;
 }
 
 // ---- the apps ----------------------------------------------------------------------------------------------------
@@ -383,14 +395,14 @@ const config = {
 const tool = startTool();
 config.screen = await tool.ask({op: 'screen'});
 log('config', JSON.stringify(config));
-const ctx = {tool, main: await startEngine(MAIN, 'main'), wide: await startEngine(WIDE, 'wide')};
+const ctx = {tool, main: await startEngine(MAIN, 'main'), wide: await startEngine(WIDE, 'wide'), variant: VARIANT ? await startEngine(VARIANT, 'variant') : null};
 try {
   if (GROUP.startsWith('safari')) await runSafari(ctx); else await runChrome(ctx);
 } catch (e) {
   config.exception = String(e?.stack || e).slice(0, 3000);
   log('exception', config.exception);
 }
-for (const e of [ctx.main, ctx.wide]) { config[`${e.name}Stderr`] = e.stderr().slice(-3000); if (e.child.exitCode === null) e.child.kill('SIGKILL'); }
+for (const e of [ctx.main, ctx.wide, ctx.variant].filter(Boolean)) { config[`${e.name}Stderr`] = e.stderr().slice(-3000); if (e.child.exitCode === null) e.child.kill('SIGKILL'); }
 save();
 tool.stop();
 server.close();

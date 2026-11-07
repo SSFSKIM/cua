@@ -17,18 +17,46 @@ let maxObservedNodes = 4_000
 /// The most elements a walk reads for the guard's record alone (#301 item 4), beside the node budget.
 let recordOnlyBudget = 1_000
 let observationDeadlineMs: Int64 = 10_000
-/// How long after the enablement the walk's one re-read of an unplaced clipping frame comes (#312): Firefox's web area,
+/// How long after the enablement the walk polls an unplaced clipping frame at most (#312): Firefox's web area,
 /// {0, 0, 0, 0} when its first observation read it, read real at the first sample after that observation answered,
 /// 0.83 s after the observation began in the faster hosted run and 1.26 s in the slower one (#287's timeline, runs
-/// 42388802262 and 42386958490). The walk's own time counts toward it, so the wait itself is shorter; a frame still
-/// unplaced then cuts nothing, which costs Firefox's page nothing, its scroll area clipping it to within a point.
+/// 42388802262 and 42386958490). The walk's own time counts toward it; a frame still unplaced then cuts nothing, which
+/// costs Firefox's page nothing, its scroll area clipping it to within a point.
 let clipRereadAfterMs = 1_000.0
+/// How often the poll reads the frame again (the design session's ruling 9d97e82a, on #312's hosted check: a single
+/// re-read at the bound cost Firefox's first observation about 860 ms, the frame having arrived well before it).
+let clipRereadPollMs = 100.0
 
-/// When the observation's re-read of an unplaced clipping frame is due (#312): `clipRereadAfterMs` after the
-/// enablement, never before now, and never past halfway from now to the walk's deadline, so a short request deadline
-/// is never spent waiting.
+/// When the observation's poll of an unplaced clipping frame ends (#312): `clipRereadAfterMs` after the enablement,
+/// never before now, and never past halfway from now to the walk's deadline, so a short request deadline is never spent
+/// waiting.
 func clipRereadDue(now: Double, enabledAt: Double, deadline: Double) -> Double {
   max(now, min(enabledAt + clipRereadAfterMs, now + (deadline - now) / 2))
+}
+
+/// The enabling observation's poll of an unplaced clipping frame (#312, ruling 9d97e82a): from when the walk meets it,
+/// the frame is read again every `clipRereadPollMs`, stopping at the first that is a place or once `clipRereadDue`
+/// passes, and read at least once. The clock and the sleep are the unit tests' seams.
+struct ClipRereadPoll {
+  let enabledAt: Double
+  let deadline: Double
+  var now: () -> Double = monotonicMilliseconds
+  var sleep: (Double) -> Void = { usleep(UInt32($0 * 1000)) }
+
+  /// Polls `read`: the frame it found, when one was a place (nil otherwise), how many reads it made, and how long it
+  /// took, the waits and reads together.
+  func run(_ read: () -> CGRect?) -> (frame: CGRect?, reads: Int, ms: Double) {
+    let started = now()
+    let until = clipRereadDue(now: started, enabledAt: enabledAt, deadline: deadline)
+    var reads = 0
+    while true {
+      let left = until - now()
+      if left > 0 { sleep(min(clipRereadPollMs, left)) }
+      reads += 1
+      if let frame = read(), !unplacedFrame(frame) { return (frame, reads, now() - started) }
+      if now() >= until { return (nil, reads, now() - started) }
+    }
+  }
 }
 let skyshotByteBudget = 6 * 1024 * 1024
 /// The width rule (F §1.5): up to this many children an element shows them all.
@@ -330,15 +358,15 @@ final class TreeWalk {
   /// Whether an element met again at an earlier place while its children wait moves there (`placeEarlier`, one of the
   /// wide-list rules, so off with them too); off alone only in a test that prices the move.
   let placesWaitingEarlier: Bool
-  /// On the observation that enabled the process's accessibility, the wait before the walk's one re-read of an unplaced
-  /// clipping frame (`unplacedFrame`, #312; Skyshot.swift bounds it); nil on any other walk, which re-reads nothing.
-  let clipRereadWait: (() -> Void)?
+  /// On the observation that enabled the process's accessibility, the poll of the first unplaced clipping frame the walk
+  /// meets (`unplacedFrame`, #312); nil on any other walk, which re-reads nothing.
+  let clipRereadPoll: ClipRereadPoll?
 
   /// The clipping elements the walk read whose frame stayed unplaced, taken as cutting nothing (timings
-  /// `unplacedClips`), and the re-read, when one ran: whether it found a real frame, and its wait and read (`clipReread`,
-  /// `clipRereadMs`).
+  /// `unplacedClips`), and the poll, when one ran: whether it found a real frame, its reads, and its time (`clipReread`,
+  /// `clipRereadReads`, `clipRereadMs`).
   private(set) var unplacedClips = 0
-  private(set) var clipReread: (real: Bool, ms: Double)?
+  private(set) var clipReread: (real: Bool, reads: Int, ms: Double)?
 
   private(set) var nodes: [[String: Any]] = []
   private(set) var menuBar: [[String: Any]] = []
@@ -482,7 +510,7 @@ final class TreeWalk {
 
   init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, chromium: Bool = false,
        visibleFrame: CGRect?, recordsScreenshot: Bool = false, wideListRules: Bool = true, placesWaitingEarlier: Bool = true,
-       clipRereadWait: (() -> Void)? = nil) {
+       clipRereadPoll: ClipRereadPoll? = nil) {
     self.source = source
     self.lineage = lineage
     previous = lineage.current
@@ -494,17 +522,19 @@ final class TreeWalk {
     self.recordsScreenshot = recordsScreenshot
     self.wideListRules = wideListRules
     self.placesWaitingEarlier = placesWaitingEarlier
-    self.clipRereadWait = clipRereadWait
+    self.clipRereadPoll = clipRereadPoll
     revision = Revision()
   }
 
   /// The observation's meta for #312: how many clipping frames stayed unplaced and were taken as cutting nothing
-  /// (`unplacedClips`), and the re-read when one ran, "real" or "unplaced" (`clipReread`), with its wait and read
-  /// (`clipRereadMs`); nothing when the walk met no unplaced clipping frame.
+  /// (`unplacedClips`), and the poll when one ran, "real" or "unplaced" (`clipReread`), with its reads
+  /// (`clipRereadReads`) and its time, the waits and reads together (`clipRereadMs`); nothing when the walk met no
+  /// unplaced clipping frame.
   func reportUnplacedClips(_ timings: inout Timings) {
     if unplacedClips > 0 { timings.set("unplacedClips", unplacedClips) }
     if let clipReread {
       timings.set("clipReread", clipReread.real ? "real" : "unplaced")
+      timings.set("clipRereadReads", clipReread.reads)
       timings.add("clipReread", clipReread.ms)
     }
   }
@@ -935,19 +965,16 @@ final class TreeWalk {
   }
 
   /// A clipping element whose frame read unplaced (`unplacedFrame`, #312): on the observation that enabled the process's
-  /// accessibility, the first such element waits `clipRereadWait` and has its frame read once more, taking it when it is
-  /// a place; an element met after that wait is read after it, so it gets none. A frame still unplaced (or a re-read
-  /// that cannot be read) stays as read, cutting nothing, and is counted.
+  /// accessibility, the first such element has its frame polled (`clipRereadPoll`), taking the first read that is a
+  /// place; an element met after that poll is read after it, so it gets none. A frame still unplaced (or reads that
+  /// cannot be read) stays as read, cutting nothing, and is counted.
   private func settleUnplacedClip(_ element: AXUIElement, _ data: inout ElementData, _ actions: [String]) {
     guard let frame = data.frame, unplacedFrame(frame), clipsDescendants(role: data.role, actions: actions) else { return }
-    if let wait = clipRereadWait, clipReread == nil {
-      let started = monotonicMilliseconds()
-      wait()
-      let reread = source.readFrame(element)  // uncached
-      let real = reread.map { !unplacedFrame($0) } ?? false
-      clipReread = (real, monotonicMilliseconds() - started)
-      if real {
-        data.frame = reread
+    if let poll = clipRereadPoll, clipReread == nil {
+      let polled = poll.run { source.readFrame(element) }  // uncached
+      clipReread = (polled.frame != nil, polled.reads, polled.ms)
+      if let real = polled.frame {
+        data.frame = real
         return
       }
     }

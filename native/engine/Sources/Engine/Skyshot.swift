@@ -314,16 +314,12 @@ extension Engine {
       if settled != nil { timings.set("settleTreeReused", false) }
     }
     let deadline = monotonicMilliseconds() + Double(min(observationDeadlineMs, max(0, context.deadline - unixMilliseconds())))
-    // On the observation that enabled accessibility, a clipping frame read unplaced is read once more when it is due
-    // (`TreeWalk.settleUnplacedClip`, #312); any other observation waits for nothing.
-    let clipRereadWait: (() -> Void)? = enabledAt.map { enabledAt in {
-      let now = monotonicMilliseconds()
-      let ms = clipRereadDue(now: now, enabledAt: enabledAt, deadline: deadline) - now
-      if ms > 0 { usleep(UInt32(ms * 1000)) }
-    } }
+    // On the observation that enabled accessibility, a clipping frame read unplaced is polled until it is a place or its
+    // bound passes (`TreeWalk.settleUnplacedClip`, #312); any other observation waits for nothing.
+    let clipRereadPoll = enabledAt.map { ClipRereadPoll(enabledAt: $0, deadline: deadline) }
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
                         interactionFlags: interactionFlags, chromium: chromium, visibleFrame: menuRoot == nil ? windowFrame : nil,
-                        recordsScreenshot: pendingCapture != nil, clipRereadWait: clipRereadWait)
+                        recordsScreenshot: pendingCapture != nil, clipRereadPoll: clipRereadPoll)
     timings.time("walk") { walk.run(window: menuRoot ?? window, menuBar: menuBarElement, menuItems: menuItems) }
     walk.revision.menuRoot = menuRoot
     timings.merge(source.costs)

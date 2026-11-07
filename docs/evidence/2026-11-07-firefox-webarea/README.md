@@ -28,6 +28,7 @@ Per-job results are under `~/.local/share/probe-287/run-42394416982/` on the Mac
 | `totalMs`, median | about 262 ms | about 1,125 ms |
 
 - B minus A on `totalMs` is about +860 ms, nearly all of it the wait to the 1 s point.
+- **Superseded:** ruling 9d97e82a replaced the single re-read at the 1 s point with a poll every 100 ms, up to the same bound. The poll stops at the first real frame, so the +860 ms above is the first build's cost, not the fix's. The poll's numbers are below.
 - `unplaced` never occurred, so the fallback path went unexercised live.
 - The second observation carries none of the keys on B, in 22 of 22, and its frame is real on A too.
 
@@ -40,3 +41,14 @@ Chrome for Testing, stable Chrome and Safari carried none of the keys, 6 of 6. T
 | Chrome for Testing | 412 / 455 ms | 428 / 446 ms |
 | stable Chrome | 335 / 424 ms | 293 / 290 ms |
 | Safari | 574 / 354 ms | 381 / 356 ms |
+
+## The poll (ruling 9d97e82a)
+
+**Run:** _(to fill)_. The fix at _(commit)_ against main 51b473fc.
+
+| | A | B (poll) |
+|---|---|---|
+| `clipReread` | absent | _(to fill)_ |
+| `clipRereadReads` | – | _(to fill)_ |
+| `clipRereadMs` | – | _(to fill)_ |
+| `totalMs`, median | _(to fill)_ | _(to fill)_ |

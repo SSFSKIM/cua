@@ -355,3 +355,95 @@ func characterBounds(_ element: AXUIElement, _ index: Int) -> CGRect? {
   var rect = CGRect.zero
   return AXValueGetValue(result as! AXValue, .cgRect, &rect) ? rect : nil
 }
+
+// MARK: An element click on text entry (#313)
+//
+// #287's hosted cells (Safari 27.2, run 42379297174, 2 of 2): an element click by token on a page's AXTextArea took the
+// ladder's AXPress, which WebKit answers with success while the focus stays on the web area, so the click answered
+// success having done nothing. Chromium's AXPress on a text field does the same before its complete mode (#282's item
+// 13); a Chromium page's field advertises no AXPress in its record and takes #283's route through the synthesized path.
+// The design session's ruling cb252e88: outside Chromium a text-entry element takes #283's AXFocused route, read back;
+// a field whose focus does not read back answers clickUnconfirmed, never success.
+
+/// How an element click the ladder gave an action (route 1, AXPick or AXPress) is carried (#313).
+enum TextEntryClickRoute<Element> {
+  /// A text-entry element in a web page outside Chromium (Safari, Firefox, any WebKit view): #283's focus route on the
+  /// field `webAreaFocusTarget` resolves, the caret at the element's clickable point.
+  case focus(WebAreaFocusTarget<Element>, walk: [String])
+  /// A text-entry role anywhere else (a native field, a Chromium page's, a page's field the walk refused): the action,
+  /// then the element's focus read back (`pressReadingFocus`).
+  case pressConfirmingFocus
+  /// Any other element: the action alone, as before.
+  case press
+}
+
+/// The route of an element click whose ladder chose an action (#313). A text-entry role (`webAreaEditableRoles`), or
+/// outside Chromium a page's plain node inside editable content (a passable role with an `AXEditableAncestor`: a
+/// contenteditable region's text), is resolved by `webAreaFocusTarget` to the field it focuses when the process is not
+/// Chromium's and the element has a clickable point (`pointed`, where the caret goes). A text-entry role the walk does not
+/// resolve (outside every web area, as a native field is; not focusable; an unread ancestry), or any in Chromium, takes
+/// its action and the focus read-back. Every other element reads nothing here, a plain node at most its
+/// `AXEditableAncestor`.
+func textEntryClickRoute<Element>(_ element: Element, role: String, chromium: Bool, pointed: Bool, roleOf: (Element) -> String?,
+                                  subrole: (Element) -> SubroleRead, parent: (Element) -> Element?, editable: (Element) -> Bool,
+                                  focusSettable: (Element) -> Bool) -> TextEntryClickRoute<Element> {
+  let textEntry = webAreaEditableRoles.contains(role)
+  let focusing = !chromium && pointed
+  guard textEntry || (focusing && webAreaPassableRoles.contains(role) && editable(element)) else { return .press }
+  if focusing {
+    var walk: [String] = []
+    if case .success(let target) = webAreaFocusTarget(element, role: roleOf, subrole: subrole, parent: parent, editable: editable,
+                                                      focusSettable: focusSettable, walk: &walk) {
+      return .focus(target, walk: walk)
+    }
+  }
+  return textEntry ? .pressConfirmingFocus : .press
+}
+
+/// What an action's focus read-back found (`elementClick.focus`).
+enum FocusReadback: String, Equatable {
+  /// The element read focused.
+  case readBack
+  /// It never read focused within the settle: the click answers clickUnconfirmed.
+  case notReadBack
+  /// Its first read answered no boolean (the attribute unsupported or unreadable): nothing to check, the action stands.
+  case unread
+}
+
+/// The action, then the element's AXFocused read (#313): true at once costs one read and no wait; false is polled every
+/// `webAreaFocusSampleMs` for up to `webAreaFocusSettleMs`.
+func pressReadingFocus(focused: () -> Bool?, now: () -> Double, sleep: (Double) -> Void, press: () throws -> Void) throws -> FocusReadback {
+  try press()
+  guard let first = focused() else { return .unread }
+  if first { return .readBack }
+  let started = now()
+  repeat {
+    sleep(webAreaFocusSampleMs)
+    if focused() == true { return .readBack }
+  } while now() - started < webAreaFocusSettleMs
+  return .notReadBack
+}
+
+/// An element click whose ladder chose an action, carried by its route (#313): the focus route (`focus`, #283's), the
+/// action with its focus read back (recorded by `noted`; a field that never reads focused answers clickUnconfirmed,
+/// `pressFocusUnconfirmed`), or the action alone.
+func carryActionClick<Element>(_ route: TextEntryClickRoute<Element>, app: String, press: () throws -> Void,
+                               focus: (WebAreaFocusTarget<Element>, [String]) throws -> Void, focused: () -> Bool?,
+                               noted: (FocusReadback) -> Void, now: () -> Double, sleep: (Double) -> Void) throws {
+  switch route {
+  case .focus(let target, let walk):
+    try focus(target, walk)
+  case .pressConfirmingFocus:
+    let found = try pressReadingFocus(focused: focused, now: now, sleep: sleep, press: press)
+    noted(found)
+    if found == .notReadBack { throw pressFocusUnconfirmed(app) }
+  case .press:
+    try press()
+  }
+}
+
+/// A text-entry element's action that left it unfocused (#313): performed, but the field does not report focus.
+func pressFocusUnconfirmed(_ app: String) -> EngineError {
+  EngineError(name: "clickUnconfirmed",
+    "The click could not be confirmed: it was carried by the text field's accessibility action in \(app), but the field does not report focus. Observe the app with get_app_state before any retry, and never retry blindly.")
+}

@@ -56,7 +56,8 @@ struct ElementClickRecord: Equatable {
   /// `webArea` (#282): a left pointer into a Chromium web area in shared mode, carried by the action of the element the
   /// pointer's point hits instead of a posted click (a coordinate click's record too).
   /// `focusField` and `focusedNotPlaced` (#283): a plain left click into a web area's text field, carried by
-  /// AXFocused, with the caret placed at the point or not (`caret` says why not).
+  /// AXFocused, with the caret placed at the point or not (`caret` says why not); and (#313) an element click on a page's
+  /// text field outside Chromium, whose ladder chose an action.
   enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea, focusField, focusedNotPlaced }
   let plan: ElementClickPlan
   let reason: Reason
@@ -72,6 +73,8 @@ struct ElementClickRecord: Equatable {
   /// `focusField` and `focusedNotPlaced` only: the caret's offset placed (`placed`), or why it was not (a
   /// `CaretNotPlaced` case name).
   var caret: String? = nil
+  /// #313, a text-entry element's action (`advertised`): what its focus read-back found (a `FocusReadback` case name).
+  var focus: String? = nil
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["reason": reason.rawValue]
@@ -85,6 +88,7 @@ struct ElementClickRecord: Equatable {
     if let walk { wire["walk"] = walk }
     if let walkStopped { wire["walkStopped"] = walkStopped }
     if let caret { wire["caret"] = caret }
+    if let focus { wire["focus"] = focus }
     return wire
   }
 }

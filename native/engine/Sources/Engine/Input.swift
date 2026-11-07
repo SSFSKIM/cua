@@ -350,7 +350,9 @@ extension Engine {
   /// nested-content gate, applied to every element by cua); every other element click is synthesized by route 3 at the
   /// midpoint of the element's visible frame (`synthesizedClick`), its activation click sparing the element for any
   /// button but the left; its meta records the plan, the ladder's reason and the hit-test's answer (`elementClick`,
-  /// ElementClickRecord). A plain left click on a menu-bar item with a menu records the item (MenuRecord.swift) and
+  /// ElementClickRecord). Where the ladder chose the action for a text-entry element (#313, `textEntryClickRoute`), a page's
+  /// field outside Chromium is focused by #283's route instead, and any other's action answers clickUnconfirmed unless the
+  /// field then reads focused. A plain left click on a menu-bar item with a menu records the item (MenuRecord.swift) and
   /// posts nothing; any other click on a menu-bar item or the menu bar is refused before anything is posted. A
   /// successful element click clears the app's menu record. A coordinate click is in the pixels of the last screenshot
   /// of the app's primary window on this connection, refused (`noScreenshotForCoordinates`, nothing posted) when there
@@ -401,9 +403,22 @@ extension Engine {
           case .action(let action):
             // Route 3's held activation first when the app does not believe it has focus (FocusHold.swift); the cursor at
             // the element's clickable point, as the action goes out.
-            let route = forced == nil ? actionRoute(for: target, app: app, connection: context.connection) : .action
-            try elementActionClick(target.element, owner: target.owner, action: action, route: route, point: pointing.point,
-                                   windowID: pointing.windowID, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+            // #313: a text-entry element outside Chromium takes #283's focus route instead, and anywhere else its action
+            // answers success only once its focus reads back.
+            let element = target.element
+            let entry: TextEntryClickRoute<AXUIElement> = forced != nil ? .press : textEntryClickRoute(
+              element, role: target.entry.identity.role, chromium: webAccessibility.isChromiumFamily(app.appPath), pointed: pointing.point != nil,
+              roleOf: { attribute($0, kAXRoleAttribute) as? String }, subrole: subroleRead, parent: { elementAttribute($0, kAXParentAttribute) },
+              editable: { attribute($0, "AXEditableAncestor") != nil }, focusSettable: { ax.isSettable($0, kAXFocusedAttribute) })
+            try carryActionClick(entry, app: app.displayName, press: {
+              let route = forced == nil ? actionRoute(for: target, app: app, connection: context.connection) : .action
+              try elementActionClick(element, owner: target.owner, action: action, route: route, point: pointing.point,
+                                     windowID: pointing.windowID, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+            }, focus: { field, walk in  // only for an element with a point (`pointed`)
+              try webAreaFocusing(element, target: field, walk: walk, point: pointing.point!, windowID: pointing.windowID, app: app,
+                                  appPid: appPid, guarding: guarding, context: context, awaitsBoxes: false)(&meta)
+            }, focused: { bool(attribute(element, kAXFocusedAttribute)) }, noted: { meta.elementClick?.focus = $0.rawValue },
+               now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
           case .synthesized(let route):
             try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding,
                                  context: context, meta: &meta)

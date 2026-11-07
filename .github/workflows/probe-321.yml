@@ -1,0 +1,86 @@
+# #321's candidates (ruling e48e53de): main's engine as the control, and candidates a and b as instrument patches applied
+# to a copy of main here on the runner only (scripts/probe-321/patch.py), on #282's original Safari cells, Safari page
+# clicks, and the engine controls (Chrome for Testing, Firefox, TextEdit behind another app), every click watched at 5 ms
+# (scripts/probe-321/run.sh). Runs only on a push to probe/313-ab that touches it (or by hand); not a ci-kit gate.
+name: probe-321
+on:
+  push:
+    branches: [probe/313-ab]
+    paths: ['scripts/probe-321/**', 'scripts/probe-282/**', '.github/workflows/probe-321.yml', '!scripts/probe-321/offline/**']
+  workflow_dispatch:
+    inputs:
+      variants:
+        description: the engines, a JSON list (main, a, b, hold)
+        required: false
+        default: ''
+      parts:
+        description: the parts, a JSON list (k282-1, k282-2, page-1, page-2, ctl-chrome, ctl-ff-native)
+        required: false
+        default: ''
+permissions:
+  contents: read
+env:
+  # main, quoted (YAML reads an all-digit-and-e SHA as a float).
+  P321_MAIN_REF: 'b27ceb36cd7914241ae69092c781d0f096f0b127'
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(github.event.inputs.variants || '["main"]') }}
+        part: ${{ fromJSON(github.event.inputs.parts || '["k282-1", "k282-2", "page-1", "page-2", "ctl-chrome", "ctl-ff-native"]') }}
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Browsers
+        env:
+          PART: ${{ matrix.part }}
+        run: |
+          case "$PART" in
+            ctl-ff-native) bash scripts/probe-287/install.sh firefox ;;
+            *) bash scripts/probe-287/install.sh ;;
+          esac
+      - name: Build the engine and the tools
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          sw_vers
+          git log -1 --format='kit %H %s'
+          swiftc -O -o "$RUNNER_TEMP/p321-win" scripts/probe-321/win.swift
+          swiftc -o "$RUNNER_TEMP/p282-hit" scripts/probe-282/hit.swift
+          app="$RUNNER_TEMP/Probe313.app/Contents"
+          mkdir -p "$app/MacOS"
+          swiftc -O -o "$app/MacOS/Probe313" scripts/probe-313/app.swift
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict>' \
+            '<key>CFBundleIdentifier</key><string>com.ssfskim.probe313</string>' \
+            '<key>CFBundleName</key><string>Probe313</string>' \
+            '<key>CFBundleExecutable</key><string>Probe313</string>' \
+            '<key>CFBundlePackageType</key><string>APPL</string>' \
+            '<key>NSPrincipalClass</key><string>NSApplication</string>' \
+            '</dict></plist>' > "$app/Info.plist"
+          git worktree add "$RUNNER_TEMP/src" "$P321_MAIN_REF"
+          git -C "$RUNNER_TEMP/src" log -1 --format="main %H %s"
+          if [ "$VARIANT" != main ]; then
+            python3 -I scripts/probe-321/patch.py "$VARIANT" "$RUNNER_TEMP/src/native/engine/Sources/Engine"
+            git -C "$RUNNER_TEMP/src" diff
+          fi
+          swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+      - name: Measure
+        env:
+          VARIANT: ${{ matrix.variant }}
+          PART: ${{ matrix.part }}
+        run: bash scripts/probe-321/run.sh
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-321-${{ matrix.variant }}-${{ matrix.part }}
+          path: |
+            ${{ runner.temp }}/probe-321/**/results.json
+          if-no-files-found: warn

@@ -5,7 +5,8 @@ name: probe-313
 on:
   push:
     branches: [probe/313-ab]
-    paths-ignore: ['scripts/probe-313/offline/**', 'docs/**']
+    # #321's candidate runs have their own workflow (probe-321.yml).
+    paths-ignore: ['scripts/probe-313/offline/**', 'docs/**', 'scripts/probe-321/**', 'scripts/probe-282/**', '.github/workflows/probe-321.yml']
   workflow_dispatch:
     inputs:
       groups:

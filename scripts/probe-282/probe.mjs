@@ -41,6 +41,22 @@ if (!OUT || !MAIN || !BRANCH || !HIT) { console.error('usage: probe.mjs --main <
 mkdirSync(OUT, {recursive: true});
 import {CHROME, BROWSER, launchOther, browserVersion, placePid} from '../probe-287/browser.mjs';
 const CFT = CHROME;  // #287: P287_CHROME names the Chrome under test (Chrome for Testing by default)
+// #321: with P321_WIN (win.swift), each click is watched: the window order against TextEdit's at 5 ms, the front app
+// and its key window, and the full window list before and after (row.p321).
+import {watch as p321Watch, dump as p321Dump, judge as p321Judge} from '../probe-321/watch.mjs';
+const P321_WIN = process.env.P321_WIN;
+async function p321Around(row, pid, act) {
+  if (!P321_WIN) return act();
+  const before = p321Dump(P321_WIN);
+  const w = await p321Watch(P321_WIN, pid, 'TextEdit', 3000);
+  const goAt = w.go();
+  const out = await act();
+  const watched = await w.done();
+  const meta = row.click?.error ? row.click.error.meta : row.click?.result?.meta;
+  row.p321 = {before, goAt, watch: {...watched, goAt}, after: p321Dump(P321_WIN), delivery: meta?.delivery ?? null,
+    judged: p321Judge({...watched, goAt}, meta?.delivery ?? null, 'com.apple.TextEdit', 'TextEdit')};
+  return out;
+}
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const log = (...a) => console.log('probe-282:', ...a);
 
@@ -235,7 +251,7 @@ async function cell(spec) {
       await sleep(800);
       row.before = counters();
       const started = Date.now();
-      row.click = lean(await w.execute('click', {pid: chrome.pid, ...spec.noObservation}));
+      await p321Around(row, chrome.pid, async () => { row.click = lean(await w.execute('click', {pid: chrome.pid, ...spec.noObservation})); });
       row.clickMs = Date.now() - started;
       await sleep(2500);
       row.after = counters();
@@ -322,7 +338,7 @@ async function cell(spec) {
     if (spec.keysFirst) for (const key of [].concat(spec.keysFirst)) { row.keys = lean(await w.execute('press_key', {pid: chrome.pid, key})); if (Array.isArray(spec.keysFirst)) await sleep(300); }
     const started = Date.now();
     // #287: an element click by the node's token (route 1), where the cell asks for one.
-    row.click = lean(spec.byElement ? await w.execute('click', {pid: chrome.pid, element: node.token}, {lineage: sky.lineage}) : await w.execute('click', {pid: chrome.pid, x, y}));
+    await p321Around(row, chrome.pid, async () => { row.click = lean(spec.byElement ? await w.execute('click', {pid: chrome.pid, element: node.token}, {lineage: sky.lineage}) : await w.execute('click', {pid: chrome.pid, x, y})); });
     row.clickMs = Date.now() - started;
     row.hitAfter = json(sh(HIT, [String(chrome.pid), String(row.point.screen.x), String(row.point.screen.y)]));
     await sleep(2500);

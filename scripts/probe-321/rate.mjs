@@ -68,7 +68,7 @@ async function freshTextEdit() {
   await frontTextEdit();
 }
 async function watch(pid) {
-  const child = spawn(WIN, ['watch', String(pid), '4500', '5'], {stdio: ['pipe', 'pipe', 'ignore']});
+  const child = spawn(WIN, ['watch', String(pid), 'TextEdit', '4500', '5'], {stdio: ['pipe', 'pipe', 'ignore']});
   child.stdin.on('error', () => {});
   const lines = createInterface({input: child.stdout});
   const queue = [], waiters = [];

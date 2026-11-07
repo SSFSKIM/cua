@@ -149,6 +149,37 @@ private func fixedTailPage(count: Int, scroll: Int) -> FakeTree {
 
 private func element(_ i: Int) -> AXUIElement { Engine.element(i) }
 
+/// A Chromium table in small for the cost test: the window (0), its web area (1, the viewport), a table (3) of `rows`
+/// rows 20 pt tall (100_000 + i) scrolled `scroll` down, each with two cells (200_000 + 10 i + c), then two AXColumn
+/// elements (90, 91) listing the cells again; offscreen boxes are strips at the viewport's edges.
+private func chromiumTableTree(rows: Int, scroll: Int) -> FakeTree {
+  let tree = FakeTree()
+  func place(_ frame: CGRect) -> CGRect {
+    if frame.maxY <= viewport.minY { return CGRect(x: frame.minX, y: viewport.minY, width: frame.width, height: 1) }
+    if frame.minY >= viewport.maxY { return CGRect(x: frame.minX, y: viewport.maxY - 1, width: frame.width, height: 1) }
+    return frame
+  }
+  for (id, role) in [0: "AXWindow", 1: "AXWebArea", 3: "AXTable", 90: "AXColumn", 91: "AXColumn"] { tree.extra[id] = ["AXRole": role as CFString] }
+  tree.frames[0] = windowFrame
+  tree.frames[1] = viewport
+  let top = viewport.minY - Double(scroll) * 20
+  tree.frames[3] = CGRect(x: 0, y: top, width: 1000, height: Double(rows) * 20)
+  tree.children = [0: [1], 1: [3]]
+  for i in 0..<rows {
+    tree.frames[100_000 + i] = place(CGRect(x: 0, y: top + Double(i) * 20, width: 1000, height: 20))
+    tree.children[100_000 + i] = [200_000 + 10 * i, 200_001 + 10 * i]
+    for c in 0..<2 { tree.frames[200_000 + 10 * i + c] = place(CGRect(x: Double(c) * 500, y: top + Double(i) * 20, width: 500, height: 20)) }
+  }
+  for c in 0..<2 {
+    tree.frames[90 + c] = CGRect(x: Double(c) * 500, y: top, width: 500, height: Double(rows) * 20)
+    tree.children[90 + c] = (0..<rows).map { 200_000 + 10 * $0 + c }
+    tree.visible[90 + c] = tree.children[90 + c]
+  }
+  tree.children[3] = (0..<rows).map { 100_000 + $0 } + [90, 91]
+  tree.visible[3] = tree.children[3]
+  return tree
+}
+
 /// The tree's preorder from the window, each element at its first place.
 private func preorderIDs(_ tree: FakeTree) -> [Int] {
   var out: [Int] = []
@@ -285,6 +316,28 @@ final class WideListInvariantTests: XCTestCase {
                    "main's selection, the check's baseline, does not move it either")
   }
 
+  /// The rule's frame reads for a list of more than 512 stay within its stated cost, about 2 log2(N) + 96 plus the
+  /// axis's probes, however many of its gaps the queue takes up later: a 6,000-row table with two columns relisting its
+  /// cells, walked uncut (every gap taken up) and cut; the columns, taken up last, are not judged at all.
+  func testAListOverFiveHundredTwelveCostsItsStatedFrameReadsWithItsGapsTakenUp() {
+    let bound = 2 * 13 + 3 * wideListSamples + ChildFrames.endProbe + ChildFrames.probe
+    for nodes in [20_000, 4_000] {
+      let tree = chromiumTableTree(rows: 6_000, scroll: 3_000)
+      let source = FakeSource(tree)
+      let walked = walk(tree, Lineage(), limits: WalkLimits(nodes: nodes, bytes: 64 << 20, deadline: .infinity), visibleFrame: windowFrame, source: source,
+                        chromium: true)
+      XCTAssertEqual(walked.nodeCapHit, nodes == 4_000)
+      XCTAssertEqual(walked.omitted == 0, nodes == 20_000, "uncut: every gap and both columns taken up")
+      let rowReads = tree.children[3]!.reduce(0) { $0 + (source.frameReads[tree.id(Engine.element($1))] ?? 0) }
+      let cellReads = source.frameReads.filter { $0.key >= 200_000 }.values.reduce(0, +)
+      XCTAssertGreaterThan(rowReads, 0)
+      XCTAssertLessThanOrEqual(rowReads, bound, "\(nodes) nodes: the table's children")
+      XCTAssertEqual(cellReads, 0, "\(nodes) nodes: the columns' cells, taken up last, unjudged")
+      XCTAssertEqual(source.costs.counts["wideListFrames"], rowReads)
+      XCTAssertEqual(source.costs.counts["wideLists"], 1)
+    }
+  }
+
   /// The move charges nothing: the walk with it and the walk without it stop at the same node count, the one reading the
   /// shown child where the other reads the section's next leaf, their bytes apart by those two nodes alone.
   func testTheMoveChargesNoBudget() {
@@ -358,7 +411,11 @@ final class WideListInvariantTests: XCTestCase {
                                                   chromium: chromium)
           if spike.incompleteLists > 0 { incomplete += 1; incompleteLists += spike.incompleteLists } else { verified += 1 }
           total += found.count
-          let status = spike.incompleteLists > 0 ? "alias-incomplete (\(spike.incompleteLists) lists)" : "verified"
+          let status = (spike.incompleteLists > 0 ? "alias-incomplete (\(spike.incompleteLists) lists)" : "verified")
+            + (spike.fullLists ? ", full lists" : "") + (spike.unreadChildren > 0 ? ", \(spike.unreadChildren) unread children" : "")
+          if ProcessInfo.processInfo.environment["CUA_304_FRAMES"] != nil {
+            for line in frameReadTrace(spike, chromium: chromium) { print("#304 frames: \(artifact)/\(file): \(line)") }
+          }
           print("#304 invariant: \(run)/\(artifact)/\(file): \(spike.nodes) nodes, \(status), \(found.count) violations\(found.isEmpty ? "" : " " + found.prefix(5).joined(separator: ", "))")
         }
       }
@@ -367,6 +424,30 @@ final class WideListInvariantTests: XCTestCase {
     XCTAssertGreaterThan(verified, 0)
     XCTAssertEqual(total, 0)
   }
+}
+
+/// For tracing the rules' cost (CUA_304_FRAMES): per list of more than 100 children that the rules' walk read, the frame
+/// reads its children took (a child two lists hold counted for each), largest first, with the main walk's beside it.
+private func frameReadTrace(_ spike: SpikeTree, chromium: Bool) -> [String] {
+  let limits = WalkLimits(nodes: maxObservedNodes - spike.menu, deadline: .infinity)
+  var counts: [[Int: Int]] = []
+  for rules in [false, true] {
+    let source = FakeSource(spike.tree)
+    _ = walk(spike.tree, Lineage(), limits: limits, visibleFrame: spike.window, source: source, chromium: chromium, wideListRules: rules)
+    var perList: [Int: Int] = [:]
+    for (parent, list) in spike.tree.children where list.count > widthThreshold {
+      let reads = list.reduce(0) { $0 + (source.frameReads[$1] ?? 0) }
+      if reads > 0 { perList[parent] = reads }
+    }
+    counts.append(perList)
+  }
+  let total = { (c: [Int: Int]) in c.values.reduce(0, +) }
+  var lines = ["frame reads: main \(total(counts[0])), rules \(total(counts[1]))"]
+  for (parent, reads) in counts[1].sorted(by: { $0.value > $1.value }).prefix(8) {
+    let role = (spike.tree.extra[parent]?["AXRole"] as? String) ?? "?"
+    lines.append("  \(parent) \(role) of \(spike.tree.children[parent]!.count): rules \(reads), main \(counts[0][parent] ?? 0)")
+  }
+  return lines
 }
 
 /// A wide tree of #304's spike (`probeReads`: [number, parent, depth, role, frame, childCount, chosen, clips, bytes,
@@ -396,6 +477,9 @@ private struct SpikeTree {
   let menu: Int
   let nodes: Int
   let incompleteLists: Int
+  /// Whether the dump listed every row's children (`chosenIds`), and how many of them it could not read.
+  let fullLists: Bool
+  let unreadChildren: Int
 }
 
 private func spikeTree(reads: [[Any]], menu: Int) -> SpikeTree? {
@@ -404,6 +488,7 @@ private func spikeTree(reads: [[Any]], menu: Int) -> SpikeTree? {
   var role: [Int: String] = [:]
   var chosen: [Int: Int] = [:]
   var parentOf: [Int: Int] = [:]
+  var listed: [Int: [Any]] = [:]
   func rect(_ value: Any) -> CGRect? {
     guard let f = value as? [String: Any], let x = f["x"] as? Double, let y = f["y"] as? Double, let w = f["width"] as? Double, let h = f["height"] as? Double else { return nil }
     return CGRect(x: x, y: y, width: w, height: h)
@@ -420,6 +505,20 @@ private func spikeTree(reads: [[Any]], menu: Int) -> SpikeTree? {
     chosen[number] = row[6] as? Int ?? 0
     if row[7] as? Bool == true, !clipping.contains(r) { tree.actions[number] = ["AXScrollDownByPage"] }
     if let parent = row[1] as? Int { kids[parent, default: []].append(number); parentOf[number] = parent }
+    if row.count > 13, let ids = row[13] as? [Any] { listed[number] = ids }
+  }
+  // A full dump (`chosenIds`, the 14th field) lists each row's children by the rows they were emitted as, wherever that
+  // was, so a shared child is in every parent's list; a child it never emitted (null) is one the wide walk could not
+  // read, and stays one: an unreadable element in its place.
+  var unreadChildren = 0
+  for (number, ids) in listed {
+    kids[number] = ids.map { id in
+      if let id = id as? Int { return id }
+      unreadChildren += 1
+      let stand = 90_000_000 + unreadChildren
+      tree.unreadable.insert(stand)
+      return stand
+    }
   }
   for (number, r) in role where r == "AXColumn" {
     guard let table = parentOf[number], (kids[number]?.count ?? 0) < (chosen[number] ?? 0) else { continue }
@@ -438,5 +537,6 @@ private func spikeTree(reads: [[Any]], menu: Int) -> SpikeTree? {
   }
   let incompleteLists = chosen.filter { number, count in (kids[number]?.count ?? 0) != count }.count
   guard let windowFrame else { return nil }
-  return SpikeTree(tree: tree, window: windowFrame, menu: menu, nodes: role.count, incompleteLists: incompleteLists)
+  return SpikeTree(tree: tree, window: windowFrame, menu: menu, nodes: role.count, incompleteLists: incompleteLists, fullLists: !listed.isEmpty,
+                   unreadChildren: unreadChildren)
 }

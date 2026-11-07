@@ -90,7 +90,12 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     return data
   }
   override func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? { tree.visible[tree.id(element)].map { $0.map(Engine.element) } }
-  override func readFrame(_ element: AXUIElement) -> CGRect? { tree.frames[tree.id(element)] }
+  /// Frame reads (AXPosition and AXSize alone) by id.
+  var frameReads: [Int: Int] = [:]
+  override func readFrame(_ element: AXUIElement) -> CGRect? {
+    frameReads[tree.id(element), default: 0] += 1
+    return tree.frames[tree.id(element)]
+  }
 
   override func scrollBars(_ element: AXUIElement) -> (horizontal: Bool, vertical: Bool) {
     let id = tree.id(element)

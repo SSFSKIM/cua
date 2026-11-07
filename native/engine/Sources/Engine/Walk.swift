@@ -558,8 +558,9 @@ final class TreeWalk {
       guard let next = stack.popLast() else {
         if cut { break }
         guard let resumed = nextDeferred() else { break }
-        switch resumed {
-        case .children(let item): expand(item)
+        switch resumed.waiting {
+        // `lastly`'s columns come up only once nothing else waits: their children are taken up in order, unjudged.
+        case .children(let item): expand(item, judging: !resumed.lastly)
         case .unread(let item, let positions): push(item, Array(positions))
         }
         continue
@@ -659,12 +660,12 @@ final class TreeWalk {
   /// Takes up a read element's children (then its record-only ones), the first to be read next. In the tree's selection,
   /// a list of more than 100 whose clip shows has the children that show taken up (`shownChildPositions`); the runs of
   /// the others wait, unread, in `deferred` (#304). Without them (main's behaviour for that list) all are taken up.
-  private func expand(_ item: Selected) {
+  private func expand(_ item: Selected, judging: Bool = true) {
     item.expanded = true
     let count = item.read.children.count + item.recordChildren.count
     // The record's selection (`selectForRecord`) drains the stack alone, so it takes every child up.
-    if wideListRules, !item.recordOnly, item.read.children.count > widthThreshold, let area = childClip(item), showsBeyondStrip(area, in: area),
-       let first = shownChildPositions(item.read.children, frame: { self.source.frame($0) }, window: area, expired: { [self] in pastDeadline() }) {
+    if wideListRules, judging, !item.recordOnly, item.read.children.count > widthThreshold, let area = childClip(item),
+       showsBeyondStrip(area, in: area), let first = judged(item, in: area) {
       var start = 0
       for position in first + [count] {
         if position > start { insertInOrder(.unread(item, start..<position), into: &deferred) }
@@ -673,6 +674,20 @@ final class TreeWalk {
       push(item, first)
     } else {
       push(item, Array(0..<count))
+    }
+  }
+
+  /// `shownChildPositions` over a read element's children, its frame reads, its time and the lists it judged counted
+  /// apart (`wideListFrames`, `wideListMs`, `wideLists`; the frame reads are inside `widthMs` too), so a run can tell the
+  /// rule's own reads from the width rule's.
+  private func judged(_ item: Selected, in area: CGRect) -> [Int]? {
+    let before = source.costs.counts["frameReads"] ?? 0
+    defer {
+      source.costs.count("wideLists")
+      source.costs.count("wideListFrames", (source.costs.counts["frameReads"] ?? 0) - before)
+    }
+    return source.costs.time("wideList") {
+      shownChildPositions(item.read.children, frame: { self.source.frame($0) }, window: area, expired: { [self] in pastDeadline() })
     }
   }
 
@@ -719,12 +734,13 @@ final class TreeWalk {
   }
 
   /// The earliest in the document's order of what waits, `lastly`'s only once `deferred` is empty.
-  private func nextDeferred() -> Waiting? {
-    while let candidate = deferred.popLast() ?? lastly.popLast() {
+  private func nextDeferred() -> (waiting: Waiting, lastly: Bool)? {
+    while true {
+      let fromLastly = deferred.isEmpty
+      guard let candidate = deferred.popLast() ?? lastly.popLast() else { return nil }
       if case .children(let item) = candidate, item.expanded { continue }
-      return candidate
+      return (candidate, fromLastly)
     }
-    return nil
   }
 
   // MARK: Emission

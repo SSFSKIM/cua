@@ -232,6 +232,7 @@ class ElementSource: @unchecked Sendable {
   final func frame(_ element: AXUIElement) -> CGRect? {
     let key = ElementKey(element: element)
     if let known = frameCache[key] { return known }
+    costs.count("frameReads")
     let read = readFrame(element)
     frameCache[key] = .some(read)
     return read

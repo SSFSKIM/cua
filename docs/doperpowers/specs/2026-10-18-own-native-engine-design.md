@@ -2736,7 +2736,26 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        its place says (before the clip ahead of the run, across it in the run, past it after the run; a frameless one
        says nothing) means the children are not one run in order, and the list is taken up as on main. This is the
        ruling's monotonic order, stated against the run, so it also catches a run whose bisected start a shown outlier
-       pulled ahead, holding unshown children it would charge. About 2 log2(N) + 96 frame reads.
+       pulled ahead, holding unshown children it would charge. About 2 log2(N) + 96 frame reads, plus the axis's
+       probes from the end.
+     **The cost, as traced** (ruling 0092b8c7's follow-up, on the A/B of bc4d395f, whose `widthMs` B − A was +178 ms on
+     the 6,000-row table, +86 on the 3,000-row one, +79 on the barred one, +78 on Safari's wiki-article and +30 on
+     Chrome's py-docs, against about 0 on 566e3612). The read counts are the rule's: over the full dumps each judged list
+     reads, per observation, 118 frames on the 6,000-row table, 114–117 on the 3,000-row one, 100–116 on IANA's tables,
+     99 on Safari's 695-item list, and every child of a list of 512 or fewer (215 for wiki-article's references, 249 and
+     251 for wiki-table's table and list, 600 over py-docs' three lists); a gap the queue takes up later is pushed, not
+     judged again, and frames are cached per walk, so nothing is read twice. So the excess is the live price per frame
+     read, not the count: py-docs' 600 reads at +30 ms is the runner's 0.05–0.06 ms, while Chromium's large tables cost
+     about 0.7–1.5 ms per read (about 117 reads for +86 to +178 ms), most likely the tables' last children (Chromium
+     re-creates their columns and header group at every observation, #301's limit, so the axis probe and the end
+     samples read stale handles there; the 6,000-row table's dump could not read 7 of them) or random access across
+     rows Chromium has not laid out near the viewport. The corrected model: a judged list costs its read count (as
+     above) times the page's live price per frame read, which is about 0.06 ms in ordinary lists and up to about 1.5
+     ms in Chromium's large tables, so about 100–180 ms per such table per observation. What changed for it: a column
+     taken up from `lastly`, once nothing else waits, is no longer judged (its cells are already read through their
+     rows; on an uncut 3,000-row table that was about 120 reads per column), and the walk's timings count the rule's
+     own reads apart (`wideLists`, `wideListFrames`, `wideListMs`, inside `widthMs`; `frameReads` all of them), so the
+     next run can tell the rule's reads from the width rule's and price each.
      The children read first go on the stack; each run of the others waits, unread, as an entry of `deferred`, placed in
      the document's order by its first child and taken up, when it comes, as `expand` takes up children. No axis, a
      failed check or the deadline takes the list up as on main. A list of exactly 100 is read whole, as before. The
@@ -2769,7 +2788,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      (863 lists), 0 losses in either.** Every short list lies in a table: 526 header AXGroups (which list the header
      cells their rows hold), 312 AXColumns whose rebuilt cells fall short, 21 AXTables and 4 AXRows; so Chrome's
      tables (the local tables, IANA, Wikipedia's article and table, py-docs, the float pages) are checked only as
-     rebuilt, not verified. A dump that recorded each element's whole child list would verify them. The check finds
+     rebuilt, not verified. The full child-list dumps (`chosenIds`, run 42352124120: 52 uncut trees, one rep, Chrome's
+     local tables, 6,000-row table, IANA, wiki-article, wiki-table, py-docs and the float and overlay pages, Safari's
+     mdn-float and wiki-article) list each row's children by the rows they were emitted as, shared children in every
+     parent's list, so nothing is rebuilt; a child a dump never emitted (7 on each 6,000-row tree, the stale columns
+     and header group) is loaded as an unreadable element in its place, as the live walk met it: **52 verified, 0
+     alias-incomplete, 0 losses**, the table pages among them. The check finds
      what the A/B found: with rule B as first built (one bisected run, no per-child judging, no samples) the replay
      counted 1,141 losses even with the earlier excuse in place, 123 and 118 on Chrome's wiki-article at 90% and 205 per
      rep on wiki-table at 90%, and 1 to 4 on HN's thread, IANA and the local tables.
@@ -2821,7 +2845,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      miss (it lies between two of them, which are where their places say) waits with its run of unshown neighbours, so
      a cut can still leave it unread. (iv) The move to an earlier place happens only when the selection meets the
      element there before the cut; an earlier place it never reaches leaves the children waiting at the later one.
-  Proven offline (`WideListTests`, 10, and `WideListInvariantTests`, 11; `swift test`; removing each rule, each bound,
+  Proven offline (`WideListTests`, 10, and `WideListInvariantTests`, 12; `swift test`; removing each rule, each bound,
   each sample check, the frameless rules, the preorder pass, its deadline and its places' propagation to a subtree
   fails at least one test, by mutation,
   `~/.local/share/187/mutate-304.py`): the uncut walk equal to the plain preorder over a 300-row table of 3 columns, a
@@ -2840,14 +2864,18 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   place checked alone, every frame read up to 512 children and fewer than 200 for 513, a frameless child read first,
   the two parents' case (the earlier place winning, no loss at 620 nodes, the element emitted once at its preorder
   place, the move charging nothing; an element that shows at the earlier place taken up at once there, main not
-  moving it), the uncut walk over a waiting alias with a shown child, and the loader flagging a dump that
+  moving it), a list of 6,000 within its stated frame reads uncut and cut, its columns taken up last unjudged, the
+  uncut walk over a waiting alias with a shown child, and the loader flagging a dump that
   lost an alias as alias-incomplete.
   The invariant check over the spike's trees: `CUA_304_TREES=$HOME/.local/share/probe-304 swift test --filter
-  WideListInvariantTests` in `native/engine` (about 6 minutes; the spike's part skipped without the variable).
+  WideListInvariantTests` in `native/engine` (about 5 minutes; the spike's part skipped without the variable), and the
+  full dumps with `CUA_304_TREES=$HOME/.local/share/probe-304/full-42352124120` (about a minute); `CUA_304_FRAMES=1`
+  prints each tree's frame reads per judged list.
   **What the hosted A/B must still measure**, on the amended rule against main: Chrome's wiki-article and wiki-table
   at 90% and `/fixedtail` at 25, 50 and 90% back to main's share, with the pages the first A/B closed staying at 100%;
-  `walkMs` p50 and p95, now with up to 512 frame reads per list of 101–512 children (about 31 ms at most each) and
-  about 2 log2(N) + 96 above; and repl-parity's and the docs-oracle's lanes unchanged.
+  `walkMs` p50 and p95, now with up to 512 frame reads per list of 101–512 children and about 2 log2(N) + 96 above;
+  `wideListMs` and `wideListFrames` against `widthMs`, to price the rule's reads on Chromium's large tables and see
+  whether the stale columns and header group carry them; and repl-parity's and the docs-oracle's lanes unchanged.
   Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling 7b2a5a70 on #304 and #309.
 
 ## Outcomes & Retrospective

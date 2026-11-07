@@ -1,3 +1,4 @@
+import ApplicationServices
 import XCTest
 @testable import Engine
 
@@ -19,6 +20,11 @@ final class TextEntryClickTests: XCTestCase {
     var pressFocuses = false
     var pressFocusesAfter: Double = 0
     var selectionFocuses = false
+    /// The caret's write: its AXError, and whether the range it writes sticks (the app may keep its own).
+    var selectionWriteError = AXError.success
+    var selectionSticks = true
+    var selection: (location: Int, length: Int)? = (5, 2)
+    var selectionReads = 0
     var focusReadable = true
     var presses = 0
     var writes: [String] = []
@@ -36,6 +42,12 @@ final class TextEntryClickTests: XCTestCase {
       if attribute == "AXFocused" { XCTFail("an AXFocused write on \(element.role ?? "?")") }
       writes.append("\(attribute) \(value)")
       if attribute == "AXSelectedTextRange", selectionFocuses { focused = element }
+    }
+
+    func writeCaret(_ element: Node, _ offset: Int) -> AXError {
+      write(element, "AXSelectedTextRange", "{\(offset), 0}")
+      if selectionWriteError == .success, selectionSticks { selection = (offset, 0) }
+      return selectionWriteError
     }
   }
 
@@ -62,7 +74,8 @@ final class TextEntryClickTests: XCTestCase {
       guard app.focusReadable else { return nil }
       if app.pressFocuses, let pressed = app.pressedAt, app.clock - pressed >= app.pressFocusesAfter { app.focused = element }
       return app.focused === element
-    }, caretOffset: { caret }, writeSelection: { app.write(element, "AXSelectedTextRange", "{\($0), 0}") },
+    }, caretOffset: { caret }, writeSelection: { app.writeCaret(element, $0) },
+       selection: { app.selectionReads += 1; return app.selection },
        noted: { app.record = $0 }, now: { app.clock }, sleep: { app.sleeps += 1; app.clock += $0 })
   }
 
@@ -100,8 +113,9 @@ final class TextEntryClickTests: XCTestCase {
     XCTAssertTrue(app.focused === field, "the focus reads back on the field, not the web area")
     XCTAssertEqual(app.presses, 1)
     XCTAssertEqual(app.writes, ["AXSelectedTextRange {3, 0}"], "the caret at the element's point")
-    XCTAssertEqual(app.record, TextEntryFocusRecord(focus: .readBack, step: .selection, caret: .success(3)))
-    XCTAssertEqual(app.clock, textEntryFocusSettleMs, "the press's settle, then the caret's focus read at once")
+    XCTAssertEqual(app.record, TextEntryFocusRecord(focus: .readBack, step: .selection, caret: .atPoint(3)))
+    XCTAssertEqual(app.clock, textEntryFocusSettleMs, "the press's settle, then the caret's focus and range read at once")
+    XCTAssertEqual(app.selectionReads, 1)
   }
 
   func testACaretThePointCannotPlaceIsWrittenAtTheStart() throws {
@@ -111,9 +125,59 @@ final class TextEntryClickTests: XCTestCase {
     app.selectionFocuses = true
     try click(field, caret: .failure(.noCharacterBoxes), app: app)
     XCTAssertEqual(app.writes, ["AXSelectedTextRange {0, 0}"])
-    XCTAssertEqual(app.record?.caret, .failure(.noCharacterBoxes))
-    XCTAssertTrue(caretFocusNote("Safari", placed: false).contains("at the start"))
-    XCTAssertTrue(caretFocusNote("Safari", placed: true).contains("at the point"))
+    XCTAssertEqual(app.record?.caret, .atStart(.noCharacterBoxes))
+    XCTAssertTrue(caretFocusNote("Safari", .atStart(.noCharacterBoxes)).contains("at the start"))
+    XCTAssertTrue(caretFocusNote("Safari", .atPoint(3)).contains("at the point"))
+  }
+
+  /// The write's answer is not the caret's place: a write that fails while the focus reads true (the earlier press
+  /// focusing late) claims no place, and keeps the write's error.
+  func testACaretWriteThatFailsWhileFocusReadsTrueClaimsNoPlace() throws {
+    let page = page()
+    let field = Node("AXTextArea", parent: page)
+    let app = App(focused: page)
+    (app.pressFocuses, app.pressFocusesAfter) = (true, textEntryFocusSettleMs + 1)  // after the press's settle
+    app.selectionWriteError = .cannotComplete
+    try click(field, app: app)
+    XCTAssertEqual(app.record, TextEntryFocusRecord(focus: .readBack, step: .selection, caret: .unconfirmed(.selectionMismatch),
+                                                    caretWriteError: AXError.cannotComplete.rawValue))
+    let note = caretFocusNote("Safari", .unconfirmed(.selectionMismatch))
+    XCTAssertTrue(note.contains("could not be confirmed"), note)
+    XCTAssertFalse(note.contains("at the point") || note.contains("at the start"), note)
+  }
+
+  /// The app takes the focus but keeps its own range: no place is claimed, after the range's settle.
+  func testARangeThatDoesNotStickClaimsNoPlace() throws {
+    let page = page()
+    let field = Node("AXTextArea", parent: page)
+    let app = App(focused: page)
+    (app.selectionFocuses, app.selectionSticks) = (true, false)
+    try click(field, app: app)
+    XCTAssertEqual(app.record, TextEntryFocusRecord(focus: .readBack, step: .selection, caret: .unconfirmed(.selectionMismatch)))
+    XCTAssertEqual(app.clock, 2 * textEntryFocusSettleMs, "the press's settle, then the range's")
+    XCTAssertGreaterThan(app.selectionReads, 1)
+  }
+
+  /// A range that arrives during the settle is read back.
+  func testARangeThatArrivesLateIsPlaced() {
+    var clock: Double = 0
+    XCTAssertTrue(readingCaret(3, selection: { clock >= 60 ? (3, 0) : (0, 0) }, now: { clock }, sleep: { clock += $0 }))
+    XCTAssertEqual(clock, 60)
+    clock = 0
+    XCTAssertFalse(readingCaret(3, selection: { (3, 1) }, now: { clock }, sleep: { clock += $0 }), "a selection is no caret")
+    XCTAssertEqual(clock, textEntryFocusSettleMs)
+  }
+
+  /// A password field's caret is written at 0, and its range never read.
+  func testAPasswordFieldsRangeIsNeverRead() throws {
+    let page = page()
+    let field = Node("AXSecureTextField", parent: page)
+    let app = App(focused: page)
+    app.selectionFocuses = true
+    try click(field, caret: .failure(.secure), app: app)
+    XCTAssertEqual(app.writes, ["AXSelectedTextRange {0, 0}"])
+    XCTAssertEqual(app.record?.caret, .unconfirmed(.secure))
+    XCTAssertEqual(app.selectionReads, 0)
   }
 
   func testSafarisTextFieldIsFocusedByItsPressAlone() throws {
@@ -136,7 +200,8 @@ final class TextEntryClickTests: XCTestCase {
       XCTAssertTrue((error as? EngineError)?.message.contains("then by placing its caret") == true)
     }
     XCTAssertEqual(app.writes, ["AXSelectedTextRange {3, 0}"])
-    XCTAssertEqual(app.record, TextEntryFocusRecord(focus: .notReadBack, step: .selection, caret: .success(3)))
+    XCTAssertEqual(app.record, TextEntryFocusRecord(focus: .notReadBack, step: .selection))
+    XCTAssertEqual(app.selectionReads, 0, "no range read on an unfocused field")
     XCTAssertEqual(app.clock, 2 * textEntryFocusSettleMs, "each step's settle")
   }
 
@@ -270,9 +335,12 @@ final class TextEntryClickTests: XCTestCase {
     var record = ElementClickRecord(plan: .action("AXPress"), reason: .advertised)
     XCTAssertNil(record.wire["focus"])
     XCTAssertNil(record.wire["focusStep"])
+    XCTAssertNil(record.wire["caretWriteError"])
     record.focus = FocusReadback.readBack.rawValue
     record.focusStep = TextEntryFocusRecord.Step.selection.rawValue
+    record.caretWriteError = AXError.cannotComplete.rawValue
     XCTAssertEqual(record.wire["focus"] as? String, "readBack")
     XCTAssertEqual(record.wire["focusStep"] as? String, "selection")
+    XCTAssertEqual(record.wire["caretWriteError"] as? Int, Int(AXError.cannotComplete.rawValue))
   }
 }

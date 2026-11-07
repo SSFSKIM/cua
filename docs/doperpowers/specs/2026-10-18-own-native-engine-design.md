@@ -2994,9 +2994,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        finds an offset, else {0, 0}. A password field's value is never read, so its caret goes at 0. Its focus is then
        read back again within the same settle. A WebKit page is a web area (`webAreaAncestry`) in a process that is
        neither Chromium's nor Gecko's (`pageEngine`, by the principal class; Firefox's is `GeckoNSApplication`, #287's
-       recon). The meta records `focusStep` `selection` and `caret` (`placed`, or why the point gave no offset), and
-       the result's note says the field was focused by placing its caret, at the point or at its start, with no mouse
-       event.
+       recon). The meta records `focusStep` `selection`.
+     - **The caret is claimed only as far as it reads back** (the review of 06c90356..8d1025c1, one P2: the write's
+       AXError was discarded and only focus was checked, so a failed write, or an app that takes the focus but keeps its
+       own range, still claimed a place). Once the field reads focused, AXSelectedTextRange is read and polled within
+       the settle (`readingCaret`) for {offset, 0}. The record's `caret` is `placed` (the point's offset, read back), or
+       why the point gave no offset (read back at 0), or, as #283 words it, `selectionMismatch` when the range never
+       read back so. A password field's range is never read, so its caret is `secure`, unconfirmed. The result's note
+       says the field was focused by placing its caret at the point, or at its start, only when that read back; an
+       unconfirmed caret's note claims no place and says typing may go elsewhere or replace a selection. The focus
+       success stands either way. A write that does not answer success is recorded as `caretWriteError`, its AXError.
      - **The answer.** A field that has not read true by its last step's settle answers `clickUnconfirmed`, with
        `focus` `notReadBack` when a read answered false and `unread` when none answered a boolean. The live read
        discards every AX error, so no boolean may be a messaging failure or an invalidated element, not only a field
@@ -3026,11 +3033,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - editable content that is not a text-entry role (a contenteditable region's text, clicked by its token).
   7. **Model-facing text.** `docs/cua-api/agent-cursor.md` is unchanged. Its paragraph describes Chromium's pages, and
      the new answers carry their own sentence (`clickUnconfirmed`, naming the caret step when it ran) and note.
-  Proven offline (`TextEntryClickTests`, 17, over Safari's page as a fake tree, with a mock that fails the test on any
+  Proven offline (`TextEntryClickTests`, 21, over Safari's page as a fake tree, with a mock that fails the test on any
   AXFocused write):
   - no text-entry role outside Chromium (WebKit and Gecko, a page's field and a native one) is written AXFocused;
   - Safari's textarea, whose AXPress does nothing, is focused by the caret step at the point, after the press's settle;
   - a caret the point cannot place is written at 0, and the note says so;
+  - a caret write that fails while the focus reads true (the press focusing late) claims no place and records its
+    AXError; a range the app does not keep claims no place, after the range's settle; a range arriving within the
+    settle is read back, and a selection is no caret; a password field's range is never read;
   - Safari's text field is focused by its press alone, on one read with no wait and no write;
   - a WebKit field that neither step focuses answers `clickUnconfirmed`, naming the caret step, after two settles;
   - a native field in a WebKit app (no web area above it) gets no caret step;
@@ -3041,12 +3051,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - a field whose focus never reads answers `clickUnconfirmed`, recorded `unread`, and unread samples are polled like
     unfocused ones;
   - the settle's value, other roles pressed with nothing read, the page engine by principal class, the password
-    classification, and the record's `focus` and `focusStep`.
-  #283's `WebAreaFocusTests` and #282's `BackgroundPointerTests` pass unchanged. Each of 30 rules and bounds
+    classification, and the record's `focus`, `focusStep` and `caretWriteError`.
+  #283's `WebAreaFocusTests` and #282's `BackgroundPointerTests` pass unchanged. Each of 41 rules and bounds
   removed in turn (`~/.local/share/187/mutate-313.py`) fails a test.
   **What the hosted check must verify** (`probe/313-ab`'s cells, 2 reps, against main):
-  - **Safari 27.2:** the textarea by token answers `focus` `readBack` with `focusStep` `selection`, and the text field
-    with `focusStep` `press`. Safari stays behind TextEdit, pointerdown is 0, and type_text lands at the caret;
+  - **Safari 27.2:** the textarea by token answers `focus` `readBack` with `focusStep` `selection` and `caret`
+    `placed` (with no `caretWriteError`), and the text field with `focusStep` `press`. Safari stays behind TextEdit, pointerdown is 0, and type_text lands at the caret;
   - **Firefox 159:** the text cells main focused answer `readBack` (`press`), and Firefox stays behind;
   - **native and Chromium:** identical to main.
   Date/Author: 2026-11-07, cursor235's implementer for the design session's rulings cb252e88 and c4108490 on #313.

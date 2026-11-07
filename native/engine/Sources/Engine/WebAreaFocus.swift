@@ -420,29 +420,66 @@ func readingFocus(after step: () throws -> Void, focused: () -> Bool?, now: () -
   return readFalse ? .notReadBack : .unread
 }
 
+/// Where a WebKit page's field's caret is after its write (#313), claimed only as far as AXSelectedTextRange read back.
+enum CaretPlacement: Equatable {
+  /// The point's offset, written and read back.
+  case atPoint(Int)
+  /// The point gave no offset (why), so {0, 0} was written, and read back.
+  case atStart(CaretNotPlaced)
+  /// Not confirmed: the range read back otherwise or not at all (`selectionMismatch`, #283's word), or a password field,
+  /// whose ranges are never read (`secure`).
+  case unconfirmed(CaretNotPlaced)
+}
+
 /// What a text field's element click did (#313): the last read-back's answer, which step focused it, and, where its
-/// caret was written, the offset computed or why none was (the caret then written at 0).
+/// caret was written, where it is and the write's AXError when it was not success.
 struct TextEntryFocusRecord: Equatable {
   enum Step: String { case press, selection }
   let focus: FocusReadback
   let step: Step
-  var caret: Result<Int, CaretNotPlaced>? = nil
+  var caret: CaretPlacement? = nil
+  var caretWriteError: Int32? = nil
+}
+
+/// Whether the field's selection reads back as the caret at `offset`, {offset, 0}: polled every `webAreaFocusSampleMs`
+/// for up to `textEntryFocusSettleMs`, true at once on the first read that matches.
+func readingCaret(_ offset: Int, selection: () -> (location: Int, length: Int)?, now: () -> Double, sleep: (Double) -> Void) -> Bool {
+  func matches() -> Bool { selection().map { $0.location == offset && $0.length == 0 } == true }
+  if matches() { return true }
+  let started = now()
+  repeat {
+    sleep(webAreaFocusSampleMs)
+    if matches() { return true }
+  } while now() - started < textEntryFocusSettleMs
+  return false
 }
 
 /// An element click whose ladder chose an action, carried by its route (#313): the action alone, or the action with its
 /// focus read back and, on a WebKit page's field still unfocused, its caret written (`writeSelection`, at `caretOffset`
-/// where that computes one, else at 0) and its focus read back again. `noted` records what was done; a field that has not
-/// read focused by the last step's settle answers clickUnconfirmed (`textEntryFocusUnconfirmed`). Nothing writes
-/// AXFocused.
+/// where that computes one, else at 0; its AXError kept) and its focus read back again. Once focused that way, the caret
+/// counts as placed only where `selection` reads it back (`readingCaret`); a password field's range is never read.
+/// `noted` records what was done; a field that has not read focused by the last step's settle answers clickUnconfirmed
+/// (`textEntryFocusUnconfirmed`). Nothing writes AXFocused.
 func carryActionClick(_ route: TextEntryClickRoute, app: String, press: () throws -> Void, focused: () -> Bool?,
-                      caretOffset: () -> Result<Int, CaretNotPlaced>, writeSelection: (Int) throws -> Void,
+                      caretOffset: () -> Result<Int, CaretNotPlaced>, writeSelection: (Int) throws -> AXError,
+                      selection: () -> (location: Int, length: Int)?,
                       noted: (TextEntryFocusRecord) -> Void, now: () -> Double, sleep: (Double) -> Void) throws {
   guard case .pressConfirmingFocus(let selecting) = route else { return try press() }
   var record = TextEntryFocusRecord(focus: try readingFocus(after: press, focused: focused, now: now, sleep: sleep), step: .press)
   if record.focus != .readBack, selecting {
     let caret = caretOffset()
-    let found = try readingFocus(after: { try writeSelection((try? caret.get()) ?? 0) }, focused: focused, now: now, sleep: sleep)
-    record = TextEntryFocusRecord(focus: found, step: .selection, caret: caret)
+    let offset = (try? caret.get()) ?? 0
+    var written = AXError.success
+    let found = try readingFocus(after: { written = try writeSelection(offset) }, focused: focused, now: now, sleep: sleep)
+    record = TextEntryFocusRecord(focus: found, step: .selection, caretWriteError: written == .success ? nil : written.rawValue)
+    if found == .readBack {
+      switch caret {
+      case .failure(.secure): record.caret = .unconfirmed(.secure)
+      case _ where !readingCaret(offset, selection: selection, now: now, sleep: sleep): record.caret = .unconfirmed(.selectionMismatch)
+      case .success: record.caret = .atPoint(offset)
+      case .failure(let why): record.caret = .atStart(why)
+      }
+    }
   }
   noted(record)
   if record.focus != .readBack { throw textEntryFocusUnconfirmed(app, selected: record.step == .selection) }
@@ -455,11 +492,17 @@ func textEntryFocusUnconfirmed(_ app: String, selected: Bool) -> EngineError {
     "The click could not be confirmed: it was carried by the text field's accessibility action in \(app)\(selected ? ", then by placing its caret" : ""), but the field does not report focus. Observe the app with get_app_state before any retry, and never retry blindly.")
 }
 
-/// The note of a WebKit page's field focused by its caret's write (#313): no mouse event, and where typing goes.
-func caretFocusNote(_ app: String, placed: Bool) -> String {
-  placed
-    ? "\(app)'s text field was focused through accessibility by placing its caret at the point. No mouse event was sent, so the page saw no click."
-    : "\(app)'s text field was focused through accessibility with its caret at the start, since the caret's place at the point could not be found. Use select_text or set_value first if the position matters. No mouse event was sent, so the page saw no click."
+/// The note of a WebKit page's field focused by its caret's write (#313): no mouse event, and where typing goes, claimed
+/// only where the caret read back.
+func caretFocusNote(_ app: String, _ caret: CaretPlacement) -> String {
+  switch caret {
+  case .atPoint:
+    return "\(app)'s text field was focused through accessibility by placing its caret at the point. No mouse event was sent, so the page saw no click."
+  case .atStart:
+    return "\(app)'s text field was focused through accessibility with its caret at the start, since the caret's place at the point could not be found. Use select_text or set_value first if the position matters. No mouse event was sent, so the page saw no click."
+  case .unconfirmed:
+    return "\(app)'s text field was focused through accessibility, but where its caret is could not be confirmed: typing may go elsewhere in the field or replace a selection. Use select_text or set_value first if the position matters. No mouse event was sent, so the page saw no click."
+  }
 }
 
 /// Whether a text field is a password field, whose value and ranges are never read (#283's rule): its role or subrole

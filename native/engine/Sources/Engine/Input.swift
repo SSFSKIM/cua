@@ -420,16 +420,23 @@ extension Engine {
               return fieldCaretOffset(element, at: point)
             }, writeSelection: { offset in
               try guarding.checkInFlight()
-              _ = meta.posting { _ = gatedWrite(element, kAXSelectedTextRangeAttribute, axRangeValue(CFRange(location: offset, length: 0))); return true }
+              var written = AXError.success
+              _ = meta.posting { written = gatedWrite(element, kAXSelectedTextRangeAttribute, axRangeValue(CFRange(location: offset, length: 0))); return true }
+              return written
+            }, selection: {
+              guard let range = rangeWire(attribute(element, kAXSelectedTextRangeAttribute)), let location = range["location"],
+                    let length = range["length"] else { return nil }
+              return (location, length)
             }, noted: { record in
               meta.elementClick?.focus = record.focus.rawValue
               meta.elementClick?.focusStep = record.step.rawValue
+              meta.elementClick?.caretWriteError = record.caretWriteError
               guard let caret = record.caret else { return }
               switch caret {
-              case .success: meta.elementClick?.caret = "placed"
-              case .failure(let why): meta.elementClick?.caret = why.rawValue
+              case .atPoint: meta.elementClick?.caret = "placed"
+              case .atStart(let why), .unconfirmed(let why): meta.elementClick?.caret = why.rawValue
               }
-              if record.focus == .readBack { meta.note = caretFocusNote(app.displayName, placed: (try? caret.get()) != nil) }
+              meta.note = caretFocusNote(app.displayName, caret)
             }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
           case .synthesized(let route):
             try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding,

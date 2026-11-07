@@ -4,14 +4,14 @@
 //! X input is sent.
 
 use anyhow::{Result, anyhow, bail};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::Engine;
 use super::pointer::{CLICK_HOLD, check_wheel, wheel};
 use super::way::Way;
 use crate::atspi::{self, Associated};
 use crate::dbus::Bus;
-use crate::families::Kind;
+use crate::families::{Family, Kind};
 use crate::focus_ack::{FocusAck, nothing_pressed, press_ack};
 use crate::resolve;
 use crate::route::{Inputs, Target};
@@ -94,7 +94,12 @@ impl Engine {
         };
         let clicked = self.click_resolved(&element, button, target, ack.as_mut());
         self.record_focus_ack(ack.as_ref());
-        clicked
+        clicked?;
+        // the primary click ran the element's action 0: its answer names a family that animates it
+        Ok(match button {
+            MouseButton::Right => Value::Null,
+            _ => action_answer(self.family_of(window), 0),
+        })
     }
 
     /// [`Engine::element_click`] once the element is resolved and its route chosen.
@@ -146,7 +151,8 @@ impl Engine {
         let names = atspi::action_names(bus, &element.target)?.map_err(anyhow::Error::msg)?;
         let index = choose_action(&names, &input.action).map_err(anyhow::Error::msg)?;
         do_action(x, bus, inputs, &element, index)?;
-        Ok(Value::Null)
+        // a named action may be the element's first, its primary action (the vendor's choice of name allows it too)
+        Ok(action_answer(self.family_of(input.window.id), index))
     }
 
     /// The element scroll (behaviour §7.3): resolved, the session opened, the point the centre of the element's
@@ -186,6 +192,17 @@ pub fn choose_action(names: &[String], action: &str) -> std::result::Result<usiz
             "AT-SPI action {action:?} is unavailable; available actions: {names:?}"
         )),
         _ => Err(format!("AT-SPI action {action:?} is ambiguous")),
+    }
+}
+
+/// What an element action that ran `DoAction(index)` answers: `{"animated_action": <family>}` when it ran the element's
+/// primary action (index 0) in a family whose toolkit animates it (`families.rs` `animates_primary_action`), whose
+/// effect so comes after the answer; null otherwise, as the vendor answers. The vendor JavaScript reads no output of
+/// these commands; cua's service settles by the family it names (`src/services/engine/linux/methods.mjs`).
+fn action_answer(family: Option<&Family>, index: usize) -> Value {
+    match family {
+        Some(family) if index == 0 && family.animates_primary_action => json!({"animated_action": family.name}),
+        _ => Value::Null,
     }
 }
 
@@ -307,6 +324,26 @@ mod tests {
             choose_action(&[], "x"),
             Err(r#"AT-SPI action "x" is unavailable; available actions: []"#.into())
         );
+    }
+
+    #[test]
+    fn an_element_s_primary_action_names_its_family_where_the_family_animates_it() {
+        let named = |name: &str| crate::families::FAMILIES.iter().find(|f| f.name == name);
+        assert_eq!(
+            action_answer(named("GTK 4"), 0),
+            serde_json::json!({"animated_action": "GTK 4"})
+        );
+        assert_eq!(
+            action_answer(named("Qt"), 0),
+            serde_json::json!({"animated_action": "Qt"})
+        );
+        for other in ["Chrome", "Chromium", "Gecko", "GTK 3", "VTE", "xterm"] {
+            assert_eq!(action_answer(named(other), 0), Value::Null, "{other}");
+        }
+        assert_eq!(action_answer(None, 0), Value::Null, "an unlisted family");
+        // a named action other than the element's first is not its primary action, whatever the family
+        assert_eq!(action_answer(named("GTK 4"), 1), Value::Null);
+        assert_eq!(action_answer(named("Qt"), 2), Value::Null);
     }
 
     #[test]

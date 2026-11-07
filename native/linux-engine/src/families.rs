@@ -116,6 +116,11 @@ pub struct Family {
     /// synthesizes that `FocusIn`, to a window with a modal dialog of its own is refused in shared mode
     /// (`engine.rs`, `x11::X11::modal_transient_of`).
     pub relays_focus_to_modal: bool,
+    /// Its toolkit animates an element's primary action: `DoAction(0)` answers at once, and the action takes effect
+    /// later (GTK 4's button about 250 ms later, as its keyboard activation does; Qt about 100 ms later, its animated
+    /// click; task 62). The answer names the family (`engine/elements.rs` `action_answer`), so cua's service settles
+    /// the next call by that family's own value (`src/services/engine/linux/settle.mjs`).
+    pub animates_primary_action: bool,
     /// The runs that showed it (`docs/evidence/2026-10-28-own-linux-engine/`).
     pub evidence: &'static str,
 }
@@ -188,6 +193,7 @@ pub const FAMILIES: &[Family] = &[
         refreshes_targets: false,
         activates_on_press: false,
         relays_focus_to_modal: false,
+        animates_primary_action: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible, m31-dnd-candidate, m31-dnd-candidate-stats",
     },
@@ -212,6 +218,7 @@ pub const FAMILIES: &[Family] = &[
         refreshes_targets: false,
         activates_on_press: false,
         relays_focus_to_modal: false,
+        animates_primary_action: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible",
     },
@@ -256,6 +263,7 @@ pub const FAMILIES: &[Family] = &[
         refreshes_targets: false,
         activates_on_press: false,
         relays_focus_to_modal: false,
+        animates_primary_action: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
                    m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600; m3/kinds/ \
                    runs m31-kinds-covered, m31-kinds-partial, m31-kinds-partial-deep, m31-move-covered, \
@@ -264,7 +272,8 @@ pub const FAMILIES: &[Family] = &[
     // GTK 4 reads input only as XInput 2 events: a synthetic key, click, scroll, drag or pointer move never arrives,
     // covered or visible, in every engine (M0.4; M3.1), so these take the foreground route in dedicated mode and are
     // refused in shared mode, as its paste chord is. Its element actions through AT-SPI take effect (M0.4's
-    // element-click run). It asks for CLIPBOARD's TARGETS at every owner change (task 56 fix 3's matrix pass).
+    // element-click run), a button's about 250 ms after `DoAction` answers (task 62). It asks for CLIPBOARD's TARGETS
+    // at every owner change (task 56 fix 3's matrix pass).
     Family {
         name: "GTK 4",
         toolkit: Some("GTK"),
@@ -304,9 +313,10 @@ pub const FAMILIES: &[Family] = &[
         refreshes_targets: true,
         activates_on_press: false,
         relays_focus_to_modal: false,
+        animates_primary_action: true,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible; m3/kinds/ runs m31-kinds-covered, \
                    m31-kinds-visible, m31-move-covered, m31-drag-covered, m31-drag-visible-new; the TARGETS: \
-                   m4/focus-timer/fix3/ (matrix-idle, matrix-load2)",
+                   m4/focus-timer/fix3/ (matrix-idle, matrix-load2); the animated action: m4/settle/",
     },
     // GTK 3 (gedit, and Writer on its gtk3 plugin) takes everything on the background route with no wait, as an
     // unlisted family does; it is listed because it asks for CLIPBOARD's TARGETS at every owner change, as GTK 4 and
@@ -325,6 +335,7 @@ pub const FAMILIES: &[Family] = &[
         refreshes_targets: true,
         activates_on_press: false,
         relays_focus_to_modal: false,
+        animates_primary_action: false,
         evidence: "m4/focus-timer/fix3/ (matrix-idle, matrix-load2)",
     },
     // Qt (kate on Qt 5.15, qtcreator on Qt 6.4) takes synthetic clicks and keys (M0.4) but no synthetic wheel event,
@@ -333,7 +344,8 @@ pub const FAMILIES: &[Family] = &[
     // loaded main thread makes likely (task 61; `focus_ack.rs`): a background press waits for its frame's `active`.
     // A FocusIn or FocusOut on a window its modal dialog blocks makes Qt activate the dialog, for any input kind (task
     // 61's fix: 5 of 5 background keys on Qt 5 and Qt 6, with and without a window manager; GTK 3, GTK 4 and Chrome 0
-    // of 5 each): input to such a window is refused in shared mode.
+    // of 5 each): input to such a window is refused in shared mode. A button's press action is Qt's animated click,
+    // which takes effect about 100 ms after `DoAction` answers (task 62).
     Family {
         name: "Qt",
         toolkit: Some("Qt"),
@@ -351,8 +363,10 @@ pub const FAMILIES: &[Family] = &[
         refreshes_targets: false,
         activates_on_press: true,
         relays_focus_to_modal: true,
+        animates_primary_action: true,
         evidence: "m3/kinds/ runs m31-kinds-covered, m31-kinds-visible, m31-qt-covered, m31-qt-visible; the press's \
-                   activation: m4/qt-activation/; the modal dialog's: m4/qt-activation/fix/",
+                   activation: m4/qt-activation/; the modal dialog's: m4/qt-activation/fix/; the animated action: \
+                   m4/settle/",
     },
     // A VTE terminal pastes with Ctrl+Shift+V; Ctrl+V inserts the next key literally in a shell. Its text is its
     // screen, whose first row scrolls out as text wraps the last row of a full screen.
@@ -370,6 +384,7 @@ pub const FAMILIES: &[Family] = &[
         refreshes_targets: true,
         activates_on_press: false,
         relays_focus_to_modal: false,
+        animates_primary_action: false,
         evidence: "M2.2's terminal paste (task-14 report; m2/ from M2.3); the scroll: task 56's paste trace \
                    (m4/focus-timer/fix/terminal-trace-load2/); the TARGETS: m4/focus-timer/fix2/never-taken/, \
                    m4/focus-timer/fix3/",
@@ -393,6 +408,7 @@ pub const FAMILIES: &[Family] = &[
         refreshes_targets: false,
         activates_on_press: false,
         relays_focus_to_modal: false,
+        animates_primary_action: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible",
     },
 ];
@@ -489,6 +505,7 @@ mod tests {
             refreshes_targets: false,
             activates_on_press: false,
             relays_focus_to_modal: false,
+            animates_primary_action: false,
             evidence: "test",
         },
         Family {
@@ -505,6 +522,7 @@ mod tests {
             refreshes_targets: false,
             activates_on_press: false,
             relays_focus_to_modal: false,
+            animates_primary_action: false,
             evidence: "test",
         },
     ];
@@ -834,6 +852,38 @@ mod tests {
         ] {
             let found = family(FAMILIES, Some(class), toolkit.as_ref());
             assert!(!found.is_some_and(|f| f.relays_focus_to_modal), "{class}");
+        }
+    }
+
+    #[test]
+    fn only_gtk_4_and_qt_animate_their_primary_action() {
+        // task 62's fix wave: GTK 4's button answers DoAction about 250 ms before its `clicked`, Qt about 100 ms before
+        // (its animated click), so cua's service settles those apart
+        let animating: Vec<&str> = FAMILIES
+            .iter()
+            .filter(|f| f.animates_primary_action)
+            .map(|f| f.name)
+            .collect();
+        assert_eq!(animating, vec!["GTK 4", "Qt"]);
+        for (class, toolkit) in [
+            (Some("gnome-text-editor"), Some(toolkit("GTK", Some("4.14.5")))),
+            (Some("kate"), Some(toolkit("Qt", Some("5.15.13")))),
+            (Some("qtcreator"), Some(toolkit("Qt", Some("6.4.2")))),
+        ] {
+            assert!(
+                family(FAMILIES, class, toolkit.as_ref()).is_some_and(|f| f.animates_primary_action),
+                "{class:?}"
+            );
+        }
+        for (class, toolkit) in [
+            ("Google-chrome", None),
+            ("cua-electron-fixture", Some(toolkit("Chromium", Some("1.0")))),
+            ("firefox", None),
+            ("Gedit", Some(toolkit("GTK", Some("3.24.41")))),
+            ("Gnome-terminal", None),
+        ] {
+            let found = family(FAMILIES, Some(class), toolkit.as_ref());
+            assert!(!found.is_some_and(|f| f.animates_primary_action), "{class}");
         }
     }
 

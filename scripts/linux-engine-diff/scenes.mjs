@@ -113,6 +113,39 @@ export function configure(id, x, y, w, h) {
   }
 }
 
+/** The screen of the harness's displays (Xvfb's `-screen 0 1280x800x24`, xtools.mjs `startPrivateServer`). */
+export const SCREEN = [1280, 800];
+/** The room kept between a scene window's frame and the screen's edges. */
+export const FIT_MARGIN = 8;
+
+/**
+ * A window's size that keeps its frame (`[left, right, top, bottom]`, the window manager's extents around it) and the
+ * margin inside the screen, the frame at the screen's top left: the size asked for where it fits, else smaller. A
+ * window that must be fully visible (wholly on the screen, nothing over it) so stays visible whatever the window
+ * manager's theme: this VM's title bar grew 2 px when its fonts changed (2026-11-07), and a 1050x780 Firefox window
+ * then ran off the 800 px screen.
+ */
+export function fitted([w, h], [left, right, top, bottom], [sw, sh] = SCREEN, margin = FIT_MARGIN) {
+  return [Math.min(w, sw - left - right - margin), Math.min(h, sh - top - bottom - margin)];
+}
+
+/** The frame's extents in an `xprop _NET_FRAME_EXTENTS` reading, `[left, right, top, bottom]`; none read as no frame. */
+export function frameExtentsOf(text) {
+  const m = String(text).match(/=\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)/);
+  return m ? m.slice(1).map(Number) : [0, 0, 0, 0];
+}
+
+/**
+ * A scene window put at the screen's top left at `w`×`h`, or smaller where its frame would not fit on the screen with
+ * the margin (`fitted`, by the window manager's `_NET_FRAME_EXTENTS` for it). Returns the size it was given.
+ */
+export function placeOnScreen(id, w, h) {
+  const extents = frameExtentsOf(xExecFileSync('xprop', ['-id', String(id), '_NET_FRAME_EXTENTS'], { encoding: 'utf8', timeout: READ_TIMEOUT_MS }));
+  const size = fitted([w, h], extents);
+  configure(id, 0, 0, ...size);
+  return size;
+}
+
 /** The geometry every scene window of a kind is given, so equivalent windows are the same size and place. */
 export const GEOMETRY = { gedit: [910, 756], chrome: [1050, 780], recorder: [600, 400], identity: [600, 380] };
 
@@ -669,9 +702,9 @@ export class Desktop {
     throw new Error(`${what} did not appear as exactly one window`);
   }
 
-  place(id, kind, x = 0, y = 0) {
-    const [w, h] = GEOMETRY[kind];
-    configure(id, x, y, w, h);
+  /** A scene window at its kind's size, at the screen's top left kept wholly on the screen (`placeOnScreen`). */
+  place(id, kind) {
+    placeOnScreen(id, ...GEOMETRY[kind]);
   }
 
   /**
@@ -1029,7 +1062,7 @@ export class Desktop {
       const info = await this.waitForWindow((w) => w.title === label, label);
       scene.id = info.id;
       if (this.stopping) return scene;
-      configure(scene.id, 0, 0, w, h);
+      placeOnScreen(scene.id, w, h);
       return scene;
     });
   }

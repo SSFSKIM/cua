@@ -141,6 +141,12 @@ killed it.
   middle-truncates a title's directory to what is left of 100 characters (`gedit-title.mjs`), and each lane's window is
   on a file of its own label, so a shortened title differs between lanes (task 49's `gedit tree_shot`). A gedit
   window whose title would still be shortened, under a run name too long for it, is refused before it opens.
+- **A scene window on the screen** (scenes.mjs `placeOnScreen`, task 62's fix wave): every scene window a run
+  places (`Desktop.place`, families.mjs `openFamily`, the recorder's window) is set at the screen's top left at its
+  listed size shrunk, where needed, so that its frame as the window manager reports it (`_NET_FRAME_EXTENTS`; none
+  read, no frame) lies inside the 1280x800 screen with 8 px to spare (`fitted`). A fixed size alone was not enough:
+  this VM's title bar grew 2 px when its fonts changed (2026-11-07), a 1050x780 Firefox window ran off the screen, and
+  every case that needs its window fully visible was refused.
 - **The run's home** (`app-env.mjs`, task 45): every application the run launches, on every display, through the one
   place that builds its environment (`Desktop.appEnvironment`, which `spawnApp` and the run's Chrome take), runs with
   `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` and `XDG_STATE_HOME` under `<scratch>/home`, made by

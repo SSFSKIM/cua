@@ -58,18 +58,15 @@ export const planLanes = (plan, cell) => (plan.search ? stepsOf(settleOf(cell)).
  * field (pages/matrix.html) takes the text kinds; the editors are the real applications; the settle scenes
  * (pages/settle-gtk3.py, settle-qt.py) count presses, moves and wheel steps in accessible names. `animates`: the family,
  * by cua-engine's name for it, whose toolkit animates an element's primary action (families.rs
- * `animates_primary_action`), which cua's service then settles by that family's own constant. `geometry`: the scene's
- * own size where its family's (families.mjs) will not do.
+ * `animates_primary_action`), which cua's service then settles by that family's own constant.
  */
 export const SCENES = {
   'chrome-input': { family: 'chrome', page: 'input.html', effects: 'input-page' },
   'chrome-text': { family: 'chrome', page: 'matrix.html', effects: 'field' },
   'electron-input': { family: 'electron', page: 'input.html', effects: 'input-page' },
   'electron-text': { family: 'electron', page: 'matrix.html', effects: 'field' },
-  // Firefox shorter than its family's 1050x780: its pointer kinds need it fully unobscured, so wholly on the 800 px
-  // screen, and a 22 px title bar (this VM's since its fonts changed, 2026-11-07) puts a 780 px window's bottom off it
-  'firefox-input': { family: 'firefox', page: 'input.html', effects: 'input-page', geometry: [1050, 740] },
-  'firefox-text': { family: 'firefox', page: 'matrix.html', effects: 'field', geometry: [1050, 740] },
+  'firefox-input': { family: 'firefox', page: 'input.html', effects: 'input-page' },
+  'firefox-text': { family: 'firefox', page: 'matrix.html', effects: 'field' },
   gedit: { family: 'gedit', effects: 'editor' },
   kate: { family: 'kate', effects: 'editor' },
   qtcreator: { family: 'qtcreator', effects: 'editor' },

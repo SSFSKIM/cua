@@ -114,10 +114,6 @@ test('activate_window then a pipelined windowless click runs in both modes, cove
   assert.equal(runPasses({ route: 'background', kind: 'activate_click', ...ok, desktopClean: false, frontActive: false }), true, 'it activates on purpose');
 });
 
-test('Firefox\'s scenes fit wholly on the 800 px screen under a title bar of up to 40 px: its pointer kinds need it unobscured', () => {
-  for (const scene of FAMILY_SCENES.firefox) assert.ok(SCENES[scene].geometry[1] + 40 <= 800, scene);
-});
-
 test('--family and --kinds and --routes choose cells; an unknown name is refused', () => {
   const gedit = cellsFor({ families: ['gedit'] });
   assert.ok(gedit.length > 0 && gedit.every((c) => c.scene === 'gedit'));

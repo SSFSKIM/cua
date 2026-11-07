@@ -33,6 +33,8 @@ function standIns({ identity = 0 } = {}) {
   }
   // configure's size check: the size last asked for
   tool('xdotool', `case "$1" in windowsize) echo "$3 $4" > ${JSON.stringify(join(dir, 'size'))};; getwindowgeometry) set -- $(cat ${JSON.stringify(join(dir, 'size'))}); printf 'WIDTH=%s\\nHEIGHT=%s\\nSCREEN=0\\n' "$1" "$2";; esac`);
+  // the window manager's frame around a scene window (scenes.mjs `placeOnScreen`): Openbox's, a 22 px title bar
+  tool('xprop', `echo '_NET_FRAME_EXTENTS(CARDINAL) = 1, 1, 22, 4'`);
   const saved = process.env.PATH;
   process.env.PATH = `${dir}${delimiter}${saved}`;
   return {

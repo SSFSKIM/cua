@@ -27,7 +27,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { CHROME_ENV } from './chrome.mjs';
 import { preorder } from './normalize.mjs';
-import { PAGES, configure } from './scenes.mjs';
+import { PAGES, placeOnScreen } from './scenes.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = join(here, '..', '..');
@@ -501,8 +501,8 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
     const info = await desktop.waitForWindow(match, label, 60000);
     scene.id = info.id;
   }
-  const [w, h] = geometry ?? family.geometry;
-  configure(scene.id, 0, 0, w, h);
+  // at the screen's top left, its frame wholly on the screen whatever the window manager's theme (`placeOnScreen`)
+  placeOnScreen(scene.id, ...(geometry ?? family.geometry));
   await settle(desktop, scene, { registers: Boolean(family.gtk4) });
   if (!warmUp) await resolveTargets(desktop, oracle, scene);
   return scene;

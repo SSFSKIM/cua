@@ -676,6 +676,7 @@ impl Engine {
                         "wait_ms": ms(w.waited),
                         "reason": w.reason.name(),
                         "unobscured": w.unobscured,
+                        "offscreen": w.offscreen,
                         "damage_ignored": w.ignored,
                         "damage_counted": w.counted,
                         "first_damage_ms": w.first.map(ms),

@@ -14,8 +14,12 @@ use x11rb::protocol::xtest::ConnectionExt as _;
 use crate::input::Keys;
 use crate::x11::X11;
 
-/// The pause between the points of a desktop pointer path (behaviour §10.2).
-const PATH_STEP: Duration = Duration::from_millis(8);
+/// The pause between the points of a desktop pointer path: none. The vendor's 8 ms (behaviour §10.2) changed no effect
+/// the harness reads on any family when removed, idle or at twice the load (M4's T9, the wait rule; evidence
+/// `m4/waits/`). The points stay the vendor's, the leading one at the pointer's own position included: the server
+/// delivers a motion there as it does any other (task 64's motion listener), so leaving it out, as the newest build
+/// does, would change what an application receives.
+const PATH_STEP: Duration = Duration::ZERO;
 
 /// The points a desktop move visits from `start` to `end` (behaviour §10.2): none to interpolate when already there
 /// (one motion to the end); else n = ⌈distance / 160 × 10⌉ clamped to 1–10, the points start + d·i/n for i = 0…n
@@ -143,7 +147,8 @@ impl Desktop {
         fake(x, MOTION_NOTIFY_EVENT, 1, x11rb::NONE, dx, dy)
     }
 
-    /// `move_path`: from wherever the pointer is to the point, through [`path_points`], 8 ms between points.
+    /// `move_path`: from wherever the pointer is to the point, through [`path_points`], with [`PATH_STEP`] between
+    /// points.
     pub fn move_path(x: &X11, rx: i16, ry: i16) -> Result<()> {
         Self::move_path_paced(x, rx, ry, PATH_STEP)
     }
@@ -153,7 +158,7 @@ impl Desktop {
         let pointer = x.conn.query_pointer(x.root)?.reply()?;
         let points = path_points((pointer.root_x, pointer.root_y), (rx, ry));
         for (i, &(px, py)) in points.iter().enumerate() {
-            if i > 0 {
+            if i > 0 && !step.is_zero() {
                 std::thread::sleep(step);
             }
             Self::motion(x, px, py)?;

@@ -47,7 +47,7 @@ use x11::Retention;
 
 const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop shared|dedicated]
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
-       [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
+       [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed|quiet]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
        [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
@@ -182,7 +182,8 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                 cfg.capture_wait = match value.map(String::as_str) {
                     Some("damage") => CaptureWait::Damage,
                     Some("fixed") => CaptureWait::Fixed,
-                    _ => return Err("--capture-wait is damage or fixed".into()),
+                    Some("quiet") => CaptureWait::QuietOnly,
+                    _ => return Err("--capture-wait is damage, fixed or quiet".into()),
                 }
             }
             "--teardown-ms" => cfg.pacing.teardown = Duration::from_millis(number(value, arg)?),
@@ -464,6 +465,11 @@ mod tests {
         assert_eq!(cfg.capture_wait, CaptureWait::Fixed);
         assert!(cfg.stats);
         assert_eq!(cfg.mouse_size_px, 12);
+        // the control lane that takes every pixmap as complete (task 64)
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--capture-wait", "quiet"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.capture_wait, CaptureWait::QuietOnly);
     }
 
     #[test]

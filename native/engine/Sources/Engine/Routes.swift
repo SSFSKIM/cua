@@ -56,8 +56,7 @@ struct ElementClickRecord: Equatable {
   /// `webArea` (#282): a left pointer into a Chromium web area in shared mode, carried by the action of the element the
   /// pointer's point hits instead of a posted click (a coordinate click's record too).
   /// `focusField` and `focusedNotPlaced` (#283): a plain left click into a web area's text field, carried by
-  /// AXFocused, with the caret placed at the point or not (`caret` says why not); and (#313) an element click on a page's
-  /// text field outside Chromium, whose ladder chose an action.
+  /// AXFocused, with the caret placed at the point or not (`caret` says why not).
   enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea, focusField, focusedNotPlaced }
   let plan: ElementClickPlan
   let reason: Reason
@@ -71,10 +70,13 @@ struct ElementClickRecord: Equatable {
   var walk: [String]? = nil
   var walkStopped: String? = nil
   /// `focusField` and `focusedNotPlaced` only: the caret's offset placed (`placed`), or why it was not (a
-  /// `CaretNotPlaced` case name).
+  /// `CaretNotPlaced` case name). #313, a WebKit page's field whose caret was written: `placed`, or why the point gave no
+  /// offset (the caret then written at 0).
   var caret: String? = nil
-  /// #313, a text-entry element's action (`advertised`): what its focus read-back found (a `FocusReadback` case name).
+  /// #313, a text-entry element's action (`advertised`): what its last focus read-back found (a `FocusReadback` case
+  /// name), and after which step (`focusStep` "press" | "selection", the caret's write on a WebKit page).
   var focus: String? = nil
+  var focusStep: String? = nil
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["reason": reason.rawValue]
@@ -89,6 +91,7 @@ struct ElementClickRecord: Equatable {
     if let walkStopped { wire["walkStopped"] = walkStopped }
     if let caret { wire["caret"] = caret }
     if let focus { wire["focus"] = focus }
+    if let focusStep { wire["focusStep"] = focusStep }
     return wire
   }
 }

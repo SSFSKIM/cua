@@ -394,8 +394,14 @@ extension Engine {
   /// was the hit, and the caret (`elementClick` reason `focusField` or `focusedNotPlaced`).
   func webAreaFocus(_ hit: AXUIElement, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
                     context: ExecutionContext, stalePoint: StalePointGate<AXUIElement>? = nil) -> (inout InputMeta) throws -> Void {
+    let role: (AXUIElement) -> String? = { attribute($0, kAXRoleAttribute) as? String }
+    func focusTarget(_ walk: inout [String]) -> Result<WebAreaFocusTarget<AXUIElement>, WebAreaRefusal> {
+      webAreaFocusTarget(hit, role: role, subrole: subroleRead, parent: { elementAttribute($0, kAXParentAttribute) },
+                         editable: { attribute($0, "AXEditableAncestor") != nil },
+                         focusSettable: { AXOps.live.isSettable($0, kAXFocusedAttribute) }, walk: &walk)
+    }
     var walk: [String] = []
-    let resolution = liveFocusTarget(hit, walk: &walk)
+    let resolution = focusTarget(&walk)
     guard case .success(let target) = resolution else {
       let why: WebAreaRefusal
       if case .failure(let refusal) = resolution { why = refusal } else { why = .incompleteAncestry }
@@ -406,24 +412,6 @@ extension Engine {
         throw backgroundClickRefused(app.displayName)
       }
     }
-    return webAreaFocusing(hit, target: target, walk: walk, point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding,
-                           context: context, stalePoint: stalePoint)
-  }
-
-  /// `webAreaFocusTarget` over the live tree, from `hit`.
-  func liveFocusTarget(_ hit: AXUIElement, walk: inout [String]) -> Result<WebAreaFocusTarget<AXUIElement>, WebAreaRefusal> {
-    webAreaFocusTarget(hit, role: { attribute($0, kAXRoleAttribute) as? String }, subrole: subroleRead,
-                       parent: { elementAttribute($0, kAXParentAttribute) }, editable: { attribute($0, "AXEditableAncestor") != nil },
-                       focusSettable: { AXOps.live.isSettable($0, kAXFocusedAttribute) }, walk: &walk)
-  }
-
-  /// `webAreaFocus` once the walk from `hit` resolved `target`: the focus, the caret and the record. `awaitsBoxes` false
-  /// (#313, a page outside Chromium) never waits for character boxes: the wait is for Chromium's complete accessibility
-  /// mode.
-  func webAreaFocusing(_ hit: AXUIElement, target: WebAreaFocusTarget<AXUIElement>, walk: [String], point: CGPoint, windowID: CGWindowID?,
-                       app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
-                       stalePoint: StalePointGate<AXUIElement>? = nil, awaitsBoxes: Bool = true) -> (inout InputMeta) throws -> Void {
-    let role: (AXUIElement) -> String? = { attribute($0, kAXRoleAttribute) as? String }
     let field = target.element
     return { [self] meta in
       // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is focused.
@@ -438,8 +426,8 @@ extension Engine {
       let sleep: (Double) -> Void = { waited = true; usleep(UInt32($0 * 1000)) }
       let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
       let freshSince = webAccessibility.freshSince(pid: appPid, launched: generation)
-      let fresh = awaitsBoxes && webAreaAccessibilityFresh(freshSince: freshSince,
-                                                           now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
+      let fresh = webAreaAccessibilityFresh(freshSince: freshSince,
+                                            now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
       let outcome = try focusPlacingCaret(
         app: app.displayName, secure: target.secure, fresh: fresh, freshSince: freshSince, beforeMutating: guarding.checkInFlight,
         beforeCaret: {
@@ -469,7 +457,7 @@ extension Engine {
         sameTarget: {
           // The hit still resolves, as the click first resolved it, to the element focused, and still not a secure one.
           var again: [String] = []
-          guard case .success(let now) = liveFocusTarget(hit, walk: &again) else { return false }
+          guard case .success(let now) = focusTarget(&again) else { return false }
           return CFEqual(now.element, field) && !now.secure
         },
         valueLength: { (attribute(field, kAXValueAttribute) as? String).map { ($0 as NSString).length } },

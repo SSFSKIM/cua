@@ -14,6 +14,7 @@
 import {spawn} from 'node:child_process';
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
+import {firefoxProfile, FIREFOX, placePid} from '../probe-287/browser.mjs';
 import {sleep, sh, osa, fileName, frontmost, lean, centre, startEngine, stopEngine, frontTextEdit, axTool, answer, config, writeResults} from './lib.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-313 native: runs only on a GitHub-hosted runner'); process.exit(2); }
@@ -50,6 +51,15 @@ CELLS.push({label: 'textedit/shared/text', kind: 'textedit', desktop: 'shared'})
 CELLS.push({label: 'finder/shared/rename', kind: 'finder-rename', desktop: 'shared'});
 CELLS.push({label: 'finder/shared/search', kind: 'finder-search', desktop: 'shared'});
 CELLS.push({label: 'settings/shared/search', kind: 'settings', desktop: 'shared'});
+// The follow-up (run 42402098567 reached neither Finder field, and no native field advertised AXPress): Finder's rename
+// field with Finder in front (its field ends when Finder resigns); a Finder window's search, expanded first by an
+// element click on its toolbar button; Safari's and Firefox's own address fields (text entry outside any web area).
+CELLS.push({label: 'x/finder/front/rename', kind: 'finder-rename', desktop: 'shared', finderFront: true});
+CELLS.push({label: 'x/finder/shared/search-expanded', kind: 'finder-search', desktop: 'shared', expand: true});
+CELLS.push({label: 'x/safari/shared/address', kind: 'safari-address', desktop: 'shared'});
+CELLS.push({label: 'x/safari/dedicated/address', kind: 'safari-address', desktop: 'dedicated'});
+CELLS.push({label: 'x/firefox/shared/address', kind: 'firefox-address', desktop: 'shared'});
+CELLS.push({label: 'x/firefox/dedicated/address', kind: 'firefox-address', desktop: 'dedicated'});
 const RUN = CELLS.filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
 
 // The target app and its node for a cell: {pid, find, type (whether type_text is harmless), events?, cleanup}.
@@ -85,12 +95,35 @@ async function setUp(spec, row) {
       row.rename = osa('tell application "System Events" to tell process "Finder" to key code 36');
       await sleep(1200);
     }
-    row.textEdit = await frontTextEdit(TEXT_DOC);
+    if (spec.finderFront) row.front = frontmost(); else row.textEdit = await frontTextEdit(TEXT_DOC);
     const find = spec.kind === 'finder-rename'
       ? n => n.role === 'AXTextField' && /probe313/.test(String(n.value ?? ''))
       : n => n.role === 'AXSearchField' || (n.role === 'AXTextField' && /search/i.test(`${n.subrole ?? ''} ${label(n)}`));
     return {pid: pidOf('Finder'), find, type: spec.kind === 'finder-search',
+      expand: spec.expand ? n => n.role === 'AXButton' && /search/i.test(`${n.subrole ?? ''} ${label(n)}`) : null,
       cleanup: async () => { osa('tell application "System Events" to tell process "Finder" to key code 53'); osa('tell application "Finder" to close every window'); await sleep(500); }};
+  }
+  if (spec.kind === 'safari-address' || spec.kind === 'firefox-address') {
+    // A loaded local page (no field of its own), so the focus is on the page, not on the address field.
+    const page = join(OUT, 'blank.html');
+    writeFileSync(page, '<!doctype html><title>probe313 blank</title><p>probe313 blank page</p>\n');
+    const frame = {x: 400, y: 30, w: 620, h: 600};
+    let pid, child = null;
+    if (spec.kind === 'safari-address') {
+      sh('pkill', ['-x', 'Safari']);
+      await sleep(1500);
+      sh('open', ['-a', 'Safari', `file://${page}`]);
+      for (let i = 0; i < 80 && !pid; i++) { await sleep(250); pid = pidOf('Safari'); }
+    } else {
+      const profile = firefoxProfile(join(OUT, `ff-${fileName(spec.label)}`));
+      child = spawn(FIREFOX, ['-profile', profile, '-no-remote', '-new-instance', `file://${page}`], {stdio: 'ignore'});
+      pid = child.pid;
+    }
+    for (let i = 0; i < 40 && placePid(pid, frame) !== 0; i++) await sleep(250);
+    await sleep(3000);
+    row.textEdit = await frontTextEdit(TEXT_DOC);
+    return {pid, find: n => ['AXTextField', 'AXComboBox', 'AXSearchField'].includes(n.role) && n.frame && n.frame.y < 140, type: true,
+      cleanup: async () => { if (child) { child.kill('SIGTERM'); await sleep(1500); if (child.exitCode === null) child.kill('SIGKILL'); } else sh('pkill', ['-x', 'Safari']); await sleep(1000); }};
   }
   if (spec.kind === 'settings') {
     sh('open', ['-a', 'System Settings']);
@@ -118,9 +151,21 @@ async function cell(spec) {
     const state = await w.execute('get_app_state', {pid: target.pid});
     const observedAt = Date.now();
     if (state.error) { row.problem = {getAppState: state.error}; return row; }
-    const sky = state.result;
+    let sky = state.result;
     writeFileSync(join(OUT, `skyshot-${fileName(spec.label)}.json`), JSON.stringify(sky, null, 1));
     row.window = sky.window;
+    if (target.expand) {
+      // The field shows only once its toolbar button is clicked: that click by token first, then a new observation.
+      const button = sky.nodes.find(target.expand);
+      if (!button) { row.problem = 'no button to expand'; return row; }
+      row.expandNode = {role: button.role, subrole: button.subrole, title: button.title, actions: button.actions};
+      row.expand = answer(await w.execute('click', {pid: target.pid, element: button.token}, {lineage: sky.lineage}));
+      await sleep(1500);
+      const again = await w.execute('get_app_state', {pid: target.pid});
+      if (again.error) { row.problem = {getAppStateAfterExpand: again.error}; return row; }
+      sky = again.result;
+      writeFileSync(join(OUT, `skyshot-${fileName(spec.label)}-expanded.json`), JSON.stringify(sky, null, 1));
+    }
     const node = sky.nodes.find(target.find);
     if (!node?.frame) {
       row.problem = 'no target node with a frame';

@@ -18,6 +18,8 @@ use crate::x11::X11;
 pub struct Pacing {
     /// After each new key edge (the pinned build's 33 ms).
     pub key: Duration,
+    /// Between a desktop pointer path's points (`desktop.rs` `PATH_STEP`; `--path-step-ms` for measurement only).
+    pub path: Duration,
     /// Before a session's `FocusOut`, on the request path, for measurement only (`--teardown-ms`: 0.3.0's wait, the
     /// vendor's 100 ms there); 0, the default, sends it as the request's input ends (`route.rs`).
     pub teardown: Duration,

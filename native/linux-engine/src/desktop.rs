@@ -18,8 +18,8 @@ use crate::x11::X11;
 /// the harness reads on any family when removed, idle or at twice the load (M4's T9, the wait rule; evidence
 /// `m4/waits/`). The points stay the vendor's, the leading one at the pointer's own position included: the server
 /// delivers a motion there as it does any other (task 64's motion listener), so leaving it out, as the newest build
-/// does, would change what an application receives.
-const PATH_STEP: Duration = Duration::ZERO;
+/// does, would change what an application receives. `--path-step-ms` sets it for measurement only.
+pub const PATH_STEP: Duration = Duration::ZERO;
 
 /// The points a desktop move visits from `start` to `end` (behaviour §10.2): none to interpolate when already there
 /// (one motion to the end); else n = ⌈distance / 160 × 10⌉ clamped to 1–10, the points start + d·i/n for i = 0…n
@@ -48,6 +48,8 @@ pub struct Desktop {
     pub keys: Keys,
     /// After each new key edge (Design: no pacing).
     pub key_pace: Duration,
+    /// Between a pointer path's points ([`PATH_STEP`]).
+    pub path_step: Duration,
     /// How long the request's foreground pointer input waited for its window to be on top at its points
     /// (`Route::on_top_at`), for the `--stats` line.
     pub on_top_waited: Option<Duration>,
@@ -59,10 +61,11 @@ fn fake(x: &X11, kind: u8, detail: u8, root: u32, rx: i16, ry: i16) -> Result<()
 }
 
 impl Desktop {
-    pub fn new(key_pace: Duration) -> Desktop {
+    pub fn new(key_pace: Duration, path_step: Duration) -> Desktop {
         Desktop {
             keys: Keys::new(Vec::new()),
             key_pace,
+            path_step,
             on_top_waited: None,
         }
     }
@@ -147,10 +150,10 @@ impl Desktop {
         fake(x, MOTION_NOTIFY_EVENT, 1, x11rb::NONE, dx, dy)
     }
 
-    /// `move_path`: from wherever the pointer is to the point, through [`path_points`], with [`PATH_STEP`] between
-    /// points.
-    pub fn move_path(x: &X11, rx: i16, ry: i16) -> Result<()> {
-        Self::move_path_paced(x, rx, ry, PATH_STEP)
+    /// `move_path`: from wherever the pointer is to the point, through [`path_points`], with the path's step
+    /// ([`PATH_STEP`]) between points.
+    pub fn move_path(&self, x: &X11, rx: i16, ry: i16) -> Result<()> {
+        Self::move_path_paced(x, rx, ry, self.path_step)
     }
 
     /// [`Desktop::move_path`]'s points with `step` between them: a held `drag_handle` move, paced by its family.

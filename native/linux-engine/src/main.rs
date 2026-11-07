@@ -48,7 +48,7 @@ use x11::Retention;
 const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop shared|dedicated]
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed|quiet]
-       [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
+       [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--path-step-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
        [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
@@ -74,6 +74,7 @@ fn default_config() -> Config {
         capture_wait: CaptureWait::Damage,
         pacing: input::Pacing {
             key: Duration::ZERO,
+            path: desktop::PATH_STEP,
             teardown: Duration::ZERO,
             exit_settle: settle::EXIT_SETTLE,
             paste_settle: settle::PASTE_SETTLE,
@@ -191,6 +192,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             "--paste-settle-ms" => cfg.pacing.paste_settle = Duration::from_millis(number(value, arg)?),
             "--paste-click-settle-ms" => cfg.pacing.paste_click_settle = Duration::from_millis(number(value, arg)?),
             "--key-pace-ms" => cfg.pacing.key = Duration::from_millis(number(value, arg)?),
+            "--path-step-ms" => cfg.pacing.path = Duration::from_millis(number(value, arg)?),
             "--drag-step-ms" => fixed_drag(&mut cfg).step = Duration::from_millis(number(value, arg)?),
             "--drag-step-us" => fixed_drag(&mut cfg).step = Duration::from_micros(number(value, arg)?),
             "--drag-press-dwell-ms" => fixed_drag(&mut cfg).press = Duration::from_millis(number(value, arg)?),
@@ -387,6 +389,22 @@ mod tests {
             panic!()
         };
         assert_eq!(off.focus_ack, Duration::ZERO, "the control: no wait");
+    }
+
+    #[test]
+    fn a_desktop_path_has_no_pause_between_its_points_unless_measured() {
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.pacing.path, Duration::ZERO, "M4's T9");
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--path-step-ms", "8"])) else {
+            panic!()
+        };
+        assert_eq!(
+            cfg.pacing.path,
+            Duration::from_millis(8),
+            "the vendor's, for measurement"
+        );
     }
 
     #[test]

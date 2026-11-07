@@ -908,7 +908,7 @@ impl Engine {
                 let window = self.x.client_at(px, py);
                 let pacing = self.drag_pacing_for(window);
                 self.handle_pacing.start(pacing);
-                Desktop::move_path(&self.x, px, py)?;
+                self.inputs.desktop.move_path(&self.x, px, py)?;
                 Desktop::motion(&self.x, px, py)?;
                 Desktop::button(&self.x, 1, true)?;
                 std::thread::sleep(pacing.press);

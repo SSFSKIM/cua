@@ -187,7 +187,7 @@ impl Inputs {
         Inputs {
             pacing,
             sessions: HashMap::new(),
-            desktop: Desktop::new(pacing.key),
+            desktop: Desktop::new(pacing.key, pacing.path),
             holds: Holds::default(),
             request: Value::Null,
             sent: Vec::new(),
@@ -464,7 +464,7 @@ impl Route<'_> {
     pub fn place(&mut self, x: &X11, rx: i16, ry: i16) -> Result<()> {
         match self {
             Route::Window(session) => session.move_to(x, rx, ry),
-            Route::Desktop(..) => Desktop::move_path(x, rx, ry),
+            Route::Desktop(desktop, _) => desktop.move_path(x, rx, ry),
         }
     }
 

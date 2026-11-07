@@ -3,7 +3,8 @@
 // fresh browser: an observation by --engine for the field's frame, then scripts/probe-283/ax.swift `act` at the field's
 // centre with one write (none, focus = AXFocused true, select = AXSelectedTextRange {0, 0}, press = AXPress), its poll
 // of the field's AXFocused, the application's focused element and the front window's owner for 1.5 s, the window order
-// before and after; the page's focus counters; and the frontmost app.
+// before and after; the page's focus counters; and the frontmost app. Then a new engine process's type_text of a marker
+// (type_text is unchanged by the fix): where it lands, and whether it raises the browser.
 //
 //   node scripts/probe-313/raw.mjs --engine <cua-engine> --ax283 <p283-ax> --out <dir>
 import {spawn} from 'node:child_process';
@@ -24,10 +25,11 @@ const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>
 <body><p><b>probe313 raw</b></p><p><input id="field" type="text" aria-label="Probe field" size="40" value="alpha"></p>
 <p><textarea id="notes" aria-label="Probe notes" rows="8" cols="60"></textarea></p>
 <script>(() => { const c = {textFocus: 0, fieldFocus: 0, windowFocus: 0, pointerdown: 0}; let seq = 0;
-const send = () => { seq += 1; navigator.sendBeacon('/counters', JSON.stringify({seq, counts: c, active: document.activeElement ? document.activeElement.id || document.activeElement.tagName : null, focused: document.hasFocus()})); };
+const send = () => { seq += 1; navigator.sendBeacon('/counters', JSON.stringify({seq, counts: c, notes: document.getElementById('notes').value, field: document.getElementById('field').value, active: document.activeElement ? document.activeElement.id || document.activeElement.tagName : null, focused: document.hasFocus()})); };
 document.getElementById('notes').addEventListener('focus', () => { c.textFocus += 1; send(); });
 document.getElementById('field').addEventListener('focus', () => { c.fieldFocus += 1; send(); });
 document.addEventListener('pointerdown', () => { c.pointerdown += 1; send(); }, true);
+document.addEventListener('input', () => send(), true);
 window.addEventListener('focus', e => { if (e.target === window) { c.windowFocus += 1; send(); } });
 addEventListener('load', () => { navigator.sendBeacon('/ready'); send(); }); })();</script></body></html>`;
 let latest = null, ready = false;
@@ -71,6 +73,12 @@ async function cell(spec) {
     await sleep(1000);
     row.after = latest;
     row.frontAfter = frontmost();
+    engine = await startEngine(ENGINE, join(OUT, 's'), `${spec.label}-t`);
+    await engine.wire.call('ping', {clientApiVersion: 'cua-engine-1'});
+    const typed = await engine.wire.execute('type_text', {pid: browser.pid, text: 'QZ'});
+    row.typed = {answer: typed.error ? (typed.error.errorName ?? typed.error.code) : 'success', route: (typed.error?.meta ?? typed.result?.meta)?.inputRoute ?? null};
+    await sleep(1500);
+    row.typed.notes = latest?.notes; row.typed.field = latest?.field; row.typed.active = latest?.active; row.typed.frontAfter = frontmost();
   } catch (e) {
     row.exception = String(e?.stack || e).slice(0, 3000);
   } finally {
@@ -89,6 +97,7 @@ for (const spec of CELLS) {
   writeResults(OUT, cfg, rows);
   const a = row.act ?? {};
   log(`${row.label}: writes=${JSON.stringify(a.writes)} target=${JSON.stringify(a.target)} front ${row.frontBefore} -> ${row.frontAfter} order ${JSON.stringify(a.orderBefore?.frontOwner)} -> ${JSON.stringify(a.orderAfter?.frontOwner)} pidIndex ${a.orderBefore?.pidIndex} -> ${a.orderAfter?.pidIndex}`);
+  log(`${row.label}: typed ${JSON.stringify(row.typed)}`);
   log(`${row.label}: poll ${JSON.stringify(a.poll)} page ${JSON.stringify(row.before?.counts)} -> ${JSON.stringify(row.after?.counts)} active=${row.after?.active}`);
   if (row.exception || row.problem) log(`${row.label}: PROBLEM ${JSON.stringify(row.problem ?? '')} ${row.exception ?? ''}`);
 }

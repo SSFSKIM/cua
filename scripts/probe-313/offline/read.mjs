@@ -44,7 +44,7 @@ function raw(r) {
     const a = c.act ?? {}, w = (a.writes ?? []).map(x => `${x.op}:${x.error}`).join(',') || 'none';
     const fronts = [...new Set((a.poll ?? []).map(p => p.frontOwner))].join('>');
     const lastPoll = (a.poll ?? []).at(-1) ?? {};
-    console.log(`    ${c.label.padEnd(18)} writes=${w.padEnd(12)} focusedEnd=${lastPoll.focused ?? '-'} appFocus=${lastPoll.appFocusRole ?? '-'} settable=${JSON.stringify(a.target?.settable ?? null)} front=${c.frontBefore?.replace('com.apple.', '')}->${c.frontAfter?.replace('com.apple.', '')} pollFronts=${fronts || '-'} pidIndex=${a.orderBefore?.pidIndex}->${a.orderAfter?.pidIndex} page=${JSON.stringify(c.after?.counts)} active=${c.after?.active}${prob(c)}`);
+    console.log(`    ${c.label.padEnd(18)} writes=${w.padEnd(12)} focusedEnd=${lastPoll.focused ?? '-'} appFocus=${lastPoll.appFocusRole ?? '-'} settable=${JSON.stringify(a.target?.settable ?? null)} front=${c.frontBefore?.replace('com.apple.', '')}->${c.frontAfter?.replace('com.apple.', '')} pollFronts=${fronts || '-'} pidIndex=${a.orderBefore?.pidIndex}->${a.orderAfter?.pidIndex} page=${JSON.stringify(c.after?.counts)} active=${c.after?.active} typed=${c.typed ? `${c.typed.answer}:notes=${JSON.stringify(c.typed.notes)},field=${JSON.stringify(c.typed.field)},front=${c.typed.frontAfter?.replace('com.apple.', '')}` : '-'}${prob(c)}`);
   }
 }
 

@@ -10,8 +10,9 @@
 //   e/end_task       main's engine: observe, 3 s of samples, endTask, 3 s of samples (does the engine's release drop it?)
 //   e/grace          observe, the connection kept open and idle, samples every 2 s for 36 s (the 30 s grace release)
 //   e/sigterm        observe, 3 s, the engine's SIGTERM, 3 s of samples
-//   e/first-click    observe, then at once a coordinate click on the editor's first line (shared mode): the answer and
-//                    its meta (the element route or a refusal, #282/#288's web-area rules in Electron)
+//   c/<mode>/<target>  observe, then a coordinate click (shared or dedicated mode) on the explorer's other.txt, the
+//                    editor's text or the New File button: the answer, its meta (#282/#288's web-area rules in Electron)
+//                    and its effect (the window's title, the focused element)
 //   node scripts/probe-287/electron.mjs --engine <cua-engine> --ax <axrecon> --out <dir> [--cells <prefix,…>]
 import {spawn, spawnSync} from 'node:child_process';
 import {createConnection} from 'node:net';
@@ -98,7 +99,7 @@ async function launchCode(label) {
   await sleep(1000);
   return {child, pid: child.pid, launchedAt, stop: async () => { if (child.exitCode === null) { child.kill('SIGTERM'); await sleep(2500); if (child.exitCode === null) child.kill('SIGKILL'); } await sleep(500); }};
 }
-const sampleOnce = (pid, from) => { const s = ax('state', pid); return {t: Date.now() - from, manual: s.manual, eui: s.eui, walked: s.walked, webArea: s.webAreaElements ?? null, ms: s.ms}; };
+const sampleOnce = (pid, from) => { const s = ax('state', pid); return {t: Date.now() - from, manual: s.manual, eui: s.eui, walked: s.walked, webArea: s.webAreaElements ?? null, ms: s.ms, activationPoint: s.activationPoint ?? null}; };
 async function samples(pid, from, ms, every) {
   const out = [];
   for (let k = 0; Date.now() < from + ms; k++) { const due = from + k * every - Date.now(); if (due > 0) await sleep(due); out.push(sampleOnce(pid, from)); }
@@ -114,7 +115,14 @@ const CELLS = [
   {label: 'e/end_task', kind: 'end'},
   {label: 'e/grace', kind: 'grace'},
   {label: 'e/sigterm', kind: 'sigterm'},
-  {label: 'e/first-click', kind: 'click'},
+  // Shared mode (the ping names none) and dedicated, 3 s after the observation (complete mode in place): the explorer's
+  // other.txt (its effect: the window's title names it), the editor's text, the explorer's New File button.
+  {label: 'c/shared/explorer', kind: 'click', target: 'explorer', waitMs: 3000},
+  {label: 'c/shared/editor', kind: 'click', target: 'editor', waitMs: 3000},
+  {label: 'c/shared/button', kind: 'click', target: 'button', waitMs: 3000},
+  {label: 'c/shared/explorer-fresh', kind: 'click', target: 'explorer'},
+  {label: 'c/dedicated/explorer', kind: 'click', target: 'explorer', waitMs: 3000, desktop: 'dedicated'},
+  {label: 'c/dedicated/editor', kind: 'click', target: 'editor', waitMs: 3000, desktop: 'dedicated'},
 ].filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
 
 const rows = [];
@@ -139,7 +147,7 @@ for (const spec of CELLS) {
     } else {
       engine = await startEngine(spec.label);
       const w = engine.wire;
-      row.ping = (await w.call('ping', {clientApiVersion: 'cua-engine-1'})).result ?? null;
+      row.ping = (await w.call('ping', {clientApiVersion: 'cua-engine-1', ...(spec.desktop ? {desktop: spec.desktop} : {})})).result ?? null;
       const shots = join(OUT, `shots-${fileName(spec.label)}`); mkdirSync(shots, {recursive: true});
       const from = Date.now();
       const o = await w.execute('get_app_state', {pid: code.pid, includeScreenshot: true, outputDirectory: shots});
@@ -155,20 +163,34 @@ for (const spec of CELLS) {
         row.idle = await samples(code.pid, at, 36_000, 2000);
       } else if (spec.kind === 'click') {
         const sky = o.result;
-        const editor = sky.nodes.filter(n => n.frame && /probe287 notes/.test(`${n.title ?? ''} ${n.description ?? ''} ${n.value ?? ''}`)).sort((a, b) => b.depth - a.depth)[0]
-          ?? sky.nodes.find(n => n.role === 'AXTextArea' && n.frame);
-        if (!editor?.frame) { row.problem = 'no editor node'; row.roles = [...new Set(sky.nodes.map(n => n.role))]; }
+        writeFileSync(join(OUT, `nodes-${fileName(spec.label)}.json`), JSON.stringify(sky.nodes.map(n => ({role: n.role, subrole: n.subrole, title: n.title, description: n.description,
+          value: typeof n.value === 'string' ? n.value.slice(0, 80) : n.value, depth: n.depth, frame: n.frame, actions: n.actions})), null, 0));
+        const text = n => `${n.title ?? ''} ${n.description ?? ''} ${typeof n.value === 'string' ? n.value : ''}`;
+        const within = n => n.frame && n.frame.width > 4 && n.frame.height > 4 && n.frame.x >= sky.window.frame.x && n.frame.y >= sky.window.frame.y;
+        const deepest = ns => ns.filter(within).sort((a, b) => b.depth - a.depth)[0];
+        const node = spec.target === 'explorer' ? deepest(sky.nodes.filter(n => /other\.txt/.test(text(n)) && n.role !== 'AXWindow'))
+          : spec.target === 'editor' ? deepest(sky.nodes.filter(n => /first line of the editor/.test(text(n))))
+          : spec.target === 'button' ? deepest(sky.nodes.filter(n => n.role === 'AXButton' && /new file/i.test(text(n))))
+          : null;
+        row.titleBefore = osa(`tell application "System Events" to get name of window 1 of (first process whose unix id is ${code.pid})`).out;
+        if (!node?.frame) { row.problem = `no ${spec.target} node`; row.roles = [...new Set(sky.nodes.map(n => n.role))]; }
         else {
           const wf = sky.window.frame, scale = sky.screenshot.width / wf.width;
-          const p = {x: editor.frame.x + Math.min(40, editor.frame.width / 2), y: editor.frame.y + Math.min(10, editor.frame.height / 2)};
+          const p = {x: node.frame.x + Math.min(30, node.frame.width / 2), y: node.frame.y + node.frame.height / 2};
           const px = {x: Math.round((p.x - wf.x) * scale), y: Math.round((p.y - wf.y) * scale)};
-          row.target = {role: editor.role, title: editor.title, frame: editor.frame, px};
+          row.target = {role: node.role, title: node.title, description: node.description, frame: node.frame, px};
+          if (spec.waitMs) await sleep(spec.waitMs);
           const started = Date.now();
           const r = await w.execute('click', {pid: code.pid, x: px.x, y: px.y});
           row.clickMs = Date.now() - started;
+          row.clickAfterObservationMs = started - at;
           row.click = r.error ? {error: r.error} : {meta: r.result?.meta ?? null, note: r.result?.note ?? null};
-          await sleep(1000);
+          await sleep(1500);
           row.frontAfter = frontmost();
+          row.titleAfter = osa(`tell application "System Events" to get name of window 1 of (first process whose unix id is ${code.pid})`).out;
+          const later = await w.execute('get_app_state', {pid: code.pid});
+          const f = later.result?.nodes?.find(n => n.token === later.result.focused);
+          row.focusedAfter = f ? {role: f.role, title: f.title, description: f.description} : null;
         }
       }
       if (spec.kind !== 'sigterm') { try { await w.call('shutdown', {}, 5000); } catch {} w.close(); }
@@ -181,6 +203,6 @@ for (const spec of CELLS) {
   }
   writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, cells: rows}, null, 1));
   const line = s => (s ?? []).map(x => `${x.t}:${x.webArea ?? '-'}/${x.walked ?? '-'}`).join(' ');
-  log(`${row.label}: front=${row.front} pre=${JSON.stringify(row.pre)} write=${JSON.stringify(row.write ?? null)} obs=${JSON.stringify(row.obs ?? null)}\n    samples ${line(row.samples)}\n    before ${line(row.before)}\n    end ${JSON.stringify(row.endTask?.result ?? row.endTask?.error ?? null)} after ${line(row.after)}\n    idle ${line(row.idle)}\n    click ${row.clickMs ?? '-'}ms ${JSON.stringify(row.click ?? null).slice(0, 900)} front=${row.frontAfter ?? '-'} ${row.problem ?? ''} ${row.exception ?? ''}`);
+  log(`${row.label}: front=${row.front} pre=${JSON.stringify(row.pre)} write=${JSON.stringify(row.write ?? null)} obs=${JSON.stringify(row.obs ?? null)}\n    samples ${line(row.samples)}\n    before ${line(row.before)}\n    end ${JSON.stringify(row.endTask?.result ?? row.endTask?.error ?? null)} after ${line(row.after)}\n    idle ${line(row.idle)}\n    click ${row.clickMs ?? '-'}ms ${JSON.stringify(row.click ?? null).slice(0, 900)} front=${row.frontAfter ?? '-'} title ${JSON.stringify(row.titleBefore ?? null)} -> ${JSON.stringify(row.titleAfter ?? null)} focused=${JSON.stringify(row.focusedAfter ?? null)} target=${JSON.stringify(row.target ?? null)} ${row.problem ?? ''} ${row.exception ?? ''}`);
 }
 process.exit(0);

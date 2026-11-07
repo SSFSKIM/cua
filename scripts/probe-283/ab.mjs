@@ -256,6 +256,8 @@ async function cell(spec) {
     row.observation = {enablementPrior: sky.timings?.enablementPrior ?? null, enablementWrite: sky.timings?.enablementWrite ?? null};
     const webArea = sky.nodes.find(n => n.role === 'AXWebArea' && /probe283/.test(`${n.title ?? ''} ${n.description ?? ''}`)) ?? sky.nodes.find(n => n.role === 'AXWebArea');
     if (!webArea?.frame) { row.problem = 'no AXWebArea node with a frame'; return row; }
+    // #287: Firefox's AXWebArea answers a zero frame; its parent scroll area is the page's viewport there.
+    if (!(webArea.frame.width > 0)) { const i = sky.nodes.indexOf(webArea); const vp = sky.nodes.slice(0, i).reverse().find(n => n.depth < webArea.depth); row.webAreaFrameZero = true; if (vp?.frame) webArea.frame = vp.frame; }
     const wf = sky.window.frame, scale = sky.screenshot.width / wf.width;
     const screen = {x: webArea.frame.x + t.p.x, y: webArea.frame.y + t.p.y};
     const x = Math.round((screen.x - wf.x) * scale), y = Math.round((screen.y - wf.y) * scale);

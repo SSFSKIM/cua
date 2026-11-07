@@ -62,7 +62,7 @@ case "$GROUP" in
     export P287_BROWSER=firefox P287_HEADS=branch
     stamp "firefox 296"; node scripts/probe-296/ab.mjs --group firefox --branch "$ENG" --main "$ENG" --app "$T/Probe296.app/Contents/MacOS/Probe296" --out "$OUT/firefox/296" ;;
   firefox-s305)
-    export P287_BROWSER=firefox P287_HEADS=branch
+    export P287_BROWSER=firefox P287_HEADS=branch P287_SWEEP_FRAMES=1
     stamp "firefox 305"; node scripts/probe-305/ab.mjs --group firefox --parts sweep --main "$ENG" --branch "$ENG" --tool "$T/probe-tool" --out "$OUT/firefox/305" ;;
   firefox-cov)
     export P287_BROWSER=firefox P287_SLOTS=2
@@ -72,6 +72,12 @@ case "$GROUP" in
   vscode-s305)
     export P287_HEADS=branch
     stamp "vscode 305"; node scripts/probe-305/ab.mjs --group vscode --parts sweep --main "$ENG" --branch "$ENG" --tool "$T/probe-tool" --out "$OUT/vscode/305" ;;
+  keys-x)
+    # #287's follow-up to the ⌘L cells: a key with no visible effect, and ⌘L closed by Escape, before the click.
+    for b in $(chromes) safari firefox; do
+      case "$b" in cft|stable) export P287_BROWSER=chrome P287_CHROME="$(bin_of "$b")" ;; *) export P287_BROWSER="$b" ;; esac
+      stamp "$b 282 x"; node scripts/probe-282/probe.mjs --main "$ENG" --branch "$ENG" --hit "$T/p282-hit" --cells x-,e-,b-shared/cmdL --out "$OUT/$b/282x"
+    done ;;
   *) echo "unknown group $GROUP"; exit 2 ;;
 esac
 stamp done

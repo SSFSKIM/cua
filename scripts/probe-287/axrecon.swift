@@ -58,6 +58,10 @@ case "state":
   out["windows"] = windows.count
   if let window = windows.first.map(prepare) {
     out["windowTitle"] = str(window, kAXTitleAttribute) ?? NSNull()
+    var ap = CGPoint.zero
+    if let v = attr(window, "AXActivationPoint"), CFGetTypeID(v) == AXValueGetTypeID(), AXValueGetValue(v as! AXValue, .cgPoint, &ap) {
+      out["activationPoint"] = ["x": Double(ap.x), "y": Double(ap.y)]
+    }
     var roles: [String: Int] = [:]
     var queue: [(AXUIElement, Int)] = [(window, 0)], head = 0
     var webAreaDepth: Int?, webArea: AXUIElement?, checkboxActions: Any = NSNull(), maxDepth = 0

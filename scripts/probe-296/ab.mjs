@@ -191,7 +191,20 @@ async function observe(w, pid, label) {
 
 // ---- the targets ---------------------------------------------------------------------------------------------------
 const centre = f => ({x: f.x + f.width / 2, y: f.y + f.height / 2});
-const hasClass = (n, c) => Array.isArray(n.domClassList) && n.domClassList.includes(c);
+// #287: Firefox exposes no AXDOMClassList; its nodes get the page's classes from their titles (each case's page holds
+// one target kind, so a title names its element there).
+const SYNTH = [[/^Elapsed /, 'label'], [/^Next to$/, 'nextto'], [/^Again$/, 'again'], [/^Pulse$/, 'pulse'], [/^Static$/, 'static'], [/^Save$/, 'save', 'relabel'],
+  [/^Keep$/, 'keep'], [/^Like \(\d+\)$/, 'like'], [/^Read the full article$/, 'lnk'], [/^Archive$/, 'vanish'], [/^Delete$/, 'delete', 'relabel'], [/^Remove$/, 'remove'],
+  [/^Feed box$/, 'feedbox'], [/^Scroll box$/, 'scrollbox']];
+const classesOf = n => {
+  if (Array.isArray(n.domClassList)) return n.domClassList;
+  const t = `${n.title || n.description || ''}`.trim();
+  const m = t.match(/^(Item|Row) (\d+)$/);
+  if (m) return [`p296-${m[1].toLowerCase()}`, `p296-${m[1].toLowerCase()}-${m[2]}`];
+  for (const [re, ...cs] of SYNTH) if (re.test(t)) return cs.map(c => `p296-${c}`);
+  return [];
+};
+const hasClass = (n, c) => classesOf(n).includes(c);
 const findReload = sky => sky.nodes.find(n => n.role === 'AXButton' && /reload/i.test(`${n.title ?? ''} ${n.description ?? ''} ${n.help ?? ''}`));
 function findTarget(sky, spec) {
   const nodes = sky.nodes;
@@ -212,7 +225,7 @@ function findTarget(sky, spec) {
   return nodes.find(n => hasClass(n, `p296-${spec.id}`));
 }
 const targetId = (n, spec) => spec.kind === 'native' ? n.identifier : spec.kind === 'toolbar' ? 'reload'
-  : (n.domClassList ?? []).find(c => /^p296-(item|row)-\d+$/.test(c))?.replace(/^p296-/, '') ?? spec.id;
+  : classesOf(n).find(c => /^p296-(item|row)-\d+$/.test(c))?.replace(/^p296-/, '') ?? spec.id;
 const holds = (f, p) => f && f.width > 0 && f.height > 0 && p.x >= f.x && p.x <= f.x + f.width && p.y >= f.y && p.y <= f.y + f.height;
 function deepest(sky, p) {
   let best = null;

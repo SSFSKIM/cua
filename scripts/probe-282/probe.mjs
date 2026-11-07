@@ -109,7 +109,7 @@ class Wire {
       this.s.write(Buffer.concat([head, bytes]));
     });
   }
-  execute(method, args) { return this.call('execute', {method, args, deadlineUnixMilliseconds: Date.now() + 80_000}); }
+  execute(method, args, extra = {}) { return this.call('execute', {method, args, deadlineUnixMilliseconds: Date.now() + 80_000, ...extra}); }
   close() { this.s.destroy(); }
 }
 
@@ -193,6 +193,16 @@ const CELLS = [
   {label: 'b-shared/cmdL+checkbox', engine: 'branch', keysFirst: 'cmd+l', target: 'checkbox'},
   {label: 'b-shared/cmdL+button', engine: 'branch', keysFirst: 'cmd+l', target: 'button'},
   {label: 'b-shared/cmdL+textarea', engine: 'branch', keysFirst: 'cmd+l', target: 'textarea'},
+  // #287: which half of a ⌘L cell's loss is the key's own effect (Safari's address field over the page) and which is the
+  // click joining the key's spent hold: a key with no visible effect first, and ⌘L closed by Escape first.
+  // #287: the element click (by token) on the page's controls, 1 s after the observation.
+  {label: 'e-shared/button-element', engine: 'branch', target: 'button', byElement: true},
+  {label: 'e-shared/checkbox-element', engine: 'branch', target: 'checkbox', byElement: true},
+  {label: 'e-shared/textarea-element', engine: 'branch', target: 'textarea', byElement: true},
+  {label: 'x-shared/F19+button', engine: 'branch', keysFirst: 'F19', target: 'button'},
+  {label: 'x-shared/F19+checkbox', engine: 'branch', keysFirst: 'F19', target: 'checkbox'},
+  {label: 'x-shared/cmdL-esc+button', engine: 'branch', keysFirst: ['cmd+l', 'Escape'], target: 'button'},
+  {label: 'x-shared/cmdL-esc+checkbox', engine: 'branch', keysFirst: ['cmd+l', 'Escape'], target: 'checkbox'},
   {label: 'geometry', engine: 'branch', geometry: true},
   // Activation or enablement (finding 1): one observation, then no activation at all for 2.5 s before the action names
   // are read and the click goes; and the checkbox's action names every 100 ms for 3 s after one observation.
@@ -303,9 +313,10 @@ async function cell(spec) {
     if (!spec.immediate) await sleep(800);
     row.before = counters();
     row.clickAfterObservationMs = Date.now() - observedAt;
-    if (spec.keysFirst) row.keys = lean(await w.execute('press_key', {pid: chrome.pid, key: spec.keysFirst}));
+    if (spec.keysFirst) for (const key of [].concat(spec.keysFirst)) { row.keys = lean(await w.execute('press_key', {pid: chrome.pid, key})); if (Array.isArray(spec.keysFirst)) await sleep(300); }
     const started = Date.now();
-    row.click = lean(await w.execute('click', {pid: chrome.pid, x, y}));
+    // #287: an element click by the node's token (route 1), where the cell asks for one.
+    row.click = lean(spec.byElement ? await w.execute('click', {pid: chrome.pid, element: node.token}, {lineage: sky.lineage}) : await w.execute('click', {pid: chrome.pid, x, y}));
     row.clickMs = Date.now() - started;
     row.hitAfter = json(sh(HIT, [String(chrome.pid), String(row.point.screen.x), String(row.point.screen.y)]));
     await sleep(2500);

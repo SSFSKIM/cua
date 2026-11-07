@@ -24,7 +24,7 @@ jobs:
       matrix:
         rep: [1, 2]
         # A push runs the groups named here.
-        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-s296","chrome-s305","chrome-cov-a","chrome-cov-b","chrome-cov-c","firefox-a","firefox-s296","firefox-s305","firefox-cov","vscode-a","vscode-s305"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["keys-x","firefox-a","firefox-s296","firefox-s305","vscode-a"]') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -40,6 +40,7 @@ jobs:
             chrome-*) bash scripts/probe-287/install.sh chrome ;;
             firefox-*) bash scripts/probe-287/install.sh firefox ;;
             vscode*) bash scripts/probe-287/install.sh vscode ;;
+            keys-*) bash scripts/probe-287/install.sh chrome firefox ;;
             *) bash scripts/probe-287/install.sh ;;
           esac
       - name: Build main's engine and the tools

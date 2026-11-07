@@ -253,7 +253,9 @@ function sweepPicks(sky) {
   for (const [role, , , frame, sh] of sky.probeRecord ?? []) if (frame && sh) shown.set(`${role}|${Math.round(frame.x)}|${Math.round(frame.y)}|${Math.round(frame.width)}|${Math.round(frame.height)}`, sh);
   const visible = n => {
     if (!n.frame) return null;
-    const s = shown.get(`${n.role}|${Math.round(n.frame.x)}|${Math.round(n.frame.y)}|${Math.round(n.frame.width)}|${Math.round(n.frame.height)}`);
+    // #287 (P287_SWEEP_FRAMES): a node the record shows nothing of is picked by its own frame, so a browser whose record
+    // clips its page away (Firefox's zero-frame AXWebArea) still has its page controls swept.
+    const s = shown.get(`${n.role}|${Math.round(n.frame.x)}|${Math.round(n.frame.y)}|${Math.round(n.frame.width)}|${Math.round(n.frame.height)}`) ?? (process.env.P287_SWEEP_FRAMES ? n.frame : undefined);
     if (!s || s.width < 10 || s.height < 10) return null;
     if (s.y < wf.y || s.y + s.height > wf.y + wf.height || s.x < wf.x || s.x + s.width > wf.x + wf.width) return null;
     return s;
@@ -281,7 +283,7 @@ function refind(sky, p) {
 }
 function shownOf(sky, n) {
   for (const [role, , , frame, sh] of sky.probeRecord ?? []) if (role === n.role && frame && sh && Math.abs(frame.x - n.frame.x) < 0.5 && Math.abs(frame.y - n.frame.y) < 0.5 && Math.abs(frame.width - n.frame.width) < 0.5 && Math.abs(frame.height - n.frame.height) < 0.5) return sh;
-  return null;
+  return process.env.P287_SWEEP_FRAMES ? n.frame : null;
 }
 const EDGES = ['top', 'right', 'bottom', 'left'];
 const edgePoint = (s, edge) => edge === 'top' ? {x: s.x + s.width / 2, y: s.y + 2} : edge === 'bottom' ? {x: s.x + s.width / 2, y: s.y + s.height - 2}

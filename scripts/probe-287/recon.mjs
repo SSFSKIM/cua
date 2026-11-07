@@ -104,15 +104,8 @@ const CODE_APP = '/Applications/Visual Studio Code.app';
 const plist = (app, key) => sh('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, `${app}/Contents/Info.plist`]).out;
 const chromeArgs = (dir, url) => [`--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', '--disable-search-engine-choice-screen',
   '--window-position=400,30', '--window-size=620,720', url];
-function firefoxProfile(dir, force) {
-  mkdirSync(dir, {recursive: true});
-  const prefs = {'browser.shell.checkDefaultBrowser': false, 'browser.aboutwelcome.enabled': false, 'browser.startup.homepage_override.mstone': 'ignore',
-    'startup.homepage_welcome_url': '', 'datareporting.policy.dataSubmissionEnabled': false, 'datareporting.policy.firstRunURL': '',
-    'toolkit.telemetry.reportingpolicy.firstRun': false, 'app.update.disabledForTesting': true, 'browser.sessionstore.resume_from_crash': false,
-    'browser.translations.automaticallyPopup': false, ...(force ? {'accessibility.force_disabled': -1} : {})};
-  writeFileSync(join(dir, 'user.js'), Object.entries(prefs).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join('\n') + '\n');
-  return dir;
-}
+import {firefoxProfile as profileOf} from './browser.mjs';
+function firefoxProfile(dir, force) { process.env.P287_FIREFOX_A11Y = force ? 'force' : ''; return profileOf(dir); }
 const kill = async child => { if (child && child.exitCode === null) { child.kill('SIGTERM'); await sleep(2500); if (child.exitCode === null) child.kill('SIGKILL'); } };
 const TARGETS = {
   cft: {app: '/Applications/Google Chrome for Testing.app', launch: async () => spawn(CFT, chromeArgs(join(OUT, 'p-cft'), URL_), {stdio: 'ignore'})},
@@ -132,7 +125,7 @@ const TARGETS = {
   }},
 };
 
-const summary = s => s && !s.error ? {eui: s.eui, manual: s.manual, listsEUI: s.listsEUI, listsManual: s.listsManual, windows: s.windows, walked: s.walked,
+const summary = s => s && !s.error ? {windowTitle: s.windowTitle, eui: s.eui, manual: s.manual, listsEUI: s.listsEUI, listsManual: s.listsManual, windows: s.windows, walked: s.walked,
   webAreaDepth: s.webAreaDepth, webAreaElements: s.webAreaElements ?? null, checkboxActions: s.checkboxActions, ms: s.ms, roles: s.roles} : s;
 const results = [];
 const config = {imageOS: process.env.ImageOS ?? null, imageVersion: process.env.ImageVersion ?? null, macOS: sh('sw_vers', []).out.replace(/\s+/g, ' '),
@@ -167,6 +160,7 @@ for (const [name, t] of Object.entries(TARGETS)) {
     const obs = (o, ms) => o.error ? {error: o.error} : {ms, nodes: o.result.nodes.length, roles: Object.fromEntries([...new Set(o.result.nodes.map(n => n.role))].map(r => [r, o.result.nodes.filter(n => n.role === r).length])),
       checkbox: o.result.nodes.find(n => n.role === 'AXCheckBox')?.actions ?? null, webAreas: o.result.nodes.filter(n => n.role === 'AXWebArea').length, timings: o.result.timings, truncated: o.result.truncated ?? null};
     row.obs1 = obs(o1, at - from);
+    if (!o1.error) row.obs1Nodes = o1.result.nodes.slice(0, 80).map(n => `${'  '.repeat(Math.min(n.depth ?? 0, 12))}${n.role}${n.subrole ? '/' + n.subrole : ''} ${JSON.stringify((n.title ?? n.description ?? n.value ?? '').toString().slice(0, 50))}`);
     row.samples = [];
     for (let k = 1; k <= 8; k++) { const due = at + k * 500 - Date.now(); if (due > 0) await sleep(due); const s = ax('state', child.pid); row.samples.push({t: Date.now() - at, eui: s.eui, manual: s.manual, checkbox: s.checkboxActions, webAreaElements: s.webAreaElements ?? null, walked: s.walked}); }
     const from2 = Date.now();
@@ -194,6 +188,7 @@ for (const [name, t] of Object.entries(TARGETS)) {
     `obs1 ${o ? JSON.stringify({ms: o.ms, nodes: o.nodes, webAreas: o.webAreas, checkbox: o.checkbox, t: o.timings && {enabled: o.timings.enabled, prior: o.timings.enablementPrior, write: o.timings.enablementWrite, err: o.timings.enablementWriteError, chromium: o.timings.chromium, webShaped: o.timings.webShaped, webAreaFound: o.timings.webAreaFound}, error: o.error}) : '-'} ` +
     `samples ${JSON.stringify(row.samples?.map(s => [s.t, s.eui, s.manual, Array.isArray(s.checkbox) && s.checkbox.includes('AXPress'), s.webAreaElements]))} ` +
     `obs2 ${JSON.stringify(row.obs2 && {nodes: row.obs2.nodes, checkbox: row.obs2.checkbox, write: row.obs2.timings?.enablementWrite})} endTask ${JSON.stringify(row.endTask?.result ?? row.endTask?.error ?? row.endTask)} ` +
+    `title ${JSON.stringify(row.pre?.[1]?.windowTitle)} ` +
     `after ${JSON.stringify(row.after?.map(p => [p?.eui, p?.manual, p?.webAreaElements ?? null, p?.checkboxActions]))} ${row.exception ? 'EXCEPTION ' + row.exception : ''}`);
 }
 writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, results}, null, 1));

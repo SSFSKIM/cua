@@ -36,7 +36,11 @@ export function firefoxProfile(dir) {
     'browser.newtabpage.enabled': false, 'extensions.autoDisableScopes': 15, 'browser.discovery.enabled': false,
     'browser.uitour.enabled': false, 'browser.messaging-system.whatsNewPanel.enabled': false, 'browser.vpn_promo.enabled': false,
     'toolkit.startup.max_resumed_crashes': -1, 'browser.toolbars.bookmarks.visibility': 'never',
-    ...(FIREFOX_A11Y === 'force' ? {'accessibility.force_disabled': -1} : {}),
+    'browser.startup.upgradeDialog.enabled': false, 'browser.startup.page': 0, 'browser.startup.homepage': 'about:blank',
+    'trailhead.firstrun.didSeeAboutWelcome': true, 'browser.privacySegmentation.preferences.show': false, 'browser.rights.3.shown': true,
+    'browser.contentblocking.introCount': 99, 'browser.download.panel.shown': true, 'browser.migrate.content-modal.enabled': false,
+    'browser.tabs.firefox-view': false, 'sidebar.revamp': false, 'browser.ml.chat.enabled': false, 'browser.urlbar.quicksuggest.enabled': false,
+    ...(process.env.P287_FIREFOX_A11Y === 'force' ? {'accessibility.force_disabled': -1} : {}),
   };
   writeFileSync(join(dir, 'user.js'), Object.entries(prefs).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join('\n') + '\n');
   return dir;

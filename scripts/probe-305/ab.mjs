@@ -457,6 +457,39 @@ async function runFirefox() {
   }
   if (child && child.exitCode === null) child.kill('SIGTERM');
 }
+// #287: VS Code (Electron), as runFirefox: re-launched only when a click changed its window's title or count.
+async function runVSCode() {
+  const APP = '/Applications/Visual Studio Code.app';
+  const BIN = `${APP}/Contents/MacOS/${sh('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleExecutable', `${APP}/Contents/Info.plist`]).out}`;
+  const dir = join(OUT, 'vscode-work'); mkdirSync(dir, {recursive: true});
+  writeFileSync(join(dir, 'notes.md'), Array.from({length: 40}, (_, i) => `Line ${i + 1} of a markdown file with words in it.`).join('\n') + '\n');
+  writeFileSync(join(dir, 'other.txt'), 'another file\n');
+  let child = null;
+  const open = async () => {
+    if (child && child.exitCode === null) { child.kill('SIGTERM'); for (let i = 0; i < 20 && child.exitCode === null; i++) await sleep(250); if (child.exitCode === null) child.kill('SIGKILL'); await sleep(1000); }
+    child = spawn(BIN, [`--user-data-dir=${join(OUT, 'vscode-user')}`, `--extensions-dir=${join(OUT, 'vscode-ext')}`, '--disable-extensions', '--skip-welcome',
+      '--skip-release-notes', '--disable-workspace-trust', '--new-window', dir, join(dir, 'notes.md')], {stdio: 'ignore'});
+    await sleep(9000); placePid(child.pid, WIN); await sleep(2000);
+  };
+  const pid = () => child.pid;
+  const title = () => osa(`tell application "System Events" to get name of window 1 of (first process whose unix id is ${child.pid})`).out;
+  const state = () => ({title: title(), windows: osa(`tell application "System Events" to count windows of (first process whose unix id is ${child.pid})`).out});
+  let expected = null;
+  const reopen = async () => { await open(); expected = state(); };
+  const reset = async function () {
+    if (this?.dirty) { await escape(); this.dirty = false; }
+    const st = state();
+    if (!expected || st.title !== expected.title || st.windows !== expected.windows) await reopen(); else { placePid(child.pid, WIN); await sleep(800); }
+  };
+  const effect = async () => state();
+  if (PARTS.includes('sweep')) {
+    await reopen();
+    const s = {name: 'sweep-vscode', pid, effect, alwaysDirty: true};
+    s.reset = reset.bind(s);
+    await sweep(s);
+  }
+  if (child && child.exitCode === null) child.kill('SIGTERM');
+}
 async function runFinder() {
   const folder = '/System/Library/PrivateFrameworks';
   const pid = () => pidOf('Finder');
@@ -510,6 +543,7 @@ try {
   if (GROUP === 'chrome') await runChrome();
   else if (GROUP === 'safari') await runSafari();
   else if (GROUP === 'firefox') await runFirefox();
+  else if (GROUP === 'vscode') await runVSCode();
   else if (GROUP === 'finder') await runFinder();
   else await runTextEdit();
 } catch (e) { config.exception = String(e?.stack || e).slice(0, 2000); log('EXCEPTION', config.exception); }

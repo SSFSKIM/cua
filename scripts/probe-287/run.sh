@@ -20,6 +20,8 @@ stamp() { echo "== $(date -u +%H:%M:%S) $*"; }
 case "$GROUP" in
   recon)
     node scripts/probe-287/recon.mjs --engine "$ENG" --ax "$T/axrecon" --out "$OUT/recon" ;;
+  firefox-recon)
+    node scripts/probe-287/recon.mjs --engine "$ENG" --ax "$T/axrecon" --targets firefox,firefox-force --out "$OUT/recon" ;;
   chrome-a)
     for b in $(chromes); do
       export P287_BROWSER=chrome P287_CHROME="$(bin_of "$b")"
@@ -65,6 +67,11 @@ case "$GROUP" in
   firefox-cov)
     export P287_BROWSER=firefox P287_SLOTS=2
     stamp "firefox 304"; node scripts/probe-304/ab.mjs --group firefox --a "$ENG" --b "$ENG" --tool "$T/probe-tool" --out "$OUT/firefox/304" ;;
+  vscode-a)
+    stamp "vscode electron"; P287_REP="$REP" node scripts/probe-287/electron.mjs --engine "$ENG" --ax "$T/axrecon" --out "$OUT/vscode/electron" ;;
+  vscode-s305)
+    export P287_HEADS=branch
+    stamp "vscode 305"; node scripts/probe-305/ab.mjs --group vscode --parts sweep --main "$ENG" --branch "$ENG" --tool "$T/probe-tool" --out "$OUT/vscode/305" ;;
   *) echo "unknown group $GROUP"; exit 2 ;;
 esac
 stamp done

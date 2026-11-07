@@ -24,7 +24,7 @@ jobs:
       matrix:
         rep: [1, 2]
         # A push runs the groups named here.
-        group: ${{ fromJSON(github.event.inputs.groups || '["recon"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["firefox-recon","chrome-a","chrome-b","safari-a"]') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -91,4 +91,5 @@ jobs:
             ${{ runner.temp }}/probe-287/*.txt
             ${{ runner.temp }}/probe-287/*.log
             ${{ runner.temp }}/probe-287/**/screen-*.png
+            ${{ runner.temp }}/probe-287/recon/shots-*/*.png
           if-no-files-found: warn

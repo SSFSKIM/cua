@@ -103,6 +103,14 @@ private func wideListChildListedLater() -> FakeTree {
   return tree
 }
 
+/// Rule B's waiting alias with a subtree: `wideListChildListedLater` with a shown child (300) under the first row.
+private func wideListWaitingChildListedLater() -> FakeTree {
+  let tree = wideListChildListedLater()
+  tree.children[100] = [300]
+  tree.frames[300] = CGRect(x: 0, y: 200, width: 100, height: 20)
+  return tree
+}
+
 private func shownRows(_ scroll: Int, of rows: Int) -> [Int] { Array(scroll..<min(rows, scroll + 35)) }
 
 private func ids(_ walk: TreeWalk) -> [Int] { walk.nodes.map { Int(($0["title"] as! String).dropFirst(5))! } }
@@ -140,6 +148,7 @@ final class WideListTests: XCTestCase {
       ("a column before a row, one cell", columnBeforeRow()),
       ("a column before a row, the cell's child", columnBeforeRowNested()),
       ("a wide list's row listed again later", wideListChildListedLater()),
+      ("a wide list's waiting child listed again later, with a shown child", wideListWaitingChildListedLater()),
     ]
     for (name, tree) in cases {
       let source = FakeSource(tree)

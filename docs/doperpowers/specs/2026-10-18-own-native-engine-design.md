@@ -2757,7 +2757,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      off (`wideListRules`, a test-only switch: main's selection) and on; for every element main took up, each child
      that shows in its clip (its frame against the clip; a frameless child is not judged) and that main read, the rules'
      walk must have read: any such child it left unread is a loss, with no excuse (the review of 566e3612..bc4d395f
-     found the first check's excuse, an element read but not taken up, passing a loss the rules caused; limit (iv)).
+     found the first check's excuse, an element read but not taken up, passing a loss the rules caused: the two
+     parents' case below).
      Over the regression shapes and the earlier tables at three budgets each, and, given `CUA_304_TREES`, over the
      spike's trees: the wide engine's full trees, each AXColumn's children rebuilt from its table's rows as the spike's
      replay did, the budget less the menu bar's nodes. A dump holds each element once, under the parent it was emitted
@@ -2772,6 +2773,20 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      what the A/B found: with rule B as first built (one bisected run, no per-child judging, no samples) the replay
      counted 1,141 losses even with the earlier excuse in place, 123 and 118 on Chrome's wiki-article at 90% and 205 per
      rep on wiki-table at 90%, and 1 to 4 on HN's thread, IANA and the local tables.
+     **Two parents, the earlier place** (`placeEarlier`, ruling 0092b8c7 on that review's case). An element two parents
+     list can be read through the later one, since the rules leave a wide list's children that do not show waiting
+     while a visible parent later in the document reads it at once; its own children then waited at the later place,
+     behind whatever waited between the two, where main had read it through the list and queued them first, so a cut
+     main passed could take its shown child (a 600-child list whose offscreen first child holds a shown child, a section
+     of 300 waiting leaves, then a visible group listing that child again: main read the shown child at 620 nodes, the
+     rules did not). Now, when the selection meets an element it has read at an earlier place in the document while its
+     children still wait, the element takes that place (its path, depth and what the place leaves showing) and its
+     waiting entry moves there, in the document's order; one that shows at the earlier place is taken up at once, and an
+     AXColumn's entry moves within `lastly`. Nothing is read or charged: the walk with the move and without it stop at
+     the same node count, apart by the shown child against the section's next leaf, their bytes less the tokens apart
+     by those two nodes alone. The element is emitted once, at its preorder place, as before; its action descriptions
+     are still judged against the place it was read at (`readPath`), so the preorder pass re-asks where that differs.
+     The move is one of the wide-list rules, off with them, so the check's baseline stays main's selection.
   4. **Rule C, the columns.** An `AXColumn` read in the tree's selection has its children set aside in their own queue
      (`lastly`), in the document's order, taken up only once `deferred` is empty; so the cells Chromium lists again under
      a table's columns are charged only once nothing else is left, and in a walk nothing cuts they have all been read
@@ -2804,14 +2819,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      shown rows and the toolbar are read within 4,000 nodes, the rows before them waiting, as the replay predicted.
      (iii) In a list of more than 512 children, a shown child in the middle, outside the bisected run, that the samples
      miss (it lies between two of them, which are where their places say) waits with its run of unshown neighbours, so
-     a cut can still leave it unread. (iv) *The rules can postpone a waiting element that two parents list*: an
-     offscreen child of a wide list, holding a shown child, that a visible group later in the document lists again is
-     read through the group, since the list's children that do not show wait, so its own children wait at the group's
-     place, after whatever waits between the two, where main read it through the list and queued them first. A cut main
-     passes can then leave the shown child unread (the review of 566e3612..bc4d395f; pinned as measured by
-     `testTheRulesCanPostponeAWaitingElementTwoParentsList`: a 620-node budget, main reading the child, the rules not).
-     The spike's verified trees show no such loss.
-  Proven offline (`WideListTests`, 10, and `WideListInvariantTests`, 9; `swift test`; removing each rule, each bound,
+     a cut can still leave it unread. (iv) The move to an earlier place happens only when the selection meets the
+     element there before the cut; an earlier place it never reaches leaves the children waiting at the later one.
+  Proven offline (`WideListTests`, 10, and `WideListInvariantTests`, 11; `swift test`; removing each rule, each bound,
   each sample check, the frameless rules, the preorder pass, its deadline and its places' propagation to a subtree
   fails at least one test, by mutation,
   `~/.local/share/187/mutate-304.py`): the uncut walk equal to the plain preorder over a 300-row table of 3 columns, a
@@ -2828,7 +2838,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   list of 215 (both columns' shown items and the toolbar after the list read, no violation), the fixed tail of a
   601-child body (the toolbar read with the run), the two-column list of 600 falling back to main, each middle-sample
   place checked alone, every frame read up to 512 children and fewer than 200 for 513, a frameless child read first,
-  limit (iv) as measured, and the loader flagging a dump that lost an alias as alias-incomplete.
+  the two parents' case (the earlier place winning, no loss at 620 nodes, the element emitted once at its preorder
+  place, the move charging nothing; an element that shows at the earlier place taken up at once there, main not
+  moving it), the uncut walk over a waiting alias with a shown child, and the loader flagging a dump that
+  lost an alias as alias-incomplete.
   The invariant check over the spike's trees: `CUA_304_TREES=$HOME/.local/share/probe-304 swift test --filter
   WideListInvariantTests` in `native/engine` (about 6 minutes; the spike's part skipped without the variable).
   **What the hosted A/B must still measure**, on the amended rule against main: Chrome's wiki-article and wiki-table

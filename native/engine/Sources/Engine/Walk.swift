@@ -314,6 +314,9 @@ final class TreeWalk {
   /// Whether #304's wide-list rules apply (`shownChildPositions`, the columns' children last); off only in tests, which
   /// compare a walk with main's selection.
   let wideListRules: Bool
+  /// Whether an element met again at an earlier place while its children wait moves there (`placeEarlier`, one of the
+  /// wide-list rules, so off with them too); off alone only in a test that prices the move.
+  let placesWaitingEarlier: Bool
 
   private(set) var nodes: [[String: Any]] = []
   private(set) var menuBar: [[String: Any]] = []
@@ -407,9 +410,13 @@ final class TreeWalk {
   /// have been taken up (`expanded`).
   private final class Selected {
     let read: Read
-    let depth: Int
-    let path: [Int]
-    let clip: CGRect?
+    /// Where it was read: the place its action descriptions were first judged at (`describeAtPreorderPlaces`).
+    let readPath: [Int]
+    /// Its place in the document as the queues take it: where it was read, or an earlier place the selection met it at
+    /// while its children waited (`placeEarlier`), with what that place leaves showing.
+    var depth: Int
+    var path: [Int]
+    var clip: CGRect?
     let recordOnly: Bool
     var expanded = false
     /// The guard's record-only children (`recordedChildPositions`), past the read's children in the document's order,
@@ -418,6 +425,7 @@ final class TreeWalk {
 
     init(_ read: Read, _ pending: Pending) {
       self.read = read
+      readPath = pending.path
       depth = pending.depth
       path = pending.path
       clip = pending.clip
@@ -451,7 +459,7 @@ final class TreeWalk {
   private var lastly: [Waiting] = []
 
   init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, chromium: Bool = false,
-       visibleFrame: CGRect?, recordsScreenshot: Bool = false, wideListRules: Bool = true) {
+       visibleFrame: CGRect?, recordsScreenshot: Bool = false, wideListRules: Bool = true, placesWaitingEarlier: Bool = true) {
     self.source = source
     self.lineage = lineage
     previous = lineage.current
@@ -462,6 +470,7 @@ final class TreeWalk {
     self.visibleFrame = visibleFrame
     self.recordsScreenshot = recordsScreenshot
     self.wideListRules = wideListRules
+    self.placesWaitingEarlier = placesWaitingEarlier
     revision = Revision()
   }
 
@@ -556,7 +565,8 @@ final class TreeWalk {
         continue
       }
       let key = ElementKey(element: next.element)
-      if selected[key] != nil || failed.contains(key) { continue }
+      if let known = selected[key] { if !cut { placeEarlier(known, key, at: next) }; continue }
+      if failed.contains(key) { continue }
       if cut { continue }
       if selectionBytes >= byteLimit { budgetHit = true; cut = true; continue }
       if kept >= nodeLimit { nodeCapHit = true; cut = true; continue }
@@ -676,6 +686,27 @@ final class TreeWalk {
     }
   }
 
+  /// An element two parents list, read through the later of them while it waited at the earlier one (the rules leave a
+  /// wide list's children that do not show waiting), is met again at the earlier place while its own children wait
+  /// (#304, the design session's ruling 0092b8c7): it takes that place, its depth and what the place leaves showing, as
+  /// the plain preorder would have read it there, and its waiting children move to it in the document's order, so they
+  /// no longer wait behind whatever lies between the two places; one that shows at the earlier place is taken up at
+  /// once. Nothing is read or charged. An AXColumn's children stay in `lastly`, moved within it.
+  private func placeEarlier(_ item: Selected, _ key: ElementKey, at pending: Pending) {
+    guard wideListRules, placesWaitingEarlier, !item.expanded, !item.recordOnly, documentPrecedes(pending.path, item.path) else { return }
+    let isItem = { (waiting: Waiting) -> Bool in if case .children(let other) = waiting { return other === item }; return false }
+    let last: Bool
+    if let index = deferred.firstIndex(where: isItem) { deferred.remove(at: index); last = false }
+    else if let index = lastly.firstIndex(where: isItem) { lastly.remove(at: index); last = true }
+    else { return }
+    item.depth = pending.depth
+    item.path = pending.path
+    item.clip = pending.clip
+    if last { insertInOrder(.children(item), into: &lastly) }
+    else if enters(item, key) { expand(item) }
+    else { insertInOrder(.children(item), into: &deferred) }
+  }
+
   /// Sets what waits aside in `queue`, in the document's order.
   private func insertInOrder(_ waiting: Waiting, into queue: inout [Waiting]) {
     let path = waiting.path
@@ -780,7 +811,7 @@ final class TreeWalk {
     while let visit = visits.popLast() {
       let key = ElementKey(element: visit.element)
       guard let item = selected[key], visited.insert(key).inserted else { continue }
-      if visit.path != item.path {
+      if visit.path != item.readPath {
         let order = ReadOrder(inMenu: false, path: visit.path)
         for action in item.read.actions where asksSystemForDescription(action) {
           guard let known = descriptions["\(item.read.owner)\u{0}\(action)"], order.precedes(known.order) else { continue }

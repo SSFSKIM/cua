@@ -15,9 +15,9 @@ private let viewport = CGRect(x: 0, y: 100, width: 1000, height: 700)
 private func ids(_ walk: TreeWalk) -> [Int] { walk.nodes.map { Int(($0["title"] as! String).dropFirst(5))! } }
 
 /// The violations of #304's invariant in `tree`, each as "parent → child".
-func wideListInvariantViolations(_ tree: FakeTree, window: CGRect, limits: WalkLimits, chromium: Bool) -> [String] {
+func wideListInvariantViolations(_ tree: FakeTree, window: CGRect, limits: WalkLimits, chromium: Bool, placesWaitingEarlier: Bool = true) -> [String] {
   let main = walk(tree, Lineage(), limits: limits, visibleFrame: window, chromium: chromium, wideListRules: false)
-  let rules = walk(tree, Lineage(), limits: limits, visibleFrame: window, chromium: chromium)
+  let rules = walk(tree, Lineage(), limits: limits, visibleFrame: window, chromium: chromium, placesWaitingEarlier: placesWaitingEarlier)
   var visits = [0]
   var seen: Set<Int> = []
   var found: [String] = []
@@ -34,10 +34,11 @@ func wideListInvariantViolations(_ tree: FakeTree, window: CGRect, limits: WalkL
   return found.sorted()
 }
 
-/// The stated limit's shape (the review of 566e3612..bc4d395f): a list of 600 (4) whose first child (100_000) lies off
-/// the viewport above and holds a shown child (600_000), then a section off it below (3, 300 leaves that wait), then a
-/// visible group (2) that lists the first child again. Main reads that child through the list, so its children wait
-/// first in the document's order; the rules read it later, through the group, so they wait after the section's.
+/// Two parents' shape (the review of 566e3612..bc4d395f; ruling 0092b8c7): a list of 600 (4) whose first child (100_000)
+/// lies off the viewport above and holds a shown child (600_000), then a section off it below (3, 300 leaves that wait),
+/// then a visible group (2) that lists the first child again. Main reads that child through the list, so its children
+/// wait first in the document's order; the rules read it through the group, where its children would wait after the
+/// section's, until the list's waiting run meets it again and moves it to the list's place (`placeEarlier`).
 private func aliasedOffscreenChild() -> FakeTree {
   let tree = FakeTree()
   func place(_ frame: CGRect) -> CGRect {
@@ -148,6 +149,19 @@ private func fixedTailPage(count: Int, scroll: Int) -> FakeTree {
 
 private func element(_ i: Int) -> AXUIElement { Engine.element(i) }
 
+/// The tree's preorder from the window, each element at its first place.
+private func preorderIDs(_ tree: FakeTree) -> [Int] {
+  var out: [Int] = []
+  var seen: Set<Int> = []
+  func visit(_ id: Int) {
+    guard seen.insert(id).inserted else { return }
+    out.append(id)
+    for child in tree.children[id] ?? [] { visit(child) }
+  }
+  visit(0)
+  return out
+}
+
 final class WideListInvariantTests: XCTestCase {
   /// Wikipedia's reference list in two CSS columns (215 items, Chrome's wiki-article at 90%): each item is judged by its
   /// frame, so both columns' shown items are read before the toolbar, and nothing main read before the cut is lost.
@@ -232,17 +246,64 @@ final class WideListInvariantTests: XCTestCase {
     XCTAssertEqual(shownChildPositions(rows, frame: frame, window: CGRect(x: 0, y: -2000, width: 100, height: 700)), [10] + Array(100..<135))
   }
 
-  /// The stated limit, pinned as measured: the rules can postpone an element two parents list that waits (an offscreen
-  /// child of a wide list, listed again later by a visible group), so its shown child waits longer than on main, and a
-  /// cut main's walk passes takes it. The check reports the loss; nothing excuses it.
-  func testTheRulesCanPostponeAWaitingElementTwoParentsList() {
+  /// Ruling 0092b8c7: an element two parents list, waiting at the later one, takes the earlier place when the selection
+  /// meets it there, so its shown child is read as main reads it, with no loss at a cut main's walk passes.
+  func testAWaitingElementTwoParentsListTakesTheEarlierPlace() {
     let tree = aliasedOffscreenChild()
     let limits = WalkLimits(nodes: 620, deadline: .infinity)
     XCTAssertTrue(Set(ids(walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true, wideListRules: false))).contains(600_000),
                   "main reads the shown child")
-    XCTAssertFalse(Set(ids(walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true))).contains(600_000),
-                   "the rules' walk spends the budget on the section first")
-    XCTAssertEqual(wideListInvariantViolations(tree, window: windowFrame, limits: limits, chromium: true), ["100000 → 600000"])
+    let moved = walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true)
+    XCTAssertTrue(Set(ids(moved)).contains(600_000), "the earlier place wins")
+    XCTAssertEqual(wideListInvariantViolations(tree, window: windowFrame, limits: limits, chromium: true), [])
+    // Once in the emission, at its preorder place: under the list, first of its children, its child under it.
+    XCTAssertEqual(ids(moved).filter { $0 == 100_000 }.count, 1)
+    XCTAssertEqual(ids(moved).filter { $0 == 600_000 }.count, 1)
+    let kept = Set(ids(moved))
+    XCTAssertEqual(ids(moved), preorderIDs(tree).filter(kept.contains))
+    let at = ids(moved).firstIndex(of: 100_000)!
+    XCTAssertEqual(Array(ids(moved)[(at - 1)...(at + 1)]), [4, 100_000, 600_000])
+    XCTAssertEqual(moved.nodes[at]["depth"] as? Int, 3)
+  }
+
+  /// An element that shows at the earlier place is taken up at once there: a collapsed group (2, a strip mid-viewport,
+  /// whose children wait) lists it first, before 99 offscreen leaves; a scroll area later (4) lists it again and clips it
+  /// away, so it is read there and waits. When the group's children come up, it moves and shows, and its child (11) is
+  /// read before the leaves, within a 50-node budget.
+  func testAnElementThatShowsAtTheEarlierPlaceIsTakenUpAtOnce() {
+    let tree = FakeTree()
+    for (id, role) in [0: "AXWindow", 1: "AXWebArea", 4: "AXScrollArea"] { tree.extra[id] = ["AXRole": role as CFString] }
+    tree.frames = [0: windowFrame, 1: viewport, 2: CGRect(x: 0, y: 400, width: 1000, height: 1), 4: CGRect(x: 0, y: 600, width: 200, height: 100),
+                   10: CGRect(x: 500, y: 200, width: 300, height: 100), 11: CGRect(x: 500, y: 200, width: 100, height: 20)]
+    tree.children = [0: [1], 1: [2, 4], 2: [10] + Array(900_000..<900_099), 4: [10], 10: [11]]
+    for k in 0..<99 { tree.frames[900_000 + k] = CGRect(x: 0, y: 100, width: 1000, height: 1) }
+    let limits = WalkLimits(nodes: 50, deadline: .infinity)
+    XCTAssertTrue(Set(ids(walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true))).contains(11))
+    XCTAssertFalse(Set(ids(walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true, placesWaitingEarlier: false))).contains(11),
+                   "without the move it waits at the scroll area's place")
+    XCTAssertFalse(Set(ids(walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true, wideListRules: false))).contains(11),
+                   "main's selection, the check's baseline, does not move it either")
+  }
+
+  /// The move charges nothing: the walk with it and the walk without it stop at the same node count, the one reading the
+  /// shown child where the other reads the section's next leaf, their bytes apart by those two nodes alone.
+  func testTheMoveChargesNoBudget() {
+    let tree = aliasedOffscreenChild()
+    let limits = WalkLimits(nodes: 620, deadline: .infinity)
+    let moved = walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true)
+    let stayed = walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true, placesWaitingEarlier: false)
+    XCTAssertEqual(moved.nodes.count, stayed.nodes.count)
+    let (a, b) = (Set(ids(moved)), Set(ids(stayed)))
+    XCTAssertEqual(a.subtracting(b), [600_000])
+    XCTAssertEqual(b.subtracting(a).count, 1)
+    let leaf = b.subtracting(a).first!
+    XCTAssertTrue((400_000..<400_300).contains(leaf), "the section's next leaf")
+    // Bytes without the tokens, which are numbered in emission order and so lengthen across a digit boundary when a node
+    // moves earlier in it.
+    func bytes(_ node: [String: Any]) -> Int { var node = node; node["token"] = nil; return jsonBytes(node) + 1 }
+    func total(_ walk: TreeWalk) -> Int { walk.nodes.reduce(0) { $0 + bytes($1) } }
+    func node(_ walk: TreeWalk, _ id: Int) -> [String: Any] { walk.nodes[ids(walk).firstIndex(of: id)!] }
+    XCTAssertEqual(total(moved) - bytes(node(moved, 600_000)), total(stayed) - bytes(node(stayed, leaf)))
   }
 
   /// The loader's alias check (the review of 566e3612..bc4d395f): a dump holds each element once, under its first parent,
@@ -253,8 +314,10 @@ final class WideListInvariantTests: XCTestCase {
     let limits = WalkLimits(nodes: 620, deadline: .infinity)
     let loaded = try! XCTUnwrap(spikeTree(reads: probeReads(of: tree), menu: 0))
     XCTAssertEqual(loaded.incompleteLists, 1, "the group lists none of its one child")
-    XCTAssertEqual(wideListInvariantViolations(loaded.tree, window: loaded.window, limits: limits, chromium: true), [],
-                   "reloaded, the loss is gone: why such a tree is never counted as verified")
+    XCTAssertEqual(wideListInvariantViolations(loaded.tree, window: loaded.window, limits: limits, chromium: true, placesWaitingEarlier: false), [],
+                   "reloaded, the loss the move fixes is gone too: why such a tree is never counted as verified")
+    XCTAssertEqual(wideListInvariantViolations(tree, window: windowFrame, limits: limits, chromium: true, placesWaitingEarlier: false), ["100000 → 600000"],
+                   "the whole tree shows it")
     let whole = fixedTailPage(count: 600, scroll: 300)
     let reloaded = try! XCTUnwrap(spikeTree(reads: probeReads(of: whole), menu: 0))
     XCTAssertEqual(reloaded.incompleteLists, 0)

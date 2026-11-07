@@ -31,6 +31,8 @@ final class FakeTree {
   var slow: [Int: UInt32] = [:]
   /// An element's own description of an action, by id then action name, over `descriptions`.
   var elementDescriptions: [Int: [String: String]] = [:]
+  /// Called on every action-description query, by id and action name (a test's delay or count).
+  var onDescription: ((Int, String) -> Void)?
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
 }
@@ -77,6 +79,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   override func document(_ element: AXUIElement) -> String? { tree.documents[tree.id(element)] }
   override func actionDescription(_ element: AXUIElement, _ action: String) -> String? {
     descriptionCalls[action, default: 0] += 1
+    tree.onDescription?(tree.id(element), action)
     return tree.elementDescriptions[tree.id(element)]?[action] ?? tree.descriptions[action]
   }
   override func readListed(_ element: AXUIElement) -> ElementData? {

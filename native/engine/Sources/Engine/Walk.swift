@@ -498,8 +498,7 @@ final class TreeWalk {
         continue
       }
       let key = ElementKey(element: next.element)
-      if let known = selected[key] { describeAgain(known.read, at: next); continue }
-      if failed.contains(key) { continue }
+      if selected[key] != nil || failed.contains(key) { continue }
       if cut { continue }
       if selectionBytes >= byteLimit { budgetHit = true; cut = true; continue }
       if kept >= nodeLimit { nodeCapHit = true; cut = true; continue }
@@ -522,6 +521,7 @@ final class TreeWalk {
         else if enters(item, key) { expand(item) } else { insertInOrder(.children(item), into: &deferred) }
       }
     }
+    describeAtPreorderPlaces(window)
     selectForRecord()
   }
 
@@ -696,13 +696,30 @@ final class TreeWalk {
 
   private func pastDeadline() -> Bool { monotonicMilliseconds() >= limits.deadline }
 
-  /// An element the selection has read, reached again through another parent (Chromium's cell, listed by its row and by
-  /// its column; any child two parents list): its action descriptions are judged at the earlier of the two places in the
-  /// document, as the plain preorder, which reads it at its first place, judges them, whichever place the queues reached
-  /// first (`describe` asks again only for a place earlier than the cached answer's).
-  private func describeAgain(_ read: Read, at pending: Pending) {
-    let order = ReadOrder(inMenu: pending.inMenu, path: pending.path)
-    for action in read.actions { _ = describe(action: action, of: read.element, owner: read.owner, order: order) }
+  /// Once the tree's selection is done: every read element's action descriptions judged at its place in emission's
+  /// preorder (its first place under read parents), as the plain preorder, which reads each element there, judges them.
+  /// An element two parents list (Chromium's cell, under its column and its row; a wide list's child another parent
+  /// lists later) was read through whichever place the queues reached first, and so was its subtree, so an element read
+  /// at another place than its preorder one is asked again there, through `describe`: only for an action whose cached
+  /// answer comes from a later place, and with `describe`'s charge to the byte budget, a growth that does not fit
+  /// refused. A query past the deadline is not made: the walk is marked cut by it, as a read would be, and keeps the
+  /// answers it has.
+  private func describeAtPreorderPlaces(_ window: AXUIElement) {
+    var visited: Set<ElementKey> = []
+    var visits: [(element: AXUIElement, path: [Int])] = [(window, [])]
+    while let visit = visits.popLast() {
+      let key = ElementKey(element: visit.element)
+      guard let item = selected[key], visited.insert(key).inserted else { continue }
+      if visit.path != item.path {
+        let order = ReadOrder(inMenu: false, path: visit.path)
+        for action in item.read.actions where asksSystemForDescription(action) {
+          guard let known = descriptions["\(item.read.owner)\u{0}\(action)"], order.precedes(known.order) else { continue }
+          if pastDeadline() { deadlineHit = true; return }
+          _ = describe(action: action, of: item.read.element, owner: item.read.owner, order: order)
+        }
+      }
+      for (position, child) in item.read.children.enumerated().reversed() { visits.append((child, visit.path + [position])) }
+    }
   }
 
   /// Reads one element: its attributes, owner, actions, flags, Markdown, the children the width rule keeps and its node.

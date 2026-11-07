@@ -75,6 +75,17 @@ private func columnBeforeRow() -> FakeTree {
   return tree
 }
 
+/// The alias nested: the column-before-row table with a child (5) under the shared cell, the child, not the cell,
+/// describing the action against the row (the re-review of 13805b82..0198ebe7).
+private func columnBeforeRowNested() -> FakeTree {
+  let tree = columnBeforeRow()
+  tree.children[4] = [5]
+  tree.frames[5] = CGRect(x: 0, y: 0, width: 50, height: 20)
+  tree.actions = [3: ["AXCustomThing"], 5: ["AXCustomThing"]]
+  tree.elementDescriptions = [3: ["AXCustomThing": "row"], 5: ["AXCustomThing": "cell child"]]
+  return tree
+}
+
 /// Rule B's alias: a wide list (1, 101 rows, rows 50-89 in view) whose first row (100), before the shown run, is listed
 /// again by a later sibling in view (2); the row and the sibling describe one action differently.
 private func wideListChildListedLater() -> FakeTree {
@@ -127,6 +138,7 @@ final class WideListTests: XCTestCase {
       ("list of 101", chromiumTable(rows: 101, columns: 0, scroll: 40)),
       ("list of 600", chromiumTable(rows: 600, columns: 0, scroll: 300, cellsPerRow: 2)),
       ("a column before a row, one cell", columnBeforeRow()),
+      ("a column before a row, the cell's child", columnBeforeRowNested()),
       ("a wide list's row listed again later", wideListChildListedLater()),
     ]
     for (name, tree) in cases {
@@ -144,8 +156,36 @@ final class WideListTests: XCTestCase {
     // The aliases' descriptions are the earliest place's, though the queues read the later place first.
     let cells = walk(columnBeforeRow(), Lineage(), visibleFrame: windowFrame, chromium: true)
     XCTAssertEqual(cells.nodes.compactMap { ($0["actionDescriptions"] as? [String])?.first }, ["cell", "cell"])
+    let nested = walk(columnBeforeRowNested(), Lineage(), visibleFrame: windowFrame, chromium: true)
+    XCTAssertEqual(nested.nodes.compactMap { ($0["actionDescriptions"] as? [String])?.first }, ["cell child", "cell child"])
     let rows = walk(wideListChildListedLater(), Lineage(), visibleFrame: windowFrame, chromium: true)
     XCTAssertEqual(rows.nodes.compactMap { ($0["actionDescriptions"] as? [String])?.first }, ["earlier", "earlier"])
+  }
+
+  /// The re-review of 13805b82..0198ebe7: asking again at the preorder's places stops at the deadline and marks the walk
+  /// cut by it. A column (2) listed before 10 rows (10-19) shares their cells (20-29), each with its own action; each
+  /// cell's second query, at the column's earlier place, takes 30 ms against a 100-ms deadline.
+  func testAskingDescriptionsAgainStopsAtTheDeadline() {
+    let tree = FakeTree()
+    tree.extra[0] = ["AXRole": "AXWindow" as CFString]
+    tree.extra[1] = ["AXRole": "AXTable" as CFString]
+    tree.extra[2] = ["AXRole": "AXColumn" as CFString]
+    tree.frames[0] = windowFrame
+    tree.children = [0: [1], 1: [2] + Array(10..<20), 2: Array(20..<30)]
+    for i in 0..<10 {
+      tree.children[10 + i] = [20 + i]
+      tree.actions[20 + i] = ["AXCustom\(i)"]
+      tree.elementDescriptions[20 + i] = ["AXCustom\(i)": "cell \(i)"]
+    }
+    var queries: [Int: Int] = [:]
+    tree.onDescription = { id, _ in
+      queries[id, default: 0] += 1
+      if queries[id]! > 1 { usleep(30_000) }
+    }
+    let walked = walk(tree, Lineage(), limits: WalkLimits(deadline: monotonicMilliseconds() + 100), visibleFrame: windowFrame)
+    XCTAssertEqual(walked.nodes.count, 23, "the tree is whole")
+    XCTAssertTrue(walked.deadlineHit, "marked cut by the deadline")
+    XCTAssertLessThan(queries.values.reduce(0, +), 20, "the queries past the deadline are not made")
   }
 
   /// Rule B: a long table whose shown rows lie in its middle no longer starves the toolbar after it in the document.

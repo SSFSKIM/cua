@@ -1,0 +1,50 @@
+fatal: not a git repository (or any of the parent directories): .git
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+| cell | lane | runs | misses (late / never / refused / invalid) | streak at the end | verdict |
+|---|---|---:|---|---:|---|
+| firefox-input press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input key_down background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input key_up background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input click background | shipped | 31 | 31 (0 / 0 / 31 / 0) | 0 | not reached |
+| firefox-input click_element background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input right_click background | shipped | 31 | 31 (0 / 0 / 31 / 0) | 0 | not reached |
+| firefox-input secondary_action background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input move background | shipped | 31 | 31 (0 / 0 / 31 / 0) | 0 | not reached |
+| firefox-input scroll background | shipped | 31 | 31 (0 / 0 / 31 / 0) | 0 | not reached |
+| firefox-input drag background | shipped | 31 | 31 (0 / 0 / 31 / 0) | 0 | not reached |
+| firefox-text press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-text type_text background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-text activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input click dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input right_click dedicated | shipped | 31 | 1 (0 / 0 / 1 / 0) | 30 | 30 consecutive |
+| firefox-input move dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input scroll dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input drag dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+
+| cell | audit | requests | runs that ran their input | effects missed |
+|---|---|---:|---:|---:|
+| firefox-input press_key background | clean | 31285 | 5 of 5 | 0 |
+| firefox-input key_down background | clean | 31396 | 5 of 5 | 0 |
+| firefox-input key_up background | clean | 31396 | 5 of 5 | 0 |
+| firefox-input click background | **5 of 5 runs did not run their input (firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does)** | 31367 | 0 of 5 | 0 |
+| firefox-input click_element background | clean | 39033 | 5 of 5 | 0 |
+| firefox-input right_click background | **5 of 5 runs did not run their input (firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does)** | 39137 | 0 of 5 | 0 |
+| firefox-input secondary_action background | clean | 39031 | 5 of 5 | 0 |
+| firefox-input move background | **5 of 5 runs did not run their input (firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does)** | 31367 | 0 of 5 | 0 |
+| firefox-input scroll background | **5 of 5 runs did not run their input (firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does)** | 31367 | 0 of 5 | 0 |
+| firefox-input drag background | **5 of 5 runs did not run their input (firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does)** | 31382 | 0 of 5 | 0 |
+| firefox-text press_key background | clean | 23514 | 5 of 5 | 0 |
+| firefox-text type_text background | clean | 32215 | 5 of 5 | 0 |
+
+**Incomplete or failed:** firefox-input click background (shipped): no 30 consecutive passing runs in 31; firefox-input right_click background (shipped): no 30 consecutive passing runs in 31; firefox-input move background (shipped): no 30 consecutive passing runs in 31; firefox-input scroll background (shipped): no 30 consecutive passing runs in 31; firefox-input drag background (shipped): no 30 consecutive passing runs in 31; firefox-input click background: the audit failed: 5 of 5 runs did not run their input (firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does); firefox-input right_click background: the audit failed: 5 of 5 runs did not run their input (firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does); firefox-input move background: the audit failed: 5 of 5 runs did not run their input (firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does); firefox-input scroll background: the audit failed: 5 of 5 runs did not run their input (firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does); firefox-input drag background: the audit failed: 5 of 5 runs did not run their input (firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does not accept background input; use a dedicated desktop or activate the window first; firefox does).

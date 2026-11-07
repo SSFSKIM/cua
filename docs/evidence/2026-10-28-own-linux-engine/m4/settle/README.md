@@ -19,25 +19,29 @@ null`). The engine is one musl build of the branch head 51dfdf00 made the releas
 
 ## The constants
 
-| method | shipped | T8 | set by (the slowest cell) |
-|---|---:|---:|---|
-| `perform_secondary_action` | 100 | **10** | Electron's page, idle |
-| `click` | 100 | 100 | GTK 4's element action (its effect about 250 ms after the answer) and Qt 6's at twice the load (about 100 ms, Qt's animated click), at no step up to 100; every coordinate click held at 25 or less (gnome-terminal's screen at twice the load; 10 elsewhere) |
-| `clipboard_read` | 100 | **0** | – |
-| `clipboard_write` | 100 | **0** | – (the engine confirms the paste before it answers) |
-| `drag` | 100 | **10** | Electron's page, idle; xterm at twice the load |
-| `drag_handle` | 100 | **10** | Electron's page, idle; gedit at twice the load |
-| `activate_window` | 100 | **10** | kate and qtcreator at twice the load |
-| `move` | 100 | **10** | Electron's page: held at 0 in the search, missed at 0 in the confirmation (below) |
-| `move_relative` | 100 | **0** | – |
-| `press_key` | 100 | 100 | an Electron page's key release, at no step up to 100 (60 to 150 ms late in about a third of the runs at every step); a key into a text field held at 25 (Writer, gnome-terminal) |
-| `key_down` | 100 | **25** | Writer and gnome-terminal, idle and at twice the load |
-| `key_up` | 100 | **50** | Chrome's page through the desktop route at twice the load |
-| `scroll` | 100 | **10** | xterm at twice the load: held at 0 in the search, missed at 0 in the confirmation |
-| `type_text` | 100 | **0** | – (the engine confirms the paste before it answers) |
-| `launch_app` | 100 | 100 | not measured: in service the trusted wrapper launches (`src/services/sky.mjs`), and every other shape the engine refuses, which defers nothing |
+Task 62's fix wave (`fix/README.md`) re-measured these on corrected judges and split `click` by what it runs; the
+service ships its values (the last column). The rest of this README is task 62's first measurement.
 
-The held step of each method per family, idle / twice the load (`search/families.md`; `·` no cell, `**none**` a cell
+| method | vendor | task 62 | fix wave | set by in task 62 (the slowest cell) |
+|---|---:|---:|---:|---|
+| `perform_secondary_action` | 100 | **10** | **10** | Electron's page, idle |
+| `click` | 100 | 100 | **25** (a coordinate click); an element's primary action `click_element` **10**, GTK 4's `animated_gtk4` **250**, Qt's `animated_qt` **125** | GTK 4's element action (its effect about 250 ms after the answer) and Qt 6's at twice the load (about 100 ms, Qt's animated click), at no step up to 100; every coordinate click held at 25 or less (gnome-terminal's screen at twice the load; 10 elsewhere) |
+| `clipboard_read` | 100 | **0** | **0** | – |
+| `clipboard_write` | 100 | **0** | **0** | – (the engine confirms the paste before it answers) |
+| `drag` | 100 | **10** | **10** | Electron's page, idle; xterm at twice the load |
+| `drag_handle` | 100 | **10** | **10** | Electron's page, idle; gedit at twice the load |
+| `activate_window` | 100 | **10** | **10** | kate and qtcreator at twice the load |
+| `move` | 100 | **10** | **75** | Electron's page: held at 0 in the search, missed at 0 in the confirmation (below) |
+| `move_relative` | 100 | **0** | **0** | – |
+| `press_key` | 100 | 100 | 100 | an Electron page's key release, at no step up to 100 (60 to 150 ms late in about a third of the runs at every step; #302); a key into a text field held at 25 (Writer, gnome-terminal) |
+| `key_down` | 100 | **25** | **25** | Writer and gnome-terminal, idle and at twice the load |
+| `key_up` | 100 | **50** | **50** | Chrome's page through the desktop route at twice the load |
+| `scroll` | 100 | **10** | **75** | xterm at twice the load: held at 0 in the search, missed at 0 in the confirmation |
+| `type_text` | 100 | **0** | **0** | – (the engine confirms the paste before it answers) |
+| `launch_app` | 100 | 100 | 100 | not measured: in service the trusted wrapper launches (`src/services/sky.mjs`), and every other shape the engine refuses, which defers nothing |
+
+Task 62's held step of each method per family, idle / twice the load (`search/families.md`; the fix wave's is in
+`fix/README.md`; `·` no cell, `**none**` a cell
 held at no step, `lost` its input never came at any step):
 
 | method | chrome | electron | firefox | gedit | kate | qtcreator | writer | gnome-terminal | xterm | gtk3 | qt5 | qt6 | gtk4 |
@@ -146,6 +150,9 @@ The call after an input waited 100 ms after every input. Now it waits nothing af
 activation, a move and a scroll; 25 after `key_down`, 50 after `key_up`. `click` and `press_key` keep their 100.
 
 ## T7b's burst lane, carried to T8 (`engine-stop/idle/`)
+
+The fix wave ran it again with the control the design session ruled (the head's service with only the stop from
+before T7b), idle and at twice the load, on Chrome and Electron: `fix/README.md`. What follows is task 62's sitting.
 
 The brief asked for the engine-stop burst lane with its control again once T8 shortened the spacing between a burst's
 keys, the control required to cut where the drain holds (`--cases burst --require-burst-cut --trials 10`). T8 keeps

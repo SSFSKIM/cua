@@ -1,0 +1,41 @@
+fatal: not a git repository (or any of the parent directories): .git
+| lane | path | case | runs | pass | engine after the stop, median ms | after the last answer, median ms |
+|---|---|---|---:|---:|---:|---:|
+| drain | idle | burst chrome | 10 | 10 | 349.2 | 359.5 |
+| drain | idle | burst electron | 10 | 10 | 354.1 | 366.1 |
+| drain | idle | pairs chrome | 10 | 10 | 353.4 | 363.3 |
+| drain | idle | pairs electron | 10 | 10 | 351.3 | 366.4 |
+| drain | eof | burst chrome | 10 | 10 | 288.2 | 299 |
+| drain | eof | burst electron | 10 | 10 | 285.4 | 298.5 |
+| drain | eof | pairs chrome | 10 | 10 | 288.5 | 298.7 |
+| drain | eof | pairs electron | 10 | 10 | 289.6 | 299.2 |
+| drain | signal | burst chrome | 10 | 10 | 286.5 | 298.7 |
+| drain | signal | burst electron | 10 | 10 | 287.7 | 299.5 |
+| drain | signal | pairs chrome | 10 | 10 | 289.7 | 299.6 |
+| drain | signal | pairs electron | 10 | 10 | 290.8 | 299 |
+| drain | remote | burst chrome | 10 | 10 | 376.1 | 385.1 |
+| drain | remote | burst electron | 10 | 10 | 364.3 | 374.3 |
+| drain | remote | pairs chrome | 10 | 10 | 368.8 | 380 |
+| drain | remote | pairs electron | 10 | 10 | 375 | 384.5 |
+| kill | idle | burst chrome | 10 | 10 | 142.3 | 154 |
+| kill | idle | burst electron | 10 | 10 | 175.2 | 187.8 |
+| kill | idle | pairs chrome | 10 | 10 | 155.8 | 176.3 |
+| kill | idle | pairs electron | 10 | 10 | 151.2 | 165.1 |
+| kill | eof | burst chrome | 10 | 10 | 84.2 | 100.1 |
+| kill | eof | burst electron | 10 | 10 | 79.9 | 92.6 |
+| kill | eof | pairs chrome | 10 | 10 | 76.9 | 85.8 |
+| kill | eof | pairs electron | 10 | 10 | 80.5 | 90.8 |
+| kill | signal | burst chrome | 10 | 10 | 78.9 | 89.1 |
+| kill | signal | burst electron | 10 | 10 | 76.7 | 88 |
+| kill | signal | pairs chrome | 10 | 10 | 77.4 | 89.7 |
+| kill | signal | pairs electron | 10 | 10 | 95.7 | 104.2 |
+| kill | remote | burst chrome | 10 | 10 | 152.1 | 165.4 |
+| kill | remote | burst electron | 10 | 10 | 158.8 | 169.9 |
+| kill | remote | pairs chrome | 10 | 10 | 163.5 | 177.2 |
+| kill | remote | pairs electron | 10 | 10 | 157.4 | 168.3 |
+
+The control's press_key bursts: 0 of 80 cut (required on each path and browser).
+
+The control's key_down/key_up pair bursts: 0 of 80 cut (required on each path and browser).
+
+**Incomplete or failed:** kill idle burst chrome: the control cut no burst (0 of 10): no pending burst was shown; kill idle burst electron: the control cut no burst (0 of 10): no pending burst was shown; kill idle pairs chrome: the control cut no burst (0 of 10): no pending burst was shown; kill idle pairs electron: the control cut no burst (0 of 10): no pending burst was shown; kill eof burst chrome: the control cut no burst (0 of 10): no pending burst was shown; kill eof burst electron: the control cut no burst (0 of 10): no pending burst was shown; kill eof pairs chrome: the control cut no burst (0 of 10): no pending burst was shown; kill eof pairs electron: the control cut no burst (0 of 10): no pending burst was shown; kill signal burst chrome: the control cut no burst (0 of 10): no pending burst was shown; kill signal burst electron: the control cut no burst (0 of 10): no pending burst was shown; kill signal pairs chrome: the control cut no burst (0 of 10): no pending burst was shown; kill signal pairs electron: the control cut no burst (0 of 10): no pending burst was shown; kill remote burst chrome: the control cut no burst (0 of 10): no pending burst was shown; kill remote burst electron: the control cut no burst (0 of 10): no pending burst was shown; kill remote pairs chrome: the control cut no burst (0 of 10): no pending burst was shown; kill remote pairs electron: the control cut no burst (0 of 10): no pending burst was shown.

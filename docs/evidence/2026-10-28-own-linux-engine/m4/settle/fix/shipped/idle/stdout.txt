@@ -1,0 +1,223 @@
+fatal: not a git repository (or any of the parent directories): .git
+| cell | lane | runs | misses (late / never / refused / invalid) | streak at the end | verdict |
+|---|---|---:|---|---:|---|
+| chrome-input press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input key_down background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input key_up background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input click_element background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input right_click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input secondary_action background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input move background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input scroll background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input drag background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-text press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-text type_text background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-text clipboard_read background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-text clipboard_write background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-text activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input press_key desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input key_down desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input key_up desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input click desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input move desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input move_relative desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input scroll desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input drag desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input drag_handle desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| chrome-input drag dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input press_key background | shipped | 37 | 6 (6 / 0 / 0 / 0) | 0 | not reached |
+| electron-input key_down background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input key_up background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input click_element background | shipped | 34 | 3 (3 / 0 / 0 / 0) | 0 | not reached |
+| electron-input right_click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input secondary_action background | shipped | 33 | 5 (5 / 0 / 0 / 0) | 0 | not reached |
+| electron-input move background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input scroll background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input drag background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-text press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-text type_text background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-text activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input press_key desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input key_down desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input key_up desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input click desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input move desktop | shipped | 31 | 1 (1 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input move_relative desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input scroll desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input drag desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input drag_handle desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| electron-input drag dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input key_down background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input key_up background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input click_element background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input right_click background | shipped | 31 | 1 (0 / 0 / 1 / 0) | 30 | 30 consecutive |
+| firefox-input secondary_action background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input move background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input scroll background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input drag background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-text press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-text type_text background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-text activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input click dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input right_click dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input move dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input scroll dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| firefox-input drag dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit key_down background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit drag background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit type_text background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit clipboard_read background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit clipboard_write background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit press_key desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit click desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit drag desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gedit drag_handle desktop | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| kate press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| kate key_down background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| kate click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| kate key_click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| kate drag background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| kate activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| qtcreator press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| qtcreator key_down background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| qtcreator click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| qtcreator key_click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| qtcreator drag background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| qtcreator activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| writer press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| writer key_down background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| writer click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| writer activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| writer type_text background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gnome-terminal press_key background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gnome-terminal key_down background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gnome-terminal click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gnome-terminal scroll background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gnome-terminal type_text background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gnome-terminal activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| xterm click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| xterm scroll background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| xterm drag background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| xterm press_key dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-gtk3 click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-gtk3 activate_click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-gtk3 activate_click dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-gtk3 click_element background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-gtk3 move background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-gtk3 scroll background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt5 click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt5 key_click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt5 click_element background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt5 move background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt5 secondary_action background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt5 scroll dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt6 click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt6 key_click background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt6 click_element background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt6 move background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt6 secondary_action background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| settle-qt6 scroll dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gtk4-button click_element background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gtk4-button secondary_action background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gtk4-input press_key dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gtk4-input click dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gtk4-input move dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gtk4-input scroll dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gtk4-input drag dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gnome-text-editor type_text dedicated | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+| gnome-text-editor activate_window background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+
+| cell | audit | requests | runs that ran their input | effects missed |
+|---|---|---:|---:|---:|
+| chrome-input press_key background | clean | 27307 | 5 of 5 | 0 |
+| chrome-input key_down background | clean | 27313 | 5 of 5 | 0 |
+| chrome-input key_up background | clean | 27314 | 5 of 5 | 0 |
+| chrome-input click background | clean | 27382 | 5 of 5 | 0 |
+| chrome-input click_element background | clean | 34057 | 5 of 5 | 0 |
+| chrome-input right_click background | clean | 34118 | 5 of 5 | 0 |
+| chrome-input secondary_action background | clean | 34057 | 5 of 5 | 0 |
+| chrome-input move background | clean | 54421 | 5 of 5 | 0 |
+| chrome-input scroll background | clean | 34235 | 5 of 5 | 0 |
+| chrome-input drag background | clean | 34168 | 5 of 5 | 0 |
+| chrome-text press_key background | clean | 20528 | 5 of 5 | 0 |
+| chrome-text type_text background | clean | 28178 | 5 of 5 | 0 |
+| chrome-text clipboard_read background | clean | 7429 | 5 of 5 | 0 |
+| chrome-text clipboard_write background | clean | 36023 | 5 of 5 | 0 |
+| electron-input press_key background | clean | 31768 | 5 of 5 | 0 |
+| electron-input key_down background | clean | 31774 | 5 of 5 | 0 |
+| electron-input key_up background | clean | 31776 | 5 of 5 | 0 |
+| electron-input click background | clean | 31842 | 5 of 5 | 0 |
+| electron-input click_element background | clean | 39636 | 5 of 5 | 0 |
+| electron-input right_click background | clean | 39692 | 5 of 5 | 0 |
+| electron-input secondary_action background | clean | 39636 | 5 of 5 | 0 |
+| electron-input move background | clean | 80701 | 5 of 5 | 0 |
+| electron-input scroll background | clean | 39810 | 5 of 5 | 0 |
+| electron-input drag background | clean | 38513 | 5 of 5 | 0 |
+| electron-text press_key background | clean | 23881 | 5 of 5 | 0 |
+| electron-text type_text background | clean | 32603 | 5 of 5 | 0 |
+| firefox-input press_key background | clean | 31282 | 5 of 5 | 0 |
+| firefox-input key_down background | clean | 31356 | 5 of 5 | 0 |
+| firefox-input key_up background | clean | 31377 | 5 of 5 | 0 |
+| firefox-input click background | clean | 31626 | 5 of 5 | 0 |
+| firefox-input click_element background | clean | 39029 | 5 of 5 | 0 |
+| firefox-input right_click background | clean | 39326 | 5 of 5 | 0 |
+| firefox-input secondary_action background | clean | 39029 | 5 of 5 | 0 |
+| firefox-input move background | clean | 75043 | 5 of 5 | 0 |
+| firefox-input scroll background | clean | 39452 | 5 of 5 | 0 |
+| firefox-input drag background | clean | 37998 | 5 of 5 | 0 |
+| firefox-text press_key background | clean | 23512 | 5 of 5 | 0 |
+| firefox-text type_text background | clean | 32181 | 5 of 5 | 0 |
+| gedit press_key background | clean | 15065 | 5 of 5 | 0 |
+| gedit key_down background | clean | 15068 | 5 of 5 | 0 |
+| gedit click background | clean | 302 | 5 of 5 | 0 |
+| gedit drag background | clean | 2003 | 5 of 5 | 0 |
+| gedit type_text background | clean | 20829 | 5 of 5 | 0 |
+| gedit clipboard_read background | clean | 5574 | 5 of 5 | 0 |
+| gedit clipboard_write background | clean | 26638 | 5 of 5 | 0 |
+| kate press_key background | clean | 16311 | 5 of 5 | 0 |
+| kate key_down background | clean | 16311 | 5 of 5 | 0 |
+| kate click background | clean | 5701 | 5 of 5 | 0 |
+| kate key_click background | clean | 5831 | 5 of 5 | 0 |
+| kate drag background | clean | 7214 | 5 of 5 | 0 |
+| qtcreator press_key background | clean | 16319 | 5 of 5 | 0 |
+| qtcreator key_down background | clean | 16320 | 5 of 5 | 0 |
+| qtcreator click background | clean | 5705 | 5 of 5 | 0 |
+| qtcreator key_click background | clean | 5840 | 5 of 5 | 0 |
+| qtcreator drag background | clean | 7085 | 5 of 5 | 0 |
+| writer press_key background | clean | 208 | 5 of 5 | 0 |
+| writer key_down background | clean | 212 | 5 of 5 | 0 |
+| writer click background | clean | 301 | 5 of 5 | 0 |
+| writer type_text background | clean | 6139 | 5 of 5 | 0 |
+| gnome-terminal press_key background | clean | 206 | 5 of 5 | 0 |
+| gnome-terminal key_down background | clean | 209 | 5 of 5 | 0 |
+| gnome-terminal click background | clean | 306 | 5 of 5 | 0 |
+| gnome-terminal scroll background | clean | 261 | 5 of 5 | 0 |
+| gnome-terminal type_text background | clean | 6121 | 5 of 5 | 0 |
+| xterm click background | clean | 301 | 5 of 5 | 0 |
+| xterm scroll background | clean | 246 | 5 of 5 | 0 |
+| xterm drag background | clean | 2151 | 5 of 5 | 0 |
+| settle-gtk3 click background | clean | 16481 | 5 of 5 | 0 |
+| settle-gtk3 click_element background | clean | 21750 | 5 of 5 | 0 |
+| settle-gtk3 move background | clean | 59571 | 5 of 5 | 0 |
+| settle-gtk3 scroll background | clean | 16436 | 5 of 5 | 0 |
+| settle-qt5 click background | clean | 21797 | 5 of 5 | 0 |
+| settle-qt5 key_click background | clean | 21927 | 5 of 5 | 0 |
+| settle-qt5 click_element background | clean | 21652 | 5 of 5 | 0 |
+| settle-qt5 move background | clean | 52804 | 5 of 5 | 0 |
+| settle-qt5 secondary_action background | clean | 21655 | 5 of 5 | 0 |
+| settle-qt6 click background | clean | 21797 | 5 of 5 | 0 |
+| settle-qt6 key_click background | clean | 21927 | 5 of 5 | 0 |
+| settle-qt6 click_element background | clean | 21656 | 5 of 5 | 0 |
+| settle-qt6 move background | clean | 58169 | 5 of 5 | 0 |
+| settle-qt6 secondary_action background | clean | 21654 | 5 of 5 | 0 |
+| gtk4-button click_element background | clean | 38680 | 5 of 5 | 0 |
+| gtk4-button secondary_action background | clean | 38680 | 5 of 5 | 0 |
+
+**Incomplete or failed:** electron-input press_key background (shipped): no 30 consecutive passing runs in 37; electron-input click_element background (shipped): no 30 consecutive passing runs in 34; electron-input secondary_action background (shipped): no 30 consecutive passing runs in 33.

@@ -449,7 +449,10 @@ const config = {
 const tool = startTool();
 config.screen = await tool.ask({op: 'screen'});
 log('config', JSON.stringify(config));
-const engines = {a: await startEngine(BINS.a, 'a'), b: await startEngine(BINS.b, 'b')};
+// #287: one engine process serves both heads when they are one binary (run 42376953140: a second process of the same
+// binary had every screen capture time out once the first had captured).
+const engines = {a: await startEngine(BINS.a, 'a')};
+engines.b = BINS.b === BINS.a ? engines.a : await startEngine(BINS.b, 'b');
 const ctx = {tool};
 try {
   if (GROUP.startsWith('safari')) await runSafari(ctx); else if (GROUP === 'firefox') await runFirefox(ctx); else await runChrome(ctx);
@@ -457,7 +460,7 @@ try {
   config.exception = String(e?.stack || e).slice(0, 3000);
   log('exception', config.exception);
 }
-for (const e of Object.values(engines)) { config[`${e.name}Stderr`] = e.stderr().slice(-3000); if (e.child.exitCode === null) e.child.kill('SIGKILL'); }
+for (const e of new Set(Object.values(engines))) { config[`${e.name}Stderr`] = e.stderr().slice(-3000); if (e.child.exitCode === null) e.child.kill('SIGKILL'); }
 save();
 tool.stop();
 server.close();

@@ -24,7 +24,7 @@ jobs:
       matrix:
         rep: [1, 2]
         # A push runs the groups named here.
-        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-s296"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-cov-a","chrome-cov-b","chrome-cov-c","firefox-cov","chrome-s305","vscode-s305"]') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:

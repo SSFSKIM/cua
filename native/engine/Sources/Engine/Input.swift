@@ -414,10 +414,10 @@ extension Engine {
               try elementActionClick(element, owner: target.owner, action: action, route: route, point: pointing.point,
                                      windowID: pointing.windowID, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
             }, focused: { bool(attribute(element, kAXFocusedAttribute)) }, caretOffset: {
-              // #283's caret from the field's own boxes; a password field's value is never read.
-              guard let point = pointing.point else { return .failure(.pointOutsideText) }
-              if secureTextField(role: attribute(element, kAXRoleAttribute) as? String, subrole: subroleRead(element)) { return .failure(.secure) }
-              return fieldCaretOffset(element, at: point)
+              // #283's caret from the field's own boxes; a password field's value and range are never read.
+              textEntryCaretOffset(point: pointing.point, secure: {
+                secureTextField(role: attribute(element, kAXRoleAttribute) as? String, subrole: subroleRead(element))
+              }, offset: { fieldCaretOffset(element, at: $0) })
             }, writeSelection: { offset in
               try guarding.checkInFlight()
               var written = AXError.success

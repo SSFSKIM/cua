@@ -168,6 +168,26 @@ final class TextEntryClickTests: XCTestCase {
     XCTAssertEqual(clock, textEntryFocusSettleMs)
   }
 
+  /// The live caret's order: a password field is known before its point, so one with no point reads nothing either, and
+  /// through the carrier is still `secure`, its range unread.
+  func testAPasswordFieldWithNoPointIsSecureAndItsRangeNeverRead() throws {
+    var scanned = 0
+    let none = textEntryCaretOffset(point: nil, secure: { true }, offset: { _ in scanned += 1; return .success(1) })
+    XCTAssertEqual(none, .failure(.secure))
+    XCTAssertEqual(textEntryCaretOffset(point: CGPoint(x: 1, y: 1), secure: { true }, offset: { _ in scanned += 1; return .success(1) }), .failure(.secure))
+    XCTAssertEqual(scanned, 0, "no box scan of a password field")
+    XCTAssertEqual(textEntryCaretOffset(point: nil, secure: { false }, offset: { _ in .success(1) }), .failure(.pointOutsideText))
+    XCTAssertEqual(textEntryCaretOffset(point: CGPoint(x: 1, y: 1), secure: { false }, offset: { _ in .success(4) }), .success(4))
+    let page = page()
+    let field = Node("AXTextField", parent: page)
+    let app = App(focused: page)
+    app.selectionFocuses = true
+    try click(field, caret: none, app: app)
+    XCTAssertEqual(app.writes, ["AXSelectedTextRange {0, 0}"])
+    XCTAssertEqual(app.record?.caret, .unconfirmed(.secure))
+    XCTAssertEqual(app.selectionReads, 0)
+  }
+
   /// A password field's caret is written at 0, and its range never read.
   func testAPasswordFieldsRangeIsNeverRead() throws {
     let page = page()

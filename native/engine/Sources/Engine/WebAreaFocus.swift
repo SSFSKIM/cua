@@ -505,6 +505,14 @@ func caretFocusNote(_ app: String, _ caret: CaretPlacement) -> String {
   }
 }
 
+/// The offset a WebKit page's field's caret is written at (#313): a password field first (`secure`, so nothing of it is
+/// read, whatever its point), then no clickable point (`pointOutsideText`), then #283's box scan at the point (`offset`).
+func textEntryCaretOffset(point: CGPoint?, secure: () -> Bool, offset: (CGPoint) -> Result<Int, CaretNotPlaced>) -> Result<Int, CaretNotPlaced> {
+  if secure() { return .failure(.secure) }
+  guard let point else { return .failure(.pointOutsideText) }
+  return offset(point)
+}
+
 /// Whether a text field is a password field, whose value and ranges are never read (#283's rule): its role or subrole
 /// AXSecureTextField, or a subrole that cannot be read.
 func secureTextField(role: String?, subrole: SubroleRead) -> Bool {

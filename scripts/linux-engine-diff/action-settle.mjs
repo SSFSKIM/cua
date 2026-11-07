@@ -651,7 +651,10 @@ async function auditCell(ctx, cell, sc, lane) {
       const row = await settled(() => oneRun(ctx, cell, sc, svc, settler, trial));
       // what the audit needs of each run: that its input ran as the timed runs' did (the review's finding 6)
       const value = row.ok ? row.value : { ok: false, landed: false, error: row.error };
-      runs.push({ class: runClass(value), landed: value.landed, why: value.error ?? value.invalid ?? value.answers?.find((a) => !a.ok)?.error ?? undefined });
+      const cls = runClass(value);
+      // a run that changed the desktop keeps its witness for the audit's failure
+      const desktop = cls === 'desktop' ? { desktop_clean: value.desktop_clean, front_active: value.front_active, witness: value.witness, activations: value.activations } : {};
+      runs.push({ class: cls, landed: value.landed, why: value.error ?? value.invalid ?? value.answers?.find((a) => !a.ok)?.error ?? undefined, ...desktop });
     }
   } catch (error) {
     setupError = String(error.message).slice(0, 300);

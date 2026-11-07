@@ -469,7 +469,10 @@ export function methodConstants(rows, { setAside = SET_ASIDE } = {}) {
 /**
  * A background cell's audit (action-settle.mjs `auditCell`): it passes only when the trace holds the engine's requests
  * and none forbidden, and every audited run ran its input as the timed runs do (its preparation and readers worked,
- * every command answered). An effect that came late or never is kept apart (`missed`): the audit judges what was sent.
+ * every command answered), and none changed the desktop (a `desktop` run: its input took effect while the background
+ * witness or the front-window check failed; a client's own request, Qt activating itself, leaves the engine's trace
+ * clean, so the trace alone cannot see it), its witness fields and activations kept in the failure. An effect that came
+ * late or never is kept apart (`missed`): the audit judges what was sent.
  */
 export function auditVerdict({ clean, requests, runs }, need) {
   const failed = [];
@@ -478,6 +481,11 @@ export function auditVerdict({ clean, requests, runs }, need) {
   if (runs.length < need) failed.push(`${runs.length} of ${need} runs`);
   const notRun = runs.filter((r) => r.class === 'invalid' || r.class === 'refused');
   if (notRun.length) failed.push(`${notRun.length} of ${runs.length} runs did not run their input (${notRun.map((r) => r.why ?? r.class).join('; ').slice(0, 300)})`);
+  const changed = runs.filter((r) => r.class === 'desktop');
+  if (changed.length) {
+    const evidence = changed.map((r) => JSON.stringify({ desktop_clean: r.desktop_clean, front_active: r.front_active, witness: r.witness, activations: r.activations }));
+    failed.push(`${changed.length} of ${runs.length} runs changed the desktop (${evidence.join('; ').slice(0, 600)})`);
+  }
   return { pass: failed.length === 0, failed, missed: runs.filter((r) => r.class === 'late' || r.class === 'never').length };
 }
 

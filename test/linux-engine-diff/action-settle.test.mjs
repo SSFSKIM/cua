@@ -245,6 +245,18 @@ test('an audit passes only on a clean trace of the engine\'s requests whose ever
   assert.equal(auditVerdict({ clean: true, requests: 40, runs: Array(3).fill(ran('pass')) }, 5).pass, false, 'runs missing');
 });
 
+test('an audit fails on a run that changed the desktop, its witness kept in the failure (the re-review)', () => {
+  // the reviewer's probe: five runs whose input took effect while the background witness or the front-window check
+  // failed (Qt activating itself leaves the engine's own trace clean: the request is Qt's)
+  const desktop = { class: 'desktop', desktop_clean: false, front_active: false, witness: ['active'], activations: [{ window: 77, by: 'client 0x1a00000' }] };
+  const verdict = auditVerdict({ clean: true, requests: 40, runs: Array(5).fill(desktop) }, 5);
+  assert.equal(verdict.pass, false);
+  assert.match(verdict.failed.join(), /5 of 5 runs changed the desktop/);
+  assert.match(verdict.failed.join(), /"active"/, 'the witness fields');
+  assert.match(verdict.failed.join(), /client 0x1a00000/, 'the activation');
+  assert.equal(auditVerdict({ clean: true, requests: 40, runs: [...Array(4).fill({ class: 'pass' }), desktop] }, 5).pass, false, 'one is enough');
+});
+
 test('a run passes on its answers and its effect, and on the background route its desktop left alone; activation and the other routes change the desktop on purpose', () => {
   const ok = { answersOk: true, landed: true, desktopClean: true, frontActive: true };
   assert.equal(runPasses({ route: 'background', kind: 'click', ...ok }), true);

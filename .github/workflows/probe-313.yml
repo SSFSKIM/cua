@@ -17,14 +17,14 @@ permissions:
 env:
   # Quoted: YAML reads an all-digit-and-e SHA as a float.
   P313_A_REF: 'b27ceb36cd7914241ae69092c781d0f096f0b127'
-  P313_B_REF: '06c9035696271245d3e16c8f47b7463d050474cd'
+  P313_B_REF: '8d1025c1eee1f1f758c9b5db9863dd1c2b1a8c06'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: ${{ fromJSON(github.event.inputs.groups || '["latency"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["safari", "firefox", "native", "chrome"]') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:

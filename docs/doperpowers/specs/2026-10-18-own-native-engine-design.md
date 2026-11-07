@@ -1905,6 +1905,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      diagnostic repeats (src/services/sky.mjs), since focusField's fallback can stop under them.
   11. **Not done.** Route 2′ on a Chrome carrying Chromium 212c026a (the ruling's D) and WebKit's first-mouse rules
      (Safari's page refuses first mouse unless a selection may be dragged; it gets `clickUnconfirmed`, not a refusal).
+     Amended by the #287 entry (2026-11-07, below): the parenthesis is wrong. Safari never answers `clickUnconfirmed`
+     for a background click: Safari's AXActivationPoint lies inside its window, so the engine clicks it, the window
+     becomes key, and the action's own mouse-down is delivered (pointer 1/1/1/1 on Safari 27.2). Firefox does answer
+     `clickUnconfirmed` (pointer 0), and truthfully, because Gecko's view refuses first mouse.
   12. **The coordinate hit-test asks the application** (found live on the hosted runner, probe/282-hosted, runs
      42123497534 and 42124119631; the design session's conditions, 1ea561bc bbaa0eba). The coordinate click, the drag
      and the coordinate scroll asked AXUIElementCopyElementAtPosition of the window element, which answers
@@ -2881,6 +2885,59 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   `wideListMs` and `wideListFrames` against `widthMs`, to price the rule's reads on Chromium's large tables and see
   whether the stale columns and header group carry them; and repl-parity's and the docs-oracle's lanes unchanged.
   Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling 7b2a5a70 on #304 and #309.
+
+- Decision (#287, 2026-11-07, `docs/287-measured`; the design session's ruling cb252e88 on #287's findings, issue
+  comment 6709964394; the spike on hosted macOS, main's engine at 51b473fc, 2 reps, kit `probe/287-hosted` f50fe37b,
+  runs 42374569976 and 42376355521 (recon), 42375146858, 42379297174, 42379365501 and 42382030666 (the cells),
+  42376953140 (VS Code's enablement and sweep), 42386958490 and 42388802262 (Firefox's timeline and VS Code's clicks);
+  amends #282's item 11): **the #282–#311 chain is measured beyond Chrome for Testing. Stable Chrome holds on every
+  cell; Safari, Firefox and VS Code hold in part, and each divergence is a ticket or a stated limit.** Nothing in the
+  engine changes in this entry. Evidence: `docs/evidence/2026-11-07-other-browsers/`.
+  1. **The measured set.** Each config ran the kits of the entries named, unchanged apart from a browser switch:
+     - **stable Google Chrome 156.0.8078.80** (.48 and .81 on the older image), for the whole #282–#311 chain, beside
+       Chrome for Testing in the same job: #282's cells, #283's 17, #288's and #292's enablement and release, #294's
+       re-layout, #296's 53 cells, #305's sweep and popover, and #301's and #304's coverage on 21 pages. Every cell
+       holds as on Chrome for Testing, #296's and #304's cell by cell, but one: ⌘L then a click on a page button is
+       refused 3 of 4 where Chrome for Testing pressed 4 of 4 (#317, item 2);
+     - **Safari 27.2** for #282 and #283 (#296, #305 and #304 had measured it already): #282's first mouse holds
+       (#282's item 11, as amended), and #283's posted click is delivered, 34 of 34, with WebKit placing the caret;
+     - **Firefox 159.0 / 158.0.1** for #296 (20 cells, the stale ones refused for the right reasons), #305's sweep
+       (0 refused) and #304's coverage at the top of each page (100% checked). Positions 25–90% are not measured:
+       Firefox exposes no scroll bar to position by;
+     - **VS Code 1.144.0** (Electron) for enablement (the AXManualAccessibility write succeeds and the full tree
+       arrives about 2.4 s later) and #305's sweep (0 refused). Its shared clicks on Monaco and the explorer are
+       refused by #282's allowlist, 6 of 6, and its dedicated clicks land.
+     The enablement, per browser: on both Chromes the AXManualAccessibility write answers −25205 and does nothing, and
+     the EUI write is the route, as #292 found. Firefox turns its accessibility on at the engine's first contact, with
+     no pref; its AXEnhancedUserInterface then reads true, so the engine writes and owns nothing there.
+  2. **The divergences and their tickets** (each spawned by #287):
+     - #312: the observation that turns Firefox's accessibility on reports its AXWebArea frame as {0, 0, 0, 0} (the
+       real one arrives 0.55 s later), so every page click on that screenshot is refused as `interactiveHit`, 4 of 4;
+     - #313: on Safari, an element click by token on a textarea answers success, 2 of 2, while the focus stays on the
+       web area: the advertised AXPress does not focus it;
+     - #314: a Firefox web area with more than 499 children prints none of them, since Firefox answers
+       AXVisibleChildren with −25212 and the width rule then shows nothing;
+     - #315: Firefox's shared-mode page clicks are lost, 34 of 34 `clickUnconfirmed` with pointer 0 (its
+       AXActivationPoint lies on a toolbar control, and Gecko refuses first mouse); the ticket is #282's element route
+       and #283's focus route for Gecko, whose element clicks by token work, 6 of 6;
+     - #316: on Safari, ⌘L then a coordinate click on the page answers success and lands on the address-field
+       overlay, 12 of 12; the overlay is not in the AX tree, so the guard's hit still answers the button
+       (`sameElement`). The ruling: measure a candidate guard's false refusals before building it, and state the limit
+       meanwhile (item 3);
+     - #317: on stable Chrome, ⌘L opens the omnibox suggestion popup over the page, and a click under it is refused,
+       3 of 4, rightly (`noHit`), but with a message that blames the page;
+     - #318: the three stated limits of item 3 that no fix ticket carries.
+  3. **The stated limits, now:**
+     - on Safari, ⌘L then a click on the page lands on the address-field overlay (#316); the controls (F19, then a
+       click; ⌘L, Escape, then a click) delivered 8 of 8;
+     - cua's release has no visible effect on VS Code: end_task, SIGTERM and the 30 s grace answer `released: 1`, but
+       its accessibility tree stays complete (#318);
+     - Firefox's toolbar Reload reloads, but answers `clickUnconfirmed`, 3 of 3 (#318);
+     - VS Code's Toggle Panel result is unresolved: its element-routed AXPress answered success 2 of 2, and the panel
+       opened in only 1 rep (#318);
+     - on stable Chrome, ⌘L's suggestion popup gives a refusal whose message blames the page (#317).
+     `docs/cua-api/agent-cursor.md` claims no measured set and states none of these, so it is unchanged.
+  Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #287.
 
 ## Outcomes & Retrospective
 

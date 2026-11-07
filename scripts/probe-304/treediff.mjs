@@ -6,7 +6,10 @@ import {render, advanceNumbering} from '../../src/services/engine/render.mjs';
 import {createHash} from 'node:crypto';
 
 export const printed = sky => { try { return render(sky, advanceNumbering(null, sky)); } catch (e) { return `RENDER ERROR ${String(e?.message ?? e)}`; } };
-export const digest = v => createHash('sha256').update(typeof v === 'string' ? v : JSON.stringify(v)).digest('hex').slice(0, 16);
+/// JSON with every object's keys sorted: the engine's dictionaries serialize in a per-process order (Swift's hash seed),
+/// so two engines' identical values differ as plain JSON.
+export const canon = v => JSON.stringify(v, (_, x) => x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, x[k]])) : x);
+export const digest = v => createHash('sha256').update(typeof v === 'string' ? v : canon(v)).digest('hex').slice(0, 16);
 
 // An element line without its index (`<tabs><index> <text>`), so a path reads by role and label.
 const bare = line => line.replace(/^(\t*)\d+ /, '$1');
@@ -31,7 +34,7 @@ export function diffPrinted(a, b) {
 }
 
 function recordPath(rec, i) {
-  const path = [`${rec[i][0]}@${JSON.stringify(rec[i][3])}`];
+  const path = [`${rec[i][0]}@${canon(rec[i][3])}`];
   let d = rec[i][1];
   for (let j = i - 1; j >= 0 && d > 0; j--) if (rec[j][1] < d) { d = rec[j][1]; path.unshift(rec[j][0]); }
   return path;
@@ -41,7 +44,7 @@ function recordPath(rec, i) {
 /// identical, else the entry counts, the number of differing entries and the first difference with its path.
 export function diffRecord(a, b) {
   a ??= []; b ??= [];
-  const sa = a.map(e => JSON.stringify(e)), sb = b.map(e => JSON.stringify(e));
+  const sa = a.map(canon), sb = b.map(canon);
   let first = -1, count = 0;
   for (let i = 0; i < Math.max(sa.length, sb.length); i++) if (sa[i] !== sb[i]) { count += 1; if (first < 0) first = i; }
   if (first < 0) return null;
@@ -53,7 +56,7 @@ export function diffRecord(a, b) {
 /// The raw nodes without their per-lineage tokens (a stricter check than the printed tree): null when identical.
 export const strip = nodes => (nodes ?? []).map(({token, ...rest}) => rest);
 export function diffNodes(a, b) {
-  const sa = strip(a).map(n => JSON.stringify(n)), sb = strip(b).map(n => JSON.stringify(n));
+  const sa = strip(a).map(canon), sb = strip(b).map(canon);
   let first = -1, count = 0;
   for (let i = 0; i < Math.max(sa.length, sb.length); i++) if (sa[i] !== sb[i]) { count += 1; if (first < 0) first = i; }
   return first < 0 ? null : {nodes: [sa.length, sb.length], differing: count, first, a: sa[first]?.slice(0, 200) ?? null, b: sb[first]?.slice(0, 200) ?? null};

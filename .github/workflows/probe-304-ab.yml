@@ -27,7 +27,10 @@ jobs:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-a","chrome-b","chrome-c","safari","sweep-chrome","sweep-safari","sweep-finder","sweep-textedit","s296-chrome","s296-final","s296-safari-final","s296-native-final"]') }}
+        # Every group: chrome-a, chrome-b, chrome-c, safari, sweep-chrome, sweep-safari, sweep-finder, sweep-textedit,
+        # s296-chrome, s296-final, s296-safari-final, s296-native-final. Run 42326533862 (kit 021a062d) ran them all on
+        # A = B = main; this push re-runs the coverage groups only, with eight timed observations per position.
+        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-a","chrome-b","chrome-c","safari"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:

@@ -2,7 +2,7 @@
 // scripts/probe-304/instrument.py, observe the spike's pages at 0 / 25 / 50 / 90 % in Chrome for Testing and Safari.
 // Per page both heads observe once untimed (the enablement and the page's tree settled, either head owning Chrome's
 // attribute); per position the tool hit-tests a 20 pt grid over the window, then the heads observe in the order X Y Y X
-// (X alternating by page, position and repetition). Each observation gives the guard's checked / container-only /
+// Y X X Y (X alternating by page, position and repetition). Each observation gives the guard's checked / container-only /
 // unrecorded share over the grid (scripts/probe-304/guard.mjs), its walk ms, its cut flags, and its printed tree and
 // guard record, which are compared across the heads (and within a head, the page's own control) by
 // scripts/probe-304/treediff.mjs. No click is posted; Safari is positioned through its scroll bar's AXValue.
@@ -267,13 +267,12 @@ const results = [];
 const save = () => writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, results}, null, 1));
 const pct = g => g ? `${g.checked}/${g.containerOnly}/${g.unrecorded}` : '-';
 
-/// Slot pairs compared: the heads side by side (1-2, 3-4, 1-3, 2-4) and each head against itself (1-4 and 2-3, the
-/// page's own control).
-const PAIRS = [[0, 1], [2, 3], [0, 2], [1, 3], [0, 3], [1, 2]];
+/// Consecutive slots compared: the heads side by side where they differ, each head against itself where it observed twice
+/// in a row (the page's own control).
 function compare(slots) {
   const out = [];
-  for (const [i, j] of PAIRS) {
-    const x = slots[i], y = slots[j];
+  for (let i = 0; i + 1 < slots.length; i++) {
+    const j = i + 1, x = slots[i], y = slots[j];
     if (!x?.obs || !y?.obs) continue;
     const same = x.head === y.head;
     const uncut = !x.obs.cut && !y.obs.cut;
@@ -287,7 +286,9 @@ async function measure(ctx, target, at, pageInfo, posIndex) {
   const label = `${GROUP}/${target.name}/${at.name}`;
   const first = (ctx.pageIndex + posIndex + REP) % 2 === 0 ? 'a' : 'b';
   const second = first === 'a' ? 'b' : 'a';
-  const order = [first, second, second, first];
+  // X Y Y X Y X X Y: each head four times, balanced for order and for a slow spell of a few seconds (run 42326533862's
+  // walks ran 0.4–0.9 s slow in one or two consecutive observations).
+  const order = [first, second, second, first, second, first, first, second];
   const row = {label, group: GROUP, target: target.name, pos: at.name, pageInfo, order};
   try {
     const wf = ctx.windowFrame;

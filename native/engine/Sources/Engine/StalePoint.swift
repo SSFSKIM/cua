@@ -66,7 +66,7 @@ struct ScreenshotNodeRead<Element> {
 /// The record of a walk's window tree (`reads` in the walk's preorder, parents before their children): each node with a
 /// frame, its shown part cut by every clipping ancestor (a scroll area, a web area, a group that scrolls by the page, a
 /// sheet, menu or popover, the window; a window, sheet, menu or popover starts the cut again at its own frame, as the
-/// vendor's visible-frame walk stops there), whether all its children were recorded (a frameless node's unrecorded
+/// vendor's visible-frame walk stops there; one whose frame is unplaced, `unplacedFrame`, cuts nothing, #312), whether all its children were recorded (a frameless node's unrecorded
 /// children counting against its nearest framed ancestor), and whether it is a strip whose children the record lacks
 /// (`thinGap`).
 func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [ScreenshotNode<Element>] {
@@ -98,7 +98,11 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
       return rect.intersection(inherited)
     }
     if clipsDescendants(role: read.role, actions: read.actions) {
-      bounds[read.number] = .some(own.map { cut($0) } ?? CGRect.null)  // a clipping frame unread: nothing known to show
+      if let own, unplacedFrame(own) {
+        bounds[read.number] = .some(inherited)  // an unplaced clipping frame (#312): unknown, so it cuts nothing
+      } else {
+        bounds[read.number] = .some(own.map { cut($0) } ?? CGRect.null)  // a clipping frame unread: nothing known to show
+      }
     } else {
       bounds[read.number] = .some(inherited)
     }

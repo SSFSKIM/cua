@@ -30,8 +30,9 @@
 //   trip of the method's own request, null when it never reached the engine (a decline, an index the service refused);
 //   cua/settle on an observation whose settle hit its cap; cua/observation on every observation: the focus it read (the
 //   focused element's index and role, or focusedIndex null, #188) and whichever of the engine's own diagnostics the
-//   harness reads its timings carry (OBSERVATION_DIAGNOSTICS: web enablement, the web area's wait, the settle's status,
-//   duration and counts, the focus read's failure; the whitelist's scalars only), which, like every key here, rides in
+//   harness reads its timings carry (OBSERVATION_DIAGNOSTICS: web enablement, the web area's wait, the clipping frames
+//   read unplaced and their re-read (#312), the settle's status, duration and counts, the focus read's failure; the
+//   whitelist's scalars only), which, like every key here, rides in
 //   the tool result's _meta and never in its content, the model's text; cua/screenshotOmitted on an observation whose screenshot the
 //   engine did not take, with the reason ("windowMinimized": a minimized window is observed in place with no screenshot,
 //   and the facade's getScreenshot then fails "Screenshot unavailable"); on input results and input errors the engine's meta as
@@ -127,13 +128,16 @@ const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activation
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application
 // element's role read before enablement (its cost, #244), what web enablement read before it touched the attribute and
 // which attribute it set, whether it attempted the write and the AXError's code when it failed (#282: it fails on Chrome
-// for Testing), whether the web area was seen or waited for (and how long), and each settle's status,
+// for Testing), whether the web area was seen or waited for (and how long), how many clipping frames read {0, 0, 0, 0}
+// and were taken as cutting nothing and what the enabling observation's re-read of one found (#312: Firefox's web area
+// on first contact), and each settle's status,
 // duration and counts, and why the focus read named no element (`focusRead`: an AXError, notAnElement or outsideTheWalk).
 // A bounded whitelist of scalars (a string of at most 64 characters), and the notification counts as at most 16 names
 // to integers; never the text, the tree or the timings of every phase. Beside them the service adds the focus every
 // observation read (./observations.mjs focus: the focused element's index and role, #188), which the trailer's selected
 // text masks for the model and the harness.
 const OBSERVATION_DIAGNOSTICS = ['launched', 'reopened', 'webShaped', 'appRoleReadMs', 'enablementPrior', 'enabled', 'enablementWrite', 'enablementWriteError', 'chromium', 'webAreaSeen', 'webAreaFound', 'webAreaWaitMs',
+  'unplacedClips', 'clipReread', 'clipRereadMs',
   ...['openSettle', 'settle'].flatMap(prefix => ['', 'Ms', 'Notifications', 'NotificationCounts', 'BusyWalks', 'BusyVetoes', 'Observed', 'QuietAtMs'].map(part => prefix + part)),
   'settleTreeReused', 'focusRead'];
 const DIAGNOSTIC_STRING_CHARS = 64, DIAGNOSTIC_COUNTS = 16;

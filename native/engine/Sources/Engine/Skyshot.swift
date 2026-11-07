@@ -240,6 +240,10 @@ extension Engine {
       }
     }
     let enablementsAfter = webAccessibility.enablements(pid: appPid, launched: generation)
+    // Whether this observation enabled the process's accessibility (#312): its enablement step set the process's
+    // `freshSince`, as the process's first observation or a write does. Firefox's accessibility comes on at that first
+    // contact with nothing written (its attribute then reads true).
+    let enabledAt = webAccessibility.freshSince(pid: appPid, launched: generation).flatMap { $0 >= started ? $0 : nil }
 
     // The window is there by now when the engine opened the app (waited above); otherwise it is read once.
     guard let window = try timings.time("window", { try awaitPrimaryWindow(of: application, until: unixMilliseconds(), opened: false) }) else {
@@ -310,9 +314,16 @@ extension Engine {
       if settled != nil { timings.set("settleTreeReused", false) }
     }
     let deadline = monotonicMilliseconds() + Double(min(observationDeadlineMs, max(0, context.deadline - unixMilliseconds())))
+    // On the observation that enabled accessibility, a clipping frame read unplaced is read once more when it is due
+    // (`TreeWalk.settleUnplacedClip`, #312); any other observation waits for nothing.
+    let clipRereadWait: (() -> Void)? = enabledAt.map { enabledAt in {
+      let now = monotonicMilliseconds()
+      let ms = clipRereadDue(now: now, enabledAt: enabledAt, deadline: deadline) - now
+      if ms > 0 { usleep(UInt32(ms * 1000)) }
+    } }
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
                         interactionFlags: interactionFlags, chromium: chromium, visibleFrame: menuRoot == nil ? windowFrame : nil,
-                        recordsScreenshot: pendingCapture != nil)
+                        recordsScreenshot: pendingCapture != nil, clipRereadWait: clipRereadWait)
     timings.time("walk") { walk.run(window: menuRoot ?? window, menuBar: menuBarElement, menuItems: menuItems) }
     walk.revision.menuRoot = menuRoot
     timings.merge(source.costs)
@@ -329,6 +340,7 @@ extension Engine {
     if walk.nodeCapHit { timings.set("nodeCapHit", true) }
     // The guard's record-only reads (#301 item 4).
     if walk.recordOnlyReads > 0 { timings.set("recordOnlyNodes", walk.recordOnlyReads) }
+    walk.reportUnplacedClips(&timings)
 
     var focused: Any = NSNull()
     var selectedText: Any = NSNull()

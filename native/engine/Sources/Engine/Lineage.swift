@@ -474,10 +474,11 @@ private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: 
     let children = chooseChildren(of: next.element, data: data, source: source, visibleFrame: windowFrame).children
     // What it leaves showing to its children: the walk's clipping rule (`TreeWalk.childClip`).
     var clip = next.clip
-    if let shown = clip, let frame = data.frame, clipsDescendants(role: data.role, actions: source.actions(next.element)) {
+    if let shown = clip, let frame = data.frame, !unplacedFrame(frame), clipsDescendants(role: data.role, actions: source.actions(next.element)) {
       clip = shown.intersection(frame)
     }
-    if next.depth == 0 || next.clip == nil || data.frame.map({ showsBeyondStrip($0, in: next.clip!) }) ?? true {
+    let unplaced = data.frame.map { unplacedFrame($0) && clipsDescendants(role: data.role, actions: source.actions(next.element)) } ?? false
+    if next.depth == 0 || next.clip == nil || unplaced || data.frame.map({ showsBeyondStrip($0, in: next.clip!) }) ?? true {
       push(children, depth: next.depth + 1, path: next.path, clip: clip)
     } else {
       var low = 0, high = deferred.count

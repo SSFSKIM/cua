@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       groups:
-        description: the groups, a JSON list (empty for the push default; all are safari, firefox, safari-x, firefox-x, native, native-x, raw, latency, safari-caret, chrome)
+        description: the groups, a JSON list (empty for the push default; all are safari, firefox, safari-x, firefox-x, native, native-x, raw, latency, safari-caret, p321, chrome)
         required: false
         default: ''
 permissions:
@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: ${{ fromJSON(github.event.inputs.groups || '["safari-caret"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["p321"]') }}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -49,6 +49,8 @@ jobs:
           git log -1 --format='kit %H %s'
           swiftc -O -o "$RUNNER_TEMP/p313-ax" scripts/probe-313/ax.swift
           swiftc -O -o "$RUNNER_TEMP/p313-poll" scripts/probe-313/poll.swift
+          swiftc -O -o "$RUNNER_TEMP/p321-win" scripts/probe-321/win.swift
+          swiftc -O -o "$RUNNER_TEMP/p321-raw" scripts/probe-321/raw.swift
           swiftc -o "$RUNNER_TEMP/p282-hit" scripts/probe-282/hit.swift
           swiftc -o "$RUNNER_TEMP/p283-ax" scripts/probe-283/ax.swift
           app="$RUNNER_TEMP/Probe313.app/Contents"
@@ -63,7 +65,7 @@ jobs:
             '<key>CFBundlePackageType</key><string>APPL</string>' \
             '<key>NSPrincipalClass</key><string>NSApplication</string>' \
             '</dict></plist>' > "$app/Info.plist"
-          heads="a b"; if [ "$GROUP" = latency ]; then heads=a; fi
+          heads="a b"; case "$GROUP" in latency|p321) heads=a ;; esac
           for h in $heads; do
             if [ "$h" = a ]; then ref="$P313_A_REF"; else ref="$P313_B_REF"; fi
             git worktree add "$RUNNER_TEMP/src-$h" "$ref"

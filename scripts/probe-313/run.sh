@@ -1,7 +1,7 @@
 #!/bin/bash
 # #313's hosted A/B: one group's cells on A (main, $RUNNER_TEMP/eng-a) and B (the fix, $RUNNER_TEMP/eng-b), one engine
 # process per cell and head, the heads' order alternating by repetition (odd: A first).
-#   GROUP=<safari|firefox|safari-x|firefox-x|native|native-x|raw|latency|safari-caret|chrome> REP=<n> scripts/probe-313/run.sh
+#   GROUP=<safari|firefox|safari-x|firefox-x|native|native-x|raw|latency|safari-caret|p321|chrome> REP=<n> scripts/probe-313/run.sh
 set -u
 T="$RUNNER_TEMP"; OUT="$T/probe-313"; AX="$T/p313-ax"
 mkdir -p "$OUT"
@@ -31,6 +31,9 @@ for h in $heads; do
       # The Safari by-token cells alone, the textarea filled so the caret's place is checkable (P313_FILLED).
       export P287_BROWSER=safari P313_FILLED="${P313_FILLED:-1}"
       stamp "$h safari caret"; node scripts/probe-313/web.mjs --engine "$E" --ax "$AX" --cells "${P313_CELLS:-}" --out "$OUT/$h/safari/web" ;;
+    p321)
+      # #321: the rate, step and timing of Safari's window rising over TextEdit's, on A only (scripts/probe-321/rate.mjs).
+      if [ "$h" = a ]; then export P287_BROWSER=safari; stamp "a safari 321"; node scripts/probe-321/rate.mjs --engine "$E" --win "$T/p321-win" --raw "$T/p321-raw" --batches 2 --clicks 5 --raw-batches 2 --raw-clicks 3 --out "$OUT/a/safari/p321"; fi ;;
     latency)
       # Firefox's focus read-back after AXPress (main's route), on A only.
       if [ "$h" = a ]; then export P287_BROWSER=firefox; stamp "a firefox latency"; node scripts/probe-313/latency.mjs --engine "$E" --ax "$AX" --poll "$T/p313-poll" --n 20 --out "$OUT/a/firefox/latency"; fi ;;

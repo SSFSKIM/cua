@@ -40,6 +40,10 @@ export function firefoxProfile(dir) {
     'trailhead.firstrun.didSeeAboutWelcome': true, 'browser.privacySegmentation.preferences.show': false, 'browser.rights.3.shown': true,
     'browser.contentblocking.introCount': 99, 'browser.download.panel.shown': true, 'browser.migrate.content-modal.enabled': false,
     'browser.tabs.firefox-view': false, 'sidebar.revamp': false, 'browser.ml.chat.enabled': false, 'browser.urlbar.quicksuggest.enabled': false,
+    // Firefox 159's tab-modal "Welcome to Firefox" Terms of Use dialog over the first page (run 42375146858).
+    'browser.preonboarding.enabled': false, 'termsofuse.bypassNotification': true, 'termsofuse.acceptedVersion': 999,
+    'termsofuse.acceptedDate': String(Date.now()), 'datareporting.policy.dataSubmissionPolicyBypassNotification': true,
+    'datareporting.policy.dataSubmissionPolicyAcceptedVersion': 999, 'datareporting.policy.dataSubmissionPolicyNotifiedTime': String(Date.now()),
     ...(process.env.P287_FIREFOX_A11Y === 'force' ? {'accessibility.force_disabled': -1} : {}),
   };
   writeFileSync(join(dir, 'user.js'), Object.entries(prefs).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join('\n') + '\n');

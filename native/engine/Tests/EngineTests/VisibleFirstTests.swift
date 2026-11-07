@@ -193,8 +193,9 @@ final class VisibleFirstTests: XCTestCase {
     for id in Set(third.keys).intersection(b.keys) { XCTAssertEqual(third[id], b[id]) }
   }
 
-  /// The stated limit (ruling 66f90453; #304 measures it): a visible control under a container that reports a collapsed
-  /// (1-pt) frame waits with it, so the budget can still cut it, and the guard checks it container-only.
+  /// The stated limit (ruling 66f90453; #304 measured none in 234 observations): a visible control under a container
+  /// that reports a collapsed (1-pt) frame waits with it, so the budget can still cut it, and the guard checks it
+  /// container-only.
   func testAVisibleControlUnderACollapsedContainerCanStillBeCut() {
     let tree = page(scroll: 30, chromium: true, collapsed: true)
     let cut = walk(tree, Lineage(), limits: budget, visibleFrame: windowFrame, chromium: true)

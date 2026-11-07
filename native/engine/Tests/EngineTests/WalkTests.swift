@@ -31,6 +31,8 @@ final class FakeTree {
   var slow: [Int: UInt32] = [:]
   /// An element's own description of an action, by id then action name, over `descriptions`.
   var elementDescriptions: [Int: [String: String]] = [:]
+  /// Called on every action-description query, by id and action name (a test's delay or count).
+  var onDescription: ((Int, String) -> Void)?
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
 }
@@ -77,6 +79,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   override func document(_ element: AXUIElement) -> String? { tree.documents[tree.id(element)] }
   override func actionDescription(_ element: AXUIElement, _ action: String) -> String? {
     descriptionCalls[action, default: 0] += 1
+    tree.onDescription?(tree.id(element), action)
     return tree.elementDescriptions[tree.id(element)]?[action] ?? tree.descriptions[action]
   }
   override func readListed(_ element: AXUIElement) -> ElementData? {
@@ -87,7 +90,12 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     return data
   }
   override func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? { tree.visible[tree.id(element)].map { $0.map(Engine.element) } }
-  override func readFrame(_ element: AXUIElement) -> CGRect? { tree.frames[tree.id(element)] }
+  /// Frame reads (AXPosition and AXSize alone) by id.
+  var frameReads: [Int: Int] = [:]
+  override func readFrame(_ element: AXUIElement) -> CGRect? {
+    frameReads[tree.id(element), default: 0] += 1
+    return tree.frames[tree.id(element)]
+  }
 
   override func scrollBars(_ element: AXUIElement) -> (horizontal: Bool, vertical: Bool) {
     let id = tree.id(element)
@@ -104,9 +112,11 @@ extension Engine {
 
 func walk(_ tree: FakeTree, _ lineage: Lineage, window: Int = 0, menuBar: Int? = nil, menu: [Int] = [],
           limits: WalkLimits = WalkLimits(deadline: .infinity), visibleFrame: CGRect? = nil, source: FakeSource? = nil,
-          interactionFlags: Bool = true, chromium: Bool = false, recordsScreenshot: Bool = false) -> TreeWalk {
+          interactionFlags: Bool = true, chromium: Bool = false, recordsScreenshot: Bool = false, wideListRules: Bool = true,
+          placesWaitingEarlier: Bool = true) -> TreeWalk {
   let walk = TreeWalk(source: source ?? FakeSource(tree), lineage: lineage, limits: limits, markdown: false,
-                      interactionFlags: interactionFlags, chromium: chromium, visibleFrame: visibleFrame, recordsScreenshot: recordsScreenshot)
+                      interactionFlags: interactionFlags, chromium: chromium, visibleFrame: visibleFrame, recordsScreenshot: recordsScreenshot,
+                      wideListRules: wideListRules, placesWaitingEarlier: placesWaitingEarlier)
   walk.run(window: element(window), menuBar: menuBar.map(element), menuItems: menu.map(element))
   lineage.commit(walk.revision)
   return walk

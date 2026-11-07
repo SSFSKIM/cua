@@ -2523,7 +2523,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      Beside `nodeCapHit`, `walkMs` and `nodes`, they give the A/B's p50 and p95.
   Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling on #301.
 
-- Decision (#301, 2026-11-06, the same branch; the ruling's item 4, question 5: the width rule's omitted branch): **an
+- Amended by the #304 and #309 entry (2026-11-06, below): the axis is chosen past an end child that overlaps the
+  first (step 2), and the bisection is shared with the tree's wide-list rule.
+  Decision (#301, 2026-11-06, the same branch; the ruling's item 4, question 5: the width rule's omitted branch): **an
   element the width rule shows none of (more than 499 children, no visible subset) keeps, in the guard's record only,
   the children whose frames meet the window, with their subtrees; the printed tree keeps the vendor's omission.** #299
   found this branch cutting Safari's HN thread to the table container (45–71% checked).
@@ -2555,7 +2557,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   and the docs-oracle's lanes unchanged.
   Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling on #301.
 
-- Decision (#301, 2026-11-06, the same branch; the design session's ruling 66f90453 on the hosted A/B, run 42231389508
+- Amended by the #304 and #309 entry (2026-11-06, below): #304 measured item 2's limit at none in 234 observations, and
+  a wide list's shown run is now read first.
+  Decision (#301, 2026-11-06, the same branch; the design session's ruling 66f90453 on the hosted A/B, run 42231389508
   on ab0e019a; supersedes the when-to-seed and cap entries above, amends the marker entry): **the seeding is dropped,
   and the frame-ordered visible-first walk stays on every app, Chromium included.**
   1. **What decided it.** The A/B measured the guard's checked share at 100% on every cut page and position of #299's
@@ -2688,6 +2692,195 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   element route kept as `recordedHit` (and after its wait's recheck), refused `pressedOther` for a target recorded
   elsewhere, moved over the point, new, or with its frame off the point.
   Date/Author: 2026-11-06, cursor235's implementer for the design session's rulings 45f5e5be and a27fc57c on #305.
+
+- Decision (#304 and #309, 2026-11-06, `fix/304-wide-list`; the design session's ruling 7b2a5a70 on #304's spike,
+  hosted macOS on f20a25ee, kit `probe/304-hosted` 07ed050c, runs 42313992098, 42315529833, 42317669249 and
+  42319757707; rule B as amended by ruling f1a7589f on the hosted A/B of f20a25ee against 566e3612; amends #301's
+  ruling-66f90453 entry, item 2, and its item-4 entry, step 2): **a wide list's shown children are found by frames and
+  read first, an AXColumn's children wait until nothing else is left, and the record's bisection chooses its axis past
+  an end child that overlaps the first.**
+  1. **What the spike found** (234 observations, 57,836 clickable points on a 20-pt grid at 0, 25, 50 and 90% down;
+     Chrome for Testing on 20 pages, Safari on 7). *Hole 2, a sibling starved by a wide list*, in 37 observations,
+     1,684 points left container-only (2.9%): Chromium answers `AXVisibleChildren` on an `AXTable` with every row, so
+     the width rule kept all 3,001 and the selection read and charged each one to learn its frame, and each `AXColumn`
+     listed every cell again (818 offscreen cells charged on the 3,000-row table, 2,042 on IANA's media-types page).
+     The 4,000-node budget ran out before the walk reached Chrome's toolbar and tab strip, and on IANA the page's next
+     visible tables: the guard checked 48.6% at 90% on IANA, 89.8–94.1% on the 3,000-row table, 32.8% at 90% on the
+     6,000-row one. *#309, the record's bisection*, in 8 observations, 804 points (1.4%): Safari's docs.python.org body
+     (667 children, which the width rule omits) ends with a 10-pt group framed at the body's top, so the first and last
+     framed children tied on both edges and `recordedChildPositions` returned none (36.8–91.1% checked, nothing cut).
+     The spike's replay over the wide engine's full trees priced the fixes: reading a wide list's frames before
+     charging, bisected to the shown run, checked 100% on all 119 cut observations for +3 ms p50 and +24 ms p95 of walk
+     (a frame read 0.06 ms against 0.55 ms for a full read); with the columns' children not taken up, +2 / +5 ms; the
+     columns alone, 98.4% mean and 32.8% min; a budget of 8,000, +2,011 / +3,836 ms.
+  2. **Rule A, the axis** (`ChildFrames.axis`, shared by both bisections). From the first framed child and a framed
+     child near the end: vertical when the end child's top lies below the first's (main's rule), horizontal only when it
+     lies wholly to the right of the first (main took any later left edge). An end child that says neither is passed and
+     the next one back tried, over 32 children from the last (main gave up at the first framed one, within 8). So #309's
+     group at the body's origin is passed, and so are Chromium's columns, each starting at the table's top and
+     overlapping its first row, which main's horizontal rule would take for a horizontal list. The vertical rule stays
+     main's on purpose: a first child that spans the list (a sidebar beside blocks that follow it down) is overlapped by
+     every end child, and "wholly below" would find no vertical axis there, then a false horizontal one. With no child
+     framed, or none of the probes saying an axis, there is still none: the record keeps none of the children, as before.
+  3. **Rule B, frame before charge** (`shownChildPositions`), as ruling f1a7589f amended it: **it never leaves unread a
+     shown child that main would have read before the cut.** Of an element taken up in the tree's selection with more
+     than 100 children, whose clip shows, the children that show are found by frames alone, none of those reads charged:
+     - up to 512 children (about 31 ms of frame reads at most), each child by its own frame: one that shows beyond a
+       strip in the clip, or has no frame, is read first, wherever it lies;
+     - above 512, the run that shows is bisected (`shownChildRun`: its start the first child not wholly before the clip,
+       its end the first wholly past it, along the axis, a frameless child judged by the next framed one within 8, one
+       with none counting as before at the start and past at the end, a frame reaching at most 1 pt into the clip
+       counting as outside, for Chromium's strips; the record's bisection keeps its edge at 0), then checked against
+       samples: the first and last 32 children, and 32 spread evenly between them. An end sample outside the run that
+       shows, or has no frame, is read with it (a fixed or sticky head or tail). A middle sample that does not lie where
+       its place says (before the clip ahead of the run, across it in the run, past it after the run; a frameless one
+       says nothing) means the children are not one run in order, and the list is taken up as on main. This is the
+       ruling's monotonic order, stated against the run, so it also catches a run whose bisected start a shown outlier
+       pulled ahead, holding unshown children it would charge. About 2 log2(N) + 96 frame reads, plus the axis's
+       probes from the end.
+     **The cost, as traced** (ruling 0092b8c7's follow-up, on the A/B of bc4d395f, whose `widthMs` B − A was +178 ms on
+     the 6,000-row table, +86 on the 3,000-row one, +79 on the barred one, +78 on Safari's wiki-article and +30 on
+     Chrome's py-docs, against about 0 on 566e3612). The read counts are the rule's: over the full dumps each judged list
+     reads, per observation, 118 frames on the 6,000-row table, 114–117 on the 3,000-row one, 100–116 on IANA's tables,
+     99 on Safari's 695-item list, and every child of a list of 512 or fewer (215 for wiki-article's references, 249 and
+     251 for wiki-table's table and list, 600 over py-docs' three lists); a gap the queue takes up later is pushed, not
+     judged again, and frames are cached per walk, so nothing is read twice. So the excess is the live price per frame
+     read, not the count: py-docs' 600 reads at +30 ms is the runner's 0.05–0.06 ms, while Chromium's large tables cost
+     about 0.7–1.5 ms per read (about 117 reads for +86 to +178 ms), most likely the tables' last children (Chromium
+     re-creates their columns and header group at every observation, #301's limit, so the axis probe and the end
+     samples read stale handles there; the 6,000-row table's dump could not read 7 of them) or random access across
+     rows Chromium has not laid out near the viewport. The corrected model: a judged list costs its read count (as
+     above) times the page's live price per frame read, which is about 0.06 ms in ordinary lists and up to about 1.5
+     ms in Chromium's large tables, so about 100–180 ms per such table per observation. What changed for it: a column
+     taken up from `lastly` whose children have all been read (Chromium's cells, through their rows) is no longer
+     judged, since nothing of it is left to read first (on an uncut 3,000-row table that was about 120 reads per
+     column); one with children no other parent lists is judged as any list is (the review of dc4b5f34..aab236fb found
+     the first version skipping every column, so a column of 250 own children behind a visible group of 100 lost its 35
+     shown children at 250 nodes, which main read), and the walk's timings count the rule's
+     own reads apart (`wideLists`, `wideListFrames`, `wideListMs`, inside `widthMs`; `frameReads` all of them), so the
+     next run can tell the rule's reads from the width rule's and price each.
+     The children read first go on the stack; each run of the others waits, unread, as an entry of `deferred`, placed in
+     the document's order by its first child and taken up, when it comes, as `expand` takes up children. No axis, a
+     failed check or the deadline takes the list up as on main. A list of exactly 100 is read whole, as before. The
+     record's own reads (`selectForRecord`) take every child up, unchanged.
+     **What amended it.** The hosted A/B of main f20a25ee against 566e3612 (2 reps, its noise floor measured) closed
+     hole 2 and #309: the 3,000-row, barred and 6,000-row tables, iana-media and Safari's py-docs at 100% at every
+     position; uncut trees identical, descriptions included; #305's sweep refusing none, every one of #296's 74 stale
+     cells still refused; no deadline or byte flag differing; cut walks +13 ms p50, inside the noise. It found two
+     regressions against main, both of the first build's single contiguous run: a list in two CSS columns (Wikipedia's
+     references, one AXList of 215 or 251 children running down the left column and starting again at the top of the
+     right, its offscreen children clamped to strips at both edges, so not monotonic along the vertical), where the
+     bisection landed on the right column's run and the cut took the left column's shown children (Chrome's
+     wiki-article at 90% fell from 100% to 70.9% checked, wiki-table at 90% from 100% to about 63%, both reps); and a
+     position:fixed toolbar as the last child of a 2,500-paragraph body (the kit's `/fixedtail`), never read at 25, 50
+     and 90%, so 11–13 points on its buttons refused as `interactiveHit` on a still page where main kept them (the
+     first build's limit (iii), worse live than container-only).
+     **The invariant as a check** (`WideListInvariantTests`): each tree is walked by the real `TreeWalk` with the rules
+     off (`wideListRules`, a test-only switch: main's selection) and on; for every element main took up, each child
+     that shows in its clip (its frame against the clip; a frameless child is not judged) and that main read, the rules'
+     walk must have read: any such child it left unread is a loss, with no excuse (the review of 566e3612..bc4d395f
+     found the first check's excuse, an element read but not taken up, passing a loss the rules caused: the two
+     parents' case below).
+     Over the regression shapes and the earlier tables at three budgets each, and, given `CUA_304_TREES`, over the
+     spike's trees: the wide engine's full trees, each AXColumn's children rebuilt from its table's rows as the spike's
+     replay did, the budget less the menu bar's nodes. A dump holds each element once, under the parent it was emitted
+     at, not the other parents that list it, so a tree in which any rebuilt list falls short of the count it listed
+     (`chosen`) is *alias-incomplete*, reported apart and never counted as verified (the same review found a loss
+     vanishing in such a round trip). Over the 282 trees (the 242 of the spike's three runs, 42313992098, 42315529833
+     and 42317669249, and the 40 of its live column-skip check, 42319757707): **154 verified, 128 alias-incomplete
+     (863 lists), 0 losses in either.** Every short list lies in a table: 526 header AXGroups (which list the header
+     cells their rows hold), 312 AXColumns whose rebuilt cells fall short, 21 AXTables and 4 AXRows; so Chrome's
+     tables (the local tables, IANA, Wikipedia's article and table, py-docs, the float pages) are checked only as
+     rebuilt, not verified. The full child-list dumps (`chosenIds`, run 42352124120: 52 uncut trees, one rep, Chrome's
+     local tables, 6,000-row table, IANA, wiki-article, wiki-table, py-docs and the float and overlay pages, Safari's
+     mdn-float and wiki-article) list each row's children by the rows they were emitted as, shared children in every
+     parent's list, so nothing is rebuilt; a child a dump never emitted (7 on each 6,000-row tree, the stale columns
+     and header group) is loaded as an unreadable element in its place, as the live walk met it: **52 verified, 0
+     alias-incomplete, 0 losses**, the table pages among them. The check finds
+     what the A/B found: with rule B as first built (one bisected run, no per-child judging, no samples) the replay
+     counted 1,141 losses even with the earlier excuse in place, 123 and 118 on Chrome's wiki-article at 90% and 205 per
+     rep on wiki-table at 90%, and 1 to 4 on HN's thread, IANA and the local tables.
+     **Two parents, the earlier place** (`placeEarlier`, ruling 0092b8c7 on that review's case). An element two parents
+     list can be read through the later one, since the rules leave a wide list's children that do not show waiting
+     while a visible parent later in the document reads it at once; its own children then waited at the later place,
+     behind whatever waited between the two, where main had read it through the list and queued them first, so a cut
+     main passed could take its shown child (a 600-child list whose offscreen first child holds a shown child, a section
+     of 300 waiting leaves, then a visible group listing that child again: main read the shown child at 620 nodes, the
+     rules did not). Now, when the selection meets an element it has read at an earlier place in the document while its
+     children still wait, the element takes that place (its path, depth and what the place leaves showing) and its
+     waiting entry moves there, in the document's order; one that shows at the earlier place is taken up at once, and an
+     AXColumn's entry moves within `lastly`. Nothing is read or charged: the walk with the move and without it stop at
+     the same node count, apart by the shown child against the section's next leaf, their bytes less the tokens apart
+     by those two nodes alone. The element is emitted once, at its preorder place, as before; its action descriptions
+     are still judged against the place it was read at (`readPath`), so the preorder pass re-asks where that differs.
+     The move is one of the wide-list rules, off with them, so the check's baseline stays main's selection.
+  4. **Rule C, the columns.** An `AXColumn` read in the tree's selection has its children set aside in their own queue
+     (`lastly`), in the document's order, taken up only once `deferred` is empty; so the cells Chromium lists again under
+     a table's columns are charged only once nothing else is left, and in a walk nothing cuts they have all been read
+     through their rows by then. Found building it: with rule B in place, rule C binds where a column has at most 100
+     children (or its run search fails), since a longer column's offscreen cells are deferred by B behind the rows'
+     cells in the document's order, already read through the rows when they come up.
+  5. **What stays.** A walk nothing cuts reads every element once and emits exactly the plain preorder's tree, tokens,
+     record and counts; only the read order and the walk time move. Where the cut falls, the tree is printed in the
+     document's order with #301's marker, unread children counted and placed by the element they hang from as before.
+     The guard's record (#301 item 4), the thin-gap rule and #305's `recordedHit` are unchanged in meaning; the record
+     holds more where rule A now finds an axis, which is #309's fix. An element two parents list (Chromium's cell, under
+     its row and its column; a wide list's child that another parent lists later) is read once, through whichever
+     place the queues reach first, and so is its subtree, so their action descriptions were judged at those places.
+     Once the selection is done, a pass over the read tree in emission's preorder (`describeAtPreorderPlaces`) judges
+     them again wherever an element's preorder place differs from the place it was read at: through `describe`, asking
+     the system only for an action whose cached answer comes from a later place. So an uncut walk's descriptions are
+     the plain preorder's whatever the queues read first (the review of f20a25ee..13805b82 found a column listed before
+     its row giving the row's description to both, and the re-review of 13805b82..0198ebe7 the same one level down,
+     under the shared cell). The pass makes no query past the deadline, and the deadline marks the walk cut, as a read
+     past it would; the selection's own loop asks nothing at a repeated place. Its growth is charged to the byte budget
+     by `describe`'s rule, a growth that does not fit refused, so the emitted tree stays within the budget; under a cut,
+     the places are those under read parents. `tech-debt-tracker.md`'s #301 entry (a growth refused near the byte
+     budget before another name's shrink) is unchanged by this: each re-judgement is still judged as it comes.
+  6. **The limits.** (i) *Hole 1, a visible control under a container that reports a collapsed (1-pt) frame*, stays a
+     stated limit (#301's): the spike measured it at 0 points in 234 observations, because Chromium gives empty or
+     collapsed wrappers their descendants' union bounds; a strip with showing children arose only as the
+     offscreen-clamped ancestor of fixed or sticky content, which the walk had read early. (ii) *A wide list whose shown
+     run, with what precedes it, takes the whole budget* still starves what follows it: a table showing 35 rows of 2
+     cells under a 100-node budget leaves the toolbar after it unread. The 6,000-row table at 90% is not that case: its
+     shown rows and the toolbar are read within 4,000 nodes, the rows before them waiting, as the replay predicted.
+     (iii) In a list of more than 512 children, a shown child in the middle, outside the bisected run, that the samples
+     miss (it lies between two of them, which are where their places say) waits with its run of unshown neighbours, so
+     a cut can still leave it unread. (iv) The move to an earlier place happens only when the selection meets the
+     element there before the cut; an earlier place it never reaches leaves the children waiting at the later one.
+  Proven offline (`WideListTests`, 10, and `WideListInvariantTests`, 13; `swift test`; removing each rule, each bound,
+  each sample check, the frameless rules, the preorder pass, its deadline and its places' propagation to a subtree
+  fails at least one test, by mutation,
+  `~/.local/share/187/mutate-304.py`): the uncut walk equal to the plain preorder over a 300-row table of 3 columns, a
+  150-row table at its end, lists of 101 and of 600, a column listed before its row with one cell and with a child
+  under that cell, and a wide list's row before its run listed again by a later sibling in view, each element read
+  once, the aliases' descriptions their preorder place's; the pass stopping at the deadline, the walk marked cut by
+  it, with slow repeated queries; a 300-row table
+  scrolled to its middle keeping the toolbar after it, its shown rows with their cells, the rest of the budget on the
+  rows above in order, and the marker's counts; lists of 100 (read whole, toolbar cut) and 101 (run first, toolbar
+  kept); the 6,000-row table at 90%; a table at its end whose two columns of 99 cells wait, no offscreen row's cell read
+  under the cut; the stated limit (ii); the run with frameless children at its start, with Chromium's strips, and with
+  no axis; the axis past an end child at the origin, past 20 column-like end children and beside a sidebar, and none
+  for stacked or overlapping children; #309's shape in a walk, the record holding the shown children; the two-column
+  list of 215 (both columns' shown items and the toolbar after the list read, no violation), the fixed tail of a
+  601-child body (the toolbar read with the run), the two-column list of 600 falling back to main, each middle-sample
+  place checked alone, every frame read up to 512 children and fewer than 200 for 513, a frameless child read first,
+  the two parents' case (the earlier place winning, no loss at 620 nodes, the element emitted once at its preorder
+  place, the move charging nothing; an element that shows at the earlier place taken up at once there, main not
+  moving it), a list of 6,000 within its stated frame reads uncut and cut, its columns taken up last unjudged, a
+  column of its own children taken up last still judged, the
+  uncut walk over a waiting alias with a shown child, and the loader flagging a dump that
+  lost an alias as alias-incomplete.
+  The invariant check over the spike's trees: `CUA_304_TREES=$HOME/.local/share/probe-304 swift test --filter
+  WideListInvariantTests` in `native/engine` (about 5 minutes; the spike's part skipped without the variable), and the
+  full dumps with `CUA_304_TREES=$HOME/.local/share/probe-304/full-42352124120` (about a minute); `CUA_304_FRAMES=1`
+  prints each tree's frame reads per judged list.
+  **What the hosted A/B must still measure**, on the amended rule against main: Chrome's wiki-article and wiki-table
+  at 90% and `/fixedtail` at 25, 50 and 90% back to main's share, with the pages the first A/B closed staying at 100%;
+  `walkMs` p50 and p95, now with up to 512 frame reads per list of 101–512 children and about 2 log2(N) + 96 above;
+  `wideListMs` and `wideListFrames` against `widthMs`, to price the rule's reads on Chromium's large tables and see
+  whether the stale columns and header group carry them; and repl-parity's and the docs-oracle's lanes unchanged.
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling 7b2a5a70 on #304 and #309.
 
 ## Outcomes & Retrospective
 

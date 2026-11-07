@@ -289,13 +289,17 @@ const notches = (r) => (Number.isInteger(r?.wheel_legacy) && r.wheel_legacy !== 
 
 /**
  * The fields of a reading that the scene's settled reading decides a kind's complete effect in (action-settle.mjs reads
- * the scene until it stops changing): a drag's selection and GTK 4's scale, and a move's motions, each of which the
- * application may still be taking in when the observation comes. Else null: the effect is complete in itself.
+ * the scene until it stops changing): a drag's selection and GTK 4's scale, and a move's motions (on a page, where its
+ * last one left the pointer), each of which the application may still be taking in when the observation comes. Else
+ * null: the effect is complete in itself.
  */
 export function settledFields(effects, kind) {
   if ((kind === 'drag' || kind === 'drag_handle') && (effects === 'editor' || effects === 'paragraphs')) return ['selection'];
   if (kind === 'drag' && effects === 'gtk4-input') return ['scale'];
-  if ((kind === 'move' || kind === 'move_relative') && ['input-page', 'settle-scene', 'gtk4-input'].includes(effects)) return ['moves'];
+  // a page's by where its last move left the pointer: Blink moves it again by itself, at the same place, when the
+  // status line's layout changes
+  if ((kind === 'move' || kind === 'move_relative') && effects === 'input-page') return ['pointer_at'];
+  if (kind === 'move' && ['settle-scene', 'gtk4-input'].includes(effects)) return ['moves'];
   return null;
 }
 

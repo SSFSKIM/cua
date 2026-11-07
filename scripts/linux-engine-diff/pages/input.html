@@ -25,7 +25,7 @@
      (the right click's fallback). The title comes from the URL's fragment, so every scene window has its own. -->
 <div id="pad"></div>
 <div id="status">
-  <p id="pointer">pointer moves 0 downs 0 ups 0 drags 0</p>
+  <p id="pointer">pointer moves 0 downs 0 ups 0 drags 0 at -1 -1</p>
   <p id="keys">keys down 0 up 0 last none</p>
   <p id="scroll">scroll 0</p>
   <p id="context">context 0 on none</p>
@@ -37,9 +37,9 @@
 <button id="far" type="button">Far</button>
 <script>
   document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
-  const state = { moves: 0, downs: 0, ups: 0, drags: 0, down: null, kd: 0, ku: 0, last: 'none', context: 0, on: 'none', clicks: 0, wheels: 0, legacy: 0 };
+  const state = { moves: 0, downs: 0, ups: 0, drags: 0, down: null, kd: 0, ku: 0, last: 'none', context: 0, on: 'none', clicks: 0, wheels: 0, legacy: 0, at: [-1, -1] };
   const show = () => {
-    document.getElementById('pointer').textContent = `pointer moves ${state.moves} downs ${state.downs} ups ${state.ups} drags ${state.drags}`;
+    document.getElementById('pointer').textContent = `pointer moves ${state.moves} downs ${state.downs} ups ${state.ups} drags ${state.drags} at ${state.at.join(' ')}`;
     document.getElementById('keys').textContent = `keys down ${state.kd} up ${state.ku} last ${state.last}`;
     document.getElementById('scroll').textContent = `scroll ${Math.round(window.scrollY)}`;
     document.getElementById('context').textContent = `context ${state.context} on ${state.on}`;
@@ -50,7 +50,9 @@
     for (const p of document.querySelectorAll('#status p')) p.setAttribute('aria-label', p.textContent);
   };
   const pad = document.getElementById('pad');
-  pad.addEventListener('mousemove', () => { state.moves += 1; show(); });
+  // where the last move left the pointer as well as how many came: Blink sends a move of its own at the same place
+  // when the status line's layout changes, so the count alone can rise long after the input
+  pad.addEventListener('mousemove', (e) => { state.moves += 1; state.at = [e.clientX, e.clientY]; show(); });
   pad.addEventListener('mousedown', (e) => { if (e.button === 0) { state.downs += 1; state.down = [e.clientX, e.clientY]; show(); } });
   document.addEventListener('mouseup', (e) => {
     if (e.button !== 0) return;

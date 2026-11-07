@@ -133,6 +133,7 @@ export function parseInputStatus(names) {
     context: num(context, 'context'),
     context_on: context.match(/\bon (\S+)/)?.[1] ?? null,
     clicks: num(line('clicks '), 'clicks'),
+    pointer_at: pointer.match(/\bat (-?\d+) (-?\d+)/)?.slice(1).map(Number) ?? null,
     wheels: num(line('wheels '), 'wheels'),
     wheel_legacy: num(line('wheels '), 'legacy'),
   };

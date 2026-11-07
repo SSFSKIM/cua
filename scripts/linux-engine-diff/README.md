@@ -1018,7 +1018,8 @@ node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out 
   mouse reports are decoded in full (a click's press and release, a drag's press and its release elsewhere, one wheel
   report a step; gnome-terminal's screen ends on the last report its program echoed); every wheel step is counted
   (`pages/input.html`'s `wheels` line, Chromium's legacy delta summing the events it coalesces); and where the
-  application may still be taking the input in (an editor's drag selection, GTK 4's scale, a move's motions,
+  application may still be taking the input in (an editor's drag selection, GTK 4's scale, a move's motions, on a
+  page where its last one left the pointer,
   `settledFields`) the reading must equal the scene's settled reading, read every 25 ms until it holds still for 300 ms,
   and a drag's path must settle where it settled before. A `clipboard_read` passes only on the copied word over the
   run's own value.

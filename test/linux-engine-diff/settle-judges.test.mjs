@@ -56,8 +56,11 @@ test('an editor\'s drag: the selection must be the one the scene settles at, not
 test('GTK 4\'s scale and every pointer move: the reading must be the settled one', () => {
   assert.equal(landed('gtk4-input', 'drag', { scale: 49 }, { scale: 94 }, { settled: { scale: 94 } }), true);
   assert.equal(landed('gtk4-input', 'drag', { scale: 49 }, { scale: 93 }, { settled: { scale: 94 } }), false, 'a motion still to come');
-  assert.equal(landed('input-page', 'move', { moves: 3 }, { moves: 9 }, { settled: { moves: 9 } }), true);
-  assert.equal(landed('input-page', 'move', { moves: 3 }, { moves: 5 }, { settled: { moves: 9 } }), false, 'motions still to come');
+  const at = (moves, pointer_at) => ({ moves, pointer_at });
+  assert.equal(landed('input-page', 'move', at(3, [10, 10]), at(9, [290, 140]), { settled: at(9, [290, 140]) }), true);
+  assert.equal(landed('input-page', 'move', at(3, [10, 10]), at(5, [120, 60]), { settled: at(9, [290, 140]) }), false, 'motions still to come');
+  // Blink's own move at the same place, after the status line's layout changed: the count rose, the pointer stayed
+  assert.equal(landed('input-page', 'move', at(3, [10, 10]), at(4, [290, 140]), { settled: at(5, [290, 140]) }), true);
   assert.equal(landed('settle-scene', 'move', { moves: 3 }, { moves: 5 }, { settled: { moves: 9 } }), false);
   assert.equal(landed('gtk4-input', 'move', { moves: 3 }, { moves: 9 }, { settled: { moves: 9 } }), true);
 });

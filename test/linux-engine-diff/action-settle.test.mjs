@@ -139,7 +139,7 @@ test('the input page\'s effects: keys, presses, clicks, context menus, moves, sc
   assert.equal(landed('input-page', 'secondary_action', before, s({ context: 2 }), { action: 'showContextMenu' }), true);
   assert.equal(landed('input-page', 'secondary_action', before, s({ clicks: 6 }), { action: 'press' }), true, 'Gecko\'s buttons offer only press');
   assert.equal(landed('input-page', 'secondary_action', before, s({ context: 2 }), { action: 'press' }), false);
-  assert.equal(landed('input-page', 'move', before, s({ moves: 4 }), { settled: { moves: 4 } }), true);
+  assert.equal(landed('input-page', 'move', before, s({ moves: 4, pointer_at: [290, 140] }), { settled: { pointer_at: [290, 140] } }), true);
   assert.equal(landed('input-page', 'move_relative', before, before, { settled: before }), false);
   // every wheel step arrived: Chromium's legacy delta, 120 a notch over the events it coalesces, else the events
   assert.equal(landed('input-page', 'scroll', before, s({ scroll: 120, wheels: 2, wheel_legacy: -360 }), { direction: 'down', steps: 3 }), true);

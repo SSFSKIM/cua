@@ -62,6 +62,36 @@ private func chromiumTable(rows: Int, columns: Int, scroll: Int, cellsPerRow: In
 }
 
 /// The rows of a table scrolled `scroll` rows down that the viewport shows (35 of them fill it).
+/// An uncut walk's alias, everything in view: a table (1) listing a column (2) before a row (3), both listing one cell
+/// (4), the cell and the row describing one system-described action differently (the review of f20a25ee..13805b82).
+private func columnBeforeRow() -> FakeTree {
+  let tree = FakeTree()
+  for (id, role) in [0: "AXWindow", 1: "AXTable", 2: "AXColumn", 3: "AXRow", 4: "AXCell"] { tree.extra[id] = ["AXRole": role as CFString] }
+  tree.children = [0: [1], 1: [2, 3], 2: [4], 3: [4]]
+  tree.frames = [0: windowFrame, 1: CGRect(x: 0, y: 0, width: 500, height: 100), 2: CGRect(x: 0, y: 0, width: 100, height: 100),
+                 3: CGRect(x: 0, y: 0, width: 500, height: 20), 4: CGRect(x: 0, y: 0, width: 100, height: 20)]
+  tree.actions = [3: ["AXCustomThing"], 4: ["AXCustomThing"]]
+  tree.elementDescriptions = [3: ["AXCustomThing": "row"], 4: ["AXCustomThing": "cell"]]
+  return tree
+}
+
+/// Rule B's alias: a wide list (1, 101 rows, rows 50-89 in view) whose first row (100), before the shown run, is listed
+/// again by a later sibling in view (2); the row and the sibling describe one action differently.
+private func wideListChildListedLater() -> FakeTree {
+  let tree = FakeTree()
+  tree.extra[0] = ["AXRole": "AXWindow" as CFString]
+  tree.frames[0] = windowFrame
+  tree.children = [0: [1, 2], 1: Array(100..<201), 2: [100]]
+  tree.visible[1] = tree.children[1]
+  tree.frames[1] = windowFrame
+  tree.frames[2] = CGRect(x: 0, y: 700, width: 100, height: 30)
+  for i in 0..<101 { tree.frames[100 + i] = CGRect(x: 0, y: Double(i - 50) * 20, width: 1000, height: 20) }
+  tree.frames[100] = CGRect(x: 0, y: -1000, width: 1000, height: 20)
+  tree.actions = [2: ["AXCustomThing"], 100: ["AXCustomThing"]]
+  tree.elementDescriptions = [2: ["AXCustomThing": "later"], 100: ["AXCustomThing": "earlier"]]
+  return tree
+}
+
 private func shownRows(_ scroll: Int, of rows: Int) -> [Int] { Array(scroll..<min(rows, scroll + 35)) }
 
 private func ids(_ walk: TreeWalk) -> [Int] { walk.nodes.map { Int(($0["title"] as! String).dropFirst(5))! } }
@@ -96,6 +126,8 @@ final class WideListTests: XCTestCase {
       ("table, end", chromiumTable(rows: 150, columns: 2, scroll: 115)),
       ("list of 101", chromiumTable(rows: 101, columns: 0, scroll: 40)),
       ("list of 600", chromiumTable(rows: 600, columns: 0, scroll: 300, cellsPerRow: 2)),
+      ("a column before a row, one cell", columnBeforeRow()),
+      ("a wide list's row listed again later", wideListChildListedLater()),
     ]
     for (name, tree) in cases {
       let source = FakeSource(tree)
@@ -109,6 +141,11 @@ final class WideListTests: XCTestCase {
       XCTAssertEqual(source.reads.count, preorder(tree).count, name)
       XCTAssertTrue(source.reads.values.allSatisfy { $0 == 1 }, "\(name): each element read once")
     }
+    // The aliases' descriptions are the earliest place's, though the queues read the later place first.
+    let cells = walk(columnBeforeRow(), Lineage(), visibleFrame: windowFrame, chromium: true)
+    XCTAssertEqual(cells.nodes.compactMap { ($0["actionDescriptions"] as? [String])?.first }, ["cell", "cell"])
+    let rows = walk(wideListChildListedLater(), Lineage(), visibleFrame: windowFrame, chromium: true)
+    XCTAssertEqual(rows.nodes.compactMap { ($0["actionDescriptions"] as? [String])?.first }, ["earlier", "earlier"])
   }
 
   /// Rule B: a long table whose shown rows lie in its middle no longer starves the toolbar after it in the document.

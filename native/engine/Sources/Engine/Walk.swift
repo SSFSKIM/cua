@@ -498,7 +498,8 @@ final class TreeWalk {
         continue
       }
       let key = ElementKey(element: next.element)
-      if selected[key] != nil || failed.contains(key) { continue }
+      if let known = selected[key] { describeAgain(known.read, at: next); continue }
+      if failed.contains(key) { continue }
       if cut { continue }
       if selectionBytes >= byteLimit { budgetHit = true; cut = true; continue }
       if kept >= nodeLimit { nodeCapHit = true; cut = true; continue }
@@ -694,6 +695,15 @@ final class TreeWalk {
   }
 
   private func pastDeadline() -> Bool { monotonicMilliseconds() >= limits.deadline }
+
+  /// An element the selection has read, reached again through another parent (Chromium's cell, listed by its row and by
+  /// its column; any child two parents list): its action descriptions are judged at the earlier of the two places in the
+  /// document, as the plain preorder, which reads it at its first place, judges them, whichever place the queues reached
+  /// first (`describe` asks again only for a place earlier than the cached answer's).
+  private func describeAgain(_ read: Read, at pending: Pending) {
+    let order = ReadOrder(inMenu: pending.inMenu, path: pending.path)
+    for action in read.actions { _ = describe(action: action, of: read.element, owner: read.owner, order: order) }
+  }
 
   /// Reads one element: its attributes, owner, actions, flags, Markdown, the children the width rule keeps and its node.
   /// The deadline is checked between a node's calls, not only between nodes, so one slow element cannot overrun it.

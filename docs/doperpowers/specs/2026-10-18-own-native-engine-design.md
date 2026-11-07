@@ -2741,7 +2741,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      record and counts; only the read order and the walk time move. Where the cut falls, the tree is printed in the
      document's order with #301's marker, unread children counted and placed by the element they hang from as before.
      The guard's record (#301 item 4), the thin-gap rule and #305's `recordedHit` are unchanged in meaning; the record
-     holds more where rule A now finds an axis, which is #309's fix.
+     holds more where rule A now finds an axis, which is #309's fix. An element two parents list (Chromium's cell, under
+     its row and its column; a wide list's child that another parent lists later) is read once, through whichever
+     place the queues reach first, so its action descriptions were judged there; meeting it again at an earlier place
+     in the document now judges them again at that place (`describeAgain`, through `describe`'s rule), so an uncut
+     walk's descriptions are the plain preorder's whatever the queues read first (the review of f20a25ee..13805b82
+     found a column listed before its row giving the row's description to both). Under a cut, an earlier place the
+     walk never reaches is not judged, as before. `tech-debt-tracker.md`'s #301 entry (a growth refused near the byte
+     budget before another name's shrink) is unchanged by this: each re-judgement still goes through `describe`'s
+     budget check as it comes.
   6. **The limits.** (i) *Hole 1, a visible control under a container that reports a collapsed (1-pt) frame*, stays a
      stated limit (#301's): the spike measured it at 0 points in 234 observations, because Chromium gives empty or
      collapsed wrappers their descendants' union bounds; a strip with showing children arose only as the
@@ -2753,9 +2761,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      body) waits in the range beside the run and is read only when that range is taken up, after the range's children
      before it, so a cut can still leave it unread; the replay, which judged each child by its own frame, read it with
      the run.
-  Proven offline (`WideListTests`, 9; `swift test`; removing each rule, each bound and the frameless rule fails at least
-  one test, by mutation, `~/.local/share/187/mutate-304.py`): the uncut walk equal to the plain preorder over a 300-row
-  table of 3 columns, a 150-row table at its end, lists of 101 and of 600, each element read once; a 300-row table
+  Proven offline (`WideListTests`, 9; `swift test`; removing each rule, each bound, the frameless rule and the
+  re-judgement fails at least one test, by mutation, `~/.local/share/187/mutate-304.py`): the uncut walk equal to the
+  plain preorder over a 300-row table of 3 columns, a 150-row table at its end, lists of 101 and of 600, a column listed
+  before its row with one cell, and a wide list's row before its run listed again by a later sibling in view, each
+  element read once, the two aliases' descriptions their earlier place's; a 300-row table
   scrolled to its middle keeping the toolbar after it, its shown rows with their cells, the rest of the budget on the
   rows above in order, and the marker's counts; lists of 100 (read whole, toolbar cut) and 101 (run first, toolbar
   kept); the 6,000-row table at 90%; a table at its end whose two columns of 99 cells wait, no offscreen row's cell read

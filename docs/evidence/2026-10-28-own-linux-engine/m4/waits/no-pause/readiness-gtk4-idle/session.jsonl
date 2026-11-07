@@ -1,0 +1,4 @@
+{"t":"2026-11-07T18:07:29.527Z","kind":"server","display":":1","pid":4125548}
+{"t":"2026-11-07T18:07:29.895Z","kind":"setup","openbox":4125555,"person":"6291468"}
+{"t":"2026-11-07T18:11:20.979Z","kind":"run-end","code":1,"signal":null}
+{"t":"2026-11-07T18:11:21.992Z","kind":"server-stopped","clean":true,"reason":null}

@@ -26,7 +26,8 @@
 //! - `xprobe record <x> <y> <width> <height> [focus] [managed <title>]`: a recorder window that prints the input events
 //!   it receives (`record.rs`).
 //! - `xprobe clip-own <text>`, `clip-read`, `grabs`, `within <window> <ancestor>`: the clipboard owner and reader and
-//!   the desktop checks of M2's text cases (`clip.rs`); `grabs` takes the root's pointer and keyboard to ask, so it
+//!   the desktop checks of M2's text cases (`clip.rs`), and `reader`, the clipboard's and the active window's reads on
+//!   a connection kept open (the settle experiment's); `grabs` takes the root's pointer and keyboard to ask, so it
 //!   runs only on a private display marked `CUA171_PRIVATE_DISPLAY`, never on a person's.
 //! - `xprobe ancestry <window>`: the window's parents up to the root read, and their reparents and ends selected, on a
 //!   connection that stays until stdin closes, so a route audit's trace shows where its window lies (`ancestry.rs`).
@@ -97,6 +98,7 @@ fn main() {
         Some("record") => record::record(&args[1..]),
         Some("clip-own") => clip::own(&args[1..]),
         Some("clip-read") if args.len() == 1 => clip::read(),
+        Some("reader") if args.len() == 1 => clip::reader(),
         Some("grabs") if args.len() == 1 => clip::grabs(),
         Some("within") => clip::within(&args[1..]),
         Some("toplevel") => restack::toplevel(&args[1..]),

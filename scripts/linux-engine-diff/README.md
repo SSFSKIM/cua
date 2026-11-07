@@ -948,7 +948,7 @@ The proof that the engine's orderly exit runs when cua's REPL host stops it on L
 everything frozen SIGKILLed), through `cua serve` itself on the engine under test.
 
 ```bash
-node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" --out "$OUT/engine-stop/idle" --control-root <checkout before T7b> [--paths idle,eof,signal,remote,held-back] [--cases hold,burst] [--lanes drain,kill] [--sandbox scoped|disabled] [--load-factor 2] [--trials 10]
+node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" --out "$OUT/engine-stop/idle" --control-root <checkout before T7b> [--paths idle,eof,signal,remote,held-back] [--cases hold,burst,pairs,handle] [--browsers chrome,electron] [--lanes drain,kill] [--sandbox scoped|disabled] [--require-burst-cut] [--load-factor 2] [--trials 10]
 ```
 
 - **Its display**, as the focus-timer experiment's: a private X server it starts itself, Openbox, the harness's Desktop
@@ -963,21 +963,27 @@ node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" -
   `--sandbox disabled` runs the REPL host with `CUA_SHIM_SANDBOX=disabled`, where the engine is in the owned group.
 - **The cases**: `hold`, key_down of Shift on the xterm, which only the foreground route delivers: the X server holds it
   (read before the stop, the positive control) and must hold nothing after; `burst`, press_key one key after another
-  into the covered Chrome window, the stop straight after the last answer, every key at the field's caret in order.
+  into the covered Chrome window, the stop straight after the last answer, every key at the field's caret in order;
+  `pairs`, the same keys as key_down then key_up requests, whose settles are shorter than press_key's (T8);
+  `--browsers chrome,electron` runs both bursts in Electron's window on the keys page as well, each judged apart.
 - **The lanes**: `drain`, this checkout's REPL host, must pass every run; `kill`, the REPL host of `--control-root`
   (whose stop SIGKILLs the tree at once), must leave the key down on every hold run, so the check can see a missing
   release (the harness releases it after), except `held-back` with the sandbox disabled, where the group's SIGTERM
   reaches the engine first in either lane. A control run that failed on its way (no engine found, a cell refused) is
-  not the failure it stands for and fails the verdict. Its bursts are counted, and under `--load-factor` at least one
-  must be cut on each path, or the sitting showed no pending burst. The engine is the same in both lanes. Every run
+  not the failure it stands for and fails the verdict. Its bursts are counted, and with `--require-burst-cut` at least
+  one must be cut on each path, burst case and browser, or the sitting showed no pending burst. The engine is the same
+  in both lanes. T8's fix wave builds the control from the head with only the stop of before T7b (the three files T7b
+  changed in `src/repl-host/`, from f59575fb), so its service and settle are the head's
+  (`docs/evidence/2026-10-28-own-linux-engine/m4/settle/fix/scripts/control-tree.sh`). Every run
   first requires the session's one engine; its effect is read once that engine has gone and before the run's own
   cleanup. Each row records how long the engine lived after the stop began and after the last answer; the control is
   recorded by its directory's name (`control_label`), never its path.
 
 ## M4 T8's addition: the action settle through cua's service (`--experiment settle`)
 
-cua's Linux service holds the call after a successful input until that input's method's settle has passed
-(`src/services/engine/linux/settle.mjs`, per method since T8), so the model's next observation finds the input's effect.
+cua's Linux service holds the call after a successful input until that input's settle has passed
+(`src/services/engine/linux/settle.mjs`, per method since T8, a click's by what it runs since its fix wave), so the
+model's next observation finds the input's effect.
 The experiment measures, per cell (a scene, an input kind, a route, an occlusion: `action-settle-cells.mjs` `CELLS`),
 whether an observation straight after the input's answer shows the effect, through the service itself
 (`createService`, in this process, its engine the candidate).
@@ -1000,20 +1006,40 @@ node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out 
   `xprobe order-watch`, attached to the sitting's display, records the order of each foreground request's focus, the
   window manager's raise and the press (`docs/evidence/2026-10-28-own-linux-engine/m4/foreground-raise/`).
 - **A run**: prepared outside its span (a caret put at the text's end through AT-SPI, a terminal's screen cleared,
-  a key held for a `key_up`, a word copied for a `clipboard_write`), read once its scene has stopped changing, then its
-  requests through the service and the reading of its effect inside one witness span. The effect is read through the
-  service's own `get_window_state` where the tree carries it, else (a caret, a selection, a field whose node has no
-  value, a terminal's screen, the clipboard, what xterm's program received, an activation's `_NET_ACTIVE_WINDOW` and
-  frame `ACTIVE` state) by the harness the moment the service's settle ends, over one kept D-Bus connection
-  (`bus-client.mjs`; `busctl` would start each read about 5 ms late). A run passes on its answers and its effect, and
-  on the background route on a desktop left alone (the witness clean, no activation request, the front window still
-  active). A miss records whether its effect came within 2 s (`late_ms`) or never.
-- **The lanes**: every method at one step (`settle-0`, `-10`, `-25`, `-50`, `-75`, `-100`) or the shipped constants
-  (`shipped`). Without `--lanes` a sitting searches each cell upward from 0 ms, the control, stopping at the first step
-  that reaches 30 consecutive passing runs in at most 60 (a series stops once it cannot). A fresh service and engine for
-  each series. With `--lanes shipped`, each background cell also gets an audit pass through xtrace (`--no-audit`).
-- **The constants**: each method's is the largest held step across its cells, idle and at twice the load
-  (`methodConstants`); a cell that held at no step keeps its method at the shipped value.
+  a key held for a `key_up`, a word copied for a `clipboard_write`, a value of the run's own put on the clipboard for a
+  `clipboard_read`), read once its scene has stopped changing, then its requests through the service and the reading of
+  its effect inside one witness span. The effect is read through the service's own `get_window_state` where the tree
+  carries it, else (a caret, a selection, a field whose node has no value, a terminal's screen, the clipboard, what
+  xterm's program received, an activation's `_NET_ACTIVE_WINDOW` and frame `ACTIVE` state) by the harness the moment the
+  service's settle ends, every reader one already running: one kept D-Bus connection (`bus-client.mjs`; `busctl` would
+  start each read about 5 ms late), one kept X connection for the clipboard and `_NET_ACTIVE_WINDOW` (`xprobe reader`,
+  `clip.mjs` `startReader`), the recorder's file read in place; an activation's two words are asked for at once.
+- **The complete effect** (`landed`): the run's reading must show all of its input, not the start of it. A terminal's
+  mouse reports are decoded in full (a click's press and release, a drag's press and its release elsewhere, one wheel
+  report a step; gnome-terminal's screen ends on the last report its program echoed); every wheel step is counted
+  (`pages/input.html`'s `wheels` line, Chromium's legacy delta summing the events it coalesces); and where the
+  application may still be taking the input in (an editor's drag selection, GTK 4's scale, a move's motions,
+  `settledFields`) the reading must equal the scene's settled reading, read every 25 ms until it holds still for 300 ms,
+  and a drag's path must settle where it settled before. A `clipboard_read` passes only on the copied word over the
+  run's own value.
+- **A run passes** on its answers and its complete effect, and on the background route on a desktop left alone (the
+  witness clean, no activation request, the front window still active). A miss records whether its effect came within
+  2 s of the answer (`late_ms`) or never. A run whose judging failed (its preparation, a reader, the settled reading, or
+  the settle the service deferred not the cell's) is `invalid`, apart from a command that failed (`refused`;
+  `runClass`).
+- **The lanes**: every settle at one step (`settle-0`, `-10`, `-25`, `-50`, `-75`, `-100`, and from 100 by 25 ms to 400
+  for an animating family's element action, `ANIMATED_STEPS`) or the shipped constants (`shipped`). Without `--lanes` a
+  sitting searches each cell upward from 0 ms, the control, through its settle's steps, stopping at the first step that
+  reaches 30 consecutive passing runs in at most 60 (a series stops once it cannot). A fresh service and engine for each
+  series. With `--lanes shipped`, each background cell also gets an audit pass through xtrace (`--no-audit`), which
+  passes only on a clean trace of the engine's requests whose every run ran its input (`auditVerdict`).
+- **The settles** (`settleOf`): each method's, a click's and a named action's by what they run: a coordinate or right
+  click `click`'s, an element's primary action `click_element`'s, and in a family whose toolkit animates that action
+  (GTK 4, Qt: `SCENES`' `animates`, as cua-engine names the family in its answer) the family's own, the named action
+  that runs it included. A run checks that the service deferred the cell's settle.
+- **The constants**: each settle's is the largest held step across its cells, idle and at twice the load
+  (`methodConstants`); a cell that held at no step keeps it at the vendor's 100, unless its input is lost on a complete
+  and valid measurement (`lostInput`) and the loss is established on its own (`SET_ASIDE`, empty).
 
 ## Files
 

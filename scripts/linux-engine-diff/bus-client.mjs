@@ -15,7 +15,8 @@ const DBUS = { destination: 'org.freedesktop.DBus', path: '/org/freedesktop/DBus
 /**
  * One connection to the bus at `address` (a `unix:path=` address), authenticated and said Hello to; `call` sends a
  * method call and resolves with the reply's body, or rejects with the error's name and message. `timeoutMs` bounds
- * each call. `close` ends the connection and fails what is pending.
+ * each call, and the authentication with its Hello, which a close before they are done also fails. `close` ends the
+ * connection and fails what is pending.
  */
 export async function connectBus(address, { timeoutMs = 5000 } = {}) {
   const socket = createConnection(socketPath(address));
@@ -56,7 +57,20 @@ export async function connectBus(address, { timeoutMs = 5000 } = {}) {
     else waiter.resolve(m.body);
   };
   const ready = new Promise((resolve, reject) => {
-    socket.once('error', reject);
+    // a bus that closes before the handshake is done fails it, and so does one that never finishes it: authentication
+    // and Hello together are bounded as a call is
+    const timer = setTimeout(() => {
+      failReady(new Error(`the bus did not finish authentication and Hello within ${timeoutMs} ms`));
+      socket.destroy();
+    }, timeoutMs);
+    const settleReady = (settle) => (value) => {
+      clearTimeout(timer);
+      settle(value);
+    };
+    const failReady = settleReady(reject);
+    const readyNow = settleReady(resolve);
+    socket.once('error', failReady);
+    socket.once('close', () => failReady(new Error('the bus connection closed before it was ready')));
     socket.on('connect', () => socket.write(authExternal()));
     socket.on('data', (chunk) => {
       pending = Buffer.concat([pending, chunk]);
@@ -66,13 +80,13 @@ export async function connectBus(address, { timeoutMs = 5000 } = {}) {
         const line = pending.subarray(0, end).toString('latin1');
         pending = pending.subarray(end + 2);
         if (!/^OK [0-9a-f]+$/.test(line)) {
-          reject(new Error(`the bus refused EXTERNAL authentication: ${line}`));
+          failReady(new Error(`the bus refused EXTERNAL authentication: ${line}`));
           socket.destroy();
           return;
         }
         authenticated = true;
         socket.write('BEGIN\r\n');
-        send({ ...DBUS, member: 'Hello' }).then(resolve, reject);
+        send({ ...DBUS, member: 'Hello' }).then(readyNow, failReady);
       }
       for (;;) {
         const length = frameLength(pending);

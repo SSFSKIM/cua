@@ -11,31 +11,44 @@
 //   clipboard, what xterm's program received, an activation: the window manager's `_NET_ACTIVE_WINDOW` and the frame's
 //   ACTIVE state, which the vendor's state names leave out), through the harness's own reader the moment the service's
 //   settle ends
-//   (`settler.wait()`, the instant the next call would reach the engine): AT-SPI on a connection kept open
-//   (bus-client.mjs), so the read starts at once.
+//   (`settler.wait()`, the instant the next call would reach the engine), every reader one already running, so the read
+//   starts at once: AT-SPI on a connection kept open (bus-client.mjs), the clipboard and `_NET_ACTIVE_WINDOW` on an X
+//   connection kept open (`xprobe reader`, clip.mjs `startReader`), the recorder's file read in place.
 //
-// The lanes (`--lanes`): every method at one step (`settle-<ms>`, action-settle-cells.mjs STEPS) or the shipped
-// constants (`shipped`). Without `--lanes` a sitting searches: each cell's series at 0 ms, then at the next step only
-// while none held, so the 0 ms lane is the control that must miss where a settle is needed. A series is the wait rule's:
-// 30 consecutive passing runs in at most 60 (`--trials` sets a development count), a fresh service and engine for each,
-// one independent run after another (the previous input settled and its effect read before the next run's reading
-// before). A run passes on its answers and its effect; on the background route its witness span (the input and the
-// reading of its effect) must also leave the desktop alone, with no activation request, and the front window still
-// active after (task 61). A missed run records whether its effect came later (`late_ms`) or never. With `--lanes
+// The reading is judged against the input's complete effect (action-settle-cells.mjs `landed`): a terminal's mouse
+// reports decoded in full, every wheel step counted, and where the application may still be taking the input in (a
+// drag's selection, GTK 4's scale, a move's motions) the scene's settled reading, read until it holds still, which a
+// drag's path must also have settled at before. A clipboard_read runs on a clipboard the harness filled with a value of
+// the run's own.
+//
+// The lanes (`--lanes`): every settle at one step (`settle-<ms>`, action-settle-cells.mjs STEPS, ANIMATED_STEPS) or the
+// shipped constants (`shipped`). Without `--lanes` a sitting searches: each cell's series at 0 ms, then at the next step
+// of its settle only while none held, so the 0 ms lane is the control that must miss where a settle is needed. A series
+// is the wait rule's: 30 consecutive passing runs in at most 60 (`--trials` sets a development count), a fresh service
+// and engine for each, one independent run after another (the previous input settled and its effect read before the
+// next run's reading before). A run passes on its answers and its effect; on the background route its witness span
+// (the input and the reading of its effect) must also leave the desktop alone, with no activation request, and the
+// front window still active after (task 61). A missed run records whether its effect came later (`late_ms`, from the
+// answer) or never; a run whose judging failed (its preparation, a reader, the settled reading, or the settle the
+// service deferred not the cell's) is invalid, not a miss (action-settle-cells.mjs `runClass`). With `--lanes
 // shipped`, each background cell also gets an audit pass (`--no-audit` skips it): runs with the engine's X connection
-// through xtrace, every request judged by audit.mjs `auditRequests`.
+// through xtrace, every request judged by audit.mjs `auditRequests`, and every run required to have run its input
+// (action-settle-cells.mjs `auditVerdict`).
 //
 // Where it runs: only on a private X server it starts itself, with Openbox, as the focus-timer experiment does
 // (focus-timer.mjs); `--load-factor 2` runs it at twice the gate's load. The cells of each family (`--family`,
 // action-settle-cells.mjs FAMILY_SCENES) run with that family's windows open and close them after.
 
-import { statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 
 import { auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { AsyncOracle } from './bus-client.mjs';
-import { clipRead } from './clip.mjs';
-import { ACTIVATING, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, cellName, cellsFor, chosenPlan, hopeless, landed, laneSettles, runPasses, settleVerdict } from './action-settle-cells.mjs';
+import { startOwner, startReader } from './clip.mjs';
+import {
+  ACTIVATING, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, auditVerdict, cellName, cellsFor, chosenPlan, hopeless, landed, laneSettles, planLanes, runClass, runPasses, settleOf,
+  settleVerdict, settledFields,
+} from './action-settle-cells.mjs';
 import { Engine, runTmpdirInProcess } from './engine.mjs';
 import { FAMILIES, openFamily } from './families.mjs';
 import { CHROMIUM, pasteTexts, seriesVerdict } from './focus-timer.mjs';
@@ -57,6 +70,8 @@ import { createService } from '../../src/services/engine/linux/service.mjs';
 export const QUIET_MS = 250;
 /** How long a missed run's effect is waited for after its reading, to tell a late effect from one that never came. */
 export const LATE_BOUND_MS = 2000;
+/** How long a scene's reading must hold still to be the one it settles at (`settledReading`). */
+export const SETTLED_MS = 300;
 /** A background cell's audit runs through xtrace (`--lanes shipped`). */
 export const AUDIT_RUNS = 5;
 /** The word a clipboard cell copies, at the start of the field's text. */
@@ -113,17 +128,23 @@ export function sourceOf(cell, sc) {
   return 'oracle';
 }
 
-/** A scene's reading from the harness's own readers, for a cell whose effect the tree hides. */
+/**
+ * A scene's reading from the harness's own readers, for a cell whose effect the tree hides: each a reader already
+ * running (the kept bus connection, `xprobe reader`) or a file read, so nothing starts late.
+ */
 async function fromOracle(ctx, cell, sc, run) {
-  const { bus } = ctx;
+  const { bus, reader } = ctx;
   if (cell.kind === 'activate_window') {
-    // the application's word first, on the kept connection; then the window manager's, through xprop
-    const active = CHROMIUM.includes(sc.family) ? null : Boolean((await bus.states(sc.frame))[0] & (1 << ACTIVE));
-    return { active, wm: activeWindow() === sc.id };
+    // the application's word and the window manager's, asked for at once
+    const [states, active] = await Promise.all([CHROMIUM.includes(sc.family) ? null : bus.states(sc.frame), reader.active()]);
+    return { active: states === null ? null : Boolean(states[0] & (1 << ACTIVE)), wm: active === sc.id };
   }
-  if (sc.effects === 'record') return { bytes: statSync(sc.record).size };
+  if (sc.effects === 'record') {
+    const data = readFileSync(sc.record, 'latin1');
+    return { bytes: data.length, data };
+  }
   if (sc.effects === 'screen') return { text: await bus.text(sc.terminal) };
-  if (cell.kind === 'clipboard_read') return { clipboard: clipRead().text ?? null };
+  if (cell.kind === 'clipboard_read') return { clipboard: (await reader.clip()).text ?? null };
   const node = run.node ?? sc.field;
   if (cell.kind === 'click' || cell.kind === 'key_click') return { caret: await bus.caret(node) };
   if (cell.kind === 'drag' || cell.kind === 'drag_handle') return { selection: await bus.selection(node) };
@@ -152,6 +173,19 @@ async function quietReading(ctx, cell, sc, svc, run) {
 }
 
 const decimalOf = (tree, nativeId) => preorder(tree ?? { children: [] }).find((n) => n.native_id === nativeId)?.id ?? null;
+/**
+ * The next of a scene's two points, paths or scroll directions for `kind`, alternating across its series as well as
+ * within them: a move to where the pointer already is sends no motion, a scale dragged along the path it was just
+ * dragged along starts where it ended, and a list scrolled up twice from its top does not move.
+ */
+function turn(sc, kind) {
+  sc.turns ??= {};
+  sc.turns[kind] = ((sc.turns[kind] ?? -1) + 1) % 2;
+  return sc.turns[kind];
+}
+
+/** Wheel steps for a scroll's pixels, as cua-engine counts them: rounded half up, at least one (engine/pointer.rs). */
+export const wheelSteps = (pixels) => Math.max(1, Math.floor((pixels + 50) / 100));
 const at = (sc, { x, y }, route) => (route === 'desktop' ? { x: sc.origin.x + x, y: sc.origin.y + y } : { x, y });
 
 /** A cell's requests to the service for run `run` (its window omitted on the desktop route). */
@@ -290,7 +324,7 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
       caretAt(ctx, sc.park.node, sc.park.offset);
       await aimAtText();
       Object.assign(run, { point: line.point, line: line.span, node: line.node });
-    } else run.point = sc.points[cell.kind === 'move' ? 'move' : 'click'][trial % 2];
+    } else run.point = cell.kind === 'move' ? sc.points.move[turn(sc, 'move')] : sc.points.click[trial % 2];
     if (effects === 'screen') await clearScreen(ctx, sc);
   } else if (cell.kind === 'move_relative') {
     // the pointer over the pad's middle first (the harness's own move, through xdotool), then 40 px either way
@@ -300,7 +334,8 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
   } else if (cell.kind === 'scroll') {
     run.point = sc.points.scroll;
     run.pixels = sc.scrollPixels;
-    run.direction = sc.effects === 'input-page' ? 'down' : trial % 2 ? 'up' : 'down';
+    run.steps = wheelSteps(run.pixels);
+    run.direction = sc.effects === 'input-page' ? 'down' : turn(sc, 'scroll') ? 'up' : 'down';
     if (effects === 'screen') await clearScreen(ctx, sc);
   } else if (cell.kind === 'drag' || cell.kind === 'drag_handle') {
     if (effects === 'editor' || effects === 'paragraphs') {
@@ -309,7 +344,7 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
       caretAt(ctx, sc.park.node, sc.park.offset);
       await aimAtText();
       Object.assign(run, { path: line.path, line: line.span, node: line.node });
-    } else run.path = sc.paths[trial % 2];
+    } else run.path = sc.paths[turn(sc, 'drag')];
     run.handle = `settle-${trial}`;
   } else if (cell.kind === 'type_text') {
     run.text = ctx.pasteText();
@@ -319,6 +354,9 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
     caretAt(ctx, sc.field);
     if (!ctx.oracle.select(sc.field, 0, WORD.length)) throw new Error(`${sc.label} refused the selection of its first word`);
     run.word = WORD;
+    // a value of the run's own on the clipboard first, so the reading after shows this run's copy, not an earlier one's
+    // (the review's finding 3); the owner stays until the run is over
+    if (cell.kind === 'clipboard_read') run.owner = await startOwner(`stale ${trial}`);
     if (cell.kind === 'clipboard_write') {
       const read = await settled(() => svc.handleRpc(execute('clipboard_read', { window: { id: sc.id } })));
       if (!read.ok) throw new Error(`${cellName(cell)}: the clipboard_read for its handle failed: ${read.error}`);
@@ -376,73 +414,141 @@ function arrange(ctx, cell, sc) {
   }
 }
 
-/** One run: prepared, read before, its requests and the reading of their effect in one witness span, then judged. */
+/**
+ * The scene's settled reading after a run (`SETTLED_MS` still), read every 25 ms from the answer for at most the late
+ * bound: `{settled, seen}`, `seen` each reading with its ms after the answer, `settled` null when the scene had not
+ * stopped changing by then, or a reading failed (`why`).
+ */
+async function settledReading(ctx, cell, sc, svc, run, answered) {
+  const seen = [];
+  let last = null;
+  let since = 0;
+  const until = answered + LATE_BOUND_MS;
+  while (performance.now() < until) {
+    const now = await settled(async () => (await readEffect(ctx, cell, sc, svc, run)).reading);
+    const at = performance.now();
+    if (!now.ok) return { settled: null, seen, why: now.error };
+    seen.push({ at: at - answered, reading: now.value });
+    if (last !== null && JSON.stringify(now.value) === JSON.stringify(last)) {
+      if (at - since >= SETTLED_MS) return { settled: now.value, seen };
+    } else {
+      last = now.value;
+      since = at;
+    }
+    await sleep(25);
+  }
+  return { settled: null, seen, why: `the scene was still changing ${LATE_BOUND_MS} ms after the answer` };
+}
+
+/** A reading as a row records it: a recorder's file by its size and its last bytes, not whole. */
+const shown = (reading) => (reading && typeof reading.data === 'string' ? { bytes: reading.bytes, tail: reading.data.slice(-24) } : reading);
+
+/**
+ * One run: prepared, read before, its requests and the reading of their effect in one witness span, then judged. The
+ * reading is judged against the complete effect: where the scene's settled reading decides it (`settledFields`), the
+ * reading must equal it, and a drag's settled reading must be the one its path settled at before. What judges the run
+ * failing (a reader, the settled reading, the settle the service deferred) makes it invalid, not a miss.
+ */
 async function oneRun(ctx, cell, sc, svc, settler, trial) {
   const run = await prepareRun(ctx, cell, sc, svc, trial);
-  await sleep(QUIET_MS);
-  const before = await quietReading(ctx, cell, sc, svc, run);
-  if (['click_element', 'right_click', 'secondary_action'].includes(cell.kind)) {
-    // a named action: the menu's context menu where the toolkit offers one (Chromium), else the button's press (Gecko's
-    // buttons offer only `press`)
-    if (cell.kind === 'secondary_action') Object.assign(run, sc.secondary);
-    run.element = decimalOf(before.tree, cell.kind === 'click_element' || run.action === 'press' ? sc.press : sc.menu);
-    if (!run.element) throw new Error(`${cellName(cell)}: the element is not in the window's tree`);
-  }
-  const source = sourceOf(cell, sc);
-  const span = await ctx.witness.span(`${cellName(cell)}#${trial}`, async () => {
-    const started = performance.now();
-    const answers = [];
-    for (const call of requestsOf(cell, sc, run)) {
-      const answer = await settled(() => svc.handleRpc(call));
-      answers.push(answer);
-      if (!answer.ok) break;
+  try {
+    await sleep(QUIET_MS);
+    const before = await quietReading(ctx, cell, sc, svc, run);
+    if (['click_element', 'right_click', 'secondary_action'].includes(cell.kind)) {
+      // a named action: the menu's context menu where the toolkit offers one (Chromium), else a button's press (Gecko's
+      // buttons offer only `press`), and on the settle scenes their button's primary action, by its own name
+      if (cell.kind === 'secondary_action') Object.assign(run, sc.secondary);
+      run.element = decimalOf(before.tree, cell.kind === 'click_element' || run.on === 'press' ? sc.press : sc.menu);
+      if (!run.element) throw new Error(`${cellName(cell)}: the element is not in the window's tree`);
     }
-    const answered = performance.now();
-    let after;
-    let waited = null;
-    if (source === 'oracle') {
-      await settler.wait();
-      waited = performance.now() - answered;
-      after = await settled(() => fromOracle(ctx, cell, sc, run));
-    } else after = await settled(async () => (await readEffect(ctx, cell, sc, svc, run)).reading);
-    return { answers, after, answered_ms: answered - started, read_ms: performance.now() - answered, waited_ms: waited };
-  });
-  const { answers, after, answered_ms: answeredMs, read_ms: readMs, waited_ms: waitedMs } = span.value;
-  const background = cell.route === 'background' && !ACTIVATING.includes(cell.kind);
-  const frontActive = background ? activeWindow() === ctx.desktop.front.id : null;
-  const answersOk = answers.every((a) => a.ok);
-  const effect = after.ok ? landed(sc.effects, cell.kind, before.reading, after.value, run) : false;
-  let lateMs = null;
-  if (!effect && answersOk) {
-    const until = performance.now() + LATE_BOUND_MS;
-    while (performance.now() < until) {
-      await sleep(50);
-      const now = await settled(async () => (await readEffect(ctx, cell, sc, svc, run)).reading);
-      if (now.ok && landed(sc.effects, cell.kind, before.reading, now.value, run)) {
-        lateMs = tenth(performance.now() - (until - LATE_BOUND_MS));
-        break;
+    const source = sourceOf(cell, sc);
+    // the settles the service defers in the span: the last is what the reading waits for (an activate_click's, its click's)
+    settler.deferred.length = 0;
+    const span = await ctx.witness.span(`${cellName(cell)}#${trial}`, async () => {
+      const started = performance.now();
+      const answers = [];
+      for (const call of requestsOf(cell, sc, run)) {
+        const answer = await settled(() => svc.handleRpc(call));
+        answers.push(answer);
+        if (!answer.ok) break;
+      }
+      const answered = performance.now();
+      let after;
+      let waited = null;
+      if (source === 'oracle') {
+        await settler.wait();
+        waited = performance.now() - answered;
+        after = await settled(() => fromOracle(ctx, cell, sc, run));
+      } else after = await settled(async () => (await readEffect(ctx, cell, sc, svc, run)).reading);
+      return { answers, after, answered, answered_ms: answered - started, read_ms: performance.now() - answered, waited_ms: waited };
+    });
+    const { answers, after, answered, answered_ms: answeredMs, read_ms: readMs, waited_ms: waitedMs } = span.value;
+    const background = cell.route === 'background' && !ACTIVATING.includes(cell.kind);
+    const frontActive = background ? activeWindow() === ctx.desktop.front.id : null;
+    const answersOk = answers.every((a) => a.ok);
+    const invalid = [];
+    const awaited = cell.kind === 'activate_click' ? 'click' : settleOf(cell);
+    if (answersOk && settler.deferred.at(-1) !== awaited) invalid.push(`the service settled it as ${settler.deferred.at(-1)}, not ${awaited}`);
+    const fields = settledFields(sc.effects, cell.kind);
+    let seen = null;
+    if (fields && answersOk && after.ok) {
+      const found = await settledReading(ctx, cell, sc, svc, run, answered);
+      seen = found.seen;
+      run.settled = found.settled;
+      if (!found.settled) invalid.push(found.why);
+      else if (fields.includes('selection')) {
+        // a text drag's path settles at one place: the first settled selection of each of the cell's two paths is the
+        // scene's own (a scale's settles within a step of it, by where its knob was pressed)
+        const key = `${cellName(cell)}#${trial % 2}`;
+        const mine = JSON.stringify(fields.map((f) => found.settled[f]));
+        const known = ctx.settledPaths.get(key);
+        if (known === undefined) ctx.settledPaths.set(key, mine);
+        else if (known !== mine) invalid.push(`settled at ${mine}, where this path settled at ${known}`);
       }
     }
+    const effect = after.ok && !invalid.length ? landed(sc.effects, cell.kind, before.reading, after.value, run) : false;
+    let lateMs = null;
+    if (!effect && answersOk && !invalid.length) {
+      if (seen) {
+        const at = seen.find((s) => landed(sc.effects, cell.kind, before.reading, s.reading, run))?.at;
+        lateMs = at === undefined ? null : tenth(at);
+      } else {
+        const until = performance.now() + LATE_BOUND_MS;
+        while (performance.now() < until) {
+          await sleep(50);
+          const now = await settled(async () => (await readEffect(ctx, cell, sc, svc, run)).reading);
+          if (now.ok && landed(sc.effects, cell.kind, before.reading, now.value, run)) {
+            lateMs = tenth(performance.now() - answered);
+            break;
+          }
+        }
+      }
+    }
+    await afterRun(ctx, cell, sc, svc, run, answers);
+    const desktopClean = spanClean(span.report);
+    const ok = runPasses({ route: cell.route, kind: cell.kind, answersOk, landed: effect, desktopClean, frontActive });
+    return {
+      ok,
+      landed: effect,
+      late_ms: lateMs,
+      ...(invalid.length ? { invalid: invalid.join('; ').slice(0, 300) } : {}),
+      answers: answers.map((a) => (a.ok ? { ok: true } : { ok: false, error: a.error })),
+      deferred: [...settler.deferred],
+      source,
+      before: shown(before.reading),
+      after: after.ok ? shown(after.value) : { error: after.error },
+      ...(run.settled ? { settled: shown(run.settled) } : {}),
+      sent: { key: run.key, point: run.point, path: run.path, direction: run.direction, steps: run.steps, text: run.text, dx: run.dx, line: run.line, action: run.action },
+      desktop_clean: desktopClean,
+      front_active: frontActive,
+      ...(desktopClean ? {} : { witness: judgeSpan(span.report).fields, activations: spanActivations(span.report) }),
+      answered_ms: tenth(answeredMs),
+      read_ms: tenth(readMs),
+      waited_ms: tenth(waitedMs),
+    };
+  } finally {
+    await run.owner?.stop();
   }
-  await afterRun(ctx, cell, sc, svc, run, answers);
-  const desktopClean = spanClean(span.report);
-  const ok = runPasses({ route: cell.route, kind: cell.kind, answersOk, landed: effect, desktopClean, frontActive });
-  return {
-    ok,
-    landed: effect,
-    late_ms: lateMs,
-    answers: answers.map((a) => (a.ok ? { ok: true } : { ok: false, error: a.error })),
-    source,
-    before: before.reading,
-    after: after.ok ? after.value : { error: after.error },
-    sent: { key: run.key, point: run.point, path: run.path, direction: run.direction, text: run.text, dx: run.dx, line: run.line },
-    desktop_clean: desktopClean,
-    front_active: frontActive,
-    ...(desktopClean ? {} : { witness: judgeSpan(span.report).fields, activations: spanActivations(span.report) }),
-    answered_ms: tenth(answeredMs),
-    read_ms: tenth(readMs),
-    waited_ms: tenth(waitedMs),
-  };
 }
 
 /**
@@ -452,6 +558,14 @@ async function oneRun(ctx, cell, sc, svc, settler, trial) {
 function serviceFor(ctx, cell, lane) {
   assertReachable('the settle experiment\'s service', [], process.env);
   const settler = new ActionSettler({ settles: laneSettles(lane) });
+  // which settle each input deferred, so a run shows the service waited by the cell's (an animating family's, as the
+  // engine's answer named it)
+  settler.deferred = [];
+  const defer = settler.defer.bind(settler);
+  settler.defer = (settle) => {
+    settler.deferred.push(settle);
+    defer(settle);
+  };
   const svc = createService({ env: { CUA_ENGINE_BIN: ctx.cua, CUA_DESKTOP_MODE: cell.route === 'dedicated' ? 'dedicated' : 'shared' }, settler });
   return { svc, settler };
 }
@@ -485,21 +599,25 @@ async function series(ctx, cell, sc, lane) {
   }
   const verdict = seriesVerdict(oks, ctx.need);
   const missed = rows.filter((r) => !r.ok);
+  const classes = rows.map(runClass);
+  const count = (c) => classes.filter((x) => x === c).length;
   const out = {
     cell: cellName(cell),
     scene: cell.scene,
     input: cell.kind,
     method: KIND_METHOD[cell.kind],
+    settle: settleOf(cell),
     route: cell.route,
     occlusion: cell.occlusion,
     lane,
     load: ctx.load,
     need: ctx.need,
     ...verdict,
-    late: missed.filter((r) => r.late_ms !== null && r.late_ms !== undefined).length,
-    never: missed.filter((r) => r.landed === false && (r.late_ms === null || r.late_ms === undefined)).length,
-    desktop_misses: missed.filter((r) => r.landed && r.desktop_clean === false).length,
-    errors: missed.filter((r) => r.error || r.answers?.some((a) => !a.ok)).length,
+    late: count('late'),
+    never: count('never'),
+    refused: count('refused'),
+    invalid: count('invalid'),
+    desktop_misses: count('desktop'),
     source: rows.find((r) => r.source)?.source ?? null,
     answered_median: tenth(median(rows.map((r) => r.answered_ms).filter(Number.isFinite))),
     read_median: tenth(median(rows.map((r) => r.read_ms).filter(Number.isFinite))),
@@ -515,6 +633,7 @@ async function auditCell(ctx, cell, sc, lane) {
   const { svc, settler } = serviceFor(ctx, cell, lane);
   const display = process.env.DISPLAY;
   let text;
+  let setupError = null;
   const runs = [];
   try {
     // the service's engine is spawned with this process's environment at setup: the proxy's display (the run's own,
@@ -530,8 +649,12 @@ async function auditCell(ctx, cell, sc, lane) {
     await sleep(300);
     for (let trial = 0; trial < AUDIT_RUNS; trial++) {
       const row = await settled(() => oneRun(ctx, cell, sc, svc, settler, trial));
-      runs.push(row.ok ? { ok: row.value.ok, landed: row.value.landed } : { ok: false, error: row.error });
+      // what the audit needs of each run: that its input ran as the timed runs' did (the review's finding 6)
+      const value = row.ok ? row.value : { ok: false, landed: false, error: row.error };
+      runs.push({ class: runClass(value), landed: value.landed, why: value.error ?? value.invalid ?? value.answers?.find((a) => !a.ok)?.error ?? undefined });
     }
+  } catch (error) {
+    setupError = String(error.message).slice(0, 300);
   } finally {
     svc.close();
     await sleep(300);
@@ -539,7 +662,12 @@ async function auditCell(ctx, cell, sc, lane) {
     text = await proxy.stop();
   }
   const forbidden = auditRequests(parseXtrace(text));
-  const row = { kind: 'settle-audit', cell: cellName(cell), lane, load: ctx.load, clean: forbidden.clean, requests: forbidden.requests, forbidden: forbidden.forbidden.slice(0, 10), runs };
+  const verdict = auditVerdict({ clean: forbidden.clean, requests: forbidden.requests, runs }, AUDIT_RUNS);
+  if (setupError) verdict.failed.unshift(`its setup failed: ${setupError}`);
+  const row = {
+    kind: 'settle-audit', cell: cellName(cell), lane, load: ctx.load, pass: verdict.pass && !setupError, failed: verdict.failed, missed: verdict.missed,
+    clean: forbidden.clean, requests: forbidden.requests, forbidden: forbidden.forbidden.slice(0, 10), runs,
+  };
   ctx.emit(row);
   return row;
 }
@@ -586,7 +714,7 @@ async function openScene(ctx, name) {
     sc.press = button('Press')?.id ?? null;
     sc.menu = button('Menu')?.id ?? null;
     if (!sc.press || !sc.menu) throw new Error(`${sc.label}: the input page has no Press or Menu button`);
-    sc.secondary = button('Menu').actions?.includes('showContextMenu') ? { action: 'showContextMenu' } : { action: 'press' };
+    sc.secondary = button('Menu').actions?.includes('showContextMenu') ? { action: 'showContextMenu', on: 'menu' } : { action: 'press', on: 'press' };
     sc.points = { click: [{ x: 300, y: 150 }, { x: 700, y: 150 }], move: [{ x: 300, y: 200 }, { x: 700, y: 200 }], scroll: { x: 520, y: 500 } };
     sc.paths = [[{ x: 200, y: 150 }, { x: 380, y: 180 }, { x: 600, y: 240 }], [{ x: 600, y: 240 }, { x: 380, y: 180 }, { x: 200, y: 150 }]];
     sc.scrollPixels = 300;
@@ -635,6 +763,9 @@ async function openScene(ctx, name) {
   if (def.effects === 'settle-scene' || def.effects === 'counter') {
     if (!sc.button) throw new Error(`${sc.label}: no counting button`);
     sc.press = sc.button;
+    // the button's primary action by its own name (its first: what an element click runs), for the named action
+    const primary = nodes.find((n) => n.id === sc.button)?.actions?.[0];
+    if (primary) sc.secondary = { action: primary, on: 'press' };
     const e = oracle.extents(sc.button);
     const button = { x: Math.round(e.x - sc.origin.x + e.w / 2), y: Math.round(e.y - sc.origin.y + e.h / 2) };
     sc.points = { click: [{ x: button.x - 40, y: button.y }, { x: button.x + 40, y: button.y }], move: [{ x: 200, y: 250 }, { x: 400, y: 250 }], scroll: { x: 300, y: 250 } };
@@ -649,7 +780,7 @@ async function openScene(ctx, name) {
     sc.paths = [[{ x: mid, y: places.scale.y }, { x: near, y: places.scale.y }], [{ x: near, y: places.scale.y }, { x: mid, y: places.scale.y }]];
     sc.scrollPixels = 100;
   }
-  ctx.emit({ kind: 'settle-scene', scene: name, window: sc.id, origin: sc.origin, tree_source: sc.treeSource, text_in_tree: sc.textInTree ?? null, lines: sc.lines?.map((l) => ({ span: l.span, point: l.point, path: l.path })) ?? null });
+  ctx.emit({ kind: 'settle-scene', scene: name, window: sc.id, origin: sc.origin, tree_source: sc.treeSource, text_in_tree: sc.textInTree ?? null, secondary: sc.secondary ?? null, lines: sc.lines?.map((l) => ({ span: l.span, point: l.point, path: l.path })) ?? null });
   return sc;
 }
 
@@ -704,6 +835,7 @@ export async function runSettle(args, { emit, run, startLoad }) {
   let loadRun = null;
   let witness = null;
   let bus = null;
+  let reader = null;
   let watched = null;
   let restoreTmpdir = () => {};
   try {
@@ -714,10 +846,11 @@ export async function runSettle(args, { emit, run, startLoad }) {
     const oracle = new Oracle();
     desktop.oracle = oracle;
     bus = await AsyncOracle.open(a11yBusAddress());
+    reader = await startReader();
     await desktop.openFront('covered');
     witness = await startWitness(XPROBE, { tailMs: 20 });
     loadRun = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
-    const ctx = { desktop, oracle, bus, witness, emit, cua: args.cua, load, need: args.samplesTrials ?? CONSECUTIVE, pasteText: pasteTexts(), caretRefused: new Set() };
+    const ctx = { desktop, oracle, bus, reader, witness, emit, cua: args.cua, load, need: args.samplesTrials ?? CONSECUTIVE, pasteText: pasteTexts(), caretRefused: new Set(), settledPaths: new Map() };
     for (const [family, sceneNames] of Object.entries(FAMILY_SCENES)) {
       const mine = cells.filter((c) => sceneNames.includes(c.scene));
       if (!mine.length) continue;
@@ -733,7 +866,7 @@ export async function runSettle(args, { emit, run, startLoad }) {
       try {
         for (const cell of mine) {
           const sc = scenes[cell.scene];
-          for (const lane of plan.lanes) {
+          for (const lane of planLanes(plan, cell)) {
             const s = await series(ctx, cell, sc, lane);
             all.push(s);
             if (plan.search && s.reached) break;
@@ -748,6 +881,7 @@ export async function runSettle(args, { emit, run, startLoad }) {
     if (loadRun) await loadRun.stop();
     if (witness) await witness.stop();
     bus?.close();
+    reader?.close();
     restoreTmpdir();
     await desktop.closeAll();
     if (wm) {
@@ -763,11 +897,11 @@ export async function runSettle(args, { emit, run, startLoad }) {
   const measured = cells.filter((c) => !skipped.some((s) => s.cell === cellName(c))).map(cellName);
   const { md, failed, held } = settleVerdict(all, { search: plan.search, cells: measured });
   for (const s of skipped) failed.push(`${s.cell} could not be opened: ${s.why}`);
-  for (const a of audits) if (!a.clean) failed.push(`${a.cell}: the audit found ${a.forbidden.length} forbidden request(s)`);
+  for (const a of audits) if (!a.pass) failed.push(`${a.cell}: the audit failed: ${a.failed.join('; ')}`);
   for (const f of ending.foreign) failed.push(`a window the experiment did not open was changed: ${f}`);
   if (!watched.clean) failed.push(`the private display's watchdog: ${watched.reason}`);
   if (plan.search) md.push('', '| cell | held step (ms) |', '|---|---:|', ...Object.entries(held).map(([c, ms]) => `| ${c} | ${ms ?? '**none**'} |`));
-  if (audits.length) md.push('', '| cell | audit | requests |', '|---|---|---:|', ...audits.map((a) => `| ${a.cell} | ${a.clean ? 'clean' : '**forbidden**'} | ${a.requests} |`));
+  if (audits.length) md.push('', '| cell | audit | requests | runs that ran their input | effects missed |', '|---|---|---:|---:|---:|', ...audits.map((a) => `| ${a.cell} | ${a.pass ? 'clean' : `**${a.failed.join('; ')}**`} | ${a.requests} | ${a.runs.filter((r) => r.class !== 'invalid' && r.class !== 'refused').length} of ${a.runs.length} | ${a.missed} |`));
   if (failed.length) md.push('', `**Incomplete or failed:** ${failed.join('; ')}.`);
   emit({ kind: 'settle-verdict', pass: failed.length === 0, failed, held });
   return { md, complete: failed.length === 0, failed, ending };

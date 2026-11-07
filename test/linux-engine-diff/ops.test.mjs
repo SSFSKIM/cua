@@ -7,7 +7,8 @@ import { asOutput, decimalIds, dehydrateTree } from '../../scripts/linux-engine-
 
 test("the input scene's status lines parse into counters", () => {
   const s = parseInputStatus(['Press', 'pointer moves 12 downs 2 ups 2 drags 1', 'keys down 3 up 2 last b', 'scroll 300', 'context 4 on far', 'clicks 5']);
-  assert.deepEqual(s, { moves: 12, downs: 2, ups: 2, drags: 1, key_downs: 3, key_ups: 2, last_key: 'b', scroll: 300, context: 4, context_on: 'far', clicks: 5 });
+  assert.deepEqual(s, { moves: 12, downs: 2, ups: 2, drags: 1, key_downs: 3, key_ups: 2, last_key: 'b', scroll: 300, context: 4, context_on: 'far', clicks: 5, wheels: null, wheel_legacy: null });
+  assert.deepEqual([parseInputStatus(['wheels 3 legacy -360']).wheels, parseInputStatus(['wheels 3 legacy -360']).wheel_legacy], [3, -360]);
   // a missing line reads as unknown, never as zero
   assert.equal(parseInputStatus([]).clicks, null);
 });

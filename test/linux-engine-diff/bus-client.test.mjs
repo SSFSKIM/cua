@@ -120,6 +120,40 @@ test('a call with no reply times out; a closed connection fails what is pending 
   await assert.rejects(client.call(':1.5', '/z', 'org.a11y.atspi.Text', 'GetText', 'ii', [0, -1]), { message: /^the bus connection (closed|failed)/ });
 });
 
+/** A bus that accepts the connection and then `behaviour(socket)`: it never authenticates. */
+async function silentBus(t, behaviour) {
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-bus-'));
+  const path = join(dir, 'bus');
+  const sockets = [];
+  const server = createServer((socket) => {
+    sockets.push(socket);
+    behaviour(socket);
+  });
+  await new Promise((resolve) => server.listen(path, resolve));
+  t.after(() => {
+    for (const s of sockets) s.destroy();
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  return `unix:path=${path},guid=0123`;
+}
+
+test('a bus that closes during authentication rejects the connection, and one that never answers it rejects within the bound (the review\'s finding 7)', async (t) => {
+  // closed once the client's AUTH line has come, before any answer
+  const closing = await silentBus(t, (socket) => socket.once('data', () => socket.destroy()));
+  await assert.rejects(connectBus(closing, { timeoutMs: 2000 }), { message: /^the bus connection closed before it was ready/ });
+  const mute = await silentBus(t, () => {});
+  const started = performance.now();
+  await assert.rejects(connectBus(mute, { timeoutMs: 80 }), { message: /^the bus did not finish authentication and Hello within 80 ms/ });
+  assert.ok(performance.now() - started < 1000, 'bounded by the call bound');
+  // after its OK, a bus that closes before Hello is answered
+  const half = await silentBus(t, (socket) => socket.once('data', () => {
+    socket.write('OK 0123456789abcdef\r\n');
+    socket.once('data', () => socket.destroy());
+  }));
+  await assert.rejects(connectBus(half, { timeoutMs: 2000 }), { message: /^the bus connection (closed|failed)/ });
+});
+
 test('the AT-SPI reads: text, caret through the Text property, the first selection or none, states, the current value', async (t) => {
   let selections = 1;
   const bus = await fakeBus(t, (m) => {

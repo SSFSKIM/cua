@@ -20,8 +20,8 @@
 <body>
 <!-- The differential harness's pointer and key scene: every input the engines send here leaves a count in the status
      lines, which read back through the tree. The pad counts pointer moves, presses and drags; the page counts key
-     downs and ups, its scroll position, its context-menu requests (cancelled, so no menu opens) and the button's
-     clicks. "far" sits below the first screen, so an element right click on it has no visible point in the window
+     downs and ups, its scroll position and wheel steps, its context-menu requests (cancelled, so no menu opens) and the
+     button's clicks. "far" sits below the first screen, so an element right click on it has no visible point in the window
      (the right click's fallback). The title comes from the URL's fragment, so every scene window has its own. -->
 <div id="pad"></div>
 <div id="status">
@@ -30,19 +30,21 @@
   <p id="scroll">scroll 0</p>
   <p id="context">context 0 on none</p>
   <p id="clicks">clicks 0</p>
+  <p id="wheels">wheels 0 legacy 0</p>
 </div>
 <button id="press" type="button">Press</button>
 <button id="menu" type="button">Menu</button>
 <button id="far" type="button">Far</button>
 <script>
   document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
-  const state = { moves: 0, downs: 0, ups: 0, drags: 0, down: null, kd: 0, ku: 0, last: 'none', context: 0, on: 'none', clicks: 0 };
+  const state = { moves: 0, downs: 0, ups: 0, drags: 0, down: null, kd: 0, ku: 0, last: 'none', context: 0, on: 'none', clicks: 0, wheels: 0, legacy: 0 };
   const show = () => {
     document.getElementById('pointer').textContent = `pointer moves ${state.moves} downs ${state.downs} ups ${state.ups} drags ${state.drags}`;
     document.getElementById('keys').textContent = `keys down ${state.kd} up ${state.ku} last ${state.last}`;
     document.getElementById('scroll').textContent = `scroll ${Math.round(window.scrollY)}`;
     document.getElementById('context').textContent = `context ${state.context} on ${state.on}`;
     document.getElementById('clicks').textContent = `clicks ${state.clicks}`;
+    document.getElementById('wheels').textContent = `wheels ${state.wheels} legacy ${state.legacy}`;
     // each status line is its own accessible name too: Firefox's tree carries a paragraph's text in no field the
     // engines read
     for (const p of document.querySelectorAll('#status p')) p.setAttribute('aria-label', p.textContent);
@@ -70,6 +72,9 @@
   document.addEventListener('contextmenu', (e) => { state.context += 1; state.on = e.target.id || e.target.tagName.toLowerCase(); show(); e.preventDefault(); });
   document.getElementById('press').addEventListener('click', () => { state.clicks += 1; show(); });
   window.addEventListener('scroll', show);
+  // the wheel events and their legacy wheelDeltaY, 120 a notch in Chromium and Gecko, so a scroll's every wheel step
+  // reads back whole even where the browser coalesces events it has not handled yet
+  document.addEventListener('wheel', (e) => { state.wheels += 1; state.legacy += e.wheelDeltaY ?? 0; show(); }, { passive: true });
   show();
 </script>
 </body>

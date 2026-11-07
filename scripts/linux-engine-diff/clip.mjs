@@ -15,6 +15,72 @@ export function clipRead() {
 }
 
 /**
+ * The clipboard's and the active window's readers kept running (`xprobe reader`), so a read starts the moment it is
+ * asked for, with no process to start (the settle experiment's readers, action-settle.mjs). Resolves once connected,
+ * with `clip()` (CLIPBOARD's text, as `clipRead` answers it), `active()` (the root's `_NET_ACTIVE_WINDOW`, 0 when unset)
+ * and `close()`. Reads are answered in order; each is bounded.
+ */
+export async function startReader({ readyMs = 5000, readMs = 5000 } = {}) {
+  const child = spawnXprobe(['reader'], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const waiting = [];
+  let ready;
+  let failed = null;
+  const began = new Promise((resolve, reject) => {
+    ready = resolve;
+    child.once('error', reject);
+    child.once('exit', (code) => reject(new Error(`xprobe reader exited (${code}) before it was ready`)));
+  });
+  child.once('exit', (code, signal) => {
+    failed = new Error(`xprobe reader ended (${code ?? signal})`);
+    for (const w of waiting.splice(0)) w.reject(failed);
+  });
+  createInterface({ input: child.stdout }).on('line', (line) => {
+    let answer;
+    try {
+      answer = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (answer.ready) return ready();
+    waiting.shift()?.resolve(answer);
+  });
+  const timer = setTimeout(() => child.kill('SIGKILL'), readyMs);
+  try {
+    await began;
+  } finally {
+    clearTimeout(timer);
+  }
+  const ask = (command) => {
+    if (failed) return Promise.reject(failed);
+    return new Promise((resolve, reject) => {
+      const w = { resolve, reject };
+      waiting.push(w);
+      child.stdin.write(`${command}\n`);
+      setTimeout(() => {
+        const i = waiting.indexOf(w);
+        if (i >= 0) {
+          // a late answer would be taken for the next read's: the reader is no longer trusted
+          failed = new Error(`xprobe reader gave no answer to ${command} within ${readMs} ms`);
+          child.kill('SIGKILL');
+          reject(failed);
+        }
+      }, readMs).unref();
+    }).then((answer) => {
+      if (answer.error) throw new Error(answer.error);
+      return answer;
+    });
+  };
+  return {
+    clip: () => ask('clip'),
+    active: async () => (await ask('active')).active,
+    close() {
+      child.stdin.end();
+      setTimeout(() => child.kill('SIGKILL'), 2000).unref();
+    },
+  };
+}
+
+/**
  * A watch of every client's pointer and keyboard grabs (`xprobe request-watch`, through RECORD, which only reads: T4b's
  * audit round replaced `xprobe grabs`, which took the root's pointer and keyboard for a moment to ask, so on a person's
  * display it took their input). Resolves once recording has begun, with `stop()`, which ends the watch and answers its

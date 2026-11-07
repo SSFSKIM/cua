@@ -6,12 +6,17 @@ import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import {
-  CELLS, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, STEPS, cellName, cellsFor, chosenPlan, heldStep, hopeless, landed, laneSettles, lostInput, methodConstants, runPasses, settleVerdict,
+  ANIMATED_STEPS, CELLS, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, STEPS, auditVerdict, cellName, cellsFor, chosenPlan, heldStep, hopeless, landed, laneSettles, lostInput, methodConstants,
+  planLanes, runClass, runPasses, settleOf, settleVerdict, stepsOf,
 } from '../../scripts/linux-engine-diff/action-settle-cells.mjs';
 import { SETTLE_MS } from '../../src/services/engine/linux/settle.mjs';
 
-test('the lanes: the shipped constants, or every method at one measured step; the steps start at the 0 ms control and end at the vendor\'s 100', () => {
+test('the lanes: the shipped constants, or every settle at one measured step; the steps start at the 0 ms control and end at the vendor\'s 100, an animating family\'s at 400', () => {
   assert.deepEqual(STEPS, [0, 10, 25, 50, 75, 100]);
+  assert.deepEqual(ANIMATED_STEPS, [0, 100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350, 375, 400]);
+  assert.deepEqual(stepsOf('animated_gtk4'), ANIMATED_STEPS);
+  assert.deepEqual(stepsOf('click_element'), STEPS);
+  assert.equal(laneSettles('settle-300').animated_qt, 300);
   assert.deepEqual(laneSettles('shipped'), SETTLE_MS);
   assert.deepEqual(laneSettles('settle-25'), Object.fromEntries(Object.keys(SETTLE_MS).map((m) => [m, 25])));
   assert.deepEqual(laneSettles('settle-0').press_key, 0);
@@ -20,7 +25,11 @@ test('the lanes: the shipped constants, or every method at one measured step; th
 });
 
 test('a sitting searches the steps upward unless --lanes names lanes; the lanes come in the experiment\'s order', () => {
-  assert.deepEqual(chosenPlan({}), { search: true, lanes: STEPS.map((ms) => `settle-${ms}`) });
+  assert.deepEqual(chosenPlan({}), { search: true, lanes: null });
+  const at = (scene, kind) => CELLS.find((c) => c.scene === scene && c.kind === kind && c.route === 'background');
+  assert.deepEqual(planLanes(chosenPlan({}), at('gedit', 'click')), STEPS.map((ms) => `settle-${ms}`), 'a cell searches its own settle\'s steps');
+  assert.deepEqual(planLanes(chosenPlan({}), at('gtk4-button', 'click_element')), ANIMATED_STEPS.map((ms) => `settle-${ms}`));
+  assert.deepEqual(planLanes(chosenPlan({ lanes: ['shipped'] }), at('gtk4-button', 'click_element')), ['shipped']);
   assert.deepEqual(chosenPlan({ lanes: ['shipped'] }), { search: false, lanes: ['shipped'] });
   assert.deepEqual(chosenPlan({ lanes: ['settle-50', 'shipped', 'settle-0'] }), { search: false, lanes: ['shipped', 'settle-0', 'settle-50'] });
   assert.throws(() => chosenPlan({ lanes: ['settle-7'] }), /unknown settle lane settle-7/);
@@ -48,9 +57,24 @@ test('every cell names a known scene, kind, route and occlusion, and every kind 
   for (const scene of Object.keys(SCENES)) assert.ok(Object.values(FAMILY_SCENES).flat().includes(scene), `${scene} belongs to a family`);
 });
 
-test('the cells reach every method but launch_app, whose service method no production call reaches (the wrapper launches)', () => {
-  const reached = new Set(CELLS.map((c) => KIND_METHOD[c.kind]));
+test('the cells reach every settle but launch_app\'s, whose service method no production call reaches (the wrapper launches)', () => {
+  const reached = new Set(CELLS.map(settleOf));
   assert.deepEqual(Object.keys(SETTLE_MS).filter((m) => !reached.has(m)), ['launch_app']);
+});
+
+test('a cell\'s settle: a coordinate or right click click\'s, an element\'s primary action its own, an animating family\'s its family\'s, a named primary action there too (the design session, 2026-11-06)', () => {
+  const at = (scene, kind, route = 'background') => CELLS.find((c) => c.scene === scene && c.kind === kind && c.route === route);
+  assert.equal(settleOf(at('chrome-input', 'click')), 'click');
+  assert.equal(settleOf(at('chrome-input', 'right_click')), 'click');
+  assert.equal(settleOf(at('settle-qt5', 'key_click')), 'click');
+  assert.equal(settleOf(at('chrome-input', 'click_element')), 'click_element');
+  assert.equal(settleOf(at('settle-gtk3', 'click_element')), 'click_element');
+  assert.equal(settleOf(at('gtk4-button', 'click_element')), 'animated_gtk4');
+  assert.equal(settleOf(at('settle-qt5', 'click_element')), 'animated_qt');
+  assert.equal(settleOf(at('settle-qt6', 'click_element')), 'animated_qt');
+  assert.equal(settleOf(at('chrome-input', 'secondary_action')), 'perform_secondary_action');
+  for (const scene of ['gtk4-button', 'settle-qt5', 'settle-qt6']) assert.equal(settleOf(at(scene, 'secondary_action')), settleOf(at(scene, 'click_element')), scene);
+  assert.equal(settleOf(at('settle-gtk3', 'activate_click')), 'activate_window');
 });
 
 test('Chromium takes background drags only with the path in view, Gecko every pointer kind only fully unobscured: those cells are unobscured', () => {
@@ -100,7 +124,7 @@ test('--family and --kinds and --routes choose cells; an unknown name is refused
 });
 
 test('the input page\'s effects: keys, presses, clicks, context menus, moves, scroll and drags, each counted in its status lines', () => {
-  const s = (o = {}) => ({ moves: 3, downs: 2, ups: 2, drags: 1, key_downs: 4, key_ups: 4, last_key: 'b', scroll: 0, context: 1, context_on: 'menu', clicks: 5, ...o });
+  const s = (o = {}) => ({ moves: 3, downs: 2, ups: 2, drags: 1, key_downs: 4, key_ups: 4, last_key: 'b', scroll: 0, context: 1, context_on: 'menu', clicks: 5, wheels: 0, wheel_legacy: 0, ...o });
   const before = s();
   assert.equal(landed('input-page', 'press_key', before, s({ key_downs: 5, key_ups: 5, last_key: 'x' }), {}), true);
   assert.equal(landed('input-page', 'press_key', before, s({ key_downs: 5, last_key: 'x' }), {}), false, 'the key\'s release not yet');
@@ -115,11 +139,14 @@ test('the input page\'s effects: keys, presses, clicks, context menus, moves, sc
   assert.equal(landed('input-page', 'secondary_action', before, s({ context: 2 }), { action: 'showContextMenu' }), true);
   assert.equal(landed('input-page', 'secondary_action', before, s({ clicks: 6 }), { action: 'press' }), true, 'Gecko\'s buttons offer only press');
   assert.equal(landed('input-page', 'secondary_action', before, s({ context: 2 }), { action: 'press' }), false);
-  assert.equal(landed('input-page', 'move', before, s({ moves: 4 }), {}), true);
-  assert.equal(landed('input-page', 'move_relative', before, before, {}), false);
-  assert.equal(landed('input-page', 'scroll', before, s({ scroll: 120 }), { direction: 'down' }), true);
-  assert.equal(landed('input-page', 'scroll', s({ scroll: 300 }), s({ scroll: 180 }), { direction: 'up' }), true);
-  assert.equal(landed('input-page', 'scroll', before, before, { direction: 'down' }), false);
+  assert.equal(landed('input-page', 'move', before, s({ moves: 4 }), { settled: { moves: 4 } }), true);
+  assert.equal(landed('input-page', 'move_relative', before, before, { settled: before }), false);
+  // every wheel step arrived: Chromium's legacy delta, 120 a notch over the events it coalesces, else the events
+  assert.equal(landed('input-page', 'scroll', before, s({ scroll: 120, wheels: 2, wheel_legacy: -360 }), { direction: 'down', steps: 3 }), true);
+  assert.equal(landed('input-page', 'scroll', before, s({ scroll: 2, wheels: 1, wheel_legacy: -120 }), { direction: 'down', steps: 3 }), false, 'one notch of three');
+  assert.equal(landed('input-page', 'scroll', before, s({ scroll: 160, wheels: 3 }), { direction: 'down', steps: 3 }), true, 'no legacy delta: the events');
+  assert.equal(landed('input-page', 'scroll', s({ scroll: 300 }), s({ scroll: 180, wheels: 3 }), { direction: 'up', steps: 3 }), true);
+  assert.equal(landed('input-page', 'scroll', before, s({ wheels: 3 }), { direction: 'down', steps: 3 }), false, 'the page did not move');
   assert.equal(landed('input-page', 'drag', before, s({ drags: 2, downs: 3, ups: 3 }), {}), true);
   assert.equal(landed('input-page', 'drag_handle', before, s({ drags: 2, downs: 3 }), {}), false, 'not released yet');
   assert.equal(landed('input-page', 'press_key', null, before, {}), false, 'no read before');
@@ -150,42 +177,72 @@ test('an editor\'s pointer effects, which the tree hides: the caret into the lin
   assert.equal(landed('editor', 'click', { caret: 46 }, { caret: 46 }, line), false);
   assert.equal(landed('editor', 'click', { caret: 46 }, { caret: 5 }, line), false, 'another line');
   assert.equal(landed('editor', 'key_click', { caret: 46 }, { caret: 23 }, line), true);
-  assert.equal(landed('editor', 'drag', { selection: null }, { selection: [23, 28] }, line), true);
-  assert.equal(landed('editor', 'drag', { selection: null }, { selection: null }, line), false);
-  assert.equal(landed('editor', 'drag', { selection: null }, { selection: [23, 23] }, line), false, 'an empty selection');
-  assert.equal(landed('editor', 'drag_handle', { selection: null }, { selection: [2, 9] }, line), false, 'outside the line');
-  assert.equal(landed('editor', 'drag', { selection: [23, 28] }, { selection: [33, 38] }, line), true, 'the last drag\'s selection replaced');
-  assert.equal(landed('editor', 'drag', { selection: [23, 28] }, { selection: [23, 28] }, line), false, 'the last drag\'s selection still');
+  const settledAt = (selection) => ({ ...line, settled: { selection } });
+  assert.equal(landed('editor', 'drag', { selection: null }, { selection: [23, 28] }, settledAt([23, 28])), true);
+  assert.equal(landed('editor', 'drag', { selection: null }, { selection: null }, settledAt(null)), false);
+  assert.equal(landed('editor', 'drag', { selection: null }, { selection: [23, 23] }, settledAt([23, 23])), false, 'an empty selection');
+  assert.equal(landed('editor', 'drag_handle', { selection: null }, { selection: [2, 9] }, settledAt([2, 9])), false, 'outside the line');
+  assert.equal(landed('editor', 'drag', { selection: [23, 28] }, { selection: [33, 38] }, settledAt([33, 38])), true, 'the last drag\'s selection replaced');
+  assert.equal(landed('editor', 'drag', { selection: [23, 28] }, { selection: [23, 28] }, settledAt([23, 28])), false, 'the last drag\'s selection still');
+  assert.equal(landed('editor', 'drag', { selection: null }, { selection: [23, 26] }, settledAt([23, 28])), false, 'the drag still under way');
   // a Writer paragraph: the caret is the clicked paragraph's own, -1 while it is elsewhere
   assert.equal(landed('paragraphs', 'click', { caret: -1 }, { caret: 0 }, { line: [0, 22] }), true);
   assert.equal(landed('paragraphs', 'click', { caret: -1 }, { caret: -1 }, { line: [0, 22] }), false);
 });
 
-test('a terminal\'s effects: one more x on its cleared screen, any change for its pointer kinds; xterm\'s program received more bytes', () => {
+test('a terminal\'s effects: one more x on its cleared screen, its last report echoed for its pointer kinds; xterm\'s program\'s reports decoded in full', () => {
   assert.equal(landed('screen', 'press_key', { text: '\n\n' }, { text: 'x\n\n' }, {}), true);
   assert.equal(landed('screen', 'press_key', { text: '\n' }, { text: '\n' }, {}), false);
   assert.equal(landed('screen', 'press_key', { text: '' }, { text: 'xx' }, {}), false, 'two keys');
-  assert.equal(landed('screen', 'click', { text: '' }, { text: ' !!' }, {}), true);
-  assert.equal(landed('screen', 'scroll', { text: 'a' }, { text: 'a' }, {}), false);
+  assert.equal(landed('screen', 'click', { text: '' }, { text: '#!!' }, {}), true, 'the release echoed last');
+  assert.equal(landed('screen', 'click', { text: '' }, { text: ' !!' }, {}), false, 'the press alone');
+  assert.equal(landed('screen', 'scroll', { text: 'a' }, { text: 'a' }, { direction: 'down' }), false);
   assert.equal(landed('screen', 'type_text', { text: '' }, { text: 's3q' }, { text: 's3q' }), true);
-  assert.equal(landed('record', 'click', { bytes: 12 }, { bytes: 24 }, {}), true);
-  assert.equal(landed('record', 'press_key', { bytes: 12 }, { bytes: 12 }, {}), false);
+  const click = '\u001b[M !!\u001b[M#!!';
+  assert.equal(landed('record', 'click', { bytes: 0, data: '' }, { bytes: 12, data: click }, {}), true);
+  assert.equal(landed('record', 'click', { bytes: 0, data: '' }, { bytes: 6, data: click.slice(0, 6) }, {}), false, 'its press alone');
+  assert.equal(landed('record', 'press_key', { bytes: 12, data: click }, { bytes: 12, data: click }, { key: 'x' }), false);
 });
 
 test('the scenes\' counters: presses, moves and wheel steps in their names; GTK 4\'s status line', () => {
   assert.equal(landed('settle-scene', 'click', { presses: 2 }, { presses: 3 }, {}), true);
   assert.equal(landed('settle-scene', 'click_element', { presses: 2 }, { presses: 2 }, {}), false);
+  assert.equal(landed('settle-scene', 'secondary_action', { presses: 2 }, { presses: 3 }, { action: 'Press' }), true, 'the button\'s primary action by its name');
   assert.equal(landed('settle-scene', 'key_click', { presses: 2 }, { presses: 3 }, {}), true, 'a key then a click: the click\'s effect');
-  assert.equal(landed('settle-scene', 'move', { moves: 2 }, { moves: 9 }, {}), true);
-  assert.equal(landed('settle-scene', 'scroll', { scrolls: 0 }, { scrolls: 3 }, {}), true);
+  assert.equal(landed('settle-scene', 'move', { moves: 2 }, { moves: 9 }, { settled: { moves: 9 } }), true);
+  assert.equal(landed('settle-scene', 'scroll', { scrolls: 0 }, { scrolls: 1 }, { steps: 1 }), true);
+  assert.equal(landed('settle-scene', 'scroll', { scrolls: 0 }, { scrolls: 3 }, { steps: 1 }), false, 'more steps than were sent');
   assert.equal(landed('counter', 'click_element', { presses: 0 }, { presses: 1 }, {}), true);
+  assert.equal(landed('counter', 'secondary_action', { presses: 0 }, { presses: 1 }, { action: 'click' }), true);
   const g = (o = {}) => ({ scroll: 0, scale: 50, moves: 0, presses: 0, keys: 0, rights: 0, ...o });
   assert.equal(landed('gtk4-input', 'press_key', g(), g({ keys: 1 }), {}), true);
   assert.equal(landed('gtk4-input', 'click', g(), g({ presses: 1 }), {}), true);
-  assert.equal(landed('gtk4-input', 'move', g(), g({ moves: 4 }), {}), true);
-  assert.equal(landed('gtk4-input', 'scroll', g(), g({ scroll: 3 }), {}), true);
-  assert.equal(landed('gtk4-input', 'drag', g(), g({ scale: 80 }), {}), true);
-  assert.equal(landed('gtk4-input', 'drag', g(), g(), {}), false);
+  assert.equal(landed('gtk4-input', 'move', g(), g({ moves: 4 }), { settled: g({ moves: 4 }) }), true);
+  assert.equal(landed('gtk4-input', 'scroll', g(), g({ scroll: 3 }), { direction: 'down' }), true);
+  assert.equal(landed('gtk4-input', 'drag', g(), g({ scale: 80 }), { settled: g({ scale: 80 }) }), true);
+  assert.equal(landed('gtk4-input', 'drag', g(), g(), { settled: g() }), false);
+});
+
+test('a run\'s class: passed; invalid when what judges it failed; refused when a command failed; the desktop changed; late; never', () => {
+  assert.equal(runClass({ ok: true }), 'pass');
+  assert.equal(runClass({ ok: false, error: 'the element is not in the window\'s tree' }), 'invalid');
+  assert.equal(runClass({ ok: false, answers: [{ ok: true }], after: { error: 'the bus connection closed' } }), 'invalid', 'a reader failed');
+  assert.equal(runClass({ ok: false, answers: [{ ok: true }], invalid: 'the service settled it as click_element, not animated_gtk4' }), 'invalid');
+  assert.equal(runClass({ ok: false, answers: [{ ok: false, error: 'x' }] }), 'refused');
+  assert.equal(runClass({ ok: false, answers: [{ ok: true }], landed: true }), 'desktop');
+  assert.equal(runClass({ ok: false, answers: [{ ok: true }], landed: false, late_ms: 40 }), 'late');
+  assert.equal(runClass({ ok: false, answers: [{ ok: true }], landed: false, late_ms: null }), 'never');
+});
+
+test('an audit passes only on a clean trace of the engine\'s requests whose every run ran its input; an effect missed is kept apart', () => {
+  const ran = (c) => ({ class: c });
+  assert.deepEqual(auditVerdict({ clean: true, requests: 40, runs: ['pass', 'late', 'pass', 'never', 'pass'].map(ran) }, 5), { pass: true, failed: [], missed: 2 });
+  assert.equal(auditVerdict({ clean: false, requests: 40, runs: Array(5).fill(ran('pass')) }, 5).pass, false);
+  assert.equal(auditVerdict({ clean: true, requests: 0, runs: Array(5).fill(ran('pass')) }, 5).pass, false, 'no trace of the engine');
+  // the review's finding 6: a failed preparation, or an engine that refused every command, left a clean trace
+  assert.match(auditVerdict({ clean: true, requests: 40, runs: Array(5).fill({ class: 'invalid', why: 'the element is not in the window\'s tree' }) }, 5).failed.join(), /5 of 5 runs did not run their input/);
+  assert.equal(auditVerdict({ clean: true, requests: 40, runs: Array(5).fill(ran('refused')) }, 5).pass, false);
+  assert.equal(auditVerdict({ clean: true, requests: 40, runs: Array(3).fill(ran('pass')) }, 5).pass, false, 'runs missing');
 });
 
 test('a run passes on its answers and its effect, and on the background route its desktop left alone; activation and the other routes change the desktop on purpose', () => {
@@ -220,34 +277,37 @@ test('a cell\'s held step is the smallest step whose series reached its passes; 
   assert.equal(heldStep([s('shipped', true)]), null, 'the shipped lane is no step');
 });
 
-test('each method\'s constant is the largest held step across its cells and sittings; a cell that held at no step keeps the method at its shipped value', () => {
+test('each settle\'s constant is the largest held step across its cells and sittings; a cell that held at no step keeps it at the vendor\'s 100', () => {
   const rows = [
-    { cell: 'chrome-input press_key background', method: 'press_key', load: 0, held: 0 },
-    { cell: 'electron-input press_key background', method: 'press_key', load: 0, held: 10 },
-    { cell: 'electron-input press_key background', method: 'press_key', load: 2, held: 25 },
-    { cell: 'gedit click background', method: 'click', load: 2, held: 0 },
-    { cell: 'chrome-input scroll background', method: 'scroll', load: 2, held: null },
+    { cell: 'chrome-input press_key background', settle: 'press_key', load: 0, held: 0 },
+    { cell: 'electron-input press_key background', settle: 'press_key', load: 0, held: 10 },
+    { cell: 'electron-input press_key background', settle: 'press_key', load: 2, held: 25 },
+    { cell: 'gedit click background', settle: 'click', load: 2, held: 0 },
+    { cell: 'chrome-input scroll background', settle: 'scroll', load: 2, held: null },
+    { cell: 'gtk4-button click_element background', settle: 'animated_gtk4', load: 2, held: 275 },
   ];
   const constants = methodConstants(rows);
   assert.deepEqual(constants.press_key, { ms: 25, by: ['electron-input press_key background at 2x'], unheld: [], lost: [] });
   assert.deepEqual(constants.click, { ms: 0, by: ['gedit click background at 2x'], unheld: [], lost: [] });
-  assert.deepEqual(constants.scroll, { ms: SETTLE_MS.scroll, by: [], unheld: ['chrome-input scroll background at 2x'], lost: [] });
-  assert.deepEqual(constants.launch_app, { ms: SETTLE_MS.launch_app, by: [], unheld: [], lost: [], unmeasured: true });
+  assert.deepEqual(constants.scroll, { ms: 100, by: [], unheld: ['chrome-input scroll background at 2x'], lost: [] }, 'the vendor\'s, never the table being measured');
+  assert.equal(constants.animated_gtk4.ms, 275);
+  assert.deepEqual(constants.launch_app, { ms: 100, by: [], unheld: [], lost: [], unmeasured: true });
 });
 
-test('a cell whose input never came at any step is set aside, listed; one with any late effect is not', () => {
-  const s = (lane, late, never, reached = false) => ({ lane, late, never, reached });
+test('a cell whose input never came at any step, on a complete and valid measurement, is a candidate; set aside only where the loss is established on its own', () => {
+  const s = (lane, late, never, reached = false) => ({ lane, late, never, reached, need: 30, refused: 0, invalid: 0 });
   const steps = (late, never) => STEPS.map((ms) => s(`settle-${ms}`, late, never));
   assert.equal(lostInput(steps(0, 9)), true);
   assert.equal(lostInput([...steps(0, 9).slice(0, 5), s('settle-100', 1, 8)]), false, 'one late effect: a settle bears on it');
   assert.equal(lostInput([s('settle-0', 0, 9), s('settle-10', 0, 0, true)]), false, 'it held');
   assert.equal(lostInput([]), false);
-  const constants = methodConstants([
-    { cell: 'electron-input drag background', method: 'drag', load: 0, held: 10 },
-    { cell: 'gtk4-input drag dedicated', method: 'drag', load: 2, held: null, lost: true },
-  ]);
-  assert.deepEqual(constants.drag, { ms: 10, by: ['electron-input drag background at idle'], unheld: [], lost: ['gtk4-input drag dedicated at 2x'] });
-  assert.equal(methodConstants([{ cell: 'x', method: 'drag', load: 2, held: null, lost: true }]).drag.ms, SETTLE_MS.drag, 'with no cell held, the shipped value');
+  assert.equal(lostInput(steps(0, 9).map((x) => ({ ...x, need: 5 }))), false, 'development series');
+  const rows = [
+    { cell: 'electron-input drag background', settle: 'drag', load: 0, held: 10 },
+    { cell: 'gtk4-input drag dedicated', settle: 'drag', load: 2, held: null, lost: true },
+  ];
+  assert.deepEqual(methodConstants(rows).drag, { ms: 100, by: [], unheld: ['gtk4-input drag dedicated at 2x'], lost: [] });
+  assert.deepEqual(methodConstants(rows, { setAside: [{ cell: 'gtk4-input drag dedicated', load: 2 }] }).drag, { ms: 10, by: ['electron-input drag background at idle'], unheld: [], lost: ['gtk4-input drag dedicated at 2x'] });
 });
 
 test('the verdict: a search sitting needs a held step in every cell, a lanes sitting every judged series reached; a missing cell fails', () => {

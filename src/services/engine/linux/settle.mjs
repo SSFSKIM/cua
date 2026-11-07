@@ -19,9 +19,9 @@ import {setTimeout as sleep} from 'node:timers/promises';
 // Electron page (60 to 150 ms later in a third of the runs, at every step; #302). launch_app's is never reached in
 // service (src/services/sky.mjs launches) and keeps it too.
 export const SETTLE_MS = Object.freeze({
-  perform_secondary_action: 0, // a named action other than an animated primary one: every page held at 0
+  perform_secondary_action: 10, // a named action but an animated primary one: Electron's page (0 missed, confirmed)
   click: 25, // a coordinate click: gnome-terminal's screen at twice the load
-  click_element: 0, // an element's primary action, in a family that does not animate it: every family held at 0
+  click_element: 10, // an element's primary action, its family not animating it: Electron's page (0 missed, confirmed)
   animated_gtk4: 250, // GTK 4's button, idle and at twice the load
   animated_qt: 125, // Qt's animated click: Qt 6 at twice the load (Qt 5 held at 100)
   clipboard_read: 0,

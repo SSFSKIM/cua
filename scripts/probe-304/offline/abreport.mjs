@@ -61,10 +61,14 @@ for (const {app, target} of pages) for (const pos of POS) {
     return v.join(' \\| ');
   };
   const cut = head => { const c = at.flatMap(r => slotsOf(r, head)).map(s => s.obs?.cut); return c.every(Boolean) ? 'cut' : c.some(Boolean) ? 'some' : 'no'; };
-  const shareSet = head => at.flatMap(r => slotsOf(r, head)).map(s => s.obs?.guard?.checked).filter(v => v != null);
-  const [ca, cb] = [shareSet('a'), shareSet('b')];
-  const verdict = !ca.length || !cb.length ? '?' : Math.min(...cb) >= Math.max(...ca) && Math.min(...ca) >= Math.max(...cb) ? 'same' : Math.min(...cb) > Math.max(...ca) ? 'B higher' : Math.max(...cb) < Math.min(...ca) ? 'B LOWER' : 'overlap';
-  if (verdict !== 'same') coverageDiffs.push(`${app}/${target}/${pos}: A ${ca.join(',')} B ${cb.join(',')}`);
+  // B against A within each rep (the same runner and page load): B's median checked share less A's.
+  const deltas = at.map(r => {
+    const m = h => median(slotsOf(r, h).map(s => s.obs?.guard?.checked).filter(v => v != null));
+    const [ma, mb] = [m('a'), m('b')];
+    return ma == null || mb == null ? null : Math.round(10 * (mb - ma)) / 10;
+  }).filter(v => v != null);
+  const verdict = !deltas.length ? '?' : deltas.every(v => v === 0) ? 'same' : deltas.some(v => v < 0) ? `B LOWER (${deltas.join(', ')})` : `B higher (+${deltas.join(', +')})`;
+  if (verdict !== 'same') coverageDiffs.push(`${app}/${target}/${pos}: ${verdict}`);
   console.log(`| ${app} | ${target} | ${pos} | ${cell('a', 1)} | ${cell('a', 2)} | ${cell('b', 1)} | ${cell('b', 2)} | ${cut('a')}, ${cut('b')} | ${verdict} |`);
 }
 console.log(`\ncoverage differing between the heads: ${coverageDiffs.length ? `\n- ${coverageDiffs.join('\n- ')}` : 'none'}`);
@@ -121,6 +125,20 @@ for (const k of ['cross', 'same']) console.log(`- ${k === 'cross' ? 'A vs B' : '
 const cutTally = {cross: {n: 0, printed: 0, record: 0}, same: {n: 0, printed: 0, record: 0}};
 for (const r of rows) for (const c of r.compare ?? []) if (!c.uncut) { const t = cutTally[c.same ? 'same' : 'cross']; t.n += 1; if (c.printed) t.printed += 1; if (c.record) t.record += 1; }
 for (const k of ['cross', 'same']) console.log(`- cut pairs, ${k === 'cross' ? 'A vs B' : 'a head vs itself'}: ${cutTally[k].n}; printed differs ${cutTally[k].printed}, record differs ${cutTally[k].record}`);
+// Per page: how often consecutive uncut observations differ across the heads and within a head. A live page (ads, a
+// ticker) differs at both rates; a head difference shows as cross-head differences on a page whose same-head pairs agree.
+console.log('\n| app | page | A vs B: differ / uncut pairs | a head vs itself: differ / pairs | verdict |');
+console.log('|---|---|---|---|---|');
+for (const {app, target} of pages) {
+  const cs = rows.filter(r => r.app === app && r.target === target).flatMap(r => (r.compare ?? []).filter(c => c.uncut));
+  if (!cs.length) continue;
+  const differs = c => Boolean(c.printed || c.record || c.nodes);
+  const cross = cs.filter(c => !c.same), same = cs.filter(c => c.same);
+  const [dc, ds] = [cross.filter(differs).length, same.filter(differs).length];
+  const verdict = !dc ? 'identical' : ds ? 'live page' : '**HEADS DIFFER**';
+  console.log(`| ${app} | ${target} | ${dc} / ${cross.length} | ${ds} / ${same.length} | ${verdict} |`);
+}
+console.log('');
 const unexplained = crossDiffs.filter(x => !x.moved);
 console.log(`- A vs B differences where the page's own control was identical (the head, not the page): ${unexplained.length}`);
 for (const x of crossDiffs) {

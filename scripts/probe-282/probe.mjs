@@ -257,7 +257,7 @@ async function cell(spec) {
       enabled: sky.timings?.enabled ?? null, enablementPrior: sky.timings?.enablementPrior ?? null,
       enablementWrite: sky.timings?.enablementWrite ?? null, enablementWriteError: sky.timings?.enablementWriteError ?? null,
       // #312's check: the clip re-read's keys, the observation's cost and the printed web area's frame.
-      unplacedClips: sky.timings?.unplacedClips ?? null, clipReread: sky.timings?.clipReread ?? null, clipRereadMs: sky.timings?.clipRereadMs ?? null,
+      unplacedClips: sky.timings?.unplacedClips ?? null, clipReread: sky.timings?.clipReread ?? null, clipRereadMs: sky.timings?.clipRereadMs ?? null, clipRereadReads: sky.timings?.clipRereadReads ?? null,
       totalMs: sky.timings?.totalMs ?? null, webAreaFrame: sky.nodes?.find(n => n.role === 'AXWebArea')?.frame ?? null};
     if (spec.buttonTimeline) {
       const n = sky.nodes.find(TARGETS.button);
@@ -334,7 +334,7 @@ async function cell(spec) {
     // The observation's `focused` is a node's token.
     const f = later.result?.nodes?.find(n => n.token === later.result.focused);
     const lt = later.result?.timings ?? {};
-    row.laterObservation = {unplacedClips: lt.unplacedClips ?? null, clipReread: lt.clipReread ?? null, clipRereadMs: lt.clipRereadMs ?? null, totalMs: lt.totalMs ?? null,
+    row.laterObservation = {unplacedClips: lt.unplacedClips ?? null, clipReread: lt.clipReread ?? null, clipRereadMs: lt.clipRereadMs ?? null, clipRereadReads: lt.clipRereadReads ?? null, totalMs: lt.totalMs ?? null,
       webAreaFrame: later.result?.nodes?.find(n => n.role === 'AXWebArea')?.frame ?? null};
     row.focusedAfter = f ? {role: f.role, title: f.title, description: f.description} : (later.error ?? later.result?.focused ?? null);
     try { await w.call('shutdown', {}, 5000); } catch {}

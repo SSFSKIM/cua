@@ -19,7 +19,7 @@ permissions:
   contents: read
 env:
   # #312's fix head for the ab312 group, quoted (YAML reads an all-digit-and-e SHA as a float).
-  P287_B_REF: '93c2b2085cd660cdac32e4633532f8a4b7d8c16e'
+  P287_B_REF: '2fda5e7f13049d75db8d7166b308c17e91b74be8'
 jobs:
   probe:
     strategy:

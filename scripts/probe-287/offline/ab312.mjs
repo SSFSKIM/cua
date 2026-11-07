@@ -5,7 +5,7 @@ import {join} from 'node:path';
 
 const dir = process.argv[2];
 const fr = f => f ? `${f.x},${f.y},${f.width}x${f.height}` : '-';
-const keys = o => o ? `clipReread=${o.clipReread ?? '-'} unplaced=${o.unplacedClips ?? '-'} rereadMs=${o.clipRereadMs ?? '-'}` : '-';
+const keys = o => o ? `clipReread=${o.clipReread ?? '-'} unplaced=${o.unplacedClips ?? '-'} rereadMs=${o.clipRereadMs ?? '-'} reads=${o.clipRereadReads ?? '-'}` : '-';
 for (const a of readdirSync(dir).filter(n => n.startsWith('probe-287-ab312')).sort()) {
   for (const h of ['a', 'b']) {
     const f = join(dir, a, h, 'firefox', '282', 'results.json');

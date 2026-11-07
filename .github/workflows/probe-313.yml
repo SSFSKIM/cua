@@ -1,0 +1,85 @@
+# #313's hosted A/B: A = main against B = fix/313-safari-textarea, each built here in its own worktree and run as its
+# own engine process: element clicks by token on web text entry (Safari, Firefox, Chrome for Testing, stable Chrome)
+# and native text entry (scripts/probe-313/run.sh). Runs only on a push to probe/313-ab (or by hand); not a ci-kit gate.
+name: probe-313
+on:
+  push:
+    branches: [probe/313-ab]
+    paths-ignore: ['scripts/probe-313/offline/**', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      groups:
+        description: the groups, a JSON list (empty for all)
+        required: false
+        default: ''
+permissions:
+  contents: read
+env:
+  # Quoted: YAML reads an all-digit-and-e SHA as a float.
+  P313_A_REF: 'b27ceb36cd7914241ae69092c781d0f096f0b127'
+  P313_B_REF: '06c9035696271245d3e16c8f47b7463d050474cd'
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2]
+        group: ${{ fromJSON(github.event.inputs.groups || '["safari", "firefox", "native", "chrome"]') }}
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Browsers
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          case "$GROUP" in
+            chrome) bash scripts/probe-287/install.sh chrome ;;
+            firefox) bash scripts/probe-287/install.sh firefox ;;
+            *) bash scripts/probe-287/install.sh ;;
+          esac
+      - name: Build A, B and the tools
+        run: |
+          sw_vers
+          git log -1 --format='kit %H %s'
+          swiftc -O -o "$RUNNER_TEMP/p313-ax" scripts/probe-313/ax.swift
+          swiftc -o "$RUNNER_TEMP/p282-hit" scripts/probe-282/hit.swift
+          swiftc -o "$RUNNER_TEMP/p283-ax" scripts/probe-283/ax.swift
+          app="$RUNNER_TEMP/Probe313.app/Contents"
+          mkdir -p "$app/MacOS"
+          swiftc -O -o "$app/MacOS/Probe313" scripts/probe-313/app.swift
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict>' \
+            '<key>CFBundleIdentifier</key><string>com.ssfskim.probe313</string>' \
+            '<key>CFBundleName</key><string>Probe313</string>' \
+            '<key>CFBundleExecutable</key><string>Probe313</string>' \
+            '<key>CFBundlePackageType</key><string>APPL</string>' \
+            '<key>NSPrincipalClass</key><string>NSApplication</string>' \
+            '</dict></plist>' > "$app/Info.plist"
+          for h in a b; do
+            if [ "$h" = a ]; then ref="$P313_A_REF"; else ref="$P313_B_REF"; fi
+            git worktree add "$RUNNER_TEMP/src-$h" "$ref"
+            git -C "$RUNNER_TEMP/src-$h" log -1 --format="$h %H %s"
+            swift build -c release --package-path "$RUNNER_TEMP/src-$h/native/engine" --scratch-path "$RUNNER_TEMP/eng-$h"
+          done
+      - name: Measure
+        env:
+          GROUP: ${{ matrix.group }}
+          REP: ${{ matrix.rep }}
+        run: bash scripts/probe-313/run.sh
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-313-${{ matrix.group }}-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-313/**/results.json
+            ${{ runner.temp }}/probe-313/**/skyshot-*.json
+            ${{ runner.temp }}/probe-313/**/app-*.jsonl
+            ${{ runner.temp }}/probe-313/**/screen-*.png
+            ${{ runner.temp }}/probe-313/*.txt
+          if-no-files-found: warn

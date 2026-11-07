@@ -5,7 +5,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createService, LINUX_METHODS} from '../../src/services/engine/linux/service.mjs';
-import {ActionSettler, SETTLE_MS} from '../../src/services/engine/linux/settle.mjs';
+import {ANIMATED_ACTION, ActionSettler, SETTLE_MS} from '../../src/services/engine/linux/settle.mjs';
 import {fakeLinuxEngine, SHOT_BYTES, TREE, WINDOWS} from '../helpers/fake-linux-engine.mjs';
 
 const W = WINDOWS[0];
@@ -211,7 +211,41 @@ test('the settle: every input method defers by its own name, each drag-handle st
   await svc.handleRpc({type: 'drag_move', handle_id: 'h', point: {x: 2, y: 2}});
   await svc.handleRpc({type: 'drag_end', handle_id: 'h'});
   assert.deepEqual(events, ['wait', 'defer drag_handle', 'wait', 'defer drag_handle', 'wait', 'defer drag_handle']);
-  assert.deepEqual(Object.keys(SETTLE_MS).sort(), [...Object.keys(inputs), 'drag_handle'].sort(), 'the settle has a constant for every method that defers, and only for those');
+  assert.deepEqual(Object.keys(SETTLE_MS).sort(), [...Object.keys(inputs), 'drag_handle', 'click_element', ...Object.values(ANIMATED_ACTION)].sort(),
+    'the settle has a constant for every method that defers, the element click\'s and each animating family\'s, and only those');
+});
+
+test('the settle of a click and a named action follows what it ran: a coordinate or right click, an element\'s primary action, and that action in a family the engine names as animating it', async t => {
+  // the fake engine answers an element action with the family the test names in the element id's end, as cua-engine
+  // answers DoAction(0) in a family whose toolkit animates it (families.rs `animates_primary_action`)
+  const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command, input) {
+    const family = String(input.element_id ?? '').split('#')[1];
+    if ((command === 'click' || command === 'perform_secondary_action') && family) return {output: {animated_action: family}};
+  }`});
+  const events = [];
+  const svc = service(t, engine, {settler: recordingSettler(events)});
+  const settleOf = async (method, input) => {
+    events.length = 0;
+    await execute(svc, method, input);
+    assert.equal(events[0], 'wait', method);
+    return events[1];
+  };
+  assert.equal(await settleOf('click', {window: W, x: 1, y: 1}), 'defer click', 'a coordinate click');
+  assert.equal(await settleOf('click', {window: W, x: 1, y: 1, mouse_button: 'right'}), 'defer click');
+  assert.equal(await settleOf('click', {x: 1, y: 1}), 'defer click', 'a desktop click');
+  assert.equal(await settleOf('click', {window: W, element_id: 'n'}), 'defer click_element', 'an element\'s primary action');
+  assert.equal(await settleOf('click', {window: W, element_id: 'n', mouse_button: 'left'}), 'defer click_element');
+  assert.equal(await settleOf('click', {window: W, element_id: 'n', mouse_button: 'l'}), 'defer click_element');
+  assert.equal(await settleOf('click', {window: W, element_id: 'n', mouse_button: 'right'}), 'defer click', 'an element\'s right click presses at its point');
+  assert.equal(await settleOf('click', {window: W, element_id: 'n', mouse_button: 'r'}), 'defer click');
+  assert.equal(await settleOf('click', {window: W, element_id: 'n#GTK 4'}), `defer ${ANIMATED_ACTION['GTK 4']}`);
+  assert.equal(await settleOf('click', {window: W, element_id: 'n#Qt'}), `defer ${ANIMATED_ACTION.Qt}`);
+  assert.equal(await settleOf('perform_secondary_action', {window: W, element_id: 'n', action: 'expand'}), 'defer perform_secondary_action');
+  assert.equal(await settleOf('perform_secondary_action', {window: W, element_id: 'n#Qt', action: 'Press'}), `defer ${ANIMATED_ACTION.Qt}`, 'a named primary action settles as the element click\'s');
+  assert.equal(await settleOf('perform_secondary_action', {window: W, element_id: 'n#GTK 4', action: 'click'}), `defer ${ANIMATED_ACTION['GTK 4']}`);
+  // a family this service does not know yet: the longest of the animating families' settles
+  const longest = Object.values(ANIMATED_ACTION).reduce((a, b) => (SETTLE_MS[b] > SETTLE_MS[a] ? b : a));
+  assert.equal(await settleOf('click', {window: W, element_id: 'n#Tk'}), `defer ${longest}`);
 });
 
 test('the settle\'s real clock: the call after an input waits out that input\'s constant', async t => {

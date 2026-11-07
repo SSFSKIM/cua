@@ -3,7 +3,7 @@
 // at once.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {ActionSettler, SETTLE_MS} from '../../src/services/engine/linux/settle.mjs';
+import {ANIMATED_ACTION, ActionSettler, SETTLE_MS, animatedSettle} from '../../src/services/engine/linux/settle.mjs';
 
 function clock() {
   let time = 1000;
@@ -12,20 +12,31 @@ function clock() {
 }
 const constant = ms => Object.fromEntries(Object.keys(SETTLE_MS).map(method => [method, ms]));
 
-// Every method that defers (src/services/engine/linux/methods.mjs): each has its own constant.
+// Every method that defers (src/services/engine/linux/methods.mjs): each has its own constant, and the click's is split
+// by what it runs (a coordinate click; an element's primary action; that action in each family that animates it).
 const DEFERRING = ['perform_secondary_action', 'click', 'clipboard_read', 'clipboard_write', 'drag', 'drag_handle', 'activate_window', 'move', 'move_relative',
   'press_key', 'key_down', 'key_up', 'scroll', 'type_text', 'launch_app'];
 
-test('every method that defers has its own constant, a whole number of ms from 0 to the vendor\'s 100', () => {
-  assert.deepEqual(Object.keys(SETTLE_MS).sort(), [...DEFERRING].sort());
-  for (const [method, ms] of Object.entries(SETTLE_MS)) assert.ok(Number.isInteger(ms) && ms >= 0 && ms <= 100, `${method}: ${ms}`);
-  assert.ok(Object.isFrozen(SETTLE_MS));
+test('every method that defers has its own constant, the element click and each animating family theirs; a whole number of ms from 0, at most the vendor\'s 100 but where a family animates its action', () => {
+  assert.deepEqual(Object.keys(SETTLE_MS).sort(), [...DEFERRING, 'click_element', 'animated_gtk4', 'animated_qt'].sort());
+  assert.deepEqual(ANIMATED_ACTION, {'GTK 4': 'animated_gtk4', Qt: 'animated_qt'}, 'by the names cua-engine gives the families (families.rs)');
+  const animated = new Set(Object.values(ANIMATED_ACTION));
+  for (const [settle, ms] of Object.entries(SETTLE_MS)) assert.ok(Number.isInteger(ms) && ms >= 0 && (animated.has(settle) || ms <= 100), `${settle}: ${ms}`);
+  assert.ok(Object.isFrozen(SETTLE_MS) && Object.isFrozen(ANIMATED_ACTION));
+});
+
+test('an animated action settles by its family\'s own constant; a family the service does not know, by the longest of them', () => {
+  assert.equal(animatedSettle('GTK 4'), 'animated_gtk4');
+  assert.equal(animatedSettle('Qt'), 'animated_qt');
+  const longest = SETTLE_MS.animated_gtk4 >= SETTLE_MS.animated_qt ? 'animated_gtk4' : 'animated_qt';
+  assert.equal(animatedSettle('Tk'), longest);
+  assert.equal(animatedSettle('constructor'), longest, 'only the table\'s own names');
 });
 
 test('the constants are T8\'s measured steps; where no step up to 100 showed every effect, the vendor\'s 100', () => {
   assert.deepEqual({...SETTLE_MS}, {
-    perform_secondary_action: 10, click: 100, clipboard_read: 0, clipboard_write: 0, drag: 10, drag_handle: 10, activate_window: 10, move: 10,
-    move_relative: 0, press_key: 100, key_down: 25, key_up: 50, scroll: 10, type_text: 0, launch_app: 100,
+    perform_secondary_action: 10, click: 25, click_element: 100, animated_gtk4: 100, animated_qt: 100, clipboard_read: 0, clipboard_write: 0, drag: 10, drag_handle: 10,
+    activate_window: 10, move: 10, move_relative: 0, press_key: 100, key_down: 25, key_up: 50, scroll: 10, type_text: 0, launch_app: 100,
   });
 });
 

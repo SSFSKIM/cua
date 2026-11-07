@@ -4,7 +4,9 @@
 //
 // - The settle (./settle.mjs): every method but clipboard_release waits for the deferred settle before it reaches the
 //   engine; an input that succeeds defers the next one by its own method's constant (clicks, keys, scroll, drag, move,
-//   text, clipboard_read and clipboard_write, activation, launch; each drag-handle step by drag_handle's). Reads (the
+//   text, clipboard_read and clipboard_write, activation, launch; each drag-handle step by drag_handle's), a click by
+//   what it ran (a coordinate click, an element's primary action, or that action in a family whose toolkit animates
+//   it, as cua-engine's answer names it), and so a named action that ran the element's primary action. Reads (the
 //   lists, observations, screenshots) defer nothing; a failure defers nothing.
 // - Element ids (./ids.mjs): click, scroll, type_text and perform_secondary_action translate a decimal element_id after
 //   the wait; get_window_state numbers the tree it returns.
@@ -19,6 +21,7 @@
 // Every input passes to the engine as the caller gave it (an absent one as {}), field for field: what cua-engine
 // validates, it refuses with its own sentence.
 import {readFile} from 'node:fs/promises';
+import {animatedSettle} from './settle.mjs';
 
 // What a missing capability stops, in the refusal's words (cua doctor's engine row names them too).
 export const CANNOT = {
@@ -44,12 +47,20 @@ export function createLinuxMethods({engine, settler, ids}) {
   const capture = async shot => ({filepath: shot.filepath, data_url: `data:image/jpeg;base64,${(await readFile(shot.filepath)).toString('base64')}`});
 
   // An input method: the wait, the request (its element id translated when `resolve`) checked for the capability
-  // `gate` names for it, the defer.
-  const input = (command, {gate = null, resolve = false} = {}) => async request => {
+  // `gate` names for it, the defer by the settle `settle` names for the request and the engine's answer (the command's
+  // own by default).
+  const input = (command, {gate = null, resolve = false, settle = () => command} = {}) => async request => {
     await settler.wait();
-    await engine.request(command, (resolve ? ids.resolve(request) : request) ?? {}, gate ? needs(gate(request)) : undefined);
-    settler.defer(command);
+    const answer = await engine.request(command, (resolve ? ids.resolve(request) : request) ?? {}, gate ? needs(gate(request)) : undefined);
+    settler.defer(settle(request, answer));
   };
+  // An element action's settle: by the family cua-engine names when the action it ran was the element's primary action
+  // in a family that animates it, else `otherwise`.
+  const actionSettle = (answer, otherwise) => (typeof answer?.animated_action === 'string' ? animatedSettle(answer.animated_action) : otherwise);
+  // A click's: an element's primary action (a left click naming an element, its button absent, left or l as cua-engine
+  // reads it) by the element action's; a coordinate click, and an element's right click, which presses at its point, by
+  // click's.
+  const clickSettle = (request, answer) => (request?.element_id != null && !['right', 'r'].includes(request.mouse_button) ? actionSettle(answer, 'click_element') : 'click');
   const read = command => async () => {
     await settler.wait();
     return engine.request(command, {});
@@ -83,8 +94,10 @@ export function createLinuxMethods({engine, settler, ids}) {
   }
 
   return {
-    perform_secondary_action: input('perform_secondary_action', {resolve: true}),
-    click: input('click', {gate: inputRoute, resolve: true}),
+    // a named action may be the element's primary action, which then settles as the element click's (the vendor lets
+    // a name choose it too: its perform_action matches every action's name, the first included)
+    perform_secondary_action: input('perform_secondary_action', {resolve: true, settle: (request, answer) => actionSettle(answer, 'perform_secondary_action')}),
+    click: input('click', {gate: inputRoute, resolve: true, settle: clickSettle}),
     async clipboard_read(request) {
       await settler.wait();
       const handle = await engine.request('clipboard_read', request ?? {});

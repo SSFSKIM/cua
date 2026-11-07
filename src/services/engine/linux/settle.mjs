@@ -6,18 +6,24 @@
 // each method's own (below).
 import {setTimeout as sleep} from 'node:timers/promises';
 
-// Each method's settle, in ms (M4's T8, by the design session's wait rule): the smallest of the steps 0, 10, 25, 50, 75
-// and 100 at which an observation through this service, straight after the input's answer, showed the effect on every
-// cell that takes the method, 30 consecutive runs idle and at twice the gate's load, searched upward from 0 and then
-// confirmed on the values as shipped (`--experiment settle`, scripts/linux-engine-diff/action-settle.mjs; evidence
-// docs/evidence/2026-10-28-own-linux-engine/m4/settle/); a step the confirmation missed went up to the next that held
-// in a sitting of its own. The slowest cell sets it, named beside it. Where some cell showed its effect at no step up to 100, the method keeps the
-// vendor's 100: a click's element action on GTK 4 (its button answers about 250 ms later) and on Qt (about 100 ms
-// later, Qt's own animated click), and a key's release on an Electron page (60 to 150 ms later in a third of the runs,
-// at every step). launch_app's is never reached in service (src/services/sky.mjs launches) and keeps it too.
+// Each settle, in ms (M4's T8, by the design session's wait rule): one per method that defers, and the click's split by
+// what it runs (the design session, 2026-11-06): a coordinate click, right clicks included (an element's right click
+// presses at its point); an element's primary action (`click_element`, a left click naming an element); and that
+// action in each family whose toolkit animates it, which cua-engine names in its answer (ANIMATED_ACTION below).
+// Each is the smallest of the steps 0, 10, 25, 50, 75 and 100 (from 100 by 25 ms for an animating family) at which an
+// observation through this service, straight after the input's answer, showed the complete effect on every cell that
+// takes it, 30 consecutive runs idle and at twice the gate's load, searched upward from 0 and then confirmed on the
+// values as shipped (`--experiment settle`, scripts/linux-engine-diff/action-settle.mjs; evidence
+// docs/evidence/2026-10-28-own-linux-engine/m4/settle/). The slowest cell sets it, named beside it. Where some cell
+// showed its effect at no step up to 100, the method keeps the vendor's 100: a key's release on an Electron page (60
+// to 150 ms later in a third of the runs, at every step; #302). launch_app's is never reached in service
+// (src/services/sky.mjs launches) and keeps it too.
 export const SETTLE_MS = Object.freeze({
   perform_secondary_action: 10, // Electron's page
-  click: 100, // GTK 4's and Qt's element actions (coordinate clicks held at 10: Electron)
+  click: 25, // a coordinate click
+  click_element: 100, // an element's primary action, in a family that does not animate it
+  animated_gtk4: 100, // GTK 4's button
+  animated_qt: 100, // Qt's animated click
   clipboard_read: 0,
   clipboard_write: 0,
   drag: 10, // Electron's page
@@ -33,7 +39,19 @@ export const SETTLE_MS = Object.freeze({
   launch_app: 100,
 });
 
-// A settle table checked whole: a constant for every method of SETTLE_MS and for nothing else, each a whole number of
+// The settle of an element's primary action in a family whose toolkit animates it, by the family's name as cua-engine
+// answers it (`{animated_action: <family>}`; native/linux-engine/src/families.rs `animates_primary_action`): the action
+// takes effect after DoAction answers (GTK 4's button about 250 ms later, as its keyboard activation does; Qt about
+// 100 ms later, its animated click).
+export const ANIMATED_ACTION = Object.freeze({'GTK 4': 'animated_gtk4', Qt: 'animated_qt'});
+
+// The settle for `family`'s animated action: its own, or for a family this service does not know, the longest of them.
+export function animatedSettle(family) {
+  if (Object.hasOwn(ANIMATED_ACTION, family)) return ANIMATED_ACTION[family];
+  return Object.values(ANIMATED_ACTION).reduce((a, b) => (SETTLE_MS[b] > SETTLE_MS[a] ? b : a));
+}
+
+// A settle table checked whole: a constant for every settle of SETTLE_MS and for nothing else, each a whole number of
 // ms from 0 (the experiment's lanes give the settler their own).
 function checked(settles) {
   for (const method of Object.keys(settles)) if (!(method in SETTLE_MS)) throw new Error(`the action settle has no method ${method}`);

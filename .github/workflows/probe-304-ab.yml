@@ -1,0 +1,98 @@
+# #304's hosted A/B (the #304 + #309 fix, branch fix/304-wide-list) against main: two engines built from two refs, A and
+# B, in one job (each with its own socket directory). The coverage groups (scripts/probe-304/ab.mjs: the guard's share,
+# live walk ms, the printed tree and record compared) build both with scripts/probe-304/instrument.py; #305's still-page
+# sweep (scripts/probe-305/ab.mjs, A as `main`, B as `branch`) and #296's stale suite (scripts/probe-296/ab.mjs) build
+# both with scripts/probe-299/instrument.py, as #305's A/B did. Runs only on a push to probe/304-ab (or by hand); not a
+# ci-kit gate.
+name: probe-304-ab
+on:
+  push:
+    branches: [probe/304-ab]
+    paths-ignore: ['scripts/probe-304/offline/**', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      groups:
+        description: the groups, a JSON list (empty for all)
+        required: false
+        default: ''
+permissions:
+  contents: read
+env:
+  # Phase 1, the noise floor and the kit's check: A = B = main f20a25ee.
+  P304_A_REF: f20a25ee895c5aab2ebb760f6114ecaac232c732
+  P304_B_REF: f20a25ee895c5aab2ebb760f6114ecaac232c732
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2]
+        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-a","chrome-b","chrome-c","safari","sweep-chrome","sweep-safari","sweep-finder","sweep-textedit","s296-chrome","s296-final","s296-safari-final","s296-native-final"]') }}
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build both engines (instrumented) and the tools
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          sw_vers
+          node --version
+          git worktree add "$RUNNER_TEMP/a" "$P304_A_REF"
+          git worktree add "$RUNNER_TEMP/b" "$P304_B_REF"
+          echo "P304_A_COMMIT=$(git -C "$RUNNER_TEMP/a" rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "P304_B_COMMIT=$(git -C "$RUNNER_TEMP/b" rev-parse HEAD)" >> "$GITHUB_ENV"
+          case "$GROUP" in
+            chrome-*|safari)
+              python3 -I scripts/probe-304/instrument.py "$RUNNER_TEMP/a/native/engine/Sources/Engine"
+              python3 -I scripts/probe-304/instrument.py "$RUNNER_TEMP/b/native/engine/Sources/Engine"
+              swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-304/tool.swift ;;
+            *)
+              python3 -I scripts/probe-299/instrument.py "$RUNNER_TEMP/a/native/engine/Sources/Engine"
+              python3 -I scripts/probe-299/instrument.py "$RUNNER_TEMP/b/native/engine/Sources/Engine"
+              swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-299/tool.swift
+              app="$RUNNER_TEMP/Probe296.app/Contents"
+              mkdir -p "$app/MacOS"
+              swiftc -O -o "$app/MacOS/Probe296" scripts/probe-296/app.swift
+              printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+                '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+                '<plist version="1.0"><dict>' \
+                '<key>CFBundleIdentifier</key><string>com.ssfskim.probe296</string>' \
+                '<key>CFBundleName</key><string>Probe296</string>' \
+                '<key>CFBundleExecutable</key><string>Probe296</string>' \
+                '<key>CFBundlePackageType</key><string>APPL</string>' \
+                '<key>NSPrincipalClass</key><string>NSApplication</string>' \
+                '</dict></plist>' > "$app/Info.plist" ;;
+          esac
+          swift build -c release --package-path "$RUNNER_TEMP/a/native/engine" --scratch-path "$RUNNER_TEMP/eng-a"
+          swift build -c release --package-path "$RUNNER_TEMP/b/native/engine" --scratch-path "$RUNNER_TEMP/eng-b"
+      - name: Measure
+        env:
+          GROUP: ${{ matrix.group }}
+          P304_REP: ${{ matrix.rep }}
+          P305_REP: ${{ matrix.rep }}
+          P296_REP: ${{ matrix.rep }}
+        run: |
+          a="$RUNNER_TEMP/eng-a/release/cua-engine"
+          b="$RUNNER_TEMP/eng-b/release/cua-engine"
+          export P305_MAIN_COMMIT="$P304_A_COMMIT" P305_BRANCH_COMMIT="$P304_B_COMMIT" P296_MAIN_COMMIT="$P304_A_COMMIT" P296_BRANCH_COMMIT="$P304_B_COMMIT"
+          out="$RUNNER_TEMP/probe-304"
+          case "$GROUP" in
+            chrome-*|safari) node scripts/probe-304/ab.mjs --group "$GROUP" --a "$a" --b "$b" --tool "$RUNNER_TEMP/probe-tool" --out "$out" ;;
+            sweep-chrome) node scripts/probe-305/ab.mjs --group chrome --parts sweep,popover --main "$a" --branch "$b" --tool "$RUNNER_TEMP/probe-tool" --out "$out" ;;
+            sweep-*) node scripts/probe-305/ab.mjs --group "${GROUP#sweep-}" --parts sweep --main "$a" --branch "$b" --tool "$RUNNER_TEMP/probe-tool" --out "$out" ;;
+            s296-*) node scripts/probe-296/ab.mjs --group "${GROUP#s296-}" --branch "$b" --main "$a" --app "$RUNNER_TEMP/Probe296.app/Contents/MacOS/Probe296" --out "$out" ;;
+          esac
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-304-ab-${{ matrix.group }}-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-304/*.json
+            ${{ runner.temp }}/probe-304/*.jsonl
+            ${{ runner.temp }}/probe-304/*.gz
+          if-no-files-found: warn

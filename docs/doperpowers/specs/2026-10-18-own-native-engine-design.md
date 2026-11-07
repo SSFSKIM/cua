@@ -2756,11 +2756,22 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      **The invariant as a check** (`WideListInvariantTests`): each tree is walked by the real `TreeWalk` with the rules
      off (`wideListRules`, a test-only switch: main's selection) and on; for every element main took up, each child
      that shows in its clip (its frame against the clip; a frameless child is not judged) and that main read, the rules'
-     walk must have read, unless that walk never took the element up for main's own reason (it read the element, the
-     element did not show, and the walk stopped before taking it up; or an ancestor was left so). Over the regression
-     shapes and the earlier tables at three budgets each, and over the spike's trees (the wide engine's full trees, each
-     AXColumn's children rebuilt from its table's rows as the spike's replay did, the budget less the menu bar's nodes),
-     given `CUA_304_TREES`: 0 violations over 282 trees: the 242 of the spike's three runs (42313992098, 42315529833, 42317669249) and the 40 of its live column-skip check (42319757707), 159 of them cut by the budget. The check finds what the A/B found: with rule B as first built (one bisected run, no per-child judging, no samples), the same replay counts 1,141 violations, 123 and 118 on Chrome's wiki-article at 90% and 205 per rep on wiki-table at 90%, and 1 to 4 on HN's thread, IANA and the local tables.
+     walk must have read: any such child it left unread is a loss, with no excuse (the review of 566e3612..bc4d395f
+     found the first check's excuse, an element read but not taken up, passing a loss the rules caused; limit (iv)).
+     Over the regression shapes and the earlier tables at three budgets each, and, given `CUA_304_TREES`, over the
+     spike's trees: the wide engine's full trees, each AXColumn's children rebuilt from its table's rows as the spike's
+     replay did, the budget less the menu bar's nodes. A dump holds each element once, under the parent it was emitted
+     at, not the other parents that list it, so a tree in which any rebuilt list falls short of the count it listed
+     (`chosen`) is *alias-incomplete*, reported apart and never counted as verified (the same review found a loss
+     vanishing in such a round trip). Over the 282 trees (the 242 of the spike's three runs, 42313992098, 42315529833
+     and 42317669249, and the 40 of its live column-skip check, 42319757707): **154 verified, 128 alias-incomplete
+     (863 lists), 0 losses in either.** Every short list lies in a table: 526 header AXGroups (which list the header
+     cells their rows hold), 312 AXColumns whose rebuilt cells fall short, 21 AXTables and 4 AXRows; so Chrome's
+     tables (the local tables, IANA, Wikipedia's article and table, py-docs, the float pages) are checked only as
+     rebuilt, not verified. A dump that recorded each element's whole child list would verify them. The check finds
+     what the A/B found: with rule B as first built (one bisected run, no per-child judging, no samples) the replay
+     counted 1,141 losses even with the earlier excuse in place, 123 and 118 on Chrome's wiki-article at 90% and 205 per
+     rep on wiki-table at 90%, and 1 to 4 on HN's thread, IANA and the local tables.
   4. **Rule C, the columns.** An `AXColumn` read in the tree's selection has its children set aside in their own queue
      (`lastly`), in the document's order, taken up only once `deferred` is empty; so the cells Chromium lists again under
      a table's columns are charged only once nothing else is left, and in a walk nothing cuts they have all been read
@@ -2793,8 +2804,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      shown rows and the toolbar are read within 4,000 nodes, the rows before them waiting, as the replay predicted.
      (iii) In a list of more than 512 children, a shown child in the middle, outside the bisected run, that the samples
      miss (it lies between two of them, which are where their places say) waits with its run of unshown neighbours, so
-     a cut can still leave it unread.
-  Proven offline (`WideListTests`, 10, and `WideListInvariantTests`, 7; `swift test`; removing each rule, each bound,
+     a cut can still leave it unread. (iv) *The rules can postpone a waiting element that two parents list*: an
+     offscreen child of a wide list, holding a shown child, that a visible group later in the document lists again is
+     read through the group, since the list's children that do not show wait, so its own children wait at the group's
+     place, after whatever waits between the two, where main read it through the list and queued them first. A cut main
+     passes can then leave the shown child unread (the review of 566e3612..bc4d395f; pinned as measured by
+     `testTheRulesCanPostponeAWaitingElementTwoParentsList`: a 620-node budget, main reading the child, the rules not).
+     The spike's verified trees show no such loss.
+  Proven offline (`WideListTests`, 10, and `WideListInvariantTests`, 9; `swift test`; removing each rule, each bound,
   each sample check, the frameless rules, the preorder pass, its deadline and its places' propagation to a subtree
   fails at least one test, by mutation,
   `~/.local/share/187/mutate-304.py`): the uncut walk equal to the plain preorder over a 300-row table of 3 columns, a
@@ -2810,11 +2827,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   for stacked or overlapping children; #309's shape in a walk, the record holding the shown children; the two-column
   list of 215 (both columns' shown items and the toolbar after the list read, no violation), the fixed tail of a
   601-child body (the toolbar read with the run), the two-column list of 600 falling back to main, each middle-sample
-  place checked alone, every frame read up to 512 children and fewer than 200 for 513, and a frameless child read
-  first.
+  place checked alone, every frame read up to 512 children and fewer than 200 for 513, a frameless child read first,
+  limit (iv) as measured, and the loader flagging a dump that lost an alias as alias-incomplete.
   The invariant check over the spike's trees: `CUA_304_TREES=$HOME/.local/share/probe-304 swift test --filter
-  WideListInvariantTests/testTheInvariantHoldsOverTheSpikesTrees` in `native/engine` (about 4 minutes; skipped
-  without the variable).
+  WideListInvariantTests` in `native/engine` (about 6 minutes; the spike's part skipped without the variable).
   **What the hosted A/B must still measure**, on the amended rule against main: Chrome's wiki-article and wiki-table
   at 90% and `/fixedtail` at 25, 50 and 90% back to main's share, with the pages the first A/B closed staying at 100%;
   `walkMs` p50 and p95, now with up to 512 frame reads per list of 101–512 children (about 31 ms at most each) and

@@ -6,9 +6,8 @@ import XCTest
 // shown child that main's selection would have read before the cut. Each tree is walked twice by the real TreeWalk,
 // once with the rules off (main's selection) and once with them on; for every element main took up, each child that
 // shows in its clip (its frame against the clip; a frameless child is not judged) and that main read, the rules' walk
-// must have read too, unless that walk never took the element up for main's own reason: it read the element, the
-// element did not show (main's deferral), and the walk stopped before taking it up; or an ancestor was left so.
-// Over the regression shapes of the hosted A/B and, given CUA_304_TREES, every tree of #304's spike.
+// must have read too: any such child it left unread is a loss, with no excuse. Over the regression shapes of the hosted
+// A/B and, given CUA_304_TREES, every tree of #304's spike; one stated limit is pinned by its own test.
 
 private let windowFrame = CGRect(x: 0, y: 0, width: 1000, height: 800)
 private let viewport = CGRect(x: 0, y: 100, width: 1000, height: 700)
@@ -19,41 +18,66 @@ private func ids(_ walk: TreeWalk) -> [Int] { walk.nodes.map { Int(($0["title"] 
 func wideListInvariantViolations(_ tree: FakeTree, window: CGRect, limits: WalkLimits, chromium: Bool) -> [String] {
   let main = walk(tree, Lineage(), limits: limits, visibleFrame: window, chromium: chromium, wideListRules: false)
   let rules = walk(tree, Lineage(), limits: limits, visibleFrame: window, chromium: chromium)
-  let id = { (element: AXUIElement) in tree.id(element) }
-  // Main's preorder parent of each element it read, for the excuse's climb.
-  var parent: [Int: Int] = [:]
   var visits = [0]
   var seen: Set<Int> = []
+  var found: [String] = []
   while let next = visits.popLast() {
     guard seen.insert(next).inserted, let facts = main.selectionFacts(of: Engine.element(next)) else { continue }
-    for child in facts.children.reversed() {
-      let c = id(child)
-      if parent[c] == nil, c != 0 { parent[c] = next }
-      visits.append(c)
-    }
-  }
-  var excuses: [Int: Bool] = [:]
-  func excused(_ element: Int) -> Bool {
-    if let known = excuses[element] { return known }
-    let answer: Bool
-    if let facts = rules.selectionFacts(of: Engine.element(element)) {
-      answer = !facts.enters && !facts.takenUp
-    } else {
-      answer = parent[element].map(excused) ?? true
-    }
-    excuses[element] = answer
-    return answer
-  }
-  var found: [String] = []
-  for element in seen.sorted() {
-    guard let facts = main.selectionFacts(of: Engine.element(element)), facts.takenUp, let clip = facts.childClip else { continue }
+    visits.append(contentsOf: facts.children.reversed().map(tree.id))
+    guard facts.takenUp, let clip = facts.childClip else { continue }
     for child in facts.children {
-      let c = id(child)
+      let c = tree.id(child)
       guard main.selectionFacts(of: child) != nil, let frame = tree.frames[c], showsBeyondStrip(frame, in: clip) else { continue }
-      if rules.selectionFacts(of: child) == nil, !excused(element) { found.append("\(element) → \(c)") }
+      if rules.selectionFacts(of: child) == nil { found.append("\(next) → \(c)") }
     }
   }
-  return found
+  return found.sorted()
+}
+
+/// The stated limit's shape (the review of 566e3612..bc4d395f): a list of 600 (4) whose first child (100_000) lies off
+/// the viewport above and holds a shown child (600_000), then a section off it below (3, 300 leaves that wait), then a
+/// visible group (2) that lists the first child again. Main reads that child through the list, so its children wait
+/// first in the document's order; the rules read it later, through the group, so they wait after the section's.
+private func aliasedOffscreenChild() -> FakeTree {
+  let tree = FakeTree()
+  func place(_ frame: CGRect) -> CGRect {
+    if frame.maxY <= viewport.minY { return CGRect(x: frame.minX, y: viewport.minY, width: frame.width, height: 1) }
+    if frame.minY >= viewport.maxY { return CGRect(x: frame.minX, y: viewport.maxY - 1, width: frame.width, height: 1) }
+    return frame
+  }
+  tree.extra[0] = ["AXRole": "AXWindow" as CFString]
+  tree.extra[1] = ["AXRole": "AXWebArea" as CFString]
+  tree.frames[0] = windowFrame
+  tree.frames[1] = viewport
+  tree.children = [0: [1], 1: [4, 3, 2], 2: [100_000], 3: Array(400_000..<400_300), 100_000: [600_000]]
+  tree.frames[2] = CGRect(x: 0, y: 700, width: 100, height: 50)
+  tree.frames[3] = place(CGRect(x: 0, y: 20_000, width: 1000, height: 300))
+  for k in 0..<300 { tree.frames[400_000 + k] = place(CGRect(x: 0, y: 20_000 + Double(k), width: 1000, height: 1)) }
+  let top = viewport.minY - 300 * 20
+  tree.frames[4] = CGRect(x: 0, y: top, width: 1000, height: 600 * 20)
+  for i in 0..<600 { tree.frames[100_000 + i] = place(CGRect(x: 0, y: top + Double(i) * 20, width: 1000, height: 20)) }
+  tree.frames[600_000] = CGRect(x: 0, y: 400, width: 100, height: 20)
+  tree.children[4] = (0..<600).map { 100_000 + $0 }
+  tree.visible[4] = tree.children[4]
+  return tree
+}
+
+/// A fake tree as the wide engine dumps it (`probeReads`, in emission order): each element once, under the first parent
+/// the preorder reaches it through, each row carrying its parent's count of the children it lists (`chosen`).
+private func probeReads(of tree: FakeTree) -> [[Any]] {
+  var rows: [[Any]] = []
+  var seen: Set<Int> = []
+  var visits: [(id: Int, parent: Int?, depth: Int)] = [(0, nil, 0)]
+  while let visit = visits.popLast() {
+    guard seen.insert(visit.id).inserted else { continue }
+    let kids = tree.children[visit.id] ?? []
+    let role = (tree.extra[visit.id]?["AXRole"] as? String) ?? "AXGroup"
+    let frame: Any = tree.frames[visit.id].map { ["x": Double($0.minX), "y": Double($0.minY), "width": Double($0.width), "height": Double($0.height)] } ?? NSNull()
+    rows.append([visit.id, visit.parent.map { $0 as Any } ?? NSNull(), visit.depth, role, frame, kids.count, kids.count,
+                 ["AXWindow", "AXWebArea", "AXScrollArea"].contains(role), 0, rows.count, true, true, false])
+    for kid in kids.reversed() { visits.append((kid, visit.id, visit.depth + 1)) }
+  }
+  return rows
 }
 
 /// Chromium's page: the window (0) holds its web area (1, the viewport) and then its toolbar (2, buttons 20–24, above
@@ -208,6 +232,35 @@ final class WideListInvariantTests: XCTestCase {
     XCTAssertEqual(shownChildPositions(rows, frame: frame, window: CGRect(x: 0, y: -2000, width: 100, height: 700)), [10] + Array(100..<135))
   }
 
+  /// The stated limit, pinned as measured: the rules can postpone an element two parents list that waits (an offscreen
+  /// child of a wide list, listed again later by a visible group), so its shown child waits longer than on main, and a
+  /// cut main's walk passes takes it. The check reports the loss; nothing excuses it.
+  func testTheRulesCanPostponeAWaitingElementTwoParentsList() {
+    let tree = aliasedOffscreenChild()
+    let limits = WalkLimits(nodes: 620, deadline: .infinity)
+    XCTAssertTrue(Set(ids(walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true, wideListRules: false))).contains(600_000),
+                  "main reads the shown child")
+    XCTAssertFalse(Set(ids(walk(tree, Lineage(), limits: limits, visibleFrame: windowFrame, chromium: true))).contains(600_000),
+                   "the rules' walk spends the budget on the section first")
+    XCTAssertEqual(wideListInvariantViolations(tree, window: windowFrame, limits: limits, chromium: true), ["100000 → 600000"])
+  }
+
+  /// The loader's alias check (the review of 566e3612..bc4d395f): a dump holds each element once, under its first parent,
+  /// so a later parent that also lists it comes back short and the loss above vanishes; the loader counts that list as
+  /// alias-incomplete, and a tree without aliases loads whole.
+  func testTheLoaderFlagsATreeWhoseDumpLostAnAlias() {
+    let tree = aliasedOffscreenChild()
+    let limits = WalkLimits(nodes: 620, deadline: .infinity)
+    let loaded = try! XCTUnwrap(spikeTree(reads: probeReads(of: tree), menu: 0))
+    XCTAssertEqual(loaded.incompleteLists, 1, "the group lists none of its one child")
+    XCTAssertEqual(wideListInvariantViolations(loaded.tree, window: loaded.window, limits: limits, chromium: true), [],
+                   "reloaded, the loss is gone: why such a tree is never counted as verified")
+    let whole = fixedTailPage(count: 600, scroll: 300)
+    let reloaded = try! XCTUnwrap(spikeTree(reads: probeReads(of: whole), menu: 0))
+    XCTAssertEqual(reloaded.incompleteLists, 0)
+    XCTAssertEqual(reloaded.tree.children, whole.children)
+  }
+
   /// The invariant over the earlier shapes: tables of 300, 99 and 6,000 rows with columns relisting their cells.
   func testTheInvariantHoldsOverTablesAndTheRegressionShapes() {
     let cases: [(String, FakeTree, Int)] = [
@@ -229,7 +282,7 @@ final class WideListInvariantTests: XCTestCase {
   func testTheInvariantHoldsOverTheSpikesTrees() throws {
     guard let root = ProcessInfo.processInfo.environment["CUA_304_TREES"] else { throw XCTSkip("CUA_304_TREES unset") }
     let runs = try FileManager.default.contentsOfDirectory(atPath: root).filter { $0.hasPrefix("run-") }.sorted()
-    var trees = 0, total = 0
+    var verified = 0, incomplete = 0, incompleteLists = 0, total = 0
     for run in runs {
       let runPath = (root as NSString).appendingPathComponent(run)
       for artifact in try FileManager.default.contentsOfDirectory(atPath: runPath).sorted() {
@@ -240,14 +293,15 @@ final class WideListInvariantTests: XCTestCase {
           let chromium = !artifact.contains("safari")
           let found = wideListInvariantViolations(spike.tree, window: spike.window, limits: WalkLimits(nodes: maxObservedNodes - spike.menu, deadline: .infinity),
                                                   chromium: chromium)
-          trees += 1
+          if spike.incompleteLists > 0 { incomplete += 1; incompleteLists += spike.incompleteLists } else { verified += 1 }
           total += found.count
-          print("#304 invariant: \(run)/\(artifact)/\(file): \(spike.nodes) nodes, \(found.count) violations\(found.isEmpty ? "" : " " + found.prefix(5).joined(separator: ", "))")
+          let status = spike.incompleteLists > 0 ? "alias-incomplete (\(spike.incompleteLists) lists)" : "verified"
+          print("#304 invariant: \(run)/\(artifact)/\(file): \(spike.nodes) nodes, \(status), \(found.count) violations\(found.isEmpty ? "" : " " + found.prefix(5).joined(separator: ", "))")
         }
       }
     }
-    print("#304 invariant: \(trees) trees, \(total) violations")
-    XCTAssertGreaterThan(trees, 0)
+    print("#304 invariant: \(verified + incomplete) trees, \(verified) verified, \(incomplete) alias-incomplete (\(incompleteLists) lists), \(total) violations")
+    XCTAssertGreaterThan(verified, 0)
     XCTAssertEqual(total, 0)
   }
 }
@@ -256,8 +310,11 @@ final class WideListInvariantTests: XCTestCase {
 /// order, enters, expanded, recordOnly], in emission order) as a fake tree: each node's children those it emitted, the
 /// record's alone left out; an AXColumn's rebuilt as the cells at its place in each of its table's rows, up to the
 /// number Chromium listed; every list of more than 100 answering AXVisibleChildren with all of them, so the width rule
-/// keeps what the wide walk kept; an AXGroup that clipped given a page-scroll action, as clipping reads it.
-private func loadSpikeTree(_ path: String) throws -> (tree: FakeTree, window: CGRect, menu: Int, nodes: Int)? {
+/// keeps what the wide walk kept; an AXGroup that clipped given a page-scroll action, as clipping reads it. The dump holds
+/// each element once, under the parent it was emitted at, and not the other parents that list it, so a rebuilt list
+/// whose children fall short of the count it listed (`chosen`) lost an alias (or a child the wide walk failed to read):
+/// counted in `incompleteLists`, and such a tree is not verified.
+private func loadSpikeTree(_ path: String) throws -> SpikeTree? {
   let gunzip = Process()
   gunzip.executableURL = URL(fileURLWithPath: "/usr/bin/gunzip")
   gunzip.arguments = ["-c", path]
@@ -267,6 +324,18 @@ private func loadSpikeTree(_ path: String) throws -> (tree: FakeTree, window: CG
   let data = pipe.fileHandleForReading.readDataToEndOfFile()
   gunzip.waitUntilExit()
   guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any], let reads = json["probeReads"] as? [[Any]], !reads.isEmpty else { return nil }
+  return spikeTree(reads: reads, menu: json["probeMenu"] as? Int ?? 0)
+}
+
+private struct SpikeTree {
+  let tree: FakeTree
+  let window: CGRect
+  let menu: Int
+  let nodes: Int
+  let incompleteLists: Int
+}
+
+private func spikeTree(reads: [[Any]], menu: Int) -> SpikeTree? {
   let tree = FakeTree()
   var kids: [Int: [Int]] = [:]
   var role: [Int: String] = [:]
@@ -304,6 +373,7 @@ private func loadSpikeTree(_ path: String) throws -> (tree: FakeTree, window: CG
     tree.children[number] = list
     if list.count > widthThreshold { tree.visible[number] = list }
   }
+  let incompleteLists = chosen.filter { number, count in (kids[number]?.count ?? 0) != count }.count
   guard let windowFrame else { return nil }
-  return (tree, windowFrame, json["probeMenu"] as? Int ?? 0, role.count)
+  return SpikeTree(tree: tree, window: windowFrame, menu: menu, nodes: role.count, incompleteLists: incompleteLists)
 }

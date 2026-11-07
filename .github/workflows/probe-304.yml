@@ -13,6 +13,10 @@ on:
         description: --targets (page names, comma-separated; empty for every page of the group)
         required: false
         default: ''
+      groups:
+        description: the groups, a JSON list (empty for chrome-a, chrome-b, chrome-c and safari)
+        required: false
+        default: ''
 permissions:
   contents: read
 env:
@@ -23,7 +27,7 @@ jobs:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: [chrome-a, chrome-b, chrome-c, safari]
+        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-a","chrome-b","chrome-c","safari"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:

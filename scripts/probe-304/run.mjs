@@ -43,6 +43,7 @@ const PAGES = {
   'npm-react': {url: 'https://www.npmjs.com/package/react', hole: 1},
   'osm': {url: 'https://www.openstreetmap.org/#map=12/51.5/-0.1', hole: 1},
   'local-float': {local: '/float', hole: 1},
+  'local-overlay': {local: '/overlay', hole: 1},
   'local-table': {local: '/', hole: 2},
   'local-table-bar': {local: '/bar', hole: 2},
   'wiki-table': {url: 'https://en.wikipedia.org/wiki/List_of_countries_and_dependencies_by_population', hole: 2},
@@ -55,6 +56,9 @@ const GROUPS = {
   'chrome-b': ['wiki-article', 'bbc-news', 'guardian', 'w3s-float', 'osm', 'local-float'],
   'chrome-c': ['local-table', 'local-table-bar', 'wiki-table', 'hn-thread', 'iana-media', 'gh-issues'],
   safari: ['py-docs', 'wiki-article', 'bbc-news', 'mdn-float', 'local-table', 'local-float'],
+  // The fixtures again after run 42313992098 (the float wrapper given a role, the overlay page added).
+  'chrome-fix': ['local-float', 'local-overlay', 'local-table-bar'],
+  'safari-fix': ['local-float', 'local-overlay'],
 };
 const TARGETS = GROUPS[GROUP]?.map(name => ({name, ...PAGES[name]}));
 if (!TARGETS) { console.error(`unknown group ${GROUP}`); process.exit(2); }
@@ -79,14 +83,29 @@ const FLOAT = (() => {
     const paras = [];
     for (let p = 1; p <= 60; p++) paras.push(`<p>Section ${s}, paragraph ${p}: the quick brown fox jumps over the lazy dog ${(s * p * 7919) % 10007}.</p>`);
     const buttons = Array.from({length: 8}, (_, b) => `<button style="float:left;margin:4px;padding:6px 10px">S${s} B${b + 1}</button>`).join('');
-    sections.push(`<section><h2>Section ${s}</h2><div class="wrap">${buttons}</div><div style="clear:both"></div>${paras.join('')}</section>`);
+    sections.push(`<section><h2>Section ${s}</h2><div class="wrap" role="group" aria-label="Actions ${s}">${buttons}</div><div style="clear:both"></div>${paras.join('')}</section>`);
   }
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>probe304 float</title><style>body{font:14px sans-serif}p{margin:4px 0}</style></head>
 <body><h1>probe304 float</h1>${sections.join('')}</body></html>`;
 })();
+// `/overlay`: a long article whose first section holds, in an empty wrapper, a banner fixed to the viewport's bottom and
+// a button fixed to its top right (#304's Wikipedia sighting: a fixed donation banner under a strip, its in-flow parent
+// scrolled off), and whose middle section holds an absolutely positioned toolbar in a zero-height wrapper.
+const OVERLAY = (() => {
+  const sections = [];
+  for (let s = 1; s <= 40; s++) {
+    const paras = [];
+    for (let p = 1; p <= 50; p++) paras.push(`<p>Section ${s}, paragraph ${p}: <a href="#s${s}p${p}">link ${p}</a> and some text ${(s * p * 7919) % 10007}.</p>`);
+    const fixed = s === 1 ? `<div class="holder" role="group" aria-label="Holder"><div role="dialog" aria-label="Banner" style="position:fixed;left:0;right:0;bottom:0;background:#ffd;padding:10px;border-top:1px solid #999">${Array.from({length: 6}, (_, b) => `<button style="margin-right:10px;padding:8px 14px">Banner ${b + 1}</button>`).join('')}</div><button style="position:fixed;top:8px;right:16px;padding:8px 14px">Fixed corner</button></div>` : '';
+    const abs = s === 20 ? `<div style="position:relative;height:0" role="group" aria-label="Zero"><div role="toolbar" aria-label="Floating" style="position:absolute;top:40px;left:200px;background:#eef;padding:8px">${Array.from({length: 5}, (_, b) => `<button style="margin-right:8px">Float ${b + 1}</button>`).join('')}</div></div>` : '';
+    sections.push(`<section><h2>Section ${s}</h2>${fixed}${abs}${paras.join('')}</section>`);
+  }
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>probe304 overlay</title><style>body{font:14px sans-serif}p{margin:4px 0}</style></head>
+<body><h1>probe304 overlay</h1>${sections.join('')}</body></html>`;
+})();
 const server = createServer((req, res) => {
   res.writeHead(200, {'content-type': 'text/html; charset=utf-8'});
-  res.end(req.url.startsWith('/float') ? FLOAT : req.url.startsWith('/bar') ? TABLE(true) : TABLE(false));
+  res.end(req.url.startsWith('/float') ? FLOAT : req.url.startsWith('/overlay') ? OVERLAY : req.url.startsWith('/bar') ? TABLE(true) : TABLE(false));
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const LOCAL = `http://127.0.0.1:${server.address().port}`;
@@ -357,7 +376,7 @@ config.screen = await tool.ask({op: 'screen'});
 log('config', JSON.stringify(config));
 const ctx = {tool, main: await startEngine(MAIN, 'main'), wide: await startEngine(WIDE, 'wide')};
 try {
-  if (GROUP === 'safari') await runSafari(ctx); else await runChrome(ctx);
+  if (GROUP.startsWith('safari')) await runSafari(ctx); else await runChrome(ctx);
 } catch (e) {
   config.exception = String(e?.stack || e).slice(0, 3000);
   log('exception', config.exception);

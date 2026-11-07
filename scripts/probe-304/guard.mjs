@@ -59,7 +59,38 @@ export function buildRecord(reads) {
     nodes.push(node);
     byNumber.set(r.number, node);
   }
-  return {nodes, byNumber, window: nodes.find(n => n.depth === 0) ?? null};
+  const kids = new Map(), readOf = new Map();
+  for (const r of reads) { readOf.set(r.number, r); if (r.parent != null) { if (!kids.has(r.parent)) kids.set(r.parent, []); kids.get(r.parent).push(r); } }
+  return {nodes, byNumber, kids, readOf, recorded, incomplete, window: nodes.find(n => n.depth === 0) ?? null};
+}
+
+/// The hit chain mapped onto the record as the guard's handle comparisons see it: from the window down, each entry the
+/// recorded child of the one above of its role and frame (searched three levels deep, for a level the AXParent chain
+/// skips); below the first entry not found nothing is recorded. When that entry's parent holds all its children (the
+/// chain and the record disagree, not a cut), the entries below fall back to role and frame. Returned hit-first:
+/// `ids[k]` the record number of `chain[k]` or null, and `loose[k]` whether `chain[k]` matches by role and frame only.
+export function mapChain(rec, chain) {
+  const n = chain.length;
+  const ids = new Array(n).fill(null), loose = new Array(n).fill(false);
+  const fits = (r, c) => r.role === c[0] && (c[1] == null ? !r.frame : near(r.frame, c));
+  const root = rec.readOf.get(rec.window?.number);
+  if (!root || !fits(root, chain[n - 1])) { loose.fill(true); return {ids, loose}; }
+  ids[n - 1] = root.number;
+  let cur = root.number;
+  for (let k = n - 2; k >= 0; k--) {
+    let level = [cur], hit = null;
+    for (let d = 0; d < 3 && hit == null; d++) {
+      const next = [];
+      for (const j of level) for (const r of rec.kids.get(j) ?? []) { if (fits(r, chain[k])) { hit = r.number; break; } next.push(r.number); }
+      level = next;
+    }
+    if (hit == null) {
+      if (!rec.incomplete.has(cur)) for (let m = k; m >= 0; m--) loose[m] = true;
+      break;
+    }
+    ids[k] = hit; cur = hit;
+  }
+  return {ids, loose};
 }
 
 /// The guard's reason at `p` (a grid point with its hit chain, [role, x, y, w, h] from the hit up to its window).
@@ -69,24 +100,26 @@ export function verdictAt(rec, p) {
   let best = null;
   for (const n of nodes) if (n.shown && holds(n.shown, p) && (!best || n.depth >= best.depth)) best = n;
   if (!best) return {v: 'unrecorded'};
-  const inside = !chain || chain.some(c => matches(best, c));
+  const m = chain ? mapChain(rec, chain) : null;
+  const is = (k, node) => m.ids[k] != null ? m.ids[k] === node.number : m.loose[k] && matches(node, chain[k]);
+  const inside = !chain || chain.some((_, k) => is(k, best));
   if (!best.complete && inside) return {v: 'unrecordedDescendant', via: 'incomplete', node: best};
   if (!chain) return {v: 'noHit', node: best};
-  if (matches(best, chain[0])) return {v: 'sameElement', node: best};
+  if (is(0, best)) return {v: 'sameElement', node: best};
   if (!INTERACTIVE.has(chain[0][0])) return {v: 'nonInteractiveHit', node: best};
-  for (let a = best.ancestor; a != null; a = nodes[a].ancestor) if (matches(nodes[a], chain[0])) return {v: 'hitAboveNode', node: best};
+  for (let a = best.ancestor; a != null; a = nodes[a].ancestor) if (is(0, nodes[a])) return {v: 'hitAboveNode', node: best};
   if (best.gapsBelow.length) {
     for (const number of best.gapsBelow) {
       const g = byNumber.get(number);
-      if (chain.slice(1).some(c => matches(g, c))) return {v: 'unrecordedDescendant', via: 'gap', node: best, gap: g};
+      for (let k = 1; k < chain.length; k++) if (is(k, g)) return {v: 'unrecordedDescendant', via: 'gap', node: best, gap: g};
     }
   }
   // #305: the hit is a recorded node whose shown frame (widened 2 pt) holds the point, or its nearest recorded ancestor's
   // (not an area role, at most a quarter of the window).
   const windowArea = rec.window ? rec.window.frame.w * rec.window.frame.h : null;
   const widened = s => s && {x: s.x - 2, y: s.y - 2, w: s.w + 4, h: s.h + 4};
-  for (const n of nodes) {
-    if (!matches(n, chain[0])) continue;
+  const hitNodes = m.ids[0] != null ? [byNumber.get(m.ids[0])].filter(Boolean) : m.loose[0] ? nodes.filter(n => matches(n, chain[0])) : [];
+  for (const n of hitNodes) {
     if (n.shown && holds(widened(n.shown), p)) return {v: 'recordedHit', node: best};
     const a = n.ancestor != null ? nodes[n.ancestor] : null;
     if (a && !AREA_ROLES.has(a.role) && windowArea && a.frame.w * a.frame.h <= 0.25 * windowArea && a.shown && holds(widened(a.shown), p)) return {v: 'recordedHit', node: best};
@@ -105,7 +138,11 @@ export const clickable = chain => {
 /// Whether the hit chain passes through a recorded strip whose children the record lacks.
 export function underStrip(rec, chain) {
   if (!chain) return null;
-  for (const n of rec.nodes) if (n.thinGap && chain.slice(1).some(c => matches(n, c))) return n;
+  const m = mapChain(rec, chain);
+  for (let k = 1; k < chain.length; k++) {
+    const n = m.ids[k] != null ? rec.byNumber.get(m.ids[k]) : null;
+    if (n?.thinGap) return n;
+  }
   return null;
 }
 

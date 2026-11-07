@@ -276,6 +276,12 @@ if (GROUP === 'final') {
   add('chrome/dedicated/toolbar-reload/launch+24s', {kind: 'toolbar', app: 'chrome', mode: 'dedicated', clickAtLaunchMs: 24_000, expect: 'refused/frameMoved'}, true);
   add('chrome/dedicated/vanish-covered/5s', {...W('vanish', {id: 'vanish', mid: {op: 'vanish', cover: true}}), app: 'chrome', mode: 'dedicated', delay: 5, expect: 'refused/nodeGone'}, true);
 }
+// #304's final A/B: the re-read-window swap of the final group (a fresh Chrome, shared mode, the target swapped 1 s into
+// the click) eight times per runner, the heads' order alternating, to tell a timing-dependent reason from a head's.
+if (GROUP === 'swap-repeat') for (let n = 1; n <= 8; n++) for (const engine of n % 2 ? ['branch', 'main'] : ['main', 'branch']) {
+  CELLS.push({...W('swap', {id: 'save'}), app: 'chrome', mode: 'shared', delay: 0.1, freshChrome: true, midAfterClick: {ms: 1000, cmd: {op: 'swap'}},
+    expect: 'refused', label: `chrome/shared-reread/swap/0.1s#${n}/${engine}`, engine});
+}
 if (GROUP === 'safari-final') {
   add('safari/shared/feed/5s', {...PAGE_TP[0], app: 'safari', mode: 'shared', delay: 5, expect: 'refused/frameMoved'}, true);
   add('safari/shared/swap/5s', {...PAGE_TP[2], app: 'safari', mode: 'shared', delay: 5, expect: 'refused/nodeGone'}, true);
@@ -411,6 +417,8 @@ async function cell(spec, shared) {
       row.effect = {events: ev.map(b => ({ev: b.ev, id: b.id, text: b.text, gen: b.gen, sx: b.sx, sy: b.sy, dt: b.t - started})), hit: clicks.map(b => b.id).filter(Boolean), text: clicks.map(b => b.text)};
     }
     row.pageEvents = beacons.slice(before).filter(b => ['prepend', 'changed'].includes(b.ev) && b.t >= o.at - 50 && b.t <= started).map(b => ({ev: b.ev, dt: b.t - o.at}));
+    // When the page made a change sent during the click (midAfterClick), from the click's start.
+    if (spec.midAfterClick) row.changedAfterClickMs = beacons.slice(before).filter(b => b.ev === 'changed' && b.t >= started).map(b => b.t - started);
     try { await w.call('shutdown', {}, 5000); } catch {}
     w.close();
   } catch (e) {

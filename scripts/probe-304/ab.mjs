@@ -60,6 +60,10 @@ const GROUPS = {
   'chrome-b': ['wiki-article', 'bbc-news', 'guardian', 'w3s-float', 'osm', 'local-float', 'local-overlay', 'local-fixed-tail'],
   'chrome-c': ['local-table', 'local-table-bar', 'local-table-6k', 'wiki-table', 'hn-thread', 'iana-media', 'gh-issues'],
   safari: ['py-docs', 'wiki-article', 'bbc-news', 'mdn-float', 'local-table', 'local-float', 'local-overlay', 'local-fixed-tail'],
+  // B built with scripts/probe-304/instrument-widelist.py (each wide list's frame reads timed by position): where the
+  // rule's slow reads lie. Kept out of the walk-ms comparison (the report skips `*-diag`).
+  'chrome-diag': ['local-table', 'local-table-6k', 'iana-media'],
+  'safari-diag': ['wiki-article'],
 };
 const TARGETS = GROUPS[GROUP]?.map(name => ({name, ...PAGES[name]}));
 if (!TARGETS) { console.error(`unknown group ${GROUP}`); process.exit(2); }
@@ -268,7 +272,7 @@ function summarize(sky, points) {
     port: checkPort(rec, sky.probeRecord), printedDigest: digest(text), recordDigest: digest(sky.probeRecord ?? []), printedLines: text.split('\n').length, text};
 }
 const slim = (sky, text) => ({window: sky.window, truncated: sky.truncated, timings: sky.timings, printed: text, nodes: sky.nodes, menuBar: sky.menuBar,
-  probeRecord: sky.probeRecord, probeReads: sky.probeReads, probeMenu: sky.probeMenu});
+  probeRecord: sky.probeRecord, probeReads: sky.probeReads, probeMenu: sky.probeMenu, probeWideLists: sky.probeWideLists});
 
 const results = [];
 const save = () => writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, results}, null, 1));

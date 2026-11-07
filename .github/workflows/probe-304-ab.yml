@@ -19,17 +19,18 @@ permissions:
   contents: read
 env:
   # Phase 1 (runs 42326533862 and 42328384133) ran A = B = main f20a25ee, the noise floor and the kit's check. Phase 3:
-  # B = fix/304-wide-list 566e3612 ran in run 42338126530; now bc4d395f (rule B amended: every shown child of a list of
-  # 101-512 read first, a sampled check of the bisected run above 512).
+  # B = fix/304-wide-list 566e3612 ran in run 42338126530, bc4d395f in run 42348997723; now aab236fb, the final run. The
+  # *-diag groups build B with scripts/probe-304/instrument-widelist.py too (each wide list's frame reads timed by
+  # position); s296-swap-repeat runs the re-read-window swap eight times per runner, the heads alternating.
   P304_A_REF: f20a25ee895c5aab2ebb760f6114ecaac232c732
-  P304_B_REF: 'bc4d395fd4eea509d9331161f752b9b00d4c12e2'  # quoted: YAML read an unquoted 566e3612 as a float (run 42329756049)
+  P304_B_REF: 'aab236fb243a6fb7b003bbd2c7511f47355a676b'  # quoted: YAML read an unquoted 566e3612 as a float (run 42329756049)
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
         rep: [1, 2]
-        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-a","chrome-b","chrome-c","safari","sweep-chrome","sweep-safari","sweep-finder","sweep-textedit","s296-chrome","s296-final","s296-safari-final","s296-native-final"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["chrome-a","chrome-b","chrome-c","safari","sweep-chrome","sweep-safari","sweep-finder","sweep-textedit","s296-chrome","s296-final","s296-safari-final","s296-native-final","s296-swap-repeat","chrome-diag","safari-diag"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -48,9 +49,10 @@ jobs:
           echo "P304_A_COMMIT=$(git -C "$RUNNER_TEMP/a" rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "P304_B_COMMIT=$(git -C "$RUNNER_TEMP/b" rev-parse HEAD)" >> "$GITHUB_ENV"
           case "$GROUP" in
-            chrome-*|safari)
+            chrome-*|safari|safari-diag)
               python3 -I scripts/probe-304/instrument.py "$RUNNER_TEMP/a/native/engine/Sources/Engine"
               python3 -I scripts/probe-304/instrument.py "$RUNNER_TEMP/b/native/engine/Sources/Engine"
+              case "$GROUP" in *-diag) python3 -I scripts/probe-304/instrument-widelist.py "$RUNNER_TEMP/b/native/engine/Sources/Engine" ;; esac
               swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-304/tool.swift ;;
             *)
               python3 -I scripts/probe-299/instrument.py "$RUNNER_TEMP/a/native/engine/Sources/Engine"
@@ -83,7 +85,7 @@ jobs:
           export P305_MAIN_COMMIT="$P304_A_COMMIT" P305_BRANCH_COMMIT="$P304_B_COMMIT" P296_MAIN_COMMIT="$P304_A_COMMIT" P296_BRANCH_COMMIT="$P304_B_COMMIT"
           out="$RUNNER_TEMP/probe-304"
           case "$GROUP" in
-            chrome-*|safari) node scripts/probe-304/ab.mjs --group "$GROUP" --a "$a" --b "$b" --tool "$RUNNER_TEMP/probe-tool" --out "$out" ;;
+            chrome-*|safari|safari-diag) node scripts/probe-304/ab.mjs --group "$GROUP" --a "$a" --b "$b" --tool "$RUNNER_TEMP/probe-tool" --out "$out" ;;
             sweep-chrome) node scripts/probe-305/ab.mjs --group chrome --parts sweep,popover --main "$a" --branch "$b" --tool "$RUNNER_TEMP/probe-tool" --out "$out" ;;
             sweep-*) node scripts/probe-305/ab.mjs --group "${GROUP#sweep-}" --parts sweep --main "$a" --branch "$b" --tool "$RUNNER_TEMP/probe-tool" --out "$out" ;;
             s296-*) node scripts/probe-296/ab.mjs --group "${GROUP#s296-}" --branch "$b" --main "$a" --app "$RUNNER_TEMP/Probe296.app/Contents/MacOS/Probe296" --out "$out" ;;

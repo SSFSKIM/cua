@@ -1,0 +1,94 @@
+# #287's hosted spike: the #282-#311 chain (background clicks and first mouse, web text focus, EUI ownership and release,
+# the toolbar re-layout, the stale-point guard and recordedHit, the visible-first walk and wide lists) on stable Google
+# Chrome beside Chrome for Testing (the control, same job), Safari, Firefox and an Electron app, on main's engine built
+# here (instrumented on the runner only where a kit needs the guard's record). The kits' scripts are copied from their
+# probe branches (scripts/probe-287/patch-kits.py adds the browser switch); scripts/probe-287/run.sh runs a group.
+# Runs only on a push to probe/287-hosted (or by hand); not a ci-kit gate.
+name: probe-287
+on:
+  push:
+    branches: [probe/287-hosted]
+    paths-ignore: ['scripts/probe-287/offline/**', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      groups:
+        description: the groups, a JSON list (empty for the push default)
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2]
+        # A push runs the groups named here.
+        group: ${{ fromJSON(github.event.inputs.groups || '["recon"]') }}
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Browsers
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          case "$GROUP" in
+            recon) bash scripts/probe-287/install.sh chrome firefox vscode ;;
+            chrome-*) bash scripts/probe-287/install.sh chrome ;;
+            firefox-*) bash scripts/probe-287/install.sh firefox ;;
+            vscode*) bash scripts/probe-287/install.sh vscode ;;
+            *) bash scripts/probe-287/install.sh ;;
+          esac
+      - name: Build main's engine and the tools
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          sw_vers
+          git log -1 --format='%H %s'
+          case "$GROUP" in
+            *-s296|*-s305)
+              python3 -I scripts/probe-299/instrument.py native/engine/Sources/Engine
+              swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-299/tool.swift
+              app="$RUNNER_TEMP/Probe296.app/Contents"
+              mkdir -p "$app/MacOS"
+              swiftc -O -o "$app/MacOS/Probe296" scripts/probe-296/app.swift
+              printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+                '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+                '<plist version="1.0"><dict>' \
+                '<key>CFBundleIdentifier</key><string>com.ssfskim.probe296</string>' \
+                '<key>CFBundleName</key><string>Probe296</string>' \
+                '<key>CFBundleExecutable</key><string>Probe296</string>' \
+                '<key>CFBundlePackageType</key><string>APPL</string>' \
+                '<key>NSPrincipalClass</key><string>NSApplication</string>' \
+                '</dict></plist>' > "$app/Info.plist" ;;
+            *-cov*)
+              python3 -I scripts/probe-304/instrument.py native/engine/Sources/Engine
+              swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-304/tool.swift ;;
+          esac
+          swiftc -O -o "$RUNNER_TEMP/axrecon" scripts/probe-287/axrecon.swift
+          swiftc -o "$RUNNER_TEMP/p282-hit" scripts/probe-282/hit.swift
+          swiftc -o "$RUNNER_TEMP/p283-ax" scripts/probe-283/ax.swift
+          swiftc -O -o "$RUNNER_TEMP/p288-ax" scripts/probe-288/ax.swift
+          swiftc -O -o "$RUNNER_TEMP/p294-tool" scripts/probe-294/tool.swift
+          swift build -c release --package-path native/engine --scratch-path "$RUNNER_TEMP/eng"
+      - name: Measure
+        env:
+          GROUP: ${{ matrix.group }}
+          REP: ${{ matrix.rep }}
+        run: bash scripts/probe-287/run.sh
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-287-${{ matrix.group }}-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-287/**/results.json
+            ${{ runner.temp }}/probe-287/**/skyshot-*.json
+            ${{ runner.temp }}/probe-287/**/*.gz
+            ${{ runner.temp }}/probe-287/*.txt
+            ${{ runner.temp }}/probe-287/*.log
+            ${{ runner.temp }}/probe-287/**/screen-*.png
+          if-no-files-found: warn

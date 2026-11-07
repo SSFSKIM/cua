@@ -186,7 +186,7 @@ export const CELLS = [
   cell('gedit', 'clipboard_write'),
   ...desktopCells('gedit', ['press_key', 'click', 'drag', 'drag_handle']),
   // the desktop route's pointer input on the matrix's other families, each window in front and active (M4's T9: a
-  // desktop path's points go with no pause between them, and the wait rule asks every family)
+  // change to a desktop path's pauses is measured on every family, as the wait rule asks)
   ...desktopCells('kate', ['click', 'drag']),
   ...desktopCells('qtcreator', ['click', 'drag']),
   ...desktopCells('writer', ['click']),

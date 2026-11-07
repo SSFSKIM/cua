@@ -299,7 +299,8 @@ export function lineAsReported(shown, truncated) {
  * the milestone its `section` names. A gap turns only its own operation's, route's and series' failing speed verdict
  * into "declared gap", which the summary lists apart and never counts as a pass; any other loss still fails.
  * `[{op, route, series, reason, section}]`. None is declared: M1a's one, desktop `move`'s later requests, closed when
- * M4's T9 removed the vendor's 8 ms between a desktop path's points (Decision Log, T9).
+ * M4's T9 dropped the pause after a desktop path's leading motion, the one at the pointer's own position (Decision
+ * Log, T9).
  */
 export const SPEED_GAPS = [];
 

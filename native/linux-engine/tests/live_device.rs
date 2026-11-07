@@ -2188,9 +2188,12 @@ fn activation_waits_for_no_window_kept_above_the_normal_layer_and_a_click_under_
     }
 }
 
+/// Each motion a listener received: its root position and server time.
+type Motions = Vec<(i16, i16, u32)>;
+
 /// The motions a window of the test's own receives (core `MotionNotify`: root position and server time) until told to
 /// stop: an override-redirect window over `rect`, selecting pointer motion only.
-fn motion_listener(rect: (i16, i16, u16, u16)) -> (mpsc::Sender<()>, std::thread::JoinHandle<Vec<(i16, i16, u32)>>) {
+fn motion_listener(rect: (i16, i16, u16, u16)) -> (mpsc::Sender<()>, std::thread::JoinHandle<Motions>) {
     let (conn, _) = x11rb::connect(None).expect("an X connection");
     let window = override_redirect(&conn, rect);
     conn.change_window_attributes(

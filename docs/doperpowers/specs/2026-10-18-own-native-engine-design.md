@@ -3621,6 +3621,84 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - **Chromium and Gecko:** identical to main, set_value's fallbacks included.
   Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 8c206e91 on #324.
 
+- Decision (#316, 2026-11-08, `fix/316-overlay-guard`; the design session's ruling 4701abd8 on the spike's findings,
+  issue #316's last comment, kit `probe/316-measure` 2180de63, runs 42496485583 and 42500093229 on main 74fe29f8;
+  amends #296's entry and #305's): **the stale-point guard also refuses a coordinate click or drag start when the app
+  has a new window at layer 0 over the screenshot's window (rule W), and when the recorded node at the point lies in
+  an AXWebArea the hit does not lie in (rule G).** Both refuse with nothing posted, as `screenChangedSinceScreenshot`.
+  1. **The candidate withdrawn.** Ruling cb252e88's candidate, which refused by the action sequence alone (a click
+     after a key that may open something), refused 546 of the 898 clicks that landed over 1,160 clicks (61%), and
+     caught 96 of the 176 that went wrong while answering success. On run 2's rows it refused 273 of 449 landed and
+     caught 56 of 104 wrong.
+  2. **What the spike found.** (i) Safari's address-field overlay after ⌘L is a separate Safari window at layer 0 above
+     the browser window: present in all 48 ⌘L and ⌘L+typing cells, absent in every other, ⌘L+Escape included, where
+     the clicks land. Neither the focused address field, AXExpanded, the window's own tree nor the point lying inside
+     the overlay's bounds tells it (Safari swallows the next page click anywhere). (ii) Chrome's omnibox popup is also a
+     window of its own, but clicks pass through it: 0 of 64 wrong. (iii) Firefox's urlbar list lies in the window's
+     tree and takes clicks aimed at the page under it: 8 of 32, one of which navigated. (iv) Chrome keeps answering the
+     page a tab has left: after a navigation, 48 of 48 clicks placed from the old screenshot passed #296 (the old
+     node still reads its frame, the new page's hit is a non-interactive element) and landed on the new page.
+  3. **Rule W** (`newWindowAbove`, `guardedPointVerdict`). The screenshot keeps the on-screen window numbers its capture
+     already reads (`ShareableWindowCache`'s list, the engine's own windows left out; `ObservedScreenshot.windowList`),
+     so the observation reads nothing more. At a coordinate click and at a drag's start, in every app and both desktop
+     modes, the on-screen window list is read once (`onScreenWindowList`), front to back down to the click's window: a
+     window of the app's process at layer 0 above it that the screenshot's list did not hold refuses before the tree
+     is read, wherever it lies (reason `newWindow`; the meta's `stalePoint.newWindow` is its number). A window the
+     screenshot's list held, one below the click's window, one at another layer (a menu, a floating panel), another
+     app's, and a list that does not hold the click's window all leave the point to the tree; so does a screenshot
+     with no list or a click with no window number. No app is excepted (fork A): Chrome's omnibox popup refuses too.
+     Measured by emulation on run 2: Safari's ⌘L caught 24 of 24; 37 false refusals of 449 landed clicks, 32 of them
+     Chrome's omnibox popup after ⌘L and ⌘L+typing (Chrome for Testing and stable), 4 Finder's rename field after
+     Return, 1 Firefox (dedicated, ⌘L+typing). The design session accepts them as the cost: one re-observation, whose
+     list then holds the window.
+  4. **Rule G** (`ScreenshotNode.webArea`, `liesIn`). The record keeps, for each node, its nearest AXWebArea at or above
+     it, frameless nodes passed through (a web area itself is its own). After #296's identity and frame checks, a hit
+     that is not the node's own handle must be that web area or lie inside it: its parents are walked, reading only
+     the parent, until one is the web area (`CFEqual`), bounded by `stalePointAncestorLevels` (300); otherwise the verdict
+     is `otherWebArea`, refused before any kept reason (`nonInteractiveHit`, `hitAboveNode`, `unrecordedDescendant`,
+     `recordedHit`). Nested documents pass while the page is unchanged: a hit in an iframe's web area reaches the
+     page's further up, and a node inside the iframe needs the iframe's own document, so a point that now reaches the
+     outer page refuses. A node outside every web area and an empty hit are judged as before. Measured by emulation on
+     run 2 (the hit's web area against the screenshot's hit's, or no web area at all): 57 of 104 wrong clicks caught
+     (Chrome for Testing 24, stable 16, Firefox's urlbar list 6, Safari 11), 2 false refusals, both also W's. The build
+     differs from the emulation in two ways: it compares with the recorded node's web area, not the screenshot's hit's,
+     and it walks past nested web areas instead of comparing the nearest; and it applies in every app with a web area,
+     not only to the browsers' page cells.
+  5. **Together** on run 2: 76 of 104 wrong clicks caught, 37 false refusals of 449 (8%).
+  6. **The refusal.** Both reuse `screenChangedSinceScreenshot`: the model's remedy is the guard's own (a new screenshot,
+     then coordinates in it), the service and the docs already carry the name, and the meta's reason tells the rules
+     apart. G's sentence names the recorded element and "is in a page the point no longer reaches", then what is there
+     now, as #296's do. W's has its own, since no recorded element is at fault: "<App> has opened a window over the one
+     the screenshot showed, which can take the click".
+  7. **The cost.** W: one `CGWindowListCopyWindowInfo` of the on-screen list per guarded pointer, measured on the
+     MacBook with 30 windows on screen at 0.32 ms median and 0.97 ms p95 (200 reads); the meta's
+     `stalePoint.windowsMs` records it per click. G: no read when the hit is the node's own handle or empty; otherwise
+     one parent read per level from the hit up to the web area (the hit's depth below it, a few levels for a page's
+     text), or to the application when it lies outside; the meta's `stalePoint.webAreaReads` counts them. Both sit
+     inside `stalePoint.ms`. G's live cost is not measured here: the hosted check measures it.
+  8. **The residue on run 2** (28 of 104 wrong clicks still kept): page-made suggestion lists in Safari, Chrome and
+     Firefox, 18 (#330: the list is the page's own element, in the same web area, over the control the click aims at);
+     TextEdit's reflow after Return or ⌘V, 4 (#331: the text moved within the same text view, whose node still holds the
+     point); Safari's clicks placed from the page's tree after a re-observation that showed the panel, 6 of 12 (the
+     re-observation's list holds the overlay window, so W passes, and the point still reaches the page's element).
+     `docs/cua-api/agent-cursor.md`'s guard paragraph gains a second half that states them and what to do (a draft,
+     final after the hosted A/B; the surface inventory's Table 3 addition of 2026-11-08, the docs test and parity's docs
+     oracle carry it).
+  Proven offline: `NewWindowGuardTests` (4) and `WebAreaGuardTests` (6) in `StalePointTests.swift`; #296's, #305's and
+  #301's suites unchanged; 997 engine tests pass. Each of 25 rule parts and bounds removed in turn
+  (`~/.local/share/187/mutate-316.py`) fails a test. Three mutations survive by design, since only a live click reaches
+  them: the capture's list not kept with its image, and the click's or the drag's call site passing no window number.
+  **What the hosted check must verify** (`probe/316-measure`'s cells, against main, both desktop modes):
+  - **Safari ⌘L and ⌘L+typing:** every click and drag start refused `newWindow` with nothing posted; ⌘L+Escape kept;
+  - **Chrome's navigated tab** (link and ⌘L navigation, both builds): every click from the old screenshot refused
+    `otherWebArea`; Firefox's urlbar list refused `otherWebArea` or `newWindow`;
+  - **the false refusals** near the emulation's: Chrome's omnibox popup after ⌘L, Finder's rename field after Return,
+    and none elsewhere (the still-page and native cells all kept), iframes included;
+  - **the cost:** `stalePoint.ms` against main's on the same cells, with `windowsMs` and `webAreaReads`'
+    distributions;
+  - **the residue** as item 8 counts it, and repl-parity green with the docs paragraph's new text.
+  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 4701abd8 on #316.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

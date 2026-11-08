@@ -15,14 +15,14 @@ on:
 permissions:
   contents: read
 env:
-  # Quoted: YAML reads an all-digit-and-e SHA as a float. origin/main at the spike's start.
-  P328_MAIN_REF: '81a430918e890cb98ead3a499c0b7b6a726ced93'
+  # Quoted: YAML reads an all-digit-and-e SHA as a float. origin/main f859ce68 (0.27.11; its scroll path is 81a43091's).
+  P328_MAIN_REF: 'f859ce6881f91fcbe559634673899c2b72e59971'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["followup2"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["confirmb"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -52,7 +52,7 @@ jobs:
         run: |
           sw_vers
           git log -1 --format='kit %H %s'
-          if [ "$GROUP" = smoke ] || [ "$GROUP" = web ]; then
+          if [ "$GROUP" = smoke ] || [ "$GROUP" = web ] || [ "$GROUP" = confirmb ]; then
             git worktree add "$RUNNER_TEMP/src" "$P328_MAIN_REF"
             echo "P328_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/src" rev-parse HEAD)" >> "$GITHUB_ENV"
             swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng"
@@ -109,6 +109,7 @@ jobs:
           path: |
             ${{ runner.temp }}/probe-328/*/results-*.json
             ${{ runner.temp }}/probe-328/*/scan-*.json
+            ${{ runner.temp }}/probe-328/*/confirm-*.json
             ${{ runner.temp }}/probe-328/*.txt
             ${{ runner.temp }}/probe-287/*.txt
           if-no-files-found: warn

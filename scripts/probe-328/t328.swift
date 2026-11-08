@@ -361,6 +361,125 @@ case "read", "setbar":
     Thread.sleep(forTimeInterval: 0.15)
     emit(["rc": Int(rc), "pos": read(area, trackedEl: nil).wire()])
   } else { emit(["pos": read(area, trackedEl: nil).wire()]) }
+case "find":
+  // t328 find <pid> <text>: the frame of the first element whose value, title or description contains the text.
+  let pid = pid_t(a[2])!
+  var hit: AXUIElement?
+  var budget = 6000
+  func walk(_ e: AXUIElement, _ d: Int) {
+    budget -= 1
+    guard hit == nil, budget > 0, d < 40 else { return }
+    for k in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] { if let t = attr(e, k) as? String, t.contains(a[3]) { hit = e; return } }
+    for k in els(attr(e, kAXChildrenAttribute)) { walk(k, d + 1) }
+  }
+  for w in windowsOf(pid) { walk(w, 0) }
+  emit(["found": hit != nil, "frame": rect(hit.flatMap(frameOf)), "role": n(hit.map(role))])
+case "confirm":
+  // The approved confirmation (ruling b1921fc3), emulated: the container is the hit's nearest AXScrollArea, else its
+  // nearest ancestor advertising a page scroll, else its AXWebArea; read before the scroll, then every 10 ms: the
+  // container's bar on the asked axis, its content's frame, a descendant about 40% across it, and (a candidate measure,
+  // not in the ruling) the hit element itself. Each measure's first move the asked way is timed, so any window can be
+  // priced offline. `external`: someone else scrolls (the engine): ready once read, the clock started by a stdin line.
+  guard let spec = try? JSONSerialization.jsonObject(with: Data(a[2].utf8)) as? [String: Any], let pidN = spec["pid"] as? Int,
+        let at = spec["at"] as? [Double] else { emit(["error": "bad spec"]); exit(2) }
+  let pid = pid_t(pidN)
+  let point = CGPoint(x: at[0], y: at[1])
+  let horizontal = (spec["axis"] as? String) == "h"
+  let forward = !["up", "left"].contains(spec["direction"] as? String ?? "down")
+  var out: [String: Any] = ["point": at, "axis": horizontal ? "h" : "v", "forward": forward]
+  let app = appElement(pid)
+  var hitRef: AXUIElement?
+  let hrc = AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hitRef)
+  guard let hitEl = hitRef else { emit(["error": "no hit", "rc": Int(hrc.rawValue)]); exit(1) }
+  var chain: [AXUIElement] = []
+  var cur: AXUIElement? = hitEl
+  while let e = cur, chain.count < 300 { chain.append(e); if role(e) == kAXApplicationRole { break }; cur = el(attr(e, kAXParentAttribute)) }
+  out["chain"] = chain.prefix(14).map { e -> String in
+    let r = role(e); let pa = actions(e).contains("AXScrollDownByPage") ? "+page" : ""
+    let bars = (el(attr(e, kAXVerticalScrollBarAttribute)) != nil ? "+vbar" : "") + (el(attr(e, kAXHorizontalScrollBarAttribute)) != nil ? "+hbar" : "")
+    return r + pa + bars
+  }
+  let byArea = chain.first { role($0) == kAXScrollAreaRole }
+  let byPage = chain.first { actions($0).contains("AXScrollDownByPage") }
+  let byWeb = chain.first { role($0) == "AXWebArea" }
+  guard let container = byArea ?? byPage ?? byWeb, let vp = frameOf(container) else { emit(["error": "no container", "chain": out["chain"] ?? []]); exit(1) }
+  out["container"] = ["how": byArea != nil ? "scrollArea" : byPage != nil ? "pageScroll" : "webArea", "role": role(container), "frame": rect(vp),
+                      "depth": chain.firstIndex { CFEqual($0, container) } ?? -1] as [String: Any]
+  out["hit"] = ["role": role(hitEl), "frame": rect(frameOf(hitEl))] as [String: Any]
+  let barEl = el(attr(container, horizontal ? kAXHorizontalScrollBarAttribute : kAXVerticalScrollBarAttribute))
+  let along: (CGRect) -> Double = { Double(horizontal ? $0.minX : $0.minY) }
+  let length: (CGRect) -> Double = { Double(horizontal ? $0.width : $0.height) }
+  // The descendant about 40% across the container's viewport on the asked axis, wholly inside it.
+  let aim = along(vp) + length(vp) * 0.4
+  var trackEl: AXUIElement?
+  var bestD = Double.infinity
+  var budget = 1500
+  func walkT(_ e: AXUIElement, _ d: Int) {
+    budget -= 1
+    guard budget > 0, d < 14 else { return }
+    if role(e) == kAXScrollBarRole { return }
+    if !CFEqual(e, container), let f = frameOf(e), f.width > 2, f.height > 2, length(f) < length(vp) * 0.3, vp.contains(f) {
+      let dist = abs(along(f) - aim)
+      if dist < bestD { bestD = dist; trackEl = e }
+    }
+    for k in els(attr(e, kAXChildrenAttribute)) { walkT(k, d + 1) }
+  }
+  walkT(container, 0)
+  let content = contentOf(container)
+  struct R { var bar: Double?; var content: Double?; var tracked: Double?; var hit: Double? }
+  func readR() -> R {
+    R(bar: barEl.flatMap { num($0, kAXValueAttribute) }, content: content.flatMap(frameOf).map(along), tracked: trackEl.flatMap(frameOf).map(along), hit: frameOf(hitEl).map(along))
+  }
+  // The asked way: a forward scroll raises the bar and moves the content, the descendant and the hit back (up or left).
+  func deltas(_ b: R, _ x: R) -> [String: Double] {
+    var d: [String: Double] = [:]
+    if let p = b.bar, let q = x.bar { d["bar"] = (q - p) * (forward ? 1 : -1) }
+    if let p = b.content, let q = x.content { d["content"] = (p - q) * (forward ? 1 : -1) }
+    if let p = b.tracked, let q = x.tracked { d["tracked"] = (p - q) * (forward ? 1 : -1) }
+    if let p = b.hit, let q = x.hit { d["hit"] = (p - q) * (forward ? 1 : -1) }
+    return d
+  }
+  let before = readR()
+  out["before"] = ["bar": r4(before.bar), "content": r1(before.content), "tracked": r1(before.tracked), "hit": r1(before.hit)]
+  out["barSettable"] = barEl.map { settable($0, kAXValueAttribute) } ?? false
+  out["atEnd"] = before.bar.map { forward ? $0 >= 0.999 : $0 <= 0.001 } ?? NSNull()
+  out["trackedRole"] = n(trackEl.map(role))
+  if (spec["route"] as? String) == "external" { emit(["ready": true]); _ = readLine() }
+  let t0 = unixMs()
+  out["t0Unix"] = t0
+  if (spec["route"] as? String) == "post" {
+    // Main's event (the vendor's): one pixel wheel, the window's fields and its local point, posted to the hit's process.
+    var ownerPid: pid_t = 0
+    AXUIElementGetPid(hitEl, &ownerPid)
+    var win: AXUIElement? = hitEl
+    while let e = win, role(e) != kAXWindowRole { win = el(attr(e, kAXParentAttribute)) }
+    let wid = win.flatMap(windowNumber), wf = win.flatMap(frameOf)
+    let d = Int32((spec["delta"] as? Double) ?? 120) * (forward ? -1 : 1)
+    if let e = CGEvent(scrollWheelEvent2Source: CGEventSource(stateID: .hidSystemState), units: .pixel, wheelCount: horizontal ? 2 : 1,
+                       wheel1: horizontal ? 0 : d, wheel2: horizontal ? d : 0, wheel3: 0) {
+      e.location = point
+      if let id = wid {
+        for f in [51, 91, 92] { e.setIntegerValueField(CGEventField(rawValue: UInt32(f))!, value: Int64(id)) }
+        if let wf { setWindowLocation?(e, CGPoint(x: point.x - wf.minX, y: point.y - wf.minY)) }
+      }
+      e.timestamp = DispatchTime.now().uptimeNanoseconds
+      e.postToPid(ownerPid == 0 ? pid : ownerPid)
+    }
+  }
+  let observeMs = spec["observeMs"] as? Double ?? 1500
+  var first: [String: Double] = [:]
+  var polls = 0
+  while unixMs() - t0 < observeMs {
+    Thread.sleep(forTimeInterval: 0.01)
+    let d = deltas(before, readR())
+    polls += 1
+    for (k, v) in d where first[k] == nil && (k == "bar" ? v > 0.0005 : v > 0.4) { first[k] = unixMs() - t0 }
+  }
+  let final = deltas(before, readR())
+  out["moved"] = final.mapValues { ($0 * 10_000).rounded() / 10_000 }
+  out["firstMs"] = first.mapValues { ($0 * 10).rounded() / 10 }
+  out["polls"] = polls
+  emit(out)
 case "trial":
   guard let spec = try? JSONSerialization.jsonObject(with: Data(a[2].utf8)) as? [String: Any], let pidN = spec["pid"] as? Int else { emit(["error": "bad spec"]); exit(2) }
   let pid = pid_t(pidN), cover = pid_t(spec["cover"] as? Int ?? 0)

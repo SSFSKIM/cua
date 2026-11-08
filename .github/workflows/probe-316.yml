@@ -1,7 +1,10 @@
-# #316's measure-first spike (ruling cb252e88): main's engine, unmodified, built here; scripts/probe-316/measure.mjs runs a
-# group's cells (a sequence a model sends, then a coordinate click placed in the screenshot taken before it) and reads
-# where each click landed and what a narrower detector could have read at click time. Runs only on a push to
-# probe/316-measure (or by hand); not a ci-kit gate.
+# #316's hosted kit. The sequence groups (safari, chrome, firefox, native) run a sequence a model sends, then a
+# coordinate click placed in the screenshot taken before it, and read where each click landed and what a narrower
+# detector could have read at click time (ruling cb252e88's measure-first spike). The sweep-* groups are the still-page
+# gate (ruling 4701abd8): live coordinate clicks on unchanged pages and apps, frames included, with no key and no
+# navigation, which W and G must never refuse. Each job builds the engine at every head named in `heads`
+# (label=ref, comma-separated; one engine process alive at a time, the heads measured one after the other) and runs
+# scripts/probe-316/measure.mjs once per head. Runs only on a push to probe/316-measure (or by hand); not a ci-kit gate.
 name: probe-316
 on:
   push:
@@ -10,7 +13,11 @@ on:
   workflow_dispatch:
     inputs:
       groups:
-        description: the groups, a JSON list (safari, chrome, firefox, native)
+        description: the groups, a JSON list (safari, chrome, firefox, native, sweep-safari, sweep-chrome, sweep-firefox, sweep-native)
+        required: false
+        default: ''
+      heads:
+        description: the engine heads, label=ref comma-separated (empty for the push default)
         required: false
         default: ''
       reps:
@@ -23,45 +30,65 @@ on:
         default: ''
 permissions:
   contents: read
+env:
+  # Quoted: YAML reads an all-digit-and-e SHA as a float. main after #329.
+  P316_HEADS_DEFAULT: 'main=73b44561d82d80202fcfa056d862f70defffd993'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["safari", "chrome", "firefox", "native"]') }}
+        # A push runs the groups named here.
+        group: ${{ fromJSON(github.event.inputs.groups || '["sweep-safari", "sweep-chrome", "sweep-firefox", "sweep-native"]') }}
     runs-on: macos-latest
-    timeout-minutes: 150
+    timeout-minutes: 170
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Apps
         env:
           GROUP: ${{ matrix.group }}
         run: |
           case "$GROUP" in
-            chrome) bash scripts/probe-316/install.sh chrome ;;
-            firefox) bash scripts/probe-316/install.sh firefox ;;
+            chrome|sweep-chrome) bash scripts/probe-316/install.sh chrome ;;
+            firefox|sweep-firefox) bash scripts/probe-316/install.sh firefox ;;
             *) bash scripts/probe-316/install.sh ;;
           esac
           defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
           defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
-      - name: Build main's engine and the tool
+      - name: Build the engine heads and the tool
+        env:
+          HEADS: ${{ github.event.inputs.heads || env.P316_HEADS_DEFAULT }}
         run: |
           sw_vers
           git log -1 --format='kit %H %s'
           swiftc -O -o "$RUNNER_TEMP/tool316" scripts/probe-316/tool.swift
-          swift build -c release --package-path native/engine --scratch-path "$RUNNER_TEMP/eng"
+          for spec in ${HEADS//,/ }; do
+            label="${spec%%=*}"; ref="${spec#*=}"
+            git worktree add --detach "$RUNNER_TEMP/src-$label" "$ref"
+            git -C "$RUNNER_TEMP/src-$label" log -1 --format="$label %H %s"
+            swift build -c release --package-path "$RUNNER_TEMP/src-$label/native/engine" --scratch-path "$RUNNER_TEMP/eng-$label"
+          done
       - name: Measure
         env:
           GROUP: ${{ matrix.group }}
+          HEADS: ${{ github.event.inputs.heads || env.P316_HEADS_DEFAULT }}
           REPS: ${{ github.event.inputs.reps || '1' }}
           ONLY: ${{ github.event.inputs.only || '' }}
         run: |
           extra=()
           if [ -n "$ONLY" ]; then extra=(--only "$ONLY"); fi
-          node scripts/probe-316/measure.mjs --group "$GROUP" --engine "$RUNNER_TEMP/eng/release/cua-engine" --tool "$RUNNER_TEMP/tool316" \
-            --out "$RUNNER_TEMP/probe-316/$GROUP" --reps "$REPS" --budget 115 "${extra[@]}"
+          specs=(${HEADS//,/ })
+          budget=$(( 150 / ${#specs[@]} ))
+          for spec in "${specs[@]}"; do
+            label="${spec%%=*}"
+            echo "== $(date -u +%H:%M:%S) head $label"
+            P316_HEAD="$label" P316_ENGINE_REF="$(git -C "$RUNNER_TEMP/src-$label" rev-parse HEAD)" \
+              node scripts/probe-316/measure.mjs --group "$GROUP" --engine "$RUNNER_TEMP/eng-$label/release/cua-engine" --tool "$RUNNER_TEMP/tool316" \
+              --out "$RUNNER_TEMP/probe-316/$GROUP/$label" --reps "$REPS" --budget "$budget" "${extra[@]}"
+          done
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

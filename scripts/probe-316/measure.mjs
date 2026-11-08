@@ -60,7 +60,7 @@ if (q) q.addEventListener('input', () => { sugg.style.display = q.value ? 'block
 if ($('mb')) $('mb').addEventListener('click', () => { menu.style.display = menu.style.display === 'block' ? 'none' : 'block'; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (sugg) sugg.style.display = 'none'; if (menu) menu.style.display = 'none'; } });
 document.addEventListener('click', e => { if (menu && e.target.id !== 'mb' && !menu.contains(e.target)) menu.style.display = 'none'; });
-const run = c => { if (c === 'reload') location.replace('/'); if (c === 'state') send('state', {active: idOf(document.activeElement), hash: location.hash}); };
+const run = c => { if (c === 'reload') location.replace('/'); if (c.startsWith('goto:')) location.replace(c.slice(5)); if (c === 'state') send('state', {active: idOf(document.activeElement), hash: location.hash}); };
 (async () => { for (;;) { try { const r = await fetch('/cmd?load=' + load, {cache: 'no-store'}); const j = await r.json(); if (j.cmd) run(j.cmd); } catch (e) { await new Promise(r => setTimeout(r, 500)); } } })();
 addEventListener('load', () => send('ready', {}));
 })();</script>`;
@@ -79,12 +79,35 @@ const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset=
 <div class="a" style="top:244px"><a id="l1" href="#one">Link one</a> &nbsp; <a id="l2" href="#two">Link two</a></div>
 <textarea id="notes" class="a" aria-label="Notes" style="top:290px;width:420px;height:150px"></textarea>
 </div>${SCRIPT}</body></html>`;
+// #316's still-page gate: frames. Each frame beacons its events (its tag and the nearest id) to its own origin's
+// server, which shares the probe's event list; frames never poll for commands.
+const FRAME_SCRIPT = `<script>(() => { const tag = new URLSearchParams(location.search).get('tag') || 'frame';
+const send = (type, extra) => navigator.sendBeacon('/ev', JSON.stringify({frame: tag, path: location.pathname, type, t: Date.now(), ...extra}));
+const idOf = t => { const e = t && t.closest ? t.closest('[id]') : null; return e ? e.id : (t && t.tagName) || null; };
+for (const k of ['pointerdown', 'mousedown', 'click', 'focusin', 'change']) document.addEventListener(k, e => send(k, {id: idOf(e.target), trusted: e.isTrusted}), true);
+addEventListener('load', () => send('fready', {})); })();</script>`;
+const frameRow = tag => `<span>${tag} frame</span> <input id="${tag}-field" aria-label="${tag} field" size="10"> <button id="${tag}-button" type="button">${tag} button</button> <label id="${tag}-checkl"><input type="checkbox" id="${tag}-check" aria-label="${tag} check"> ${tag} check</label> <a id="${tag}-link" href="#${tag}">${tag} link</a>`;
+const frameDoc = tag => `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><title>${tag} frame</title><style>body{font:14px -apple-system,Helvetica,sans-serif;margin:6px;background:#eef4ff}</style></head><body id="${tag}-body">${frameRow(tag)}${FRAME_SCRIPT}</body></html>`;
+const nestDoc = tag => `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><title>${tag} frame</title><style>body{font:14px -apple-system,Helvetica,sans-serif;margin:6px;background:#fff4e8}</style></head><body id="${tag}-body"><span>${tag} frame</span> <button id="${tag}-button" type="button">${tag} button</button> <a id="${tag}-link" href="#${tag}">${tag} link</a><br><iframe title="Deep frame" src="${ORIGIN_B}/frame?tag=Deep" style="margin-top:6px;width:520px;height:56px;border:1px solid #888"></iframe>${FRAME_SCRIPT}</body></html>`;
+const framesPage = () => `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe316 frames</title>
+<style>body{font:15px -apple-system,Helvetica,sans-serif;margin:8px} iframe{display:block;margin-top:8px;width:570px;border:1px solid #888}</style></head>
+<body id="ftop"><div id="Top-row">${frameRow('Top')}</div>
+<iframe id="fsame" title="Same frame" src="/frame?tag=Same" style="height:46px"></iframe>
+<iframe id="fcross" title="Cross frame" src="${ORIGIN_B}/frame?tag=Cross" style="height:46px"></iframe>
+<iframe id="fnest" title="Nested frame" src="/nest?tag=Mid" style="height:110px"></iframe>
+<div id="Bottom-row" style="margin-top:8px"><button id="Bottom-button" type="button">Bottom button</button> <a id="Bottom-link" href="#bottom">Bottom link</a> <input id="Bottom-field" aria-label="Bottom field" size="10"></div>${SCRIPT}</body></html>`;
 const RESULTS = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>probe316 results</title><style>body{font:15px -apple-system,Helvetica,sans-serif;margin:16px}</style></head>
 <body id="results"><h3>Results</h3>${Array.from({length: 8}, (_, i) => `<p><a id="r${i + 1}" href="#r">Result ${i + 1}</a></p>`).join('')}${SCRIPT}</body></html>`;
 
 const events = [];
 let pollers = [], queued = null;
-const server = createServer((req, res) => {
+function serve(req, res) {
+  if (req.method === 'GET' && /^\/(frames|frame|nest)(\?|$)/.test(req.url)) {
+    const tag = new URL(req.url, 'http://x').searchParams.get('tag') ?? 'Frame';
+    res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'});
+    res.end(req.url.startsWith('/frames') ? framesPage() : req.url.startsWith('/nest') ? nestDoc(tag) : frameDoc(tag));
+    return;
+  }
   if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?') || req.url.startsWith('/results'))) {
     res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'});
     res.end(req.url.startsWith('/results') ? RESULTS : PAGE);
@@ -103,9 +126,12 @@ const server = createServer((req, res) => {
     if (req.url === '/ev') { try { events.push({...JSON.parse(body), at: Date.now()}); } catch {} }
     res.writeHead(204); res.end();
   });
-});
+}
+const server = createServer(serve), serverB = createServer(serve);
 await new Promise(r => server.listen(0, '127.0.0.1', r));
+await new Promise(r => serverB.listen(0, '::', r));  // dual-stack: localhost may resolve to ::1 first
 const URL_ = `http://127.0.0.1:${server.address().port}/`;
+const ORIGIN_B = `http://localhost:${serverB.address().port}`;
 const sendCmd = c => {
   const live = pollers; pollers = [];
   if (!live.length) { queued = c; return; }
@@ -217,7 +243,7 @@ function candidateRefuses(steps) {
 }
 
 const results = [];
-const config = {group: GROUP, reps: REPS, macOS: sh('sw_vers', []).out.replace(/\s+/g, ' '), commit: process.env.GITHUB_SHA ?? null,
+const config = {group: GROUP, head: process.env.P316_HEAD ?? 'main', engineRef: process.env.P316_ENGINE_REF ?? null, reps: REPS, macOS: sh('sw_vers', []).out.replace(/\s+/g, ' '), commit: process.env.GITHUB_SHA ?? null,
   image: process.env.ImageVersion ?? null, display: osa('tell application "Finder" to get bounds of window of desktop').out, stepMs: STEP_MS};
 const save = () => writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, results}, null, 1));
 const overBudget = () => Date.now() - STARTED > BUDGET_MS;
@@ -651,6 +677,255 @@ async function runFinder() {
   osa('tell application "Finder" to close every Finder window');
 }
 
+// ---- #316's still-page gate (ruling 4701abd8) -------------------------------------------------------------------------
+// Live coordinate clicks on unchanged pages and apps, with no key and no navigation before them: each after a re-set and
+// a fresh observation, at a control's centre and 2 pt inside one edge (rotating), #305's sweep pattern (about 20
+// controls per scene chosen from the observed tree by role); and the frames page's labelled controls: the page around
+// the frames, a same-origin frame, a cross-site frame (another port on another host name), and a cross-site frame
+// nested in a same-origin one. Each click records the engine's answer (the A/B scores its real refusals) and the
+// emulated W (a layer-0 window of the app above the target window that the list at the screenshot lacked) and G (the
+// hit outside the web area the screenshot's hit lay in: nearest-web-area equality, and the ancestor reading).
+const BUCKETS = [
+  ['field', ['AXTextField', 'AXSearchField', 'AXComboBox', 'AXTextArea'], 3],
+  ['toggle', ['AXCheckBox', 'AXRadioButton', 'AXTab', 'AXSwitch'], 3],
+  ['row', ['AXRow', 'AXCell', 'AXOutlineRow'], 4],
+  ['button', ['AXButton', 'AXDisclosureTriangle', 'AXIncrementor', 'AXSegmentedControl'], 5],
+  ['menu', ['AXPopUpButton', 'AXMenuButton'], 2],
+  ['link', ['AXLink'], 5],
+];
+// Controls that would end the scene or leave the machine (#305's list).
+const SKIP = /close|minimi|zoom|full ?screen|quit|delete|trash|sign|log ?(in|out)|account|download|print|install|extension|profile|donat|buy|subscribe|share|eject|new (tab|window)|private|airdrop|translat/i;
+const SKIP_SUBROLES = new Set(['AXCloseButton', 'AXMinimizeButton', 'AXZoomButton', 'AXFullScreenButton']);
+const lbl = n => `${n.title ?? ''} ${n.description ?? ''} ${n.help ?? ''} ${n.identifier ?? ''}`;
+function sweepPicks(sky, max = 20) {
+  const wf = sky.window.frame;
+  const vis = n => n.frame && n.frame.width >= 10 && n.frame.height >= 10 && n.frame.x >= wf.x && n.frame.y >= wf.y
+    && n.frame.x + n.frame.width <= wf.x + wf.width && n.frame.y + n.frame.height <= wf.y + wf.height;
+  const out = [];
+  for (const [bucket, roles, quota] of BUCKETS) {
+    const cands = sky.nodes.filter(n => roles.includes(n.role) && n.flags?.enabled !== false && !SKIP.test(lbl(n)) && !SKIP_SUBROLES.has(n.subrole) && vis(n))
+      .map(n => ({bucket, role: n.role, title: n.title ?? null, description: n.description ?? null, frame: n.frame}))
+      .sort((a, b) => a.frame.y - b.frame.y || a.frame.x - b.frame.x);
+    const q = Math.min(quota, cands.length);
+    for (let i = 0; i < q; i++) out.push(cands[Math.floor((i + 0.5) * cands.length / q)]);
+  }
+  return out.slice(0, max);
+}
+/// The control again in a fresh observation (#305's refind): by role and label and a frame within 4 pt, else by role and
+/// frame within 2 pt, else the nearest of its role and label, else the nearest of its role within 40 pt.
+function refind(sky, p) {
+  const near = (a, b, t) => a && b && Math.abs(a.x - b.x) <= t && Math.abs(a.y - b.y) <= t && Math.abs(a.width - b.width) <= t && Math.abs(a.height - b.height) <= t;
+  const dist = n => Math.abs(n.frame.x - p.frame.x) + Math.abs(n.frame.y - p.frame.y);
+  const nearest = ns => ns.filter(n => n.frame).sort((a, b) => dist(a) - dist(b))[0];
+  const same = n => (n.title ?? null) === p.title && (n.description ?? null) === p.description;
+  return sky.nodes.find(n => n.role === p.role && same(n) && near(n.frame, p.frame, 4))
+    ?? sky.nodes.find(n => n.role === p.role && near(n.frame, p.frame, 2))
+    ?? ((p.title || p.description) ? nearest(sky.nodes.filter(n => n.role === p.role && same(n))) : null)
+    ?? nearest(sky.nodes.filter(n => n.role === p.role && n.frame && dist(n) <= 40));
+}
+const EDGES = ['top', 'right', 'bottom', 'left'];
+const edgePoint = (s, edge) => edge === 'top' ? {x: s.x + s.width / 2, y: s.y + 2} : edge === 'bottom' ? {x: s.x + s.width / 2, y: s.y + s.height - 2}
+  : edge === 'left' ? {x: s.x + 2, y: s.y + s.height / 2} : {x: s.x + s.width - 2, y: s.y + s.height / 2};
+const emuW = r => { const had = new Set((r.atShot?.appWindowsCG ?? []).map(w => w.n)); return (r.signals?.sameAppAbove ?? []).some(w => w.layer === 0 && !had.has(w.n)); };
+const emuG = r => { const h = r.signals?.hit; return Boolean(h?.shotHadArea && (h.inWebArea === false || h.sameWebAreaAsShot === false)); };
+const emuGanc = r => { const h = r.signals?.hit; return Boolean(h?.shotHadArea && (h.inWebArea === false || h.shotAreaInChain === false)); };
+
+/// One still click: a fresh connection and observation, the point `place(sky)` answers, the signals at the screenshot
+/// and at the click, the click, and the page's events after it.
+async function stillCell(meta, pid, mode, place) {
+  const row = {part: 'still', head: config.head, ...meta};
+  row.label = `${meta.app}-${meta.scene}-${meta.cell}-${meta.at}-${meta.rep}`.replace(/[^a-z0-9:-]+/gi, '_');
+  results.push(row);
+  let w;
+  try {
+    w = await connect(mode);
+    const sky = await observe(w, pid, row.label);
+    const found = place(sky);
+    if (!found) { row.problem = 'not in the observation'; row.seen = sky.nodes.filter(n => /AX(Button|CheckBox|Link|TextField|WebArea)/.test(n.role)).map(n => `${n.role}:${(n.title || n.description || '').slice(0, 30)}`).slice(0, 60); return; }
+    row.node = {role: found.node.role, title: found.node.title ?? null, description: found.node.description ?? null, frame: found.node.frame};
+    const {px, screen} = toPixels(sky, found.point);
+    row.point = {px, screen};
+    const f = sky.window.frame, win = [f.x, f.y, f.width, f.height];
+    row.atShot = await ask({op: 'signals', pid, remember: true, ...screen, window: win});
+    await sleep(500);
+    row.signals = await ask({op: 'signals', pid, compare: true, ...screen, window: win});
+    const mark = events.length;
+    const r = await w.execute('click', {pid, x: px.x, y: px.y});
+    row.click = brief(r);
+    await sleep(900);
+    row.events = events.slice(mark).filter(e => !['ready', 'fready', 'state', 'keydown'].includes(e.type)).map(e => `${e.frame ?? 'top'}:${e.type}:${e.id}`).slice(0, 12);
+    if (meta.expect) row.landed = row.events.some(e => meta.expect.some(id => e.endsWith(`:${id}`) && /:(click|focusin|change):/.test(e)));
+    row.W = emuW(row); row.G = emuG(row); row.Ganc = emuGanc(row);
+  } catch (e) { row.exception = String(e?.stack || e).slice(0, 1500); }
+  finally {
+    w?.close(); save();
+    const sp = row.click?.stalePoint;
+    log(`${row.label}: ${row.problem ?? row.exception?.split('\n')[0] ?? `${row.click?.error ?? 'ok'} ${sp ? `${sp.verdict}/${sp.reason} rec=${sp.recordedRole} hit=${sp.hitRole}` : ''} W=${row.W} G=${row.G} Ganc=${row.Ganc} areas=${row.signals?.hit?.webAreas} landed=${row.landed ?? '-'} ev=${JSON.stringify(row.events?.slice(0, 4))}`}`);
+  }
+}
+
+/// A browser kept at a scene's URL: re-set by Escape (the engine's), the local page's own long-poll (to the scene's
+/// path) or, on an outside page whose title or window count changed, a fresh launch; the web area's focus written.
+async function stillHarness(kind) {
+  const profileRoot = join(process.env.RUNNER_TEMP ?? OUT, `p316s-${kind}`);
+  let b = null, launches = 0, current = null, expected = null;
+  const winState = () => ({title: osa(`tell application "System Events" to get name of window 1 of (first process whose unix id is ${b.pid})`).out,
+    windows: osa(`tell application "System Events" to count windows of (first process whose unix id is ${b.pid})`).out});
+  const local = url => url.startsWith(URL_);
+  const relaunch = async url => {
+    if (b && b.exitCode === null) { b.kill('SIGTERM'); for (let i = 0; i < 20 && b.exitCode === null; i++) await sleep(250); if (b.exitCode === null) b.kill('SIGKILL'); await sleep(1000); }
+    launches++;
+    const prev = lastLoad();
+    b = await launch(kind, url, join(profileRoot, String(launches)), WIN);
+    if (local(url)) { if (!(await newLoad(prev, 30_000))) throw new Error(`${kind} did not load ${url}`); } else await sleep(9000);
+    if (kind === 'cft' || kind === 'stable') { const left = b.launchedAt + 22_000 - Date.now(); if (left > 0) await sleep(left); }
+    placePid(b.pid, WIN);
+    await sleep(1500);
+    const w = await connect('shared');
+    for (let i = 0; i < 2; i++) { await observe(w, b.pid, `${kind}-still-warm-${launches}-${i}`).catch(() => {}); await sleep(1200); }
+    w.close();
+    current = url; expected = winState();
+  };
+  const reset = async url => {
+    const notes = [];
+    if (!b || b.exitCode !== null || current !== url) { await relaunch(url); notes.push('launched'); }
+    else {
+      try { const w = await connect('shared'); for (let i = 0; i < 2; i++) { await w.execute('press_key', {pid: b.pid, key: 'Escape'}); await sleep(250); } w.close(); } catch (e) { notes.push('escape failed'); }
+      if (local(url)) {
+        const prev = lastLoad();
+        sendCmd(`goto:${new URL(url).pathname}`);
+        if (!(await newLoad(prev))) { notes.push('no reload: relaunch'); await relaunch(url); }
+      } else {
+        const st = winState();
+        if (st.title !== expected.title || st.windows !== expected.windows) { notes.push(`changed (${st.title.slice(0, 40)}/${st.windows}): relaunch`); await relaunch(url); }
+      }
+    }
+    await ask({op: 'focusweb', pid: b.pid});
+    placePid(b.pid, WIN);
+    setFront(b.pid);
+    await sleep(700);
+    const s = await ask({op: 'signals', pid: b.pid, x: WIN.x + 300, y: WIN.y + 400, window: [WIN.x, WIN.y, WIN.w, WIN.h]});
+    const f = s.focused;
+    if (f && !f.inWebArea && !f.isWebArea && ['AXTextField', 'AXComboBox', 'AXSearchField'].includes(f.role)) {
+      notes.push(`focus left on ${f.role}: relaunch`);
+      await relaunch(url); setFront(b.pid); await sleep(700);
+    }
+    return notes;
+  };
+  return {pid: () => b.pid, reset, close: async () => { if (b && b.exitCode === null) { b.kill('SIGTERM'); await sleep(1500); } }};
+}
+
+const FRAME_CELLS = [['Top', ['field', 'button', 'check', 'link']], ['Same', ['field', 'button', 'check', 'link']], ['Cross', ['field', 'button', 'check', 'link']],
+  ['Mid', ['button', 'link']], ['Deep', ['field', 'button', 'check', 'link']], ['Bottom', ['button', 'link', 'field']]];
+const CONTROL_ROLES = {field: ['AXTextField'], button: ['AXButton'], check: ['AXCheckBox'], link: ['AXLink']};
+const FRAME_KIND = {Top: 'page', Bottom: 'page', Same: 'same-origin', Cross: 'cross-site', Mid: 'same-origin (holds Deep)', Deep: 'cross-site nested in same-origin'};
+
+async function stillBrowser(kind) {
+  config[`${kind}Version`] = version(kind);
+  const h = await stillHarness(kind);
+  const scenes = [['frames', `${URL_}frames`], ['page', URL_], ['wiki', 'https://en.wikipedia.org/wiki/Hacker_News']];
+  for (let rep = 1; rep <= REPS; rep++) for (const [scene, url] of scenes) {
+    if (scene === 'frames') {
+      let k = 0;
+      for (const [where, controls] of FRAME_CELLS) for (const control of controls) for (const at of ['centre', EDGES[k++ % 4]]) {
+        if (overBudget()) { config.budgetStop = true; save(); return; }
+        const notes = await h.reset(url);
+        await stillCell({app: kind, scene, cell: `${where}/${control}`, frame: where, frameKind: FRAME_KIND[where], at, rep, reset: notes,
+          expect: control === 'check' ? [`${where}-check`, `${where}-checkl`] : [`${where}-${control}`]}, h.pid(), 'shared', sky => {
+          const n = findNode(sky, CONTROL_ROLES[control], `${where} ${control}`);
+          return n ? {node: n, point: at === 'centre' ? centre(n) : edgePoint(n.frame, at)} : null;
+        });
+      }
+      continue;
+    }
+    await h.reset(url);
+    const w = await connect('shared');
+    const sky = await observe(w, h.pid(), `${kind}-${scene}-pick-${rep}`);
+    w.close();
+    const picks = sweepPicks(sky);
+    config[`picks-${kind}-${scene}`] = picks.map(p => `${p.bucket}:${p.role}:${(p.title ?? p.description ?? '').slice(0, 24)}`);
+    let k = 0;
+    for (const p of picks) {
+      const edge = EDGES[k++ % 4];
+      for (const at of ['centre', edge]) {
+        if (overBudget()) { config.budgetStop = true; save(); return; }
+        const notes = await h.reset(url);
+        await stillCell({app: kind, scene, cell: `${p.bucket}:${p.role}:${(p.title ?? p.description ?? '').slice(0, 30)}`, at, rep, reset: notes}, h.pid(), 'shared', s2 => {
+          const n = refind(s2, p);
+          return n ? {node: n, point: at === 'centre' ? centre(n) : edgePoint(n.frame, at)} : null;
+        });
+      }
+    }
+  }
+  await h.close();
+}
+
+/// A native app's still sweep: the picks from one observation, each click after `reset` and a fresh observation.
+async function stillNative(app, pid, reset) {
+  await reset();
+  const w = await connect('shared');
+  const sky = await observe(w, pid(), `${app}-still-pick`);
+  w.close();
+  const picks = sweepPicks(sky);
+  config[`picks-${app}`] = picks.map(p => `${p.bucket}:${p.role}:${(p.title ?? p.description ?? '').slice(0, 24)}`);
+  for (let rep = 1; rep <= REPS; rep++) {
+    let k = 0;
+    for (const p of picks) {
+      const edge = EDGES[k++ % 4];
+      for (const at of ['centre', edge]) {
+        if (overBudget()) { config.budgetStop = true; save(); return; }
+        const notes = await reset();
+        await stillCell({app, scene: 'app', cell: `${p.bucket}:${p.role}:${(p.title ?? p.description ?? '').slice(0, 30)}`, at, rep, reset: notes}, pid(), 'shared', s2 => {
+          const n = refind(s2, p);
+          return n ? {node: n, point: at === 'centre' ? centre(n) : edgePoint(n.frame, at)} : null;
+        });
+      }
+    }
+  }
+}
+async function escapeTwice(pid) {
+  if (!pid) return;
+  try { const w = await connect('shared'); for (let i = 0; i < 2; i++) { await w.execute('press_key', {pid, key: 'Escape'}); await sleep(250); } w.close(); } catch {}
+}
+async function stillTextEdit() {
+  const file = join(OUT, 'p316-still.rtf');
+  writeFileSync(file, `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Helvetica;}}\\f0\\fs28\n${TE_LINES.map(l => `${l}\\par`).join('\n')}\n}`);
+  const pid = () => pidOf('TextEdit');
+  await stillNative('textedit', pid, async () => {
+    await escapeTwice(pid());
+    osa('tell application "TextEdit" to close every document saving no');
+    await sleep(500);
+    sh('open', ['-a', 'TextEdit', file]);
+    for (let i = 0; i < 30; i++) { await sleep(300); if (osa('tell application "System Events" to count windows of process "TextEdit"').out === '1') break; }
+    osa(`tell application "System Events" to tell process "TextEdit" to set position of window 1 to {${WIN.x}, ${WIN.y}}`);
+    osa(`tell application "System Events" to tell process "TextEdit" to set size of window 1 to {${WIN.w}, ${WIN.h}}`);
+    setFront(pid());
+    await sleep(900);
+    return [];
+  });
+  osa('tell application "TextEdit" to close every document saving no');
+}
+async function stillFinder() {
+  const folder = join(process.env.RUNNER_TEMP ?? OUT, 'p316s');
+  mkdirSync(folder, {recursive: true});
+  for (const f of FILES) writeFileSync(join(folder, f), `${f}\n`);
+  const pid = () => pidOf('Finder');
+  await stillNative('finder', pid, async () => {
+    await escapeTwice(pid());
+    for (const f of readdirSync(folder)) if (!FILES.includes(f)) rmSync(join(folder, f), {force: true, recursive: true});
+    osa('tell application "Finder" to close every Finder window');
+    await sleep(500);
+    sh('open', [folder]);
+    for (let i = 0; i < 20; i++) { await sleep(300); if (osa('tell application "Finder" to get name of front Finder window').out === 'p316s') break; }
+    osa('tell application "Finder" to set current view of front Finder window to list view');
+    osa(`tell application "Finder" to set bounds of front Finder window to {${WIN.x}, ${WIN.y}, ${WIN.x + WIN.w}, ${WIN.y + WIN.h}}`);
+    setFront(pid());
+    await sleep(1200);
+    return [];
+  });
+  osa('tell application "Finder" to close every Finder window');
+}
+
 mkdirSync(join(OUT, 'screens'), {recursive: true});
 log('config', JSON.stringify(config));
 try {
@@ -658,11 +933,15 @@ try {
   else if (GROUP === 'chrome') { await runBrowser('cft'); await runBrowser('stable'); }
   else if (GROUP === 'firefox') await runBrowser('firefox');
   else if (GROUP === 'native') { await runTextEdit(); await runFinder(); }
+  else if (GROUP === 'sweep-safari') await stillBrowser('safari');
+  else if (GROUP === 'sweep-chrome') { await stillBrowser('cft'); await stillBrowser('stable'); }
+  else if (GROUP === 'sweep-firefox') await stillBrowser('firefox');
+  else if (GROUP === 'sweep-native') { await stillTextEdit(); await stillFinder(); }
   else throw new Error(`unknown group ${GROUP}`);
 } catch (e) { config.exception = String(e?.stack || e).slice(0, 2000); log('EXCEPTION', config.exception); }
 config.engineStderr = engineErr.slice(-4000);
 config.minutes = Math.round((Date.now() - STARTED) / 600) / 100;
 save();
 engine?.kill('SIGKILL');
-tool.stdin.end(); server.close();
+tool.stdin.end(); server.close(); serverB.close();
 process.exit(0);

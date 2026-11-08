@@ -173,7 +173,12 @@ func signals(_ q: [String: Any]) -> [String: Any] {
     if (q["compare"] as? Bool) == true {
       if let old = rememberedArea[pid] ?? nil, let area { d["sameWebAreaAsShot"] = CFEqual(old, area); d["shotAreaFrame"] = wire(frameOf(old)) }
       else { d["sameWebAreaAsShot"] = NSNull() }
+      // The ancestor reading (the build's G with a recorded outer web area): the screenshot's web area anywhere among
+      // the hit's ancestors.
+      if let old = rememberedArea[pid] ?? nil { d["shotAreaInChain"] = c.contains { CFEqual($0, old) } }
+      d["shotHadArea"] = (rememberedArea[pid] ?? nil) != nil
     }
+    d["webAreas"] = c.filter { role($0) == "AXWebArea" }.count
     out["hit"] = d
   } else { out["hit"] = NSNull() }
   let system = prepare(AXUIElementCreateSystemWide())

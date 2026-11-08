@@ -1,7 +1,7 @@
 # #321's A/B offline: per head (A, B: the artifact's first directory) and cell, over every results.json under the run
 # directories given: delivery, the watch's raises inside the hold and after it (visible), front app and key window held;
 # the delivery record's transientRaise (seen, ms, outlivedHold), screenHoldMs, capped, guardMs, activationClickKind and the
-# click's answer latency; transientRaise read against the watch; and every guard above 200 ms with its record.
+# click's answer latency; transientRaise read against the watch; and every guard above 250 ms with its record.
 #   python3 -I ab.py <run dir>...
 import json
 import os
@@ -128,7 +128,7 @@ for top in sys.argv[1:]:
                     s['tr'].append(tr)
                     if j:
                         s['truth'].append((tr.get('seen'), j['inGuard'], tr.get('outlivedHold'), j['after'], label))
-                if (dl.get('guardMs') or 0) > 200:
+                if (dl.get('guardMs') or 0) > 250:
                     outliers.append((head, app, cell, label, dl, j and {k: j[k] for k in ('inside', 'after', 'samples')}))
                 if j and j['after']:
                     fv = j['firstVisible']
@@ -172,6 +172,6 @@ for key in sorted(cells):
     if s['fails']:
         print(f"    fails {s['fails'][:6]}")
 
-print('\nguards above 200 ms:')
+print('\nguards above 250 ms:')
 for o in outliers:
     print(f"  {o[0]} {o[1]} {o[2]} {o[3]}: {json.dumps(o[4], sort_keys=True)} watch {o[5]}")

@@ -145,22 +145,20 @@ final class ScrollConfirmTests: XCTestCase {
     XCTAssertEqual(record.outcome, .unconfirmed)
   }
 
-  func testUnmovedAtTheEndIsSuccessWithAtEnd() throws {
+  /// The bar at its end before the wheel: success at once, the wheel posted, nothing polled, nothing written.
+  func testAtTheEndBeforeTheWheelIsAnsweredAtOnce() throws {
     let scene = ScrollScene(offset: 800, barSettable: true)
-    let record = try confirmScroll(hit: scene.row(at: 200), direction: .down, delta: 120, ax: scene.ax.ops, post: {})
+    var posted = 0
+    let record = try confirmScroll(hit: scene.row(at: 200), direction: .down, delta: 120, ax: scene.ax.ops, post: { posted += 1 })
     XCTAssertEqual(record.outcome, .atEnd)
     XCTAssertEqual(record.wire["atEnd"] as? Bool, true)
+    XCTAssertEqual(record.wire["endBefore"] as? Bool, true)
     XCTAssertEqual(try scrollAnswer(record, direction: .down, app: "Fake"),
-                   "Nothing moved: what is at that point in Fake is already scrolled as far down as it goes.")
-    XCTAssertGreaterThanOrEqual(scene.ax.clock, scrollConfirmWindowMs, "the end is told only after the whole window")
-  }
-
-  /// The end must read before and after: a bar that left its end while nothing moved is not the end's answer.
-  func testTheEndMustReadBeforeAndAfter() throws {
-    let scene = ScrollScene(offset: 800)
-    let record = try confirmScroll(hit: scene.row(at: 200), direction: .down, delta: 120, ax: scene.ax.ops,
-                                   post: { scene.ax.values[5]?[kAXValueAttribute] = NSNumber(value: 0.9) })
-    XCTAssertEqual(record.outcome, .unconfirmed)
+                   "What is at that point in Fake is already scrolled as far down as it goes.")
+    XCTAssertEqual(posted, 1, "the wheel still goes, so an outer scroller can take it")
+    XCTAssertEqual(record.polls, 0)
+    XCTAssertEqual(scene.ax.clock, 0, "no wait")
+    XCTAssertTrue(scene.ax.writes.isEmpty)
   }
 
   /// The in-flight intervention check runs before the fallback's write: a user event then stops the scroll, nothing
@@ -233,8 +231,8 @@ final class ScrollConfirmTests: XCTestCase {
   /// The poll reads every interval until the window closes: a move that first shows late inside it is seen; one that
   /// shows only after it is not.
   func testAMoveThatFirstAppearsLateInsideTheWindowIsSeen() throws {
-    // Literal times, so the window's 300 ms is pinned: a shorter window misses 260, a longer one sees 340.
-    for (late, seen) in [(260.0, true), (340.0, false)] {
+    // Literal times, so the window's 800 ms is pinned: a shorter window misses 760, a longer one sees 840.
+    for (late, seen) in [(760.0, true), (840.0, false)] {
       let scene = ScrollScene(offset: 200)
       var ops = scene.ax.ops
       var postedAt: Double?
@@ -246,7 +244,7 @@ final class ScrollConfirmTests: XCTestCase {
       XCTAssertEqual(record.outcome, seen ? .moved : .unconfirmed, "a move first at \(late) ms")
       if seen {
         XCTAssertGreaterThanOrEqual(record.firstMoveMs ?? 0, late)
-        XCTAssertLessThan(record.firstMoveMs ?? .infinity, 300 + scrollConfirmIntervalMs)
+        XCTAssertLessThan(record.firstMoveMs ?? .infinity, 800 + scrollConfirmIntervalMs)
       }
     }
   }
@@ -312,23 +310,119 @@ final class ScrollConfirmTests: XCTestCase {
     XCTAssertNil(scrollGeometry(el(2), kind: .scrollArea, hit: nil, horizontal: false, ax: scene.ax.ops).scrollableLength)
   }
 
-  func testTheContainerIsTheNearestScrollAreaElseAPageScrollerOrAWebArea() {
+  /// The nearest boundary of any kind, in one walk: a page scroller below a web area below a scroll area is the page
+  /// scroller; a page's own web area defers to the scroll area around it; a web area with none around it is its own.
+  func testTheContainerIsTheNearestBoundaryOfAnyKind() {
     let ax = FakeAX()
     ax.roles = [1: kAXWindowRole, 2: kAXScrollAreaRole, 3: "AXWebArea", 4: kAXGroupRole, 5: kAXStaticTextRole]
     ax.parents = [2: 1, 3: 2, 4: 3, 5: 4]
     ax.actions = [4: ["AXScrollDownByPage"]]
-    XCTAssertTrue(scrollContainer(of: el(5), ax: ax.ops).map { FakeAX.id($0.element) == 2 && $0.kind == .scrollArea } ?? false,
-                  "the scroll area above, past a page scroller and a web area")
-    ax.roles[2] = kAXGroupRole
-    XCTAssertTrue(scrollContainer(of: el(5), ax: ax.ops).map { FakeAX.id($0.element) == 4 && $0.kind == .pageScroller } ?? false)
+    func container() -> String? { scrollContainer(of: el(5), ax: ax.ops).map { "\(FakeAX.id($0.element)) \($0.kind.rawValue)" } }
+    XCTAssertEqual(container(), "4 pageScroller", "the nearer page scroller, not the scroll area above it")
+    ax.actions = [4: ["AXScrollRightByPage"]]
+    XCTAssertEqual(container(), "4 pageScroller", "any page scroll action")
     ax.actions = [:]
-    XCTAssertTrue(scrollContainer(of: el(5), ax: ax.ops).map { FakeAX.id($0.element) == 3 && $0.kind == .webArea } ?? false)
+    XCTAssertEqual(container(), "2 scrollArea", "a page's own web area defers to its scroll area, which holds the bar")
+    ax.actions = [3: ["AXScrollDownByPage"]]
+    XCTAssertEqual(container(), "2 scrollArea", "even when the page's web area advertises the page scroll")
+    ax.actions = [:]
+    ax.roles[2] = kAXGroupRole
+    XCTAssertEqual(container(), "3 webArea", "a web area with no scroll area around it (an iframe's document)")
     ax.roles[3] = kAXGroupRole
-    XCTAssertNil(scrollContainer(of: el(5), ax: ax.ops))
+    XCTAssertNil(container())
     ax.roles[0] = kAXScrollAreaRole; ax.parents[1] = 0  // something above the window answering a scroll area
-    XCTAssertNil(scrollContainer(of: el(5), ax: ax.ops), "the walk stops at the window")
+    XCTAssertNil(container(), "the walk stops at the window")
     ax.roles[5] = kAXScrollAreaRole
-    XCTAssertTrue(scrollContainer(of: el(5), ax: ax.ops).map { FakeAX.id($0.element) == 5 } ?? false, "the hit itself")
+    XCTAssertEqual(container(), "5 scrollArea", "the hit itself")
+  }
+
+  /// #328's review, P1: a page-scrolling group under the point, inside the outer scroll area whose bar is settable and
+  /// not at its end. The group is the container: at its own end the scroll answers atEnd, and without a bar of its own
+  /// there is no fallback; the outer bar is never written. An iframe's web area inside the page is the same.
+  func testANestedScrollerIsItsOwnContainerAndTheOuterBarIsNeverWritten() throws {
+    let scene = ScrollScene(offset: 200, barSettable: true)
+    let ax = scene.ax
+    ax.roles[70] = kAXGroupRole; ax.roles[71] = kAXScrollBarRole; ax.roles[72] = kAXStaticTextRole
+    ax.parents[70] = 3; ax.parents[71] = 70; ax.parents[72] = 70
+    ax.children[70] = [72, 71]
+    ax.actions[70] = ["AXScrollDownByPage", "AXScrollUpByPage"]
+    ax.frames[70] = CGRect(x: 0, y: 150, width: 390, height: 100); ax.frames[72] = CGRect(x: 0, y: 160, width: 100, height: 20)
+    ax.values[70] = [kAXVerticalScrollBarAttribute: el(71)]
+    ax.values[71] = [kAXValueAttribute: NSNumber(value: 1.0)]
+    ax.settable[71] = [kAXValueAttribute]
+    let atEnd = try confirmScroll(hit: el(72), direction: .down, delta: 120, ax: ax.ops, post: {})
+    XCTAssertEqual(atEnd.container, .pageScroller)
+    XCTAssertEqual(atEnd.outcome, .atEnd, "the group's own bar at its end")
+    XCTAssertTrue(ax.writes.isEmpty)
+    XCTAssertEqual(scene.offset, 200, "the outer content never moved")
+    ax.values[70] = [:]
+    let barless = try confirmScroll(hit: el(72), direction: .down, delta: 120, ax: ax.ops, post: {})
+    XCTAssertEqual(barless.outcome, .unconfirmed, "no bar of its own: no fallback")
+    XCTAssertTrue(ax.writes.isEmpty)
+    ax.roles[70] = "AXWebArea"; ax.actions[70] = []
+    let frame = try confirmScroll(hit: el(72), direction: .down, delta: 120, ax: ax.ops, post: {})
+    XCTAssertEqual(frame.container, .webArea, "an iframe's document under a list, not its page's scroll area")
+    XCTAssertEqual(frame.outcome, .unconfirmed)
+    XCTAssertTrue(ax.writes.isEmpty)
+  }
+
+  /// Gate (c): the fallback writes only the bar of the hit's nearest scroller. A page-scrolling group with a settable
+  /// bar of its own under the point: its bar is written, never the outer one. A plain group that clips the hit (an
+  /// unexposed nested scroller): nothing is written though the outer bar is settable. Web content: nothing either.
+  func testTheFallbackWritesOnlyTheNearestScrollersOwnBar() throws {
+    let scene = ScrollScene(offset: 200, barSettable: true)
+    let ax = scene.ax
+    ax.roles[70] = kAXGroupRole; ax.roles[71] = kAXScrollBarRole; ax.roles[72] = kAXStaticTextRole
+    ax.parents[70] = 3; ax.parents[71] = 70; ax.parents[72] = 70
+    ax.children[70] = [72, 71]
+    ax.actions[70] = ["AXScrollDownByPage"]
+    ax.frames[70] = CGRect(x: 0, y: 150, width: 390, height: 100); ax.frames[72] = CGRect(x: 0, y: 160, width: 100, height: 20)
+    ax.values[70] = [kAXVerticalScrollBarAttribute: el(71), "AXContentSize": AXValueCreate(.cgSize, [CGSize(width: 390, height: 500)])!]
+    ax.values[71] = [kAXValueAttribute: NSNumber(value: 0.5)]
+    ax.settable[71] = [kAXValueAttribute]
+    let own = try confirmScroll(hit: el(72), direction: .down, delta: 120, ax: ax.ops, post: {})
+    XCTAssertEqual(ax.writes.map(\.id), [71], "the nearest scroller's own bar")
+    XCTAssertEqual(own.barWrite ?? 0, 0.8, accuracy: 1e-9, "0.5 + 120 / (500 - 100)")
+    XCTAssertNil(own.fallbackSkipped)
+    // A plain group (no page action, no bar) smaller than the outer area, the hit reaching past its top: clipped.
+    ax.writes = []
+    ax.actions[70] = []
+    ax.values[70] = [:]
+    ax.frames[72] = CGRect(x: 0, y: 140, width: 100, height: 20)
+    let clipped = try confirmScroll(hit: el(72), direction: .down, delta: 120, ax: ax.ops, post: {})
+    XCTAssertEqual(clipped.container, .scrollArea)
+    XCTAssertEqual(clipped.fallbackSkipped, .clipped)
+    XCTAssertEqual(clipped.wire["fallbackSkipped"] as? String, "clipped")
+    XCTAssertEqual(clipped.outcome, .unconfirmed)
+    XCTAssertTrue(ax.writes.isEmpty, "the outer bar is never written past a scroller the tree cannot see")
+    // The same group holding the hit wholly: the outer area is the nearest scroller as far as the tree tells.
+    ax.frames[72] = CGRect(x: 0, y: 160, width: 100, height: 20)
+    let held = try confirmScroll(hit: el(72), direction: .down, delta: 120, ax: ax.ops, post: {})
+    XCTAssertNil(held.fallbackSkipped)
+    XCTAssertEqual(ax.writes.map(\.id), [5])
+    // Web content: a page's web area between the hit and the scroll area.
+    ax.writes = []
+    scene.place(200)
+    ax.roles[70] = "AXWebArea"; ax.parents[70] = 2; ax.children[2] = [70, 3, 5]
+    let web = try confirmScroll(hit: el(72), direction: .down, delta: 120, ax: ax.ops, post: {})
+    XCTAssertEqual(web.container, .scrollArea)
+    XCTAssertEqual(web.fallbackSkipped, .web)
+    XCTAssertTrue(ax.writes.isEmpty)
+  }
+
+  /// #328's review, P2: an overflow div the tree exposes as no boundary, its text under the point clipped at the div's
+  /// top. Scrolling down shrinks the text from there: its leading edge stays, its trailing edge moves.
+  func testAClippedHitIsSeenByItsTrailingEdge() throws {
+    let scene = ScrollScene(offset: 200)
+    let ax = scene.ax
+    ax.roles[60] = kAXStaticTextRole; ax.parents[60] = 107
+    ax.frames[60] = CGRect(x: 10, y: 240, width: 100, height: 40)  // clipped at the div's top, 240
+    let record = try confirmScroll(hit: el(60), direction: .down, delta: 120, ax: ax.ops,
+                                   post: { ax.frames[60] = CGRect(x: 10, y: 240, width: 100, height: 10) })
+    XCTAssertEqual(record.container, .scrollArea)
+    XCTAssertEqual(record.outcome, .moved)
+    XCTAssertEqual(record.by, "hit")
+    XCTAssertEqual(record.moved, 30)
   }
 
   /// A web area whose own frame stays put while its page scrolls, and whose top rows Chrome clips: the descendant about
@@ -350,6 +444,7 @@ final class ScrollConfirmTests: XCTestCase {
     place()
     // 60 points down: the top row under the point is clipped and reads no move; row 104, 40% down, moved 60.
     let record = try confirmScroll(hit: el(100), direction: .down, delta: 60, ax: ax.ops, post: { offset = 60; place() })
+    XCTAssertEqual(record.container, .scrollArea, "the page's web area defers to its scroll area")
     XCTAssertEqual(record.outcome, .moved)
     XCTAssertEqual(record.by, "tracked")
     XCTAssertEqual(record.moved, 60)

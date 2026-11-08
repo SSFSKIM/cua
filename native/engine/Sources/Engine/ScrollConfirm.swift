@@ -5,8 +5,9 @@ import Foundation
 // entry). A posted wheel answered success whether or not anything moved. Now the scroll container of the element under
 // the point is read before the wheel is posted and polled after it, and the answer says what was seen:
 // - moved: success, the move in the meta;
-// - nothing moved and the container reads at its end in the scroll's direction, before and after: success with a note,
-//   `atEnd` in the meta;
+// - the container's bar already at its end in the scroll's direction before the wheel: success at once, the wheel
+//   posted (a wheel can chain to an outer scroller) and nothing polled, with a note, `atEnd` and `endBefore` in the
+//   meta (the design session's condition 08d673c3: only a container with no readable end pays the whole window);
 // - otherwise, after the fallback below: `scrollUnconfirmed`, including when the point has no readable container.
 // The fallback, when nothing moved and the container's own bar is settable and not at its end: the bar's AXValue
 // written by the requested delta (System Settings' content pane ignores every posted wheel, #328's spike), nothing
@@ -16,14 +17,19 @@ import Foundation
 // The read-back is the spike's (`probe/328-measure`, scripts/probe-328/t328.swift `read`, `tracked`, `moved`), which saw
 // 808 of 808 moves and no phantom: the bar's AXValue, the content's frame, and one descendant about 40% into the
 // viewport (Chrome clips the frame of an element that scrolls off the top, so not one near it). Added here: the element
-// under the point itself, when it lies inside the container and is smaller than it, since a nested scroller the
-// container's tree does not expose as an AXScrollArea (an overflow div, an iframe) moves it while the container's own
-// measures stay put.
+// under the point itself, when it lies inside the container and is smaller than it, since a nested scroller the tree
+// exposes as no boundary at all (an overflow div with no scroll area and no page action) moves it while the container's
+// own measures stay put; and both edges of each element on the axis, since one clipped at its scroller's leading edge
+// moves only its trailing one. The container is the nearest boundary of any kind, so the tracked descendant and the
+// fallback's bar are both that boundary's own.
 
 /// The poll after the wheel: every `scrollConfirmIntervalMs` until a move reads, at most `scrollConfirmWindowMs` from
-/// the post (the spike's first move read at 50 ms p50, 101 ms p95). Named so the hosted gate can re-price them.
+/// the post. The spike's first move read at 50 ms p50, 101 ms p95; Chrome's tree trails its page by 150 to 200 ms, and
+/// a script-delayed or rAF-animated page scroll read only at 258 to 285 and 712 to 762 ms (the hosted early read of
+/// gate b, run 42535468711, where 300 ms left false scrollUnconfirmed answers and 800 none). The poll stops at the first
+/// move, so only a scroll that moved nothing pays the whole window. Named so the hosted gate can re-price them.
 let scrollConfirmIntervalMs: Double = 15
-let scrollConfirmWindowMs: Double = 300
+let scrollConfirmWindowMs: Double = 800
 /// A move counts from this many points the asked way (the spike's 0.4, rounded up), or a bar this far the asked way
 /// when the content's length cannot be read to scale it.
 let scrollMovedMinimumPoints: Double = 0.5
@@ -37,24 +43,60 @@ let scrollTrackedBudget = 800
 let scrollTrackedDepth = 10
 let scrollTrackedAim: CGFloat = 0.4
 
-/// What the container is: the nearest AXScrollArea at or above the element under the point, or failing one, the nearest
-/// ancestor that advertises AXScrollDownByPage, or an AXWebArea (Catalyst's UIKit has no AXScrollArea).
+/// What the container is: the nearest scrolling boundary at or above the element under the point, whichever kind comes
+/// first: an AXScrollArea, an AXWebArea that is not its scroll area's own page (an iframe's document, or a page with no
+/// scroll area around it), or an element that advertises a page scroll (Catalyst's UIKit has no AXScrollArea; a page's
+/// own scrolling element).
 enum ScrollContainerKind: String { case scrollArea, pageScroller, webArea }
 
-/// The container of `hit` that a scroll there moves, through `ax`: nil when none lies between it and its window.
+/// The container of `hit` that a scroll there moves, through `ax`: the nearest boundary, in one walk up to its window;
+/// nil when none lies between them. A nested scroller is its own container, so the fallback never writes the bar of
+/// one around it (#328's review, P1). A web area whose parent is an AXScrollArea is that scroll area's page: the scroll
+/// area, the next level, is the boundary, and holds the bar.
 func scrollContainer(of hit: AXUIElement, ax: AXOps) -> (element: AXUIElement, kind: ScrollContainerKind)? {
-  var chain: [(element: AXUIElement, role: String)] = []
+  scrollContainerPath(of: hit, ax: ax).map { ($0.element, $0.kind) }
+}
+
+/// `scrollContainer` with the path walked below it: the hit and each ancestor up to the container (not included), with
+/// their roles.
+func scrollContainerPath(of hit: AXUIElement, ax: AXOps)
+  -> (element: AXUIElement, kind: ScrollContainerKind, path: [(element: AXUIElement, role: String)])? {
+  var path: [(element: AXUIElement, role: String)] = []
   var current: AXUIElement? = hit
-  while let node = current, chain.count < scrollContainerLevels {
+  while let node = current, path.count < scrollContainerLevels {
     let role = ax.role(node) ?? ""
-    if role == kAXWindowRole || role == kAXApplicationRole { break }
-    if role == kAXScrollAreaRole { return (node, .scrollArea) }
-    chain.append((node, role))
-    current = ax.parent(node)
+    if role == kAXWindowRole || role == kAXApplicationRole { return nil }
+    if role == kAXScrollAreaRole { return (node, .scrollArea, path) }
+    let parent = ax.parent(node)
+    if role == "AXWebArea" {
+      if parent.map({ ax.role($0) != kAXScrollAreaRole }) ?? true { return (node, .webArea, path) }
+    } else if !pageScrollActions.isDisjoint(with: ax.actions(node)) {
+      return (node, .pageScroller, path)
+    }
+    path.append((node, role))
+    current = parent
   }
-  for (node, role) in chain {
-    if role == "AXWebArea" { return (node, .webArea) }
-    if ax.actions(node).contains("AXScrollDownByPage") { return (node, .pageScroller) }
+  return nil
+}
+
+/// Why the fallback may not write the container's bar though nothing moved: the hit lies in web content, where all three
+/// browsers expose a nested overflow div as a plain AXGroup with no bar and no page action (and Chrome an iframe too),
+/// so a nearer scroller the tree cannot see may have taken the wheel (`web`: a web area on the path, as the container,
+/// or as its content); or an element between the hit and the container, smaller than the container on the axis, does
+/// not hold the hit's frame there, which is an unexposed scroller clipping it (`clipped`). Nil: the container is the
+/// hit's nearest scrollable ancestor as far as the tree can tell, and the fallback may write.
+enum ScrollFallbackSkip: String { case web, clipped }
+
+func scrollFallbackSkip(path: [(element: AXUIElement, role: String)], container: AXUIElement, kind: ScrollContainerKind,
+                        content: AXUIElement?, horizontal: Bool, ax: AXOps) -> ScrollFallbackSkip? {
+  if kind == .webArea || path.contains(where: { $0.role == "AXWebArea" }) || content.flatMap(ax.role) == "AXWebArea" { return .web }
+  guard let hit = path.first.flatMap({ ax.frame($0.element) }), let area = ax.frame(container) else { return nil }
+  let span = { (frame: CGRect) in horizontal ? (frame.minX, frame.maxX) : (frame.minY, frame.maxY) }
+  let (hitStart, hitEnd) = span(hit), (areaStart, areaEnd) = span(area)
+  for (element, _) in path.dropFirst() {
+    guard let frame = ax.frame(element) else { continue }
+    let (start, end) = span(frame)
+    if end - start < areaEnd - areaStart, hitStart < start - 0.5 || hitEnd > end + 0.5 { return .clipped }
   }
   return nil
 }
@@ -84,16 +126,26 @@ struct ScrollGeometry {
   }
 }
 
-/// One reading of a container: the bar's value and the leading edge, on the axis, of the content, the tracked
-/// descendant and the element under the point (nil where it does not read).
-struct ScrollReading: Equatable {
-  var bar: Double?
-  var content: CGFloat?
-  var tracked: CGFloat?
-  var hit: CGFloat?
+/// An element's leading and trailing edges on the scroll's axis. Both are kept: an element clipped at its scroller's
+/// leading edge keeps that edge while the scroll shrinks it from there, and moves only its trailing one (#328's review,
+/// P2: an overflow div's text under the point, clipped at the div's top).
+struct ScrollEdges: Equatable {
+  var lead: CGFloat
+  var trail: CGFloat
 }
 
-private func leading(_ frame: CGRect?, horizontal: Bool) -> CGFloat? { frame.map { horizontal ? $0.minX : $0.minY } }
+/// One reading of a container: the bar's value and the edges, on the axis, of the content, the tracked descendant and
+/// the element under the point (nil where it does not read).
+struct ScrollReading: Equatable {
+  var bar: Double?
+  var content: ScrollEdges?
+  var tracked: ScrollEdges?
+  var hit: ScrollEdges?
+}
+
+private func edges(_ frame: CGRect?, horizontal: Bool) -> ScrollEdges? {
+  frame.map { horizontal ? ScrollEdges(lead: $0.minX, trail: $0.maxX) : ScrollEdges(lead: $0.minY, trail: $0.maxY) }
+}
 
 /// The content a scroll area moves: its AXContents' first element, else its first child that is not a scroll bar (the
 /// spike's `contentOf`). A page scroller or a web area is its own content.
@@ -156,9 +208,9 @@ func scrollGeometry(_ container: AXUIElement, kind: ScrollContainerKind, hit: AX
 func readScroll(_ geometry: ScrollGeometry, ax: AXOps) -> ScrollReading {
   let horizontal = geometry.horizontal
   return ScrollReading(bar: geometry.bar.flatMap { scrollNumber(ax.read($0, kAXValueAttribute)) },
-                       content: leading(geometry.content.flatMap(ax.frame), horizontal: horizontal),
-                       tracked: leading(geometry.tracked.flatMap(ax.frame), horizontal: horizontal),
-                       hit: leading(geometry.hit.flatMap(ax.frame), horizontal: horizontal))
+                       content: edges(geometry.content.flatMap(ax.frame), horizontal: horizontal),
+                       tracked: edges(geometry.tracked.flatMap(ax.frame), horizontal: horizontal),
+                       hit: edges(geometry.hit.flatMap(ax.frame), horizontal: horizontal))
 }
 
 private func scrollNumber(_ value: CFTypeRef?) -> Double? {
@@ -171,16 +223,20 @@ func scrollSign(_ direction: ScrollDirection) -> Double { direction == .down || 
 
 /// The move between two readings the asked way, in points (positive: the way asked), by the first measure that moved
 /// at least the minimum that way: the content, the tracked descendant, the element under the point (each moves against
-/// the scroll), then the bar times the scrollable length. A bar alone, its length unread, counts by its own minimum
+/// the scroll, by its leading edge or else its trailing one), then the bar times the scrollable length. A bar alone, its length unread, counts by its own minimum
 /// with no points. Nil when nothing moved the asked way. `countsBar` false leaves the bar out: after the fallback's
 /// write it reads back the value written whether or not the view moved.
 func scrollMove(_ before: ScrollReading, _ after: ScrollReading, direction: ScrollDirection, scrollable: CGFloat?,
                 countsBar: Bool = true) -> (points: Double?, by: String)? {
   let sign = scrollSign(direction)
-  let edges: [(String, CGFloat?, CGFloat?)] = [("content", before.content, after.content), ("tracked", before.tracked, after.tracked),
-                                               ("hit", before.hit, after.hit)]
-  for (name, a, b) in edges {
-    if let a, let b, Double(a - b) * sign >= scrollMovedMinimumPoints { return (Double(a - b) * sign, name) }
+  let measures: [(String, ScrollEdges?, ScrollEdges?)] = [("content", before.content, after.content), ("tracked", before.tracked, after.tracked),
+                                                          ("hit", before.hit, after.hit)]
+  for (name, a, b) in measures {
+    guard let a, let b else { continue }
+    let lead = Double(a.lead - b.lead) * sign
+    if lead >= scrollMovedMinimumPoints { return (lead, name) }
+    let trail = Double(a.trail - b.trail) * sign
+    if trail >= scrollMovedMinimumPoints { return (trail, name) }
   }
   if countsBar, let a = before.bar, let b = after.bar {
     let moved = (b - a) * sign
@@ -222,6 +278,10 @@ struct ScrollConfirmRecord: Equatable {
   /// The fallback's write: the bar's value written and the write's AXError when not success.
   var barWrite: Double?
   var barWriteError: Int32?
+  /// Why the fallback did not write though it otherwise would have (`scrollFallbackSkip`).
+  var fallbackSkipped: ScrollFallbackSkip?
+  /// The end was read before the wheel, and the answer given then (always so for `atEnd`).
+  var endBefore = false
   var walked = 0
   /// The reading before the wheel (the container, its geometry and the walk), and the whole confirmation.
   var readMs: Double = 0
@@ -231,6 +291,7 @@ struct ScrollConfirmRecord: Equatable {
     var wire: [String: Any] = ["container": container?.rawValue ?? NSNull(), "outcome": outcome.rawValue, "polls": polls,
                                "readMs": rounded(readMs), "ms": rounded(ms)]
     if outcome == .atEnd { wire["atEnd"] = true }
+    if endBefore { wire["endBefore"] = true }
     if let moved { wire["moved"] = rounded(moved) }
     if let by { wire["by"] = by }
     if let barBefore { wire["barBefore"] = rounded(barBefore, 10_000) }
@@ -238,6 +299,7 @@ struct ScrollConfirmRecord: Equatable {
     if let firstMoveMs { wire["firstMoveMs"] = rounded(firstMoveMs) }
     if let barWrite { wire["barWrite"] = rounded(barWrite, 10_000) }
     if let barWriteError { wire["barWriteError"] = Int(barWriteError) }
+    if let fallbackSkipped { wire["fallbackSkipped"] = fallbackSkipped.rawValue }
     if container != nil { wire["walked"] = walked }
     return wire
   }
@@ -260,7 +322,7 @@ func confirmScroll(hit: AXUIElement?, direction: ScrollDirection, delta: Int32, 
 private func confirming(_ record: inout ScrollConfirmRecord, hit: AXUIElement?, direction: ScrollDirection, delta: Int32, ax: AXOps,
                         post: () throws -> Void, beforeWriting: () throws -> Void) throws {
   let started = ax.now()
-  let found = hit.flatMap { scrollContainer(of: $0, ax: ax) }
+  let found = hit.flatMap { scrollContainerPath(of: $0, ax: ax) }
   let geometry = found.map { scrollGeometry($0.element, kind: $0.kind, hit: hit, horizontal: direction.horizontal, ax: ax) }
   let before = geometry.map { readScroll($0, ax: ax) }
   record.container = found?.kind
@@ -269,6 +331,13 @@ private func confirming(_ record: inout ScrollConfirmRecord, hit: AXUIElement?, 
   record.readMs = ax.now() - started
   try post()
   guard let geometry, let before else { return }
+  // At its end before the wheel: answered at once, no poll and no fallback. The wheel went all the same, as before, so a
+  // scroller around this one can take it.
+  if scrollAtEnd(before, direction: direction) {
+    record.outcome = .atEnd
+    record.endBefore = true
+    return
+  }
 
   /// Polls from now for a move against `before`; the last reading.
   func poll(countsBar: Bool) -> ScrollReading {
@@ -291,12 +360,13 @@ private func confirming(_ record: inout ScrollConfirmRecord, hit: AXUIElement?, 
 
   let after = poll(countsBar: true)
   if record.outcome == .moved { return }
-  if scrollAtEnd(before, direction: direction) && scrollAtEnd(after, direction: direction) {
-    record.outcome = .atEnd
+  guard let bar = geometry.bar, let value = after.bar, !scrollAtEnd(after, direction: direction),
+        let scrollable = geometry.scrollableLength, ax.isSettable(bar, kAXValueAttribute), let found else { return }
+  if let skip = scrollFallbackSkip(path: found.path, container: found.element, kind: found.kind, content: geometry.content,
+                                   horizontal: direction.horizontal, ax: ax) {
+    record.fallbackSkipped = skip
     return
   }
-  guard let bar = geometry.bar, let value = after.bar, !scrollAtEnd(after, direction: direction),
-        let scrollable = geometry.scrollableLength, ax.isSettable(bar, kAXValueAttribute) else { return }
   let target = scrollBarTarget(from: value, delta: delta, scrollable: scrollable, direction: direction)
   try beforeWriting()
   record.barWrite = target
@@ -312,7 +382,7 @@ private func confirming(_ record: inout ScrollConfirmRecord, hit: AXUIElement?, 
 func scrollAnswer(_ record: ScrollConfirmRecord, direction: ScrollDirection, app: String) throws -> String? {
   switch record.outcome {
   case .moved: return nil
-  case .atEnd: return "Nothing moved: what is at that point in \(app) is already scrolled as far \(direction.rawValue) as it goes."
+  case .atEnd: return "What is at that point in \(app) is already scrolled as far \(direction.rawValue) as it goes."
   case .unconfirmed: throw scrollUnconfirmed(app: app)
   }
 }

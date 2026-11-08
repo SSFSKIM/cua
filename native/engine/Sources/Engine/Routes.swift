@@ -692,8 +692,8 @@ private let boundaryRoles: Set<String> = ["AXWindow", "AXSheet", "AXMenu", "AXPo
 /// `boundaryRoles` for the stale-point record (StalePoint.swift), which cuts the recorded tree's frames by the same rule.
 var clipBoundaryRoles: Set<String> { boundaryRoles }
 /// A group clips when it can scroll by the page (the vendor's `hasScrollAction`, not decompiled; read as the
-/// UIElementAction cases that scroll, E §5).
-private let pageScrollActions: Set<String> = ["AXScrollUpByPage", "AXScrollDownByPage", "AXScrollLeftByPage", "AXScrollRightByPage"]
+/// UIElementAction cases that scroll, E §5); #328's scroll confirmation takes such an element as a scroll container.
+let pageScrollActions: Set<String> = ["AXScrollUpByPage", "AXScrollDownByPage", "AXScrollLeftByPage", "AXScrollRightByPage"]
 
 /// Whether an element of `role` with `actions` cuts what of its descendants shows (`visibleFrame`'s clipping ancestors).
 func clipsDescendants(role: String, actions: @autoclosure () -> [String]) -> Bool {

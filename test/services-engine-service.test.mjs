@@ -594,9 +594,9 @@ test('#296: the stale-point guard\'s verdict rides as cua/stalePoint, and its re
 
 test('#328: a scroll\'s confirmation rides as cua/scroll, its at-end note reaches the tool result\'s text, and scrollUnconfirmed and the out-of-screenshot refusal reach the model with their sentence, name and meta', async t => {
   const moved = {container: 'scrollArea', outcome: 'moved', moved: 120, by: 'content', polls: 3, readMs: 4.1, ms: 49.2, walked: 61};
-  const atEnd = {container: 'scrollArea', outcome: 'atEnd', atEnd: true, barBefore: 1, barAfter: 1, polls: 20, readMs: 3, ms: 305, walked: 40};
+  const atEnd = {container: 'scrollArea', outcome: 'atEnd', atEnd: true, endBefore: true, barBefore: 1, polls: 0, readMs: 3, ms: 3.2, walked: 40};
   const unconfirmed = {container: null, outcome: 'unconfirmed', polls: 0, readMs: 0.3, ms: 0.5};
-  const endNote = 'Nothing moved: what is at that point in TextEdit is already scrolled as far down as it goes.';
+  const endNote = 'What is at that point in TextEdit is already scrolled as far down as it goes.';
   const unsent = 'The scroll was sent to TextEdit, but nothing at that point was seen to move. Observe the app (take a screenshot or call getAXState()) before scrolling again.';
   const outside = 'The point (600, 2000) lies outside the screenshot, which is 1220 × 860 pixels. Give a point inside it: x from 0 to 1219 and y from 0 to 859.';
   let answer = 'moved';

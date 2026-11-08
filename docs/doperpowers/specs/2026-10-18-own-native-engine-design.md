@@ -548,8 +548,9 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
     result's content
   scroll (#328, on a scroll's result and its scrollUnconfirmed): {container: "scrollArea" | "pageScroller" | "webArea" |
-    null, outcome: "moved" | "atEnd" | "unconfirmed", atEnd?: true, moved?: points the asked way, by?: "content" |
-    "tracked" | "hit" | "bar", barBefore?, barAfter?, firstMoveMs?, polls, barWrite?, barWriteError?, walked?, readMs, ms}
+    null, outcome: "moved" | "atEnd" | "unconfirmed", atEnd?: true, endBefore?: true, moved?: points the asked way,
+    by?: "content" | "tracked" | "hit" | "bar", barBefore?, barAfter?, firstMoveMs?, polls, barWrite?, barWriteError?,
+    fallbackSkipped?: "web" | "clipped", walked?, readMs, ms}
   pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): ⌘V was sent and the text
     read from the clipboard, but no effect was seen, or none could be (Decision Log, #187); or, at stage "returnEffect", a
     Return between two of type_text's lines showed no effect, and the next line was not pasted (its own sentence)
@@ -3863,23 +3864,34 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      is #334.
   4. **The confirmation** (ScrollConfirm.swift `confirmScroll`, from `scroll` in ScrollDrag.swift). The element under
      the point (the coordinate's or the centre's hit-test, as before; for an element scroll the hit-test at its
-     clickable point, else the element) is walked up to its window (`scrollContainerLevels`, 300) for its container:
-     the nearest AXScrollArea at or above it; failing one, the nearest ancestor that is an AXWebArea or advertises
-     AXScrollDownByPage. Before the wheel the engine reads the container's frame (the viewport), its content (AXContents'
+     clickable point, else the element) is walked up to its window (`scrollContainerLevels`, 300) for its container,
+     in one walk, nearest first: the first scrolling boundary at or above it of any kind, an AXScrollArea, an element
+     that advertises a page scroll (AXScroll{Up,Down,Left,Right}ByPage, `pageScrollActions`, the set the visible-frame
+     walk already clips by), or an AXWebArea that is not its scroll area's own page (an iframe's document, or a page with
+     no scroll area around it). A web area whose parent is an AXScrollArea defers to that scroll area, which holds the
+     bar. (Corrected by the review of f859ce68..b2281926, P1: the first build took the first AXScrollArea on the way up
+     and looked at page scrollers and web areas only when there was none, so a nested scroller under the point lost to
+     the page's scroll area, and the fallback could write the outer page's bar.) Before the wheel the engine reads the container's frame (the viewport), its content (AXContents'
      first, else its first child that is not a scroll bar; a web area or page scroller has none), its bar on the
      scroll's axis, and one descendant about 40% into the viewport (`scrollTrackedAim`; the spike's walk, at most 800
      nodes 10 deep, shorter than 30% of the viewport, wholly inside it; subtrees wholly outside the viewport are skipped
      and the walk stops at a candidate within 2 points of the aim, both added to bound its cost on a long page).
      **Added to the spike's measures:** the element under the point itself, when it lies inside the container and is
-     shorter than the viewport on the axis, since a nested scroller the container's tree does not expose as a scroll
-     area (an overflow div, an iframe) moves it while the container's own measures stay put. After the post the
-     container is read every `scrollConfirmIntervalMs` (15) for at most `scrollConfirmWindowMs` (300), stopping at the
-     first reading that moved: the content's, the descendant's or the hit's leading edge at least
+     shorter than the viewport on the axis, since a nested scroller the tree exposes as no boundary at all (an overflow
+     div with no scroll area and no page action) moves it while the container's own measures stay put. Each element
+     measure (the content, the descendant, the hit) keeps both its edges on the axis (the same review, P2): an element
+     clipped at its scroller's leading edge keeps that edge while the scroll shrinks it from there, so only its
+     trailing edge moves. The descendant is chosen inside the container, the nearest boundary. After the post the
+     container is read every `scrollConfirmIntervalMs` (15) for at most `scrollConfirmWindowMs` (800), stopping at the
+     first reading that moved: the content's, the descendant's or the hit's leading edge, else its trailing edge, at least
      `scrollMovedMinimumPoints` (0.5) against the scroll, or the bar that much times the scrollable length (or by
      `scrollBarMovedMinimum`, 0.0005, when that length does not read). Only a move the asked way counts. The constants
-     are named so the hosted gate can re-price them.
-  5. **The fallback.** When nothing moved, the end does not explain it, and the container's own bar reads, is settable
-     and is not at its end (within `scrollBarEndTolerance`, 0.001, of 1 for down or right, of 0 for up or left), the
+     are named so the hosted gate can re-price them. **The window, 800 ms** (first built at 300; the hosted early read
+     of gate (b), run 42535468711, and the design session's acceptance 08d673c3): Chrome's tree trails its page by 150
+     to 200 ms (the first move read at p50 182 ms, max 241), a script-delayed page scroll read at 258 to 285 ms and a
+     rAF-animated one at 712 to 762 ms; at 300 ms false `scrollUnconfirmed` answers remained on those cells, at 800 none
+     anywhere. The same read showed the hit's measure removing almost every false answer on nested divs.
+  5. **The fallback.** When nothing moved, and the container's own bar reads, is settable and is not at its end (within `scrollBarEndTolerance`, 0.001, of 1 for down or right, of 0 for up or left), the
      bar's AXValue is written by the requested delta, nothing posted (the in-flight intervention check first), then
      polled again for the same window. After the write only the content, the descendant or the hit count: the bar reads
      back the value written whether or not the view moved. **The conversion:** value + delta / (content − viewport),
@@ -3888,28 +3900,44 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      Its precision is the lengths': a move lands within the app's own rounding plus delta × (the lengths' error / the
      scrollable length), and a scroll area whose frame includes a bar across the axis overstates the viewport by that
      bar's thickness (a 15 pt bar on 800 scrollable points: 2 points on a 120-point delta). The spike's System Settings
-     writes, by the same formula, moved to within 1 point. Never written on any container but the hit's (the container
-     is found from the hit and nothing else), nor at the end, nor when a failed write answers an AXError (recorded, not
+     writes, by the same formula, moved to within 1 point. **Gate (c): only the bar of the hit's nearest scroller.**
+     Never on any container but the hit's nearest boundary, nor on a bar that is not that boundary's own (one without a
+     settable bar has no fallback), nor at the end. And the boundary must be the hit's nearest scrollable ancestor as far
+     as the tree can tell (`scrollFallbackSkip`, the meta's `fallbackSkipped`): in all three browsers a nested overflow
+     div is a plain AXGroup with no bar and no page action, and Chrome exposes an iframe no better (Safari and Firefox
+     expose it as its own AXScrollArea), so the page's scroll area can be the nearest boundary the tree shows while an
+     unseen scroller took the wheel. So no write when the hit lies in web content (`web`: an AXWebArea on the path from
+     the hit to the container, as the container, or as its content); none when an element on that path, shorter than
+     the container on the axis, does not hold the hit's frame there (`clipped`: an unexposed scroller clipping the hit,
+     the design session's rule); otherwise the write is allowed. In practice the fallback is for AppKit's surfaces
+     (System Settings' pane); the spike's browsers took every in-bounds wheel. nor when a failed write answers an AXError (recorded, not
      polled).
   6. **The answers** (`scrollAnswer`). Moved: success, `meta.scroll.moved` the points the asked way and `by` the measure.
-     Nothing moved and the bar at its end in that direction both before and after: success, `meta.scroll.atEnd` true,
-     and the note "Nothing moved: what is at that point in <App> is already scrolled as far <direction> as it goes."
-     (the service now carries a scroll's note to the tool result's text, as a click's). Otherwise, including no readable
+     The container's bar at its end in that direction when read before the wheel: success at once, nothing polled and
+     no fallback (the design session's condition, 08d673c3), `meta.scroll.atEnd` and `endBefore` true, and the note
+     "What is at that point in <App> is already scrolled as far <direction> as it goes.", which does not claim that
+     nothing else moved: the wheel is still posted (as before #328), so a scroller around this one can take it by
+     chaining; skipping it would save nothing the answer waits for (the service now carries a scroll's note to the tool
+     result's text, as a click's). Otherwise, including no readable
      container (nothing to poll, answered at once) and a container without a bar at its end: `scrollUnconfirmed`, "The
      scroll was sent to <App>, but nothing at that point was seen to move. Observe the app (take a screenshot or call
      getAXState()) before scrolling again.", with the meta. `meta.scroll` (and `cua/scroll`): container (`scrollArea`,
-     `pageScroller`, `webArea` or null), outcome, moved, by, barBefore, barAfter, firstMoveMs, polls, barWrite,
-     barWriteError, walked, readMs (the container, the walk and the first reading, before the wheel) and ms.
+     `pageScroller`, `webArea` or null), outcome, atEnd, endBefore, moved, by, barBefore, barAfter, firstMoveMs, polls,
+     barWrite, barWriteError, fallbackSkipped (`web` or `clipped`), walked, readMs (the container, the walk and the first reading, before the wheel) and ms.
   7. **Unchanged:** the posted wheel itself, its units, source, wheel count, fields and target process; no session or
      HID tap, gesture phase, line unit or pointer move is added. A scroll still never arms the settle.
   8. **The costs.** The refusal reads nothing. A scroll pays, before its wheel, the container walk (one role read per
-     level, an actions read per level only when no scroll area is found), the geometry and the descendant's walk (its
-     node count in `walked`), and after it 15 ms polls of at most four frame or value reads each: a scroll that moves
-     answers at its first move (the spike's 50 ms p50), one at its end or unconfirmed after the whole 300 ms, plus the
-     fallback's second window when it writes. None of these is measured live here: the hosted check measures `readMs`,
+     level below the container, an actions read per level that is neither a scroll area nor a web area, and a parent's
+     role for a web area), the geometry and the descendant's walk (its
+     node count in `walked`), and after it 15 ms polls of at most four frame or value reads each. A scroll that moves
+     answers at its first move: about 50 ms (the spike's p50), about 200 ms in Chrome, whose tree trails its page. One
+     whose container's bar is at its end answers at once, before any poll. Only one whose container has no readable end
+     (a plain-group nested div at its end) or that moved nothing pays the whole 800 ms, plus the fallback's second
+     window when it writes. None of these is measured live here: the hosted check measures `readMs`,
      `ms` and `firstMoveMs`.
   9. **The limits.** A drag out of the window is refused (#334). A container with no readable bar cannot tell its end,
-     so a scroll at the end of such a page answers `scrollUnconfirmed` rather than the at-end success. A page whose
+     so a scroll at the end of such a page answers `scrollUnconfirmed` after 800 ms rather than the at-end success.
+     Web content gets no fallback. A page whose
      descendants all leave the viewport in one step and read no frame once off it would show no move on the descendant;
      the content, the bar and the hit still count. An element scroll's confirmation reads the hit-test at the element's
      point, one more read than before.
@@ -3918,22 +3946,33 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     a scroll's, a drag's start and end), the sentence; the edge points (0, 0), (W−1, H−1) and a fraction short of the
     width pass; the drag's middle between its ends. `TuningTests`' two coordinate tests now aim inside the image (one
     aimed at its far corner, which the rule refuses).
-  - `ScrollConfirmTests` (20): moved up and down, the move in the meta; a move the wrong way is none; at the end
-    (down and up) success with `atEnd` after the whole window; the end read before and after; the fallback written
+  - `ScrollConfirmTests` (22): moved up and down, the move in the meta; a move the wrong way is none; the bar at its
+    end before the wheel (down and up) answered `atEnd` and `endBefore` at once, the wheel posted, nothing polled or
+    written; the fallback written
     with the converted value and confirmed, a fallback that moves nothing unconfirmed though its bar reads the value
     written, an unsettable bar unconfirmed, the fallback behind the intervention check; no container unconfirmed; a
-    move first at 260 ms seen and one at 340 ms not; never written at the end (both directions, and at the end after
+    move first at 760 ms seen and one at 840 ms not; never written at the end (both directions, and at the end after
     the wheel only); never on another container (a sibling scroll area, an outer one around the hit's); the
-    conversion and AXContentSize; the container's order and its stop at the window; a web page seen on the descendant
-    40% down while its top rows clip; a nested scroller seen on the hit; a horizontal scroll on the horizontal bar.
+    conversion and AXContentSize; the nearest boundary of any kind (a page scroller below a web area below a scroll
+    area, any page action, a page's web area deferring to its scroll area, an iframe's web area) and the walk's stop at
+    the window; for the review's P1, a page-scrolling group under the point at its own end answering atEnd, without a
+    bar of its own answering unconfirmed, and an iframe's web area, each with the outer page's settable bar never
+    written; for gate (c), the nearest page scroller's own settable bar written (by delta over its AXContentSize less
+    its frame) and never the outer one, a plain group clipping the hit skipped `clipped` with the outer bar unwritten,
+    the same group holding the hit wholly letting the outer bar be written, and a page's web area on the path skipped
+    `web`; for P2, an overflow div's text clipped at the div's top seen by its trailing edge; a web page seen on the
+    descendant 40% down while its top rows clip, its container the page's scroll area; a nested scroller seen on the
+    hit; a horizontal scroll on the horizontal bar.
   - `ScrollWheelUnchangedTests` (1): the posted wheel's units, source, phases, deltas and field 51.
   - `services-engine-service.test.mjs`' #328 test: `cua/scroll`, the at-end note in the tool result's text, and both
     errors with their sentence, name and meta.
-  - Each of 49 rule parts and bounds removed in turn (`~/.local/share/187/mutate-328.py`) fails a test: 9 for the
-    refusal, 11 for the read and the poll, 7 for the container, 7 for the answers, 11 for the fallback, 4 for the
-    wheel. Three survive by design, since only a live scroll reaches them: the method not confirming, the coordinate's
+  - Each of 59 rule parts and bounds removed in turn (`~/.local/share/187/mutate-328.py`) fails a test: 9 for the
+    refusal, 13 for the read and the poll (the window pinned at 800 from both sides, the hit's trailing edge), 10 for
+    the container (3 for the review's P1: the first scroll area winning, a page's web area not deferring, only
+    AXScrollDownByPage), 8 for the answers (3 for the end before the wheel: polled first, the wheel skipped, endBefore
+    off the wire), 15 for the fallback (4 for gate (c)), 4 for the wheel. Three survive by design, since only a live scroll reaches them: the method not confirming, the coordinate's
     hit not passed to the confirmation, and the meta dropping `scroll`.
-  - Every other suite passes (1,040 engine tests, 1 skipped as before), and the docs test, repl-parity's docs oracle
+  - Every other suite passes (1,042 engine tests, 1 skipped as before), and the docs test, repl-parity's docs oracle
     suites and the service file's focused tests.
   **What the hosted check must verify** (main against the branch, background targets behind a frontmost cover, as the
   spike ran):
@@ -3943,12 +3982,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - **No false `scrollUnconfirmed`** on scrollers that really moved: the spike's AppKit, SwiftUI, Catalyst, Safari,
     Chrome and Firefox areas, a nested overflow div, an iframe, a horizontal scroller, a smooth-scrolling page, each
     with the engine's own page-sized delta (larger than the spike's 120 points), and the measure that saw it.
-  - **The end:** a scroll down at the content's end answers success with `atEnd` where the container has a bar, and
-    `scrollUnconfirmed` where it has none (how often, per browser).
+  - **The end:** a scroll down at the content's end answers success with `atEnd` and `endBefore` at once where the
+    container has a bar, and `scrollUnconfirmed` after 800 ms where it has none (how often, per browser), and the
+    wheel still chains to an outer scroller where the page does so.
   - **The fallback:** System Settings' content pane moves by the bar write and answers success; the bar is never
-    written at its end, nor on any container but the hit's; the written move against the delta.
-  - **The costs:** `readMs`, `ms` and `firstMoveMs` per target, to re-price `scrollConfirmWindowMs` and
-    `scrollConfirmIntervalMs`; and repl-parity green.
+    written at its end, nor on any container but the hit's nearest scroller, and never in web content (`fallbackSkipped`
+    `web`) nor past a clipping group (`clipped`); the written move against the delta.
+  - **The costs:** `readMs`, `ms` and `firstMoveMs` per target, to re-price `scrollConfirmWindowMs` (800) and
+    `scrollConfirmIntervalMs`, and no false `scrollUnconfirmed` left on the delayed and rAF-animated cells at 800 ms;
+    and repl-parity green.
   Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling b1921fc3 on #328.
 
 ## Outcomes & Retrospective

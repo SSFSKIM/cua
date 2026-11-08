@@ -3681,8 +3681,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      TextEdit's reflow after Return or ⌘V, 4 (#331: the text moved within the same text view, whose node still holds the
      point); Safari's clicks placed from the page's tree after a re-observation that showed the panel, 6 of 12 (the
      re-observation's list holds the overlay window, so W passes, and the point still reaches the page's element).
-     `docs/cua-api/agent-cursor.md`'s guard paragraph gains a second half that states them and what to do (a draft,
-     final after the hosted A/B; the surface inventory's Table 3 addition of 2026-11-08, the docs test and parity's docs
+     `docs/cua-api/agent-cursor.md`'s guard paragraph gains a second half that states them and what to do (the surface inventory's Table 3 addition of 2026-11-08, the docs test and parity's docs
      oracle carry it).
   An element route's record (`StalePointGate.check`), which replaces the first check's in the meta, keeps the first
   check's `windowsMs` and the `webAreaReads` its verdict was judged after (the review of 73b44561..e62a7454, one P2).
@@ -3690,20 +3689,31 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   #301's suites unchanged; 998 engine tests pass. Each of 28 rule parts and bounds removed in turn
   (`~/.local/share/187/mutate-316.py`) fails a test. Three mutations survive by design, since only a live click reaches
   them: the capture's list not kept with its image, and the click's or the drag's call site passing no window number.
-  **What the hosted check must verify** (`probe/316-measure`'s cells, against main, both desktop modes):
-  - **Safari ⌘L and ⌘L+typing:** every click and drag start refused `newWindow` with nothing posted; ⌘L+Escape kept;
-  - **Chrome's navigated tab** (link and ⌘L navigation, both builds): every click from the old screenshot refused
-    `otherWebArea`; Firefox's urlbar list refused `otherWebArea` or `newWindow`;
-  - **the false refusals** near the emulation's: Chrome's omnibox popup after ⌘L, Finder's rename field after Return,
-    and none elsewhere (the still-page and native cells all kept), iframes included, same-origin and cross-origin;
-  - **#305's toolbar cells kept:** G refuses before `recordedHit`, so a toolbar control's point whose deepest recorded
-    node lay in the page's web area would now refuse; #305's live check found Safari's deepest node there to be the
-    page view AXGroup outside the web area, which this must confirm for Safari's address field and Reload and for
-    Chrome's toolbar;
-  - **the cost:** `stalePoint.ms` against main's on the same cells, with `windowsMs` and `webAreaReads`'
-    distributions;
-  - **the residue** as item 8 counts it, and repl-parity green with the docs paragraph's new text.
-  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 4701abd8 on #316.
+  **The hosted A/B** (main 73b44561 against ca4652a7, run 42506462753, kit af721d0f; the engine's own refusals scored;
+  `docs/evidence/2026-11-08-overlay-guard/`):
+  - **Safari ⌘L and ⌘L+typing:** 32 of 32 clicks and drag starts refused `newWindow` (main: 32 wrong, success
+    answered); ⌘L+Escape 16 of 16 land on both.
+  - **Chrome's navigated tab** (link, ⌘L+URL, suggestion+Return): 40 of 40 refused `otherWebArea` (main: 40 on the new
+    page). Firefox's urlbar list: 8 of 8 refused (main: 6 wrong).
+  - **Costs, as emulated:** Chrome's omnibox after ⌘L, 48 refused `newWindow` that landed on main; Finder's rename field
+    after Return, 4.
+  - **The still-page gate** (live clicks on unchanged pages and apps, no key, no navigation; the design session's
+    condition, after #296's emulated table missed #305): main refused 0 of 473, the branch 3 of 492. Frames (same-origin,
+    cross-site, nested, and the page around them; 168 per head) and #305's toolbar cells (Safari's address field and 8 pt
+    above it, Reload, Chrome's toolbar; 44 per head) are all kept on both. The 3 are Wikipedia links in Chrome for
+    Testing whose recorded frame was a 1 pt sliver at the web area's bottom edge, where Chrome's hit-test answers its
+    own view group outside the web area: G refuses `otherWebArea`; main kept them (`nonInteractiveHit`), the page got
+    no event, and success was answered. The design session accepted them as is (17dd203e): a truthful refusal in place
+    of a false success, and no sliver rule.
+  - **G's reading confirmed:** on main's still sweep (run 42504762481), G read as "the nearest web area equal to the
+    screenshot's hit's" would have refused 36 Chrome frame clicks that landed (Chromium resolves into a frame only on a
+    later read); the ancestor reading built here refused none.
+  - **The cost:** `stalePoint.ms` p50 / p95 / max 0.19 / 1.74 / 10.75 ms on main, 0.80 / 4.15 / 8.24 on the branch;
+    `windowsMs` p50 0.52, p95 1.20; `webAreaReads` at most 14.
+  - **The residue** as item 8 counts it, unchanged on both heads: suggestion lists 6 of 8 per browser (#330), TextEdit
+    reflow 4 (#331), Safari's tree-placed clicks after a re-observation 6 of 12. The docs paragraph's text is final.
+  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 4701abd8 on #316; the hosted A/B
+  by cursor235.
 
 ## Outcomes & Retrospective
 

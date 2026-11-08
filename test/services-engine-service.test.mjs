@@ -592,6 +592,43 @@ test('#296: the stale-point guard\'s verdict rides as cua/stalePoint, and its re
   assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null}, 'nothing posted');
 });
 
+test('#328: a scroll\'s confirmation rides as cua/scroll, its at-end note reaches the tool result\'s text, and scrollUnconfirmed and the out-of-screenshot refusal reach the model with their sentence, name and meta', async t => {
+  const moved = {container: 'scrollArea', outcome: 'moved', moved: 120, by: 'content', polls: 3, readMs: 4.1, ms: 49.2, walked: 61};
+  const atEnd = {container: 'scrollArea', outcome: 'atEnd', atEnd: true, barBefore: 1, barAfter: 1, polls: 20, readMs: 3, ms: 305, walked: 40};
+  const unconfirmed = {container: null, outcome: 'unconfirmed', polls: 0, readMs: 0.3, ms: 0.5};
+  const endNote = 'Nothing moved: what is at that point in TextEdit is already scrolled as far down as it goes.';
+  const unsent = 'The scroll was sent to TextEdit, but nothing at that point was seen to move. Observe the app (take a screenshot or call getAXState()) before scrolling again.';
+  const outside = 'The point (600, 2000) lies outside the screenshot, which is 1220 × 860 pixels. Give a point inside it: x from 0 to 1219 and y from 0 to 859.';
+  let answer = 'moved';
+  const {getApp, call, meta, record} = await session(t, {handlers: {'execute:scroll': () => {
+    if (answer === 'moved') return {meta: {...INPUT_META, scroll: moved}};
+    if (answer === 'atEnd') return {meta: {...INPUT_META, scroll: atEnd}, note: endNote};
+    if (answer === 'outside') throw new EngineFailure(-10005, outside, 'pointOutsideScreenshot', {meta: {...INPUT_META, inputRoute: null, startedAt: null, endedAt: null}});
+    throw new EngineFailure(-10005, unsent, 'scrollUnconfirmed', {meta: {...INPUT_META, scroll: unconfirmed}});
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.scroll([300, 400], 'down', 1));
+  assert.deepEqual(meta['cua/scroll'], moved);
+  assert.deepEqual(record.items, [], 'no note for a move');
+  answer = 'atEnd';
+  await call(() => app.scroll([300, 400], 'down', 1));
+  assert.deepEqual(meta['cua/scroll'], atEnd);
+  assert.deepEqual(record.items, [endNote]);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/scroll'], null, 'reset by the next call');
+  answer = 'unconfirmed';
+  await assert.rejects(call(() => app.scroll([300, 400], 'down', 1)), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${unsent}`, 'the whole sentence');
+    assert.equal(error.errorName, 'scrollUnconfirmed');
+    return true;
+  });
+  assert.deepEqual(meta['cua/scroll'], unconfirmed);
+  answer = 'outside';
+  await assert.rejects(call(() => app.scroll([600, 2000], 'down', 1)), error => error.errorName === 'pointOutsideScreenshot' && error.message.endsWith(outside));
+  assert.equal(meta['cua/scroll'], null);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null}, 'nothing posted');
+});
+
 test('a control build\'s variant rides in cua/nativeEngine, on its results and its input errors alike', async t => {
   const {getApp, call, meta} = await session(t, {identity: {engineVersion: '0.1.0', build: 'b1', variant: 'control-no-inert-click'},
     handlers: {'execute:press_key': () => { throw new EngineFailure(-10005, 'activationFailed', 'activationFailed', {meta: INPUT_META}); }}});

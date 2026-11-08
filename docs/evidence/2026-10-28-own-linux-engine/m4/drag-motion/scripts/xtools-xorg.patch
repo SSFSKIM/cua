@@ -1,0 +1,8 @@
+324c324,328
+<   const child = xSpawn('Xvfb', ['-displayfd', '3', '-noreset', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
+---
+>   // task 66's probe copy: Xorg with the dummy driver on a seat of no devices, in place of Xvfb (CUA171_XORG=1)
+>   const xorg = process.env.CUA171_XORG === '1';
+>   const child = xorg
+>     ? xSpawn('/usr/lib/xorg/Xorg', ['-displayfd', '3', '-config', '<home>/.local/share/cua-171/task66/xorg/dummy.conf', '-logfile', `${out}/xorg.log`, '-noreset', '-nolisten', 'tcp', '-sharevts', '-novtswitch', '-keeptty', '-seat', 'seat-cua171'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] })
+>     : xSpawn('Xvfb', ['-displayfd', '3', '-noreset', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });

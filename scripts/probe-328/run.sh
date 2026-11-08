@@ -47,6 +47,14 @@ case "$GROUP" in
     m mail mail --sets routes --reps 1
     m catalyst328 catalyst328 --sets full,split,routes --reps 1
     if [ -n "$catalyst" ]; then m catalyst catalyst --sets full,split,routes --reps 1 --catalyst "$catalyst"; fi ;;
+  followup)
+    # What run 42526444701 left open: Firefox's read-back (no AXScrollArea: its AXWebArea), Chrome's with the tracked
+    # element mid-viewport, Notes with a body that scrolls, Stocks past its first-run sheet.
+    m firefox followup-firefox --sets web,routes,bottom --reps 3
+    m chrome followup-chrome --sets web,bottom --reps 2
+    m safari followup-safari --sets web --reps 1
+    m notes followup-notes --sets full,split,routes --reps 1
+    if [ -n "$catalyst" ]; then m catalyst followup-catalyst --sets full,split,routes --reps 1 --catalyst "$catalyst"; fi ;;
   web)
     m swiftui swiftui --sets full,split,routes --reps 1
     m safari safari --sets web,routes,bottom --reps 3

@@ -69,7 +69,7 @@ func scrollAreas(_ root: AXUIElement) -> [AXUIElement] {
   func walk2(_ e: AXUIElement, _ d: Int) {
     budget -= 1
     guard budget > 0, d < 30 else { return }
-    if e != root, actions(e).contains("AXScrollDownByPage") || el(attr(e, kAXVerticalScrollBarAttribute)) != nil { out.append(e); return }
+    if e != root, actions(e).contains("AXScrollDownByPage") || el(attr(e, kAXVerticalScrollBarAttribute)) != nil || role(e) == "AXWebArea" { out.append(e); return }
     for k in els(attr(e, kAXChildrenAttribute)) { walk2(k, d + 1) }
   }
   walk2(root, 0)
@@ -131,8 +131,9 @@ func belowFold(_ area: AXUIElement, viewport: CGRect, min: CGFloat) -> AXUIEleme
   walk(area, 0)
   return byAction ?? byAttribute ?? plain
 }
-/// A descendant inside the viewport, near its top, tracked across the trial (its frame's y).
+/// A descendant inside the viewport, its top nearest 40% down it, tracked across the trial (its frame's y).
 func tracked(_ area: AXUIElement, viewport: CGRect) -> AXUIElement? {
+  let aim = viewport.minY + viewport.height * 0.4
   var budget = 800
   var best: (AXUIElement, CGFloat)?
   func walk(_ e: AXUIElement, _ d: Int) {
@@ -140,8 +141,8 @@ func tracked(_ area: AXUIElement, viewport: CGRect) -> AXUIElement? {
     guard budget > 0, d < 10 else { return }
     let r = role(e)
     if r == kAXScrollBarRole { return }
-    if r != kAXScrollBarRole, e != area, let f = frameOf(e), f.height > 2, f.height < viewport.height * 0.6, f.minY >= viewport.minY, f.minY < viewport.midY {
-      if best == nil || f.minY < best!.1 { best = (e, f.minY) }
+    if r != kAXScrollBarRole, e != area, let f = frameOf(e), f.height > 2, f.height < viewport.height * 0.3, f.minY >= viewport.minY, f.maxY <= viewport.maxY {
+      if best == nil || abs(f.minY - aim) < abs(best!.1 - aim) { best = (e, f.minY) }
     }
     for k in els(attr(e, kAXChildrenAttribute)) { walk(k, d + 1) }
   }
@@ -335,11 +336,23 @@ case "press":
   var hit: AXUIElement?
   func walk(_ e: AXUIElement, _ d: Int) {
     guard hit == nil, d < 12 else { return }
-    if role(e) == kAXButtonRole, str(e, kAXTitleAttribute) == a[3] { hit = e; return }
+    if role(e) == kAXButtonRole, a[3] == "*" ? (str(e, kAXSubroleAttribute) == nil && (str(e, kAXTitleAttribute) ?? "").isEmpty) : str(e, kAXTitleAttribute) == a[3] { hit = e; return }
     for k in els(attr(e, kAXChildrenAttribute)) { walk(k, d + 1) }
   }
   for w in windowsOf(pid) { walk(w, 0) }
   emit(["found": hit != nil, "rc": n(hit.map { Int(AXUIElementPerformAction($0, kAXPressAction as CFString).rawValue) })])
+case "setvalue":
+  // t328 setvalue <pid> <AXIdentifier> <file>: the element's AXValue written with the file's text (Notes' body).
+  let pid = pid_t(a[2])!
+  var hit: AXUIElement?
+  func walk(_ e: AXUIElement, _ d: Int) {
+    guard hit == nil, d < 14 else { return }
+    if str(e, "AXIdentifier") == a[3] { hit = e; return }
+    for k in els(attr(e, kAXChildrenAttribute)) { walk(k, d + 1) }
+  }
+  for w in windowsOf(pid) { walk(w, 0) }
+  let text = (try? String(contentsOfFile: a[4], encoding: .utf8)) ?? ""
+  emit(["found": hit != nil, "rc": n(hit.map { Int(AXUIElementSetAttributeValue($0, kAXValueAttribute as CFString, text as CFString).rawValue) })])
 case "read", "setbar":
   let pid = pid_t(a[2])!
   guard let w = findWindow(pid, Int(a[3]) ?? (a[3] as Any)), let area = scrollAreas(w).dropFirst(Int(a[4]) ?? 0).first else { emit(["error": "no area"]); exit(1) }

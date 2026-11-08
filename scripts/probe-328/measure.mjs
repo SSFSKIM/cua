@@ -165,7 +165,7 @@ const areaBy = (scan, pred) => {
 };
 // Scrollable: its content taller than it, an enabled bar, or (no AXScrollArea in the window: Catalyst) a page scroll advertised.
 const scrollableAreas = scan => (scan.windows ?? []).flatMap(w => (w.areas ?? []).filter(a => a.scrollable === true || (a.bar && a.bar.enabled !== false)
-  || (a.role && a.role !== 'AXScrollArea' && (a.actions ?? []).includes('AXScrollDownByPage'))).map(a => ({win: w.index, area: a.index, title: w.title, id: a.id, role: a.content?.role ?? a.role})));
+  || (a.role && a.role !== 'AXScrollArea' && ((a.actions ?? []).includes('AXScrollDownByPage') || a.role === 'AXWebArea'))).map(a => ({win: w.index, area: a.index, title: w.title, id: a.id, role: a.content?.role ?? a.role})));
 const barReset = (pid, win, area) => async () => { t328('setbar', pid, win, area, 0); await sleep(150); };
 
 async function probeTargets() {
@@ -407,6 +407,13 @@ try {
         // A new note, its text pasted: an Apple Event to Notes hangs on the runner (smoke run 42523332336).
         spawnSync('pbcopy', {input: Array.from({length: 150}, (_, i) => `notes line ${i} with words`).join('\n')});
         config.notesMake = osa('tell application "System Events"\nset frontmost of process "Notes" to true\ndelay 0.5\nkeystroke "n" using command down\ndelay 1\nkeystroke "v" using command down\ndelay 1\nend tell', 15_000);
+        // The paste never reached the body (run 42526444701: a sheet over it, the body one viewport tall): the sheet
+        // cancelled, the body's text written by Accessibility.
+        config.notesCancel = t328('press', pid, 'Cancel');
+        const bodyFile = join(T, 'notes328.txt');
+        writeFileSync(bodyFile, Array.from({length: 150}, (_, i) => `notes line ${i} with words`).join('\n'));
+        await sleep(800);
+        config.notesBody = t328('setvalue', pid, 'Note Body Text View', bodyFile);
         await sleep(1500);
         place('process "Notes"', 1, 420, 40, 600, 440);
       });
@@ -422,7 +429,7 @@ try {
       config.catalyst = name;
       block = name ? await systemAppTargets(name, ['-a', CATALYST], async pid => {
         await sleep(3000);
-        config.catalystContinue = t328('press', pid, 'Continue');  // Stocks' first-run privacy sheet
+        config.catalystContinue = t328('press', pid, '*');  // Stocks' first-run privacy sheet: its Continue button has no title
         await sleep(2500);
         place(`process "${name}"`, 1, 420, 40, 600, 440);
       }) : {targets: [], stop: async () => {}, scan: {error: 'no Catalyst app'}};

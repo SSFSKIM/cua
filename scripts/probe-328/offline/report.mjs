@@ -27,7 +27,7 @@ function judge(r) {
   const keyChange = (kb.coverFocused !== ka.coverFocused) || (ka.coverFrontmost === false) || (r.frontOther?.length > 0)
     || kb.targetFocused !== ka.targetFocused || kb.targetMain !== ka.targetMain;
   const truth = r.truth?.y && r.truth.y[0] != null && r.truth.y[1] != null ? (r.truth.y[1] - r.truth.y[0]) * sign
-    : r.truth?.offsets ? (() => { const k = /list/.test(r.target) ? 'list' : 'scroll'; const b = r.truth.offsets[0]?.[k], a = r.truth.offsets[1]?.[k]; return a != null && b != null ? (a - b) * sign : null; })() : null;
+    : r.truth?.offsets ? (() => { const k = /list/.test(r.target) ? 'list' : /catalyst/.test(r.target) ? 'table' : 'scroll'; const b = r.truth.offsets[0]?.[k], a = r.truth.offsets[1]?.[k]; return a != null && b != null ? (a - b) * sign : null; })() : null;
   // Moved the asked way: by more than 2 points, or (no length to scale it: SwiftUI's List) its bar the asked way.
   const barMoved = r.barDelta != null && r.barDelta * sign > 0.0005;
   return {delivered: (px != null && px > 2) || barMoved, barMoved, px, raised: !!r.raised, keyChange, truth, reached: r.truth?.reached ?? null, wheels: r.truth?.wheels ?? null};
@@ -61,6 +61,23 @@ if (flag('factors')) {
     const cells = names.map((n, i) => { const lv = new Map(); for (const r of rs) { const v = r.name.split('/')[i + 1]; const x = lv.get(v) ?? [0, 0]; x[0] += judge(r).delivered ? 1 : 0; x[1] += 1; lv.set(v, x); } return `${n}: ${[...lv].map(([v, x]) => `${v} ${x[0]}/${x[1]}`).join(', ')}`; });
     console.log(`- ${t}: ${cells.join('; ')}`);
   }
+}
+
+if (flag('timing')) {
+  // The read-back an honest answer would rest on: against the apps' own ground truth, how often Accessibility saw a
+  // move that happened (and saw one that did not), and how soon the first move read back.
+  console.log('\n### Read-back against ground truth, and the first move\'s time');
+  const pct = (xs, p) => { const v = xs.filter(x => x != null).sort((a, b) => a - b); return v.length ? v[Math.min(v.length - 1, Math.floor(p * v.length))] : null; };
+  const fam = t => t.split('/')[0] + (/list/.test(t) ? '/list' : '');
+  const g = new Map();
+  for (const r of trials) { const k = fam(r.target); if (!g.has(k)) g.set(k, []); g.get(k).push(r); }
+  table(['family', 'trials with truth', 'truth moved, AX saw', 'truth moved, AX missed', 'truth still, AX moved', 'first move p50/p95/max ms (posted, no phase, delivered)'], [...g].map(([k, rs]) => {
+    const t = rs.map(r => ({r, j: judge(r)})).filter(x => x.j.truth != null);
+    const moved = t.filter(x => Math.abs(x.j.truth) > 2);
+    const fm = rs.filter(r => r.spec?.route === 'post' && (r.spec.post?.phase ?? 'none') === 'none' && judge(r).delivered).map(r => r.firstMoveMs);
+    return [k, t.length, moved.filter(x => x.j.delivered || Math.abs(x.j.px ?? 0) > 2).length, moved.filter(x => !(x.j.delivered || Math.abs(x.j.px ?? 0) > 2)).length,
+      t.filter(x => Math.abs(x.j.truth) <= 2 && (x.j.delivered || Math.abs(x.j.px ?? 0) > 2)).length, `${f1(pct(fm, 0.5))}/${f1(pct(fm, 0.95))}/${f1(pct(fm, 1))} (n ${fm.length})`];
+  }));
 }
 
 const eng = rows.filter(r => r.block === 'engine');

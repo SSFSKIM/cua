@@ -20,6 +20,7 @@ const BLOCK = arg('block'), T328 = arg('t328'), APP = arg('app'), COVER = arg('c
 const SETS = arg('sets', 'full,split,routes').split(',');
 const REPS = Number(arg('reps', 1));
 const CATALYST = arg('catalyst');
+const CATALYST_APP = arg('catalyst-app');
 if (!BLOCK || !T328 || !APP || !COVER || !OUT) { console.error('usage: measure.mjs --block <b> --t328 --app --cover --out'); process.exit(2); }
 const BROWSER = ['safari', 'chrome', 'firefox'].includes(BLOCK) ? BLOCK : 'safari';
 process.env.P287_BROWSER = BROWSER;
@@ -39,10 +40,13 @@ const byPid = pid => `(first process whose unix id is ${pid})`;
 const AWAY = [190, 190];  // over the cover's window
 
 // ---- the probe apps' processes: a state file and a numbered command file -----------------------------------------------
-function spawnApp(bin, label, extra = []) {
+function spawnApp(bin, label, extra = [], envNames = null) {
   const state = join(OUT, `state-${label}.json`), cmds = join(OUT, `cmd-${label}.txt`);
   writeFileSync(cmds, '');
-  const child = spawn(bin, [state, cmds, ...extra], {stdio: 'ignore'});
+  // envNames [stateVar, cmdVar]: the paths by environment, no arguments (a SwiftUI app launched with a path argument
+  // opens it as a document and presents no window: smoke run 42523332336).
+  const child = envNames ? spawn(bin, extra, {stdio: 'ignore', env: {...process.env, [envNames[0]]: state, [envNames[1]]: cmds}})
+    : spawn(bin, [state, cmds, ...extra], {stdio: 'ignore'});
   let n = 0;
   return {child, pid: child.pid, read: () => { try { return JSON.parse(readFileSync(state, 'utf8')); } catch { return null; } },
     send: async (cmd, wait = 250) => { n += 1; writeFileSync(cmds, `${n} ${cmd}\n`); await sleep(wait); },
@@ -90,6 +94,7 @@ function setOf(name) {
       ['line+cont1', {units: 'line', continuous: 1}], ['moved', {pre: 'moved'}], ['srcCombined', {source: 'combined'}], ['srcNil', {source: 'nil'}], ['momentum', {phase: 'momentum'}],
       ['annotated', {tap: 'annotated'}]];
     for (const pointer of ['over', 'away']) for (const [n, p] of v) out.push(post({pointer, post: p, name: `split/${n}/${pointer}`}));
+    for (const pointer of ['over', 'away']) out.push({...post({pointer, name: `split/appPid/${pointer}`}), pidFrom: 'app'});
   }
   if (name === 'smoke') {
     out.push(post({name: 'post/pid/away/none/pixel/vendor'}), post({pointer: 'over', post: {tap: 'hid'}, name: 'post/hid/over/none/pixel/vendor'}),
@@ -106,6 +111,10 @@ function setOf(name) {
   }
   if (name === 'active') {
     for (const pointer of ['away', 'over']) out.push({...post({pointer, name: `active/post/pid/${pointer}`}), active: true});
+  }
+  if (name === 'outside') {
+    // #324's point: the centre of the content's whole frame, below the window when the text is long.
+    for (const pointer of ['away', 'over']) for (const tap of ['pid', 'hid']) out.push({...post({pointer, post: {tap}, name: `outside/${tap}/${pointer}`}), at: 'content'});
   }
   if (name === 'bottom') {
     out.push({...post({name: 'bottom/post/pid/away', post: {}}), bottom: true, direction: 'down'}, {route: 'barWrite', pointer: 'away', name: 'bottom/ax/barWrite', bottom: true, direction: 'down'});
@@ -127,13 +136,14 @@ async function trial(target, spec, rep) {
     await sleep(250);
     const truthBefore = target.truth?.();
     const s = {pid: target.pid, cover: cover.pid, win: target.win, area: target.area, route: spec.route, post: spec.post, pointer: spec.pointer,
+      ...(spec.at ? {at: spec.at} : {}), ...(spec.pidFrom ? {pidFrom: spec.pidFrom} : {}),
       away: AWAY, direction: spec.direction ?? 'auto', delta: 120, watchMs: 1200, settleMs: 900};
     const t0 = Date.now();
     const r = json(sh(T328, ['trial', JSON.stringify(s)], 30_000));
     await sleep(150);
     const truthAfter = target.truth?.();
     Object.assign(row, r, {spec: undefined});
-    row.spec = {route: s.route, post: s.post, pointer: s.pointer};
+    row.spec = {route: s.route, post: s.post, pointer: s.pointer, at: s.at, pidFrom: s.pidFrom};
     row.truth = target.judge ? target.judge(truthBefore, truthAfter, t0) : null;
     row.frontAfter = front();
     if (spec.active) { await refront(); }
@@ -186,7 +196,7 @@ async function texteditTarget() {
     bottom: async () => { t328('setbar', pid, at.title, at.area, 1); await sleep(150); }, activate: async () => { osa(`tell application "System Events"\nset frontmost of ${byPid(pid)} to true\nend tell`); await sleep(400); }}] : [],
     stop: async () => { sh('pkill', ['-x', 'TextEdit']); await sleep(1000); }, scan};
 }
-async function systemAppTargets(name, open, setup) {
+async function systemAppTargets(name, open, setup, label = BLOCK) {
   if (open) { sh('open', open); await sleep(5000); }
   const pid = pidOf(name);
   if (!pid) return {targets: [], stop: async () => {}, scan: {error: `${name} is not running`}};
@@ -194,14 +204,35 @@ async function systemAppTargets(name, open, setup) {
   await sleep(800);
   await refront();
   const scan = scanOf(pid);
-  writeFileSync(join(OUT, `scan-${BLOCK}.json`), JSON.stringify(scan, null, 1));
+  writeFileSync(join(OUT, `scan-${label}.json`), JSON.stringify(scan, null, 1));
   const areas = scrollableAreas(scan).slice(0, 3);
-  return {targets: areas.map(a => ({name: `${BLOCK}/${a.id ?? a.role ?? 'area'}#${a.win}.${a.area}`, pid, win: a.win, area: a.area, reset: barReset(pid, a.win, a.area),
+  return {targets: areas.map(a => ({name: `${label}/${a.id ?? a.role ?? 'area'}#${a.win}.${a.area}`, pid, win: a.win, area: a.area, reset: barReset(pid, a.win, a.area),
     bottom: async () => { t328('setbar', pid, a.win, a.area, 1); await sleep(150); }, activate: async () => { osa(`tell application "System Events"\nset frontmost of ${byPid(pid)} to true\nend tell`); await sleep(400); }})),
     stop: async () => { if (name !== 'Finder') sh('pkill', ['-x', name]); await sleep(1000); }, scan, pid};
 }
+async function catalystTargets() {
+  const state = join(OUT, 'state-catalyst.json'), cmds = join(OUT, 'cmd-catalyst.txt');
+  writeFileSync(cmds, '');
+  sh('open', ['-n', '-a', CATALYST_APP, '--env', `CATALYST328_STATE=${state}`, '--env', `CATALYST328_CMD=${cmds}`]);
+  let pid = null;
+  for (let i = 0; i < 40 && !pid; i++) { await sleep(250); pid = pidOf('Catalyst328'); }
+  await sleep(3000);
+  if (!pid) return {targets: [], stop: async () => {}, scan: {error: 'Catalyst328 did not start'}};
+  place(byPid(pid), 1, 420, 40, 560, 420);
+  await sleep(600);
+  await refront();
+  const scan = scanOf(pid);
+  writeFileSync(join(OUT, 'scan-catalyst328.json'), JSON.stringify(scan, null, 1));
+  let n = 0;
+  const read = () => { try { return JSON.parse(readFileSync(state, 'utf8')); } catch { return null; } };
+  return {targets: scrollableAreas(scan).slice(0, 2).map(a => ({name: `catalyst328/${a.role ?? 'area'}#${a.win}.${a.area}`, pid, win: a.win, area: a.area,
+    reset: async () => { n += 1; writeFileSync(cmds, `${n} reset\n`); await sleep(400); },
+    activate: async () => { osa(`tell application "System Events"\nset frontmost of ${byPid(pid)} to true\nend tell`); await sleep(400); },
+    truth: read, judge: (b, x) => ({offsets: [b?.offsets ?? null, x?.offsets ?? null], scrolls: (x?.scrolls ?? 0)})})),
+    stop: async () => { sh('pkill', ['-x', 'Catalyst328']); await sleep(1000); }, scan};
+}
 async function swiftuiTargets() {
-  const app = spawnApp(SWIFTUI, 'swiftui');
+  const app = spawnApp(SWIFTUI, 'swiftui', [], ['SWIFTUI328_STATE', 'SWIFTUI328_CMD']);
   await sleep(3500);
   place(byPid(app.pid), 1, 420, 40, null, null);
   await sleep(400);
@@ -269,7 +300,7 @@ async function withEngine(desktop, fn) {
 const lean = r => (r.error ? {error: {name: r.error.errorName ?? r.error.code, message: String(r.error.message ?? '').slice(0, 300), meta: r.error.meta ?? null}} : {result: {meta: r.result?.meta ?? null}});
 async function engineCells(connect, target, desktop, reps) {
   const rows = [];
-  for (let rep = 1; rep <= reps; rep++) for (const how of ['coordinate', 'element']) {
+  for (let rep = 1; rep <= reps; rep++) for (const how of ['coordinate', 'element', 'nodeCentre']) {
     const row = {block: 'engine', desktop, target: target.name, rep, name: `engine/${how}`};
     const w = await connect();
     try {
@@ -285,20 +316,37 @@ async function engineCells(connect, target, desktop, reps) {
       const vp = target.viewport;
       const inside = n => n.frame && vp && n.frame.x <= vp[0] + vp[2] / 2 && n.frame.x + n.frame.width >= vp[0] + vp[2] / 2 && n.frame.y <= vp[1] + vp[3] / 2 && n.frame.y + n.frame.height >= vp[1] + vp[3] / 2;
       let args;
+      const wf = sky.window?.frame, s = sky.screenshot?.width && wf ? sky.screenshot.width / wf.width : 1;
+      row.screenshot = sky.screenshot ? {width: sky.screenshot.width, height: sky.screenshot.height} : null;
+      row.windowFrame = wf ?? null;
       if (how === 'coordinate') {
-        const wf = sky.window?.frame, s = sky.screenshot?.width && wf ? sky.screenshot.width / wf.width : 1;
         if (!wf || !vp) { row.problem = 'no window frame or viewport'; rows.push(row); continue; }
         args = {direction: 'down', x: Math.round((vp[0] + vp[2] / 2 - wf.x) * s), y: Math.round((vp[1] + vp[3] / 2 - wf.y) * s)};
+      } else if (how === 'nodeCentre') {
+        // #324's kit: the centre of the first text area's frame (its whole content, for a long text), in the screenshot's pixels.
+        const n = nodes.find(x => x.role === 'AXTextArea' && x.frame) ?? nodes.find(x => /AXTable|AXOutline|AXList/.test(x.role) && x.frame);
+        if (!n || !wf) { row.problem = 'no text area node'; rows.push(row); continue; }
+        row.node = {role: n.role, frame: n.frame};
+        args = {direction: 'down', x: Math.round((n.frame.x + n.frame.width / 2 - wf.x) * s), y: Math.round((n.frame.y + n.frame.height / 2 - wf.y) * s)};
+        row.inScreenshot = row.screenshot ? args.x >= 0 && args.y >= 0 && args.x < row.screenshot.width && args.y < row.screenshot.height : null;
       } else {
         const n = nodes.filter(inside).filter(n => /AXScrollArea|AXTextArea|AXWebArea|AXTable|AXOutline|AXList/.test(n.role)).sort((a, b) => a.frame.width * a.frame.height - b.frame.width * b.frame.height)[0];
         if (!n) { row.problem = `no node at the viewport (${[...new Set(nodes.map(x => x.role))].join(',')})`; rows.push(row); continue; }
         row.node = {role: n.role, frame: n.frame};
         args = {direction: 'down', element: n.token};
       }
+      // t328 reads and watches around the engine's scroll as around its own trials.
+      const tc = spawn(T328, ['trial', JSON.stringify({pid: target.pid, cover: cover.pid, win: target.win, area: target.area, route: 'external', pointer: 'none', direction: 'down', watchMs: 1200, settleMs: 900})], {stdio: ['pipe', 'pipe', 'ignore']});
+      let tout = '';
+      tc.stdout.on('data', d => { tout += d; });
+      for (let i = 0; i < 100 && !tout.includes('"ready"'); i++) await sleep(50);
+      const exited = new Promise(r => tc.on('exit', r));
+      tc.stdin.write('go\n');
       const t0 = Date.now();
       const a = lean(await w.execute('scroll', {pid: target.pid, ...args}, sky.lineage));
       row.ms = Date.now() - t0;
-      await sleep(900);
+      await Promise.race([exited, sleep(15_000)]);
+      try { const r = JSON.parse(tout.trim().split('\n').pop()); row.read = {movedPx: r.movedPx, movedBy: r.movedBy, measures: r.measures, firstMoveMs: r.firstMoveMs, raised: r.raised, frontOther: r.frontOther, keysBefore: r.keysBefore, keysAfter: r.keysAfter}; } catch { row.read = {bad: tout.slice(-300)}; }
       const after = t328('read', target.pid, target.win, target.area).pos;
       row.args = {...args, element: args.element ? 'token' : undefined};
       row.answer = a.error ? a.error.name : 'success';
@@ -312,7 +360,7 @@ async function engineCells(connect, target, desktop, reps) {
       row.front = front();
     } catch (e) { row.exception = String(e?.stack || e).slice(0, 800); } finally { w.close(); }
     rows.push(row);
-    log(`engine ${desktop} ${row.target} r${rep} ${how}: ${row.answer ?? row.problem ?? row.exception} route=${row.route} moved=${row.movedPx} bar=${JSON.stringify(row.bar)} truth=${JSON.stringify(row.truth)?.slice(0, 120)}`);
+    log(`engine ${desktop} ${row.target} r${rep} ${how}: ${row.answer ?? JSON.stringify(row.problem) ?? row.exception} route=${row.route} read=${JSON.stringify(row.read)?.slice(0, 200)} args=${JSON.stringify(row.args)} shot=${JSON.stringify(row.screenshot)} truth=${JSON.stringify(row.truth)?.slice(0, 120)}`);
   }
   return rows;
 }
@@ -346,8 +394,9 @@ try {
       block = await systemAppTargets('Notes', ['-a', 'Notes'], async () => {
         await sleep(2000);
         osa('tell application "System Events" to tell process "Notes" to repeat with b in (buttons of window 1 whose name is in {"Continue", "Get Started", "Not Now", "OK"})\nclick b\nend repeat', 10_000);
-        const body = Array.from({length: 120}, (_, i) => `notes line ${i} with words`).join('<br>');
-        config.notesMake = osa(`tell application "Notes" to make new note with properties {name:"probe328", body:"<h1>probe328</h1>${body}"}`, 15_000);
+        // A new note, its text pasted: an Apple Event to Notes hangs on the runner (smoke run 42523332336).
+        spawnSync('pbcopy', {input: Array.from({length: 150}, (_, i) => `notes line ${i} with words`).join('\n')});
+        config.notesMake = osa('tell application "System Events"\nset frontmost of process "Notes" to true\ndelay 0.5\nkeystroke "n" using command down\ndelay 1\nkeystroke "v" using command down\ndelay 1\nend tell', 15_000);
         await sleep(1500);
         place('process "Notes"', 1, 420, 40, 600, 440);
       });
@@ -365,6 +414,7 @@ try {
       break;
     }
     case 'swiftui': block = await swiftuiTargets(); break;
+    case 'catalyst328': block = await catalystTargets(); break;
     case 'safari': case 'chrome': case 'firefox': block = await browserTargets(); break;
     case 'engine': break;
     default: throw new Error(`unknown block ${BLOCK}`);
@@ -391,10 +441,14 @@ try {
       save();
       await b.stop();
     };
-    const keyOnly = mk => async () => { const b = await mk(); b.targets = b.targets.filter(t => /B\.text|B\.legacy|textedit|swiftui|page/.test(t.name)); return b; };
+    const keyOnly = mk => async () => { const b = await mk(); b.targets = b.targets.filter(t => /B\.text|B\.legacy|textedit|swiftui|catalyst|finder|settings/.test(t.name)); return b; };
     await run(keyOnly(probeTargets), 'shared', REPS);
     await run(texteditTarget, 'shared', REPS);
     await run(keyOnly(swiftuiTargets), 'shared', REPS);
+    if (CATALYST_APP) await run(keyOnly(catalystTargets), 'shared', REPS);
+    await run(keyOnly(async () => { const dir = join(T, 'probe328files'); mkdirSync(dir, {recursive: true}); for (let i = 0; i < 160; i++) writeFileSync(join(dir, `file ${String(i).padStart(3, '0')}.txt`), 'x');
+      return systemAppTargets('Finder', [dir], async () => { place('process "Finder"', 1, 420, 40, 560, 420); }, 'finder'); }), 'shared', REPS);
+    await run(keyOnly(() => systemAppTargets('System Settings', ['-b', 'com.apple.systempreferences'], async () => { place('process "System Settings"', 1, 400, 40, 620, 420); await sleep(800); }, 'settings')), 'shared', REPS);
     await run(keyOnly(probeTargets), 'dedicated', Math.max(1, REPS - 1));
     await run(texteditTarget, 'dedicated', Math.max(1, REPS - 1));
   }

@@ -7,9 +7,11 @@
 //   t328 setbar <pid> <win> <area> <fraction>   the vertical bar's AXValue written (a reset)
 //   t328 trial <json>          one trial (the spec below); prints one JSON line
 // The spec: {pid, cover (pid), win (index or title substring), area (index), route, post: {tap, units, delta, phase,
-// continuous, fields, pre}, pointer: over|away|none, away: [x, y], direction: down|up|auto, delta (px requested),
-// watchMs, settleMs}. Routes: post, barWrite, barIncrement, pagePress, arrowPress, scrollByPage, scrollToVisible,
-// visibleRange, makeRectVisible, none (a control: nothing done).
+// continuous, fields, pre, source}, at: content|[x, y] (default the viewport's centre), pidFrom: app (default the area's
+// own process), pointer: over|away|none, away: [x, y], direction: down|up|auto, delta (px requested), watchMs,
+// settleMs}. Routes: post, barWrite, barIncrement, pagePress, arrowPress, scrollByPage, scrollToVisible, visibleRange,
+// makeRectVisible, none (a control: nothing done), external (another process scrolls: `{"ready":true}` once read, then
+// the clock starts on a line from stdin).
 import AppKit
 import ApplicationServices
 import Foundation
@@ -75,20 +77,24 @@ func contentOf(_ area: AXUIElement) -> AXUIElement? {
   return els(attr(area, kAXChildrenAttribute)).first { role($0) != kAXScrollBarRole }
 }
 func bar(_ area: AXUIElement) -> AXUIElement? { el(attr(area, kAXVerticalScrollBarAttribute)) }
-/// A descendant of the area (leaves first met in DFS) whose frame lies wholly below the viewport.
+/// A descendant of the area whose frame lies wholly below the viewport: the first (DFS) that advertises AXScrollToVisible,
+/// else the first whose AXScrollToVisible attribute is settable (a cell's, F §16.8), else the first of the plain roles.
 func belowFold(_ area: AXUIElement, viewport: CGRect, min: CGFloat) -> AXUIElement? {
-  var budget = 1500
-  var best: AXUIElement?
+  var budget = 2500
+  var byAction: AXUIElement?, byAttribute: AXUIElement?, plain: AXUIElement?
   func walk(_ e: AXUIElement, _ d: Int) {
     budget -= 1
-    guard budget > 0, d < 12, best == nil else { return }
+    guard budget > 0, d < 14, byAction == nil else { return }
     let r = role(e)
-    if r != kAXScrollBarRole, e != area, let f = frameOf(e), f.minY > viewport.maxY + min, f.height > 0, f.height < viewport.height,
-       ["AXRow", "AXCell", "AXStaticText", "AXButton", "AXTextField", "AXGroup", "AXImage"].contains(r) { best = e; return }
+    if r != kAXScrollBarRole, e != area, let f = frameOf(e), f.minY > viewport.maxY + min, f.height > 0, f.height < viewport.height {
+      if actions(e).contains("AXScrollToVisible") { byAction = e; return }
+      if byAttribute == nil, settable(e, "AXScrollToVisible") { byAttribute = e }
+      if plain == nil, ["AXRow", "AXCell", "AXStaticText", "AXButton", "AXTextField", "AXGroup", "AXImage"].contains(r) { plain = e }
+    }
     for k in els(attr(e, kAXChildrenAttribute)) { walk(k, d + 1) }
   }
   walk(area, 0)
-  return best
+  return byAction ?? byAttribute ?? plain
 }
 /// A descendant inside the viewport, near its top, tracked across the trial (its frame's y).
 func tracked(_ area: AXUIElement, viewport: CGRect) -> AXUIElement? {
@@ -294,7 +300,17 @@ case "trial":
   guard ai < areas.count, let viewport = frameOf(areas[ai]) else { emit(["error": "no area \(ai) of \(areas.count)", "spec": spec]); exit(1) }
   let area = areas[ai]
   let wid = windowNumber(w), wf = frameOf(w)
-  let point = (spec["at"] as? [Double]).map { CGPoint(x: $0[0], y: $0[1]) } ?? CGPoint(x: viewport.midX, y: viewport.midY)
+  // The point: the viewport's centre, the content's centre (#324's kit aimed there: below a long text's window), or given.
+  let contentFrame = contentOf(area).flatMap(frameOf)
+  let point = (spec["at"] as? [Double]).map { CGPoint(x: $0[0], y: $0[1]) }
+    ?? ((spec["at"] as? String) == "content" ? contentFrame.map { CGPoint(x: $0.midX, y: $0.midY) } : nil)
+    ?? CGPoint(x: viewport.midX, y: viewport.midY)
+  out["pointInWindow"] = wf.map { $0.contains(point) } ?? false
+  // The process the events go to: the area's own (an out-of-process view's, as the engine's hit-test owner), or the app's.
+  var areaPid: pid_t = 0
+  AXUIElementGetPid(area, &areaPid)
+  let postPid = (spec["pidFrom"] as? String) == "app" || areaPid == 0 ? pid : areaPid
+  out["areaPid"] = Int(areaPid); out["postPid"] = Int(postPid)
   out["window"] = ["title": n(str(w, kAXTitleAttribute)), "number": n(wid.map { Int($0) }), "frame": rect(wf)] as [String: Any]
   out["viewport"] = rect(viewport); out["point"] = [point.x, point.y]
   let track = tracked(area, viewport: viewport)
@@ -324,6 +340,7 @@ case "trial":
   // Anything prepared before the clock starts: the events, the route's element.
   let p = spec["post"] as? [String: Any] ?? [:]
   let events = route == "post" ? scrollEvents(p, point: point, window: wid, windowFrame: wf, down: down) : []
+  if route == "external" { emit(["ready": true]); _ = readLine() }
   let t0 = unixMs()
   let watch = Watch(target: pid, cover: cover, ms: watchMs)
   watch.start(from: t0)
@@ -332,15 +349,18 @@ case "trial":
   case "post":
     if (p["pre"] as? String) == "moved", let m = moveEvent(point, window: wid, frame: wf) {
       m.timestamp = DispatchTime.now().uptimeNanoseconds
-      if (p["tap"] as? String ?? "pid") == "pid" { m.postToPid(pid) } else { m.post(tap: .cgSessionEventTap) }
+      if (p["tap"] as? String ?? "pid") == "pid" { m.postToPid(postPid) } else { m.post(tap: .cgSessionEventTap) }
       Thread.sleep(forTimeInterval: 0.02)
     }
-    post(events, tap: p["tap"] as? String ?? "pid", pid: pid, gapMs: p["gapMs"] as? Double ?? 8)
+    post(events, tap: p["tap"] as? String ?? "pid", pid: postPid, gapMs: p["gapMs"] as? Double ?? 8)
     detail["events"] = events.count
     detail["continuous"] = events.first.map { Int($0.getIntegerValueField(.scrollWheelEventIsContinuous)) } ?? NSNull()
   case "barWrite":
-    if let b = bar(area), let v = before.bar, let c = before.contentH, let vh = before.viewH, c > vh {
-      let target = min(max(v + (down ? 1 : -1) * requested / (c - vh), 0), 1)
+    if let b = bar(area), let v = before.bar {
+      // The step that moves `requested` points when the content's height reads; else 0.15 of the range.
+      let step = before.contentH.flatMap { c in before.viewH.map { vh in c > vh ? requested / (c - vh) : 0.15 } } ?? 0.15
+      detail["step"] = r4(step)
+      let target = min(max(v + (down ? 1 : -1) * step, 0), 1)
       detail["wrote"] = r4(target)
       rc = AXUIElementSetAttributeValue(b, kAXValueAttribute as CFString, target as CFNumber).rawValue
     } else { detail["missing"] = "bar, value or content" }

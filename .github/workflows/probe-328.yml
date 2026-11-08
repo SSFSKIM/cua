@@ -44,7 +44,8 @@ jobs:
             if otool -L "$exe" 2>/dev/null | grep -q iOSSupport; then echo "$app"; fi
           done > "$RUNNER_TEMP/probe-328/catalyst-all.txt"
           cat "$RUNNER_TEMP/probe-328/catalyst-all.txt"
-          { grep -E '/(Stocks|Home|News|Podcasts|Voice Memos)\.app$' "$RUNNER_TEMP/probe-328/catalyst-all.txt"; cat "$RUNNER_TEMP/probe-328/catalyst-all.txt"; } | head -1 > "$RUNNER_TEMP/probe-328/catalyst.txt"
+          # Home showed no scroll area (smoke run 42523332336): the ones with a list first.
+          for n in Stocks Podcasts News Weather Books; do grep "/$n.app$" "$RUNNER_TEMP/probe-328/catalyst-all.txt"; done | head -1 > "$RUNNER_TEMP/probe-328/catalyst.txt"
       - name: Build the tools and main's engine
         env:
           GROUP: ${{ matrix.group }}
@@ -55,6 +56,15 @@ jobs:
             git worktree add "$RUNNER_TEMP/src" "$P328_MAIN_REF"
             echo "P328_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/src" rev-parse HEAD)" >> "$GITHUB_ENV"
             swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+            # #324's own kit, for its scroll cells re-run on main (run.sh's repro324).
+            swiftc -O -o "$RUNNER_TEMP/p321-win" scripts/probe-321/win.swift
+            swiftc -O -o "$RUNNER_TEMP/ax324" scripts/probe-324/ax.swift
+            mkdir -p "$RUNNER_TEMP/Probe324.app/Contents/MacOS"
+            swiftc -O -o "$RUNNER_TEMP/Probe324.app/Contents/MacOS/Probe324" scripts/probe-324/app.swift
+            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<plist version="1.0"><dict>' \
+              '<key>CFBundleIdentifier</key><string>com.ssfskim.probe324</string><key>CFBundleName</key><string>Probe324</string>' \
+              '<key>CFBundleExecutable</key><string>Probe324</string><key>CFBundlePackageType</key><string>APPL</string>' \
+              '<key>NSPrincipalClass</key><string>NSApplication</string></dict></plist>' > "$RUNNER_TEMP/Probe324.app/Contents/Info.plist"
           fi
           swiftc -O -o "$RUNNER_TEMP/t328" scripts/probe-328/t328.swift
           bundle() {  # <dir> <bundle id> <name> <executable> <source> [swiftc flags]
@@ -73,6 +83,20 @@ jobs:
           bundle "$RUNNER_TEMP/Probe328.app" com.ssfskim.probe328 Probe328 Probe328 scripts/probe-328/app.swift
           bundle "$RUNNER_TEMP/Cover328.app" com.ssfskim.cover328 Cover328 Probe328 scripts/probe-328/app.swift
           bundle "$RUNNER_TEMP/SwiftUI328.app" com.ssfskim.swiftui328 SwiftUI328 SwiftUI328 scripts/probe-328/swiftui.swift -parse-as-library
+          # Catalyst328: UIKit for Mac (platform 6), its plist an iPad app's.
+          c="$RUNNER_TEMP/Catalyst328.app/Contents"
+          mkdir -p "$c/MacOS"
+          xcrun --sdk macosx swiftc -O -parse-as-library -target "$(uname -m)-apple-ios17.0-macabi" \
+            -Fsystem "$(xcrun --sdk macosx --show-sdk-path)/System/iOSSupport/System/Library/Frameworks" -o "$c/MacOS/Catalyst328" scripts/probe-328/catalyst.swift
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<plist version="1.0"><dict>' \
+            '<key>CFBundleIdentifier</key><string>com.ssfskim.catalyst328</string><key>CFBundleName</key><string>Catalyst328</string>' \
+            '<key>CFBundleExecutable</key><string>Catalyst328</string><key>CFBundlePackageType</key><string>APPL</string>' \
+            '<key>CFBundleVersion</key><string>1</string><key>CFBundleShortVersionString</key><string>1.0</string>' \
+            '<key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>' \
+            '<key>UIDeviceFamily</key><array><integer>2</integer></array><key>LSMinimumSystemVersion</key><string>14.0</string>' \
+            '</dict></plist>' > "$c/Info.plist"
+          codesign -s - --force "$RUNNER_TEMP/Catalyst328.app" || true
+          otool -l "$c/MacOS/Catalyst328" | grep -A3 LC_BUILD_VERSION | head -4
       - name: Measure
         env:
           GROUP: ${{ matrix.group }}

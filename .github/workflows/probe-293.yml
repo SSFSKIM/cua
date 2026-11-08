@@ -1,0 +1,75 @@
+# #293's hosted check (scripts/probe-293/live.mjs, made from probe-288's): an engine SIGKILLed after enabling Chrome for
+# Testing leaves AXEnhancedUserInterface on; the next engine's start, in the same socket directory, writes it false
+# from the enablement record and Chrome leaves complete mode. fix/293-eui-restore's engine against origin/main's (the
+# control, which leaves it on). Three runners, each running every cell twice (--repeat 2). Runs only on a push to probe/293-hosted (or by hand);
+# not a ci-kit gate.
+name: probe-293
+on:
+  push:
+    branches: [probe/293-hosted]
+  workflow_dispatch:
+    inputs:
+      cells:
+        description: --cells (label prefixes, comma-separated; empty for #293's cells)
+        required: false
+        default: ''
+      repeat:
+        description: --repeat (each cell this many times per runner)
+        required: false
+        default: '2'
+permissions:
+  contents: read
+env:
+  # Set both to the commits under test before pushing (quoted: a ref of digits only is a number in YAML).
+  P293_MAIN_REF: '81a43091'
+  P293_BRANCH_REF: 'bc44b120'
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2, 3]
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: TCC rows for the services the engine needs
+        run: |
+          sw_vers
+          for db in "/Library/Application Support/com.apple.TCC/TCC.db" "$HOME/Library/Application Support/com.apple.TCC/TCC.db"; do
+            echo "== $db"
+            sudo sqlite3 "$db" "select service, client, auth_value from access where service in ('kTCCServiceAccessibility','kTCCServicePostEvent','kTCCServiceScreenCapture','kTCCServiceListenEvent') order by service, client" || true
+          done
+      - name: Build main's engine
+        run: |
+          git worktree add "$RUNNER_TEMP/main" "$P293_MAIN_REF"
+          echo "P288_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
+          swift build --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+      - name: Build the branch's engine
+        run: |
+          git fetch --no-tags origin fix/293-eui-restore
+          git worktree add "$RUNNER_TEMP/branch" "$P293_BRANCH_REF"
+          echo "P288_BRANCH_COMMIT=$(git -C "$RUNNER_TEMP/branch" rev-parse HEAD)" >> "$GITHUB_ENV"
+          swift build --package-path "$RUNNER_TEMP/branch/native/engine" --scratch-path "$RUNNER_TEMP/eng-branch"
+      - name: Build the AX tool
+        run: swiftc -O -o "$RUNNER_TEMP/p293-ax" scripts/probe-293/ax.swift
+      - name: Live check
+        env:
+          P288_REP: ${{ matrix.rep }}
+          P293_CELLS: ${{ github.event.inputs.cells || 'c7/,c8/' }}
+          P293_REPEAT: ${{ github.event.inputs.repeat || '2' }}
+        run: node scripts/probe-293/live.mjs --main "$RUNNER_TEMP/eng/debug/cua-engine" --branch "$RUNNER_TEMP/eng-branch/debug/cua-engine" --ax "$RUNNER_TEMP/p293-ax" --cells "$P293_CELLS" --repeat "$P293_REPEAT" --out "$RUNNER_TEMP/probe-293"
+      - name: The engines' enablement log
+        if: always()
+        run: log show --predicate 'subsystem == "io.github.ssfskim.cua.engine" AND category == "enablement"' --info --last 30m | tail -200 || true
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-293-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-293/*.json
+          if-no-files-found: warn

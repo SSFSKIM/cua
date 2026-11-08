@@ -641,18 +641,20 @@ func pressConfirmingValue(app: String, checksValue: Bool, readValue: () -> Strin
 }
 
 /// Shared mode's refusal of a left pointer into a Chromium or (#315) Gecko web area (#282), in the Linux engine's form (the
-/// cause, then the remedy): nothing was posted. `engine`, the page's, adds what still works there in the background
+/// cause, then the remedy): nothing was posted. The remedy never reads as the model's to raise the app (the design
+/// session's ruling 80a11b9a: in shared mode that puts a window over the person's): a dedicated desktop, or the person
+/// bringing the app forward when asked. `engine`, the page's, adds what still works there in the background
 /// (`backgroundFieldAlternative`); Chromium's wording is unchanged.
 func backgroundClickRefused(_ app: String, engine: PageEngine = .other) -> EngineError {
   EngineError(name: "backgroundClickRefused",
-    "\(app)'s web page does not accept a background click; bring \(app) forward or use a dedicated desktop" + backgroundFieldAlternative(engine))
+    "\(app)'s web page does not accept a background click; use a dedicated desktop, or ask the person to bring \(app) forward" + backgroundFieldAlternative(engine))
 }
 
 /// The refusal of a control whose action the page has not exposed yet (`WebAreaRefusal.noAction`): its accessibility may
 /// still be coming up, so observing the app first may let the next click through.
 func backgroundClickRefusedObserveFirst(_ app: String, engine: PageEngine = .other) -> EngineError {
   EngineError(name: "backgroundClickRefused",
-    "\(app)'s web page does not accept a background click, and the control there exposes no action yet; observe \(app) with get_app_state first and click again, or bring \(app) forward or use a dedicated desktop"
+    "\(app)'s web page does not accept a background click, and the control there exposes no action yet; observe \(app) with get_app_state first and click again, or use a dedicated desktop, or ask the person to bring \(app) forward"
       + backgroundFieldAlternative(engine))
 }
 

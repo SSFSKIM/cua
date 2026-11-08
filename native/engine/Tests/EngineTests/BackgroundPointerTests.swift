@@ -80,7 +80,7 @@ final class BackgroundPointerTests: XCTestCase {
       XCTAssertThrowsError(try attempt(), name) {
         let error = $0 as? EngineError
         XCTAssertEqual(error?.errorName, "backgroundClickRefused", name)
-        XCTAssertEqual(error?.message, "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop")
+        XCTAssertEqual(error?.message, "Google Chrome for Testing's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Google Chrome for Testing forward")
       }
       XCTAssertEqual(seam.posts.count, 0, "nothing posted: \(name)")
       XCTAssertEqual(seam.holds, 0, "no screen-update hold: \(name)")

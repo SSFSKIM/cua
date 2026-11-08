@@ -590,14 +590,15 @@ func focusFallbackByPress(role: String, actions: [String]?, app: String, press: 
 /// The refusal of focusField's fallback on a Gecko page whose field has no action to focus it: nothing was done.
 func focusFallbackUnfocusable(_ app: String) -> EngineError {
   EngineError(name: "backgroundClickRefused",
-    "\(app)'s text field cannot be focused in the background: \(app)'s web page does not accept a background click, and the field exposes no accessibility action to focus it instead, so nothing was changed. Bring \(app) forward or use a dedicated desktop")
+    "\(app)'s text field cannot be focused in the background: \(app)'s web page does not accept a background click, and the field exposes no accessibility action to focus it instead, so nothing was changed. Use a dedicated desktop, or ask the person to bring \(app) forward")
 }
 
-/// focusField's fallback on a Gecko page whose press did not leave the field reading focused: the action went, the
-/// value or selection was not changed.
+/// focusField's fallback on a Gecko page whose press did not leave the field reading focused: the action went, and the
+/// page may have acted on it (a focus handler changing the value, then blurring the field), so the sentence claims only
+/// that the method's own write was skipped (the review of acb88f72..146b76a7, one P2).
 func focusFallbackUnconfirmed(_ app: String) -> EngineError {
   EngineError(name: "clickUnconfirmed",
-    "\(app)'s text field could not be focused in the background: its accessibility action was performed, but the field does not report focus, so nothing was changed. Observe \(app) with get_app_state before any retry, and never retry blindly; to change the field, bring \(app) forward or use a dedicated desktop")
+    "\(app)'s text field could not be focused in the background: its accessibility action was performed, but the field does not report focus, so the requested value or selection was not written. Observe \(app) with get_app_state before any retry, and never retry blindly; to change the field, use a dedicated desktop, or ask the person to bring \(app) forward")
 }
 
 /// The note of a Gecko field focused by its action (#315): no caret was placed, so the place typing goes is Gecko's.

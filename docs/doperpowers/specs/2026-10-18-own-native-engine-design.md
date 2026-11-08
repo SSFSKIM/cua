@@ -3324,26 +3324,40 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   9. **Not done:** the toolbar's `clickUnconfirmed` (item 4, #318); a Firefox field's caret at the point (no
      AXSelectedTextRange step was measured on Gecko).
   10. **The refusal names what still works** (the design session's ruling 99e45959, which accepted the web-area scope
-     and the first build's refusal of the fallback click, since replaced by item 7's press). On a Gecko page, `backgroundClickRefused` and its observe-first form
-     add a sentence (Routes.swift `backgroundFieldAlternative`, keyed on the page engine the pointer carries,
-     `PointerTarget.engine`, never on an app name):
-     `Firefox's web page does not accept a background click; bring Firefox forward or use a dedicated desktop. A text
-     field on the page still works in the background: click the field by its element ID, which focuses it through
-     accessibility, then type or set its value`. It reaches a drag, a double click, and a click on something with no
-     action (the element route's walk refusal and its no-action refusal). An element click on a Firefox field is carried
-     by #313's press and read-back, or by item 6's route when its point lands inside it, and a focused field takes
-     set_value with no fallback click. Where the press on that very field is what failed, the sentence would not be
-     true, so it is not given: the focus route's own refusals (a field with no action, a walk that reaches no text-entry
-     element) name no alternative, and the fallback's two failures (ruling 1cd6ed32) name only Firefox brought forward
-     and a dedicated desktop:
+     and the first build's refusal of the fallback click, since replaced by item 7's press). On a Gecko page,
+     `backgroundClickRefused` and its observe-first form add a sentence (Routes.swift `backgroundFieldAlternative`,
+     keyed on the page engine the pointer carries, `PointerTarget.engine`, never on an app name):
+     `Firefox's web page does not accept a background click; use a dedicated desktop, or ask the person to bring
+     Firefox forward. A text field on the page still works in the background: click the field by its element ID, which
+     focuses it through accessibility, then type or set its value`, and the observe-first form `Firefox's web page does
+     not accept a background click, and the control there exposes no action yet; observe Firefox with get_app_state
+     first and click again, or use a dedicated desktop, or ask the person to bring Firefox forward. A text field on the
+     page still works in the background: …` (the same sentence). It reaches a drag, a double click, and a click on
+     something with no action (the element route's walk refusal and its no-action refusal). An element click on a
+     Firefox field is carried by #313's press and read-back, or by item 6's route when its point lands inside it, and a
+     focused field takes set_value with no fallback click. Where the press on that very field is what failed, the
+     sentence would not be true, so it is not given: the focus route's own refusals (a field with no action, a walk that
+     reaches no text-entry element) name no alternative, and the fallback's two failures (ruling 1cd6ed32) name only a
+     dedicated desktop and the person bringing Firefox forward:
      `Firefox's text field cannot be focused in the background: Firefox's web page does not accept a background click,
-     and the field exposes no accessibility action to focus it instead, so nothing was changed. Bring Firefox forward or
-     use a dedicated desktop` (`backgroundClickRefused`), and `Firefox's text field could not be focused in the
-     background: its accessibility action was performed, but the field does not report focus, so nothing was changed.
-     Observe Firefox with get_app_state before any retry, and never retry blindly; to change the field, bring Firefox
-     forward or use a dedicated desktop` (`clickUnconfirmed`). Chromium's and every other engine's wording is unchanged: its JS tests
-     (`test/services-engine-service.test.mjs`) and `agent-cursor.md`, which quotes the sentence's first clause, still
-     hold as they are.
+     and the field exposes no accessibility action to focus it instead, so nothing was changed. Use a dedicated
+     desktop, or ask the person to bring Firefox forward` (`backgroundClickRefused`; nothing was performed, so "nothing
+     was changed" holds), and `Firefox's text field could not be focused in the background: its accessibility action
+     was performed, but the field does not report focus, so the requested value or selection was not written. Observe
+     Firefox with get_app_state before any retry, and never retry blindly; to change the field, use a dedicated desktop,
+     or ask the person to bring Firefox forward` (`clickUnconfirmed`). That one claims only the method's own write
+     skipped (the review of acb88f72..146b76a7, one P2): the press went, and the page may have acted on it, a focus
+     handler changing the value and blurring the field before the next read, or the reads failing after it took effect.
+  12. **The remedy is never the model's raise** (the design session's ruling 80a11b9a). In shared mode, bringing the app
+     forward puts a window over the person's, which the host's rules forbid unless the person asks, so no refusal may
+     read as telling the model to do it. Every refusal sentence above names a dedicated desktop, or the person bringing
+     the app forward, which the model may ask them to do. **This changes Chromium's text too**, since the phrase is
+     #282's shared template (`backgroundClickRefused`, `backgroundClickRefusedObserveFirst`): `<App>'s web page does
+     not accept a background click; use a dedicated desktop, or ask the person to bring <App> forward`, where #282's
+     entry above has `bring <App> forward or use a dedicated desktop`. Chromium's form is otherwise word for word as
+     before, and Gecko's adds item 10's sentence. The JS service tests (`test/services-engine-service.test.mjs`), the
+     first-call paragraph (`docs/cua-api/agent-cursor.md`, its docs test, repl-parity's docs oracle, and the surface
+     inventory's #315 Table 3 addition) carry the new clause.
   11. **The hosted A/B of acb88f72 against main** (run https://github.com/SSFSKIM/cua/actions/runs/42457001051,
      confirmations 42459610340 and 42460845888; Firefox 159 behind a frontmost TextEdit). On main, set_value on an
      unfocused background Firefox text field was not lost: its posted fallback click succeeded, 3 of 3, and the value

@@ -18,7 +18,7 @@ final class GeckoPointerTests: XCTestCase {
   private let point = CGPoint(x: 300, y: 400)
   private let activations = HeldActivations()
   /// The refusal into Firefox's page, naming what still works on its fields (the design session's ruling 99e45959).
-  private let refusal = "Firefox's web page does not accept a background click; bring Firefox forward or use a dedicated desktop. A text field on the page still works in the background: click the field by its element ID, which focuses it through accessibility, then type or set its value"
+  private let refusal = "Firefox's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Firefox forward. A text field on the page still works in the background: click the field by its element ID, which focuses it through accessibility, then type or set its value"
 
   private final class Node {
     let role: String?
@@ -235,17 +235,17 @@ final class GeckoPointerTests: XCTestCase {
     }
     XCTAssertEqual(backgroundClickRefused("Firefox", engine: .gecko).message, refusal)
     XCTAssertEqual(backgroundClickRefusedObserveFirst("Firefox", engine: .gecko).message,
-                   "Firefox's web page does not accept a background click, and the control there exposes no action yet; observe Firefox with get_app_state first and click again, or bring Firefox forward or use a dedicated desktop. A text field on the page still works in the background: click the field by its element ID, which focuses it through accessibility, then type or set its value")
+                   "Firefox's web page does not accept a background click, and the control there exposes no action yet; observe Firefox with get_app_state first and click again, or use a dedicated desktop, or ask the person to bring Firefox forward. A text field on the page still works in the background: click the field by its element ID, which focuses it through accessibility, then type or set its value")
     for engine in [PageEngine.chromium, .other] {
       XCTAssertEqual(backgroundClickRefused("Chrome", engine: engine).message,
-                     "Chrome's web page does not accept a background click; bring Chrome forward or use a dedicated desktop", "\(engine)")
+                     "Chrome's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Chrome forward", "\(engine)")
       XCTAssertFalse(backgroundClickRefusedObserveFirst("Chrome", engine: engine).message.contains("text field"), "\(engine)")
       let seam = GuardSeam(frontmost: user)
       var refusedMeta = meta(connection())
       let chrome = PointerTarget(view: .webArea, app: "Chrome", engine: engine)
       XCTAssertThrowsError(try click(seam, activation: firefoxActivation(seam), pointer: chrome, meta: &refusedMeta)) {
         XCTAssertEqual(($0 as? EngineError)?.message,
-                       "Chrome's web page does not accept a background click; bring Chrome forward or use a dedicated desktop", "\(engine)")
+                       "Chrome's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Chrome forward", "\(engine)")
       }
     }
   }
@@ -378,7 +378,7 @@ final class GeckoPointerTests: XCTestCase {
     XCTAssertThrowsError(try click(refusedSeam, activation: firefoxActivation(refusedSeam), pointer: pointer(.webArea, fallbackRoute(.gecko, inert)),
                                    meta: &refusedMeta)) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "backgroundClickRefused")
-      XCTAssertEqual(($0 as? EngineError)?.message, "Firefox's text field cannot be focused in the background: Firefox's web page does not accept a background click, and the field exposes no accessibility action to focus it instead, so nothing was changed. Bring Firefox forward or use a dedicated desktop")
+      XCTAssertEqual(($0 as? EngineError)?.message, "Firefox's text field cannot be focused in the background: Firefox's web page does not accept a background click, and the field exposes no accessibility action to focus it instead, so nothing was changed. Use a dedicated desktop, or ask the person to bring Firefox forward")
     }
     XCTAssertEqual(inert.performs.count, 0)
     XCTAssertEqual(refusedSeam.posts.count, 0)
@@ -388,7 +388,7 @@ final class GeckoPointerTests: XCTestCase {
     XCTAssertThrowsError(try click(stuckSeam, activation: firefoxActivation(stuckSeam), pointer: pointer(.webArea, fallbackRoute(.gecko, stuck, focuses: false)),
                                    meta: &stuckMeta)) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
-      XCTAssertEqual(($0 as? EngineError)?.message, "Firefox's text field could not be focused in the background: its accessibility action was performed, but the field does not report focus, so nothing was changed. Observe Firefox with get_app_state before any retry, and never retry blindly; to change the field, bring Firefox forward or use a dedicated desktop")
+      XCTAssertEqual(($0 as? EngineError)?.message, "Firefox's text field could not be focused in the background: its accessibility action was performed, but the field does not report focus, so the requested value or selection was not written. Observe Firefox with get_app_state before any retry, and never retry blindly; to change the field, use a dedicated desktop, or ask the person to bring Firefox forward")
       XCTAssertFalse(($0 as? EngineError)?.message.contains("element ID") == true)
     }
     XCTAssertEqual(stuck.performs.map(\.action), ["AXPress"])
@@ -411,7 +411,7 @@ final class GeckoPointerTests: XCTestCase {
     var chromeMeta = meta(connection())
     XCTAssertThrowsError(try click(chromeSeam, activation: firefoxActivation(chromeSeam),
                                    pointer: PointerTarget(view: .webArea, app: "Chrome", engine: .chromium), meta: &chromeMeta)) {
-      XCTAssertEqual(($0 as? EngineError)?.message, "Chrome's web page does not accept a background click; bring Chrome forward or use a dedicated desktop")
+      XCTAssertEqual(($0 as? EngineError)?.message, "Chrome's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Chrome forward")
     }
     XCTAssertEqual(chromeSeam.posts.count, 0)
     let safariSeam = GuardSeam(frontmost: user)

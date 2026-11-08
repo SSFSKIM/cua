@@ -353,7 +353,7 @@ const TEXTEDIT = [
   {name: 'sv/text', steps: [S.sv('text', 'sv324text', a => a.value)]},
   {name: 'st/text', steps: [S.st('text', 'native line 3 ', a => a.sel, [notesLine(3), 'native line 3 '.length])]},
   {name: 'coord/text+type+key', steps: [S.coord('text', (b, a) => ({seen: (a.sel?.[0] ?? 0) > 0, sel: a.sel}), f => ({x: f.x + 120, y: f.y + 50})),
-    S.type('q324', a => a.value), S.key('BackSpace', a => a.value)]},
+    S.type('q324', a => a.around), {...S.key('BackSpace', a => a.value), effect: (b, a) => ({seen: a.length === b.length - 1, before: b.length, after: a.length})}]},
   {name: 'scroll/text', steps: [S.scroll('text', a => a.scroll)]},
   {name: 'drag/text', steps: [S.drag('text', a => a.sel?.[1])]},
 ];
@@ -495,7 +495,7 @@ if (BLOCK === 'residue') {
         for (let i = 1; i <= CLICKS; i++) {
           const cell = {name: `coord/${tgt}#${i}`, steps: [S.coord(tgt, (bf, a) => {
             const d = pageDelta(bf, a);
-            const pointer = ['pointerdown', 'mousedown', 'mouseup', 'click'].every(k => d[k] === 1);
+            const pointer = ['pointerdown', 'mousedown', 'mouseup'].every(k => d[k] === 1) && (d.click ?? 0) >= 1;
             const own = tgt === 'apply' ? d.applyClick === 1 : tgt === 'checkbox' ? d.optionChange === 1 : d[`${tgt}Focus`] === 1 && a.active === tgt;
             return {seen: pointer && own, pointer, own};
           })]};
@@ -514,32 +514,34 @@ if (BLOCK === 'residue') {
   }
 } else {
   const cells = {safari: SAFARI, appkit: APPKIT, textedit: TEXTEDIT}[BLOCK].filter(c => !ONLY || ONLY.includes(c.name));
-  const engines = {};
-  for (const m of MODES) engines[m] = await startEngine(m);
-  try {
+  // One engine process alive at a time (the smoke run 42467362773: with three processes of the one build alive, every
+  // capture but the first process's timed out), a fresh one per repetition and mode.
+  {
     for (let rep = FIRST_REP; rep < FIRST_REP + REPS; rep++) {
       const modes = rep % 2 ? MODES : [...MODES].reverse();
       for (const mode of modes) {
         const label = `${BLOCK}-${mode}-r${rep}`;
         log(`== ${new Date().toISOString().slice(11, 19)} ${label}`);
-        let target;
+        let target, engine;
         try {
+          engine = await startEngine(mode);
           target = await (BLOCK === 'safari' ? safariTarget : BLOCK === 'appkit' ? appkitTarget : texteditTarget)(label);
           // An untimed observation first (the tree built), then the cells.
-          const warm = await engines[mode].connect();
+          const warm = await engine.connect();
           await observe(warm, target.pid, `${label}-warm`); warm.close();
           for (const cell of cells.filter(c => mode !== 'press' || FOCUS_CELLS(c))) {
-            const row = await runCell({engine: engines[mode], mode, rep, target}, cell);
+            const row = await runCell({engine, mode, rep, target}, cell);
             results.push(row); save(); say(row);
           }
         } catch (e) {
           results.push({label, mode, rep, exception: String(e?.stack || e).slice(0, 1500)}); save();
           log(`${label}: EXCEPTION ${String(e?.stack || e).slice(0, 500)}`);
-        } finally { if (target) await target.stop(); }
+        } finally {
+          if (engine) { config[`stderr-${mode}-r${rep}`] = engine.stderr().slice(-1500); await stopEngine(engine); }
+          if (target) await target.stop();
+        }
       }
     }
-  } finally {
-    for (const e of Object.values(engines)) { config[`stderr-${e.mode}`] = e.stderr().slice(-3000); await stopEngine(e); }
   }
 }
 save();

@@ -43,7 +43,14 @@ if let f = focused {
   out["length"] = value.map { $0.utf16.count } ?? NSNull()
   out["value"] = value.map { String($0.prefix(160)) } ?? NSNull()
   var r = CFRange()
-  if let v = attr(f, kAXSelectedTextRangeAttribute), CFGetTypeID(v) == AXValueGetTypeID(), AXValueGetValue(v as! AXValue, .cfRange, &r) { out["sel"] = [r.location, r.length] }
+  if let v = attr(f, kAXSelectedTextRangeAttribute), CFGetTypeID(v) == AXValueGetTypeID(), AXValueGetValue(v as! AXValue, .cfRange, &r) {
+    out["sel"] = [r.location, r.length]
+    // The text around the caret, 40 UTF-16 units each side (a typed marker lands there).
+    if let value {
+      let u = Array(value.utf16), lo = max(0, r.location - 40), hi = min(u.count, r.location + 40)
+      out["around"] = lo < hi ? String(utf16CodeUnits: Array(u[lo..<hi]), count: hi - lo) : ""
+    }
+  }
 }
 if let w = window {
   out["window"] = attr(w, kAXTitleAttribute) as? String ?? NSNull()

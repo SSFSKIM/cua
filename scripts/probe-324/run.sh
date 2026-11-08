@@ -22,7 +22,7 @@ case "$GROUP" in
     node scripts/probe-324/measure.mjs --block residue "${common[@]}" --modes main,ev300 --batches 2 --clicks 2 --out "$T/probe-324/smoke-residue" ;;
   safari)
     stamp safari
-    node scripts/probe-324/measure.mjs --block safari "${common[@]}" --modes main,press,c --reps "${REPS:-6}" --out "$T/probe-324/safari" ;;
+    node scripts/probe-324/measure.mjs --block safari "${common[@]}" --modes main,press,c --reps "${REPS:-8}" --out "$T/probe-324/safari" ;;
   native)
     stamp appkit
     node scripts/probe-324/measure.mjs --block appkit "${common[@]}" --modes main,press,c --reps "${REPS:-6}" --out "$T/probe-324/appkit"

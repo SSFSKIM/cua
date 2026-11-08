@@ -1,7 +1,8 @@
 # #324's hosted spike: main's engine, patched on the runner only (scripts/probe-324/patch.py: the hold log on stderr, the
 # fallback click's delivery record kept, the modes press, caret, c, ev and ev300 behind P324_MODE, and P324_DELAY_MS), on Safari, an AppKit
 # app and TextEdit behind a frontmost cover app (scripts/probe-324/run.sh). Runs only on a push to probe/324-measure (or by
-# hand); not a ci-kit gate.
+# hand); not a ci-kit gate. The ab-* groups are #324's hosted A/B: A = main, B = fix/324-caret-first, BS = B with
+# caretFirstCoversSecureFields on, each patched for logging only (scripts/probe-324/patch-log.py).
 name: probe-324
 on:
   push:
@@ -18,12 +19,14 @@ permissions:
 env:
   # Quoted: YAML reads an all-digit-and-e SHA as a float. origin/main after #327.
   P324_MAIN_REF: '74fe29f8ac876d425ca6d743b510a601ae466a3b'
+  P324_A_REF: '74fe29f8ac876d425ca6d743b510a601ae466a3b'
+  P324_B_REF: '2821788e8974b80f05af19eae28d68769976ba69'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["run3"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["ab-safari", "ab-native", "ab-cap"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -32,18 +35,38 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Browsers
+        env:
+          GROUP: ${{ matrix.group }}
         run: |
-          bash scripts/probe-287/install.sh
+          if [ "$GROUP" = ab-native ]; then bash scripts/probe-287/install.sh firefox; else bash scripts/probe-287/install.sh; fi
           defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
           defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
       - name: Build the engine and the tools
+        env:
+          GROUP: ${{ matrix.group }}
         run: |
           sw_vers
           git log -1 --format='kit %H %s'
-          git worktree add "$RUNNER_TEMP/src" "$P324_MAIN_REF"
-          echo "P324_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/src" rev-parse HEAD)" >> "$GITHUB_ENV"
-          python3 -I scripts/probe-324/patch.py "$RUNNER_TEMP/src/native/engine/Sources/Engine"
-          swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+          case "$GROUP" in
+            ab-*)
+              for h in a b; do
+                ref="P324_$(echo $h | tr a-z A-Z)_REF"
+                git worktree add "$RUNNER_TEMP/src-$h" "${!ref}"
+                echo "P324_$(echo $h | tr a-z A-Z)_COMMIT=$(git -C "$RUNNER_TEMP/src-$h" rev-parse HEAD)" >> "$GITHUB_ENV"
+              done
+              cp -R "$RUNNER_TEMP/src-b" "$RUNNER_TEMP/src-bs"
+              python3 -I scripts/probe-324/patch-log.py "$RUNNER_TEMP/src-a/native/engine/Sources/Engine"
+              python3 -I scripts/probe-324/patch-log.py "$RUNNER_TEMP/src-b/native/engine/Sources/Engine"
+              python3 -I scripts/probe-324/patch-log.py "$RUNNER_TEMP/src-bs/native/engine/Sources/Engine" --secure-on
+              for h in a b bs; do
+                swift build -c release --package-path "$RUNNER_TEMP/src-$h/native/engine" --scratch-path "$RUNNER_TEMP/eng-$h"
+              done ;;
+            *)
+              git worktree add "$RUNNER_TEMP/src" "$P324_MAIN_REF"
+              echo "P324_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/src" rev-parse HEAD)" >> "$GITHUB_ENV"
+              python3 -I scripts/probe-324/patch.py "$RUNNER_TEMP/src/native/engine/Sources/Engine"
+              swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng" ;;
+          esac
           swiftc -O -o "$RUNNER_TEMP/p321-win" scripts/probe-321/win.swift
           swiftc -O -o "$RUNNER_TEMP/ax324" scripts/probe-324/ax.swift
           app="$RUNNER_TEMP/Probe324.app/Contents"

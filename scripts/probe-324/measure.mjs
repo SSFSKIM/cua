@@ -34,8 +34,13 @@ const ONLY = arg('cells')?.split(',') ?? null;
 const BATCHES = Number(arg('batches', 10)), CLICKS = Number(arg('clicks', 5));
 // --delay <lo>-<hi>: the engines' P324_DELAY_MS (a slow activation injected inside a pointer's hold, patch.py).
 const DELAY = arg('delay');
-if (!BLOCK || !ENGINE || !WIN || !AX || !APP || !OUT) { console.error('usage: measure.mjs --block <b> --engine --win --ax --app --out'); process.exit(2); }
-process.env.P287_BROWSER = 'safari';
+// #324's A/B: --bins <head>=<engine binary>,... (the modes name heads, each its own binary); --desktop shared|dedicated;
+// --browser safari|chrome|firefox for the page block.
+const BINS = Object.fromEntries((arg('bins') ?? '').split(',').filter(Boolean).map(kv => kv.split('=')));
+const DESKTOP = arg('desktop', 'shared');
+const BROWSER = arg('browser', 'safari');
+if (!BLOCK || !(ENGINE || Object.keys(BINS).length) || !WIN || !AX || !APP || !OUT) { console.error('usage: measure.mjs --block <b> --engine --win --ax --app --out'); process.exit(2); }
+process.env.P287_BROWSER = BROWSER;
 const {launchOther, browserVersion, placePid} = await import('../probe-287/browser.mjs');
 const {watch, dump} = await import('../probe-321/watch.mjs');
 mkdirSync(OUT, {recursive: true});
@@ -45,7 +50,8 @@ const sh = (cmd, args, timeout = 20_000) => { const r = spawnSync(cmd, args, {en
 const osa = script => sh('osascript', ['-e', script]);
 const json = r => { try { return JSON.parse(r.out); } catch { return {status: r.status, out: r.out.slice(0, 500), err: r.err.slice(0, 500)}; } };
 const fileName = s => s.replace(/[^a-z0-9+-]+/gi, '_');
-const FRAME = {x: 400, y: 30, w: 620, h: 720};  // the hosted screen is 1024 x 768; the cover sits to the left
+const FRAME = {x: 400, y: 30, w: 620, h: 720};
+const CFT = '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';  // the hosted screen is 1024 x 768; the cover sits to the left
 const frontmost = () => {
   const asn = sh('lsappinfo', ['front']).out;
   const info = sh('lsappinfo', ['info', '-only', 'bundleid', asn]).out;
@@ -61,22 +67,23 @@ const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>
 <p id="plain">Plain words to read here, nothing to press.</p>
 <p><input id="name" type="text" placeholder="Probe name" aria-label="Probe name" size="30"></p>
 <p><input id="filled" type="text" aria-label="Probe filled" value="alpha beta gamma" size="30"></p>
+<p><input id="secret" type="password" placeholder="Probe secret" aria-label="Probe secret" size="30"></p>
 <p><textarea id="notes" aria-label="Probe notes" rows="3"></textarea></p>
 <p><textarea id="area" aria-label="Probe area" rows="3">${AREA}</textarea></p>
 <div id="tail">tail</div>
 <script>history.scrollRestoration = 'manual'; (() => { const c = {pointerdown: 0, mousedown: 0, mouseup: 0, click: 0, applyClick: 0, optionChange: 0, input: 0, keydown: 0,
-  nameFocus: 0, filledFocus: 0, notesFocus: 0, areaFocus: 0, windowFocus: 0, windowBlur: 0};
+  nameFocus: 0, filledFocus: 0, notesFocus: 0, areaFocus: 0, secretFocus: 0, windowFocus: 0, windowBlur: 0};
 let seq = 0; const load = Math.random().toString(36).slice(2, 10);
 const $ = id => document.getElementById(id);
 const send = () => { seq += 1; navigator.sendBeacon('/counters', JSON.stringify({load, seq, counts: c, checked: $('option').checked,
-  name: $('name').value, notes: $('notes').value, filled: $('filled').value, area: $('area').value,
+  name: $('name').value, notes: $('notes').value, filled: $('filled').value, area: $('area').value, secretLen: $('secret').value.length, secretOk: $('secret').value === 'pw324Secret',
   filledSel: [$('filled').selectionStart, $('filled').selectionEnd], areaSel: [$('area').selectionStart, $('area').selectionEnd],
   selection: String(getSelection()).length, scrollY: Math.round(scrollY), focused: document.hasFocus(),
   active: document.activeElement ? document.activeElement.id || document.activeElement.tagName : null})); };
 for (const k of ['pointerdown', 'mousedown', 'mouseup', 'click', 'keydown']) document.addEventListener(k, () => { c[k] += 1; send(); }, true);
 $('apply').addEventListener('click', () => { c.applyClick += 1; send(); });
 $('option').addEventListener('change', () => { c.optionChange += 1; send(); });
-for (const id of ['name', 'filled', 'notes', 'area']) { $(id).addEventListener('focus', () => { c[id + 'Focus'] += 1; send(); }); $(id).addEventListener('input', () => { c.input += 1; send(); }); }
+for (const id of ['name', 'filled', 'notes', 'area', 'secret']) { $(id).addEventListener('focus', () => { c[id + 'Focus'] += 1; send(); }); $(id).addEventListener('input', () => { c.input += 1; send(); }); }
 document.addEventListener('selectionchange', send);
 addEventListener('scroll', send);
 window.addEventListener('focus', e => { if (e.target === window) { c.windowFocus += 1; send(); } });
@@ -97,10 +104,10 @@ const server = createServer((req, res) => {
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const LOCAL = `http://127.0.0.1:${server.address().port}/`;
-const page = () => (latest ? {load: latest.load, ...latest.counts, checked: latest.checked, name: latest.name, notes: latest.notes, filled: latest.filled, area: latest.area,
+const page = () => (latest ? {load: latest.load, ...latest.counts, checked: latest.checked, name: latest.name, notes: latest.notes, filled: latest.filled, area: latest.area, secretLen: latest.secretLen, secretOk: latest.secretOk,
   filledSel: latest.filledSel, areaSel: latest.areaSel, selection: latest.selection, scrollY: latest.scrollY, focused: latest.focused, active: latest.active} : {});
 const pageDelta = (b, a) => {
-  const keys = ['pointerdown', 'mousedown', 'mouseup', 'click', 'applyClick', 'optionChange', 'input', 'keydown', 'nameFocus', 'filledFocus', 'notesFocus', 'areaFocus', 'windowFocus', 'windowBlur'];
+  const keys = ['pointerdown', 'mousedown', 'mouseup', 'click', 'applyClick', 'optionChange', 'input', 'keydown', 'nameFocus', 'filledFocus', 'notesFocus', 'areaFocus', 'secretFocus', 'windowFocus', 'windowBlur'];
   return Object.fromEntries(keys.map(k => [k, (a[k] ?? 0) - (a.load === b.load ? b[k] ?? 0 : 0)]).filter(([, v]) => v));
 };
 async function reloadPage() {
@@ -156,7 +163,7 @@ async function startEngine(mode) {
   engineSeq += 1;
   const dir = join(process.env.RUNNER_TEMP || OUT, `s324${engineSeq}`); mkdirSync(dir, {recursive: true, mode: 0o700});
   const socket = join(dir, 'e.sock');
-  const child = spawn(ENGINE, [], {env: {...process.env, CUA_ENGINE_SOCKET: socket, P324_MODE: mode, ...(DELAY ? {P324_DELAY_MS: DELAY} : {})}, stdio: ['ignore', 'pipe', 'pipe']});
+  const child = spawn(BINS[mode] ?? ENGINE, [], {env: {...process.env, CUA_ENGINE_SOCKET: socket, P324_MODE: mode, ...(DELAY ? {P324_DELAY_MS: DELAY} : {})}, stdio: ['ignore', 'pipe', 'pipe']});
   const events = [];
   let rest = '', other = '';
   child.stderr.on('data', d => {
@@ -169,7 +176,7 @@ async function startEngine(mode) {
   child.stdout.on('data', () => {});
   const connect = async () => {
     const wire = await Wire.connect(socket);
-    const ping = await wire.call('ping', {clientApiVersion: 'cua-engine-1', desktop: 'shared'});
+    const ping = await wire.call('ping', {clientApiVersion: 'cua-engine-1', desktop: DESKTOP});
     if (ping.error) throw new Error(`ping ${mode}: ${JSON.stringify(ping.error).slice(0, 300)}`);
     return wire;
   };
@@ -232,6 +239,8 @@ function reading(w, events, from, to, coverBundle, coverName) {
     visibleNoHold: firstVisible != null && !Number.isFinite(lastRelease),
     raiseAtMs: raises.length ? round(raises[0][0] - from) : null, holds: spans.length, frozenMs: round(frozen.reduce((s, v) => s + v, 0)), longestFreezeMs: round(Math.max(0, ...frozen)),
     holdSpans: spans.map(f => [round(f[0] - from), round(f[1] - from)]),
+    holdSpansByCall: early.map(f => [round(f[0] - from), round(f[1] - from)]), holdStartsUnix: spans.map(f => f[0]),
+    frozenByCallMs: round(early.reduce((x, f) => x + f[1] - f[0], 0)),
     frontHeld: changes.every(c => c.frontmost === coverBundle), keyHeld: changes.every(c => (c.key ?? '').startsWith(`${coverName}:`)),
     fronts: [...new Set(changes.map(c => c.frontmost))], keys: [...new Set(changes.map(c => c.key))],
     trace: changes.slice(0, 14).map(c => [round(c.atMs - from), c.aboveFront ? 1 : 0])};
@@ -244,7 +253,9 @@ function recordOf(meta) {
   return {route: meta?.inputRoute ?? null, activationClickKind: meta?.activationClickKind?.kind ?? null, activationGuardMs: meta?.activationGuardMs ?? null,
     elementClick: meta?.elementClick ? {plan: meta.elementClick.plan, action: meta.elementClick.action, focus: meta.elementClick.focus, focusStep: meta.elementClick.focusStep} : null,
     delivery: d ? {guardMs: d.guardMs, screenHoldMs: d.screenHoldMs, capped: d.capped, raiseLeft: d.raiseLeft, restores: d.restores, repairedAfterRelease: d.repairedAfterRelease,
-      transientRaise: d.transientRaise, postedAfterHoldStartMs: d.postedAt - d.holdStartedAt} : null};
+      transientRaise: d.transientRaise, postedAfterHoldStartMs: d.postedAt - d.holdStartedAt, frozenMs: d.frozenMs ?? null,
+      holdStartedAt: d.holdStartedAt, releasedAt: d.releasedAt, postedAt: d.postedAt} : null,
+    fieldFocus: meta?.fieldFocus ?? null};
 }
 
 // ---- the cover and the targets --------------------------------------------------------------------------------------
@@ -284,6 +295,7 @@ const FIND = {
   checkbox: n => n.role === 'AXCheckBox',
   plain: n => n.role === 'AXStaticText' && /Plain words/.test(`${labelOf(n)} ${n.value ?? ''}`),
   name: n => n.role === 'AXTextField' && /Probe name/.test(labelOf(n)),
+  secret: n => /AXTextField|AXSecureTextField/.test(n.role) && /Probe secret/.test(labelOf(n)),
   filled: n => n.role === 'AXTextField' && /Probe filled/.test(labelOf(n)),
   notes: n => n.role === 'AXTextArea' && /Probe notes/.test(labelOf(n)),
   area: n => n.role === 'AXTextArea' && /Probe area/.test(labelOf(n)),
@@ -331,6 +343,7 @@ const SAFARI = [
   {name: 'sv/notes', steps: [S.sv('notes', 'sv324notes', a => a.notes)]},
   {name: 'sv/name-focused', prep: 'name', steps: [S.sv('name', 'sv324focused', a => a.name)]},
   {name: 'sv/notes-focused', prep: 'notes', steps: [S.sv('notes', 'sv324nfocused', a => a.notes)]},
+  {name: 'sv/secret', steps: [{...S.sv('secret', 'pw324Secret', a => a.secretOk), effect: (b, a) => ({seen: a.secretOk === true && a.secretLen === 11, len: a.secretLen})}]},
   {name: 'st/filled', steps: [S.st('filled', 'beta', a => a.filledSel, [6, 10])]},
   {name: 'st/area', steps: [S.st('area', 'three', a => a.areaSel, [8, 13])]},
   {name: 'st/filled-focused', prep: 'filled', steps: [S.st('filled', 'gamma', a => a.filledSel, [11, 16])]},
@@ -408,6 +421,7 @@ async function runCell(ctx, cell) {
       s.effect = step.effect(before, after);
       if (target.posted) s.posted = target.posted(before, after);
       s.keyed = target.keyed?.(before, after);
+      if (target.pageDelta) s.pageDelta = target.pageDelta(before, after);
       row.steps.push(s);
     }
   } catch (e) {
@@ -427,12 +441,18 @@ const say = row => {
 async function safariTarget(label) {
   ready = false; latest = null;
   await frontTextEdit();
-  const child = await launchOther(LOCAL, join(OUT, 'profiles', fileName(label)), FRAME);
+  let child;
+  if (BROWSER === 'chrome') {
+    child = spawn(CFT, [`--user-data-dir=${join(OUT, 'profiles', fileName(label))}`, '--no-first-run', '--no-default-browser-check', '--disable-search-engine-choice-screen',
+      '--lang=en-US', '--disable-features=Translate', `--window-position=${FRAME.x},${FRAME.y}`, `--window-size=${FRAME.w},${FRAME.h}`, LOCAL], {stdio: 'ignore'});
+    child.launchedAt = Date.now();
+  } else child = await launchOther(LOCAL, join(OUT, 'profiles', fileName(label)), FRAME);
   for (let i = 0; i < 120 && !ready; i++) await sleep(250);
   await sleep(2000);
+  if (BROWSER === 'chrome') { const left = child.launchedAt + 25_000 - Date.now(); if (left > 0) await sleep(left); }  // past CfT's toolbar re-layout
   placePid(child.pid, FRAME);
   await frontTextEdit();
-  const t = {pid: child.pid, child, coverName: 'TextEdit', coverBundle: 'com.apple.TextEdit', state: () => page(), posted,
+  const t = {pid: child.pid, child, coverName: 'TextEdit', coverBundle: 'com.apple.TextEdit', state: () => page(), posted, pageDelta,
     reset: async () => { await reloadPage(); },
     prep: async (w, key, l) => {
       // The field focused first by an element click on it (#313's press, or the caret step on a textarea), its own observation.
@@ -443,7 +463,11 @@ async function safariTarget(label) {
       return {answer: r.problem ?? answerOf(r), active: page().active};
     },
     refront: async () => { const o = order(child.pid, 'TextEdit'); if (o.frontmost !== 'com.apple.TextEdit' || o.above) await frontTextEdit(); },
-    stop: async () => { sh('pkill', ['-x', 'Safari']); await sleep(1500); }};
+    stop: async () => {
+      if (BROWSER === 'safari') sh('pkill', ['-x', 'Safari']);
+      else if (child.exitCode === null) { child.kill('SIGTERM'); for (let i = 0; i < 20 && child.exitCode === null; i++) await sleep(250); if (child.exitCode === null) child.kill('SIGKILL'); }
+      await sleep(1500);
+    }};
   return t;
 }
 async function appkitTarget(label) {
@@ -482,10 +506,11 @@ async function texteditTarget(label) {
 }
 
 // ---- the run ----------------------------------------------------------------------------------------------------------
-const config = {block: BLOCK, modes: MODES, reps: REPS, delay: DELAY ?? null, imageVersion: process.env.ImageVersion ?? null, macOS: sh('sw_vers', []).out.replace(/\s+/g, ' '),
+const config = {block: BLOCK, modes: MODES, reps: REPS, delay: DELAY ?? null, bins: BINS, desktop: DESKTOP, browser: BROWSER,
+  heads: {a: process.env.P324_A_COMMIT ?? null, b: process.env.P324_B_COMMIT ?? null}, imageVersion: process.env.ImageVersion ?? null, macOS: sh('sw_vers', []).out.replace(/\s+/g, ' '),
   safari: browserVersion(), mainCommit: process.env.P324_MAIN_COMMIT ?? null, probeCommit: process.env.GITHUB_SHA ?? null};
 const results = [];
-const save = () => writeFileSync(join(OUT, `results-${BLOCK}.json`), JSON.stringify({config, results}, null, 1));
+const save = () => writeFileSync(join(OUT, `results-${BLOCK}-${BROWSER}-${DESKTOP}.json`), JSON.stringify({config, results}, null, 1));
 log('config', JSON.stringify(config));
 save();
 

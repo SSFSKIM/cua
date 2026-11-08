@@ -116,6 +116,21 @@ export function judgeReadinessRun(trials, vendorTrials) {
   };
 }
 
+/**
+ * The sitting's outcome, named for what it showed (the design session, 2026-11-07). FAIL when one of cua's first
+ * captures is wrong or unjudged. Otherwise PASS only when the pinned build confirmed every truth and every control lane
+ * missed somewhere. A truth the pinned build's capture did not confirm is a REFERENCE MISMATCH; a control lane that
+ * captured every first frame right is CONTROL NON-DISCRIMINATING (the sitting could not have failed the rule it drops).
+ * Neither is a pass, and neither is a miss of cua's.
+ */
+export function readinessOutcome(verdict, controls) {
+  if (!(verdict.trials > 0 && verdict.wrong === 0 && verdict.unjudged === 0)) return { label: 'FAIL', pass: false };
+  const labels = [];
+  if (!(verdict.vendor_trials > 0 && verdict.vendor_wrong === 0 && verdict.vendor_unjudged === 0)) labels.push('REFERENCE MISMATCH');
+  if (controls.some((c) => !c.missed)) labels.push('CONTROL NON-DISCRIMINATING');
+  return labels.length ? { label: labels.join(', '), pass: false } : { label: 'PASS', pass: true };
+}
+
 function imgdiff(a, b) {
   return JSON.parse(xExecFileSync(XPROBE, ['imgdiff', a, b, '0'], { encoding: 'utf8' }));
 }
@@ -255,10 +270,10 @@ export async function engineReadiness(desktop, emit, args) {
   }
   const verdict = judgeReadinessRun(all.filter((t) => t.lane === 'cua'), vendor);
   const controls = judgeControls(all);
-  const pass = verdict.pass && controls.every((c) => c.missed);
-  emit({ kind: 'readiness-verdict', ...verdict, controls, pass });
+  const { label, pass } = readinessOutcome(verdict, controls);
+  emit({ kind: 'readiness-verdict', ...verdict, controls, outcome: label, pass });
   const firsts = verdict.wrong === 0 && verdict.unjudged === 0 ? 'every first capture right' : `${verdict.wrong} wrong first captures (${verdict.unobscured_wrong} judged unobscured), ${verdict.unjudged} unjudged`;
-  md.push('', `**${pass ? 'PASS' : 'FAIL'}: ${firsts}** of ${verdict.trials}; the pinned build's captures against the truth: ${verdict.vendor_wrong} off and ${verdict.vendor_unjudged} unjudged of ${verdict.vendor_trials}.`);
-  for (const c of controls) md.push('', `Control lane ${c.lane}: ${c.wrong} of ${c.trials} first captures wrong${c.missed ? '' : ', so it shows nothing and the run fails'}.`);
-  return { md, pass };
+  md.push('', `**${label}: ${firsts}** of ${verdict.trials}; the pinned build's captures against the truth: ${verdict.vendor_wrong} off and ${verdict.vendor_unjudged} unjudged of ${verdict.vendor_trials}.`);
+  for (const c of controls) md.push('', `Control lane ${c.lane}: ${c.wrong} of ${c.trials} first captures wrong${c.missed ? '' : ', so the sitting could not have failed the rule it drops'}.`);
+  return { md, pass, label };
 }

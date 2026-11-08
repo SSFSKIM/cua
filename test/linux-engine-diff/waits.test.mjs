@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { cellsFor } from '../../scripts/linux-engine-diff/action-settle-cells.mjs';
-import { firstCaptureVerdict, judgeControls } from '../../scripts/linux-engine-diff/readiness-check.mjs';
+import { firstCaptureVerdict, judgeControls, judgeReadinessRun, readinessOutcome } from '../../scripts/linux-engine-diff/readiness-check.mjs';
 import { SPEED_GAPS, declaredSpeedGap } from '../../scripts/linux-engine-diff/deviations.mjs';
 import { eventSpeeds, fakeMotions, judgeMotionListener, judgeMotionStep } from '../../scripts/linux-engine-diff/events.mjs';
 
@@ -47,6 +47,25 @@ test('a control lane counts only when it missed: one that captured every first f
     { lane: 'cua:other', trials: 1, wrong: 0, missed: false },
   ]);
   assert.deepEqual(judgeControls([trial('cua', false)]), [], 'the shipped lane is no control');
+});
+
+test("a sitting is named for what it showed: cua's miss fails it, and a reference mismatch or a control that missed nothing is no pass", () => {
+  const right = Array.from({ length: 4 }, () => ({ ok: true, capture: {} }));
+  const confirmed = [{ ok: true }, { ok: true }];
+  const control = (wrong) => ({ lane: 'cua:control', trials: 4, wrong, missed: wrong > 0 });
+  const outcome = (trials, vendor, controls) => readinessOutcome(judgeReadinessRun(trials, vendor), controls);
+  assert.deepEqual(outcome(right, confirmed, [control(1)]), { label: 'PASS', pass: true });
+  assert.deepEqual(outcome(right, confirmed, []), { label: 'PASS', pass: true }, 'no control lane asked for');
+  // the design session (2026-11-07): an idle control that captured every first frame right cannot fail the rule
+  assert.deepEqual(outcome(right, confirmed, [control(0)]), { label: 'CONTROL NON-DISCRIMINATING', pass: false });
+  // the pinned build's capture off the truth: the truth is unconfirmed, which is neither cua's miss nor a pass
+  assert.deepEqual(outcome(right, [{ ok: true }, { ok: false }], [control(1)]), { label: 'REFERENCE MISMATCH', pass: false });
+  assert.deepEqual(outcome(right, [], [control(1)]), { label: 'REFERENCE MISMATCH', pass: false }, 'no reference at all');
+  assert.deepEqual(outcome(right, [{ ok: null }], [control(0)]), { label: 'REFERENCE MISMATCH, CONTROL NON-DISCRIMINATING', pass: false });
+  // a wrong or unjudged first capture of cua's fails the sitting, whatever else held
+  assert.deepEqual(outcome([...right, { ok: false, capture: {} }], [{ ok: false }], [control(0)]), { label: 'FAIL', pass: false });
+  assert.deepEqual(outcome([...right, { ok: null, capture: {} }], confirmed, [control(1)]), { label: 'FAIL', pass: false });
+  assert.deepEqual(outcome([], confirmed, [control(1)]), { label: 'FAIL', pass: false }, 'no trial at all');
 });
 
 // an xtrace line of an absolute XTEST motion to (x, y), as xtrace 1.4 prints FakeInput (its body unparsed)

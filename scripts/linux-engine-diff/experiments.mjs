@@ -383,7 +383,7 @@ export async function runExperiment(args) {
       mkdirSync(desktop.keepDir, { recursive: true });
       const result = await engineReadiness(desktop, emit, args);
       md = result.md;
-      outcome = { complete: result.pass, failed: result.pass ? [] : ["a first capture was wrong or unjudged, or the pinned build's capture did not confirm a truth"] };
+      outcome = { complete: result.pass, failed: result.pass ? [] : [`${result.label} (FAIL: a first capture of cua's wrong or unjudged; REFERENCE MISMATCH: the pinned build's capture did not confirm a truth; CONTROL NON-DISCRIMINATING: a control lane captured every first frame right)`] };
     }
     else if (['drag', 'kinds', 'dnd'].includes(args.experiment)) {
       const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd }[args.experiment];

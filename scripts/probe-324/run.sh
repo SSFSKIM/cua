@@ -78,6 +78,12 @@ case "$GROUP" in
         node scripts/probe-324/$m --block residue "${ab[@]}" --modes a,b --batches 20 --clicks 5 --out "$T/probe-324/cap-natural"
         stamp cap delayed
         node scripts/probe-324/$m --block residue "${ab[@]}" --modes a,b --batches 12 --clicks 5 --delay 100-190 --out "$T/probe-324/cap-delayed" ;;
+      ab-confirm)
+        # B = e2e452c9 (the workflow's P324_B2_REF): Safari shared set_value and select_text, and natural page clicks.
+        stamp confirm safari
+        node scripts/probe-324/$m --block safari "${ab[@]}" --modes a,b --reps 5 --cells sv/name,sv/notes,st/filled,st/area --out "$T/probe-324/confirm-safari"
+        stamp confirm clicks
+        node scripts/probe-324/$m --block residue "${ab[@]}" --modes a,b --batches 6 --clicks 5 --out "$T/probe-324/confirm-clicks" ;;
       *) echo "unknown group $GROUP"; exit 2 ;;
     esac ;;
   *) echo "unknown group $GROUP"; exit 2 ;;

@@ -66,7 +66,9 @@ patch('Activation.swift', [
     [("        window.restore()\n        if !released { outcome.restores += 1 }\n",
       "        window.restore()\n        p324(\"dlv.restore\", [\"released\": released, \"ms\": system.now() - posted])\n        if !released { outcome.restores += 1 }\n")],
     [("    let held = ended - hold.startedAt\n    hold.release()\n",
-      "    let held = ended - hold.startedAt\n    p324(\"dlv.end\", [\"guardMs\": outcome.guardMs, \"heldMs\": held, \"capped\": outcome.capped])\n    hold.release()\n")],
+      "    let held = ended - hold.startedAt\n    p324(\"dlv.end\", [\"guardMs\": outcome.guardMs, \"heldMs\": held, \"capped\": outcome.capped])\n    hold.release()\n"),
+     ("    let held = ended - hold.startedAt\n",
+      "    let held = ended - hold.startedAt\n    p324(\"dlv.end\", [\"guardMs\": outcome.guardMs, \"heldMs\": held, \"capped\": outcome.capped])\n")],
 ])
 
 if secure_on:

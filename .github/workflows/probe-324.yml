@@ -21,12 +21,14 @@ env:
   P324_MAIN_REF: '74fe29f8ac876d425ca6d743b510a601ae466a3b'
   P324_A_REF: '74fe29f8ac876d425ca6d743b510a601ae466a3b'
   P324_B_REF: '2821788e8974b80f05af19eae28d68769976ba69'
+  # The confirmation's B (ab-confirm): the delivery record's Unix times anchored before the stamp's wait.
+  P324_B2_REF: 'e2e452c95d964647eefd459d14be84e726a8b16b'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["ab-safari", "ab-native", "ab-cap"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["ab-confirm"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -49,6 +51,7 @@ jobs:
           git log -1 --format='kit %H %s'
           case "$GROUP" in
             ab-*)
+              if [ "$GROUP" = ab-confirm ]; then export P324_B_REF="$P324_B2_REF"; fi
               for h in a b; do
                 ref="P324_$(echo $h | tr a-z A-Z)_REF"
                 git worktree add "$RUNNER_TEMP/src-$h" "${!ref}"

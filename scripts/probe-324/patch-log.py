@@ -3,9 +3,10 @@
 # hook (the residue's slow activation made on purpose). Each edit is an exact replacement matching once; where the heads
 # differ, the first alternative that matches is taken.
 #   hold / release.call / release   SLSDisableUpdate taken / SLSReenableUpdate called / returned (Unix ms, stderr "P324 ")
-#   act / act.delay / act.restore / dlv.post / dlv.above / dlv.restore / dlv.end   route 3's activation and delivery guard
+#   act / act.delay / act.restore / act.end / dlv.post / dlv.above / dlv.restore / dlv.end   route 3's activation and delivery guard
 #   python3 -I patch-log.py <native/engine/Sources/Engine> [--secure-on]
 #     --secure-on   B's `caretFirstCoversSecureFields` turned on (the password-field variant)
+#     --timer-modes holdTimerStrict and holdHoldsActivity read from P324_MODE (none, strict, activity, both)
 import sys
 
 root = sys.argv[1]
@@ -54,6 +55,8 @@ patch('Activation.swift', [
       "    _ = disableUpdate(connection)\n    p324(\"hold\")\n    stamp.arm()\n    return {\n      stamp.stamp(monotonicMilliseconds())\n      p324(\"release.call\")\n      _ = reenableUpdate(connection)\n      p324(\"release\")\n    }")],
     [("    postActivation(planned)\n    let started = system.now()\n",
       "    postActivation(planned)\n    let started = system.now()\n    p324(\"act\", [\"pid\": Int(pid), \"kind\": \"\\(planned.kind)\", \"untilOrder\": untilOrderReadsBack])\n")],
+    [("    defer { guardMs = ((system.now() - started) * 1000).rounded() / 1000 }\n",
+      "    defer { guardMs = ((system.now() - started) * 1000).rounded() / 1000; p324(\"act.end\", [\"guardMs\": guardMs ?? -1]) }\n")],
     [("        stable = 0\n        userWindow.restore()\n",
       "        stable = 0\n        userWindow.restore()\n        p324(\"act.restore\")\n")],
     [("    if holdsThroughDelivery {\n      keepsHold = true\n",
@@ -70,6 +73,16 @@ patch('Activation.swift', [
      ("    let held = ended - hold.startedAt\n",
       "    let held = ended - hold.startedAt\n    p324(\"dlv.end\", [\"guardMs\": outcome.guardMs, \"heldMs\": held, \"capped\": outcome.capped])\n")],
 ])
+
+if '--timer-modes' in sys.argv[2:]:
+    # #324's timer re-measure (ruling eecaccfe): the two remedies' constants read from P324_MODE at start, so one build
+    # serves the four variants (none, strict, activity, both), one process alive at a time.
+    patch('Activation.swift', [
+        [("let holdTimerStrict = true\n",
+          "let holdTimerStrict = [\"strict\", \"both\"].contains(ProcessInfo.processInfo.environment[\"P324_MODE\"] ?? \"both\")  // #324 probe\n")],
+        [("let holdHoldsActivity = true\n",
+          "let holdHoldsActivity = [\"activity\", \"both\"].contains(ProcessInfo.processInfo.environment[\"P324_MODE\"] ?? \"both\")  // #324 probe\n")],
+    ])
 
 if secure_on:
     patch('ElementInput.swift', [[("let caretFirstCoversSecureFields = false\n", "let caretFirstCoversSecureFields = true  // #324's password-field variant\n")]])

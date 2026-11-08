@@ -50,6 +50,17 @@ case "$GROUP" in
     stamp safari3
     node scripts/probe-324/measure.mjs --block safari "${common[@]}" --modes press,caret --reps 8 \
       --cells sv/name,sv/notes,st/filled,st/area --out "$T/probe-324/safari3" ;;
+  ab-timers-*)
+    # #324's timer re-measure (ruling eecaccfe): B = 90596c43, one build, its two remedies chosen per process by
+    # P324_MODE (none, strict, activity, both; patch-log.py --timer-modes), the variants alternating by batch.
+    tm=(--engine "$T/eng-t/release/cua-engine" --win "$T/p321-win" --ax "$T/ax324" --app "$T/Probe324.app/Contents/MacOS/Probe324")
+    v=none,strict,activity,both
+    stamp timers safari
+    node scripts/probe-324/measure.mjs --block safari "${tm[@]}" --modes "$v" --reps 5 --cells sv/name,sv/secret,st/filled --out "$T/probe-324/timers-safari"
+    stamp timers delayed
+    node scripts/probe-324/measure.mjs --block residue "${tm[@]}" --modes "$v" --batches 6 --clicks 5 --delay 100-190 --out "$T/probe-324/timers-delayed"
+    stamp timers natural
+    node scripts/probe-324/measure.mjs --block residue "${tm[@]}" --modes "$v" --batches 10 --clicks 5 --out "$T/probe-324/timers-natural" ;;
   ab-*)
     # #324's hosted A/B: A = main ($T/eng-a), B = fix/324-caret-first ($T/eng-b), BS = B with caretFirstCoversSecureFields
     # on ($T/eng-bs), each patched for logging only (patch-log.py); one engine process alive at a time.

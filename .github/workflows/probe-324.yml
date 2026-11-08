@@ -23,12 +23,14 @@ env:
   P324_B_REF: '2821788e8974b80f05af19eae28d68769976ba69'
   # The confirmation's B (ab-confirm): the delivery record's Unix times anchored before the stamp's wait.
   P324_B2_REF: 'e2e452c95d964647eefd459d14be84e726a8b16b'
+  # The timer re-measure (ab-timers-*, ruling eecaccfe): B with password fields on and the two remedies' constants.
+  P324_B3_REF: '90596c43608ddb7910e4fe1a8a876070ccadfca4'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["ab-confirm"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["ab-timers-1", "ab-timers-2"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -50,6 +52,11 @@ jobs:
           sw_vers
           git log -1 --format='kit %H %s'
           case "$GROUP" in
+            ab-timers-*)
+              git worktree add "$RUNNER_TEMP/src-t" "$P324_B3_REF"
+              echo "P324_B_COMMIT=$(git -C "$RUNNER_TEMP/src-t" rev-parse HEAD)" >> "$GITHUB_ENV"
+              python3 -I scripts/probe-324/patch-log.py "$RUNNER_TEMP/src-t/native/engine/Sources/Engine" --timer-modes
+              swift build -c release --package-path "$RUNNER_TEMP/src-t/native/engine" --scratch-path "$RUNNER_TEMP/eng-t" ;;
             ab-*)
               if [ "$GROUP" = ab-confirm ]; then export P324_B_REF="$P324_B2_REF"; fi
               for h in a b; do

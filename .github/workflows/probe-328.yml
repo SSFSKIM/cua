@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["followup"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["followup2"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:

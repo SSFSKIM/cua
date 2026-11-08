@@ -24,6 +24,8 @@ const CATALYST_APP = arg('catalyst-app');
 if (!BLOCK || !T328 || !APP || !COVER || !OUT) { console.error('usage: measure.mjs --block <b> --t328 --app --cover --out'); process.exit(2); }
 const BROWSER = ['safari', 'chrome', 'firefox'].includes(BLOCK) ? BLOCK : 'safari';
 process.env.P287_BROWSER = BROWSER;
+// Gecko's tree for an AX client that is not the engine: always on (run 42529832136 read only its window buttons).
+if (BROWSER === 'firefox') process.env.P287_FIREFOX_A11Y = 'force';
 const {launchOther, browserVersion, placePid} = await import('../probe-287/browser.mjs');
 mkdirSync(OUT, {recursive: true});
 const T = process.env.RUNNER_TEMP || OUT;

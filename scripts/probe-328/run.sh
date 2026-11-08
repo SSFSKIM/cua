@@ -55,6 +55,9 @@ case "$GROUP" in
     m safari followup-safari --sets web --reps 1
     m notes followup-notes --sets full,split,routes --reps 1
     if [ -n "$catalyst" ]; then m catalyst followup-catalyst --sets full,split,routes --reps 1 --catalyst "$catalyst"; fi ;;
+  followup2)
+    # Firefox with Gecko's accessibility forced on (run 42529832136's scan read only its window buttons).
+    m firefox followup2-firefox --sets web,routes,bottom --reps 3 ;;
   web)
     m swiftui swiftui --sets full,split,routes --reps 1
     m safari safari --sets web,routes,bottom --reps 3

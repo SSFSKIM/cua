@@ -1,0 +1,25 @@
+# linux-engine-diff summary
+
+## t65-idle-released (experiment drag)
+
+Every engine drags the same path 30 times per family and kind, in its own window (visible), each drag in a witness span; a run took effect when its result is the pinned build's (module header, drag.mjs). `cua:0ms` has no wait after a sample, after the press or before the release.
+The judges (T10), for the shipped lane `cua`: every run takes effect; Chrome's and Electron's thumbs land at or past the pinned build's mean distance of the same sitting; the long paths (Chrome's and Firefox's canvas, Chrome's drag and drop in front) pass on warm speed under Acceptance 3's interval rule, topped up to 40 a side. Every other cua lane is measured, not judged.
+
+| family | kind | pinned took | newest took | cua took | cua:0ms took | newest drag ms | cua drag ms | cua:0ms drag ms | pinned drag ms | witness | judges | verdict |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|
+| Chrome | scroller | 30/30 | 30/30 | 30/30 | 4/30 | 262.2 | 144.6 | 110.4 | 280.2 | clean | reach (pinned mean 129.5 px): cua 14/30 (shortest 97, mean 126), cua:0ms 2/30 (shortest 0, mean 45.5); received (raw/moves, median): pinned 60/0, newest 17/0, cua 54/0, cua:0ms 38/0 | cua **FAIL**, cua:0ms **FAIL** |
+| Chrome | dnd | 30/30 | 30/30 | 30/30 | 30/30 | 340 | 467.4 | 462.5 | 512.4 | **changed** | speed (warm): cua **fail** [123.7, 132.2]: cua 467.4 ms against newest's 340 ms, the interval [123.7, 132.2] above 0; cua:0ms **fail** [118.6, 126.2]: cua:0ms 462.5 ms against newest's 340 ms, the interval [118.6, 126.2] above 0; received (raw/moves, median): pinned 12/2, newest 5/1, cua 14.5/1, cua:0ms 32.5/1 | cua **FAIL**, cua:0ms **FAIL** |
+| Chrome | canvas | 40/40 | 21/40 | 40/40 | 0/40 | 515.9 | 656.1 | 177.5 | 1166.3 | clean | speed (warm): cua **fail** [132.05, 152.25]: cua 656.05 ms against newest's 513.9 ms, the interval [132.05, 152.25] above 0; cua:0ms **fail**: cua:0ms: 0 usable samples of 40, fewer than 20; received (raw/moves, median): pinned 768/59, newest 196/19, cua 763/34, cua:0ms 667.5/5 | cua **FAIL**, cua:0ms **FAIL** |
+| Electron (cua fixture) | scroller | 30/30 | 30/30 | 27/30 | 1/30 | 262.3 | 353.4 | 353.5 | 278.6 | clean | reach (pinned mean 130 px): cua 12/30 (shortest 88, mean 124.1), cua:0ms 0/30 (shortest 0, mean 21.7); received (raw/moves, median): pinned 61/0, newest 17/0, cua 56/0, cua:0ms 53.5/0 | cua **FAIL**, cua:0ms **FAIL** |
+| Electron (cua fixture) | dnd | 30/30 | 30/30 | 30/30 | 30/30 | 337.9 | 467.7 | 466.6 | 508.1 | clean | received (raw/moves, median): pinned 10/1, newest 4/1, cua 13/1, cua:0ms 69/1 | cua PASS, cua:0ms PASS |
+| Electron (cua fixture) | canvas | 30/30 | 18/30 | 30/30 | 1/30 | 511.1 | 674.2 | 354.6 | 1164.2 | clean | received (raw/moves, median): pinned 769/58.5, newest 196/19, cua 764/35, cua:0ms 678.5/6 | cua PASS, cua:0ms **FAIL** |
+| Firefox | scroller | 30/30 | 30/30 | 30/30 | 30/30 | 263.2 | 166.2 | 111.4 | 280.8 | clean | received (raw/moves, median): pinned 46/0, newest 10/0, cua 24/0, cua:0ms 4/0 | cua PASS, cua:0ms PASS |
+| Firefox | dnd | 30/30 | 30/30 | 17/30 | 0/30 | 342.5 | 286 | 144.6 | 518.5 | clean | received (raw/moves, median): pinned 14/2, newest 11/1.5, cua 29/2, cua:0ms 4/1 | cua **FAIL**, cua:0ms **FAIL** |
+| Firefox | canvas | 30/30 | 22/30 | 27/30 | 1/30 | 518.9 | 550.1 | 182.7 | 1177.9 | clean | speed (warm): cua **fail** [21.05, 41.6]: cua 545.6 ms against newest's 516.6 ms, the interval [21.05, 41.6] above 0; cua:0ms **undetermined**: cua:0ms: 1 usable samples of 30, fewer than 20; received (raw/moves, median): pinned 754/58, newest 180/18, cua 719.5/25, cua:0ms 246.5/5 | cua **FAIL**, cua:0ms **FAIL** |
+
+Cells where a cua lane missed a run the pinned build took: chrome scroller (cua:0ms); chrome canvas (cua:0ms); electron scroller (cua, cua:0ms); electron canvas (cua:0ms); firefox dnd (cua, cua:0ms); firefox canvas (cua, cua:0ms).
+
+The judges' verdict for `cua`: **FAIL**: chrome scroller: cua short of the pinned build's mean distance (129.5 px) on 16 of 30 runs (shortest 97 px, mean 126 px); chrome dnd: cua speed: cua 467.4 ms against newest's 340 ms, the interval [123.7, 132.2] above 0; chrome canvas: cua speed: cua 656.05 ms against newest's 513.9 ms, the interval [132.05, 152.25] above 0; electron scroller: cua missed runs 2 7 24; electron scroller: cua short of the pinned build's mean distance (130 px) on 18 of 30 runs (shortest 88 px, mean 124.1 px); firefox dnd: cua missed runs 1 2 7 8 10 12 14 16 17 18 19 22 29; firefox canvas: cua missed runs 8 27 28; firefox canvas: cua speed: cua 545.6 ms against newest's 516.6 ms, the interval [21.05, 41.6] above 0.
+
+desktop: started with 0x0080000c active (foreign), ended with 0x0080000c active (foreign), neither acted on; holder 0x00e0000c; the harness's own trace: 17398 requests, 3777 changes of a window, every one of its own; the run's record: not run (the display is a private one, and the run's caller declined to start the whole-run RECORD on it)
+

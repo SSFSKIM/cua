@@ -1,0 +1,8 @@
+chrome scroller, the thumb judge: pinned mean 133.7 px; newest reached 30/30 (shortest 146); cua reached 11/30 (shortest 90)
+electron scroller, the thumb judge: pinned mean 129.8 px; newest reached 30/30 (shortest 146); cua reached 2/30 (shortest 90)
+chrome canvas, the speed judge, newest against the pinned build alone: fail 517.8 ms against null's null ms [undefined]; newest: 15 usable samples of 40, fewer than 20
+chrome canvas, the speed judge, cua against the pinned build alone: pass (faster) 569 ms against pinned's 1156.8 ms [-597.15, -572.85]
+chrome dnd, the speed judge, newest against the pinned build alone: pass (faster) 337.4 ms against pinned's 513 ms [-177.2, -167.4]
+chrome dnd, the speed judge, cua against the pinned build alone: pass (faster) 364.8 ms against pinned's 513 ms [-149.9, -139.7]
+firefox canvas, the speed judge, newest against the pinned build alone: pass (faster) 513.3 ms against pinned's 1173.5 ms [-673.6, -643.3]
+firefox canvas, the speed judge, cua against the pinned build alone: pass (faster) 451.4 ms against pinned's 1173.5 ms [-741, -702.9]

@@ -545,9 +545,9 @@ export function judgeCell(runs, lanes, expected = {}, { absolute = false } = {})
 
 /**
  * The spacing of a held-move cell's `drag_handle` requests, every lane alike: cua's service defers each by its settle
- * (settle.mjs), so no caller through it sends them closer. Back to back, Firefox merged one held move's motions into the
- * next's and missed the canvas and the drop in every engine but the pinned build (task 65's probe); that would measure
- * a sequence no agent can send.
+ * (settle.mjs), so no caller through it sends them closer, and the cell measures what an agent's sequence gets. Back to
+ * back, Firefox received two or three moves of cua's held ones and cua's lanes missed every canvas stroke and drop
+ * (task 65's probe; the vendor builds, 8 ms between held points, took them); spaced so, cua still missed most of them.
  */
 export const HANDLE_GAP_MS = SETTLE_MS.drag_handle;
 
@@ -716,7 +716,7 @@ export async function runDrag(args, { desktop, emit }) {
     `Every engine drags the same path ${n} times per family and kind, in its own window (${args.occlusion}${args.load ? `, under load: ${args.loadFactor ?? 1} stress-ng worker${(args.loadFactor ?? 1) === 1 ? '' : 's'} per core` : ''}), each drag in a witness span; a run took effect when its result is the pinned build's (module header, drag.mjs). \`cua:0ms\` has no wait after a sample, after the press or before the release.`,
     `The judges (T10), for the shipped lane \`cua\`: ${args.load ? "under load the landed counts decide, cua's at least the pinned build's, 40 a side" : "every run takes effect; Chrome's and Electron's thumbs land at or past the pinned build's mean distance of the same sitting; the long paths (Chrome's and Firefox's canvas, Chrome's drag and drop in front) pass on warm speed under Acceptance 3's interval rule, topped up to 40 a side"}. Every other cua lane is measured, not judged.`,
     '',
-    `| family | kind | ${lanes.map((l) => `${l.label} took`).join(' | ')} | ${lanes.slice(1).map((l) => `${l.label} drag ms`).join(' | ')} | pinned drag ms | witness | judges | verdict |`,
+    `| family | kind | ${lanes.map((l) => `${l.label} took`).join(' | ')} | ${lanes.slice(1).map((l) => `${l.label} warm ms`).join(' | ')} | pinned warm ms | witness | judges | verdict |`,
     `|---|---|${lanes.map(() => '---:').join('|')}|${lanes.slice(1).map(() => '---:').join('|')}|---:|---|---|---|`,
   ];
   const cells = [];

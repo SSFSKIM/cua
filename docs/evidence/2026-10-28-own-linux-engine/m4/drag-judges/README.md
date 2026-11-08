@@ -32,6 +32,11 @@ The lanes: `pinned` (the reference), `newest`, `cua` (the candidate as it ships,
 
 ## Results
 
+**The first sittings below ran on b103323d's harness, before the task review's fix wave.** Their motion counts count
+dispatched events, not samples, and their no-press control rows carry the previous drag's record. Their cells took
+each lane's 30 drags in one series. The judges' verdicts there stand, but read their counts through the fix wave's
+section at the end, which re-ran the released idle sitting, the load lane and the held-move cells on d8d5b552.
+
 ### The released 0.3.0 fails what it should (`idle-released/`, idle, visible, 30 a side)
 
 | cell | the judge | 0.3.0 (`cua`) | verdict |
@@ -57,8 +62,10 @@ The run exits 1, its verdict line naming each failure (`idle-released/stdout.txt
 | Firefox canvas | **faster**, 451.4 ms against the newest build's 513.3, [−71.2, −53.0]; 25 of 30 took | **FAIL** (misses) |
 | Firefox dnd | 16 of 30 took | **FAIL** |
 
-The head's drags are about 90–100 ms faster than 0.3.0's on the long paths (T9 dropped the pause after the leading
-motion), and its thumbs land shorter.
+The head's drags were about 90–100 ms faster than 0.3.0's on the long paths in these two sittings, and its thumbs
+landed shorter. The cause is not assigned. These samples are window-targeted background `drag` requests, placed by
+`Session::move_to`. They never pass through the desktop `move_path` whose pause T9 removed, and T9 kept `drag_along`'s
+step. Only a controlled comparison of the two builds could isolate the cause.
 
 ### The load lane (`load2-released/`, 0.3.0, 2 stress-ng workers per core, 40 a side, `--lanes pinned,cua`)
 
@@ -133,3 +140,67 @@ judge had no selection to check itself against, and the run says REFERENCE MISMA
 
 One commit after b103323d changes a comment and labels the summary's median columns `warm ms`. Neither changes what is
 measured or judged; the sittings' summaries say `drag ms` for the same warm medians.
+
+## The fix wave (`fix/`, d8d5b552's harness)
+
+The task review found five faults; the fixes are in d8d5b552:
+1. A long path's effect was waived when the pinned build took nothing. It is now judged on every candidate run, and a
+   drop's or a stroke's reader is proven by either vendor build's take.
+2. The motion count counted dispatched events. It now counts the coalesced samples (`getCoalescedEvents()`), with the
+   events beside them.
+3. A run could take the previous drag's motion record. It now keeps a record only when its press is newer than the
+   one read before the drag.
+4. A cell took each lane's drags in one series. They now run in rotating blocks of 10 on fresh engines, the top-ups
+   continuing the rotation.
+5. This README attributed the head's long-path gain to T9; the cause is now left unassigned (above).
+
+The same candidates, on private displays.
+
+### Firefox's held moves recounted (`fix/handle-head/`, head, 30 a side; `fix/analysis/handle-recount.md`)
+
+What Firefox received per `handle-canvas` drag, median [range]:
+
+| lane | took | pointermove samples | pointermove events (the first sitting's count) | pointerrawupdate samples |
+|---|---:|---|---|---|
+| pinned | 30/30 | 32 [30–32] | 16 [15–17] | 32 [30–32] |
+| newest | 30/30 | 30 [28–30] | 16 [15–17] | 30 [28–30] |
+| cua | 5/30 | 23 [15–23] | 2 [2–3] | 23 [15–23] |
+| cua:nolead | 2/30 | 21 [12–23] | 2 [2–3] | 21 [12–23] |
+| cua:0ms | 0/30 | 6.5 [4–10] | 2 [1–2] | 6.5 [4–10] |
+| cua:no-press | 0/30 | no record (30 of 30) | – | – |
+
+**The gap shrinks.** Read as events it was 2 against 16. Read as the motions Firefox took, it is 23 against 32 (and
+30). Firefox coalesces cua's held motions into two or three events, but takes about three quarters as many
+motions as the vendor builds deliver. Yet cua still lands the stroke in only 5 of 30. So the count of motions alone
+does not explain the miss; how they are batched (their spacing) is the candidate. `handle-dnd` runs in a drag session
+where pointer events stop at `dragstart`, so its counts are not comparable: cua took 4 of 30, `cua:nolead` 3, the
+vendor builds 30 of 30. The lead-pause variant is no better than `cua` in either cell. The control left no record and
+took nothing.
+
+### The released 0.3.0 still fails for the same reasons (`fix/idle-released/`, rotating blocks)
+
+| cell | the judge | 0.3.0 (`cua`) | verdict |
+|---|---|---|---|
+| Chrome scroller | reach, pinned mean 133.2 px | 9 of 30 reached (shortest 88, mean 120.2); 5 runs missed the tolerance judge | **FAIL** |
+| Electron scroller | reach, pinned mean 129.4 px | 10 of 30 (shortest 90, mean 120.4); 3 missed | **FAIL** |
+| Chrome canvas | speed, topped up to 40, effect on every run | 670.4 ms against the newest build's 519.9 (21 of 40 took), [+142.8, +158.4] | **FAIL** (slow) |
+| Chrome dnd, in front | speed | 464.4 ms against the newest build's 339.0, [+121.0, +128.1] | **FAIL** (slow) |
+| Firefox canvas | speed; effect | 552.8 ms against the newest build's 518.0, [+19.4, +51.2]; 27 of 30 took | **FAIL** |
+| Firefox dnd | effect | 20 of 30 took | **FAIL** |
+| Electron dnd, Electron canvas, Firefox scroller | effect | 30 of 30 | PASS |
+
+On the Chromium thumbs the sample counts barely differ from the event counts idle (cua 55 samples in 54.5 events).
+Coalescing shows on the long paths' pointermove (cua 763 samples in 35 events on Chrome's canvas) and under load. The
+positive controls hold (`fix/analysis/positive-controls-idle-released.txt`: the newest build reaches the thumb mean 30
+of 30; against the pinned build alone, the speed judge passes both the newest build and cua).
+
+### The load lane (`fix/load2-released/`, 0.3.0, 40 a side)
+
+| cell | pinned landed | `cua` landed | verdict |
+|---|---:|---:|---|
+| Chrome scroller | 40/40 | 34/40 | **FAIL** |
+| Electron scroller | 40/40 | 35/40 | **FAIL** |
+| Chrome range | 40/40 | 39/40 | **FAIL** (one fewer; the first sitting had 40 against 39) |
+| Electron range | 40/40 | 40/40 | PASS |
+
+Under load Chrome coalesces: the pinned build's thumbs arrive as 54 samples in 49 events, cua's as 43 in 35.

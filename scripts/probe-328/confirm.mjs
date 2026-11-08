@@ -56,12 +56,13 @@ const own=(id,delay,dur)=>$(id).addEventListener('wheel',e=>{e.preventDefault();
   setTimeout(()=>{const s=performance.now();const step=n=>{const k=Math.min(1,(n-s)/dur);el.scrollTop=from+by*k;if(k<1)requestAnimationFrame(step)};requestAnimationFrame(step)},delay)},{passive:false});
 own('raf',0,300);own('mid',150,200);own('late',350,200);
 const reset=()=>{for(const id of ['div','raf','mid','late']) $(id).scrollTop=0;$('hdiv').scrollLeft=0;try{ifr().scrollTo(0,0)}catch{};scrollTo(0,0)};
-setInterval(()=>fetch('/cmd',{cache:'no-store'}).then(r=>r.text()).then(t=>{if(t==='reset')reset();if(t.startsWith('end:')){reset();const el=$(t.slice(4));el.scrollTop=el.scrollHeight}
+const report=()=>{let f=0;try{f=ifr().scrollY}catch{};navigator.sendBeacon('/e',JSON.stringify({id:'report',pos:{page:scrollY,div:$('div').scrollTop,iframe:f,hdiv:$('hdiv').scrollLeft,raf:$('raf').scrollTop,mid:$('mid').scrollTop,late:$('late').scrollTop},t:Date.now()}))};
+setInterval(()=>fetch('/cmd',{cache:'no-store'}).then(r=>r.text()).then(t=>{if(t==='report')report();if(t==='reset')reset();if(t.startsWith('end:')){reset();const el=$(t.slice(4));el.scrollTop=el.scrollHeight}
   if(t.startsWith('go:'))location.href=t.slice(3)}).catch(()=>{}),50);
 addEventListener('load',()=>{reset();navigator.sendBeacon('/ready')});</script></body></html>`;
 const SMOOTH = `<!doctype html><html style="scroll-behavior:smooth"><head><meta charset="utf-8"><title>probe328 smooth</title><style>body{font:14px sans-serif;margin:8px}.r{height:20px}</style></head><body>
 ${rows('smooth', 300)}<script>history.scrollRestoration='manual';addEventListener('scroll',()=>navigator.sendBeacon('/e',JSON.stringify({id:'smooth',pos:scrollY,t:Date.now()})));
-setInterval(()=>fetch('/cmd',{cache:'no-store'}).then(r=>r.text()).then(t=>{if(t==='reset'){document.documentElement.style.scrollBehavior='auto';scrollTo(0,0);document.documentElement.style.scrollBehavior='smooth'}
+setInterval(()=>fetch('/cmd',{cache:'no-store'}).then(r=>r.text()).then(t=>{if(t==='report')navigator.sendBeacon('/e',JSON.stringify({id:'report',pos:{smooth:scrollY},t:Date.now()}));if(t==='reset'){document.documentElement.style.scrollBehavior='auto';scrollTo(0,0);document.documentElement.style.scrollBehavior='smooth'}
   if(t.startsWith('go:'))location.href=t.slice(3)}).catch(()=>{}),50);addEventListener('load',()=>{scrollTo(0,0);navigator.sendBeacon('/ready')});</script></body></html>`;
 let events = [], ready = false, cmd = '';
 const server = createServer((req, res) => {
@@ -142,7 +143,9 @@ for (let rep = 1; rep <= REPS; rep++) for (const cell of CELLS) {
     if (o.error) { row.problem = `get_app_state ${o.error.errorName ?? o.error.code}`; results.push(row); continue; }
     const wf = o.result.window?.frame, s = o.result.screenshot?.width && wf ? o.result.screenshot.width / wf.width : 1;
     const args = {direction: cell.direction, pages: PAGES, x: Math.round((pt[0] - wf.x) * s), y: Math.round((pt[1] - wf.y) * s)};
-    const startPos = (() => { const e = events.filter(x => x.id === cell.id).pop(); return e ? e.pos : 0; })();
+    const reportNow = async () => { const n = events.length; await send('report', 150); for (let i = 0; i < 30 && !events.slice(n).some(e => e.id === 'report'); i++) await sleep(50); return events.slice(n).filter(e => e.id === 'report').pop()?.pos ?? null; };
+    const before = await reportNow();
+    const startPos = before?.[cell.id] ?? 0;
     // The read-back around the engine's own scroll.
     const tc = spawn(T328, ['confirm', JSON.stringify({pid: child.pid, at: pt, axis: cell.axis ?? 'v', direction: cell.direction, route: 'external', observeMs: 1500})], {stdio: ['pipe', 'pipe', 'ignore']});
     let tout = ''; tc.stdout.on('data', d => { tout += d; });
@@ -162,8 +165,10 @@ for (let rep = 1; rep <= REPS; rep++) for (const cell of CELLS) {
     const mine = events.slice(mark).filter(e => e.id === cell.id && e.t >= t0 - 5);
     const sign = ['up', 'left'].includes(cell.direction) ? -1 : 1;
     const firstMove = mine.find(e => (e.pos - startPos) * sign > 0.5);
-    row.truth = {moved: mine.length ? Math.round((mine[mine.length - 1].pos - startPos) * sign * 10) / 10 : 0, firstMs: firstMove ? firstMove.t - t0 : null, events: mine.length,
-      others: [...new Set(events.slice(mark).filter(e => e.id !== cell.id && e.t >= t0 - 5).map(e => e.id))]};
+    const after = await reportNow();
+    const movedOf = id => (after && before && after[id] != null && before[id] != null ? Math.round((after[id] - before[id]) * 10) / 10 : null);
+    row.truth = {moved: movedOf(cell.id) == null ? null : movedOf(cell.id) * sign, firstMs: firstMove ? Math.round((firstMove.t - t0) * 10) / 10 : null, events: mine.length,
+      before, after, others: Object.keys(after ?? {}).filter(id => id !== cell.id && Math.abs(movedOf(id) ?? 0) > 0.5)};
   } catch (e) { row.exception = String(e?.stack || e).slice(0, 600); } finally { w.close(); }
   results.push(row); save();
   const r = row.read ?? {};

@@ -61,7 +61,7 @@ case "$GROUP" in
     for b in safari chrome firefox; do
       echo "== $(date -u +%H:%M:%S) confirm $b"
       node scripts/probe-328/confirm.mjs --browser "$b" --t328 "$T/t328" --cover "$T/Cover328.app/Contents/MacOS/Probe328" \
-        --engine "$T/eng/release/cua-engine" --reps "${REPS:-4}" --out "$T/probe-328/confirmb-$b"
+        --engine "$T/eng/release/cua-engine" --reps "${REPS:-5}" --out "$T/probe-328/confirmb-$b"
     done ;;
   followup2)
     # Firefox with Gecko's accessibility forced on (run 42529832136's scan read only its window buttons).

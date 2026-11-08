@@ -92,6 +92,11 @@ func enablementAttribute(listed names: [String]) -> String? {
   return nil
 }
 
+/// Whether a read back of false shows that a write of `attribute` true did not take: not for AXManualAccessibility,
+/// whose getter in Electron is computed and keeps reading false after the enablement (#244), so a failed write of it is
+/// always uncertain (#293's review).
+func enablementReadBackConfirms(_ attribute: String) -> Bool { attribute != "AXManualAccessibility" }
+
 /// Whether an observation waits for a web area (the spec's Observation paragraph): after enabling, or on a Chromium
 /// window, until a web area has been seen in the process. cua's departure: the vendor waits on every Chromium
 /// observation (about 145 ms each on the MacBook shakedown); a window whose web area went away is the settle's busy
@@ -436,10 +441,12 @@ final class WebAccessibility: @unchecked Sendable {
     let after = written == .success ? true : entry.access.read(name)
     guard written == .success || (written == .notImplemented && after == true) else {
       entry.on = false
-      // Not set. Read back false, nothing took: the entry goes. An owned write whose outcome is uncertain (it reads
-      // true or cannot be read after a failing answer) is rolled back; a rollback that fails too keeps the ownership
-      // and the entry, so a release or the next start writes it back.
-      guard owning, after != false else {
+      // Not set. Read back false, nothing took: the entry goes, but only where the getter can confirm it, which
+      // Electron's computed AXManualAccessibility cannot (it reads false after enabling too, #244). An owned write whose
+      // outcome is uncertain (it reads true or cannot be read after a failing answer, or its getter cannot confirm) is
+      // rolled back; a rollback that fails too keeps the ownership and the entry, so a release or the next start
+      // writes it back.
+      guard owning, after != false || !enablementReadBackConfirms(name) else {
         if let recorded { record?.remove(pid: recorded.pid, start: recorded.start) }
         return (nil, prior, written)
       }

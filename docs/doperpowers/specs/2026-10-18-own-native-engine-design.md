@@ -3741,9 +3741,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        not written.
      - **Removed** in `releaseIfUnobserved` once the write back is done or the process has ended. A failed write back
        keeps the entry, with the ownership.
-     - **A write that did not take.** If it reads back false, nothing took, and the entry goes at once. If the outcome
-       is uncertain (-25208 and a read back that fails, or a failing answer and a read back of true), the write is
-       rolled back with a write of false. If the rollback succeeds, the entry goes and the process is remembered as
+     - **A write that did not take.** If it reads back false, nothing took, and the entry goes at once. That holds
+       only where the getter can confirm it (`enablementReadBackConfirms`). Electron's AXManualAccessibility getter is
+       computed and keeps reading false after the enablement (#244), so a failed write of it (a timeout that may have
+       taken) is always uncertain. If the outcome is uncertain (that case, -25208 and a read back that fails, or a
+       failing answer and a read back of true), the write is rolled back with a write of false. If the rollback succeeds, the entry goes and the process is remembered as
        written back. If it fails too, the entry and the ownership are kept (logged), so a release or the next start
        writes it back.
   4. **Concurrency.** Each file is written whole under a temporary name and renamed into place (Foundation's atomic
@@ -3778,13 +3780,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - **Another client.** An attribute that another client also wants on after cua's write (VoiceOver) is written back,
        as #292's release already does.
   Proven offline:
-  - `EnablementRecordTests`, 16:
+  - `EnablementRecordTests`, 17:
     - the entry filed before the write, in the stated format, once while owned;
     - for the review of 81a43091..bc44b120 (three P2s, all fixed):
       - a pid another process took between the false read and the filing is neither filed nor written;
       - a pid reused during the restore inherits no write-back memory, so a true value there is never written;
       - an uncertain write is rolled back, and only then its entry removed;
       - when the rollback fails too, the entry and the ownership are kept until the release writes it back;
+      - from the re-review, a failed AXManualAccessibility write that reads back false is rolled back, and kept owned
+        when the rollback fails;
     - none for a value read true, an unreadable one, or a write that did not take;
     - the entry removed at the close's and the stop's write back and when the process ended, and kept by a failed
       write back;
@@ -3800,10 +3804,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     - the kernel start time exact and gone with its process.
   - `native-engine.test.mjs`'s start test: the real engine drops 4,001 dead entries and skips a malformed one before
     its socket first answers.
-  - Every other suite passes (1,014 engine tests, the node file's 21).
-  - Each of 39 rule parts and bounds removed in turn (`~/.local/share/187/mutate-293.py`) fails a test. That includes
-    the restore moved after the socket's bind, the server keeping no record, and the review's three fixes: 3 mutations
-    for the identity, 1 for the restore's memory, 5 for the uncertain write.
+  - Every other suite passes (1,015 engine tests, the node file's 21). One expectation changed:
+    `BackgroundPointerTests`' failed AXManualAccessibility write now counts two writes, the attempt and its rollback.
+  - Each of 41 rule parts and bounds removed in turn (`~/.local/share/187/mutate-293.py`) fails a test. That includes
+    the restore moved after the socket's bind, the server keeping no record, and the reviews' fixes: 3 mutations for
+    the identity, 1 for the restore's memory, 7 for the uncertain write (2 of them for AXManualAccessibility).
   - Not unit tested: the live AX write and its timeout, and NSRunningApplication's generation.
   **What the hosted check must verify** (`c7/` and `c8/` on Chrome for Testing, behind a frontmost TextEdit, against
   main):

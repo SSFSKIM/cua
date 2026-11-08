@@ -17,6 +17,10 @@ private final class Processes: @unchecked Sendable {
 /// with kAXErrorNotImplemented while acting on them (#292).
 private final class Chrome: @unchecked Sendable {
   var value: Bool? = false
+  /// The attribute listed: Chrome's EUI by default; Electron lists AXManualAccessibility.
+  var names = ["AXEnhancedUserInterface"]
+  /// Electron's computed getter: reads false whatever was written (#244).
+  var computedFalse = false
   var answer: AXError = .notImplemented
   /// Answers for the next writes, in order, before `answer`.
   var answers: [AXError] = []
@@ -30,11 +34,11 @@ private final class Chrome: @unchecked Sendable {
 
   var access: EnablementAccess {
     EnablementAccess(
-      listed: { ["AXEnhancedUserInterface"] },
+      listed: { self.names },
       readRole: {},
       read: { _ in
         self.duringRead()
-        return self.value
+        return self.computedFalse ? false : self.value
       },
       write: { _, value in
         self.duringWrite()
@@ -345,6 +349,28 @@ final class EnablementRecordTests: XCTestCase {
     web.release(connection: 1)
     XCTAssertEqual(chrome.writes, [true, false, false], "the release writes it back")
     XCTAssertEqual(filed(first), [])
+  }
+
+  func testAFailedManualAccessibilityWriteIsUncertainThoughItReadsBackFalse() {
+    // The re-review: Electron's AXManualAccessibility getter keeps reading false after the enablement (#244), so a
+    // write answering a timeout may have taken while it reads back false. It is rolled back, or kept owned.
+    let processes = Processes([7: 7_000, 900: 9_000])
+    let first = record(owner: 900, ownerStart: 9_000, processes)
+    let web = WebAccessibility(releaseGraceMs: 0, releaseFailed: { _ in }, record: first)
+    let electron = Chrome()
+    electron.names = ["AXManualAccessibility"]
+    electron.computedFalse = true
+    electron.answers = [.cannotComplete, .cannotComplete]  // the write and its rollback time out
+    electron.answer = .success
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: electron.access))
+    XCTAssertEqual(electron.writes, [true, false], "rolled back though it reads false")
+    let manual = EnablementRecordEntry(pid: 7, start: 7_000, attribute: "AXManualAccessibility", ownerPid: 900, ownerStart: 9_000)
+    XCTAssertEqual(filed(first), [manual], "kept: the rollback failed")
+    web.release(connection: 1)
+    XCTAssertEqual(electron.writes, [true, false, false], "owned, so the release writes it back")
+    XCTAssertEqual(filed(first), [])
+    XCTAssertFalse(enablementReadBackConfirms("AXManualAccessibility"))
+    XCTAssertTrue(enablementReadBackConfirms(eui), "Chrome's EUI reads back what it holds")
   }
 
   func testTheKernelStartTimeIsExactAndGoneWithItsProcess() throws {

@@ -32,14 +32,15 @@ permissions:
   contents: read
 env:
   # Quoted: YAML reads an all-digit-and-e SHA as a float. main after #329.
-  P316_HEADS_DEFAULT: 'main=73b44561d82d80202fcfa056d862f70defffd993'
+  # The A/B (ruling 4701abd8): main against fix/316-overlay-guard's head.
+  P316_HEADS_DEFAULT: 'main=73b44561d82d80202fcfa056d862f70defffd993,branch=ca4652a7e96fb58fc9853ddfd6ee4a37820cea5f'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
         # A push runs the groups named here.
-        group: ${{ fromJSON(github.event.inputs.groups || '["sweep-safari", "sweep-chrome", "sweep-firefox", "sweep-native"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["sweep-safari", "sweep-chrome", "sweep-firefox", "sweep-native", "safari", "chrome", "firefox", "native"]') }}
     runs-on: macos-latest
     timeout-minutes: 170
     steps:
@@ -53,7 +54,11 @@ jobs:
         run: |
           case "$GROUP" in
             chrome|sweep-chrome) bash scripts/probe-316/install.sh chrome ;;
-            firefox|sweep-firefox) bash scripts/probe-316/install.sh firefox ;;
+            firefox|sweep-firefox)
+              bash scripts/probe-316/install.sh firefox
+              # Firefox's "Update available" panel covered the frames page in run 42504762481: no update checks.
+              mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+              printf '%s\n' '{"policies": {"DisableAppUpdate": true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json ;;
             *) bash scripts/probe-316/install.sh ;;
           esac
           defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES

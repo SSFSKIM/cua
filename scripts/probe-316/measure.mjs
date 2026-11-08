@@ -303,6 +303,11 @@ const BSEQ = {
   // Run 2: a navigation with no key (a link), and one through the address field.
   linkNav: ['click:nav'],
   cmdLnav: ['key:cmd+l', 'type:URL/results', 'key:Return'],
+  // The A/B: a drag from the target 30 pt right instead of the click, after none, ⌘L, ⌘L+typing and ⌘L+Escape.
+  noneDrag: [],
+  cmdLDrag: ['key:cmd+l'],
+  cmdLtypeDrag: ['key:cmd+l', 'type:probe'],
+  cmdLescDrag: ['key:cmd+l', 'key:Escape'],
 };
 const BNODES = {
   name: [['AXTextField'], 'Your name'],
@@ -457,11 +462,15 @@ async function runBrowser(kind) {
       sh('screencapture', ['-x', '-t', 'jpg', join(OUT, 'screens', `${fileName(lab)}.jpg`)]);
       const mark = events.length, loadBefore = lastLoad();
       const t0 = Date.now();
-      const r = await w.execute('click', {pid: b.pid, x: px.x, y: px.y});
+      const r = seq.endsWith('Drag') ? await w.execute('drag', {pid: b.pid, from_x: px.x, from_y: px.y, to_x: px.x + 30, to_y: px.y})
+        : await w.execute('click', {pid: b.pid, x: px.x, y: px.y});
+      row.action = seq.endsWith('Drag') ? 'drag' : 'click';
       row.clickMs = Date.now() - t0;
       row.click = brief(r);
       await sleep(1300);
       row.result = pageLanding(mark, BIDS[target], loadBefore);
+      // A drag's start landed when its press reached the target.
+      if (row.action === 'drag' && since(mark).some(e => ['pointerdown', 'mousedown'].includes(e.type) && BIDS[target].includes(e.id))) row.result.landing = 'landed';
       if (row.click.error) row.result.landing = `refused:${row.click.error}`;
       const after = await ask({op: 'focus', pid: b.pid});
       row.focusAfter = after.focused ?? null;
@@ -694,7 +703,7 @@ const BUCKETS = [
   ['link', ['AXLink'], 5],
 ];
 // Controls that would end the scene or leave the machine (#305's list).
-const SKIP = /close|minimi|zoom|full ?screen|quit|delete|trash|sign|log ?(in|out)|account|download|print|install|extension|profile|donat|buy|subscribe|share|eject|new (tab|window)|private|airdrop|translat/i;
+const SKIP = /close|minimi|zoom|full ?screen|quit|delete|trash|sign|log ?(in|out)|account|download|print|install|extension|profile|donat|buy|subscribe|share|eject|new (tab|window)|private|airdrop|translat|sidebar/i;
 const SKIP_SUBROLES = new Set(['AXCloseButton', 'AXMinimizeButton', 'AXZoomButton', 'AXFullScreenButton']);
 const lbl = n => `${n.title ?? ''} ${n.description ?? ''} ${n.help ?? ''} ${n.identifier ?? ''}`;
 function sweepPicks(sky, max = 20) {
@@ -741,7 +750,7 @@ async function stillCell(meta, pid, mode, place) {
     w = await connect(mode);
     const sky = await observe(w, pid, row.label);
     const found = place(sky);
-    if (!found) { row.problem = 'not in the observation'; row.seen = sky.nodes.filter(n => /AX(Button|CheckBox|Link|TextField|WebArea)/.test(n.role)).map(n => `${n.role}:${(n.title || n.description || '').slice(0, 30)}`).slice(0, 60); return; }
+    if (!found) { row.problem = 'not in the observation'; row.seen = sky.nodes.filter(n => /AX(Button|CheckBox|Link|TextField|WebArea)/.test(n.role)).map(n => `${n.role}:${(n.title || n.description || '').slice(0, 30)}`).slice(0, 60); return row; }
     row.node = {role: found.node.role, title: found.node.title ?? null, description: found.node.description ?? null, frame: found.node.frame};
     const {px, screen} = toPixels(sky, found.point);
     row.point = {px, screen};
@@ -762,13 +771,14 @@ async function stillCell(meta, pid, mode, place) {
     const sp = row.click?.stalePoint;
     log(`${row.label}: ${row.problem ?? row.exception?.split('\n')[0] ?? `${row.click?.error ?? 'ok'} ${sp ? `${sp.verdict}/${sp.reason} rec=${sp.recordedRole} hit=${sp.hitRole}` : ''} W=${row.W} G=${row.G} Ganc=${row.Ganc} areas=${row.signals?.hit?.webAreas} landed=${row.landed ?? '-'} ev=${JSON.stringify(row.events?.slice(0, 4))}`}`);
   }
+  return row;
 }
 
 /// A browser kept at a scene's URL: re-set by Escape (the engine's), the local page's own long-poll (to the scene's
 /// path) or, on an outside page whose title or window count changed, a fresh launch; the web area's focus written.
 async function stillHarness(kind) {
   const profileRoot = join(process.env.RUNNER_TEMP ?? OUT, `p316s-${kind}`);
-  let b = null, launches = 0, current = null, expected = null;
+  let b = null, launches = 0, current = null, expected = null, forced = false;
   const winState = () => ({title: osa(`tell application "System Events" to get name of window 1 of (first process whose unix id is ${b.pid})`).out,
     windows: osa(`tell application "System Events" to count windows of (first process whose unix id is ${b.pid})`).out});
   const local = url => url.startsWith(URL_);
@@ -788,7 +798,7 @@ async function stillHarness(kind) {
   };
   const reset = async url => {
     const notes = [];
-    if (!b || b.exitCode !== null || current !== url) { await relaunch(url); notes.push('launched'); }
+    if (!b || b.exitCode !== null || current !== url || forced) { forced = false; await relaunch(url); notes.push('launched'); }
     else {
       try { const w = await connect('shared'); for (let i = 0; i < 2; i++) { await w.execute('press_key', {pid: b.pid, key: 'Escape'}); await sleep(250); } w.close(); } catch (e) { notes.push('escape failed'); }
       if (local(url)) {
@@ -812,29 +822,50 @@ async function stillHarness(kind) {
     }
     return notes;
   };
-  return {pid: () => b.pid, reset, close: async () => { if (b && b.exitCode === null) { b.kill('SIGTERM'); await sleep(1500); } }};
+  return {pid: () => b.pid, reset, dirty: () => { forced = true; }, close: async () => { if (b && b.exitCode === null) { b.kill('SIGTERM'); await sleep(1500); } }};
 }
 
 const FRAME_CELLS = [['Top', ['field', 'button', 'check', 'link']], ['Same', ['field', 'button', 'check', 'link']], ['Cross', ['field', 'button', 'check', 'link']],
   ['Mid', ['button', 'link']], ['Deep', ['field', 'button', 'check', 'link']], ['Bottom', ['button', 'link', 'field']]];
 const CONTROL_ROLES = {field: ['AXTextField'], button: ['AXButton'], check: ['AXCheckBox'], link: ['AXLink']};
+const TOOLBAR = {
+  safari: [['address', ['AXTextField'], 'smart search field', true], ['reload', ['AXButton'], 'Reload this page'], ['pagemenu', ['AXButton'], 'Page Menu']],
+  cft: [['address', ['AXTextField'], 'Address and search bar', true], ['reload', ['AXButton'], 'Reload'], ['siteinfo', ['AXPopUpButton'], 'View site information'], ['bookmark', ['AXButton'], 'Bookmark this tab']],
+  firefox: [['address', ['AXComboBox'], 'Search with Google or enter address', true], ['reload', ['AXButton'], 'Reload'], ['siteinfo', ['AXButton'], 'View site information']],
+};
+TOOLBAR.stable = TOOLBAR.cft;
 const FRAME_KIND = {Top: 'page', Bottom: 'page', Same: 'same-origin', Cross: 'cross-site', Mid: 'same-origin (holds Deep)', Deep: 'cross-site nested in same-origin'};
 
 async function stillBrowser(kind) {
   config[`${kind}Version`] = version(kind);
   const h = await stillHarness(kind);
-  const scenes = [['frames', `${URL_}frames`], ['page', URL_], ['wiki', 'https://en.wikipedia.org/wiki/Hacker_News']];
+  const scenes = [['frames', `${URL_}frames`], ['toolbar', URL_], ['page', URL_], ['wiki', 'https://en.wikipedia.org/wiki/Hacker_News']];
   for (let rep = 1; rep <= REPS; rep++) for (const [scene, url] of scenes) {
+    if (scene === 'toolbar') {
+      let k = 0;
+      for (const [name, roles, want, above] of TOOLBAR[kind]) for (const at of ['centre', EDGES[k++ % 4], EDGES[k++ % 4], ...(above ? ['above8'] : [])]) {
+        if (overBudget()) { config.budgetStop = true; save(); return; }
+        const notes = await h.reset(url);
+        const tr = await stillCell({app: kind, scene, cell: `toolbar/${name}`, at, rep, reset: notes}, h.pid(), 'shared', sky => {
+          const n = findNode(sky, roles, want);
+          if (!n) return null;
+          return {node: n, point: at === 'centre' ? centre(n) : at === 'above8' ? {x: n.frame.x + n.frame.width / 2, y: n.frame.y - 8} : edgePoint(n.frame, at)};
+        });
+        if (tr?.problem) h.dirty();
+      }
+      continue;
+    }
     if (scene === 'frames') {
       let k = 0;
       for (const [where, controls] of FRAME_CELLS) for (const control of controls) for (const at of ['centre', EDGES[k++ % 4]]) {
         if (overBudget()) { config.budgetStop = true; save(); return; }
         const notes = await h.reset(url);
-        await stillCell({app: kind, scene, cell: `${where}/${control}`, frame: where, frameKind: FRAME_KIND[where], at, rep, reset: notes,
+        const fr = await stillCell({app: kind, scene, cell: `${where}/${control}`, frame: where, frameKind: FRAME_KIND[where], at, rep, reset: notes,
           expect: control === 'check' ? [`${where}-check`, `${where}-checkl`] : [`${where}-${control}`]}, h.pid(), 'shared', sky => {
           const n = findNode(sky, CONTROL_ROLES[control], `${where} ${control}`);
           return n ? {node: n, point: at === 'centre' ? centre(n) : edgePoint(n.frame, at)} : null;
         });
+        if (fr?.problem) h.dirty();
       }
       continue;
     }
@@ -850,10 +881,11 @@ async function stillBrowser(kind) {
       for (const at of ['centre', edge]) {
         if (overBudget()) { config.budgetStop = true; save(); return; }
         const notes = await h.reset(url);
-        await stillCell({app: kind, scene, cell: `${p.bucket}:${p.role}:${(p.title ?? p.description ?? '').slice(0, 30)}`, at, rep, reset: notes}, h.pid(), 'shared', s2 => {
+        const sr = await stillCell({app: kind, scene, cell: `${p.bucket}:${p.role}:${(p.title ?? p.description ?? '').slice(0, 30)}`, at, rep, reset: notes}, h.pid(), 'shared', s2 => {
           const n = refind(s2, p);
           return n ? {node: n, point: at === 'centre' ? centre(n) : edgePoint(n.frame, at)} : null;
         });
+        if (sr?.problem) h.dirty();
       }
     }
   }

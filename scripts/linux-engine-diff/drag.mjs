@@ -89,10 +89,17 @@ export const DRAG_FAMILIES = {
 };
 
 /**
- * Kinds a run measures only when `--ops` names them: Writer's unprimed first drag (T16's measurement), and Firefox's
- * held `drag_handle` moves (whether Gecko's `held_lead_pause` can go, Decision Log, T9).
+ * Kinds a run measures only when `--ops` names them: Writer's unprimed first drag (T16's measurement), and the browsers'
+ * held `drag_handle` moves (Gecko's held-move pacing and its `held_lead_pause`, Decision Log, T9 and T11; Chromium's as
+ * their controls).
  */
-export const OPTIONAL_KINDS = { writer: ['select-unprimed'], firefox: ['handle-canvas', 'handle-dnd'] };
+export const OPTIONAL_KINDS = {
+  writer: ['select-unprimed'],
+  firefox: ['handle-canvas', 'handle-dnd'],
+  // T11: Chromium's held moves, the controls of Gecko's (the design session, 2026-11-08)
+  chrome: ['handle-canvas', 'handle-dnd'],
+  electron: ['handle-canvas', 'handle-dnd'],
+};
 
 /** The long browser paths Acceptance 3 judges from M4 on, on speed as well as effect. */
 export const LONG_PATHS = { chrome: ['canvas', 'dnd'], firefox: ['canvas'] };

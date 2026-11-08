@@ -16,24 +16,49 @@ use std::time::Duration;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DragPacing {
     pub step: Duration,
+    /// Whether `step` is paced by elapsed time: each sample is due a step after the previous one was due, so the time
+    /// the motions themselves take is part of the step (`pointer.rs` `next_due`); else a step follows each sample.
+    pub elapsed: bool,
+    /// The rest at a corner of the path and at its end (`pointer.rs` `drag_plan`): the pointer stays at the point this
+    /// long, then visits it again. Zero: no rest and no second visit of the end.
+    pub rest: Duration,
+    /// Between a held `drag_handle` move's points.
+    pub held_step: Duration,
+    /// The rest at a held move's end, which is then visited again (`desktop.rs` `held_points`). Zero: none.
+    pub held_rest: Duration,
     pub press: Duration,
     pub release: Duration,
     /// Whether a held `drag_handle` move pauses its step after its leading motion, the one at the pointer's own
-    /// position, as every move did before M4's T9. T9 dropped that pause from the desktop path, and Chromium's held
-    /// moves were measured without it; Gecko keeps it until the drag tasks (T10 to T16) measure Firefox's held moves
-    /// without it (the design session, 2026-11-07).
+    /// position, as every move did before M4's T9. T9 dropped that pause from the desktop path; T11 measured Firefox's
+    /// held moves with and without it and dropped it from Gecko's too (its rest at the end lands them either way). No
+    /// family sets it; the flag `--held-lead-pause` measures it.
     pub held_lead_pause: bool,
 }
 
 impl DragPacing {
+    /// Sets the drag's step and a held move's step alike (`--drag-step-ms`, `--drag-step-us`: what they set before
+    /// held moves had their own; `--held-step-*` after them sets the held one apart).
+    pub fn set_step(&mut self, step: Duration) {
+        self.step = step;
+        self.held_step = step;
+    }
+
     /// No wait at all: what an unlisted family gets.
     pub const NONE: DragPacing = DragPacing {
         step: Duration::ZERO,
+        elapsed: false,
+        rest: Duration::ZERO,
+        held_step: Duration::ZERO,
+        held_rest: Duration::ZERO,
         press: Duration::ZERO,
         release: Duration::ZERO,
         held_lead_pause: false,
     };
 }
+
+/// The browsers' rest at a drag's corners and its end (`DragPacing.rest`): a frame at 60 Hz (16.7 ms) and a margin, so
+/// the point the pointer rests at falls in a frame of its own (M4's T11, evidence `m4/drag-motion/`).
+pub const BROWSER_REST: Duration = Duration::from_millis(20);
 
 /// An input kind a family can ignore on the background route (Design, Device mode and the foreground route). Element
 /// actions through AT-SPI take effect everywhere and are never a kind here.
@@ -164,12 +189,18 @@ impl Toolkit {
 }
 
 pub const FAMILIES: &[Family] = &[
-    // The browsers' engines merge motions that arrive faster than they handle them: with no wait a canvas stroke loses
-    // the path's corners and an HTML5 drop can fail, in Chromium also a scrollbar thumb's drag falls short and a text
-    // selection can end early, and a dwell after the press or before the release alone does not help. Chromium takes
-    // every kind with 500 µs after each sample (less leaves canvas strokes and thumb drags short; a dwell before the
-    // release adds nothing); Gecko takes canvas strokes with 300 µs and HTML5 drops only with 30 ms before the release
-    // as well. The other families of M0.4's matrix matched the pinned build with no wait at all. Fully covered, a
+    // The browsers take pointer input once a frame (M4's T11, evidence `m4/drag-motion/`): a page gets one move a frame,
+    // the latest, so a corner the pointer passes within a frame is cut from a stroke; Chromium's scrollbar takes at most
+    // one move a frame and drops the rest, so a thumb stops where the last frame's first move put it (M1a.4's thumbs
+    // short of the path, which no dwell before the release fixed); and Gecko's drop target accepts only a position that
+    // comes after it has answered an earlier one, so a drag whose motions over the target all arrive at once drops
+    // nothing (Firefox's drop misses on private displays, where the motions are faster than on `:0`). Their drags keep
+    // the pinned build's samples, paced by elapsed time (Chromium 500 µs a sample, Gecko 300 µs), and rest a frame
+    // (`BROWSER_REST`) at each sharp corner and at the end, the point then visited again; Gecko's drop also keeps its
+    // 30 ms before the release (without it 3 of 30 dropped). Gecko's held `drag_handle` moves rest at their end the
+    // same way: Firefox merged held points 300 µs apart into two or three events, losing the stroke and the drop. Chromium's
+    // held moves, rerun as controls, keep their pacing. The other families of M0.4's matrix matched the pinned build
+    // with no wait at all. Fully covered, a
     // Chromium window ignores background text-selection, scrollbar-thumb and drag-and-drop drags in every engine
     // (range and canvas drags still land); with half the window covered and the path visible every drag lands, and
     // with the path under the cover the drags miss as fully covered (M3.1): its drags are refused unless their whole
@@ -185,6 +216,10 @@ pub const FAMILIES: &[Family] = &[
         classes: &["Google-chrome", "Chromium", "Chromium-browser"],
         drag: DragPacing {
             step: Duration::from_micros(500),
+            elapsed: true,
+            rest: BROWSER_REST,
+            held_step: Duration::from_micros(500),
+            held_rest: Duration::ZERO,
             press: Duration::ZERO,
             release: Duration::ZERO,
             held_lead_pause: false,
@@ -201,7 +236,7 @@ pub const FAMILIES: &[Family] = &[
         activates_on_press: false,
         relays_focus_to_modal: false,
         animates_primary_action: false,
-        evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
+        evidence: "m4/drag-motion/; m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible, m31-dnd-candidate, m31-dnd-candidate-stats",
     },
     Family {
@@ -211,6 +246,10 @@ pub const FAMILIES: &[Family] = &[
         classes: &[],
         drag: DragPacing {
             step: Duration::from_micros(500),
+            elapsed: true,
+            rest: BROWSER_REST,
+            held_step: Duration::from_micros(500),
+            held_rest: Duration::ZERO,
             press: Duration::ZERO,
             release: Duration::ZERO,
             held_lead_pause: false,
@@ -227,7 +266,7 @@ pub const FAMILIES: &[Family] = &[
         activates_on_press: false,
         relays_focus_to_modal: false,
         animates_primary_action: false,
-        evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
+        evidence: "m4/drag-motion/; m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible",
     },
     // Gecko's Text answers a U+FEFF after each character beyond the BMP (M0.4), which the paste's confirmation strips
@@ -243,9 +282,13 @@ pub const FAMILIES: &[Family] = &[
         classes: &["firefox"],
         drag: DragPacing {
             step: Duration::from_micros(300),
+            elapsed: true,
+            rest: BROWSER_REST,
+            held_step: Duration::from_micros(300),
+            held_rest: BROWSER_REST,
             press: Duration::ZERO,
             release: Duration::from_millis(30),
-            held_lead_pause: true,
+            held_lead_pause: false,
         },
         paste: DEFAULT_PASTE,
         ignores: &[
@@ -273,7 +316,7 @@ pub const FAMILIES: &[Family] = &[
         activates_on_press: false,
         relays_focus_to_modal: false,
         animates_primary_action: false,
-        evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
+        evidence: "m4/drag-motion/; m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
                    m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600; m3/kinds/ \
                    runs m31-kinds-covered, m31-kinds-partial, m31-kinds-partial-deep, m31-move-covered, \
                    m31-drag-covered, m31-drag-partial, m31-drag-partial-deep, m31-dnd-covered",
@@ -496,6 +539,10 @@ mod tests {
 
     const PACED: DragPacing = DragPacing {
         step: Duration::from_micros(500),
+        elapsed: false,
+        rest: Duration::ZERO,
+        held_step: Duration::from_micros(500),
+        held_rest: Duration::ZERO,
         press: Duration::ZERO,
         release: Duration::ZERO,
         held_lead_pause: false,
@@ -895,6 +942,42 @@ mod tests {
             let found = family(FAMILIES, Some(class), toolkit.as_ref());
             assert!(!found.is_some_and(|f| f.animates_primary_action), "{class}");
         }
+    }
+
+    /// T11 (evidence `m4/drag-motion/`): the browsers' drags rest a frame at each corner and at the end and pace their
+    /// samples by elapsed time; every other family keeps the pinned build's events with no wait.
+    #[test]
+    fn only_the_browsers_drags_rest_and_are_paced_by_elapsed_time() {
+        let ms = Duration::from_millis;
+        for f in FAMILIES {
+            let browser = blink(f.name) || f.name == "Gecko";
+            assert_eq!(f.drag.elapsed, browser, "{}", f.name);
+            assert_eq!(f.drag.rest, if browser { ms(20) } else { Duration::ZERO }, "{}", f.name);
+            if !browser {
+                assert_eq!(f.drag, DragPacing::NONE, "{}", f.name);
+            }
+        }
+        let drag = |class| family(FAMILIES, Some(class), None).expect(class).drag;
+        assert_eq!(drag("Google-chrome").step, Duration::from_micros(500));
+        assert_eq!(drag("firefox").step, Duration::from_micros(300));
+        assert_eq!(
+            drag("firefox").release,
+            ms(30),
+            "Gecko's drop still needs the dwell before the release"
+        );
+        // Gecko's held moves rest at their end, the end then visited again, with no pause after the leading motion
+        // (T11's held-move sittings: Firefox merged 300 µs spaced points into two or three events)
+        let firefox = drag("firefox");
+        assert_eq!(
+            (firefox.held_step, firefox.held_rest, firefox.held_lead_pause),
+            (Duration::from_micros(300), BROWSER_REST, false)
+        );
+        // Chromium's held moves keep their pacing: no rest, no lead pause
+        let chrome = drag("Google-chrome");
+        assert_eq!(
+            (chrome.held_step, chrome.held_rest, chrome.held_lead_pause),
+            (Duration::from_micros(500), Duration::ZERO, false)
+        );
     }
 
     #[test]

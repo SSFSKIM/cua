@@ -150,6 +150,14 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                 cfg.stats = true;
                 takes_value = false;
             }
+            "--drag-elapsed" => {
+                fixed_drag(&mut cfg).elapsed = true;
+                takes_value = false;
+            }
+            "--held-lead-pause" => {
+                fixed_drag(&mut cfg).held_lead_pause = true;
+                takes_value = false;
+            }
             "--dnd-cancel-after-release" => {
                 cfg.dnd_cancel_late = true;
                 takes_value = false;
@@ -193,8 +201,12 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             "--paste-click-settle-ms" => cfg.pacing.paste_click_settle = Duration::from_millis(number(value, arg)?),
             "--key-pace-ms" => cfg.pacing.key = Duration::from_millis(number(value, arg)?),
             "--path-step-ms" => cfg.pacing.path = Duration::from_millis(number(value, arg)?),
-            "--drag-step-ms" => fixed_drag(&mut cfg).step = Duration::from_millis(number(value, arg)?),
-            "--drag-step-us" => fixed_drag(&mut cfg).step = Duration::from_micros(number(value, arg)?),
+            "--drag-step-ms" => fixed_drag(&mut cfg).set_step(Duration::from_millis(number(value, arg)?)),
+            "--drag-step-us" => fixed_drag(&mut cfg).set_step(Duration::from_micros(number(value, arg)?)),
+            "--held-step-ms" => fixed_drag(&mut cfg).held_step = Duration::from_millis(number(value, arg)?),
+            "--held-step-us" => fixed_drag(&mut cfg).held_step = Duration::from_micros(number(value, arg)?),
+            "--drag-rest-ms" => fixed_drag(&mut cfg).rest = Duration::from_millis(number(value, arg)?),
+            "--held-rest-ms" => fixed_drag(&mut cfg).held_rest = Duration::from_millis(number(value, arg)?),
             "--drag-press-dwell-ms" => fixed_drag(&mut cfg).press = Duration::from_millis(number(value, arg)?),
             "--drag-release-dwell-ms" => fixed_drag(&mut cfg).release = Duration::from_millis(number(value, arg)?),
             "--drag-dnd-hold-ms" => cfg.dnd_hold = Duration::from_millis(number(value, arg)?),
@@ -441,12 +453,44 @@ mod tests {
         assert_eq!(
             cfg.pacing.drag,
             Some(DragPacing {
-                step: Duration::ZERO,
                 press: Duration::from_millis(30),
                 release: Duration::from_millis(20),
-                held_lead_pause: false,
+                ..DragPacing::NONE
             })
         );
+        // the motion model's measurement flags (M4's T11): the drag's step sets a held move's too, unless a held step
+        // follows it
+        let Ok(Command::Server(cfg)) = parse_args(&args(&[
+            "server",
+            "--drag-step-us",
+            "500",
+            "--held-step-ms",
+            "8",
+            "--drag-elapsed",
+            "--drag-rest-ms",
+            "20",
+            "--held-lead-pause",
+            "--held-rest-ms",
+            "15",
+        ])) else {
+            panic!()
+        };
+        assert_eq!(
+            cfg.pacing.drag,
+            Some(DragPacing {
+                step: Duration::from_micros(500),
+                elapsed: true,
+                rest: Duration::from_millis(20),
+                held_step: Duration::from_millis(8),
+                held_rest: Duration::from_millis(15),
+                held_lead_pause: true,
+                ..DragPacing::NONE
+            })
+        );
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-step-us", "300"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.pacing.drag.map(|p| p.held_step), Some(Duration::from_micros(300)));
     }
 
     #[test]

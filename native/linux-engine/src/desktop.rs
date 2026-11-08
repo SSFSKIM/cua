@@ -52,6 +52,18 @@ pub fn path_points(start: (i16, i16), end: (i16, i16)) -> Vec<(i16, i16)> {
     points
 }
 
+/// A held `drag_handle` move's points: [`path_points`], and for a family that rests (`DragPacing.rest`) its end once
+/// more, after the rest. The agent names a held move's end, so the end is the path's corner or its last point, which
+/// a browser sees only if the pointer stays there into a frame of its own, and Gecko's drop target accepts only a
+/// position that comes after it has answered an earlier one (`pointer.rs` `drag_plan`).
+pub fn held_points(start: (i16, i16), end: (i16, i16), rest: bool) -> Vec<(i16, i16)> {
+    let mut points = path_points(start, end);
+    if rest {
+        points.push(end);
+    }
+    points
+}
+
 /// The desktop's held keys: counted per keycode as a window's are, shared by every desktop request (the server
 /// computes the events' state itself, so no modifier masks are kept).
 pub struct Desktop {
@@ -163,17 +175,21 @@ impl Desktop {
     /// `move_path`: from wherever the pointer is to the point, through [`path_points`], with the path's step
     /// ([`PATH_STEP`]) between points.
     pub fn move_path(&self, x: &X11, rx: i16, ry: i16) -> Result<()> {
-        Self::move_path_paced(x, rx, ry, self.path_step, false)
+        Self::move_path_paced(x, rx, ry, self.path_step, false, Duration::ZERO)
     }
 
     /// [`Desktop::move_path`]'s points with `step` between them: a held `drag_handle` move, paced by its family;
-    /// `lead_pause` keeps the step after the leading motion too ([`paused_before`]).
-    pub fn move_path_paced(x: &X11, rx: i16, ry: i16, step: Duration, lead_pause: bool) -> Result<()> {
+    /// `lead_pause` keeps the step after the leading motion too ([`paused_before`]); a nonzero `rest` is spent at the
+    /// end, which is then visited once more ([`held_points`]).
+    pub fn move_path_paced(x: &X11, rx: i16, ry: i16, step: Duration, lead_pause: bool, rest: Duration) -> Result<()> {
         let pointer = x.conn.query_pointer(x.root)?.reply()?;
         let start = (pointer.root_x, pointer.root_y);
-        let points = path_points(start, (rx, ry));
+        let points = held_points(start, (rx, ry), !rest.is_zero());
+        let last = points.len() - 1;
         for (i, &(px, py)) in points.iter().enumerate() {
-            if i > 0 && !step.is_zero() && paused_before(&points, start, i, lead_pause) {
+            if i > 0 && !rest.is_zero() && i == last {
+                std::thread::sleep(rest);
+            } else if i > 0 && !step.is_zero() && paused_before(&points, start, i, lead_pause) {
                 std::thread::sleep(step);
             }
             Self::motion(x, px, py)?;
@@ -229,6 +245,24 @@ mod tests {
         );
         // the leading motion counts as the pointer's own position only when it is
         assert!(paused_before(&[(0, 0), (5, 5)], (9, 9), 1, false));
+    }
+
+    #[test]
+    fn a_resting_held_move_visits_its_end_once_more_after_its_rest() {
+        let points = path_points((300, 300), (700, 500));
+        assert_eq!(
+            held_points((300, 300), (700, 500), false),
+            points,
+            "no rest: the vendor's points"
+        );
+        let mut rested = points.clone();
+        rested.push((700, 500));
+        assert_eq!(held_points((300, 300), (700, 500), true), rested);
+        assert_eq!(
+            held_points((5, 5), (5, 5), true),
+            vec![(5, 5), (5, 5)],
+            "a move to the pointer's own place"
+        );
     }
 
     #[test]

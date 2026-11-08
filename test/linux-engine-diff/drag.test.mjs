@@ -338,6 +338,11 @@ test("Firefox's held-move cells: drag_handle's start, a held move to each point,
   assert.equal(T10.handleSteps(at, 'handle-dnd', window)[0].action, 'start');
   assert.ok(!dragPlan(['firefox'], null).some((p) => p.kind.startsWith('handle')), 'named only: not in the default cells');
   assert.deepEqual(dragPlan(['firefox'], ['handle-canvas', 'handle-dnd']).map((p) => p.kind), ['handle-canvas', 'handle-dnd']);
+  // T11: Chromium's held moves are rerun as controls of Gecko's, in the same cells, named only too
+  for (const family of ['chrome', 'electron']) {
+    assert.ok(!dragPlan([family], null).some((p) => p.kind.startsWith('handle')), `${family}: named only`);
+    assert.deepEqual(dragPlan([family], ['handle-canvas', 'handle-dnd']).map((p) => p.kind), ['handle-canvas', 'handle-dnd']);
+  }
   // each is judged as the effect it draws: a stroke near every corner, one more drop
   const stroke = (strokes, dev) => ({ strokes, moves: 9, dev });
   assert.deepEqual(judgeRuns('handle-canvas', [run('pinned', 0, stroke(0, -1), stroke(1, 6)), run('cua', 0, stroke(1, 6), stroke(1, 6))]).runs.map((r) => r.took), [true, false]);

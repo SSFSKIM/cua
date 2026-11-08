@@ -71,6 +71,68 @@ pub fn drag_samples(points: &[(i16, i16)]) -> Vec<(i16, i16)> {
     samples
 }
 
+/// How sharply a path must turn at a joint for a resting drag to rest there (`drag_plan`). A browser takes the pointer
+/// once a frame, so a stroke drawn from what it took cuts a corner by up to half a frame's travel times the cosine of
+/// half the corner's angle; at a turn below this the cut stays a few pixels even at a fast pace.
+const CORNER_TURN_DEG: f64 = 30.0;
+
+/// The samples a drag sends after its press, and where it rests.
+#[derive(Debug, PartialEq, Eq)]
+pub struct DragPlan {
+    pub samples: Vec<(i16, i16)>,
+    /// The indices of the samples that go out only after a rest at the point before them.
+    pub rests: Vec<usize>,
+}
+
+/// A drag's motions (`families.rs` `DragPacing.rest`): the pinned build's samples ([`drag_samples`]) and, for a
+/// family that rests, a rest at each joint that turns by [`CORNER_TURN_DEG`] or more, between the joint's two visits,
+/// and a rest at the end, which is then visited once more. A browser takes pointer input once a frame: Chromium and
+/// Gecko hand a page one move a frame (the latest), so a corner the pointer passes within a frame is cut, and
+/// Chromium's scrollbar takes at most one move a frame and drops the rest, so a thumb stops where the last frame's
+/// first move left it and the release, which carries no position for it, does not move it on (`cc/input/
+/// scrollbar_controller.cc`, `drag_processed_for_current_frame_`; evidence `m4/drag-motion/`). A rest of a frame at a
+/// point puts it in a frame of its own, and the second visit after it reaches a scrollbar that took nothing since.
+pub fn drag_plan(points: &[(i16, i16)], rests: bool) -> DragPlan {
+    let mut samples = Vec::new();
+    let mut at = Vec::new();
+    for (j, pair) in points.windows(2).enumerate() {
+        if rests && j > 0 && turn_deg(points[j - 1], points[j], points[j + 1]) >= CORNER_TURN_DEG {
+            at.push(samples.len());
+        }
+        samples.extend(drag_samples(pair));
+    }
+    if rests && let Some(&last) = samples.last() {
+        at.push(samples.len());
+        samples.push(last);
+    }
+    DragPlan { samples, rests: at }
+}
+
+/// The turn at `b` between a→b and b→c, in degrees (0 straight on, 180 straight back); a zero-length side has no
+/// direction, so no turn.
+fn turn_deg(a: (i16, i16), b: (i16, i16), c: (i16, i16)) -> f64 {
+    let (ux, uy) = (b.0 as f64 - a.0 as f64, b.1 as f64 - a.1 as f64);
+    let (vx, vy) = (c.0 as f64 - b.0 as f64, c.1 as f64 - b.1 as f64);
+    let (nu, nv) = (ux.hypot(uy), vx.hypot(vy));
+    if nu == 0.0 || nv == 0.0 {
+        return 0.0;
+    }
+    ((ux * vx + uy * vy) / (nu * nv)).clamp(-1.0, 1.0).acos().to_degrees()
+}
+
+/// When a drag's next sample is due, the previous one having been due at `due` and sent at `sent`: after a rest
+/// (`rest`), the rest after it was sent; by elapsed time ([`DragPacing::elapsed`]), a step after it was due, so a sample
+/// sent late does not delay the ones after it; else a step after it was sent.
+pub fn next_due(due: Instant, sent: Instant, pacing: &DragPacing, rest: bool) -> Instant {
+    if rest {
+        sent + pacing.rest
+    } else if pacing.elapsed {
+        due + pacing.step
+    } else {
+        sent + pacing.step
+    }
+}
+
 /// Blink's drag threshold off the Mac (`mouse_event_manager.cc` `kDragThresholdX/Y`): a press starts a drag on a move
 /// this far out in x or y.
 const DRAG_THRESHOLD_PX: i32 = 4;
@@ -254,9 +316,10 @@ fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &m
     Err(DropCancelled.into())
 }
 
-/// The drag after the pointer is placed at its first point: the chord, the press, every sample, the release.
-/// `pacing.step` follows each sample, the last included (where the vendor waits 1 ms, behaviour §10.4),
-/// `pacing.press` follows the press and `pacing.release` precedes the release (`families.rs`). With a guard (always on
+/// The drag after the pointer is placed at its first point: the chord, the press, every sample of its plan
+/// ([`drag_plan`]), the release. `pacing.step` follows each sample, the last included (where the vendor waits 1 ms,
+/// behaviour §10.4), by elapsed time where the family asks ([`next_due`]), `pacing.rest` precedes a corner's or the
+/// end's second visit, `pacing.press` follows the press and `pacing.release` precedes the release (`families.rs`). With a guard (always on
 /// the background route), `XdndSelection` is looked at after every sample and once more just before the release: a
 /// take there stops the drag, Escape is pressed and released, then the button, so the drag and drop is cancelled before
 /// anything drops ([`Outcome::InTime`]). After the release it is watched through `SETTLE`: a take then (or, with `late`,
@@ -292,7 +355,7 @@ fn drag_along(
     let mut pressed = false;
     let dragged = (|| -> Result<()> {
         route.place_again(x, points[0].0, points[0].1)?;
-        let samples = drag_samples(points);
+        let DragPlan { samples, rests } = drag_plan(points, !pacing.rest.is_zero());
         let count = samples.len();
         // a Chromium-family press: the watch begun, then the press and the samples through the drag threshold under
         // one server grab (no take can come during it: the target's requests wait for the grab's end)
@@ -312,15 +375,24 @@ fn drag_along(
         };
         let pressed_at = pressed_at.expect("the button was pressed");
         std::thread::sleep(pacing.press);
-        // the path's last two samples, which a floor after a take re-visits
-        let last = *samples.last().expect("a drag has samples");
-        let before_last = samples.len().checked_sub(2).map_or(last, |k| samples[k]);
+        // the path's last two samples, which a floor after a take re-visits (the path's own: not the end's second
+        // visit after its rest, which would make them one point)
+        let path = if rests.last() == Some(&(count - 1)) {
+            count - 1
+        } else {
+            count
+        };
+        let last = samples[path - 1];
+        let before_last = path.checked_sub(2).map_or(last, |k| samples[k]);
         // the take, when it was seen, and how many samples were still to send then
         let mut taken: Option<(Instant, usize)> = None;
         let mut since_take = 0;
-        for (i, (sx, sy)) in samples.into_iter().enumerate().skip(first) {
+        // when the sample being sent was due
+        let mut due = Instant::now();
+        for (i, &(sx, sy)) in samples.iter().enumerate().skip(first) {
             route.place_again(x, sx, sy)?;
-            let mut wait = pacing.step;
+            due = next_due(due, Instant::now(), pacing, rests.contains(&(i + 1)));
+            let mut wait = due.saturating_duration_since(Instant::now());
             if let Some((watch, _)) = hold.as_mut() {
                 match taken {
                     Some((at, left)) if !after_take.is_zero() => {
@@ -898,8 +970,9 @@ impl Engine {
     }
 
     /// `drag_handle`: desktop only; start, move and end are the JavaScript's to order (behaviour §10.5). The vendor's
-    /// events, with the drag's waits by family (`families.rs`) in place of the vendor's 8 ms between a held move's
-    /// points: the window under the start decides them, for the whole handle. The move to the start is the vendor's
+    /// events, with the drag's waits by family (`families.rs`: `held_step` in place of the vendor's 8 ms between a held
+    /// move's points, and `held_rest` at its end, the end then visited again): the window under the start decides them,
+    /// for the whole handle. The move to the start is the vendor's
     /// own pointer move, as a desktop `drag`'s placing is.
     pub(super) fn drag_handle(&mut self, input: Option<Value>) -> Result<Value> {
         let input: DragHandleInput = parse_input(input)?;
@@ -924,7 +997,14 @@ impl Engine {
                         self.handle_pacing.start(pacing)
                     }
                 };
-                Desktop::move_path_paced(&self.x, px, py, pacing.step, pacing.held_lead_pause)?;
+                Desktop::move_path_paced(
+                    &self.x,
+                    px,
+                    py,
+                    pacing.held_step,
+                    pacing.held_lead_pause,
+                    pacing.held_rest,
+                )?;
             }
             DragHandleInput::End => self.end_drag_handle()?,
         }
@@ -1012,9 +1092,10 @@ mod tests {
     fn a_drag_handle_keeps_the_pacing_its_start_found_until_its_end() {
         let gecko = DragPacing {
             step: Duration::from_micros(300),
-            press: Duration::ZERO,
+            held_step: Duration::from_micros(300),
             release: Duration::from_millis(30),
             held_lead_pause: true,
+            ..DragPacing::NONE
         };
         let mut handle = HandlePacing::default();
         assert_eq!(handle.current(), None, "no handle yet: the move looks its window up");
@@ -1033,13 +1114,12 @@ mod tests {
         );
     }
 
-    /// T9's review: a held `drag_handle` move shares the desktop path's code, and T9 dropped the pause after its leading
-    /// motion. Chromium's held moves were measured without it (the settle experiment's `drag_handle` cells on Chrome and
-    /// Electron); Gecko's were not, so Gecko keeps its step there until the drag tasks measure Firefox's held moves (the
-    /// design session, 2026-11-07).
+    /// T9's review kept Gecko's pause after a held move's leading motion until Firefox's held moves were measured; T11
+    /// measured them (evidence `m4/drag-motion/`): a Gecko held move rests at its end and visits it again, with no
+    /// pause after the leading motion, while a Chromium one keeps its pacing (no rest; no lead pause, as T9 left it).
     #[test]
-    fn a_gecko_held_move_keeps_its_pause_after_the_leading_motion_and_a_chromium_one_does_not() {
-        use crate::desktop::{path_points, paused_before};
+    fn a_gecko_held_move_rests_at_its_end_with_no_lead_pause_and_a_chromium_one_keeps_its_pacing() {
+        use crate::desktop::{held_points, path_points, paused_before};
         use crate::families::{FAMILIES, Toolkit, family};
         let drag = |class: &str, toolkit: &str| {
             let toolkit = Toolkit {
@@ -1055,15 +1135,20 @@ mod tests {
                 .map(|i| paused_before(&points, start, i, pacing.held_lead_pause))
                 .collect()
         };
-        let gecko = pauses(drag("firefox", "Gecko"));
-        assert!(
-            gecko.iter().all(|&p| p),
-            "Gecko pauses before every point but the first: {gecko:?}"
+        let gecko = drag("firefox", "Gecko");
+        assert!(!pauses(gecko)[0], "no pause after the leading motion");
+        let rested = held_points(start, (700, 500), !gecko.held_rest.is_zero());
+        assert_eq!(rested.len(), points.len() + 1);
+        assert_eq!(
+            rested[rested.len() - 2..],
+            [(700, 500), (700, 500)],
+            "the end, then the end again after the rest"
         );
         for class in ["Google-chrome", "Electron"] {
-            let chromium = pauses(drag(class, "Chromium"));
-            assert!(!chromium[0], "{class}: no pause after the leading motion");
-            assert!(chromium[1..].iter().all(|&p| p), "{class}: {chromium:?}");
+            let chromium = drag(class, "Chromium");
+            assert!(!pauses(chromium)[0], "{class}: no pause after the leading motion");
+            assert!(chromium.held_rest.is_zero(), "{class}: no rest");
+            assert_eq!(held_points(start, (700, 500), false), points, "{class}");
         }
         assert!(
             !pauses(DragPacing::NONE)[0],
@@ -1120,6 +1205,71 @@ mod tests {
         // a long straight path crosses early: the threshold, not the length, decides
         assert_eq!(press_samples(&drag_samples(&[(0, 0), (3000, 0)])), 5);
         assert_eq!(press_samples(&drag_samples(&[(0, 0), (2000, 2000)])), 7);
+    }
+
+    #[test]
+    fn a_resting_drag_rests_before_its_end_s_second_visit_and_at_each_sharp_corner() {
+        // a straight drag: the pinned build's samples, then the end once more after a rest
+        let straight = drag_plan(&[(200, 300), (240, 300)], true);
+        let mut samples = drag_samples(&[(200, 300), (240, 300)]);
+        samples.push((240, 300));
+        assert_eq!(straight.samples, samples);
+        assert_eq!(straight.rests, vec![41], "only before the end's second visit");
+        // the canvas path (drag.mjs CORNERS): the joints turn 139° and 65°, so the pointer rests at both, between the
+        // joint's two visits (the second visit is the next segment's first sample), and at the end
+        let corners = [(20, 20), (380, 40), (200, 180), (40, 100)];
+        let plan = drag_plan(&corners, true);
+        let first = drag_samples(&corners[..2]).len();
+        let second = drag_samples(&corners[1..3]).len();
+        assert_eq!(plan.samples.len(), drag_samples(&corners).len() + 1);
+        assert_eq!(plan.rests, vec![first, first + second, plan.samples.len() - 1]);
+        for &k in &plan.rests {
+            assert_eq!(
+                plan.samples[k],
+                plan.samples[k - 1],
+                "a rest is between two visits of one point"
+            );
+        }
+        // the drop's path turns 7° at its joint: a shallow joint is passed without a rest
+        let dnd = drag_plan(&[(410, 155), (440, 160), (660, 170)], true);
+        assert_eq!(dnd.rests, vec![dnd.samples.len() - 1]);
+        // a zero-length segment has no direction: no corner there
+        let still = drag_plan(&[(0, 0), (0, 0), (10, 0)], true);
+        assert_eq!(still.rests, vec![still.samples.len() - 1]);
+    }
+
+    #[test]
+    fn a_drag_that_does_not_rest_sends_the_pinned_build_s_samples() {
+        let corners = [(20, 20), (380, 40), (200, 180), (40, 100)];
+        let plan = drag_plan(&corners, false);
+        assert_eq!(plan.samples, drag_samples(&corners));
+        assert!(plan.rests.is_empty());
+    }
+
+    #[test]
+    fn by_elapsed_time_a_sample_is_due_a_step_after_the_last_was_due_and_a_rest_counts_from_the_last_sent() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let paced = |elapsed| DragPacing {
+            step: Duration::from_micros(500),
+            elapsed,
+            rest: ms(20),
+            ..DragPacing::NONE
+        };
+        // the previous sample was due at t0 and went out 300 µs late
+        let sent = t0 + Duration::from_micros(300);
+        assert_eq!(next_due(t0, sent, &paced(true), false), t0 + Duration::from_micros(500));
+        assert_eq!(
+            next_due(t0, sent, &paced(false), false),
+            sent + Duration::from_micros(500),
+            "per sample: a step after it went out"
+        );
+        // late by more than a step: due at once, so the motions catch up rather than add their own time
+        let late = t0 + ms(3);
+        assert!(next_due(t0, late, &paced(true), false) < late);
+        // a rest is a rest whatever the lateness: from when the point went out
+        assert_eq!(next_due(t0, late, &paced(true), true), late + ms(20));
+        assert_eq!(next_due(t0, late, &paced(false), true), late + ms(20));
     }
 
     #[test]

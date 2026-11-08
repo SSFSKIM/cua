@@ -2102,7 +2102,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   3. **The release, whichever comes first.** (a) end_task: the service's end_task hook sends `endTask` before it closes
      the connection (client.mjs `release`), and the engine releases at once every process whose only remaining observer
      or last actor was that connection (an older engine answers methodNotFound, unread). (b) The engine's stop: the
-     shutdown request, as before, and now a termination signal (`Lifecycle.beforeSignalExit`); SIGKILL leaves it on.
+     shutdown request, as before, and now a termination signal (`Lifecycle.beforeSignalExit`); SIGKILL leaves it on (until the next engine's start: #293's entry).
      (c) `enablementReleaseGraceMs`, 30 s, after the process's last activity, whether or not a connection is still open
      (a model that never calls end_task keeps its connection until the 15-minute idle stop, and EUI must not stay on all
      that time). Activity is an observation (its enablement step), an input to the process (every input method of a
@@ -2124,7 +2124,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      both re-reads run until the later of 2 s from their start and `freshSince` + 2.6 s (the 2.2 s and a margin),
      capped at 3 s from their start; with no write since, 2 s as before.
   6. **Limits.** EUI stays on while cua drives that Chrome: until release (end_task, engine stop, or 30 s after cua's
-     last action on that Chrome); SIGKILL leaves it on. Each task after an end_task, and the first action after a grace
+     last action on that Chrome); SIGKILL leaves it on until the next engine's start (#293). Each task after an end_task, and the first action after a grace
      release, pays Chrome's 2.2 s debounce again (#288's latency); the first click into a fresh Chrome can take up to
      about 3 s. No early write at first resolution is made (the design session dropped it). A request running longer
      than the grace (a 30 s settle) could be released under it; its end re-arms the grace.
@@ -3714,6 +3714,95 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     reflow 4 (#331), Safari's tree-placed clicks after a re-observation 6 of 12. The docs paragraph's text is final.
   Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 4701abd8 on #316; the hosted A/B
   by cursor235.
+- Decision (#293, 2026-11-08, `fix/293-eui-restore`; the issue's intent, which picks the persisted record over a
+  launchd watchdog; amends #292's item 6): **the engine records every enablement it owns in a file beside its socket,
+  and its next start writes back what an engine killed with SIGKILL, or one that crashed, left on, before it serves.**
+  1. **The defect.** #292 releases at end_task, at the engine's stop and 30 s after cua's last action, but an engine
+     killed with SIGKILL, or one that crashes, runs none of them, and Chrome keeps AXEnhancedUserInterface for its whole
+     life: complete mode, the screen-reader flag, and window moves animated over 3 to 5 frames (#288's spike).
+  2. **A record, not a watchdog.** Nothing found makes the record unworkable. The engine is the one place that knows
+     what it owns (A3), so it records that, and the next engine, which the service starts on the next use, writes it
+     back. No new process, launchd job or owner step is needed. The cost is the gap: EUI stays on from the kill to the
+     next engine's start (item 7).
+  3. **The record** (`EnablementRecord.swift`). It lives in the engine's own state directory, the 0700 directory of
+     engine.lock and usage.json beside the socket: `enablement/<pid>-<start>.json`, so
+     `~/Library/Application Support/cua/engine/enablement/` for the approved engine, and beside `CUA_ENGINE_SOCKET` for a
+     direct run. One JSON file per process, `{pid, start, attribute, ownerPid, ownerStart}`: the target's pid and kernel
+     start time in microseconds (`processStartMicros`, exact, compared as integers), the attribute written
+     (AXEnhancedUserInterface or AXManualAccessibility, `enablementAttribute`), and the owning engine's pid and start
+     time.
+     - **Written** in `enableReporting` when the write will be owned (A3 settles that at the first write: read false,
+       or written back by the engine since), and before the attribute is written. An engine killed between the two
+       leaves an entry for a process that read false; writing it back is harmless. A value read true or unreadable gets
+       no entry.
+     - **Removed** in `releaseIfUnobserved` once the write back is done or the process has ended. A write that did not
+       take removes its entry at once. A failed write back keeps the entry, with the ownership.
+  4. **Concurrency.** Each file is written whole under a temporary name and renamed into place (Foundation's atomic
+     write). A writer that dies mid-write leaves at most a temporary file, which no reader takes (only `.json` names are
+     read), and no other entry is touched. Connection threads write different files. One engine runs per directory
+     (engine.lock), and the restore runs after the lock. There is no fsync: the record matters only while its target
+     runs, and a machine crash ends the target too.
+  5. **The restore** (`WebAccessibility.restoreRecorded`, from `Server.start` after `takeLock` and before `bindSocket`,
+     so before any connection). For each entry:
+     - its owner still runs (a process at `ownerPid` with `ownerStart`): left alone, its enablement being that engine's
+       to release;
+     - its target is gone, or its pid now belongs to a process with another start time: dropped, nothing written;
+     - otherwise the attribute is written false and the entry dropped, and Chrome's -25208 counts as done (#292).
+     Nothing the record does not name, by pid and start time together, is written. The write has a 0.5 s messaging
+     timeout (`enablementRestoreTimeout`), and the whole restore a 2 s budget (`enablementRestoreBudgetMs`). An entry past
+     the budget, or whose write failed, is kept for the next start. An unreadable or malformed entry is skipped with a
+     log line, and kept. That covers a cut-short file, an attribute other than the two, and content filed under another
+     entry's name. Nothing in the record is fatal. Restores and skips are logged to the unified log (category
+     `enablement`) and to stderr.
+  6. **After a restore.** A restored process is remembered as written back (`writtenBack`). So the new engine's first
+     observation of it sets the attribute again, owned, whatever it reads, as after its own write back. This follows the
+     readback rule (Decision Log 2026-10-22): without it, a true readback would leave Chrome out of complete mode while
+     the engine counted it on.
+  7. **Limits.**
+     - **The gap.** EUI stays on from the kill until the next engine starts. Nothing starts an engine only to restore.
+     - **One directory.** The record is per engine directory: an engine at another socket (a harness's
+       `CUA_ENGINE_SOCKET`) restores only its own directory's entries.
+     - **The live-owner rule** cannot fire within one directory while engine.lock holds. It guards the record under any
+       other arrangement.
+     - **Another client.** An attribute that another client also wants on after cua's write (VoiceOver) is written back,
+       as #292's release already does.
+  Proven offline:
+  - `EnablementRecordTests`, 12:
+    - the entry filed before the write, in the stated format, once while owned;
+    - none for a value read true, an unreadable one, or a write that did not take;
+    - the entry removed at the close's and the stop's write back and when the process ended, and kept by a failed
+      write back;
+    - a dead owner's entry written false and dropped, with an owner whose pid was reused counted dead, then re-enabled
+      owned at the next observation though it reads true;
+    - nothing written for a gone target or a reused pid;
+    - a live owner's entry left;
+    - three malformed files and a leftover temporary file skipped with log lines while the readable entry is restored;
+    - no record at all;
+    - 200 entries from two concurrent writers all whole;
+    - a failed restore kept and retried;
+    - the budget leaving the third entry;
+    - the kernel start time exact and gone with its process.
+  - `native-engine.test.mjs`'s start test: the real engine drops 4,001 dead entries and skips a malformed one before
+    its socket first answers.
+  - Every other suite passes (1,010 engine tests, the node file's 21).
+  - Each of 30 rule parts and bounds removed in turn (`~/.local/share/187/mutate-293.py`) fails a test. That includes
+    the restore moved after the socket's bind, and the server keeping no record.
+  - Not unit tested: the live AX write and its timeout, and NSRunningApplication's generation.
+  **What the hosted check must verify** (`c7/` and `c8/` on Chrome for Testing, behind a frontmost TextEdit, against
+  main):
+  - **After the SIGKILL** (both heads): an observation by engine A writes EUI (prior false, write `success` with -25208),
+    and 2.6 s later the checkbox lists AXPress. On the branch, A's entry is on disk with Chrome's pid and A's pid. After
+    the SIGKILL, AXEnhancedUserInterface on Chrome's application element still reads true, AXPress stays, and a scripted
+    move or resize animates (3 to 5 frames).
+  - **The branch's next start** (B in the same directory): EUI reads false, and the checkbox's AXPress and the field's
+    character box are gone, within B's start, before its socket answers. The entry is gone, and B's stderr names the
+    restore. A move or resize then settles in about 2 frames, as #292's release did.
+  - **After the restore:** B's first observation sets EUI again, owned (an entry with B as owner), AXPress returns, and
+    B's shutdown writes it back with the entry gone.
+  - **Main, the control:** EUI and AXPress stay on through B's start, and window moves stay animated.
+  - **A3 (`c8/`):** EUI written true by another client before any engine is not recorded, and stays true through A's
+    SIGKILL and B's start and shutdown.
+  Date/Author: 2026-11-08, cursor235's implementer for #293.
 
 ## Outcomes & Retrospective
 

@@ -15,6 +15,7 @@
 //       window (the engine's webAreaWalk) before anything else; the application's role read; the same hit and walk; then
 //       the hit's window searched for an AXWebArea (the engine's containsWebArea) every 10 ms until found or 2 s; a page
 //       point's hit and walk. Each step timed. Spec: {reload: {x, y}, page: {x, y}}
+//   ax serve <pid>                  (#293) one AXEnhancedUserInterface read per stdin line, each answered as one JSON line
 //   ax locate <pid>                 the role read, then up to 3 s for the toolbar's Reload button and the checkbox (their
 //       frames)
 //   ax geom <pid> <spec-json>      the window's scripted move and resize through AX (AXPosition, AXSize) in phases, each
@@ -357,6 +358,17 @@ case "watch":
     pause(max(1, sampleMs - (nowMs() - st)))
   }
   emit(["t0": t0, "samples": samples, "changes": changes, "lastT": prevT ?? NSNull(), "lastEndT": prevEndT ?? NSNull()])
+
+case "serve":
+  // #293: one read of the application's AXEnhancedUserInterface per stdin line, answered at once (the live check writes
+  // a line the moment the engine's socket accepts, so the read begins then).
+  emit(["ready": true, "t0": nowMs()])
+  while let line = readLine() {
+    let st = nowMs()
+    let (e, ee) = copy(app, "AXEnhancedUserInterface")
+    let en = nowMs()
+    emit(["tag": line, "start": st, "end": en, "eui": e != nil ? boolValue(e) : "error \(ee)"])
+  }
 
 case "tbtimeline":
   // Round 2: one sample before the role read, then the role read, then every 5 ms for 600 ms: the page point's and the

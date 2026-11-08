@@ -22,7 +22,7 @@ permissions:
 env:
   # Set both to the commits under test before pushing (quoted: a ref of digits only is a number in YAML).
   P293_MAIN_REF: '81a43091'
-  P293_BRANCH_REF: 'bc44b120'
+  P293_BRANCH_REF: 'a32d029d'
 jobs:
   probe:
     strategy:

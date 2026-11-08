@@ -176,7 +176,7 @@ function points() {
 // A cell's own socket directory (#293: the enablement record lives beside the socket, so the two engines of a sigkill
 // cell share it, and no other cell's record is read). Kept short: a socket path must stay under 104 bytes.
 const cellDir = label => join(OUT, 'sock', fileName(label).slice(-40));
-async function startEngine(which, label, dir = cellDir(label)) {
+async function startEngine(which, label, dir = cellDir(label), onConnect = null) {
   mkdirSync(dir, {recursive: true, mode: 0o700});
   const socket = join(dir, 'engine.sock');
   const spawnedAt = Date.now();
@@ -188,7 +188,7 @@ async function startEngine(which, label, dir = cellDir(label)) {
   // Polled every 5 ms, so the listen time (#293's start cost) is read to about that.
   for (let i = 0; i < 3000; i++) {
     if (child.exitCode !== null) throw new Error(`engine exited ${child.exitCode}: ${stderr.slice(0, 2000)}`);
-    try { const wire = await Wire.connect(socket); return {child, wire, exited, spawnedAt, listeningAt: Date.now(), stderr: () => stderr}; } catch { await sleep(5); }
+    try { const wire = await Wire.connect(socket); const listeningAt = Date.now(); onConnect?.(); return {child, wire, exited, spawnedAt, listeningAt, stderr: () => stderr}; } catch { await sleep(5); }
   }
   throw new Error(`engine did not listen: ${stderr.slice(0, 2000)}`);
 }
@@ -203,6 +203,16 @@ const recordOf = dir => {
 };
 async function stop(chrome) {
   if (chrome && chrome.exitCode === null) { chrome.kill('SIGTERM'); await sleep(2000); if (chrome.exitCode === null) chrome.kill('SIGKILL'); }
+}
+// #293: an EUI reader kept running, one read per request (`ax serve`), so a read can begin the moment a socket accepts.
+async function euiReader(pid) {
+  const child = spawn(AX, ['serve', String(pid)], {stdio: ['pipe', 'pipe', 'ignore']});
+  let buf = '';
+  const waiting = [];
+  child.stdout.on('data', d => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); try { waiting.shift()?.(JSON.parse(line)); } catch {} } });
+  const next = () => new Promise(r => waiting.push(r));
+  const ready = await Promise.race([next(), sleep(10_000).then(() => null)]);
+  return {ready, read: tag => { const p = next(); child.stdin.write(`${tag}\n`); return p; }, close: () => { child.stdin.end(); setTimeout(() => child.kill('SIGKILL'), 1000); }};
 }
 const watch = (pid, P, pollMs, sampleMs = 20, euiOnly = false) => ax(['watch', String(pid), JSON.stringify({pollMs, sampleMs, euiOnly, cb: P.cb, tf: P.tf})], pollMs + 30_000);
 const geom = (pid, label) => ax(['geom', String(pid), JSON.stringify({phases: [{label, before: [], waitMs: 0}]})]);
@@ -302,17 +312,27 @@ async function sigkillCell(spec, pid, P, row, track) {
   row.geomAfterKill = await geom(pid, 'afterKill');
   row.recordAfterKill = recordOf(dir);
   // B, with the sampler already running, so the restore's write lands inside its window.
-  // Two samplers from before B's spawn: the full one (AXPress, the character box) and an attribute-only one every
-  // 2 ms, which brackets EUI's flip against B's listen.
-  const watching = watch(pid, P, 3000);
+  // An attribute-only sampler from before B's spawn, which brackets EUI's flip against B's listen; a read begun the
+  // moment B's socket accepts (the reader, started first); and the full sampler (AXPress, the character box) from just
+  // after the listen, so its hit tests do not slow the attribute reads around it.
+  const reader = await euiReader(pid);
+  row.readerReady = !!reader.ready;
   const watchingFast = watch(pid, P, 2000, 2, true);
   await sleep(600);
-  const b = await startEngine(spec.e, spec.label, dir);
+  let atListen;
+  const b = await startEngine(spec.e, spec.label, dir, () => { atListen = reader.read('listen'); });
+  const watching = watch(pid, P, 2400);
   track(b);
   row.pidB = b.child.pid;
   row.bListeningMs = b.listeningAt - b.spawnedAt;
   row.pingB = (await b.wire.call('ping', {clientApiVersion: 'cua-engine-1'})).result ?? null;
   row.bAnsweredMs = Date.now() - b.spawnedAt;
+  const atPing = await reader.read('ping');
+  const rel = v => Math.round((v - b.spawnedAt) * 10) / 10;
+  const atL = await Promise.race([atListen, sleep(5000).then(() => null)]);
+  row.euiAtListen = atL ? {eui: atL.eui, startMs: rel(atL.start), endMs: rel(atL.end)} : null;
+  row.euiAtPing = atPing ? {eui: atPing.eui, startMs: rel(atPing.start), endMs: rel(atPing.end)} : null;
+  reader.close();
   row.watchAtStart = await watching;
   row.watchFastAtStart = await watchingFast;
   // From B's spawn: the end of the last read answering true, and the start and end of the first answering false. A
@@ -473,7 +493,7 @@ function summary(r) {
   const obs = r.observation ? `obs ${JSON.stringify(r.observation)}` : '';
   const files = rec => rec ? `[${rec.files.map(f => f.name).join(' ')}]` : '-';
   if (r.watchAtStart) return `${obs} record ${files(r.recordBeforeKill)} killed exit=${JSON.stringify(r.exitA)} afterKill ${changesLine(r.watchAfterKill)} geom[${geomLine(r.geomAfterKill)}] `
-    + `| B listening@${r.bListeningMs} answered@${r.bAnsweredMs} sampler@${r.samplerStartMs} flip ${JSON.stringify(r.euiFlip)} fast ${JSON.stringify(r.euiFastFlip)} atStart ${changesLine(r.watchAtStart)} euiFalse@${r.euiFalseMs} pressLost@${r.pressLostMs} record ${files(r.recordAfterStart)} geom[${geomLine(r.geomAfterStart)}] `
+    + `| B listening@${r.bListeningMs} answered@${r.bAnsweredMs} atListen ${JSON.stringify(r.euiAtListen)} atPing ${JSON.stringify(r.euiAtPing)} sampler@${r.samplerStartMs} flip ${JSON.stringify(r.euiFlip)} fast ${JSON.stringify(r.euiFastFlip)} atStart ${changesLine(r.watchAtStart)} euiFalse@${r.euiFalseMs} pressLost@${r.pressLostMs} record ${files(r.recordAfterStart)} geom[${geomLine(r.geomAfterStart)}] `
     + `| B obs ${JSON.stringify(r.observationB)} record ${files(r.recordWhileBOwns)} shutdown euiFalse@${r.shutdownEuiFalseMs} record ${files(r.recordAfterShutdown)} ${tail}`;
   if (r.watchAfter) return `${obs} before ${changesLine(r.watchBefore)} after ${changesLine(r.watchAfter)} pressLost@${r.releasedPressLostMs} euiFalse@${r.releasedEuiFalseMs} exit=${r.engineExit ?? ''} geom before[${geomLine(r.geomBefore)}] after[${geomLine(r.geomAfter)}] ${tail}`;
   if (r.kind === 'grace' || r.observedAt) return `${obs} reobs ${JSON.stringify(r.reobservation ?? null)} press@${r.pressFirstMs} released@${r.releasedMs} (after reobs ${r.releasedAfterReobsMs}) eui@release ${r.euiAtRelease} changes ${changesLine(r.watch)} ${tail}`;

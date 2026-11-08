@@ -20,8 +20,9 @@ import os
 // its full-UI context, since that attribute changes how an AppKit app (the owner's Finder) behaves while it stays set
 // (Decision Log, T1's re-review); and the engine **releases** what it set, writing the attribute back to false at
 // whichever comes first (#292): the end of the task of the last connection that observed or acted on the process
-// (end_task, the `endTask` request), the engine's stop (a shutdown request or a termination signal; SIGKILL leaves it
-// on), or `enablementReleaseGraceMs` (30 s) after cua's last observation of or input to the process, whether or not a
+// (end_task, the `endTask` request), the engine's stop (a shutdown request or a termination signal; an engine killed
+// with SIGKILL, or one that crashes, leaves it on until the next engine's start writes it back from the enablement
+// record, #293, EnablementRecord.swift), or `enablementReleaseGraceMs` (30 s) after cua's last observation of or input to the process, whether or not a
 // connection is still open (a model that never calls end_task keeps its connection until the 15-minute idle stop); a
 // new observation or input within that grace starts it again, and one after it sets the attribute again, owned, an
 // input included (`inputEnablement`). It owns, and so releases, only an attribute it read false and then set: one
@@ -108,12 +109,7 @@ func processGeneration(launchDate: Date?, pid: pid_t) -> Date? {
 
 /// The kernel's start time of process `pid` (`kp_proc.p_starttime`); nil when there is no such process.
 func processStartTime(pid: pid_t) -> Date? {
-  var info = kinfo_proc()
-  var size = MemoryLayout<kinfo_proc>.stride
-  var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-  guard sysctl(&name, u_int(name.count), &info, &size, nil, 0) == 0, size > 0, info.kp_proc.p_pid == pid else { return nil }
-  let start = info.kp_proc.p_starttime
-  return Date(timeIntervalSince1970: Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000)
+  processStartMicros(pid: pid).map { Date(timeIntervalSince1970: Double($0 / 1_000_000) + Double($0 % 1_000_000) / 1_000_000) }
 }
 
 /// How the enablement reaches one process's application element: its attribute names (nil while they cannot be read,
@@ -182,6 +178,9 @@ private final class EnabledProcess: @unchecked Sendable {
   /// Whether the process's generation is known; a write-back is remembered only then, since a key of the pid alone
   /// would match a later process reusing it.
   let generationKnown: Bool
+  /// The process's entry in the enablement record (#293), filed by its pid and start time, while the engine owns its
+  /// attribute; nil when it does not, or none could be written.
+  var recorded: (pid: pid_t, start: Int64)?
 
   init(access: EnablementAccess, generationKnown: Bool) {
     self.access = access
@@ -221,15 +220,35 @@ final class WebAccessibility: @unchecked Sendable {
   private let schedule: (Double, @escaping @Sendable () -> Void) -> Void
   /// Told (a bounded, value-free line) when a reset of the attribute the engine set fails; it stays owned.
   private let releaseFailed: (String) -> Void
+  /// The enablement record (#293, EnablementRecord.swift): every owned attribute filed before its write and removed
+  /// once written back, so the next engine restores what a SIGKILL or a crash left on. Nil keeps no record (the unit
+  /// tests' engines).
+  private let record: EnablementRecord?
 
   init(releaseGraceMs: Double = enablementReleaseGraceMs,
        schedule: @escaping (Double, @escaping @Sendable () -> Void) -> Void = { ms, work in
          DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
        },
-       releaseFailed: @escaping (String) -> Void = { enablementLog.error("\($0, privacy: .public)") }) {
+       releaseFailed: @escaping (String) -> Void = { enablementLog.error("\($0, privacy: .public)") },
+       record: EnablementRecord? = nil) {
     self.releaseGraceMs = releaseGraceMs
     self.schedule = schedule
     self.releaseFailed = releaseFailed
+    self.record = record
+  }
+
+  /// The engine's start (#293), before any connection: restores what dead engines left on (`EnablementRecord.restore`)
+  /// and remembers each restored process as written back, so its next observation sets the attribute again, owned,
+  /// whatever it reads (Chromium's readback after a write-back, Decision Log 2026-10-22). Nil without a record.
+  @discardableResult
+  func restoreRecorded() -> EnablementRestore? {
+    guard let record else { return nil }
+    let report = record.restore()
+    let keys = report.restored.compactMap { entry in record.generation(entry.pid).map { Self.process(entry.pid, $0) } }
+    lock.lock()
+    writtenBack.formUnion(keys)
+    lock.unlock()
+    return report
   }
 
   /// The connections observing a process now.
@@ -389,21 +408,26 @@ final class WebAccessibility: @unchecked Sendable {
       entry.on = read == true && !reEnabling
       return (nil, prior, nil)
     }
+    // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's. A value
+    // the engine itself wrote back is its own whatever it reads now. What will be owned is recorded before the write
+    // (#293), so an engine killed right after the write leaves an entry the next start restores.
+    let owning = read == false || reEnabling
+    let recorded = owning ? record?.add(pid: pid, attribute: name).map { (pid: pid, start: $0) } : nil
     let written = entry.access.write(name, true)
     lock.lock()
     freshSinceByProcess[key] = monotonicMilliseconds()
     lock.unlock()
     guard written == .success || (written == .notImplemented && entry.access.read(name) == true) else {
+      if let recorded { record?.remove(pid: recorded.pid, start: recorded.start) }  // not set: nothing to restore
       entry.on = false
       return (nil, prior, written)
     }
     entry.on = true
     lock.lock()
     writes[key, default: 0] += 1
-    // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's. A value
-    // the engine itself wrote back is its own whatever it reads now.
-    if read == false || reEnabling {
+    if owning {
       entry.owned = name
+      entry.recorded = recorded
       writtenBack.remove(key)
     }
     lock.unlock()
@@ -552,6 +576,11 @@ final class WebAccessibility: @unchecked Sendable {
         reset = true
       } else {
         releaseFailed("enablement release failed: \(owned) on pid \(key.prefix { $0 != "@" }); kept for a later close or shutdown")
+      }
+      // Written back, or the process ended: its record entry goes (#293). A failed reset keeps it with the ownership.
+      if entry.owned == nil, let recorded = entry.recorded {
+        record?.remove(pid: recorded.pid, start: recorded.start)
+        entry.recorded = nil
       }
     }
     lock.lock()

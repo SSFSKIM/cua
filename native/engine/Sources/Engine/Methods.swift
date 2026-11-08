@@ -33,7 +33,8 @@ private let inputMethods: Set<String> = ["click", "press_key", "type_text", "pas
 final class Engine: @unchecked Sendable {
   let paths: ServerPaths
   let apps: AppDirectory
-  let webAccessibility = WebAccessibility()
+  /// Per process, the web enablement (Enablement.swift); the server's engine keeps its record (#293).
+  let webAccessibility: WebAccessibility
   /// The intervention tap and its ledger (Intervention.swift).
   let intervention: InterventionMonitor
   /// The owner's per-app route-4 override, `routes` in engine.json as read at launch (Config.swift).
@@ -65,8 +66,9 @@ final class Engine: @unchecked Sendable {
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
        screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
        pasteActivation: ActivationSystem = ActivationSystem(), cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true,
-       cursorDebug: CursorDebug? = nil) {
+       cursorDebug: CursorDebug? = nil, enablementRecord: EnablementRecord? = nil) {
     self.paths = paths
+    self.webAccessibility = WebAccessibility(record: enablementRecord)
     self.apps = AppDirectory(usagePath: paths.usage)
     self.routes = routes
     self.cursorEnabled = cursorEnabled

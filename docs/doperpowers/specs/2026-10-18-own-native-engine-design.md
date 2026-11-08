@@ -3693,7 +3693,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - **Chrome's navigated tab** (link and ⌘L navigation, both builds): every click from the old screenshot refused
     `otherWebArea`; Firefox's urlbar list refused `otherWebArea` or `newWindow`;
   - **the false refusals** near the emulation's: Chrome's omnibox popup after ⌘L, Finder's rename field after Return,
-    and none elsewhere (the still-page and native cells all kept), iframes included;
+    and none elsewhere (the still-page and native cells all kept), iframes included, same-origin and cross-origin;
+  - **#305's toolbar cells kept:** G refuses before `recordedHit`, so a toolbar control's point whose deepest recorded
+    node lay in the page's web area would now refuse; #305's live check found Safari's deepest node there to be the
+    page view AXGroup outside the web area, which this must confirm for Safari's address field and Reload and for
+    Chrome's toolbar;
   - **the cost:** `stalePoint.ms` against main's on the same cells, with `windowsMs` and `webAreaReads`'
     distributions;
   - **the residue** as item 8 counts it, and repl-parity green with the docs paragraph's new text.

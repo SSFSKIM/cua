@@ -1,0 +1,86 @@
+# #315's hosted A/B: A = main against B = fix/315-gecko-routes (a shared-mode pointer into a background Firefox page
+# takes #282's element route, its text field #313's press with the focus read back, anything else refused with nothing
+# posted), both engines built here from their refs, one engine process per head, the heads' order alternating by
+# repetition (scripts/probe-315/ab.mjs). Firefox: the counters page, /fixedtail and its sidebar and devtools; Chrome for
+# Testing and Safari: the counters page. Runs only on a push to probe/315-ab (or by hand); not a ci-kit gate.
+name: probe-315-ab
+on:
+  push:
+    branches: ['probe/315-ab']
+    paths-ignore: ['scripts/probe-315/offline/**', 'docs/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  # Quoted: YAML reads an all-digit-and-e SHA as a float.
+  P315_A_REF: 'fc3b08043dc57d74c85fef296aeb3f1135b19997'
+  P315_B_REF: '9abdd7e804b16f9a8a1037dbe21efc7b5c940200'
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {rep: 1, group: firefox}
+          - {rep: 2, group: firefox}
+          - {rep: 3, group: firefox}
+          - {rep: 1, group: others}
+          - {rep: 2, group: others}
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Browsers
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          case "$GROUP" in
+            firefox) bash scripts/probe-287/install.sh firefox ;;
+            *) bash scripts/probe-287/install.sh ;;
+          esac
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+      - name: Build both engines and the tools
+        run: |
+          sw_vers
+          node --version
+          git worktree add "$RUNNER_TEMP/a" "$P315_A_REF"
+          git worktree add "$RUNNER_TEMP/b" "$P315_B_REF"
+          echo "P315_A_COMMIT=$(git -C "$RUNNER_TEMP/a" rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "P315_B_COMMIT=$(git -C "$RUNNER_TEMP/b" rev-parse HEAD)" >> "$GITHUB_ENV"
+          swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-314/tool.swift
+          swiftc -O -o "$RUNNER_TEMP/p282-hit" scripts/probe-282/hit.swift
+          swiftc -O -o "$RUNNER_TEMP/p321-win" scripts/probe-321/win.swift
+          swift build -c release --package-path "$RUNNER_TEMP/a/native/engine" --scratch-path "$RUNNER_TEMP/eng-a"
+          swift build -c release --package-path "$RUNNER_TEMP/b/native/engine" --scratch-path "$RUNNER_TEMP/eng-b"
+      - name: Measure
+        env:
+          GROUP: ${{ matrix.group }}
+          P315_REP: ${{ matrix.rep }}
+        run: |
+          T="$RUNNER_TEMP"
+          common=(--a "$T/eng-a/release/cua-engine" --b "$T/eng-b/release/cua-engine" --tool "$T/probe-tool" --hit "$T/p282-hit" --win "$T/p321-win")
+          if [ "$GROUP" = firefox ]; then
+            node scripts/probe-315/ab.mjs --browser firefox "${common[@]}" --out "$T/probe-315/firefox"
+          else
+            # The browsers' order alternating by repetition.
+            if [ $((P315_REP % 2)) -eq 1 ]; then order="chrome safari"; else order="safari chrome"; fi
+            for b in $order; do
+              echo "== $(date -u +%H:%M:%S) $b"
+              node scripts/probe-315/ab.mjs --browser "$b" "${common[@]}" --out "$T/probe-315/$b"
+            done
+          fi
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-315-ab-${{ matrix.group }}-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-315/*/*.json
+            ${{ runner.temp }}/probe-315/*/*.gz
+            ${{ runner.temp }}/probe-315/*/*.png
+            ${{ runner.temp }}/probe-287/*.txt
+          if-no-files-found: warn

@@ -17,12 +17,14 @@ permissions:
 env:
   # Quoted: YAML reads an all-digit-and-e SHA as a float. origin/main f859ce68 (0.27.11; its scroll path is 81a43091's).
   P328_MAIN_REF: 'f859ce6881f91fcbe559634673899c2b72e59971'
+  # The A/B's B (the ab-* groups): fix/328-scroll-confirm, the build of ruling b1921fc3.
+  P328_B_REF: 'b2281926cd219e4dc73907246655648a25779cde'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["confirmb"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["ab-native", "ab-web"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -52,7 +54,12 @@ jobs:
         run: |
           sw_vers
           git log -1 --format='kit %H %s'
-          if [ "$GROUP" = smoke ] || [ "$GROUP" = web ] || [ "$GROUP" = confirmb ]; then
+          case "$GROUP" in ab-*)
+            git worktree add "$RUNNER_TEMP/src-b" "$P328_B_REF"
+            echo "P328_B_COMMIT=$(git -C "$RUNNER_TEMP/src-b" rev-parse HEAD)" >> "$GITHUB_ENV"
+            swift build -c release --package-path "$RUNNER_TEMP/src-b/native/engine" --scratch-path "$RUNNER_TEMP/eng-b" ;;
+          esac
+          if [ "$GROUP" = smoke ] || [ "$GROUP" = web ] || [ "$GROUP" = confirmb ] || [ "${GROUP#ab-}" != "$GROUP" ]; then
             git worktree add "$RUNNER_TEMP/src" "$P328_MAIN_REF"
             echo "P328_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/src" rev-parse HEAD)" >> "$GITHUB_ENV"
             swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng"
@@ -110,6 +117,7 @@ jobs:
             ${{ runner.temp }}/probe-328/*/results-*.json
             ${{ runner.temp }}/probe-328/*/scan-*.json
             ${{ runner.temp }}/probe-328/*/confirm-*.json
+            ${{ runner.temp }}/probe-328/*/sweep-*.json
             ${{ runner.temp }}/probe-328/*.txt
             ${{ runner.temp }}/probe-287/*.txt
           if-no-files-found: warn

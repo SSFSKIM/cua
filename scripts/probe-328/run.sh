@@ -13,11 +13,19 @@ common=(--t328 "$T/t328" --app "$T/Probe328.app/Contents/MacOS/Probe328" --cover
 catalyst=$(head -1 "$T/probe-328/catalyst.txt" 2>/dev/null)
 m() { echo "== $(date -u +%H:%M:%S) $1"; node scripts/probe-328/measure.mjs --block "$1" "${common[@]}" --out "$T/probe-328/$2" "${@:3}"; }
 # #324's scroll cells as #324 ran them, on main unpatched: the scroll aimed at the centre of the text area's whole frame.
-repro324() {
-  echo "== $(date -u +%H:%M:%S) repro324"
-  r=(--engine "$T/eng/release/cua-engine" --win "$T/p321-win" --ax "$T/ax324" --app "$T/Probe324.app/Contents/MacOS/Probe324" --modes main --reps "$1")
-  node scripts/probe-324/measure.mjs --block textedit "${r[@]}" --cells scroll/text --out "$T/probe-328/repro324-textedit"
-  node scripts/probe-324/measure.mjs --block appkit "${r[@]}" --cells scroll/notes --out "$T/probe-328/repro324-appkit"
+repro324() {  # <reps> [engine dir, default eng] [output suffix]
+  echo "== $(date -u +%H:%M:%S) repro324 ${2:-eng}"
+  r=(--engine "$T/${2:-eng}/release/cua-engine" --win "$T/p321-win" --ax "$T/ax324" --app "$T/Probe324.app/Contents/MacOS/Probe324" --modes main --reps "$1")
+  node scripts/probe-324/measure.mjs --block textedit "${r[@]}" --cells scroll/text --out "$T/probe-328/repro324-textedit${3:-}"
+  node scripts/probe-324/measure.mjs --block appkit "${r[@]}" --cells scroll/notes --out "$T/probe-328/repro324-appkit${3:-}"
+}
+# The A/B (ruling b1921fc3's gates): head a = main ($T/eng), head b = the branch ($T/eng-b); one engine process alive at
+# a time, each head's cells run in turn on the same apps.
+engdir() { if [ "$1" = a ]; then echo eng; else echo eng-b; fi; }
+sweep() {  # <head> <app>
+  echo "== $(date -u +%H:%M:%S) sweep $2 $1"
+  node scripts/probe-328/sweep.mjs --app "$2" --engine "$T/$(engdir "$1")/release/cua-engine" --head "$1" --t328 "$T/t328" \
+    --cover "$T/Cover328.app/Contents/MacOS/Probe328" --probe-app "$T/Probe328.app/Contents/MacOS/Probe328" --out "$T/probe-328/ab-sweep-$2-$1"
 }
 case "$GROUP" in
   smoke)
@@ -55,6 +63,28 @@ case "$GROUP" in
     m safari followup-safari --sets web --reps 1
     m notes followup-notes --sets full,split,routes --reps 1
     if [ -n "$catalyst" ]; then m catalyst followup-catalyst --sets full,split,routes --reps 1 --catalyst "$catalyst"; fi ;;
+  ab-native)
+    # The spike's engine cells (coordinate, element, #324's point, at the end) on Probe328, TextEdit, SwiftUI328,
+    # Catalyst328, Finder and Settings' sidebar and pane, #324's own cells, and the native still sweep, per head.
+    for h in a b; do
+      e="$T/$(engdir $h)/release/cua-engine"
+      echo "== $(date -u +%H:%M:%S) engine $h"
+      node scripts/probe-328/measure.mjs --block engine --engine "$e" --t328 "$T/t328" --app "$T/Probe328.app/Contents/MacOS/Probe328" \
+        --cover "$T/Cover328.app/Contents/MacOS/Probe328" --swiftui "$T/SwiftUI328.app/Contents/MacOS/SwiftUI328" \
+        --catalyst-app "$T/Catalyst328.app" --reps 3 --out "$T/probe-328/ab-engine-$h"
+      repro324 2 "$(engdir $h)" "-$h"
+      for app in textedit finder probe; do sweep $h $app; done
+    done ;;
+  ab-web)
+    # Gate (b)'s nested web cells at the engine's own page-sized delta, and the browsers' still sweep, per head.
+    for h in a b; do
+      for b in safari chrome firefox; do
+        echo "== $(date -u +%H:%M:%S) confirm $b $h"
+        node scripts/probe-328/confirm.mjs --browser "$b" --t328 "$T/t328" --cover "$T/Cover328.app/Contents/MacOS/Probe328" \
+          --engine "$T/$(engdir $h)/release/cua-engine" --pages 1 --reps 4 --out "$T/probe-328/ab-confirm-$b-$h"
+        sweep $h $b
+      done
+    done ;;
   confirmb)
     # Gate (b)'s early read (ruling b1921fc3): main's engine scrolls nested web scrollers, t328 emulates the approved
     # confirmation around it, the page's scroll events are the truth (scripts/probe-328/confirm.mjs).

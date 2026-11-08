@@ -57,7 +57,7 @@ const own=(id,delay,dur)=>$(id).addEventListener('wheel',e=>{e.preventDefault();
 own('raf',0,300);own('mid',150,200);own('late',350,200);
 const reset=()=>{for(const id of ['div','raf','mid','late']) $(id).scrollTop=0;$('hdiv').scrollLeft=0;try{ifr().scrollTo(0,0)}catch{};scrollTo(0,0)};
 const report=()=>{let f=0;try{f=ifr().scrollY}catch{};navigator.sendBeacon('/e',JSON.stringify({id:'report',pos:{page:scrollY,div:$('div').scrollTop,iframe:f,hdiv:$('hdiv').scrollLeft,raf:$('raf').scrollTop,mid:$('mid').scrollTop,late:$('late').scrollTop},t:Date.now()}))};
-setInterval(()=>fetch('/cmd',{cache:'no-store'}).then(r=>r.text()).then(t=>{if(t==='report')report();if(t==='reset')reset();if(t.startsWith('end:')){reset();const el=$(t.slice(4));el.scrollTop=el.scrollHeight}
+setInterval(()=>fetch('/cmd',{cache:'no-store'}).then(r=>r.text()).then(t=>{if(t==='report')report();if(t==='reset')reset();if(t.startsWith('end:')){reset();const el=$(t.slice(4));el.scrollTop=el.scrollHeight}if(t==='endpage'){reset();scrollTo(0,document.documentElement.scrollHeight)}
   if(t.startsWith('go:'))location.href=t.slice(3)}).catch(()=>{}),50);
 addEventListener('load',()=>{reset();navigator.sendBeacon('/ready')});</script></body></html>`;
 const SMOOTH = `<!doctype html><html style="scroll-behavior:smooth"><head><meta charset="utf-8"><title>probe328 smooth</title><style>body{font:14px sans-serif;margin:8px}.r{height:20px}</style></head><body>
@@ -119,6 +119,7 @@ const CELLS = [
   {name: 'mid', text: 'mid row 3', id: 'mid', direction: 'down'},
   {name: 'late', text: 'late row 3', id: 'late', direction: 'down'},
   {name: 'divEnd', text: 'div row 57', id: 'div', direction: 'down', setup: 'end:div'},
+  {name: 'pageEnd', text: 'tail row 118', id: 'page', direction: 'down', setup: 'endpage'},
   {name: 'smooth', text: 'smooth row 3', id: 'smooth', direction: 'down', page: '/smooth'},
 ].filter(c => !ONLY || ONLY.includes(c.name));
 const results = [];
@@ -157,6 +158,8 @@ for (let rep = 1; rep <= REPS; rep++) for (const cell of CELLS) {
     const a = await w.execute('scroll', {pid: child.pid, ...args}, o.result.lineage);
     row.answerMs = Date.now() - tPost;
     row.answer = a.error ? (a.error.errorName ?? a.error.code) : 'success';
+    row.message = a.error ? String(a.error.message ?? '').slice(0, 300) : undefined;
+    row.meta = (a.error ? a.error.meta : a.result?.meta) ?? null;
     await Promise.race([exited, sleep(10_000)]);
     await sleep(300);
     row.read = lastJson(tout);

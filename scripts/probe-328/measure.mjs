@@ -309,11 +309,12 @@ async function withEngine(desktop, fn) {
 const lean = r => (r.error ? {error: {name: r.error.errorName ?? r.error.code, message: String(r.error.message ?? '').slice(0, 300), meta: r.error.meta ?? null}} : {result: {meta: r.result?.meta ?? null}});
 async function engineCells(connect, target, desktop, reps) {
   const rows = [];
-  for (let rep = 1; rep <= reps; rep++) for (const how of ['coordinate', 'element', 'nodeCentre']) {
+  for (let rep = 1; rep <= reps; rep++) for (const how of ['coordinate', 'element', 'nodeCentre', ...(target.bottom ? ['end'] : [])]) {
     const row = {block: 'engine', desktop, target: target.name, rep, name: `engine/${how}`};
     const w = await connect();
     try {
       await target.reset();
+      if (how === 'end') await target.bottom();
       if (front() !== 'com.ssfskim.cover328') await refront();
       const truthBefore = target.truth?.();
       const shots = join(T, 'shots328'); mkdirSync(shots, {recursive: true});
@@ -328,7 +329,7 @@ async function engineCells(connect, target, desktop, reps) {
       const wf = sky.window?.frame, s = sky.screenshot?.width && wf ? sky.screenshot.width / wf.width : 1;
       row.screenshot = sky.screenshot ? {width: sky.screenshot.width, height: sky.screenshot.height} : null;
       row.windowFrame = wf ?? null;
-      if (how === 'coordinate') {
+      if (how === 'coordinate' || how === 'end') {
         if (!wf || !vp) { row.problem = 'no window frame or viewport'; rows.push(row); continue; }
         args = {direction: 'down', x: Math.round((vp[0] + vp[2] / 2 - wf.x) * s), y: Math.round((vp[1] + vp[3] / 2 - wf.y) * s)};
       } else if (how === 'nodeCentre') {
@@ -361,6 +362,7 @@ async function engineCells(connect, target, desktop, reps) {
       row.answer = a.error ? a.error.name : 'success';
       row.message = a.error?.message;
       row.route = (a.error ? a.error.meta : a.result.meta)?.inputRoute ?? null;
+      row.meta = (a.error ? a.error.meta : a.result.meta) ?? null;
       row.before = before; row.after = after;
       row.movedPx = before?.offset != null && after?.offset != null ? Math.round((after.offset - before.offset) * 10) / 10 : null;
       row.trackedPx = before?.trackedY != null && after?.trackedY != null ? before.trackedY - after.trackedY : null;

@@ -97,6 +97,8 @@ function setOf(name) {
     for (const pointer of ['over', 'away']) out.push({...post({pointer, name: `split/appPid/${pointer}`}), pidFrom: 'app'});
     // To the topmost window under the point, its owner and its number (WindowServer's routing, by pid).
     for (const pointer of ['over', 'away']) out.push({...post({pointer, name: `split/cgWindow/${pointer}`}), pidFrom: 'cg'});
+    // To another process's layer-0 window under the point, listed on screen or not (a remote view's service).
+    for (const pointer of ['over', 'away']) out.push({...post({pointer, name: `split/remote/${pointer}`}), pidFrom: 'remote'});
   }
   if (name === 'smoke') {
     out.push(post({name: 'post/pid/away/none/pixel/vendor'}), post({pointer: 'over', post: {tap: 'hid'}, name: 'post/hid/over/none/pixel/vendor'}),
@@ -396,8 +398,11 @@ try {
       break;
     }
     case 'notes':
-      block = await systemAppTargets('Notes', ['-a', 'Notes'], async () => {
+      block = await systemAppTargets('Notes', ['-a', 'Notes'], async pid => {
         await sleep(2000);
+        // Its first-run sheet (What's New, smoke2 run 42525896744) by its Continue button.
+        config.notesContinue = t328('press', pid, 'Continue');
+        await sleep(1500);
         osa('tell application "System Events" to tell process "Notes" to repeat with b in (buttons of window 1 whose name is in {"Continue", "Get Started", "Not Now", "OK"})\nclick b\nend repeat', 10_000);
         // A new note, its text pasted: an Apple Event to Notes hangs on the runner (smoke run 42523332336).
         spawnSync('pbcopy', {input: Array.from({length: 150}, (_, i) => `notes line ${i} with words`).join('\n')});
@@ -415,7 +420,12 @@ try {
     case 'catalyst': {
       const name = CATALYST ? CATALYST.split('/').pop().replace(/\.app$/, '') : null;
       config.catalyst = name;
-      block = name ? await systemAppTargets(name, ['-a', CATALYST], async () => { await sleep(3000); place(`process "${name}"`, 1, 420, 40, 600, 440); }) : {targets: [], stop: async () => {}, scan: {error: 'no Catalyst app'}};
+      block = name ? await systemAppTargets(name, ['-a', CATALYST], async pid => {
+        await sleep(3000);
+        config.catalystContinue = t328('press', pid, 'Continue');  // Stocks' first-run privacy sheet
+        await sleep(2500);
+        place(`process "${name}"`, 1, 420, 40, 600, 440);
+      }) : {targets: [], stop: async () => {}, scan: {error: 'no Catalyst app'}};
       break;
     }
     case 'swiftui': block = await swiftuiTargets(); break;

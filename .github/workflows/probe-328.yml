@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["smoke2"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["appkit", "apps", "web"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:

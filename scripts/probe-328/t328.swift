@@ -90,13 +90,14 @@ func tree(_ root: AXUIElement, depth: Int = 8, limit: Int = 220) -> [[String: An
 }
 /// The on-screen windows under `point`, front to back (WindowServer's view of who gets a wheel there): owner, pid,
 /// number, layer, bounds.
-func windowsAt(_ point: CGPoint) -> [[String: Any]] {
-  let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+func windowsAt(_ point: CGPoint, all: Bool = false) -> [[String: Any]] {
+  let list = (CGWindowListCopyWindowInfo(all ? [.optionAll] : [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
   return list.compactMap { w -> [String: Any]? in
     guard let b = w[kCGWindowBounds as String] as? [String: Any], let r = CGRect(dictionaryRepresentation: b as CFDictionary), r.contains(point) else { return nil }
     return ["owner": w[kCGWindowOwnerName as String] ?? "?", "pid": w[kCGWindowOwnerPID as String] ?? 0, "number": w[kCGWindowNumber as String] ?? 0,
-            "layer": w[kCGWindowLayer as String] ?? 0, "bounds": rect(r), "alpha": w[kCGWindowAlpha as String] ?? 1]
-  }.prefix(4).map { $0 }
+            "layer": w[kCGWindowLayer as String] ?? 0, "bounds": rect(r), "alpha": w[kCGWindowAlpha as String] ?? 1,
+            "onscreen": w[kCGWindowIsOnscreen as String] ?? false]
+  }.prefix(all ? 12 : 4).map { $0 }
 }
 func findWindow(_ pid: pid_t, _ spec: Any?) -> AXUIElement? {
   let ws = windowsOf(pid)
@@ -328,6 +329,17 @@ case "scan":
     ws.append(entry)
   }
   emit(["pid": Int(pid), "windows": ws, "setWindowLocation": setWindowLocation != nil, "getWindow": getWindow != nil])
+case "press":
+  // t328 press <pid> <title>: AXPress on the first button so titled in any of the app's windows (a first-run sheet's Continue).
+  let pid = pid_t(a[2])!
+  var hit: AXUIElement?
+  func walk(_ e: AXUIElement, _ d: Int) {
+    guard hit == nil, d < 12 else { return }
+    if role(e) == kAXButtonRole, str(e, kAXTitleAttribute) == a[3] { hit = e; return }
+    for k in els(attr(e, kAXChildrenAttribute)) { walk(k, d + 1) }
+  }
+  for w in windowsOf(pid) { walk(w, 0) }
+  emit(["found": hit != nil, "rc": n(hit.map { Int(AXUIElementPerformAction($0, kAXPressAction as CFString).rawValue) })])
 case "read", "setbar":
   let pid = pid_t(a[2])!
   guard let w = findWindow(pid, Int(a[3]) ?? (a[3] as Any)), let area = scrollAreas(w).dropFirst(Int(a[4]) ?? 0).first else { emit(["error": "no area"]); exit(1) }
@@ -357,11 +369,17 @@ case "trial":
   AXUIElementGetPid(area, &areaPid)
   let under = windowsAt(point)
   out["windowsAt"] = under
-  let cgTop = under.first { ($0["layer"] as? Int ?? 0) >= 0 && ($0["alpha"] as? Double ?? 1) > 0 }
+  // cg: the topmost layer-0 window under the point (the Dock's full-screen layer-20 one is no target: smoke2 run
+  // 42525896744); remote: a layer-0 window of another process under the point, listed or not (a remote view's host).
+  let cgTop = under.first { ($0["layer"] as? Int ?? 0) == 0 }
+  let everything = windowsAt(point, all: true)
+  out["windowsAll"] = everything.filter { ($0["pid"] as? Int ?? 0) != Int(pid) && ($0["pid"] as? Int ?? 0) != Int(cover) && ($0["owner"] as? String) != "Dock" }
+  let remote = everything.first { ($0["layer"] as? Int ?? 0) == 0 && ($0["pid"] as? Int ?? 0) != Int(pid) && ($0["pid"] as? Int ?? 0) != Int(cover) && ($0["owner"] as? String) != "Window Server" }
   let postPid: pid_t
   switch spec["pidFrom"] as? String {
   case "app": postPid = pid
   case "cg": postPid = (cgTop?["pid"] as? Int).map { pid_t($0) } ?? pid
+  case "remote": postPid = (remote?["pid"] as? Int).map { pid_t($0) } ?? pid
   default: postPid = areaPid == 0 ? pid : areaPid
   }
   out["areaPid"] = Int(areaPid); out["postPid"] = Int(postPid)
@@ -395,7 +413,7 @@ case "trial":
   let p = spec["post"] as? [String: Any] ?? [:]
   // pidFrom cg: the window the events name is the topmost one under the point (its owner's), as WindowServer would route.
   var stampId = wid, stampFrame = wf
-  if (spec["pidFrom"] as? String) == "cg", let top = cgTop, let num = top["number"] as? Int, let b = top["bounds"] as? [Double] {
+  if let top = (spec["pidFrom"] as? String) == "cg" ? cgTop : (spec["pidFrom"] as? String) == "remote" ? remote : nil, let num = top["number"] as? Int, let b = top["bounds"] as? [Double] {
     stampId = CGWindowID(num); stampFrame = CGRect(x: b[0], y: b[1], width: b[2], height: b[3])
   }
   let events = route == "post" ? scrollEvents(p, point: point, window: stampId, windowFrame: stampFrame, down: down) : []

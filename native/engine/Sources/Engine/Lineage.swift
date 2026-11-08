@@ -471,12 +471,9 @@ private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: 
     visited += 1
     if ElementIdentity(data, pid: identity.pid).matches(identity, ignoringValue: ignoringValue) { found.append(next.element) }
     guard next.descend && next.depth < maxDepth else { continue }
-    let children = chooseChildren(of: next.element, data: data, source: source, visibleFrame: windowFrame).children
-    // What it leaves showing to its children: the walk's clipping rule (`TreeWalk.childClip`).
-    var clip = next.clip
-    if let shown = clip, let frame = data.frame, !unplacedFrame(frame), clipsDescendants(role: data.role, actions: source.actions(next.element)) {
-      clip = shown.intersection(frame)
-    }
+    // What it leaves showing to its children: the walk's clipping rule (`childrenClip`), which the width rule judges in.
+    let clip = childrenClip(next.clip, frame: data.frame, role: data.role, actions: source.actions(next.element))
+    let children = chooseChildren(of: next.element, data: data, source: source, visibleFrame: windowFrame, shownIn: clip).children
     let unplaced = data.frame.map { unplacedFrame($0) && clipsDescendants(role: data.role, actions: source.actions(next.element)) } ?? false
     if next.depth == 0 || next.clip == nil || unplaced || data.frame.map({ showsBeyondStrip($0, in: next.clip!) }) ?? true {
       push(children, depth: next.depth + 1, path: next.path, clip: clip)

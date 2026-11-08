@@ -200,7 +200,7 @@ func busyWalk(_ window: AXUIElement, source: ElementSource, visibleFrame: CGRect
       reading.loadedWebArea = true
     }
     if depth < maxDepth {
-      for child in chooseChildren(of: element, data: data, source: source, visibleFrame: visibleFrame).children.reversed() {
+      for child in chooseChildren(of: element, data: data, source: source, visibleFrame: visibleFrame, shownIn: visibleFrame).children.reversed() {
         stack.append((prepare(child), depth + 1))
       }
     }

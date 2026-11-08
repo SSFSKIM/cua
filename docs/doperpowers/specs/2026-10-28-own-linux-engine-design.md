@@ -1579,6 +1579,16 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m4/drag-motion/`, `m4/drag-motion/fix/`; the task-66 report (local); `ci-gate` GREEN on 59c30d64 and f2561e8d (8 of 8) and the `engine-linux` gate on 8251772e.
   Date/Author: 2026-11-08, the plan-executor (session linux171), from task 66's report, its review and fix wave (reviewer-medium), and the design session's rulings.
 
+- Decision (2026-11-08, M4, T12 (#265): thumb and range drags under load): task 67, 676a39f3, evidence only; fix aa4588cc (the review: the rerun runs from the repo alone and returns the runner's status); evidence `m4/drag-load/`. No fix was needed, and no code changed.
+  - On the head (7d464cb2), at twice the load (16 stress-ng workers on 8 cores), with 40 drags a side on a private Xvfb, cua lands 40 of 40 in every cell: Chrome's and Electron's thumbs and ranges. The pinned build lands 40 of 40 in each. The judges passed and the watchdog was clean.
+  - A control lane ran the same build with Chromium's pacing from before T11 (500 µs a sample, no rest). It landed the thumbs 35 and 34 of 40, about what 0.3.0 landed in T10. So this load still separates the two pacings, and T11's end rest is what closed #265's gap.
+  - The mechanism is T11's: Chromium's compositor scrollbar takes one move a frame and drops the rest. Under load, the last frames' moves were lost before the release.
+  - Limits:
+    - The candidate was a development musl build of the head, not the attested artifact. T18's gate repeats these cells on the artifact.
+    - 40 of 40 shows parity with the pinned build at this sample size, not a miss rate below 1 in 40.
+  Evidence: `m4/drag-load/` (README, the sitting, and its "Rerunning it" bootstrap: `scripts/export-harness.sh`, `scripts/build-musl.sh`, then `scripts/sitting.sh <harness> <candidate> <name>`); the task-67 report (local); `ci-gate` GREEN on 676a39f3.
+  Date/Author: 2026-11-08, the plan-executor (session linux171), from task 67's report and its review (reviewer-low).
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

@@ -56,9 +56,11 @@ impl DragPacing {
     };
 }
 
-/// The browsers' rest at a drag's corners and its end (`DragPacing.rest`): a frame at 60 Hz (16.7 ms) and a margin, so
-/// the point the pointer rests at falls in a frame of its own (M4's T11, evidence `m4/drag-motion/`).
-pub const BROWSER_REST: Duration = Duration::from_millis(20);
+/// The browsers' rest at a drag's corners and its end (`DragPacing.rest`) and at a held move's end (`held_rest`): a
+/// frame at 60 Hz (16.7 ms) and a margin, so the point the pointer rests at falls in a frame of its own (M4's T11,
+/// evidence `m4/drag-motion/`). 20 ms took every kind idle; at twice the gate's load Firefox's drop and canvas stroke
+/// and its held stroke and drop took fewer than the pinned build with 20 ms and as many or more with 30.
+pub const BROWSER_REST: Duration = Duration::from_millis(30);
 
 /// An input kind a family can ignore on the background route (Design, Device mode and the foreground route). Element
 /// actions through AT-SPI take effect everywhere and are never a kind here.
@@ -953,7 +955,7 @@ mod tests {
         for f in FAMILIES {
             let browser = blink(f.name) || f.name == "Gecko";
             assert_eq!(f.drag.elapsed, browser, "{}", f.name);
-            assert_eq!(f.drag.rest, if browser { ms(20) } else { Duration::ZERO }, "{}", f.name);
+            assert_eq!(f.drag.rest, if browser { ms(30) } else { Duration::ZERO }, "{}", f.name);
             if !browser {
                 assert_eq!(f.drag, DragPacing::NONE, "{}", f.name);
             }

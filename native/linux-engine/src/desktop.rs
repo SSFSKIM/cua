@@ -26,7 +26,7 @@ pub const PATH_STEP: Duration = Duration::from_millis(8);
 /// Whether a path pauses before its point `i` (> 0): not after a leading motion at the pointer's own position
 /// (`pointer`, where the path began), which moves nothing, so no two positions are closer in time than the step, and a
 /// one-step move answers at once as the newest build's does (M4's T9, closing M1a's declared gap); unless `lead_pause`
-/// keeps that pause too (a Gecko held move, `DragPacing::held_lead_pause`).
+/// keeps that pause too (a held move measured with `--held-lead-pause`, `DragPacing::held_lead_pause`).
 pub fn paused_before(points: &[(i16, i16)], pointer: (i16, i16), i: usize, lead_pause: bool) -> bool {
     lead_pause || !(i == 1 && points.first() == Some(&pointer))
 }

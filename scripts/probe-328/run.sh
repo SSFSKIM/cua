@@ -55,6 +55,14 @@ case "$GROUP" in
     m safari followup-safari --sets web --reps 1
     m notes followup-notes --sets full,split,routes --reps 1
     if [ -n "$catalyst" ]; then m catalyst followup-catalyst --sets full,split,routes --reps 1 --catalyst "$catalyst"; fi ;;
+  confirmb)
+    # Gate (b)'s early read (ruling b1921fc3): main's engine scrolls nested web scrollers, t328 emulates the approved
+    # confirmation around it, the page's scroll events are the truth (scripts/probe-328/confirm.mjs).
+    for b in safari chrome firefox; do
+      echo "== $(date -u +%H:%M:%S) confirm $b"
+      node scripts/probe-328/confirm.mjs --browser "$b" --t328 "$T/t328" --cover "$T/Cover328.app/Contents/MacOS/Probe328" \
+        --engine "$T/eng/release/cua-engine" --reps "${REPS:-4}" --out "$T/probe-328/confirmb-$b"
+    done ;;
   followup2)
     # Firefox with Gecko's accessibility forced on (run 42529832136's scan read only its window buttons).
     m firefox followup2-firefox --sets web,routes,bottom --reps 3 ;;

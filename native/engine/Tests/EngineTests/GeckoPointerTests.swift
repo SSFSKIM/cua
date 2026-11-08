@@ -1,0 +1,478 @@
+import AppKit
+import CoreGraphics
+import Foundation
+import XCTest
+@testable import Engine
+
+// #315 (Routes.swift `pointerView`, `geckoChromeView`; WebAreaFocus.swift `webAreaFocusCarrier`, `pressFocusingField`): a
+// shared-mode left pointer into a background Firefox page was posted and lost (#287: 34 of 34 `clickUnconfirmed`, pointer
+// 0), since Firefox's AXActivationPoint lies on a toolbar control, so its activation clicks no point, and Gecko refuses a
+// click-through mouse down into its page. Its page is now a web area as Chromium's is: a plain click goes by the element's
+// own action, a text field is focused by its press and read back (never an AXFocused write, which a background Firefox
+// ignores, #313), anything else is refused with nothing posted. Its chrome (toolbar, tabs) is not a web area. The trees are
+// Firefox 159's, as #287's hosted recon and #314's A/B printed them.
+
+final class GeckoPointerTests: XCTestCase {
+  private let target: pid_t = 990_101, user: pid_t = 990_102
+  private let window = CGRect(x: 80, y: 60, width: 610, height: 860)
+  private let point = CGPoint(x: 300, y: 400)
+  private let activations = HeldActivations()
+  /// The refusal into Firefox's page, naming what still works on its fields (the design session's ruling 99e45959).
+  private let refusal = "Firefox's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Firefox forward. A text field on the page still works in the background: click the field by its element ID, which focuses it through accessibility, then type or set its value"
+
+  private final class Node {
+    let role: String?
+    let actions: [String]?
+    weak var parent: Node?
+    var children: [Node] = []
+    init(_ role: String?, actions: [String]? = [], parent: Node? = nil) {
+      (self.role, self.actions) = (role, actions)
+      self.parent = parent
+      parent?.children.append(self)
+    }
+  }
+
+  /// Firefox's window: window → group → (toolbar → Reload) and (group → group → scroll area → web area → page).
+  private final class Firefox {
+    let window = Node("AXWindow")
+    let top: Node, toolbar: Node, reload: Node, scrollArea: Node, page: Node
+    init() {
+      top = Node("AXGroup", parent: window)
+      toolbar = Node("AXToolbar", parent: top)
+      reload = Node("AXButton", actions: ["AXShowMenu", "AXScrollToVisible", "AXPress"], parent: toolbar)
+      scrollArea = Node("AXScrollArea", parent: Node("AXGroup", parent: Node("AXGroup", parent: top)))
+      page = Node("AXWebArea", parent: scrollArea)
+    }
+  }
+
+  private func view(_ hit: Node?, engine: PageEngine = .gecko, seen: Bool = true) -> PointerView {
+    pointerView(engine: engine, webAreaSeen: seen, hit: hit, role: { $0.role }, parent: { $0.parent }, children: { $0.children })
+  }
+
+  private func connection(_ desktop: DesktopMode = .shared) -> ConnectionState {
+    let connection = ConnectionState(id: 1, fd: -1)
+    connection.desktop = desktop
+    return connection
+  }
+
+  private func meta(_ connection: ConnectionState) -> InputMeta {
+    InputMeta(ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+  }
+
+  /// Firefox's activation: its AXActivationPoint inside the frame, on a toolbar control (`activationClick: control`), so
+  /// it clicks no activation point (#287, the point (430, 47) on the toolbar).
+  private func firefoxActivation(_ seam: GuardSeam) -> FakeActivation {
+    seam.activationPoint = CGPoint(x: 300, y: 70)
+    seam.activationHit = ActivationHit(role: "AXButton", actions: ["AXShowMenu", "AXScrollToVisible", "AXPress"])
+    return FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: window, windowID: 41, system: seam.system)
+  }
+
+  /// Safari's: its AXActivationPoint inside the frame on chrome that is no control, clicked right after subtype 1.
+  private func safari(_ seam: GuardSeam) -> FakeActivation {
+    seam.activationPoint = CGPoint(x: 300, y: 70)
+    return FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: window, windowID: 41, system: seam.system)
+  }
+
+  private func pointer(_ view: PointerView, noun: String = "click", _ route: ((inout InputMeta) throws -> Void)? = nil) -> PointerTarget {
+    PointerTarget(view: view, app: "Firefox", noun: noun, engine: .gecko, elementRoute: route)
+  }
+
+  private func click(_ seam: GuardSeam, activation: FakeActivation, pointer: PointerTarget, count: Int = 1, meta: inout InputMeta) throws {
+    try deliverClick(ClickTarget(point: point, windowFrame: window, windowID: 41, pid: target), route: .activation, button: .left, count: count,
+                     activation: activation, activations: activations, pointer: pointer, targetActive: { false }, post: seam.system.post, meta: &meta)
+  }
+
+  private func drag(_ seam: GuardSeam, activation: FakeActivation, pointer: PointerTarget, meta: inout InputMeta) throws {
+    let start = ClickTarget(point: point, windowFrame: window, windowID: 41, pid: target)
+    try deliverPointer(to: target, route: .activation, activation: activation, activations: activations, postsLeftMouseDown: true,
+                       pointer: pointer, post: seam.system.post, meta: &meta) {
+      dragEvents(from: start.point, to: CGPoint(x: 400, y: 500), window: start, flags: [])
+    }
+  }
+
+  private func control(_ hit: Node) -> Result<(control: Node, role: String, ancestor: Bool), WebAreaRefusal> {
+    webAreaControl(hit, role: { $0.role }, parent: { $0.parent }, editable: { _ in false })
+  }
+
+  /// The element route as `webAreaPress` decides it, over the fake tree, not fresh: the control's action pressed
+  /// (`pressed`), or the refusal thrown with nothing pressed.
+  private func elementRoute(_ hit: Node, pressed: @escaping (Node, String) -> Void) -> (inout InputMeta) throws -> Void {
+    { _ in
+      guard case .success(let resolved) = self.control(hit) else { throw backgroundClickRefused("Firefox", engine: .gecko) }
+      let decision = webAreaPressDecision(resolved.control, walkedRole: resolved.role, fresh: false, actions: { $0.actions },
+                                          role: { $0.role }, parent: { $0.parent }, editable: { _ in false },
+                                          now: { 0 }, sleep: { _ in XCTFail("no wait where not fresh") })
+      guard case .success(let press) = decision else { throw backgroundClickRefused("Firefox", engine: .gecko) }
+      pressed(resolved.control, press.action)
+    }
+  }
+
+  // MARK: Where the rule applies: Gecko's page, not its chrome
+
+  /// A hit in Firefox's page is a web area, seen or not; a hit not established outside one (no hit, the scroll area over
+  /// the web area, an unread role) is a possible one; its toolbar is `geckoChromeView`, never known to accept first mouse.
+  func testGeckosPageIsAWebAreaAndItsChromeIsNot() {
+    let firefox = Firefox()
+    let button = Node("AXButton", actions: ["AXPress"], parent: Node("AXGroup", parent: firefox.page))
+    XCTAssertEqual(view(button), .webArea)
+    XCTAssertEqual(view(button, seen: false), .webArea, "a web area whether or not an observation saw it")
+    XCTAssertEqual(view(firefox.page), .webArea, "the web area itself")
+    XCTAssertEqual(view(nil), .possibleWebArea, "no hit")
+    XCTAssertEqual(view(firefox.scrollArea), .possibleWebArea, "the scroll area holding the web area")
+    XCTAssertEqual(view(Node(nil, parent: firefox.page)), .possibleWebArea, "an unreadable role")
+    XCTAssertEqual(geckoChromeView, .unknown)
+    for seen in [true, false] {
+      XCTAssertEqual(view(firefox.reload, seen: seen), .unknown, "the toolbar's Reload, seen \(seen)")
+      XCTAssertEqual(view(firefox.toolbar, seen: seen), .unknown, "the toolbar, seen \(seen)")
+    }
+  }
+
+  /// #288's establishment is Chromium's: a Gecko process, its page tree not yet seen, runs none of it.
+  func testAGeckoProcessRunsNoEstablishment() {
+    let firefox = Firefox()
+    let seams = PointerEstablishing<Node>(readAppRole: { XCTFail("no role read") }, windowHasWebArea: { XCTFail("no search"); return true },
+                                          noteWebArea: { XCTFail("nothing noted") }, rehit: { XCTFail("no re-hit"); return nil },
+                                          now: { 0 }, sleep: { _ in XCTFail("no wait") })
+    let result = establishedPointerView(engine: .gecko, webAreaSeen: false, hit: firefox.page, role: { $0.role }, parent: { $0.parent },
+                                        children: { $0.children }, establish: seams)
+    XCTAssertEqual(result.view, .webArea)
+    XCTAssertTrue(result.hit === firefox.page)
+    XCTAssertNil(result.record)
+  }
+
+  // MARK: Shared mode: the element route, or the refusal, with nothing posted
+
+  /// A plain coordinate click on a page button whose activation clicked a toolbar control: carried by the button's own
+  /// action, cua posting nothing; with no element route the click, a double click and a drag are refused, nothing posted.
+  func testASharedGeckoPageClickIsElementRoutedOrRefusedWithNothingPosted() throws {
+    let firefox = Firefox()
+    let button = Node("AXButton", actions: ["AXShowMenu", "AXScrollToVisible", "AXPress"], parent: Node("AXGroup", parent: firefox.page))
+    let seam = GuardSeam(frontmost: user)
+    var clickMeta = meta(connection())
+    var pressed: [String] = []
+    try click(seam, activation: firefoxActivation(seam), pointer: pointer(view(button), elementRoute(button) { node, action in
+      XCTAssertTrue(node === button)
+      pressed.append(action)
+    }), meta: &clickMeta)
+    XCTAssertEqual(pressed, ["AXPress"])
+    XCTAssertEqual(seam.posts.count, 0, "cua posts nothing: no activation, no event")
+    XCTAssertEqual(activations.holders(target), 0)
+    for (name, count) in [("a click", 1), ("a double click", 2), ("a drag", 0)] {
+      let refused = GuardSeam(frontmost: user)
+      var refusedMeta = meta(connection())
+      let attempt = {
+        if count == 0 { try self.drag(refused, activation: self.firefoxActivation(refused), pointer: self.pointer(self.view(button), noun: "drag"), meta: &refusedMeta) }
+        else { try self.click(refused, activation: self.firefoxActivation(refused), pointer: self.pointer(self.view(button)), count: count, meta: &refusedMeta) }
+      }
+      XCTAssertThrowsError(try attempt(), name) {
+        XCTAssertEqual(($0 as? EngineError)?.errorName, "backgroundClickRefused", name)
+        XCTAssertEqual(($0 as? EngineError)?.message, self.refusal, name)
+      }
+      XCTAssertEqual(refused.posts.count, 0, "nothing posted: \(name)")
+      XCTAssertEqual(refused.holds, 0, name)
+      XCTAssertNil(refusedMeta.activationClickKind, name)
+    }
+  }
+
+  /// #314's A/B on `/fixedtail`: a row below the top, an AXLink whose point lands on its text child, so the element
+  /// click's ladder synthesizes it; that pointer's hit is in the page, so it is element-routed to the link, nothing posted.
+  func testAClickByTokenWhoseHitLandsOnADescendantIsElementRoutedToItsControl() throws {
+    let firefox = Firefox()
+    let link = Node("AXLink", actions: ["AXShowMenu", "AXScrollToVisible", "AXPress"], parent: Node("AXGroup", parent: firefox.page))
+    let text = Node("AXStaticText", parent: link)
+    let plan = try elementClickPlan(forced: nil, button: .left, count: 1, role: "AXLink", actions: link.actions ?? []) { true }
+    XCTAssertEqual(plan, .synthesized(.activation), "the ladder's gate: the point lands on a strict descendant")
+    let resolved = try control(text).get()
+    XCTAssertTrue(resolved.control === link)
+    XCTAssertTrue(resolved.ancestor)
+    let seam = GuardSeam(frontmost: user)
+    var clickMeta = meta(connection())
+    var pressed: [String] = []
+    try click(seam, activation: firefoxActivation(seam), pointer: pointer(view(text), elementRoute(text) { node, action in
+      XCTAssertTrue(node === link)
+      pressed.append(action)
+    }), meta: &clickMeta)
+    XCTAssertEqual(pressed, ["AXPress"])
+    XCTAssertEqual(seam.posts.count, 0)
+  }
+
+  /// Plain text under no control, and a control advertising no action: refused, nothing posted or pressed.
+  func testAnElementWithNoActionUnderNoActionableAncestorIsRefusedWithNothingPosted() throws {
+    let firefox = Firefox()
+    let paragraph = Node("AXGroup", parent: firefox.page)
+    let text = Node("AXStaticText", parent: paragraph)
+    guard case .failure(.roleNotAllowed) = control(text) else { return XCTFail("plain text walks to the web area") }
+    let inert = Node("AXButton", actions: ["AXShowMenu"], parent: paragraph)
+    guard case .failure(.noAction) = webAreaPressDecision(inert, walkedRole: "AXButton", fresh: false, actions: { $0.actions },
+                                                         role: { $0.role }, parent: { $0.parent }, editable: { _ in false },
+                                                         now: { 0 }, sleep: { _ in }) else { return XCTFail("a control with no action") }
+    for hit in [text, inert] {
+      let seam = GuardSeam(frontmost: user)
+      var clickMeta = meta(connection())
+      XCTAssertThrowsError(try click(seam, activation: firefoxActivation(seam), pointer: pointer(view(hit), elementRoute(hit) { _, _ in XCTFail("nothing pressed") }),
+                                     meta: &clickMeta)) {
+        XCTAssertEqual(($0 as? EngineError)?.errorName, "backgroundClickRefused")
+      }
+      XCTAssertEqual(seam.posts.count, 0, hit.role ?? "")
+    }
+  }
+
+  /// The ruling 99e45959: a refusal into a Gecko page names what still works on its fields, by the page engine the
+  /// pointer carries: a refused click with no element route, a drag, and the observe-first refusal of a control with no
+  /// action yet. Chromium's and any other app's wording is unchanged.
+  func testAGeckoRefusalNamesWhatStillWorksOnItsFields() {
+    let firefox = Firefox()
+    let field = Node("AXTextArea", actions: ["AXPress"], parent: Node("AXGroup", parent: firefox.page))
+    for noun in ["click", "drag"] {
+      let seam = GuardSeam(frontmost: user)
+      var refusedMeta = meta(connection())
+      let fallback = pointer(view(field), noun: noun)  // no element route
+      XCTAssertThrowsError(try noun == "drag" ? drag(seam, activation: firefoxActivation(seam), pointer: fallback, meta: &refusedMeta)
+                                              : click(seam, activation: firefoxActivation(seam), pointer: fallback, meta: &refusedMeta)) {
+        XCTAssertEqual(($0 as? EngineError)?.message, refusal, noun)
+      }
+      XCTAssertEqual(seam.posts.count, 0, noun)
+    }
+    XCTAssertEqual(backgroundClickRefused("Firefox", engine: .gecko).message, refusal)
+    XCTAssertEqual(backgroundClickRefusedObserveFirst("Firefox", engine: .gecko).message,
+                   "Firefox's web page does not accept a background click, and the control there exposes no action yet; observe Firefox with get_app_state first and click again, or use a dedicated desktop, or ask the person to bring Firefox forward. A text field on the page still works in the background: click the field by its element ID, which focuses it through accessibility, then type or set its value")
+    for engine in [PageEngine.chromium, .other] {
+      XCTAssertEqual(backgroundClickRefused("Chrome", engine: engine).message,
+                     "Chrome's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Chrome forward", "\(engine)")
+      XCTAssertFalse(backgroundClickRefusedObserveFirst("Chrome", engine: engine).message.contains("text field"), "\(engine)")
+      let seam = GuardSeam(frontmost: user)
+      var refusedMeta = meta(connection())
+      let chrome = PointerTarget(view: .webArea, app: "Chrome", engine: engine)
+      XCTAssertThrowsError(try click(seam, activation: firefoxActivation(seam), pointer: chrome, meta: &refusedMeta)) {
+        XCTAssertEqual(($0 as? EngineError)?.message,
+                       "Chrome's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Chrome forward", "\(engine)")
+      }
+    }
+  }
+
+  // MARK: Text entry: the press and its read-back, never an AXFocused write
+
+  /// The fake field: its press focuses it `focusesAfter` ms later, or never; everything the route did to it.
+  private final class Field {
+    var focusesAfter: Double? = 200
+    var presses: [String] = []
+    var pressedAt: Double?
+    var focusReads = 0
+    var clock: Double = 0
+    var record: TextEntryFocusRecord?
+  }
+
+  private func focusByPress(_ field: Field, role: String = "AXTextArea", actions: [String]? = ["AXShowMenu", "AXScrollToVisible", "AXPress"]) throws -> String {
+    try pressFocusingField(role: role, actions: actions, app: "Firefox", press: {
+      field.presses.append($0)
+      field.pressedAt = field.clock
+    }, focused: {
+      field.focusReads += 1
+      guard let after = field.focusesAfter, let pressed = field.pressedAt else { return false }
+      return field.clock - pressed >= after
+    }, noted: { field.record = $0 }, now: { field.clock }, sleep: { field.clock += $0 })
+  }
+
+  /// A page's text-entry hit stops #282's walk as editable; on Gecko it is carried by the press with its focus read back
+  /// (the route has no write at all), on Chromium by #283's AXFocused write.
+  func testAGeckoTextFieldIsFocusedByItsPressAndItsReadBackNeverByAFocusWrite() throws {
+    let firefox = Firefox()
+    XCTAssertEqual(webAreaFocusCarrier(.gecko), .pressReadingFocus)
+    XCTAssertEqual(webAreaFocusCarrier(.chromium), .focusWrite, "Chromium's #283 route unchanged")
+    for role in ["AXTextArea", "AXTextField", "AXSearchField", "AXComboBox", "AXSecureTextField"] {
+      let hit = Node(role, actions: ["AXShowMenu", "AXScrollToVisible", "AXPress"], parent: Node("AXGroup", parent: firefox.page))
+      XCTAssertEqual(view(hit), .webArea, role)
+      guard case .failure(.editable) = control(hit) else { return XCTFail("\(role) stops the walk as editable") }
+      var walk: [String] = []
+      let found = webAreaFocusTarget(hit, role: { $0.role }, subrole: { _ in .none }, parent: { $0.parent }, editable: { _ in false },
+                                     focusSettable: { _ in true }, walk: &walk)
+      XCTAssertTrue((try? found.get())?.element === hit, role)
+      let field = Field()
+      XCTAssertEqual(try focusByPress(field, role: role), "AXPress", role)
+      XCTAssertEqual(field.presses, ["AXPress"], role)
+      XCTAssertEqual(field.record, TextEntryFocusRecord(focus: .readBack, step: .press), role)
+      XCTAssertEqual(field.clock, 200, "read back as it arrives: \(role)")
+    }
+    let note = pressFocusNote("Firefox")
+    XCTAssertTrue(note.contains("accessibility action rather than a click at the point"), note)
+    XCTAssertFalse(note.contains("at the point."), "no caret claimed at the point")
+  }
+
+  /// A field its press leaves unfocused answers clickUnconfirmed after the settle; one advertising no action is refused
+  /// with nothing pressed and nothing read.
+  func testAGeckoFieldItsPressLeavesUnfocusedIsUnconfirmedAndOneWithNoActionIsRefused() {
+    let unfocused = Field()
+    unfocused.focusesAfter = nil
+    XCTAssertThrowsError(try focusByPress(unfocused)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
+    }
+    XCTAssertEqual(unfocused.presses, ["AXPress"])
+    XCTAssertEqual(unfocused.record, TextEntryFocusRecord(focus: .notReadBack, step: .press))
+    XCTAssertEqual(unfocused.clock, textEntryFocusSettleMs)
+    let inert = Field()
+    XCTAssertThrowsError(try focusByPress(inert, actions: ["AXShowMenu", "AXScrollToVisible"])) {
+      XCTAssertEqual($0 as? WebAreaRefusal, .noAction)
+    }
+    XCTAssertThrowsError(try focusByPress(inert, actions: nil)) { XCTAssertEqual($0 as? WebAreaRefusal, .noAction, "unread actions") }
+    XCTAssertEqual(inert.presses, [])
+    XCTAssertEqual(inert.focusReads, 0)
+    XCTAssertNil(inert.record)
+  }
+
+  // MARK: set_value's and select_text's fallback click (the design session's ruling 1cd6ed32)
+
+  /// Firefox's page field (id 1) as focusFieldIfNeeded meets it: a text area, unfocused, its AXFocused settable but
+  /// ignored by a background Firefox (#313), advertising AXPress unless `actions` says otherwise.
+  private func firefoxField(actions: [String] = ["AXShowMenu", "AXScrollToVisible", "AXPress"]) -> FakeAX {
+    let ax = FakeAX()
+    ax.roles = [1: kAXTextAreaRole]
+    ax.values = [1: [kAXFocusedAttribute: kCFBooleanFalse]]
+    ax.settable = [1: [kAXFocusedAttribute]]
+    ax.actions = [1: actions]
+    return ax
+  }
+
+  /// The element route the fallback's refused pointer takes, by `refusedPointerCarrier` as synthesizedClick chooses it:
+  /// on Gecko the field's press (`focuses`: whether it takes the focus), else none.
+  private func fallbackRoute(_ engine: PageEngine, _ ax: FakeAX, focuses: Bool = true) -> ((inout InputMeta) throws -> Void)? {
+    guard refusedPointerCarrier(focusingFallback: true, engine: engine) == .focusPress else { return nil }
+    let field = Engine.element(1)
+    return { _ in
+      try focusFallbackByPress(role: ax.roles[1] ?? "", actions: ax.actions[1], app: "Firefox", press: { action in
+        _ = ax.ops.perform(field, action)
+        if focuses { ax.values[1]?[kAXFocusedAttribute] = kCFBooleanTrue }
+      }, focused: { bool(ax.ops.read(field, kAXFocusedAttribute)) }, now: { ax.clock }, sleep: { ax.clock += $0 })
+    }
+  }
+
+  /// focusFieldIfNeeded's AXFocused write does nothing in a background Firefox, so its fallback click goes; on a Gecko
+  /// page that click is refused as a pointer and carried by the field's AXPress, read back focused, nothing posted, and
+  /// the method goes on (set_value writes its value). The fallback itself writes nothing.
+  func testSetValuesFallbackOnAGeckoPageFocusesTheFieldByItsPressAndProceeds() throws {
+    let ax = firefoxField()
+    var ops = ax.ops
+    ops.write = { element, name, value in
+      ax.writes.append((FakeAX.id(element), name, value))
+      return .success  // accepted, and ignored
+    }
+    let seam = GuardSeam(frontmost: user)
+    var clickMeta = meta(connection())
+    let clicked = try focusFieldIfNeeded(Engine.element(1), bundleIdentifier: "org.mozilla.firefox", ax: ops) {
+      try click(seam, activation: firefoxActivation(seam), pointer: pointer(.webArea, fallbackRoute(.gecko, ax)), meta: &clickMeta)
+    }
+    XCTAssertTrue(clicked, "the fallback ran")
+    XCTAssertEqual(ax.performs.map(\.action), ["AXPress"])
+    XCTAssertEqual(ax.writes.map(\.attribute), [kAXFocusedAttribute], "only focusFieldIfNeeded's own write, before the fallback")
+    XCTAssertEqual(seam.posts.count, 0, "nothing posted")
+    XCTAssertTrue(bool(ax.ops.read(Engine.element(1), kAXFocusedAttribute)) == true)
+    XCTAssertEqual(refusedPointerCarrier(focusingFallback: true, engine: .gecko), .focusPress)
+  }
+
+  /// Where the press cannot focus the field it is refused (no action: nothing done) or unconfirmed (the press went, the
+  /// focus never read back, after the settle), nothing posted either way, and the sentence names what works there
+  /// without an element click on the same field.
+  func testAGeckoFallbackThatCannotFocusIsRefusedOrUnconfirmedWithNothingPosted() {
+    let inert = firefoxField(actions: ["AXShowMenu", "AXScrollToVisible"])
+    let refusedSeam = GuardSeam(frontmost: user)
+    var refusedMeta = meta(connection())
+    XCTAssertThrowsError(try click(refusedSeam, activation: firefoxActivation(refusedSeam), pointer: pointer(.webArea, fallbackRoute(.gecko, inert)),
+                                   meta: &refusedMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "backgroundClickRefused")
+      XCTAssertEqual(($0 as? EngineError)?.message, "Firefox's text field cannot be focused in the background: Firefox's web page does not accept a background click, and the field exposes no accessibility action to focus it instead, so nothing was changed. Use a dedicated desktop, or ask the person to bring Firefox forward")
+    }
+    XCTAssertEqual(inert.performs.count, 0)
+    XCTAssertEqual(refusedSeam.posts.count, 0)
+    let stuck = firefoxField()
+    let stuckSeam = GuardSeam(frontmost: user)
+    var stuckMeta = meta(connection())
+    XCTAssertThrowsError(try click(stuckSeam, activation: firefoxActivation(stuckSeam), pointer: pointer(.webArea, fallbackRoute(.gecko, stuck, focuses: false)),
+                                   meta: &stuckMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
+      XCTAssertEqual(($0 as? EngineError)?.message, "Firefox's text field could not be focused in the background: its accessibility action was performed, but the field does not report focus, so the requested value or selection was not written. Observe Firefox with get_app_state before any retry, and never retry blindly; to change the field, use a dedicated desktop, or ask the person to bring Firefox forward")
+      XCTAssertFalse(($0 as? EngineError)?.message.contains("element ID") == true)
+    }
+    XCTAssertEqual(stuck.performs.map(\.action), ["AXPress"])
+    XCTAssertEqual(stuck.clock, textEntryFocusSettleMs, "the read-back's settle")
+    XCTAssertEqual(stuckSeam.posts.count, 0)
+  }
+
+  /// Elsewhere the fallback is as before: on Chromium refused in shared mode with its own sentence, nothing pressed; a
+  /// Safari or native field's (no web area) posted; in dedicated mode posted on Gecko too, the press never taken. An
+  /// element click's and a coordinate click's refused pointer keeps #282's element route on every engine.
+  func testTheFallbackIsUnchangedOnOtherEnginesAndInDedicatedMode() throws {
+    for engine in [PageEngine.chromium, .gecko, .other] {
+      XCTAssertEqual(refusedPointerCarrier(focusingFallback: false, engine: engine), .elementRoute, "\(engine)")
+    }
+    XCTAssertEqual(refusedPointerCarrier(focusingFallback: true, engine: .chromium), .none)
+    XCTAssertEqual(refusedPointerCarrier(focusingFallback: true, engine: .other), .none)
+    let chrome = firefoxField()
+    XCTAssertNil(fallbackRoute(.chromium, chrome))
+    let chromeSeam = GuardSeam(frontmost: user)
+    var chromeMeta = meta(connection())
+    XCTAssertThrowsError(try click(chromeSeam, activation: firefoxActivation(chromeSeam),
+                                   pointer: PointerTarget(view: .webArea, app: "Chrome", engine: .chromium), meta: &chromeMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.message, "Chrome's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Chrome forward")
+    }
+    XCTAssertEqual(chromeSeam.posts.count, 0)
+    let safariSeam = GuardSeam(frontmost: user)
+    var safariMeta = meta(connection())
+    try click(safariSeam, activation: safari(safariSeam), pointer: PointerTarget(view: .unknown, app: "Safari", engine: .other), meta: &safariMeta)
+    XCTAssertEqual(safariSeam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.count, 2, "Safari's fallback posted")
+    let dedicated = firefoxField()
+    let dedicatedSeam = GuardSeam(frontmost: user)
+    var dedicatedMeta = meta(connection(.dedicated))
+    try click(dedicatedSeam, activation: firefoxActivation(dedicatedSeam), pointer: pointer(.webArea, fallbackRoute(.gecko, dedicated)), meta: &dedicatedMeta)
+    XCTAssertEqual(dedicated.performs.count, 0, "no press in dedicated mode")
+    XCTAssertEqual(dedicatedSeam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.count, 2, "the inert click, then the fallback's own")
+  }
+
+  // MARK: Unchanged: Gecko's chrome, dedicated mode, Safari, native, Chromium
+
+  /// Firefox's toolbar is not a web area: its click is posted as before, and its own down consuming the arm answers
+  /// clickUnconfirmed (#318's stated limit), though Gecko delivers it.
+  func testTheGeckoToolbarsClickIsPostedAndAnswersClickUnconfirmed() {
+    let firefox = Firefox()
+    let seam = GuardSeam(frontmost: user)
+    var clickMeta = meta(connection())
+    XCTAssertThrowsError(try click(seam, activation: firefoxActivation(seam), pointer: pointer(view(firefox.reload)), meta: &clickMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
+    }
+    XCTAssertEqual(seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.map(\.location), [point])
+    XCTAssertEqual(clickMeta.activationClickKind, .action)
+  }
+
+  /// Dedicated mode posts a Gecko page's click and drag as before: the inert click right after subtype 1, then the
+  /// action's own down into a key window, no refusal and no element route.
+  func testDedicatedModePostsAGeckoPagePointerAsBefore() throws {
+    let firefox = Firefox()
+    let button = Node("AXButton", actions: ["AXPress"], parent: Node("AXGroup", parent: firefox.page))
+    for isDrag in [false, true] {
+      let seam = GuardSeam(frontmost: user)
+      var clickMeta = meta(connection(.dedicated))
+      let routed = pointer(view(button), noun: isDrag ? "drag" : "click") { _ in XCTFail("no element route in dedicated mode") }
+      if isDrag { try drag(seam, activation: firefoxActivation(seam), pointer: routed, meta: &clickMeta) }
+      else { try click(seam, activation: firefoxActivation(seam), pointer: routed, meta: &clickMeta) }
+      XCTAssertEqual(seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.count, 2, "the inert click, then the action's own: drag \(isDrag)")
+      XCTAssertEqual(clickMeta.activationClickKind, .inertOutside(.offset, .early))
+      XCTAssertNil(clickMeta.delivery)
+    }
+  }
+
+  /// Safari's page and a native app have no web-area rule (Safari's activation clicks its in-window point, so its
+  /// pointer is delivered, #287); Chromium's toolbar stays known to accept once a web area is seen.
+  func testSafariNativeAndChromiumAreUnchanged() throws {
+    let firefox = Firefox()  // the same shape under another engine
+    let button = Node("AXButton", actions: ["AXPress"], parent: Node("AXGroup", parent: firefox.page))
+    XCTAssertEqual(view(button, engine: .other), .unknown, "Safari's page")
+    XCTAssertEqual(view(Node("AXButton", parent: Node("AXWindow")), engine: .other), .unknown, "a native button")
+    XCTAssertEqual(view(firefox.reload, engine: .chromium), .acceptsFirstMouse, "Chrome's toolbar")
+    XCTAssertEqual(view(firefox.reload, engine: .chromium, seen: false), .possibleWebArea)
+    XCTAssertEqual(view(button, engine: .chromium), .webArea)
+    XCTAssertEqual(pageEngineOf(info: ["NSPrincipalClass": "BrowserApplication"]), .other, "Safari 27.2's principal class")
+    let seam = GuardSeam(frontmost: user)
+    var clickMeta = meta(connection())
+    try click(seam, activation: safari(seam), pointer: pointer(view(button, engine: .other)), meta: &clickMeta)
+    XCTAssertEqual(clickMeta.activationClickKind, .activationPoint)
+    XCTAssertEqual(seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.count, 2, "Safari's click posted as before")
+  }
+}

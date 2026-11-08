@@ -486,7 +486,7 @@ final class StalePointTests: XCTestCase {
     guard case .recovered(let recovered) = stalePointRouteHit(nil, verdict, same: { $0 === $1 }) else { return XCTFail("not recovered") }
     XCTAssertTrue(recovered === again)
     func view(_ hit: Node?) -> PointerView {
-      pointerView(chromium: true, webAreaSeen: true, hit: hit, role: { $0.role }, parent: { $0.parent }, children: { $0.children })
+      pointerView(engine: .chromium, webAreaSeen: true, hit: hit, role: { $0.role }, parent: { $0.parent }, children: { $0.children })
     }
     XCTAssertEqual(view(nil), .possibleWebArea, "the first hit's view: no route to build")
     XCTAssertEqual(view(recovered), .webArea)

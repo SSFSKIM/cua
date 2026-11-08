@@ -54,7 +54,8 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
 /// carried it. Value-free: action names and enumeration words only.
 struct ElementClickRecord: Equatable {
   /// `webArea` (#282): a left pointer into a Chromium web area in shared mode, carried by the action of the element the
-  /// pointer's point hits instead of a posted click (a coordinate click's record too).
+  /// pointer's point hits instead of a posted click (a coordinate click's record too); #315, a Gecko web area's alike, its
+  /// text field by its action with the focus read back (`focus`, `focusStep` "press").
   /// `focusField` and `focusedNotPlaced` (#283): a plain left click into a web area's text field, carried by
   /// AXFocused, with the caret placed at the point or not (`caret` says why not).
   enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea, focusField, focusedNotPlaced }
@@ -73,8 +74,9 @@ struct ElementClickRecord: Equatable {
   /// `CaretNotPlaced` case name). #313, a WebKit page's field whose caret was written: `placed` (read back at the point),
   /// why the point gave no offset (read back at 0), or `selectionMismatch` / `secure` (not confirmed).
   var caret: String? = nil
-  /// #313, a text-entry element's action (`advertised`): what its last focus read-back found (a `FocusReadback` case
-  /// name), and after which step (`focusStep` "press" | "selection", the caret's write on a WebKit page).
+  /// #313, a text-entry element's action (`advertised`; #315, a Gecko web area's field, `webArea`): what its last focus
+  /// read-back found (a `FocusReadback` case name), and after which step (`focusStep` "press" | "selection", the caret's
+  /// write on a WebKit page).
   var focus: String? = nil
   var focusStep: String? = nil
   /// #313, the caret's AXSelectedTextRange write when it did not answer success: its AXError.
@@ -275,9 +277,10 @@ func hitRelation<Element>(_ hit: Element?, to target: Element, parent: (Element)
 // mouse below the popup levels, so the first loses the click silently and the second raises the window. The owner's
 // ruling for that class (the Linux engine's device mode): on a shared desktop cua refuses input an app ignores, and a
 // dedicated desktop may bring the window forward. So, per connection (its ping's `desktop`):
-// - shared (the default): a left pointer into a Chromium web area, where the activation it meets clicked no activation
-//   point, is never posted: a plain click takes the hit element's own action when it advertises one (the element route),
-//   anything else is refused (`backgroundClickRefused`), with nothing posted;
+// - shared (the default): a left pointer into a Chromium or (#315) a Gecko web area, where the activation it meets clicked
+//   no activation point (Firefox's lies on a toolbar control, so it clicks none), is never posted: a plain click takes
+//   the hit element's own action when it advertises one (the element route), anything else is refused
+//   (`backgroundClickRefused`), with nothing posted;
 // - dedicated: the inert click goes right after subtype 1 for left pointers too, so their own down meets a key window and
 //   is delivered, and nothing puts the person's window order back for that action (nobody is at the desktop);
 // - everywhere: a pointer whose own down consumed the arm, into a view not known to accept first mouse, answers
@@ -294,10 +297,11 @@ enum PointerView: Equatable {
   /// Known to accept first mouse: a Chromium process's native views (its toolbar; `BridgedContentView acceptsFirstMouse:`
   /// answers YES), the one rule cua knows. A down that consumes the arm there is delivered.
   case acceptsFirstMouse
-  /// A Chromium web area or inside one, whose view refuses first mouse.
+  /// A Chromium or Gecko web area or inside one, whose view refuses first mouse (Gecko's refuses a click-through
+  /// mouse down into its page, #315).
   case webArea
-  /// A Chromium hit not established outside every web area (no hit, an incomplete walk, a page tree not yet seen):
-  /// treated as a web area in shared mode, since the owner's rule refuses input the app may ignore (#282's review).
+  /// A Chromium or Gecko hit not established outside every web area (no hit, an incomplete walk, a Chromium page tree
+  /// not yet seen): treated as a web area in shared mode, since the owner's rule refuses input the app may ignore (#282's review).
   case possibleWebArea
   /// Anything else: an app with no known rule.
   case unknown
@@ -361,22 +365,34 @@ func hasWebAreaChild<Element>(_ element: Element, children: (Element) -> [Elemen
   return unknown ? nil : false
 }
 
-/// The view a left pointer's point hits in a process: in a Chromium-family process (`chromiumFamily`, Enablement.swift),
-/// a web area when the hit is or lies inside an AXWebArea; a native view known to accept first mouse only when the walk
-/// established the hit outside every web area and an observation has seen a web area in the process (`webAreaSeen`: its
-/// page's tree is exposed, so a page point would have answered inside one); otherwise, in a Chromium process, a possible
-/// web area (no hit, an incomplete walk, a page tree not yet seen, or a hit or element on its walk with an AXWebArea
-/// child, #288), and `unknown` outside one.
-func pointerView<Element>(chromium: Bool, webAreaSeen: Bool, hit: Element?, role: (Element) -> String?,
+/// The view a left pointer's point hits in a process, by its page engine (`pageEngineOf`, Enablement.swift): in a
+/// Chromium-family or a Gecko process, a web area when the hit is or lies inside an AXWebArea, and a possible web area
+/// when the hit is not established outside every one (no hit, an incomplete walk, or a hit or element on its walk with an
+/// AXWebArea child, #288). Established outside: in a Chromium process a native view known to accept first mouse once an
+/// observation has seen a web area in the process (`webAreaSeen`: its page's tree is exposed, so a page point would have
+/// answered inside one), a possible web area before; in a Gecko process `geckoChromeView`. A WebKit or native process
+/// (`other`) is `unknown`: Safari's activation clicks its in-window point, so its pointer is delivered (#287).
+func pointerView<Element>(engine: PageEngine, webAreaSeen: Bool, hit: Element?, role: (Element) -> String?,
                           parent: (Element) -> Element?, children: (Element) -> [Element]? = { _ in [] }) -> PointerView {
-  guard chromium else { return .unknown }
+  guard engine != .other else { return .unknown }
   guard let hit else { return .possibleWebArea }
   switch webAreaWalk(hit, role: role, parent: parent, webAreaChild: { hasWebAreaChild($0, children: children, role: role) }) {
   case .inside: return .webArea
-  case .outside: return webAreaSeen ? .acceptsFirstMouse : .possibleWebArea
+  case .outside:
+    guard engine == .chromium else { return geckoChromeView }
+    return webAreaSeen ? .acceptsFirstMouse : .possibleWebArea
   case .incomplete, .aboveWebArea: return .possibleWebArea
   }
 }
+
+/// #315: what a Gecko hit established outside every web area is (its toolbar, tabs and address bar, which Gecko draws in
+/// the same ChildView as the page). Gecko's view accepts first mouse at AppKit's level and then asks its own content
+/// whether a click-through mouse down may pass (nsCocoaWindow.mm `inactiveWindowAcceptsMouseEvent:`, its eMouseActivate,
+/// answered by EventStateManager.cpp `NodeAllowsClickThrough`): refused inside a XUL `<browser>` (the page) or `<tree>`,
+/// allowed elsewhere. So the browser chrome takes the click (#287: the toolbar's Reload reloaded, 3 of 3) and the rule
+/// covers only the web area. The chrome stays `unknown`, answering `clickUnconfirmed` as before (#318), since a XUL tree
+/// outside a web area also refuses; making it known to accept is `webAreaSeen ? .acceptsFirstMouse : .unknown` above.
+let geckoChromeView: PointerView = .unknown
 
 /// #288's establishment, at click time, of a Chromium process's page tree no observation has seen: the application's
 /// role read (Basic mode), a bounded search of the target window for an AXWebArea (`noteWebArea` when found), then the
@@ -414,12 +430,13 @@ struct PointerEstablishing<Element> {
 
 /// The view a left pointer by route 3 aims at (`pointerView`), with #288's establishment first in a Chromium process
 /// where no web area has been seen, when `establish` is given: answers the view, the hit it was read from (the
-/// establishment's last hit-test, else `hit`), and the establishment's record (nil when none ran).
-func establishedPointerView<Element>(chromium: Bool, webAreaSeen: Bool, hit: Element?, role: (Element) -> String?,
+/// establishment's last hit-test, else `hit`), and the establishment's record (nil when none ran). A Gecko process runs
+/// none: its tree is exposed at the first contact of any AX client (#287), with no Basic mode to wait through.
+func establishedPointerView<Element>(engine: PageEngine, webAreaSeen: Bool, hit: Element?, role: (Element) -> String?,
                                      parent: (Element) -> Element?, children: (Element) -> [Element]?,
                                      establish: PointerEstablishing<Element>?) -> (view: PointerView, hit: Element?, record: PointerEstablishRecord?) {
-  guard chromium, !webAreaSeen, let establish else {
-    return (pointerView(chromium: chromium, webAreaSeen: webAreaSeen, hit: hit, role: role, parent: parent, children: children), hit, nil)
+  guard engine == .chromium, !webAreaSeen, let establish else {
+    return (pointerView(engine: engine, webAreaSeen: webAreaSeen, hit: hit, role: role, parent: parent, children: children), hit, nil)
   }
   let started = establish.now()
   establish.readAppRole()
@@ -435,7 +452,7 @@ func establishedPointerView<Element>(chromium: Bool, webAreaSeen: Bool, hit: Ele
     current = establish.rehit()
     rehits += 1
   }
-  let view = pointerView(chromium: true, webAreaSeen: found, hit: current, role: role, parent: parent, children: children)
+  let view = pointerView(engine: .chromium, webAreaSeen: found, hit: current, role: role, parent: parent, children: children)
   return (view, current, PointerEstablishRecord(ms: establish.now() - started, webAreaFound: found, rehits: rehits))
 }
 
@@ -623,17 +640,32 @@ func pressConfirmingValue(app: String, checksValue: Bool, readValue: () -> Strin
   throw pressUnconfirmed(app)
 }
 
-/// Shared mode's refusal of a left pointer into a Chromium web area (#282), in the Linux engine's form (the cause, then
-/// the remedy): nothing was posted.
-func backgroundClickRefused(_ app: String) -> EngineError {
-  EngineError(name: "backgroundClickRefused", "\(app)'s web page does not accept a background click; bring \(app) forward or use a dedicated desktop")
+/// Shared mode's refusal of a left pointer into a Chromium or (#315) Gecko web area (#282), in the Linux engine's form (the
+/// cause, then the remedy): nothing was posted. The remedy never reads as the model's to raise the app (the design
+/// session's ruling 80a11b9a: in shared mode that puts a window over the person's): a dedicated desktop, or the person
+/// bringing the app forward when asked. `engine`, the page's, adds what still works there in the background
+/// (`backgroundFieldAlternative`); Chromium's wording is unchanged.
+func backgroundClickRefused(_ app: String, engine: PageEngine = .other) -> EngineError {
+  EngineError(name: "backgroundClickRefused",
+    "\(app)'s web page does not accept a background click; use a dedicated desktop, or ask the person to bring \(app) forward" + backgroundFieldAlternative(engine))
 }
 
 /// The refusal of a control whose action the page has not exposed yet (`WebAreaRefusal.noAction`): its accessibility may
 /// still be coming up, so observing the app first may let the next click through.
-func backgroundClickRefusedObserveFirst(_ app: String) -> EngineError {
+func backgroundClickRefusedObserveFirst(_ app: String, engine: PageEngine = .other) -> EngineError {
   EngineError(name: "backgroundClickRefused",
-    "\(app)'s web page does not accept a background click, and the control there exposes no action yet; observe \(app) with get_app_state first and click again, or bring \(app) forward or use a dedicated desktop")
+    "\(app)'s web page does not accept a background click, and the control there exposes no action yet; observe \(app) with get_app_state first and click again, or use a dedicated desktop, or ask the person to bring \(app) forward"
+      + backgroundFieldAlternative(engine))
+}
+
+/// #315 (the design session's ruling 99e45959): a refusal into a Gecko page names what still works on its text fields in
+/// the background, an element click on the field, which Gecko's AXPress focuses (read back, `pressFocusingField` and
+/// #313's `carryActionClick`), besides the dedicated desktop the sentence already names. It reaches set_value's and
+/// select_text's fallback click, a drag, and a click on something with no action. Empty for any other engine.
+func backgroundFieldAlternative(_ engine: PageEngine) -> String {
+  engine == .gecko
+    ? ". A text field on the page still works in the background: click the field by its element ID, which focuses it through accessibility, then type or set its value"
+    : ""
 }
 
 /// The answer of a pointer whose own mouse down consumed route 3's activation arm in a view not known to accept first

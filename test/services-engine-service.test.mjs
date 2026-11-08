@@ -552,7 +552,7 @@ test('a coordinate click\'s placement rides as cua/coordinateClick on its result
 
 test('#288: a click\'s establishment of a page tree not yet seen rides as cua/pointerEstablish, on a refusal too', async t => {
   const record = {ms: 312.5, webAreaFound: true, rehits: 9};
-  const refusal = "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop";
+  const refusal = "Google Chrome for Testing's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Google Chrome for Testing forward";
   let refuse = false;
   const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => {
     if (refuse) throw new EngineFailure(-10005, refusal, 'backgroundClickRefused', {meta: {...INPUT_META, pointerEstablish: record}});
@@ -772,7 +772,7 @@ test('the service names its session\'s device mode in the ping (#282): CUA_DESKT
 });
 
 test('#282: the engine\'s background-click refusal and clickUnconfirmed reach the model with their sentence, name and meta', async t => {
-  const refusal = "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop";
+  const refusal = "Google Chrome for Testing's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Google Chrome for Testing forward";
   const unconfirmed = 'The click could not be confirmed: it was sent to Example in the background, but it may only have activated the window without reaching what is under the pointer. Observe the app with get_app_state before any retry, and never retry blindly.';
   for (const [name, message, meta] of [['backgroundClickRefused', refusal, {...INPUT_META, startedAt: null, endedAt: null, activationJoin: 'fresh'}],
     ['clickUnconfirmed', unconfirmed, {...INPUT_META, activationClickKind: {kind: 'action', when: 'consumedByAction'}}]]) {

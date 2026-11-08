@@ -80,7 +80,7 @@ final class BackgroundPointerTests: XCTestCase {
       XCTAssertThrowsError(try attempt(), name) {
         let error = $0 as? EngineError
         XCTAssertEqual(error?.errorName, "backgroundClickRefused", name)
-        XCTAssertEqual(error?.message, "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop")
+        XCTAssertEqual(error?.message, "Google Chrome for Testing's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Google Chrome for Testing forward")
       }
       XCTAssertEqual(seam.posts.count, 0, "nothing posted: \(name)")
       XCTAssertEqual(seam.holds, 0, "no screen-update hold: \(name)")
@@ -266,7 +266,7 @@ final class BackgroundPointerTests: XCTestCase {
     let area = Node("AXWebArea", parent: Node("AXGroup", parent: window))
     let field = Node("AXTextArea", parent: Node("AXGroup", parent: area))
     let view = { (hit: Node?, chromium: Bool, seen: Bool) in
-      pointerView(chromium: chromium, webAreaSeen: seen, hit: hit, role: { $0.role }, parent: { $0.parent })
+      pointerView(engine: chromium ? .chromium : .other, webAreaSeen: seen, hit: hit, role: { $0.role }, parent: { $0.parent })
     }
     XCTAssertEqual(view(field, true, true), .webArea, "inside a web area")
     XCTAssertEqual(view(area, true, true), .webArea, "the web area itself")
@@ -286,7 +286,7 @@ final class BackgroundPointerTests: XCTestCase {
   /// hit is outside every web area. A failed parent read, an unreadable role, or the bound running out with the web area
   /// beyond it is incomplete: in a Chromium process a possible web area, never a view known to accept first mouse.
   func testAnIncompleteWalkIsNeverKnownToAcceptFirstMouse() {
-    let view = { (hit: Node) in pointerView(chromium: true, webAreaSeen: true, hit: hit, role: { $0.role }, parent: { $0.parent }) }
+    let view = { (hit: Node) in pointerView(engine: .chromium, webAreaSeen: true, hit: hit, role: { $0.role }, parent: { $0.parent }) }
     // A parent that could not be read: the chain ends before any window.
     let orphan = Node("AXTextArea", parent: Node("AXGroup"))
     XCTAssertEqual(webAreaWalk(orphan, role: { $0.role }, parent: { $0.parent }), .incomplete)
@@ -624,10 +624,10 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertTrue(found === field)
     XCTAssertEqual(asked.count, 1)
     XCTAssertTrue(asked.first === application, "asked of the application, never the window")
-    XCTAssertEqual(pointerView(chromium: true, webAreaSeen: true, hit: found, role: { $0.role }, parent: { $0.parent }), .webArea)
+    XCTAssertEqual(pointerView(engine: .chromium, webAreaSeen: true, hit: found, role: { $0.role }, parent: { $0.parent }), .webArea)
     let refused = hitIn(application, window) { _, _ in (.illegalArgument, nil) }  // -25201, the window's answer
     XCTAssertNil(refused)
-    XCTAssertEqual(pointerView(chromium: true, webAreaSeen: true, hit: refused, role: { $0.role }, parent: { $0.parent }), .possibleWebArea)
+    XCTAssertEqual(pointerView(engine: .chromium, webAreaSeen: true, hit: refused, role: { $0.role }, parent: { $0.parent }), .possibleWebArea)
     XCTAssertNil(hitIn(application, window, stub(application, answers: nil)), "no element at the point")
   }
 
@@ -700,13 +700,13 @@ final class PointerEstablishTests: XCTestCase {
   }
 
   private func view(_ hit: Tree?, seen: Bool = true) -> PointerView {
-    pointerView(chromium: true, webAreaSeen: seen, hit: hit, role: { $0.role }, parent: { $0.parent }, children: { $0.children })
+    pointerView(engine: .chromium, webAreaSeen: seen, hit: hit, role: { $0.role }, parent: { $0.parent }, children: { $0.children })
   }
 
   func testAnElementWithAWebAreaChildIsAPossibleWebAreaNeverOutside() {
     let chrome = Chrome()
     XCTAssertEqual(view(chrome.contents), .possibleWebArea, "the web contents' scroll area: its child is the page")
-    XCTAssertEqual(pointerView(chromium: true, webAreaSeen: true, hit: chrome.contents, role: { $0.role }, parent: { $0.parent }),
+    XCTAssertEqual(pointerView(engine: .chromium, webAreaSeen: true, hit: chrome.contents, role: { $0.role }, parent: { $0.parent }),
                    .acceptsFirstMouse, "what the walk said before #288")
     XCTAssertEqual(view(chrome.scrollBar), .possibleWebArea, "an element whose walk passes the container")
     XCTAssertEqual(view(chrome.contents, seen: false), .possibleWebArea, "seen or not")
@@ -723,7 +723,7 @@ final class PointerEstablishTests: XCTestCase {
   func testUnreadableChildrenAreAPossibleWebAreaNeverOutside() {
     let chrome = Chrome()
     let unreadable = { (hit: Tree, children: @escaping (Tree) -> [Tree]?, role: @escaping (Tree) -> String?) in
-      pointerView(chromium: true, webAreaSeen: true, hit: hit, role: role, parent: { $0.parent }, children: children)
+      pointerView(engine: .chromium, webAreaSeen: true, hit: hit, role: role, parent: { $0.parent }, children: children)
     }
     XCTAssertEqual(unreadable(chrome.contents, { $0 === chrome.contents ? nil : $0.children }, { $0.role }), .possibleWebArea,
                    "the web contents' scroll area whose children read failed")
@@ -736,7 +736,7 @@ final class PointerEstablishTests: XCTestCase {
     var clock: Double = 0
     let seams = PointerEstablishing<Tree>(readAppRole: {}, windowHasWebArea: { true }, noteWebArea: {}, rehit: { chrome.contents },
                                           now: { clock }, sleep: { clock += $0 })
-    let result = establishedPointerView(chromium: true, webAreaSeen: false, hit: nil, role: { $0.role }, parent: { $0.parent },
+    let result = establishedPointerView(engine: .chromium, webAreaSeen: false, hit: nil, role: { $0.role }, parent: { $0.parent },
                                         children: { $0 === chrome.contents ? nil : $0.children }, establish: seams)
     XCTAssertEqual(result.view, .possibleWebArea)
     XCTAssertEqual(result.record?.rehits, 21)
@@ -767,7 +767,7 @@ final class PointerEstablishTests: XCTestCase {
 
   private func established(_ hit: Tree?, _ seams: PointerEstablishing<Tree>?, seen: Bool = false, chromium: Bool = true)
     -> (view: PointerView, hit: Tree?, record: PointerEstablishRecord?) {
-    establishedPointerView(chromium: chromium, webAreaSeen: seen, hit: hit, role: { $0.role }, parent: { $0.parent },
+    establishedPointerView(engine: chromium ? .chromium : .other, webAreaSeen: seen, hit: hit, role: { $0.role }, parent: { $0.parent },
                            children: { $0.children }, establish: seams)
   }
 

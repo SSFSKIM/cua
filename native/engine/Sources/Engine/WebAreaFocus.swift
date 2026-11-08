@@ -523,3 +523,85 @@ func secureTextField(role: String?, subrole: SubroleRead) -> Bool {
   case .failed: return true
   }
 }
+
+// MARK: Gecko's focus route (#315)
+//
+// #287's hosted cells: a shared-mode coordinate click into a background Firefox page is lost (34 of 34, pointer 0), since
+// Gecko refuses a click-through mouse down into its page (Routes.swift `geckoChromeView`). The design session's ruling
+// cb252e88 gives Gecko #282's element route and #283's focus route. But #313's A/B (run 42402098567) found a background
+// Firefox ignoring an AXFocused write, while AXPress focuses its fields (p99 234 ms, inside `textEntryFocusSettleMs`), with
+// Firefox kept behind. So on Gecko a text field takes #313's press and read-back, never #283's write.
+
+/// How a shared-mode plain left click into a web area's text entry is carried, by the page's engine (`PageEngine`, only
+/// Chromium's or Gecko's: `pointerView`'s web areas): Chromium's by #283's AXFocused write (`focusPlacingCaret`), Gecko's
+/// by the field's own action with its focus read back (`pressFocusingField`).
+enum WebAreaFocusCarrier: Equatable {
+  case focusWrite
+  case pressReadingFocus
+}
+
+func webAreaFocusCarrier(_ engine: PageEngine) -> WebAreaFocusCarrier {
+  engine == .gecko ? .pressReadingFocus : .focusWrite
+}
+
+/// Gecko's focus route for the text-entry element the walk reached (`webAreaFocusTarget`): its action (`webAreaAction`:
+/// AXPick, else AXPress) through `press`, then its focus read back as #313's is (`readingFocus`); only a read of true is
+/// success, recorded through `noted` (step `press`), and a field that never reads focused answers clickUnconfirmed. A
+/// field advertising neither action throws `WebAreaRefusal.noAction` with nothing pressed. Nothing writes AXFocused or
+/// the selection here. Answers the action taken.
+@discardableResult
+func pressFocusingField(role: String, actions: [String]?, app: String, press: (String) throws -> Void, focused: () -> Bool?,
+                        noted: (TextEntryFocusRecord) -> Void, now: () -> Double, sleep: (Double) -> Void) throws -> String {
+  guard let action = webAreaAction(role: role, actions: actions) else { throw WebAreaRefusal.noAction }
+  let found = try readingFocus(after: { try press(action) }, focused: focused, now: now, sleep: sleep)
+  noted(TextEntryFocusRecord(focus: found, step: .press))
+  if found != .readBack { throw textEntryFocusUnconfirmed(app, selected: false) }
+  return action
+}
+
+/// What a left pointer refused in a web area (#282's `PointerRefused`) is carried by instead (#315): an element click's or
+/// a coordinate click's by #282's element route from the hit (`webAreaPress`); focusField's fallback click (set_value's
+/// and select_text's) by the field's own press on a Gecko page (`focusFallbackByPress`, the design session's ruling
+/// 1cd6ed32: main's posted fallback set the value in a background Firefox, 3 of 3, while raising it for 26 to 30 ms),
+/// and by nothing elsewhere, so it stays refused (#282's item 6: an action is no focusing on Chromium).
+enum RefusedPointerCarrier: Equatable {
+  case elementRoute
+  case focusPress
+  case none
+}
+
+func refusedPointerCarrier(focusingFallback: Bool, engine: PageEngine) -> RefusedPointerCarrier {
+  guard focusingFallback else { return .elementRoute }
+  return webAreaFocusCarrier(engine) == .pressReadingFocus ? .focusPress : .none
+}
+
+/// focusField's fallback click on a Gecko page in shared mode, carried by the field's own action (AXPick, else AXPress)
+/// through `press`, then its focus read back as #313's is (`readingFocus`, `textEntryFocusSettleMs`), so set_value or
+/// select_text proceeds once it reads focused. Nothing writes AXFocused or a selection here. A field advertising neither
+/// action is refused with nothing done (`focusFallbackUnfocusable`); one whose focus never reads back answers
+/// `focusFallbackUnconfirmed`. Neither names an element click on the field, which would take the same press.
+func focusFallbackByPress(role: String, actions: [String]?, app: String, press: (String) throws -> Void, focused: () -> Bool?,
+                          now: () -> Double, sleep: (Double) -> Void) throws {
+  guard let action = webAreaAction(role: role, actions: actions) else { throw focusFallbackUnfocusable(app) }
+  let found = try readingFocus(after: { try press(action) }, focused: focused, now: now, sleep: sleep)
+  if found != .readBack { throw focusFallbackUnconfirmed(app) }
+}
+
+/// The refusal of focusField's fallback on a Gecko page whose field has no action to focus it: nothing was done.
+func focusFallbackUnfocusable(_ app: String) -> EngineError {
+  EngineError(name: "backgroundClickRefused",
+    "\(app)'s text field cannot be focused in the background: \(app)'s web page does not accept a background click, and the field exposes no accessibility action to focus it instead, so nothing was changed. Use a dedicated desktop, or ask the person to bring \(app) forward")
+}
+
+/// focusField's fallback on a Gecko page whose press did not leave the field reading focused: the action went, and the
+/// page may have acted on it (a focus handler changing the value, then blurring the field), so the sentence claims only
+/// that the method's own write was skipped (the review of acb88f72..146b76a7, one P2).
+func focusFallbackUnconfirmed(_ app: String) -> EngineError {
+  EngineError(name: "clickUnconfirmed",
+    "\(app)'s text field could not be focused in the background: its accessibility action was performed, but the field does not report focus, so the requested value or selection was not written. Observe \(app) with get_app_state before any retry, and never retry blindly; to change the field, use a dedicated desktop, or ask the person to bring \(app) forward")
+}
+
+/// The note of a Gecko field focused by its action (#315): no caret was placed, so the place typing goes is Gecko's.
+func pressFocusNote(_ app: String) -> String {
+  "\(app)'s text field was focused through its accessibility action rather than a click at the point, so its caret is where \(app) put it, which need not be the point. Use select_text or set_value first if the position matters."
+}

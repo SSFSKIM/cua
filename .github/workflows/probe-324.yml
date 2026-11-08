@@ -1,5 +1,5 @@
 # #324's hosted spike: main's engine, patched on the runner only (scripts/probe-324/patch.py: the hold log on stderr, the
-# fallback click's delivery record kept, and the modes press, c, ev and ev300 behind P324_MODE), on Safari, an AppKit
+# fallback click's delivery record kept, the modes press, caret, c, ev and ev300 behind P324_MODE, and P324_DELAY_MS), on Safari, an AppKit
 # app and TextEdit behind a frontmost cover app (scripts/probe-324/run.sh). Runs only on a push to probe/324-measure (or by
 # hand); not a ci-kit gate.
 name: probe-324
@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["safari", "native", "residue"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["run2"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:

@@ -32,6 +32,8 @@ const MODES = arg('modes', 'main').split(',');
 const REPS = Number(arg('reps', 1)), FIRST_REP = Number(arg('rep', 1));
 const ONLY = arg('cells')?.split(',') ?? null;
 const BATCHES = Number(arg('batches', 10)), CLICKS = Number(arg('clicks', 5));
+// --delay <lo>-<hi>: the engines' P324_DELAY_MS (a slow activation injected inside a pointer's hold, patch.py).
+const DELAY = arg('delay');
 if (!BLOCK || !ENGINE || !WIN || !AX || !APP || !OUT) { console.error('usage: measure.mjs --block <b> --engine --win --ax --app --out'); process.exit(2); }
 process.env.P287_BROWSER = 'safari';
 const {launchOther, browserVersion, placePid} = await import('../probe-287/browser.mjs');
@@ -154,7 +156,7 @@ async function startEngine(mode) {
   engineSeq += 1;
   const dir = join(process.env.RUNNER_TEMP || OUT, `s324${engineSeq}`); mkdirSync(dir, {recursive: true, mode: 0o700});
   const socket = join(dir, 'e.sock');
-  const child = spawn(ENGINE, [], {env: {...process.env, CUA_ENGINE_SOCKET: socket, P324_MODE: mode}, stdio: ['ignore', 'pipe', 'pipe']});
+  const child = spawn(ENGINE, [], {env: {...process.env, CUA_ENGINE_SOCKET: socket, P324_MODE: mode, ...(DELAY ? {P324_DELAY_MS: DELAY} : {})}, stdio: ['ignore', 'pipe', 'pipe']});
   const events = [];
   let rest = '', other = '';
   child.stderr.on('data', d => {
@@ -182,12 +184,12 @@ const stopEngine = async e => { if (e && e.child.exitCode === null) { e.child.ki
 // ---- the reading: a step's watch against the holds the engine logged -------------------------------------------------
 /// The display's frozen spans (a hold counted from each SLSDisableUpdate to the SLSReenableUpdate that ends the last one
 /// outstanding) from the engine's log between `from` and `to`.
-function frozenSpans(events, from, to) {
+function frozenSpans(events, from, to, releaseEvent = 'release') {
   const spans = [];
   let depth = 0, start = null;
   for (const e of events.filter(x => x.t >= from && x.t <= to).sort((x, y) => x.t - y.t)) {
     if (e.ev === 'hold') { if (depth === 0) start = e.t; depth += 1; }
-    if (e.ev === 'release' && depth > 0) { depth -= 1; if (depth === 0) { spans.push([start, e.t]); start = null; } }
+    if (e.ev === releaseEvent && depth > 0) { depth -= 1; if (depth === 0) { spans.push([start, e.t]); start = null; } }
   }
   if (depth > 0) spans.push([start, to]);
   return spans;
@@ -199,14 +201,18 @@ const overlap = (a, b) => Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]
 function reading(w, events, from, to, coverBundle, coverName) {
   const changes = w?.changes ?? [];
   const spans = frozenSpans(events, from - 20, to);
+  // The display's unfreeze lies between SLSReenableUpdate's call and its return: the spans to the call bound what was
+  // visible from above (visibleMsByCall), those to the return from below (visibleMs).
+  const early = frozenSpans(events, from - 20, to, 'release.call');
   const raises = [];
   for (let i = 0; i < changes.length; i++) {
     if (!changes[i].aboveFront) continue;
     const end = changes[i + 1]?.atMs ?? (w.goAt + w.ms);
     raises.push([changes[i].atMs, end]);
   }
-  let insideMs = 0, visibleMs = 0, firstVisible = null;
+  let insideMs = 0, visibleMs = 0, firstVisible = null, visibleMsByCall = 0;
   for (const r of raises) {
+    visibleMsByCall += (r[1] - r[0]) - early.reduce((s, f) => s + overlap(r, f), 0);
     const hidden = spans.reduce((s, f) => s + overlap(r, f), 0);
     insideMs += hidden; visibleMs += (r[1] - r[0]) - hidden;
     if (firstVisible == null && (r[1] - r[0]) - hidden > 0.5) {
@@ -220,6 +226,8 @@ function reading(w, events, from, to, coverBundle, coverName) {
   const frozen = spans.map(f => f[1] - f[0]);
   const round = v => (v == null || !Number.isFinite(v) ? null : Math.round(v * 10) / 10);
   return {raised: raises.length > 0, raisedInside: insideMs > 0.5, raisedAfter: visibleMs > 0.5, insideMs: round(insideMs), visibleMs: round(visibleMs),
+    visibleMsByCall: early.length ? round(visibleMsByCall) : null, raisedAfterByCall: early.length ? visibleMsByCall > 0.5 : null,
+    releaseLagMs: early.length === spans.length ? round(Math.max(0, ...spans.map((f, i) => f[1] - early[i][1]))) : null,
     visibleAfterReleaseMs: firstVisible != null && Number.isFinite(lastRelease) ? round(firstVisible - lastRelease) : null,
     visibleNoHold: firstVisible != null && !Number.isFinite(lastRelease),
     raiseAtMs: raises.length ? round(raises[0][0] - from) : null, holds: spans.length, frozenMs: round(frozen.reduce((s, v) => s + v, 0)), longestFreezeMs: round(Math.max(0, ...frozen)),
@@ -339,9 +347,9 @@ const APPKIT = [
   {name: 'sv/field-focused', prep: 'field', steps: [S.sv('field', 'sv324ffocused', a => a.field)]},
   {name: 'sv/notes-focused', prep: 'notes', steps: [S.sv('appNotes', 'sv324nfocused', a => a.notes)]},
   {name: 'st/field', steps: [S.st('field', 'bravo', a => a.fieldSel, [6, 5])]},
-  {name: 'st/notes', steps: [S.st('appNotes', 'notes line 2', a => a.notesSel, [APP_NOTES.indexOf('notes line 2'), 12])]},
+  {name: 'st/notes', steps: [S.st('appNotes', 'notes line 2 delta', a => a.notesSel, [APP_NOTES.indexOf('notes line 2 delta'), 18])]},
   {name: 'st/field-focused', prep: 'field', steps: [S.st('field', 'charlie', a => a.fieldSel, [12, 7])]},
-  {name: 'st/notes-focused', prep: 'notes', steps: [S.st('appNotes', 'notes line 3', a => a.notesSel, [APP_NOTES.indexOf('notes line 3'), 12])]},
+  {name: 'st/notes-focused', prep: 'notes', steps: [S.st('appNotes', 'notes line 3 delta', a => a.notesSel, [APP_NOTES.indexOf('notes line 3 delta'), 18])]},
   {name: 'coord/notes+type+key', steps: [S.coord('appNotes', (b, a) => ({seen: a.responder === 'notes', responder: a.responder}), f => ({x: f.x + 80, y: f.y + 30})),
     S.type('q324', a => a.notes), S.key('BackSpace', a => a.notes)]},
   {name: 'coord/field+type', steps: [S.coord('field', (b, a) => ({seen: a.responder === 'field', responder: a.responder})), S.type('q324', a => a.field)]},
@@ -474,7 +482,7 @@ async function texteditTarget(label) {
 }
 
 // ---- the run ----------------------------------------------------------------------------------------------------------
-const config = {block: BLOCK, modes: MODES, reps: REPS, imageVersion: process.env.ImageVersion ?? null, macOS: sh('sw_vers', []).out.replace(/\s+/g, ' '),
+const config = {block: BLOCK, modes: MODES, reps: REPS, delay: DELAY ?? null, imageVersion: process.env.ImageVersion ?? null, macOS: sh('sw_vers', []).out.replace(/\s+/g, ' '),
   safari: browserVersion(), mainCommit: process.env.P324_MAIN_COMMIT ?? null, probeCommit: process.env.GITHUB_SHA ?? null};
 const results = [];
 const save = () => writeFileSync(join(OUT, `results-${BLOCK}.json`), JSON.stringify({config, results}, null, 1));

@@ -37,7 +37,7 @@ for (const [k, ss] of [...groups].sort()) {
   if (ss.some(s => s.keyed)) extra.push(`key[${count(ss, s => s.keyed?.becameKey)}] active[${count(ss, s => s.keyed?.activeSeen)}]`);
   const answers = tally(ss.map(s => s.answer));
   console.log([k, `${ss.length} ${count(ss, s => s.answer === 'success')} ${count(ss, s => s.effect?.seen)}`,
-    `${count(ss, s => s.read.raised)} ${count(ss, s => s.read.raisedInside)} ${count(ss, s => s.read.raisedAfter)}`,
+    `${count(ss, s => s.read.raised)} ${count(ss, s => s.read.raisedInside)} ${count(ss, s => s.read.raisedAfter)}${ss.some(s => s.read.raisedAfterByCall != null) ? `(${count(ss, s => s.read.raisedAfterByCall)})` : ''}`,
     `${JSON.stringify(ss.filter(s => s.read.raisedAfter).map(s => s.read.visibleMs))} ${JSON.stringify(ss.filter(s => s.read.raisedAfter).map(s => s.read.visibleAfterReleaseMs ?? (s.read.visibleNoHold ? 'nohold' : null)))}`,
     tally(ss.map(s => s.record.activationClickKind)), tally(until),
     `${med(ss.map(s => s.record.delivery?.screenHoldMs))}/${max(ss.map(s => s.record.delivery?.screenHoldMs))} ${count(ss, s => s.record.delivery?.capped)} ${count(ss, s => s.record.delivery?.transientRaise?.seen)} ${count(ss, s => s.record.delivery?.transientRaise?.outlivedHold)}`,
@@ -58,7 +58,7 @@ if (residue.length) {
     const gaps = ss.map(s => s.record.delivery?.postedAfterHoldStartMs).filter(v => v != null).sort((a, b) => a - b);
     const fr = ss.map(s => s.read.longestFreezeMs).filter(v => v != null).sort((a, b) => a - b);
     const p95 = a => a.length ? a[Math.min(a.length - 1, Math.floor(a.length * 0.95))] : null;
-    console.log(`${mode} | ${ss.length} ${count(ss, s => s.effect?.seen)} | ${count(ss, s => s.read.raisedAfter)} | ${count(ss, s => s.first && s.read.raisedAfter)} of ${count(ss, s => s.first)} | ${med(gaps)}/${p95(gaps)}/${max(gaps)} | ${med(ss.map(s => s.record.delivery?.screenHoldMs))}/${max(ss.map(s => s.record.delivery?.screenHoldMs))} | ${med(fr)}/${p95(fr)}/${max(fr)} | ${count(ss, s => s.record.delivery?.capped)}`);
+    console.log(`${mode} | ${ss.length} ${count(ss, s => s.effect?.seen)} | ${count(ss, s => s.read.raisedAfter)} (by call ${count(ss, s => s.read.raisedAfterByCall)}) | ${count(ss, s => s.first && s.read.raisedAfter)} of ${count(ss, s => s.first)} | ${med(gaps)}/${p95(gaps)}/${max(gaps)} | ${med(ss.map(s => s.record.delivery?.screenHoldMs))}/${max(ss.map(s => s.record.delivery?.screenHoldMs))} | ${med(fr)}/${p95(fr)}/${max(fr)} | ${count(ss, s => s.record.delivery?.capped)}`);
     for (const s of ss.filter(x => x.read.raisedAfter)) console.log(`    visible ${s.read.visibleMs} ms, ${s.read.visibleAfterReleaseMs} ms after release; gap ${s.record.delivery?.postedAfterHoldStartMs}, hold ${s.record.delivery?.screenHoldMs}, guard ${s.record.delivery?.guardMs}, capped ${s.record.delivery?.capped}, first ${s.first}`);
     const slow = ss.filter(s => (s.record.delivery?.postedAfterHoldStartMs ?? 0) > 100);
     console.log(`    gap > 100 ms: ${slow.length}, visible ${count(slow, s => s.read.raisedAfter)}; longest freeze among them ${max(slow.map(s => s.read.longestFreezeMs))}`);

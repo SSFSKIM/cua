@@ -2,7 +2,9 @@
 # patched engine reads P324_MODE once at start. Each edit is an exact replacement that must match once.
 #
 # Instrumentation, in every mode: JSON lines on stderr, prefixed "P324 ", each with its Unix ms (`t`):
-#   hold / release        SLSDisableUpdate taken / SLSReenableUpdate returned (the display frozen between)
+#   hold / release.call / release   SLSDisableUpdate taken / SLSReenableUpdate called / returned (the display frozen
+#                         from the first to somewhere between the other two)
+#   act.delay             P324_DELAY_MS's injected wait, inside a pointer's hold before its events
 #   act / act.restore / act.end   route 3's activation: its planned click kind and hold class; a restore by its guard; its end
 #   dlv.post / dlv.above / dlv.restore / dlv.reactivate / dlv.end   the delivery guard (#200, #321): its hold class and
 #                         cap, the first sample above, each repair, its end
@@ -22,6 +24,11 @@
 #   ev     #321's hold (a shared pointer whose activation clicked its point): the 200 ms cap counted from the click's
 #          events, not the hold's start; the activation's own timer only past its guard's 1 s timeout
 #   ev300  ev, with a ceiling of 300 ms from the hold's start
+#   caret  press, its steps the other way round: the caret written and read back first, the field's AXPick or AXPress
+#          only if that left it unfocused
+# P324_DELAY_MS=<lo>-<hi> (any mode): a pointer action whose activation leaves its hold open for the delivery (#200) waits
+# a uniform random <lo> to <hi> ms after its activation's guard, its hold still open, before its events: #321's slow
+# activation made on purpose, so the residue's condition comes on every click.
 #   python3 -I patch.py <native/engine/Sources/Engine>
 import sys
 
@@ -46,6 +53,12 @@ import Foundation
 
 // #324's probe instrumentation and modes (scripts/probe-324/patch.py); never on any engine branch.
 let p324Mode: String = ProcessInfo.processInfo.environment["P324_MODE"] ?? "main"
+let p324Delay: (Double, Double)? = {
+  guard let s = ProcessInfo.processInfo.environment["P324_DELAY_MS"] else { return nil }
+  let parts = s.split(separator: "-").compactMap { Double($0) }
+  return parts.count == 2 && parts[0] <= parts[1] ? (parts[0], parts[1]) : nil
+}()
+func p324DelayMs() -> Double { p324Delay.map { Double.random(in: $0.0...$0.1) } ?? 0 }
 
 func p324(_ event: String, _ fields: [String: Any] = [:]) {
   var o = fields
@@ -82,14 +95,15 @@ func p324PressFocus(_ element: AXUIElement, beforeMutating: () throws -> Void) t
   let sleep: (Double) -> Void = { ms in _ = usleep(UInt32(max(0, ms) * 1000)) }
   var steps: [String] = []
   var found = FocusReadback.notReadBack
-  if let action = ["AXPick", "AXPress"].first(where: { actions.contains($0) }) {
+  func press() throws {
+    guard let action = ["AXPick", "AXPress"].first(where: { actions.contains($0) }) else { return }
     try beforeMutating()
     let t0 = monotonicMilliseconds()
     var error = AXError.success
     found = try readingFocus(after: { error = gatedPerform(element, action) }, focused: focused, now: monotonicMilliseconds, sleep: sleep)
     steps.append("\(action) err=\(error.rawValue) \(found.rawValue) \(Int(monotonicMilliseconds() - t0))ms")
   }
-  if found != .readBack {
+  func caret() throws {
     try beforeMutating()
     let t0 = monotonicMilliseconds()
     var error = AXError.success
@@ -97,6 +111,13 @@ func p324PressFocus(_ element: AXUIElement, beforeMutating: () throws -> Void) t
       error = gatedWrite(element, kAXSelectedTextRangeAttribute, axRangeValue(CFRange(location: 0, length: 0)))
     }, focused: focused, now: monotonicMilliseconds, sleep: sleep)
     steps.append("selection err=\(error.rawValue) \(found.rawValue) \(Int(monotonicMilliseconds() - t0))ms")
+  }
+  if p324Mode == "caret" {
+    try caret()
+    if found != .readBack { try press() }
+  } else {
+    try press()
+    if found != .readBack { try caret() }
   }
   p324("pf", ["role": role, "actions": actions.joined(separator: ","), "steps": steps.joined(separator: "; "), "found": found.rawValue])
   if found != .readBack {
@@ -108,7 +129,7 @@ print(f'wrote {root}/P324.swift')
 
 patch('Activation.swift', [
     ("    _ = disableUpdate?(connection)\n    return { _ = reenableUpdate?(connection) }",
-     "    _ = disableUpdate?(connection)\n    p324(\"hold\")\n    return { _ = reenableUpdate?(connection); p324(\"release\") }"),
+     "    _ = disableUpdate?(connection)\n    p324(\"hold\")\n    return { p324(\"release.call\"); _ = reenableUpdate?(connection); p324(\"release\") }"),
     ("    system.schedule(untilOrderReadsBack ? activationPointHoldCapMs : activationHoldCapMs) { release() }\n"
      "    postActivation(planned)\n"
      "    let started = system.now()\n"
@@ -125,6 +146,13 @@ patch('Activation.swift', [
      "    let needed = holdsThroughDelivery ? activationGuardStableSamplesBeforeDelivery : activationGuardStableSamples\n"
      "    var stable = 0\n"
      "    while stable < needed || (p324c && system.now() - started < activationPointGuardMinimumMs) {\n"),
+    ("    if holdsThroughDelivery {\n      keepsHold = true\n",
+     "    if holdsThroughDelivery, p324Delay != nil {\n"
+     "      let p324Wait = p324DelayMs()\n"
+     "      p324(\"act.delay\", [\"ms\": p324Wait])\n"
+     "      system.sleep(p324Wait)\n"
+     "    }\n"
+     "    if holdsThroughDelivery {\n      keepsHold = true\n"),
     ("        stable = 0\n        userWindow.restore()\n",
      "        stable = 0\n        userWindow.restore()\n        p324(\"act.restore\", [\"ms\": system.now() - started])\n"),
     ("      system.schedule(opened.capMs) { release() }",

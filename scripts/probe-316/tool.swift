@@ -111,6 +111,7 @@ func outsideWebArea(_ window: AXUIElement, cap: Int = 700) -> (text: [[String: A
   return (text, overlays, queue.count)
 }
 
+var rememberedArea: [pid_t: AXUIElement?] = [:]
 func signals(_ q: [String: Any]) -> [String: Any] {
   let t0 = nowMs()
   guard let pid = (q["pid"] as? NSNumber)?.int32Value, let x = (q["x"] as? NSNumber)?.doubleValue, let y = (q["y"] as? NSNumber)?.doubleValue else { return ["error": "args"] }
@@ -164,7 +165,16 @@ func signals(_ q: [String: Any]) -> [String: Any] {
   var hit: AXUIElement?
   if AXUIElementCopyElementAtPosition(app, Float(x), Float(y), &hit) == .success, let h = hit {
     let c = chain(prepare(h))
-    out["hit"] = ["chain": chainWire(c), "inWebArea": c.contains { role($0) == "AXWebArea" }, "pid": pidOf(h)]
+    var d: [String: Any] = ["chain": chainWire(c), "inWebArea": c.contains { role($0) == "AXWebArea" }, "pid": pidOf(h)]
+    // The hit's nearest web area, remembered at the screenshot (`remember`) and compared at the click (`compare`):
+    // whether the click's hit lies in the same web area (CFEqual) as the screenshot's hit at the point did.
+    let area = c.first { role($0) == "AXWebArea" }
+    if (q["remember"] as? Bool) == true { rememberedArea[pid] = area }
+    if (q["compare"] as? Bool) == true {
+      if let old = rememberedArea[pid] ?? nil, let area { d["sameWebAreaAsShot"] = CFEqual(old, area); d["shotAreaFrame"] = wire(frameOf(old)) }
+      else { d["sameWebAreaAsShot"] = NSNull() }
+    }
+    out["hit"] = d
   } else { out["hit"] = NSNull() }
   let system = prepare(AXUIElementCreateSystemWide())
   var sys: AXUIElement?

@@ -42,7 +42,22 @@ const DETECTORS = {
   // The system-wide hit at the point belongs to another process, or lies outside the web area.
   systemHitOther: r => r.signals?.systemHit != null && r.signals.systemHit.pid !== r.signals?.hit?.pid,
   systemHitOutsideWeb: r => isPage(r) && r.signals?.systemHit != null && r.signals.systemHit.inWebArea === false,
+  // Run 2 (the signals read at the screenshot too): a window of the app's own above the screenshot's window that the
+  // window list did not hold at the screenshot (any layer; layer 0 only).
+  newSameAppWindow: r => newAbove(r).length > 0,
+  newSameAppWindowL0: r => newAbove(r).some(w => w.layer === 0),
+  // The hit lies outside every web area, or in another web area than the screenshot's hit at the point (CFEqual).
+  hitLeftWebArea: r => isPage(r) && r.signals?.hit != null && (r.signals.hit.inWebArea === false || r.signals.hit.sameWebAreaAsShot === false),
+  // The proposal: the new window, or the hit outside the screenshot's web area.
+  proposal: r => newAbove(r).some(w => w.layer === 0) || (isPage(r) && r.signals?.hit != null && (r.signals.hit.inWebArea === false || r.signals.hit.sameWebAreaAsShot === false)),
 };
+/// The app's windows above the target window at the click that the screenshot's (or re-observation's) list lacked.
+function newAbove(r) {
+  const shot = r.atReobs ?? r.atShot;
+  if (!shot) return [];
+  const had = new Set((shot.appWindowsCG ?? []).map(w => w.n));
+  return (r.signals?.sameAppAbove ?? []).filter(w => !had.has(w.n));
+}
 
 const key = r => `${r.app} | ${r.variant} | ${r.seq}`;
 const groups = new Map();
@@ -73,6 +88,17 @@ for (const r of rows) {
 console.log('\n| detector | false refusals (of clicks that landed) | true catches (of wrong clicks the engine kept) | missed |');
 console.log('|---|---|---|---|');
 for (const n of names) { const t = tally[n]; console.log(`| ${n} | ${t.falseRefusal} / ${t.landed} | ${t.trueCatch} / ${t.wrong} | ${t.missed} |`); }
+// The same per app: false refusals / landed, true catches / wrong.
+const apps = [...new Set(rows.map(r => r.app))];
+console.log(`\n| detector | ${apps.join(' | ')} |\n|---|${apps.map(() => '---').join('|')}|`);
+for (const n of names) {
+  const cells = apps.map(a => {
+    const rs = rows.filter(r => r.app === a);
+    const landed = rs.filter(r => outcome(r) === 'landed'), wrong = rs.filter(r => outcome(r) === 'wrong');
+    return `${landed.filter(DETECTORS[n]).length}/${landed.length} false, ${wrong.filter(DETECTORS[n]).length}/${wrong.length} caught`;
+  });
+  console.log(`| ${n} | ${cells.join(' | ')} |`);
+}
 
 // Per detector, where it fires falsely and what it misses.
 for (const n of names) {

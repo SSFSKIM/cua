@@ -68,7 +68,7 @@ const items = (n, id, label, role) => Array.from({length: n}, (_, i) => `<a id="
 const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe316 page</title>
 <style>body{font:15px -apple-system,Helvetica,sans-serif;margin:0} .a{position:absolute;left:16px} .drop{position:absolute;left:16px;display:none;background:#fff;border:1px solid #888;z-index:5;box-shadow:0 2px 6px #0004}</style></head>
 <body id="page"><div id="wrap" style="position:relative;height:560px">
-<h3 class="a" style="top:2px;margin:0">probe316 page</h3>
+<h3 class="a" style="top:2px;margin:0">probe316 page</h3><a id="nav" href="/results" style="position:absolute;left:300px;top:6px">Results page</a>
 <form id="nf" class="a" style="top:36px" onsubmit="event.preventDefault()"><input id="name" aria-label="Your name" placeholder="Your name" size="22"> <button id="save" type="submit">Save</button></form>
 <form id="sf" class="a" style="top:74px" action="/results"><input id="q" name="q" aria-label="Search" placeholder="Search" autocomplete="off" size="22"> <button id="go" type="submit">Go</button></form>
 <div id="sugg" class="drop" role="listbox" aria-label="Suggestions" style="top:100px;width:300px">${items(6, 's', 'Suggestion', 'option')}</div>
@@ -234,6 +234,7 @@ async function runSteps(w, pid, sky, steps, ctx, row) {
     if (kind === 'reobserve') {
       const again = await observe(w, pid, `${row.label}-reobs`);
       row.reobs = ctx.reobserved(again);
+      if (ctx.signalsAt) row.atReobs = await ctx.signalsAt(again);
       sky = again;
       rec.ok = true;
       await sleep(300);
@@ -246,7 +247,7 @@ async function runSteps(w, pid, sky, steps, ctx, row) {
       if (!p) { rec.problem = 'no point'; row.problem = `setup: no point for ${step}`; return null; }
       const {px} = toPixels(sky, p);
       r = await w.execute('click', {pid, x: px.x, y: px.y});
-    } else if (kind === 'type') r = await w.execute('type_text', {pid, text: value});
+    } else if (kind === 'type') r = await w.execute('type_text', {pid, text: value.replace(/^URL\//, URL_)});
     else if (kind === 'key') r = await w.execute('press_key', {pid, key: value});
     rec.answer = brief(r);
     await sleep(STEP_MS);
@@ -273,6 +274,9 @@ const BSEQ = {
   cmdLesc: ['key:cmd+l', 'key:Escape'],
   cmdLtype: ['key:cmd+l', 'type:probe'],
   cmdLreobs: ['key:cmd+l', 'reobserve'],
+  // Run 2: a navigation with no key (a link), and one through the address field.
+  linkNav: ['click:nav'],
+  cmdLnav: ['key:cmd+l', 'type:URL/results', 'key:Return'],
 };
 const BNODES = {
   name: [['AXTextField'], 'Your name'],
@@ -283,24 +287,25 @@ const BNODES = {
   checkbox: [['AXCheckBox'], 'Option'],
   link: [['AXLink'], 'Link one'],
   textarea: [['AXTextArea'], 'Notes'],
+  nav: [['AXLink'], 'Results page'],
 };
-const BIDS = {button: ['b2'], checkbox: ['opt', 'optl'], link: ['l1'], textarea: ['notes'], name: ['name'], q: ['q'], mb: ['mb'], sel: ['sel']};
+const BIDS = {button: ['b2'], checkbox: ['opt', 'optl'], link: ['l1'], textarea: ['notes'], nav: ['nav'], name: ['name'], q: ['q'], mb: ['mb'], sel: ['sel']};
 const BTARGETS = ['button', 'checkbox', 'link', 'textarea'];
 const ALL = Object.keys(BSEQ);
 const CMDL = ['none', 'F19', 'cmdL', 'cmdLesc', 'cmdLtype', 'cmdLreobs'];
 const BVARIANTS = {
   safari: [
     {name: 'shared-front', mode: 'shared', front: true, seqs: ALL},
-    {name: 'shared-behind', mode: 'shared', front: false, seqs: [...CMDL, 'type', 'typeEnter', 'escMenu', 'cmdA']},
-    {name: 'dedicated-front', mode: 'dedicated', front: true, seqs: [...CMDL, 'typeEnter', 'escMenu', 'cmdA', 'suggest']},
+    {name: 'shared-behind', mode: 'shared', front: false, seqs: [...CMDL, 'type', 'typeEnter', 'escMenu', 'cmdA', 'linkNav', 'cmdLnav']},
+    {name: 'dedicated-front', mode: 'dedicated', front: true, seqs: [...CMDL, 'typeEnter', 'escMenu', 'cmdA', 'suggest', 'linkNav', 'cmdLnav']},
   ],
   cft: [
     {name: 'shared-front', mode: 'shared', front: true, seqs: ALL},
     {name: 'dedicated-front', mode: 'dedicated', front: true, seqs: ALL},
   ],
   stable: [
-    {name: 'shared-front', mode: 'shared', front: true, seqs: [...CMDL, 'typeEnter', 'escMenu']},
-    {name: 'dedicated-front', mode: 'dedicated', front: true, seqs: [...CMDL, 'typeEnter', 'escMenu']},
+    {name: 'shared-front', mode: 'shared', front: true, seqs: [...CMDL, 'typeEnter', 'escMenu', 'linkNav', 'cmdLnav']},
+    {name: 'dedicated-front', mode: 'dedicated', front: true, seqs: [...CMDL, 'typeEnter', 'escMenu', 'linkNav', 'cmdLnav']},
   ],
   firefox: [
     {name: 'shared-front', mode: 'shared', front: true, seqs: ALL},
@@ -402,6 +407,8 @@ async function runBrowser(kind) {
       row.screenshot = sky.screenshot?.url?.replace(/^.*\/shots\//, '');
       const tnode = findNode(sky, ...BNODES[target]);
       if (!tnode) { row.problem = `no ${target} node`; row.roles = sky.nodes.filter(n => /AX(Button|CheckBox|Link|TextArea|TextField)/.test(n.role)).map(n => `${n.role}:${label(n)}`).slice(0, 40); continue; }
+      row.targetNode = {role: tnode.role, frame: tnode.frame};
+      row.atShot = await ask({op: 'signals', pid: b.pid, remember: true, ...centre(tnode), window: [sky.window.frame.x, sky.window.frame.y, sky.window.frame.width, sky.window.frame.height]});
       const c = ctx(sky);
       c.reobserved = again => {
         const n = findNode(again, ...BNODES[target]);
@@ -413,13 +420,14 @@ async function runBrowser(kind) {
           focused: again.nodes.find(x => x.token === again.focused) ? (({role, description, identifier}) => ({role, description, identifier}))(again.nodes.find(x => x.token === again.focused)) : again.focused ?? null,
           webArea: again.nodes.find(x => x.role === 'AXWebArea')?.frame ?? null};
       };
+      c.signalsAt = async again => { const n = findNode(again, ...BNODES[target]); const f = again.window.frame; return n ? ask({op: 'signals', pid: b.pid, remember: true, ...centre(n), window: [f.x, f.y, f.width, f.height]}) : null; };
       const used = await runSteps(w, b.pid, sky, BSEQ[seq], c, row);
       if (!used) continue;
       const node = used === sky ? tnode : findNode(used, ...BNODES[target]);
       if (!node) { row.problem = 're-observation shows no target'; row.skippedClick = true; continue; }
       const {px, screen} = toPixels(used, centre(node));
       row.point = {px, screen};
-      row.signals = await ask({op: 'signals', pid: b.pid, x: screen.x, y: screen.y, window: [used.window.frame.x, used.window.frame.y, used.window.frame.width, used.window.frame.height]});
+      row.signals = await ask({op: 'signals', pid: b.pid, compare: true, x: screen.x, y: screen.y, window: [used.window.frame.x, used.window.frame.y, used.window.frame.width, used.window.frame.height]});
       sh('screencapture', ['-x', '-t', 'jpg', join(OUT, 'screens', `${fileName(lab)}.jpg`)]);
       const mark = events.length, loadBefore = lastLoad();
       const t0 = Date.now();
@@ -503,6 +511,7 @@ async function runTextEdit() {
       let tpoint;
       if (target === 'bold') { const n = findBold(sky); if (!n) { row.problem = 'no Bold control'; row.roles = sky.nodes.filter(n => n.frame && n.frame.y < sky.window.frame.y + 90).map(n => `${n.role}:${label(n)}`).slice(0, 40); continue; } tpoint = centre(n); row.boldNode = {role: n.role, label: label(n), frame: n.frame}; }
       else { const tp = await ask({op: 'textpoint', pid: p, phrase: target.slice(5), after: 2}); if (tp.error) { row.problem = `textpoint ${tp.error}`; continue; } tpoint = {x: tp.x, y: tp.y}; }
+      row.atShot = await ask({op: 'signals', pid: p, ...tpoint, window: [sky.window.frame.x, sky.window.frame.y, sky.window.frame.width, sky.window.frame.height]});
       const c = {
         point: async step => {
           if (step === 'click:popup') { const n = findPopup(sky); return n ? centre(n) : null; }
@@ -604,6 +613,7 @@ async function runFinder() {
       r0.window = sky.window?.frame;
       const tpoint = pointOf(sky, target);
       if (!tpoint) { r0.problem = `no ${target} node`; r0.roles = sky.nodes.filter(n => n.frame).map(n => `${n.role}:${label(n)}:${n.value ?? ''}`).slice(0, 60); continue; }
+      r0.atShot = await ask({op: 'signals', pid: p, ...tpoint, window: [sky.window.frame.x, sky.window.frame.y, sky.window.frame.width, sky.window.frame.height]});
       const c = {
         point: async step => pointOf(sky, step.split(':').slice(1).join(':')),
         setup: async step => {

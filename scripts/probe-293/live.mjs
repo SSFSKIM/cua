@@ -204,7 +204,7 @@ const recordOf = dir => {
 async function stop(chrome) {
   if (chrome && chrome.exitCode === null) { chrome.kill('SIGTERM'); await sleep(2000); if (chrome.exitCode === null) chrome.kill('SIGKILL'); }
 }
-const watch = (pid, P, pollMs, sampleMs = 20) => ax(['watch', String(pid), JSON.stringify({pollMs, sampleMs, cb: P.cb, tf: P.tf})], pollMs + 30_000);
+const watch = (pid, P, pollMs, sampleMs = 20, euiOnly = false) => ax(['watch', String(pid), JSON.stringify({pollMs, sampleMs, euiOnly, cb: P.cb, tf: P.tf})], pollMs + 30_000);
 const geom = (pid, label) => ax(['geom', String(pid), JSON.stringify({phases: [{label, before: [], waitMs: 0}]})]);
 const geomLine = g => { const p = g?.phases?.[0]; return p ? ['move', 'resize', 'moveBack', 'resizeBack'].map(k => p[k] ? `${p[k].distinctFrames}f/${p[k].settledMs}ms` : '-').join(' ') : String(JSON.stringify(g) ?? '-').slice(0, 200); };
 // When a watch's samples first showed a state, relative to `from` (epoch ms).
@@ -302,7 +302,10 @@ async function sigkillCell(spec, pid, P, row, track) {
   row.geomAfterKill = await geom(pid, 'afterKill');
   row.recordAfterKill = recordOf(dir);
   // B, with the sampler already running, so the restore's write lands inside its window.
+  // Two samplers from before B's spawn: the full one (AXPress, the character box) and an attribute-only one every
+  // 2 ms, which brackets EUI's flip against B's listen.
   const watching = watch(pid, P, 3000);
+  const watchingFast = watch(pid, P, 2000, 2, true);
   await sleep(600);
   const b = await startEngine(spec.e, spec.label, dir);
   track(b);
@@ -311,6 +314,17 @@ async function sigkillCell(spec, pid, P, row, track) {
   row.pingB = (await b.wire.call('ping', {clientApiVersion: 'cua-engine-1'})).result ?? null;
   row.bAnsweredMs = Date.now() - b.spawnedAt;
   row.watchAtStart = await watching;
+  row.watchFastAtStart = await watchingFast;
+  // From B's spawn: the end of the last read answering true, and the start and end of the first answering false. A
+  // false answer that ended by B's listen shows EUI false before the socket answered; a true read begun after it the
+  // reverse.
+  { const w = row.watchFastAtStart, ch = w?.changes ?? [], at = v => (w?.t0 != null && v != null ? Math.round((w.t0 + v - b.spawnedAt) * 10) / 10 : null);
+    const f = ch.find(x => x.eui === false);
+    row.euiFastFlip = f ? {lastTrueEndMs: at(f.prevEndT), firstFalseStartMs: at(f.euiT), firstFalseEndMs: at(f.euiEndT), lastTrueStartMs: at(f.prevT)} : null;
+    row.fastSamples = w?.samples ?? null;
+    row.fastStartMs = w?.t0 != null ? Math.round(w.t0 - b.spawnedAt) : null;
+    row.euiFalseByListenFast = f ? at(f.euiEndT) <= row.bListeningMs : false;
+    row.euiTrueReadAfterListenFast = f ? (at(f.prevT) ?? -Infinity) >= row.bListeningMs : ch.at(-1)?.eui === true; }
   row.euiFalseMs = firstAt(row.watchAtStart, c => c.eui === false, b.spawnedAt);
   // The flip's bracket, from B's spawn: the last sample still reading true, and the first reading false.
   { const c = row.watchAtStart?.changes?.find(x => x.eui === false), w = row.watchAtStart;
@@ -459,7 +473,7 @@ function summary(r) {
   const obs = r.observation ? `obs ${JSON.stringify(r.observation)}` : '';
   const files = rec => rec ? `[${rec.files.map(f => f.name).join(' ')}]` : '-';
   if (r.watchAtStart) return `${obs} record ${files(r.recordBeforeKill)} killed exit=${JSON.stringify(r.exitA)} afterKill ${changesLine(r.watchAfterKill)} geom[${geomLine(r.geomAfterKill)}] `
-    + `| B listening@${r.bListeningMs} answered@${r.bAnsweredMs} sampler@${r.samplerStartMs} flip ${JSON.stringify(r.euiFlip)} atStart ${changesLine(r.watchAtStart)} euiFalse@${r.euiFalseMs} pressLost@${r.pressLostMs} record ${files(r.recordAfterStart)} geom[${geomLine(r.geomAfterStart)}] `
+    + `| B listening@${r.bListeningMs} answered@${r.bAnsweredMs} sampler@${r.samplerStartMs} flip ${JSON.stringify(r.euiFlip)} fast ${JSON.stringify(r.euiFastFlip)} atStart ${changesLine(r.watchAtStart)} euiFalse@${r.euiFalseMs} pressLost@${r.pressLostMs} record ${files(r.recordAfterStart)} geom[${geomLine(r.geomAfterStart)}] `
     + `| B obs ${JSON.stringify(r.observationB)} record ${files(r.recordWhileBOwns)} shutdown euiFalse@${r.shutdownEuiFalseMs} record ${files(r.recordAfterShutdown)} ${tail}`;
   if (r.watchAfter) return `${obs} before ${changesLine(r.watchBefore)} after ${changesLine(r.watchAfter)} pressLost@${r.releasedPressLostMs} euiFalse@${r.releasedEuiFalseMs} exit=${r.engineExit ?? ''} geom before[${geomLine(r.geomBefore)}] after[${geomLine(r.geomAfter)}] ${tail}`;
   if (r.kind === 'grace' || r.observedAt) return `${obs} reobs ${JSON.stringify(r.reobservation ?? null)} press@${r.pressFirstMs} released@${r.releasedMs} (after reobs ${r.releasedAfterReobsMs}) eui@release ${r.euiAtRelease} changes ${changesLine(r.watch)} ${tail}`;

@@ -323,12 +323,23 @@ case "watch":
   let pollMs = (spec["pollMs"] as? NSNumber)?.doubleValue ?? 1500, sampleMs = (spec["sampleMs"] as? NSNumber)?.doubleValue ?? 20
   let cb = spec["cb"] as? [String: Any] ?? [:], tf = spec["tf"] as? [String: Any] ?? [:]
   let k = Int(num(tf, "k"))
+  // #293: euiOnly reads only the attribute (no hit tests), so its samples are a few ms apart.
+  let euiOnly = (spec["euiOnly"] as? Bool) ?? false
   let t0 = nowMs()
-  var changes: [[String: Any]] = [], last = "", samples = 0, prevT: Double? = nil
+  var changes: [[String: Any]] = [], last = "", samples = 0, prevT: Double? = nil, prevEndT: Double? = nil
   while nowMs() - t0 <= pollMs {
     let st = nowMs()
     let (e, ee) = copy(app, "AXEnhancedUserInterface")
     let eui: Any = e != nil ? boolValue(e) : "error \(ee)"
+    let euiEnd = nowMs()
+    if euiOnly {
+      samples += 1
+      let key = "\(eui)"
+      if key != last { changes.append(["t": r1(euiEnd - t0), "euiT": r1(st - t0), "euiEndT": r1(euiEnd - t0), "prevT": prevT ?? NSNull(), "prevEndT": prevEndT ?? NSNull(), "eui": eui]); last = key }
+      prevT = r1(st - t0); prevEndT = r1(euiEnd - t0)
+      pause(max(1, sampleMs - (nowMs() - st)))
+      continue
+    }
     let cbHit = hitTest(app, num(cb, "x"), num(cb, "y")).0
     let press = (cbHit.flatMap(actions) ?? []).contains("AXPress")
     var box = "none"
@@ -341,11 +352,11 @@ case "watch":
     // #293: each change also carries the previous sample's time (when the old state was last seen) and the EUI read's
     // own time, so a flip is bracketed.
     let tt = r1(nowMs() - t0)
-    if key != last { changes.append(["t": tt, "euiT": r1(st - t0), "prevT": prevT ?? NSNull(), "eui": eui, "press": press, "box": box]); last = key }
-    prevT = r1(st - t0)
+    if key != last { changes.append(["t": tt, "euiT": r1(st - t0), "euiEndT": r1(euiEnd - t0), "prevT": prevT ?? NSNull(), "prevEndT": prevEndT ?? NSNull(), "eui": eui, "press": press, "box": box]); last = key }
+    prevT = r1(st - t0); prevEndT = r1(euiEnd - t0)
     pause(max(1, sampleMs - (nowMs() - st)))
   }
-  emit(["t0": t0, "samples": samples, "changes": changes, "lastT": prevT ?? NSNull()])
+  emit(["t0": t0, "samples": samples, "changes": changes, "lastT": prevT ?? NSNull(), "lastEndT": prevEndT ?? NSNull()])
 
 case "tbtimeline":
   // Round 2: one sample before the role read, then the role read, then every 5 ms for 600 ms: the page point's and the

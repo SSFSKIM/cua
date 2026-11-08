@@ -25,9 +25,10 @@ pub const PATH_STEP: Duration = Duration::from_millis(8);
 
 /// Whether a path pauses before its point `i` (> 0): not after a leading motion at the pointer's own position
 /// (`pointer`, where the path began), which moves nothing, so no two positions are closer in time than the step, and a
-/// one-step move answers at once as the newest build's does (M4's T9, closing M1a's declared gap).
-pub fn paused_before(points: &[(i16, i16)], pointer: (i16, i16), i: usize) -> bool {
-    !(i == 1 && points.first() == Some(&pointer))
+/// one-step move answers at once as the newest build's does (M4's T9, closing M1a's declared gap); unless `lead_pause`
+/// keeps that pause too (a Gecko held move, `DragPacing::held_lead_pause`).
+pub fn paused_before(points: &[(i16, i16)], pointer: (i16, i16), i: usize, lead_pause: bool) -> bool {
+    lead_pause || !(i == 1 && points.first() == Some(&pointer))
 }
 
 /// The points a desktop move visits from `start` to `end` (behaviour §10.2): none to interpolate when already there
@@ -162,16 +163,17 @@ impl Desktop {
     /// `move_path`: from wherever the pointer is to the point, through [`path_points`], with the path's step
     /// ([`PATH_STEP`]) between points.
     pub fn move_path(&self, x: &X11, rx: i16, ry: i16) -> Result<()> {
-        Self::move_path_paced(x, rx, ry, self.path_step)
+        Self::move_path_paced(x, rx, ry, self.path_step, false)
     }
 
-    /// [`Desktop::move_path`]'s points with `step` between them: a held `drag_handle` move, paced by its family.
-    pub fn move_path_paced(x: &X11, rx: i16, ry: i16, step: Duration) -> Result<()> {
+    /// [`Desktop::move_path`]'s points with `step` between them: a held `drag_handle` move, paced by its family;
+    /// `lead_pause` keeps the step after the leading motion too ([`paused_before`]).
+    pub fn move_path_paced(x: &X11, rx: i16, ry: i16, step: Duration, lead_pause: bool) -> Result<()> {
         let pointer = x.conn.query_pointer(x.root)?.reply()?;
         let start = (pointer.root_x, pointer.root_y);
         let points = path_points(start, (rx, ry));
         for (i, &(px, py)) in points.iter().enumerate() {
-            if i > 0 && !step.is_zero() && paused_before(&points, start, i) {
+            if i > 0 && !step.is_zero() && paused_before(&points, start, i, lead_pause) {
                 std::thread::sleep(step);
             }
             Self::motion(x, px, py)?;
@@ -210,7 +212,9 @@ mod tests {
     fn a_path_pauses_between_two_positions_but_not_after_the_motion_at_the_pointer_s_own_position() {
         let start = (640, 400);
         let points = path_points(start, (1260, 790));
-        let paused: Vec<bool> = (1..points.len()).map(|i| paused_before(&points, start, i)).collect();
+        let paused: Vec<bool> = (1..points.len())
+            .map(|i| paused_before(&points, start, i, false))
+            .collect();
         assert_eq!(
             paused,
             [false, true, true, true, true, true, true, true, true, true],
@@ -218,9 +222,13 @@ mod tests {
         );
         // a short move: the leading motion, then the point, at once (the newest build's one motion and no pause)
         let short = path_points((300, 300), (310, 300));
-        assert!(!paused_before(&short, (300, 300), 1));
+        assert!(!paused_before(&short, (300, 300), 1, false));
+        assert!(
+            paused_before(&short, (300, 300), 1, true),
+            "kept where a held move asks for it"
+        );
         // the leading motion counts as the pointer's own position only when it is
-        assert!(paused_before(&[(0, 0), (5, 5)], (9, 9), 1));
+        assert!(paused_before(&[(0, 0), (5, 5)], (9, 9), 1, false));
     }
 
     #[test]

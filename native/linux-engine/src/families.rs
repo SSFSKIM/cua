@@ -18,6 +18,11 @@ pub struct DragPacing {
     pub step: Duration,
     pub press: Duration,
     pub release: Duration,
+    /// Whether a held `drag_handle` move pauses its step after its leading motion, the one at the pointer's own
+    /// position, as every move did before M4's T9. T9 dropped that pause from the desktop path, and Chromium's held
+    /// moves were measured without it; Gecko keeps it until the drag tasks (T10 to T16) measure Firefox's held moves
+    /// without it (the design session, 2026-11-07).
+    pub held_lead_pause: bool,
 }
 
 impl DragPacing {
@@ -26,6 +31,7 @@ impl DragPacing {
         step: Duration::ZERO,
         press: Duration::ZERO,
         release: Duration::ZERO,
+        held_lead_pause: false,
     };
 }
 
@@ -181,6 +187,7 @@ pub const FAMILIES: &[Family] = &[
             step: Duration::from_micros(500),
             press: Duration::ZERO,
             release: Duration::ZERO,
+            held_lead_pause: false,
         },
         paste: DEFAULT_PASTE,
         ignores: &[Ignored {
@@ -206,6 +213,7 @@ pub const FAMILIES: &[Family] = &[
             step: Duration::from_micros(500),
             press: Duration::ZERO,
             release: Duration::ZERO,
+            held_lead_pause: false,
         },
         paste: DEFAULT_PASTE,
         ignores: &[Ignored {
@@ -237,6 +245,7 @@ pub const FAMILIES: &[Family] = &[
             step: Duration::from_micros(300),
             press: Duration::ZERO,
             release: Duration::from_millis(30),
+            held_lead_pause: true,
         },
         paste: DEFAULT_PASTE,
         ignores: &[
@@ -489,6 +498,7 @@ mod tests {
         step: Duration::from_micros(500),
         press: Duration::ZERO,
         release: Duration::ZERO,
+        held_lead_pause: false,
     };
     const TABLE: &[Family] = &[
         Family {

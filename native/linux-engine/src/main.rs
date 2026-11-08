@@ -444,6 +444,7 @@ mod tests {
                 step: Duration::ZERO,
                 press: Duration::from_millis(30),
                 release: Duration::from_millis(20),
+                held_lead_pause: false,
             })
         );
     }

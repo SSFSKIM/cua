@@ -924,7 +924,7 @@ impl Engine {
                         self.handle_pacing.start(pacing)
                     }
                 };
-                Desktop::move_path_paced(&self.x, px, py, pacing.step)?;
+                Desktop::move_path_paced(&self.x, px, py, pacing.step, pacing.held_lead_pause)?;
             }
             DragHandleInput::End => self.end_drag_handle()?,
         }
@@ -1014,6 +1014,7 @@ mod tests {
             step: Duration::from_micros(300),
             press: Duration::ZERO,
             release: Duration::from_millis(30),
+            held_lead_pause: true,
         };
         let mut handle = HandlePacing::default();
         assert_eq!(handle.current(), None, "no handle yet: the move looks its window up");
@@ -1029,6 +1030,44 @@ mod tests {
             handle.end(),
             DragPacing::NONE,
             "an end without a start waits for nothing"
+        );
+    }
+
+    /// T9's review: a held `drag_handle` move shares the desktop path's code, and T9 dropped the pause after its leading
+    /// motion. Chromium's held moves were measured without it (the settle experiment's `drag_handle` cells on Chrome and
+    /// Electron); Gecko's were not, so Gecko keeps its step there until the drag tasks measure Firefox's held moves (the
+    /// design session, 2026-11-07).
+    #[test]
+    fn a_gecko_held_move_keeps_its_pause_after_the_leading_motion_and_a_chromium_one_does_not() {
+        use crate::desktop::{path_points, paused_before};
+        use crate::families::{FAMILIES, Toolkit, family};
+        let drag = |class: &str, toolkit: &str| {
+            let toolkit = Toolkit {
+                name: toolkit.into(),
+                version: None,
+            };
+            family(FAMILIES, Some(class), Some(&toolkit)).expect(class).drag
+        };
+        let start = (300, 300);
+        let points = path_points(start, (700, 500));
+        let pauses = |pacing: DragPacing| -> Vec<bool> {
+            (1..points.len())
+                .map(|i| paused_before(&points, start, i, pacing.held_lead_pause))
+                .collect()
+        };
+        let gecko = pauses(drag("firefox", "Gecko"));
+        assert!(
+            gecko.iter().all(|&p| p),
+            "Gecko pauses before every point but the first: {gecko:?}"
+        );
+        for class in ["Google-chrome", "Electron"] {
+            let chromium = pauses(drag(class, "Chromium"));
+            assert!(!chromium[0], "{class}: no pause after the leading motion");
+            assert!(chromium[1..].iter().all(|&p| p), "{class}: {chromium:?}");
+        }
+        assert!(
+            !pauses(DragPacing::NONE)[0],
+            "an unlisted family pauses nowhere after it (nor does the desktop path)"
         );
     }
 

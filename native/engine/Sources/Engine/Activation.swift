@@ -510,11 +510,16 @@ final class FakeActivation {
   /// `activationPointGuardMinimumMs` after the events and ends on its stable samples as ever, and the hold is released
   /// then, or at `activationPointHoldCapMs` by the timer whatever the order. Every other delivery is as before. Each
   /// records what its samples saw of a reorder (`transientRaise`).
+  ///
+  /// `ranBy` is the activation the calling action made (nil when it made none): the hold this activation's guard left
+  /// open is its own action's alone, cap and least wait included, so an action of another connection sharing the
+  /// activation before that action's events (a paste joining a pointer's, or the other way round) takes a hold of its
+  /// own under its own classification, never the pending one (#321's review).
   func deliver(window: CGWindowID? = nil, watches: AfterActionWatches? = nil, repairWindow: RepairWindow? = nil, pointer: Bool = false,
-               _ post: () -> Void) -> DeliveryGuardOutcome? {
+               ranBy action: FakeActivation?, _ post: () -> Void) -> DeliveryGuardOutcome? {
     let system = system
     let hold: OpenHold
-    if let open = takeOpenHold() {
+    if action === self, let open = takeOpenHold() {
       hold = open
     } else {
       guard activated, let user = system.frontmost(), user != pid, user != appPid else {

@@ -948,7 +948,7 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(subject.clickKind, .activationPoint)
     var raised = false
     paste.onFrontmostRead = { if raised, paste.clock < 165 { paste.targetAbove = true } }
-    let delivery = try XCTUnwrap(subject.deliver(window: 41) { raised = true })
+    let delivery = try XCTUnwrap(subject.deliver(window: 41, ranBy: subject) { raised = true })
     XCTAssertEqual(paste.releasedAt, activationHoldCapMs, "the paste's: main's cap")
     XCTAssertTrue(delivery.capped)
   }
@@ -965,7 +965,7 @@ final class ClickDeliveryTests: XCTestCase {
       XCTAssertEqual(seam.releasedAt, 30)
       var raised = false
       seam.onFrontmostRead = { if raised, seam.clock < 185 { seam.targetAbove = true } }
-      let delivery = try XCTUnwrap(subject.deliver(window: 41, pointer: pointer) { raised = true })
+      let delivery = try XCTUnwrap(subject.deliver(window: 41, pointer: pointer, ranBy: nil) { raised = true })
       XCTAssertEqual(seam.holds, 2)
       XCTAssertEqual(seam.heldAt, 30)
       if pointer {
@@ -984,9 +984,39 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(held.clickKind, .inertOutside(.activationPoint, .early))
     var raised = false
     chrome.onFrontmostRead = { if raised, chrome.clock < 185 { chrome.targetAbove = true } }
-    let delivery = try XCTUnwrap(held.deliver(window: 41, pointer: true) { raised = true })
+    let delivery = try XCTUnwrap(held.deliver(window: 41, pointer: true, ranBy: nil) { raised = true })
     XCTAssertEqual(chrome.releasedAt, 30 + activationHoldCapMs)
     XCTAssertTrue(delivery.capped)
+  }
+
+  /// #321's review: a pointer of another connection that shares a paste's activation before the paste's events never
+  /// takes the paste's pending hold (main's cap): it takes its own, held until the order reads back under its own 200 ms
+  /// cap, and the paste's pending hold is left for the paste.
+  func testAPointerSharingAPastesPendingHoldTakesItsOwnUnderItsOwnCap() throws {
+    let seam = GuardSeam(frontmost: user)
+    let registry = HeldActivations()
+    let paste = activation(seam, at: insidePoint)
+    paste.holdsThroughDelivery = true
+    var pasteMeta = meta()
+    let pasteRelease = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), beforeActivating: {}, make: { paste },
+                                            meta: &pasteMeta)
+    XCTAssertEqual(paste.clickKind, .activationPoint)
+    XCTAssertEqual(seam.holds - seam.releases, 1, "the paste's hold pending")
+    reordering(seam, until: 165)
+    let connection = ConnectionState(id: 2, fd: -1)
+    var meta = InputMeta(ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: freshActivation(seam), activations: registry,
+                     targetActive: { false }, post: seam.system.post, meta: &meta)
+    XCTAssertEqual(meta.activationJoin, .shared)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(seam.holds, 2, "the pointer's own hold beside the paste's")
+    XCTAssertEqual(seam.heldAt, 10)
+    XCTAssertFalse(delivery.capped, "its own 200 ms cap: read back at 170, released at 190")
+    XCTAssertEqual(delivery.screenHoldMs, 180)
+    let pasted = try XCTUnwrap(paste.deliver(window: 41, ranBy: paste) {})
+    XCTAssertEqual(seam.holds, 2, "the paste took its own pending hold")
+    XCTAssertTrue(pasted.capped, "released by its 100 ms timer while the pointer's guard ran")
+    _ = pasteRelease()
   }
 
   /// Dedicated mode is unchanged: no delivery guard and no hold through the click, whatever the activation clicked.

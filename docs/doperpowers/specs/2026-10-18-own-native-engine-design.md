@@ -3159,6 +3159,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        window above the user's; `ms`, from that sample to the one that read the order back after the last that saw
        it (to the guard's end when none did); `outlivedHold`, whether the order had not read back by the hold's
        release. `raiseLeft` stays as it is: what the guard's last sample saw.
+     - **The hold is its own action's** (the review of 602b7093..6c96be25, one P2). An activation's guard leaves its
+       hold open for the delivery of the action that ran it, and another connection's action may share the activation
+       before that delivery: a pointer joining a paste's activation would have taken the paste's pending hold with its
+       100 ms cap, and a paste joining a pointer's the 200 ms one. Only the action that ran the activation takes its
+       pending hold (`deliver(ranBy:)`); any other takes a hold of its own, classified as above.
   4. **The cost:** about 200 ms of frozen screen per such click, against 100 before, and it is person-visible. The
      click's answer waits for the guard as before, so it comes about 100 ms later too.
   5. **The limits: invisible, not absent.** The target still orders its window above the person's; the guard repairs
@@ -3168,7 +3173,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   6. **Dedicated mode is unchanged:** no delivery guard and no hold through the click, so the target's window rises
      above the person's and stays there (60 of 60), as #282 ruled for a desktop nobody is at.
   7. **Model-facing text.** `docs/cua-api/agent-cursor.md` describes neither the hold nor the guard, so it is unchanged.
-  Proven offline (`ClickDeliveryTests`, 7 new, and `FocusHoldTests`, 1 new, on the fake clock):
+  Proven offline (`ClickDeliveryTests`, 8 new, `FocusHoldTests` and `PasteActivationTests`, 1 new each, on the fake
+  clock):
   - the hold waits while the order reads wrong, past main's cap and the least wait, and is released at the guard's
     stable samples once it reads back;
   - a reorder after main's 60 ms least wait is still repaired inside the hold;
@@ -3179,8 +3185,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     paste's delivery there, and a click inside Chrome's held activation (which clicked no point), keep main's cap;
   - dedicated mode takes no hold through the click and repairs nothing;
   - `transientRaise` for a reorder repaired inside the hold, one read back only after the cap, one seen twice, and
-    none, on the wire; `raiseLeft` false for each reorder that read back.
-  Each of 29 rules and bounds removed in turn (`~/.local/share/187/mutate-321.py`) fails a test.
+    none, on the wire; `raiseLeft` false for each reorder that read back;
+  - a pointer of another connection sharing a paste's activation before the paste's events takes its own hold under
+    its own 200 ms cap, leaving the paste its pending one; a paste sharing a pointer's takes its own under 100 ms.
+  Each of 33 rules and bounds removed in turn (`~/.local/share/187/mutate-321.py`) fails a test.
   **What the hosted check must verify** (`probe/313-ab`'s `scripts/probe-321/` cells, against main):
   - **Safari:** shared clicks deliver as on main; raises visible after the hold's release near the 2 of 240 the patch
     measured; `transientRaise.seen` on about as many clicks as main raised, `outlivedHold` only on the visible ones;

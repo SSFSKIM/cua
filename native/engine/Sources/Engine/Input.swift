@@ -288,7 +288,7 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     }
     // Dedicated mode puts nothing back: no delivery guard, no after-action watch (the Linux foreground route's choice).
     if let standing, shared {
-      meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, pointer: true, postEvents)
+      meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, pointer: true, ranBy: activation, postEvents)
     } else { postEvents() }
   }
   if route == .foreground, let foreground {

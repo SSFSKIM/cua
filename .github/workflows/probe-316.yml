@@ -1,0 +1,76 @@
+# #316's measure-first spike (ruling cb252e88): main's engine, unmodified, built here; scripts/probe-316/measure.mjs runs a
+# group's cells (a sequence a model sends, then a coordinate click placed in the screenshot taken before it) and reads
+# where each click landed and what a narrower detector could have read at click time. Runs only on a push to
+# probe/316-measure (or by hand); not a ci-kit gate.
+name: probe-316
+on:
+  push:
+    branches: ['probe/316-measure']
+    paths-ignore: ['scripts/probe-316/offline/**', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      groups:
+        description: the groups, a JSON list (safari, chrome, firefox, native)
+        required: false
+        default: ''
+      reps:
+        description: repetitions per cell
+        required: false
+        default: '1'
+      only:
+        description: the sequences (comma list; empty for all)
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(github.event.inputs.groups || '["safari", "chrome", "firefox", "native"]') }}
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Apps
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          case "$GROUP" in
+            chrome) bash scripts/probe-316/install.sh chrome ;;
+            firefox) bash scripts/probe-316/install.sh firefox ;;
+            *) bash scripts/probe-316/install.sh ;;
+          esac
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+      - name: Build main's engine and the tool
+        run: |
+          sw_vers
+          git log -1 --format='kit %H %s'
+          swiftc -O -o "$RUNNER_TEMP/tool316" scripts/probe-316/tool.swift
+          swift build -c release --package-path native/engine --scratch-path "$RUNNER_TEMP/eng"
+      - name: Measure
+        env:
+          GROUP: ${{ matrix.group }}
+          REPS: ${{ github.event.inputs.reps || '1' }}
+          ONLY: ${{ github.event.inputs.only || '' }}
+        run: |
+          extra=()
+          if [ -n "$ONLY" ]; then extra=(--only "$ONLY"); fi
+          node scripts/probe-316/measure.mjs --group "$GROUP" --engine "$RUNNER_TEMP/eng/release/cua-engine" --tool "$RUNNER_TEMP/tool316" \
+            --out "$RUNNER_TEMP/probe-316/$GROUP" --reps "$REPS" --budget 115 "${extra[@]}"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-316-${{ matrix.group }}
+          path: |
+            ${{ runner.temp }}/probe-316/*.txt
+            ${{ runner.temp }}/probe-316/**/results.json
+            ${{ runner.temp }}/probe-316/**/screens/*.jpg
+            ${{ runner.temp }}/probe-316/**/shots/**/*.jpg
+            ${{ runner.temp }}/probe-316/**/shots/**/*.png
+          if-no-files-found: warn

@@ -454,7 +454,8 @@ final class SeamStub {
     system.activationPoint = { _ in nil }
     system.now = { self.clock }
     system.sleep = { self.clock += $0 }
-    system.schedule = { _, _ in }  // the cap's timer never fires here: every guard ends first
+    system.schedule = { _, _ in }
+    system.scheduleHoldRelease = { _, _ in }  // the cap's timer never fires here: every guard ends first
     return system
   }
 }

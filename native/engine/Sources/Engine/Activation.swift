@@ -199,9 +199,16 @@ struct ActivationSystem {
   /// Seconds since the last input of any type on the HID system state: a person's input since an action's events stops
   /// the delivery guard's repairs after the hold's release.
   var secondsSinceInput: () -> Double = { CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: CGEventType(rawValue: ~0)!) }
-  /// Runs `work` after the given milliseconds on another thread (the hold's cap, kept while the guard is blocked):
-  /// `scheduleHoldTimer`, strict under `holdTimerStrict` (#324).
-  var schedule: (Double, @escaping @Sendable () -> Void) -> Void = scheduleHoldTimer
+  /// Runs `work` after the given milliseconds on another thread: the after-action watch's samples, whose window-order
+  /// reads and repairs (an AXRaise) may block up to the AX timeout, so never on the hold's release queue.
+  var schedule: (Double, @escaping @Sendable () -> Void) -> Void = { ms, work in
+    DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + .microseconds(Int(max(0, ms) * 1000)), execute: work)
+  }
+  /// Runs a hold's release after the given milliseconds (the cap's and the ceiling's timers, kept while the guard is
+  /// blocked; #324): `scheduleHoldTimer`, strict under `holdTimerStrict`, on a queue that runs nothing but releases,
+  /// each of which only enqueues the re-enable. Nothing else may use it: a blocking block there would hold every
+  /// release behind it (the review of e2e452c9..5dc2e65b, one P1).
+  var scheduleHoldRelease: (Double, @escaping @Sendable () -> Void) -> Void = scheduleHoldTimer
   /// The wall clock the delivery record's Unix times are read on (Unix ms).
   var unixNow: () -> Int64 = unixMilliseconds
   /// Waits up to the given milliseconds of real time for a hold's re-enable stamp (#324, `ReenableStamp.wait`).
@@ -532,7 +539,7 @@ final class FakeActivation {
     let untilOrderReadsBack = holdsThroughDelivery && holdsUntilOrderReadsBack && planned.kind == .activationPoint
     // #324: a hold kept until the order reads back is timed at its ceiling here; its cap after the events is set once
     // they go (`deliver`).
-    system.schedule(untilOrderReadsBack ? activationPointHoldCeilingMs : activationHoldCapMs) { release() }
+    system.scheduleHoldRelease(untilOrderReadsBack ? activationPointHoldCeilingMs : activationHoldCapMs) { release() }
     postActivation(planned)
     let started = system.now()
     defer { guardMs = ((system.now() - started) * 1000).rounded() / 1000 }
@@ -636,7 +643,7 @@ final class FakeActivation {
       let release = OnceRelease(system.holdScreenUpdates(stamp))
       let opened = OpenHold(release: release, startedAt: started, user: guarded, stamp: stamp,
                             untilOrderReadsBack: pointer && clickKind == .activationPoint)
-      system.schedule(opened.openingCapMs) { release() }
+      system.scheduleHoldRelease(opened.openingCapMs) { release() }
       hold = opened
     }
     let minimumMs = hold.untilOrderReadsBack ? activationPointGuardMinimumMs : deliveryGuardMinimumMs
@@ -648,7 +655,7 @@ final class FakeActivation {
     let capMs = hold.capMs(eventsAt: posted)
     if hold.untilOrderReadsBack {
       let release = hold.release
-      system.schedule(max(0, hold.startedAt + capMs - posted)) { release() }
+      system.scheduleHoldRelease(max(0, hold.startedAt + capMs - posted)) { release() }
     }
     let round = { (ms: Double) in (ms * 1000).rounded() / 1000 }
     // The cap's timer releases the hold on its own, so the deadline is read again after whatever may block (the poll's

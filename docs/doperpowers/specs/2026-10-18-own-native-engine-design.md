@@ -3518,7 +3518,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      dispatch timer coalescing in a background process with no UI. Every hold timer (#321's cap and ceiling, main's
      100 ms cap, the guard's own hold's) is a one-shot dispatch source timer with the `.strict` flag and no leeway, on
      a serial userInteractive queue of its own (`cua.engine.hold-timer`), cancelled as it fires; off, the global
-     queue's `asyncAfter` as before. **Kept: strict alone.**
+     queue's `asyncAfter` as before. **Kept: strict alone.** The hold's releases have a scheduler of their own
+     (`ActivationSystem.scheduleHoldRelease`), used only by those timers, each of which only enqueues the re-enable;
+     the after-action watch's samples, which read the window order and repair (an AXRaise may block for the 1 s AX
+     timeout), stay on `schedule`, the global queue's `asyncAfter` (the review of e2e452c9..5dc2e65b, one P1: with one
+     scheduler for both, a 300 ms release fired at 514 ms behind a blocking sample, and `.strict` cannot preempt work
+     already running on its queue).
      - **Measured** (run https://github.com/SSFSKIM/cua/actions/runs/42487558851, kit `probe/324-measure` b279af95; the
        real freeze at the 300 ms ceiling, p50 / p95 / max, in ms):
 
@@ -3562,7 +3567,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      none: the value replaces the text, and select_text writes its own range).
   10. **Model-facing text.** `docs/cua-api/agent-cursor.md` does not describe set_value's focus, so it is unchanged;
      the refusal carries its own sentence.
-  Proven offline (`CaretFirstFocusTests`, 12; `ClickDeliveryTests`, 4 new and the cap test widened; `ValueSettingTests`,
+  Proven offline (`CaretFirstFocusTests`, 12; `ClickDeliveryTests`, 6 new and the cap test widened; `ValueSettingTests`,
   1 new; with FakeAX for the field and the fake clock for the hold):
   - set_value and select_text on a Safari page's unfocused field focus it by the caret write at {0, 0}, read at once,
     with no AXFocused write, nothing pressed and no fallback click, Safari's DOM element included;
@@ -3585,12 +3590,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     release happened, and one that never comes is waited for the 100 ms bound and no longer, with no field (the first
     version used a real-time 60 ms stamp against the real 100 ms bound, which a loaded hosted runner missed, run
     42480881696);
-  - the hold's timer is strict with no leeway, and it fires once and not before its time;
+  - the hold's timer is strict with no leeway, and it fires once and not before its time; every hold's release (the
+    activation's, the guard's own hold's opening, the cap after the events) goes through `scheduleHoldRelease` and
+    the watch's samples through `schedule`, and a live block blocking on `schedule` leaves a release on
+    `scheduleHoldRelease` to fire before it ends;
   - select_text focuses an unfocused AppKit field whose range is not settable and checks it again; a range that stays
     unsettable is refused after the focus, and an element needing no focus before anything is written;
   - `fieldFocus` on the wire.
   Every other suite passes unchanged (#313's `TextEntryClickTests`, #315's `GeckoPointerTests`, #282's
-  `BackgroundPointerTests`, the paste and focus-hold suites). Each of 54 rules and bounds removed in turn
+  `BackgroundPointerTests`, the paste and focus-hold suites). Each of 59 rules and bounds removed in turn
   (`~/.local/share/187/mutate-324.py`) fails a test. focusField's glue (the page engine, the live subrole read, the
   method's interval and the settle mark) reads live AX and is not unit tested, nor is whether the strict timer fires
   on time under coalescing: the hosted check covered them (item 6b).

@@ -1261,6 +1261,52 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(seam.posts.count, posts)
   }
 
+  /// The review of e2e452c9..5dc2e65b (one P1): the hold's release timers (here the ceiling's, set at the activation, and
+  /// the cap's after the events) go through `scheduleHoldRelease` alone, and the after-action watch's samples, which
+  /// read the window order and repair, through `schedule`, so a blocking sample can never queue ahead of a release.
+  func testTheWatchsSamplesAndTheHoldsReleasesGoThroughTheirOwnSchedulers() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    var meta = meta()
+    try click(seam, activation: activation(seam, at: insidePoint), meta: &meta)
+    XCTAssertEqual(Array(seam.scheduledBy.prefix(2)), [.holdRelease, .holdRelease], "the ceiling, then the cap after the events")
+    seam.advance(100)
+    XCTAssertEqual(seam.scheduledBy.filter { $0 == .holdRelease }.count, 2, "no watch sample on the release scheduler")
+    XCTAssertGreaterThanOrEqual(seam.scheduledBy.filter { $0 == .watch }.count, 2, "the watch sampled on")
+    XCTAssertEqual(seam.scheduledBy.dropFirst(2).filter { $0 == .holdRelease }.count, 0)
+    // A held activation's hold (main's 100 ms cap), then the guard's own hold inside it (its opening ceiling and its cap
+    // after the events): every one a release's.
+    let held = GuardSeam(frontmost: user)
+    held.targetAbove = false
+    let standing = activation(held, at: insidePoint)
+    try standing.activate()
+    _ = standing.deliver(window: 41, pointer: true, ranBy: nil) {}
+    XCTAssertEqual(held.scheduledBy, [.holdRelease, .holdRelease, .holdRelease])
+  }
+
+  /// The live schedulers: a block that blocks on `schedule` (a watch sample stuck in an AXRaise) leaves a hold's release
+  /// on `scheduleHoldRelease` to fire on time, before the block ends.
+  func testABlockingWatchSampleDoesNotDelayAHoldsRelease() {
+    final class Order: @unchecked Sendable {
+      let lock = NSLock()
+      var blockerEnded = false
+      var releasedBeforeBlockerEnded: Bool?
+    }
+    let order = Order()
+    let system = ActivationSystem()
+    let released = expectation(description: "the release fired")
+    system.schedule(0) {
+      Thread.sleep(forTimeInterval: 1.5)
+      order.lock.withLock { order.blockerEnded = true }
+    }
+    system.scheduleHoldRelease(30) {
+      order.lock.withLock { order.releasedBeforeBlockerEnded = !order.blockerEnded }
+      released.fulfill()
+    }
+    wait(for: [released], timeout: 10)
+    order.lock.withLock { XCTAssertEqual(order.releasedBeforeBlockerEnded, true) }
+  }
+
   /// The target's process taking the front after the release: the user's app made frontmost again, only that app.
   func testTheWatchRestoresTheFrontmostAppWhenTheTargetTakesItAfterTheRelease() throws {
     let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
@@ -1733,6 +1779,9 @@ final class GuardSeam {
   private var pendingStamps: [ReenableStamp] = []
   /// The Unix clock the delivery record reads: the fake clock past a fixed epoch.
   static let unixEpoch: Int64 = 1_000_000
+  /// Which scheduler each piece of scheduled work went through, in order (#324: the hold's releases apart from the rest).
+  enum Scheduler: Equatable { case holdRelease, watch }
+  var scheduledBy: [Scheduler] = []
   /// When the last screen-update hold was taken, on the fake clock.
   var heldAt: Double?
   var reactivated: [pid_t] = []
@@ -1863,7 +1912,14 @@ final class GuardSeam {
     system.hitAt = { _, _ in self.activationHit }
     system.now = { self.clock }
     system.sleep = { _ in self.advance(self.step) }
-    system.schedule = { ms, work in self.timers.append((self.clock + ms, work)) }
+    system.schedule = { ms, work in
+      self.scheduledBy.append(.watch)
+      self.timers.append((self.clock + ms, work))
+    }
+    system.scheduleHoldRelease = { ms, work in
+      self.scheduledBy.append(.holdRelease)
+      self.timers.append((self.clock + ms, work))
+    }
     return system
   }
 }

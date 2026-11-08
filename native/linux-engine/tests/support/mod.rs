@@ -101,6 +101,13 @@ impl Engine {
         Engine::spawn_with(&live_build(), options, &[("CUA_ENGINE_FAULT", fault)])
     }
 
+    /// An engine on this X display (`DISPLAY`) in place of the test's own.
+    pub fn start_on_display(display: &str) -> Engine {
+        let mut command = Command::new(engine_bin());
+        command.arg("server").env("DISPLAY", display);
+        Engine::spawn_command(command, &engine_bin().display().to_string(), false)
+    }
+
     /// The engine's process id.
     pub fn pid(&self) -> u32 {
         self.child.id()

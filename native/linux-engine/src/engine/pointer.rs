@@ -1045,8 +1045,9 @@ impl Engine {
     /// `drag_handle`'s end: for a family that rests at a held move's end (`held_rest`), a rest and the pointer's place
     /// visited once more, so the last position before the release comes after the target answered the ones before it
     /// (a drop target accepts only such a position, and a cold window's drag can start after the last move; evidence
-    /// `m4/drag-motion/`); then the release dwell its start found, then button 1 up where the pointer is. The release
-    /// is sent whatever the visit did. It arms no after-release watch. The engine's exit ends a handle still held the
+    /// `m4/drag-motion/`), unless the pointer is on another screen of the display, which the visit would carry it back
+    /// from; then the release dwell its start found, then button 1 up where the pointer is. The release is sent
+    /// whatever the visit did. It arms no after-release watch. The engine's exit ends a handle still held the
     /// same way (`Engine::shutdown`).
     pub(super) fn end_drag_handle(&mut self) -> Result<()> {
         let pacing = self.handle_pacing.end();
@@ -1059,7 +1060,15 @@ impl Engine {
                 .query_pointer(self.x.root)
                 .map_err(anyhow::Error::from)
                 .and_then(|cookie| Ok(cookie.reply()?))
-                .and_then(|p| Desktop::motion(&self.x, p.root_x, p.root_y));
+                // with the pointer on another screen the reply's place is on that screen's root: a motion to it on the
+                // engine's own root would carry the held pointer back across before the release
+                .and_then(|p| {
+                    if p.same_screen {
+                        Desktop::motion(&self.x, p.root_x, p.root_y)
+                    } else {
+                        Ok(())
+                    }
+                });
         }
         std::thread::sleep(pacing.release);
         Desktop::button(&self.x, 1, false).and(revisited)

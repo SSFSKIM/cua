@@ -2358,3 +2358,187 @@ fn a_browser_s_drag_handle_rests_at_each_held_move_s_end_and_before_its_release(
         }
     }
 }
+
+/// An X server of the test's own with two screens, each its own root (`Xvfb -screen 0 … -screen 1 …`), on a display it
+/// picks itself (`-displayfd`); killed on drop. `CUA_LIVE_TWO_SCREENS` names a running two-screen display to use in
+/// its place: Xvfb puts both screens at one origin, so a motion on one screen's root moves the pointer within the
+/// screen it is on, where an Xorg whose layout puts the screens side by side carries it across.
+struct TwoScreens {
+    server: Option<std::process::Child>,
+    display: String,
+}
+
+impl TwoScreens {
+    fn start() -> TwoScreens {
+        use std::io::BufRead;
+        if let Ok(display) = std::env::var("CUA_LIVE_TWO_SCREENS") {
+            return TwoScreens { server: None, display };
+        }
+        let mut server = std::process::Command::new("Xvfb")
+            .args([
+                "-displayfd",
+                "1",
+                "-nolisten",
+                "tcp",
+                "-screen",
+                "0",
+                "640x480x24",
+                "-screen",
+                "1",
+                "640x480x24",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("Xvfb starts");
+        let mut number = String::new();
+        std::io::BufReader::new(server.stdout.take().unwrap())
+            .read_line(&mut number)
+            .expect("Xvfb names its display");
+        TwoScreens {
+            server: Some(server),
+            display: format!(":{}", number.trim()),
+        }
+    }
+}
+
+impl Drop for TwoScreens {
+    fn drop(&mut self) {
+        if let Some(server) = self.server.as_mut() {
+            let _ = server.kill();
+            let _ = server.wait();
+        }
+    }
+}
+
+/// What a window grabbing the pointer was told after a `drag_handle`'s end: a motion or button 1's release, with the
+/// root it was reported on and the position on that root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reported {
+    Motion { root: Window, x: i16, y: i16 },
+    Release { root: Window, x: i16, y: i16 },
+}
+
+/// The motions and button 1's releases queued for a connection, once the server has handled everything before.
+fn reported(conn: &RustConnection) -> Vec<Reported> {
+    conn.sync().unwrap();
+    let mut seen = Vec::new();
+    while let Some(event) = conn.poll_for_event().unwrap() {
+        match event {
+            Event::MotionNotify(e) => seen.push(Reported::Motion {
+                root: e.root,
+                x: e.root_x,
+                y: e.root_y,
+            }),
+            Event::ButtonRelease(e) if e.detail == 1 => seen.push(Reported::Release {
+                root: e.root,
+                x: e.root_x,
+                y: e.root_y,
+            }),
+            _ => {}
+        }
+    }
+    seen
+}
+
+/// How a `drag_handle` ends: its `end`, or the engine's exit with the handle held (`Engine::shutdown`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HandleEnd {
+    End,
+    Exit,
+}
+
+/// A `drag_handle` that ends while the pointer is on another screen of the display, with button 1 held, releases the
+/// button where the pointer is and sends no motion first: the end's visit of the pointer's place (a browser's held
+/// rest, M4's T11) would carry that screen's coordinates onto the engine's own root, moving the held pointer back
+/// there and releasing it over whatever window is under that point (review of T11, finding 2).
+#[test]
+fn a_drag_handle_ended_with_the_pointer_on_another_screen_releases_there_and_moves_nothing() {
+    handle_ended_on_another_screen(HandleEnd::End);
+}
+
+/// The engine's exit ends a held `drag_handle` as its `end` does, the pointer on another screen included.
+#[test]
+fn an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing() {
+    handle_ended_on_another_screen(HandleEnd::Exit);
+}
+
+/// A `drag_handle` over Gecko's window (which rests at a held move's end and before the release) on screen 0 of a
+/// two-screen display, the pointer then put on screen 1 with button 1 still held, and the handle ended: the window
+/// took the implicit grab at the press, so it is told of every motion and of the release wherever the pointer is.
+fn handle_ended_on_another_screen(ending: HandleEnd) {
+    let display = TwoScreens::start();
+    let (conn, _) = x11rb::connect(Some(&display.display)).expect("the two-screen display");
+    let (root, other) = (conn.setup().roots[0].root, conn.setup().roots[1].root);
+    let window = conn.generate_id().unwrap();
+    let aux = CreateWindowAux::new()
+        .event_mask(EventMask::POINTER_MOTION | EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE);
+    conn.create_window(
+        0,
+        window,
+        root,
+        100,
+        100,
+        400,
+        300,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &aux,
+    )
+    .unwrap();
+    conn.change_property8(
+        PropMode::REPLACE,
+        window,
+        AtomEnum::WM_CLASS,
+        AtomEnum::STRING,
+        b"probe\0firefox\0",
+    )
+    .unwrap();
+    let state = conn.intern_atom(false, b"WM_STATE").unwrap().reply().unwrap().atom;
+    conn.change_property32(PropMode::REPLACE, window, state, state, &[1, x11rb::NONE])
+        .unwrap();
+    conn.map_window(window).unwrap();
+    conn.sync().unwrap();
+    let button1 = x11rb::protocol::xproto::KeyButMask::BUTTON1;
+    conn.warp_pointer(x11rb::NONE, root, 0, 0, 0, 0, 20, 20).unwrap();
+    let mut engine = Engine::start_on_display(&display.display);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 330, "y": 250}))
+        .unwrap();
+    // the pointer goes to the other screen, button 1 still held
+    conn.warp_pointer(x11rb::NONE, other, 0, 0, 0, 0, 200, 120).unwrap();
+    let pointer = conn.query_pointer(root).unwrap().reply().unwrap();
+    assert!(
+        !pointer.same_screen && pointer.root == other && (pointer.root_x, pointer.root_y) == (200, 120),
+        "the pointer is on the other screen: {pointer:?}"
+    );
+    assert!(pointer.mask.contains(button1), "button 1 is held");
+    reported(&conn);
+    match ending {
+        HandleEnd::End => {
+            engine.request("drag_handle", json!({"action": "end"})).unwrap();
+        }
+        HandleEnd::Exit => {
+            engine.close_stdin();
+            engine.exit_within(Duration::from_secs(10)).expect("the engine exits");
+        }
+    }
+    assert_eq!(
+        reported(&conn),
+        vec![Reported::Release {
+            root: other,
+            x: 200,
+            y: 120
+        }],
+        "{ending:?}: the release where the pointer is, no motion before it"
+    );
+    let pointer = conn.query_pointer(root).unwrap().reply().unwrap();
+    assert!(
+        pointer.root == other && (pointer.root_x, pointer.root_y) == (200, 120) && !pointer.mask.contains(button1),
+        "{ending:?}: released on the other screen: {pointer:?}"
+    );
+}

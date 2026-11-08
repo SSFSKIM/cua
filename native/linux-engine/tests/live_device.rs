@@ -2404,8 +2404,12 @@ impl TwoScreens {
 
 impl Drop for TwoScreens {
     fn drop(&mut self) {
+        // terminated, not killed, so it removes its socket and lock: a display left named by them refuses the next
+        // server that would take it
         if let Some(server) = self.server.as_mut() {
-            let _ = server.kill();
+            if let Some(pid) = rustix::process::Pid::from_raw(server.id() as i32) {
+                let _ = rustix::process::kill_process(pid, rustix::process::Signal::TERM);
+            }
             let _ = server.wait();
         }
     }

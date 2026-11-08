@@ -35,8 +35,9 @@
      - canvas: a path-tracking target that draws what plain pointermove events (no coalesced events) report while the
        button is down; the status line counts the moves of the last stroke and the farthest of the path's corners from
        the stroke drawn (CORNERS, canvas pixels), so a drag whose motions arrive merged shows a large deviation.
-     - received: the motions Chrome received during the last press (pointerrawupdate events, and pointermove), which
-       the harness keeps beside each drag's distance (T10).
+     - received: the motions the browser received during the last press, as the coalesced samples of its
+       pointerrawupdate and pointermove events (and the events), which the harness keeps beside each drag's distance
+       (T10).
      The title comes from the URL's fragment, so every window has its own. -->
 <p id="words">alpha bravo charlie delta echo foxtrot golf</p>
 <input id="range" type="range" min="0" max="100" value="0" aria-label="Range">
@@ -52,7 +53,7 @@
   <p id="s-dnd">dnd starts 0 drops 0 downs 0 detail 0 gap -1 selects 0 ends 0 effect -1 lat -1 dur -1 ups 0 at 0</p>
   <p id="s-canvas">canvas strokes 0 moves 0 dev -1</p>
   <p id="s-moves">moves seq 0 n 0 start -1 up -1 cancel -1 end -1 m</p>
-  <p id="s-received">received seq 0 target none raw 0 moves 0</p>
+  <p id="s-received">received seq 0 target none raw 0 moves 0 raw_events 0 move_events 0</p>
 </div>
 <script>
   document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
@@ -143,24 +144,36 @@
   $('target').addEventListener('dragover', (e) => e.preventDefault());
   $('target').addEventListener('drop', (e) => { e.preventDefault(); dnd.drops += 1; showDnd(); });
 
-  // the motions Chrome received during each press (T10): from a left press anywhere in the page to its release (or the
-  // dragend of a drag and drop it started), the pointerrawupdate events, which Chrome dispatches as it takes each
-  // motion, a scrollbar drag's included (no pointermove reaches the page while the scrollbar holds the press: task 65's
-  // probe), and the pointermove events. Written once, when the press ends.
+  // the motions the browser received during each press (T10): from a left press anywhere in the page to its release
+  // (or the dragend of a drag and drop it started), the samples of the pointerrawupdate events, which Chrome dispatches
+  // as it takes each motion, a scrollbar drag's included (no pointermove reaches the page while the scrollbar holds the
+  // press: task 65's probe), and the samples of the pointermove events. One dispatched event can carry several
+  // coalesced samples (Pointer Events, getCoalescedEvents()), each a motion the browser took, so `raw` and `moves` count
+  // samples, and `raw_events` and `move_events` the events. An event without the list, or with an empty one, is its
+  // own one sample. Written once, when the press ends.
   let rec = null;
   let recSeq = 0;
+  const samples = (e) => Math.max(1, typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents().length : 1);
   const endRec = () => {
     if (!rec?.open) return;
     rec.open = false;
-    line('s-received', `received seq ${recSeq} target ${rec.target} raw ${rec.raw} moves ${rec.moves}`);
+    line('s-received', `received seq ${recSeq} target ${rec.target} raw ${rec.raw} moves ${rec.moves} raw_events ${rec.rawEvents} move_events ${rec.moveEvents}`);
   };
   document.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     recSeq += 1;
-    rec = { target: e.target.id || e.target.localName, raw: 0, moves: 0, open: true };
+    rec = { target: e.target.id || e.target.localName, raw: 0, moves: 0, rawEvents: 0, moveEvents: 0, open: true };
   }, true);
-  document.addEventListener('pointerrawupdate', () => { if (rec?.open) rec.raw += 1; }, true);
-  document.addEventListener('pointermove', () => { if (rec?.open) rec.moves += 1; }, true);
+  document.addEventListener('pointerrawupdate', (e) => {
+    if (!rec?.open) return;
+    rec.raw += samples(e);
+    rec.rawEvents += 1;
+  }, true);
+  document.addEventListener('pointermove', (e) => {
+    if (!rec?.open) return;
+    rec.moves += samples(e);
+    rec.moveEvents += 1;
+  }, true);
   document.addEventListener('pointerup', (e) => { if (e.button === 0) endRec(); }, true);
   document.addEventListener('mouseup', (e) => { if (e.button === 0) endRec(); }, true);
   document.addEventListener('dragend', endRec, true);

@@ -525,7 +525,9 @@ variants included; their evidence is written either way. The run's `end` row kee
 - **M4's judges** (T10, `drag-judge.mjs`; Acceptance 3; the Decision Log's M4 pre-flight). They decide the run's
   verdict for the shipped `cua` lane, and the run exits nonzero when it fails; every other cua lane is measured, not
   judged:
-  - *Effect*: every run of `cua` takes effect, wherever the pinned build missed too (the M1a.4 rule).
+  - *Effect*: every run of `cua` takes effect, wherever the pinned build missed too (the M1a.4 rule). A drop or a
+    stroke has its reader proven by either vendor build's take, and a long path is judged on every run whatever the
+    vendor builds took (`judgeDragCell`).
   - *Thumbs*: Chrome's and Electron's `scroller` runs each land at or past the pinned build's mean distance, the mean
     of its runs that took in the same sitting (`thumbReach`), never a stored constant.
   - *Long paths* (Chrome's and Firefox's `canvas`, Chrome's `dnd`), warm, under Acceptance 3's interval rule
@@ -539,10 +541,14 @@ variants included; their evidence is written either way. The run's `end` row kee
     landed counts decide, `cua`'s at least the pinned build's, with every side's distances reported (`loadCounts`);
     speed and the thumb reach are reported, not judged. The load lane of #265:
     `--experiment drag --load-factor 2 --family chrome,electron --ops scroller,range --occlusion visible --lanes pinned,cua`.
-  - *The motions Chrome received*: `pages/drag.html` counts, per press, the `pointerrawupdate` events (which Chrome
-    dispatches as it takes each motion, a scrollbar drag's included, where no `pointermove` reaches the page) and the
-    `pointermove` events; each page run keeps them as `received`, beside its `before` and `after`, for T11's plot of
-    distance against the motions received.
+  - *The motions the browser received*: `pages/drag.html` counts, per press, the coalesced samples of the
+    `pointerrawupdate` events (which Chrome dispatches as it takes each motion, a scrollbar drag's included, where no
+    `pointermove` reaches the page) and of the `pointermove` events (`raw`, `moves`), with the dispatched events beside
+    them (`raw_events`, `move_events`); each page run keeps the record as `received`, beside its `before` and `after`,
+    only when its press is newer than the record read before the drag (`freshReceived`: a drag that pressed nothing has
+    none), for T11's plot of distance against the motions received.
+  - *Blocks*: a cell's drags run in rotating blocks of 10, every lane's block on a fresh engine, the lanes' order
+    rotating from block to block and the top-ups continuing it (`blockPlan`); each block's first request is cold.
   - *Named only* (`OPTIONAL_KINDS`, by `--ops`): `select-unprimed` on Writer, every run a fresh window's first drag,
     judged absolutely by the text its path spans (`selectionCovers`), beside the primed `select` cell, whose even runs
     that took the judge must take too (REFERENCE MISMATCH otherwise); and `handle-canvas`, `handle-dnd` on Firefox,

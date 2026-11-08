@@ -32,8 +32,12 @@
 //   taking: cua's at least the pinned build's, with the distances reported (`loadCounts`). Speed is judged idle only.
 // - Chrome's drag and drop runs in front for every lane (`inFront`), as its drop needs; a covered path stays a declared
 //   refusal.
-// - The page reports the motions Chrome received between a press and its release (`received`, pointerrawupdate events,
-//   which Chrome dispatches during a scrollbar drag too), kept per run beside its distance.
+// - The page reports the motions the browser received between a press and its release (`received`: the coalesced
+//   samples of its pointerrawupdate events, which Chrome dispatches during a scrollbar drag too, and of its pointermove
+//   events, with the events beside them), kept per run beside its distance when the press is the run's own
+//   (`freshReceived`).
+// - A cell's drags run in rotating blocks of 10, each lane's on a fresh engine (`blockPlan`), the top-ups going on with
+//   the rotation, so drift in load or browser state is spread over the engines.
 // - Named only (`OPTIONAL_KINDS`): Writer's unprimed first drag (`select-unprimed`, a fresh window a run, judged
 //   absolutely), and Firefox's held `drag_handle` moves (`handle-canvas`, `handle-dnd`) with a no-press control lane
 //   that must miss every run (`controlVerdict`).
@@ -369,13 +373,25 @@ export function parseDragStatus(texts) {
 }
 
 /**
- * The page's count of the motions Chrome received during the last press (`received seq <press> target <id> raw <n>
- * moves <n>`): `raw` the pointerrawupdate events, which Chrome dispatches as it takes each motion, during a scrollbar
- * drag too (where no pointermove reaches the page), and `moves` the pointermove events. Null without the line.
+ * The page's count of the motions the browser received during the last press (`received seq <press> target <id> raw
+ * <n> moves <n> raw_events <n> move_events <n>`): `raw` the coalesced samples of the pointerrawupdate events, which
+ * Chrome dispatches as it takes each motion, during a scrollbar drag too (where no pointermove reaches the page), and
+ * `moves` those of the pointermove events; `raw_events` and `move_events` the dispatched events, which can carry several
+ * samples each. Null without the line.
  */
 function parseReceived(text) {
-  const m = text?.match(/^received seq (\d+) target (\S+) raw (\d+) moves (\d+)$/);
-  return m ? { seq: Number(m[1]), target: m[2], raw: Number(m[3]), moves: Number(m[4]) } : null;
+  const m = text?.match(/^received seq (\d+) target (\S+) raw (\d+) moves (\d+) raw_events (\d+) move_events (\d+)$/);
+  return m ? { seq: Number(m[1]), target: m[2], raw: Number(m[3]), moves: Number(m[4]), raw_events: Number(m[5]), move_events: Number(m[6]) } : null;
+}
+
+/**
+ * The drag's own motion record: the one read after it, only when its press is newer than the record read before it. The
+ * page publishes a record when a press ends, so a drag that pressed nothing (the no-press control) or a record not yet
+ * written leaves the previous drag's in place, which is never taken for this one's.
+ */
+export function freshReceived(before, after) {
+  if (!after) return null;
+  return before && after.seq <= before.seq ? null : after;
 }
 
 /** Blink's drag threshold off the Mac (`mouse_event_manager.cc` `kDragThresholdX/Y`): a press starts a drag on a move this far out in x or y. */
@@ -516,17 +532,22 @@ export function judgeRuns(kind, runs) {
 
 /**
  * A cell's verdict per cua lane, absolute once the cell has a usable reference (Decision Log, M1a.4): every one of the
- * lane's runs must take effect, wherever the pinned build missed too. The reference is usable when the pinned build
- * took at least one run (the reader works) and, for a kind judged against the pinned build's values (`expected`),
- * every parity the runs use has one; a cell without it is recorded, not judged (`pass: null`). With `absolute` the kind's
- * effect needs no reference (Writer's unprimed first drag, which every engine's may miss): the cell is always judged.
+ * lane's runs must take effect, wherever the pinned build missed too. The reference is usable when a vendor build took
+ * at least one run (the reader works: the pinned build for a kind judged against its values, `expected`, which then
+ * needs one for every parity the runs use; either build for a drop or a stroke); a cell without it is recorded, not
+ * judged (`pass: null`). With `absolute` the cell is always judged: a long path's effect on every candidate run
+ * (Acceptance 3), whatever the vendor builds took, and Writer's unprimed first drag, which every engine's may miss.
  */
 export function judgeCell(runs, lanes, expected = {}, { absolute = false } = {}) {
   const pinnedRuns = runs.filter((r) => r.engine === 'pinned');
   const pinnedTook = pinnedRuns.filter((r) => r.took).length;
   const positions = [...new Set(pinnedRuns.map((r) => r.i))].sort((a, b) => a - b);
   const parities = [...new Set(runs.map((r) => r.i % 2))];
-  const usable = absolute || (pinnedTook > 0 && (Object.keys(expected).length === 0 || parities.every((p) => expected[p] !== null && expected[p] !== undefined)));
+  // the reader works when a vendor build took a run: the pinned build for a kind judged against its values, either
+  // build for one whose effect needs no value of theirs (a drop, a stroke near the corners)
+  const valued = Object.keys(expected).length > 0;
+  const vendorTook = runs.some((r) => (r.engine === 'pinned' || (!valued && r.engine === 'newest')) && r.took);
+  const usable = absolute || (vendorTook && (!valued || parities.every((p) => expected[p] !== null && expected[p] !== undefined)));
   // the witness is required of a lane where every pinned run kept it: Chrome's own drag and drop changes the stacking
   // (and its first one the focus), whichever engine drags
   const pinnedClean = pinnedRuns.every((r) => r.witness === true);
@@ -602,6 +623,8 @@ async function series(ctx, spec, scene, at, kind, n, { prime = false, start = 0 
         await sleep(400);
       }
       const before = await read();
+      // the page's last motion record before the drag, so the drag's own is told from it (freshReceived)
+      const receivedBefore = at.page ? await readReceived(ctx, scene) : null;
       const handle = kind.startsWith('handle-');
       const path = handle ? handleSteps(at, kind, scene.window, { control: spec.handleControl }) : runPath(at, kind, i);
       const tag = `${spec.label}:${family}:drag:${kind}`;
@@ -621,7 +644,15 @@ async function series(ctx, spec, scene, at, kind, n, { prime = false, start = 0 
       const run = { family, drag: kind, occlusion: ctx.occlusion, engine: spec.label, i, first_request: i === start && !prime, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before, after, path };
       if (inFront(family, kind)) run.in_front = true;
       if (at.text?.pixels) run.pixels_changed = ok ? pixelsChanged(before.capture, after.capture) : false;
-      if (at.page && ok) run.received = await readReceived(ctx, scene);
+      if (at.page && ok) {
+        // the record is published when the press ends: a drag's own is looked for a little, then counted missing
+        let received = freshReceived(receivedBefore, await readReceived(ctx, scene));
+        for (let tries = 0; !received && !spec.handleControl && tries < 5; tries++) {
+          await sleep(100);
+          received = freshReceived(receivedBefore, await readReceived(ctx, scene));
+        }
+        run.received = received;
+      }
       runs.push(run);
       // what the application changed (Chrome's drag and drop activates and restacks, the control activates) is put
       // back for the next run by its arrangement
@@ -632,6 +663,60 @@ async function series(ctx, spec, scene, at, kind, n, { prime = false, start = 0 
     await engine.close();
   }
   return runs;
+}
+
+/** The drags of one fresh engine in a cell: a block, after which the next lane's block runs. */
+export const BLOCK_RUNS = 10;
+
+/**
+ * A cell's drags from run `start`, `count` a lane, in blocks of `BLOCK_RUNS`: each block every lane's, each lane on a
+ * fresh engine, the lanes' order rotating block by block (stats.mjs `blockOrder`, from the block's index and the cell's
+ * `offset`), so drift in load or browser state is spread over every engine, as the differential run's blocks spread
+ * it. A top-up (`start` past 0) continues the rotation. Returns `[{spec, start, count}]` in the order they run.
+ */
+export function blockPlan(lanes, count, start, { block = BLOCK_RUNS, offset = 0 } = {}) {
+  const plan = [];
+  for (let at = start; at < start + count; ) {
+    const size = Math.min(block - (at % block), start + count - at);
+    for (const spec of blockOrder(lanes, Math.floor(at / block) + offset)) plan.push({ spec, start: at, count: size });
+    at += size;
+  }
+  return plan;
+}
+
+/**
+ * One cell judged whole (record's judges, apart from the run): the effect per cua lane (judgeCell), the thumb reach,
+ * a long path's speed, the load counts, the held-move control, the unprimed lane's reference, the motions received. A
+ * long path's effect is judged on every candidate run whatever the vendor builds took (Acceptance 3), as is Writer's
+ * unprimed drag (`absolute`). Returns the cell's row and its judged runs.
+ */
+export function judgeDragCell(family, kind, runs, { cuaLanes, vendors, laneLabels = null, load = false, primed = null, absolute = false }) {
+  const judged = judgeRuns(kind, runs);
+  const cell = judgeCell(judged.runs.filter((r) => r.engine !== CONTROL_LANE), cuaLanes, judged.expected, { absolute: absolute || isLongPath(family, kind) });
+  const reach = reachJudged(family, kind) ? thumbReach(judged.runs, cuaLanes) : null;
+  const speedOf = (lane) => {
+    const { samples, ...verdict } = dragSpeed(judged.runs, { candidate: lane, vendors });
+    return { ...verdict, usable: Object.fromEntries(Object.entries(samples).map(([e, s]) => [e, s.usable.length])), sampled: Object.fromEntries(Object.entries(samples).map(([e, s]) => [e, s.sampled])) };
+  };
+  const labels = laneLabels ?? [...new Set(judged.runs.map((r) => r.engine))].filter((l) => l !== CONTROL_LANE);
+  const ms = (label) => median(judged.runs.filter((r) => r.engine === label && r.ok && !r.first_request).map((r) => r.ms));
+  const withReceived = judged.runs.filter((r) => r.received);
+  const of = (label, key) => median(withReceived.filter((r) => r.engine === label).map((r) => r.received[key]));
+  const row = {
+    kind: 'drag-cell',
+    family,
+    drag: kind,
+    expected: judged.expected,
+    ...cell,
+    ms: Object.fromEntries(labels.map((l) => [l, ms(l)])),
+    ...(reach ? { reach: { pinned_mean: reach.pinned_mean, lanes: reach.lanes } } : {}),
+    ...(isLongPath(family, kind) && !load && vendors.length ? { speed: Object.fromEntries(cuaLanes.map((l) => [l, speedOf(l)])) } : {}),
+    ...(load ? { load: loadCounts(judged.runs, cuaLanes) } : {}),
+    ...(kind.startsWith('handle-') ? { control: controlVerdict(judged.runs.filter((r) => r.engine === CONTROL_LANE)) } : {}),
+    ...(primed ? { primed_reference: primedReference(primed) } : {}),
+    ...(withReceived.length ? { received: Object.fromEntries(labels.map((l) => [l, { raw: of(l, 'raw'), moves: of(l, 'moves'), raw_events: of(l, 'raw_events'), move_events: of(l, 'move_events') }])) } : {}),
+  };
+  return { row, runs: reach ? reach.runs : judged.runs };
 }
 
 /** The cells a run asks for: each family's kinds (`--ops` narrows them), in the order the run measures them. */
@@ -724,36 +809,14 @@ export async function runDrag(args, { desktop, emit }) {
   // each family's primed select runs, the unprimed lane's reference
   const primedSelect = {};
   const record = (family, kind, runs, { absolute = false, primed = null } = {}) => {
-    const judged = judgeRuns(kind, runs);
-    const cell = judgeCell(judged.runs.filter((r) => r.engine !== CONTROL_LANE), cuaLanes, judged.expected, { absolute });
-    const reach = reachJudged(family, kind) ? thumbReach(judged.runs, cuaLanes) : null;
-    for (const r of reach ? reach.runs : judged.runs) emit({ kind: 'drag-run', ...r });
-    const speedOf = (lane) => {
-      const { samples, ...verdict } = dragSpeed(judged.runs, { candidate: lane, vendors });
-      return { ...verdict, usable: Object.fromEntries(Object.entries(samples).map(([e, s]) => [e, s.usable.length])), sampled: Object.fromEntries(Object.entries(samples).map(([e, s]) => [e, s.sampled])) };
-    };
-    const ms = (label) => median(judged.runs.filter((r) => r.engine === label && r.ok && !r.first_request).map((r) => r.ms));
-    const withReceived = judged.runs.filter((r) => r.received);
-    const row = {
-      kind: 'drag-cell',
-      family,
-      drag: kind,
-      expected: judged.expected,
-      ...cell,
-      ms: Object.fromEntries(lanes.map((l) => [l.label, ms(l.label)])),
-      ...(reach ? { reach: { pinned_mean: reach.pinned_mean, lanes: reach.lanes } } : {}),
-      ...(isLongPath(family, kind) && !args.load && vendors.length ? { speed: Object.fromEntries(cuaLanes.map((l) => [l, speedOf(l)])) } : {}),
-      ...(args.load ? { load: loadCounts(judged.runs, cuaLanes) } : {}),
-      ...(kind.startsWith('handle-') ? { control: controlVerdict(judged.runs.filter((r) => r.engine === CONTROL_LANE)) } : {}),
-      ...(primed ? { primed_reference: primedReference(primed) } : {}),
-      ...(withReceived.length ? { received: Object.fromEntries(lanes.map((l) => [l.label, { raw: median(withReceived.filter((r) => r.engine === l.label).map((r) => r.received.raw)), moves: median(withReceived.filter((r) => r.engine === l.label).map((r) => r.received.moves)) }])) } : {}),
-    };
+    const { row, runs: judged } = judgeDragCell(family, kind, runs, { cuaLanes, vendors, laneLabels: lanes.map((l) => l.label), load: Boolean(args.load), primed, absolute });
+    for (const r of judged) emit({ kind: 'drag-run', ...r });
     emit(row);
     cells.push(row);
-    if (kind === 'select') primedSelect[family] = judged.runs;
-    const took = (label) => `${judged.runs.filter((r) => r.engine === label && r.took).length}/${judged.runs.filter((r) => r.engine === label).length}`;
-    const verdict = !cell.reference && !row.load ? (cell.pinned_took === 0 ? 'no pinned effect: not judged' : 'no usable pinned reference: not judged') : cuaLanes.map((l) => `${l} ${laneFailures(row, l).length ? '**FAIL**' : 'PASS'}`).join(', ');
-    const witnessClean = judged.runs.every((r) => r.witness) ? 'clean' : '**changed**';
+    if (kind === 'select') primedSelect[family] = judged;
+    const took = (label) => `${judged.filter((r) => r.engine === label && r.took).length}/${judged.filter((r) => r.engine === label).length}`;
+    const verdict = !row.reference && !row.load ? (row.pinned_took === 0 ? 'no vendor effect: not judged' : 'no usable pinned reference: not judged') : cuaLanes.map((l) => `${l} ${laneFailures(row, l).length ? '**FAIL**' : 'PASS'}`).join(', ');
+    const witnessClean = judged.every((r) => r.witness) ? 'clean' : '**changed**';
     md.push(`| ${FAMILIES[family].title} | ${kind} | ${lanes.map((l) => took(l.label)).join(' | ')} | ${lanes.slice(1).map((l) => r1(row.ms[l.label])).join(' | ')} | ${r1(row.ms.pinned)} | ${witnessClean} | ${judgeNotes(row, cuaLanes)} | ${verdict} |`);
     process.stdout.write(`${md.at(-1)}\n`);
   };
@@ -792,11 +855,14 @@ export async function runDrag(args, { desktop, emit }) {
         for (const [k, kind] of plain.entries()) {
           measuring = kind;
           const runs = [];
-          // the lanes rotate per kind, so no lane always goes first
-          const order = [...lanes.slice(k % lanes.length), ...lanes.slice(0, k % lanes.length)];
+          // rotating blocks of fresh engines (blockPlan), the first block's order shifted per kind, the top-ups going on
+          // with the rotation; a primed family primes each lane's window once, at its first drag
+          const primedLanes = new Set();
           const measure = async (count, start) => {
-            for (const spec of order) {
-              runs.push(...(await series(ctx, spec, scenes[spec.label], at[spec.label], kind, count, { prime: start === 0 && k === 0 && Boolean(DRAG_PRIMING[family]), start })));
+            for (const { spec, start: from, count: size } of blockPlan(lanes, count, start, { offset: k })) {
+              const prime = k === 0 && Boolean(DRAG_PRIMING[family]) && !primedLanes.has(spec.label);
+              primedLanes.add(spec.label);
+              runs.push(...(await series(ctx, spec, scenes[spec.label], at[spec.label], kind, size, { prime, start: from })));
               desktop.focusFront();
             }
           };

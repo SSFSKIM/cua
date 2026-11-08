@@ -292,8 +292,8 @@ test("under load the landed counts decide, 40 a side: cua at least the pinned bu
 });
 
 test("the drag page's received line: the motions Chrome dispatched between a press and its release", () => {
-  const s = parseDragStatus(['received seq 4 target scroller raw 55 moves 0']);
-  assert.deepEqual(s.received, { seq: 4, target: 'scroller', raw: 55, moves: 0 });
+  const s = parseDragStatus(['received seq 4 target scroller raw 55 moves 0 raw_events 50 move_events 0']);
+  assert.deepEqual(s.received, { seq: 4, target: 'scroller', raw: 55, moves: 0, raw_events: 50, move_events: 0 });
   assert.equal(parseDragStatus([]).received, null);
 });
 
@@ -401,4 +401,122 @@ test('under load the drag experiment runs 40 a side unless told otherwise, and r
   assert.throws(() => parseArgs([...base, '--load-factor', '2', '--trials', '30']), /40 drags a side/);
   assert.equal(parseArgs([...base, '--load-factor', '2']).samplesTrials, undefined, 'the default under load is 40 (dragTrials)');
   assert.equal(parseArgs([...base, '--trials', '20']).samplesTrials, 20, 'idle, any number');
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// T10's fix wave (the task review of 843d3179..f27b9b5b)
+
+const cellRuns = (engine, n, { took, ms, after = (k) => ({ strokes: k + 1, moves: 9, dev: took(k) ? 4 : 140 }) }) =>
+  Array.from({ length: n }, (_, i) => ({ engine, i, ok: true, witness: true, ms: ms + (i % 5), first_request: i % 10 === 0, before: { strokes: i, moves: 9, dev: 4 }, after: after(i) }));
+
+test("a long path's effect is judged on every candidate run, whatever the pinned build took (the review's probe)", () => {
+  // 40 pinned misses, 40 newest successes, the candidate faster but missing one stroke of 40
+  const runs = [
+    ...cellRuns('pinned', 40, { took: () => false, ms: 1100 }),
+    ...cellRuns('newest', 40, { took: () => true, ms: 517 }),
+    ...cellRuns('cua', 40, { took: (i) => i !== 17, ms: 400 }),
+  ];
+  const { row } = T10.judgeDragCell('chrome', 'canvas', runs, { cuaLanes: ['cua'], vendors: ['pinned', 'newest'] });
+  assert.equal(row.reference, true);
+  assert.equal(row.lanes.cua.pass, false);
+  assert.equal(row.speed.cua.verdict, 'pass', 'the newest build sets a valid bar');
+  const verdict = T10.dragVerdict([row]);
+  assert.equal(verdict.pass, false);
+  assert.match(verdict.failed.join(), /chrome canvas: cua missed runs 17/);
+  // nor does a missing bar waive it: no vendor build took anything
+  const none = [...cellRuns('pinned', 40, { took: () => false, ms: 1100 }), ...cellRuns('newest', 40, { took: () => false, ms: 517 }), ...cellRuns('cua', 40, { took: (i) => i !== 3, ms: 400 })];
+  assert.match(T10.dragVerdict([T10.judgeDragCell('chrome', 'canvas', none, { cuaLanes: ['cua'], vendors: ['pinned', 'newest'] }).row]).failed.join(), /missed runs 3/);
+  // a drop or a stroke elsewhere has its reader proven by either vendor build's take
+  const dnd = (engine, n, took) => Array.from({ length: n }, (_, i) => ({ engine, i, ok: true, witness: true, ms: 300, before: { drops: i }, after: { drops: i + (took(i) ? 1 : 0) } }));
+  const { row: electron } = T10.judgeDragCell('electron', 'dnd', [...dnd('pinned', 30, () => false), ...dnd('newest', 30, () => true), ...dnd('cua', 30, (i) => i !== 5)], { cuaLanes: ['cua'], vendors: ['pinned', 'newest'] });
+  assert.equal(electron.reference, true);
+  assert.match(T10.dragVerdict([electron]).failed.join(), /electron dnd: cua missed runs 5/);
+  // a value kind still needs the pinned build's values: nothing to compare against, recorded, not judged
+  const sel = (engine) => Array.from({ length: 4 }, (_, i) => ({ engine, i, ok: true, witness: true, ms: 100, before: '', after: '' }));
+  assert.equal(T10.judgeDragCell('gnome-text-editor', 'select', [...sel('pinned'), ...sel('newest'), ...sel('cua')], { cuaLanes: ['cua'], vendors: ['pinned', 'newest'] }).row.lanes.cua.pass, null);
+});
+
+/** drag.html's own script, run on a stand-in for the document: its listeners, and the elements' text. */
+async function dragPage() {
+  const { readFileSync } = await import('node:fs');
+  const vm = await import('node:vm');
+  const html = readFileSync(new URL('../../scripts/linux-engine-diff/pages/drag.html', import.meta.url), 'utf8');
+  const script = html.slice(html.indexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
+  const listeners = [];
+  const elements = new Map();
+  const element = (id) => {
+    if (!elements.has(id)) {
+      elements.set(id, {
+        id,
+        localName: 'div',
+        textContent: '',
+        value: '0',
+        scrollTop: 0,
+        setAttribute() {},
+        addEventListener: (type, fn) => listeners.push({ type, fn, on: id }),
+        getContext: () => new Proxy({}, { get: () => () => {} }),
+        getBoundingClientRect: () => ({ left: 0, top: 0 }),
+      });
+    }
+    return elements.get(id);
+  };
+  const document = {
+    title: '',
+    getElementById: element,
+    querySelectorAll: () => [],
+    addEventListener: (type, fn) => listeners.push({ type, fn, on: 'document' }),
+  };
+  vm.runInNewContext(script, { document, location: { hash: '' }, window: { getSelection: () => '' }, performance: { now: () => 0, timeOrigin: 0 }, setTimeout, clearTimeout, decodeURIComponent, Math, String });
+  const fire = (type, event) => {
+    for (const l of listeners.filter((x) => x.type === type)) l.fn({ button: 0, buttons: 1, timeStamp: 0, clientX: 0, clientY: 0, ...event, target: element(event.target ?? 'scroller') });
+  };
+  return { fire, text: (id) => element(id).textContent };
+}
+
+test("the page's motion count counts the coalesced samples each event carries, not the events", async () => {
+  const page = await dragPage();
+  page.fire('pointerdown', { target: 'scroller' });
+  // one dispatched pointerrawupdate carrying three coalesced samples, then one with a single sample
+  page.fire('pointerrawupdate', { getCoalescedEvents: () => [{}, {}, {}] });
+  page.fire('pointerrawupdate', { getCoalescedEvents: () => [{}] });
+  // a pointermove of two, and one whose list is empty (the event itself is its one sample)
+  page.fire('pointermove', { getCoalescedEvents: () => [{}, {}] });
+  page.fire('pointermove', { getCoalescedEvents: () => [] });
+  page.fire('pointerup', {});
+  const received = parseDragStatus([page.text('s-received')]).received;
+  assert.equal(received.target, 'scroller');
+  assert.equal(received.raw, 4, 'samples, not the 2 events');
+  assert.equal(received.moves, 3);
+  assert.equal(received.raw_events, 2, 'the dispatched events kept beside them');
+  assert.equal(received.move_events, 2);
+  // a browser without coalesced events: each event is one sample
+  const plain = await dragPage();
+  plain.fire('pointerdown', { target: 'canvas' });
+  plain.fire('pointermove', {});
+  plain.fire('pointerup', {});
+  assert.deepEqual(parseDragStatus([plain.text('s-received')]).received, { seq: 1, target: 'canvas', raw: 0, moves: 1, raw_events: 0, move_events: 1 });
+});
+
+test("a motion record is the drag's only when its press is new: the previous drag's is never taken for it", () => {
+  const prev = { seq: 30, target: 'canvas', raw: 700, moves: 33, raw_events: 600, move_events: 30 };
+  const next = { ...prev, seq: 31 };
+  assert.deepEqual(T10.freshReceived(prev, next), next);
+  assert.equal(T10.freshReceived(prev, prev), null, 'the no-press control publishes nothing new: no record, not the last one');
+  assert.equal(T10.freshReceived(prev, null), null);
+  assert.deepEqual(T10.freshReceived(null, next), next, 'a page with no record before');
+  assert.equal(T10.freshReceived(next, prev), null);
+});
+
+test("a cell's drags run in rotating blocks of fresh engines, the top-ups continuing the rotation", () => {
+  const lanes = [{ label: 'pinned' }, { label: 'newest' }, { label: 'cua' }];
+  const plan = T10.blockPlan(lanes, 30, 0);
+  assert.equal(plan.length, 9, 'three blocks of 10 per lane');
+  assert.deepEqual(plan.slice(0, 3).map((b) => [b.spec.label, b.start, b.count]), [['pinned', 0, 10], ['newest', 0, 10], ['cua', 0, 10]]);
+  assert.deepEqual(plan.slice(3, 6).map((b) => b.spec.label), ['newest', 'cua', 'pinned'], 'the order rotates block by block');
+  assert.deepEqual(plan.slice(6, 9).map((b) => [b.spec.label, b.start]), [['cua', 20], ['pinned', 20], ['newest', 20]]);
+  // a top-up of 10 from 30 is the fourth block, rotated on from the third
+  assert.deepEqual(T10.blockPlan(lanes, 10, 30).map((b) => [b.spec.label, b.start, b.count]), [['pinned', 30, 10], ['newest', 30, 10], ['cua', 30, 10]]);
+  // a cell's offset (its kind's index) shifts the first block, and a short tail is its own block
+  assert.deepEqual(T10.blockPlan(lanes, 5, 0, { offset: 1 }).map((b) => [b.spec.label, b.count]), [['newest', 5], ['cua', 5], ['pinned', 5]]);
+  assert.deepEqual(T10.blockPlan(lanes, 15, 0).map((b) => b.count), [10, 10, 10, 5, 5, 5]);
 });

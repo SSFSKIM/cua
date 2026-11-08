@@ -15,8 +15,12 @@ import Foundation
 // hit inside a node still in place (its label's text, a group) passes. The vendor posts at the point
 // blindly. Where #282 element-routes the pointer (the design session's ruling 1ea561bc ca82a6f4, reversing the first
 // build's skip), a refused point is refused before anything is pressed, and a kept one's route presses only the recorded
-// node or its control, the guard run again after any wait of the route's (`StalePointGate`). Everything here reads
-// through closures, so the rule is unit-tested over a fake tree.
+// node or its control, the guard run again after any wait of the route's (`StalePointGate`). #316 adds two rules (the
+// design session's ruling 4701abd8): before the tree is read, a window of the app's at layer 0 above the screenshot's
+// window that the screenshot's window list did not hold refuses (`newWindowAbove`: Safari's address-field overlay, which
+// swallows the next click anywhere in the page), and a recorded node inside an AXWebArea requires the hit inside that
+// same web area (`otherWebArea`: Chrome keeps answering the page a tab has left, and Firefox's urlbar list lies over the
+// page). Everything here reads through closures, so the rule is unit-tested over a fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
 struct ScreenshotNode<Element> {
@@ -47,6 +51,9 @@ struct ScreenshotNode<Element> {
   var gapsBelow: [Element] = []
   /// The index in the record of its nearest recorded (framed) ancestor, frameless ones passed through (#305's rule 3).
   var ancestor: Int?
+  /// The nearest AXWebArea at or above it in the record, frameless ones included (#316's rule G): the document the
+  /// screenshot showed it in, which a hit at its point must still lie in.
+  var webArea: Element?
 }
 
 /// One element as the walk emitted it, for the record (`screenshotNodes`): its lineage number and its parent's.
@@ -86,9 +93,13 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
   var bounds: [Int: CGRect?] = [:]
   /// Each read's nearest framed node at or above it, by its index in `nodes`.
   var framed: [Int: Int] = [:]
+  /// Each read's nearest AXWebArea at or above it (#316).
+  var webAreas: [Int: Element] = [:]
   var nodes: [ScreenshotNode<Element>] = []
   nodes.reserveCapacity(reads.count)
   for read in reads {
+    let webArea = read.role == "AXWebArea" ? read.element : read.parent.flatMap { webAreas[$0] }
+    if let webArea { webAreas[read.number] = webArea }
     let boundary = clipBoundaryRoles.contains(read.role)
     let inherited: CGRect? = boundary ? nil : read.parent.flatMap { bounds[$0] ?? nil }
     let own = read.frame
@@ -116,7 +127,7 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
     nodes.append(ScreenshotNode(element: read.element, role: read.role, title: read.title, description: read.description, frame: frame,
                                 shown: shown, depth: read.depth, subtreeRecorded: !incomplete.contains(read.number),
                                 thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
-                                ancestor: ancestor))
+                                ancestor: ancestor, webArea: webArea))
   }
   return nodes
 }
@@ -191,8 +202,16 @@ enum StalePointReason: String, Equatable {
   /// a wrapped text's box over its neighbour, a hit region past its frame (an edge, a toolbar item's padding: ruling
   /// a27fc57c, `recordedHitBy`).
   case recordedHit
+  /// Refused (#316's rule W): the app has a window at layer 0 above the screenshot's window that the screenshot's window
+  /// list did not hold (`newWindowAbove`); nothing of the tree was read.
+  case newWindow
+  /// Refused (#316's rule G): the recorded node lies in an AXWebArea and the hit does not (`ScreenshotNode.webArea`): the
+  /// point reaches another document now, or something over the page.
+  case otherWebArea
 
-  var refuses: Bool { self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther }
+  var refuses: Bool {
+    self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther || self == .newWindow || self == .otherWebArea
+  }
 }
 
 /// How the recorded node was found now: its own handle, or one re-created in place.
@@ -219,6 +238,11 @@ struct StalePointVerdict<Element> {
   var nodes: [ScreenshotNode<Element>] = []
   /// For `recordedHit`, the frame that carried the point (`recordedHitAtPoint`).
   var recordedHitBy: RecordedHitFrame?
+  /// #316's rule G: how many parents of the hit were read to find the recorded node's web area (nil when the rule did not
+  /// walk: no web area recorded, no hit, or the hit the node itself).
+  var webAreaReads: Int?
+  /// #316's rule W: the new window over the screenshot's, for `newWindow`.
+  var newWindow: ListedWindow?
   var refused: Bool { reason.refuses }
 }
 
@@ -300,6 +324,21 @@ private func isInside<Element>(_ element: Element, _ container: Element, _ reads
   return false
 }
 
+/// #316's rule G: whether `hit` is `area` or lies inside it, its parents walked (nothing else read) until one is `area`, up
+/// to `stalePointAncestorLevels`, and how many were read. Inside, the walk stops at the area, so a hit in a nested
+/// document (an iframe's web area inside the page's) reaches the page's further up; outside, it ends at the application,
+/// whose parent is none.
+func liesIn<Element>(_ hit: Element, _ area: Element, _ reads: StalePointReads<Element>) -> (inside: Bool, reads: Int) {
+  if reads.same(hit, area) { return (true, 0) }
+  var current = hit
+  for level in 0..<stalePointAncestorLevels {
+    guard let next = reads.parent(current) else { return (false, level + 1) }
+    if reads.same(next, area) { return (true, level + 1) }
+    current = next
+  }
+  return (false, stalePointAncestorLevels)
+}
+
 /// Up to `stalePointDescendantBound` of `element`'s descendants, breadth-first.
 private func descendants<Element>(of element: Element, _ reads: StalePointReads<Element>) -> [Element] {
   var queue = reads.children(element) ?? []
@@ -368,15 +407,24 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   }
   guard let current = verdict.current else { return verdict }
   let gaps = node.gapsBelow
+  var webAreaReads: Int?
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
     StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: hitRole, hit: hit, gaps: gaps,
-                      point: point, windowShift: windowShift, nodes: nodes)
+                      point: point, windowShift: windowShift, nodes: nodes, webAreaReads: webAreaReads)
   }
   // Judged in order: the node's identity (above) and its frame, then the hit (the reasons name what was read, kept or
   // refused). A node the record holds incompletely has passed as every node passes by here (the design session's
   // ruling 2db3ba75), and whatever the point reaches inside it (no hit, the node itself, anything under it) is its
   // unrecorded interior, kept unguarded and said so.
   if let currentFrame, !holdsPoint(currentFrame, point) { return judged(.frameMoved) }
+  // #316's rule G: a node the screenshot showed in a web area is judged only by a hit in that same web area, its nearest
+  // one in the record (so an iframe's hit passes inside the page's, and a page's inside its iframe's own). The hit that is
+  // the node's own handle is in it by the record; an empty hit is judged as before.
+  if let hit, let area = node.webArea, !reads.same(hit, node.element) {
+    let walk = liesIn(hit, area, reads)
+    webAreaReads = walk.reads
+    if !walk.inside { return judged(.otherWebArea) }
+  }
   if !node.subtreeRecorded, hit.map({ reads.same($0, current) || isInside($0, current, reads) }) ?? true {
     return judged(.unrecordedDescendant)
   }
@@ -463,6 +511,32 @@ private func insideGap<Element>(_ element: Element, _ gaps: [Element], _ reads: 
   return ancestors(of: element, reads).contains { ancestor in gaps.contains { reads.same(ancestor, $0) } }
 }
 
+/// #316's rule W (the design session's ruling 4701abd8): the frontmost window of `pid`'s at layer 0 above `target` in
+/// `list` (the window list, front to back) that the screenshot's window list (`recorded`) did not hold; nil when there is
+/// none, or when the list does not hold the target, which nothing is then above. Such a window refuses wherever it lies:
+/// Safari's address-field overlay takes the next page click anywhere, not only under its bounds. No app is excepted, so
+/// Chrome's omnibox popup, also a window of its own, refuses too, which the ruling accepts as one re-observation.
+func newWindowAbove(target: CGWindowID, pid: pid_t, recorded: Set<CGWindowID>, list: [ListedWindow]) -> ListedWindow? {
+  var found: ListedWindow?
+  for window in list {
+    if window.number == target { return found }
+    if found == nil, window.owner == pid, window.layer == 0, !recorded.contains(window.number) { found = window }
+  }
+  return nil
+}
+
+/// The guard at a coordinate click's or drag start's point (#296, #316): rule W from the window list (`windows`, the
+/// on-screen list read once, only when there is a target window number and a recorded list to compare: about 0.3 ms, p95
+/// 1 ms, with 30 windows on screen on the MacBook), and only when it keeps the point, the tree's verdict (`tree`,
+/// `stalePointVerdict`). Both call sites take this one, so a drag's start is guarded as a click is.
+func guardedPointVerdict<Element>(at point: CGPoint, hit: Element?, target: CGWindowID?, pid: pid_t, recorded: Set<CGWindowID>?,
+                                  windows: () -> [ListedWindow], tree: () -> StalePointVerdict<Element>) -> StalePointVerdict<Element> {
+  if let target, let recorded, let new = newWindowAbove(target: target, pid: pid, recorded: recorded, list: windows()) {
+    return StalePointVerdict(reason: .newWindow, hit: hit, point: point, newWindow: new)
+  }
+  return tree()
+}
+
 /// The meta's `stalePoint` (#296): what the guard decided ("kept" | "refused"), why, how it found the node, the recorded
 /// node's role and the hit's, for `recordedHit` the frame that carried it (`recordedHitBy`), its time (both checks' when
 /// there were two), and `rechecked` when an element route's wait
@@ -483,6 +557,11 @@ struct StalePointRecord: Equatable {
   /// The check that answered ran after the route's focus hold had activated the app (`pressAfterFinalCheck`): a refusal
   /// then pressed nothing, but the activation ran.
   var afterActivation = false
+  /// #316's costs, apart from `ms`, which covers them: rule W's window-list read and check, and rule G's parent reads.
+  var windowsMs: Double?
+  let webAreaReads: Int?
+  /// For `newWindow`, the new window's number.
+  let newWindow: CGWindowID?
 
   init<Element>(_ verdict: StalePointVerdict<Element>, ms: Double, rechecked: Bool = false) {
     self.verdict = verdict.refused ? .refused : .kept
@@ -491,6 +570,8 @@ struct StalePointRecord: Equatable {
     recordedRole = verdict.node?.role
     hitRole = verdict.hitRole
     recordedHitBy = verdict.recordedHitBy
+    webAreaReads = verdict.webAreaReads
+    newWindow = verdict.newWindow?.number
     self.ms = ms
     self.rechecked = rechecked
   }
@@ -501,6 +582,9 @@ struct StalePointRecord: Equatable {
     if let recordedRole { wire["recordedRole"] = recordedRole }
     if let hitRole { wire["hitRole"] = hitRole }
     if let recordedHitBy { wire["recordedHitBy"] = recordedHitBy.rawValue }
+    if let windowsMs { wire["windowsMs"] = (windowsMs * 1000).rounded() / 1000 }
+    if let webAreaReads { wire["webAreaReads"] = webAreaReads }
+    if let newWindow { wire["newWindow"] = Int(newWindow) }
     if rechecked { wire["rechecked"] = true }
     if afterActivation { wire["afterActivation"] = true }
     return wire
@@ -519,7 +603,8 @@ func stalePointPressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVe
   if reads.same(pressed, current) || isInside(current, pressed, reads) { return verdict }
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
     StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: reads.role(pressed), hit: pressed,
-                      gaps: verdict.gaps, point: verdict.point, windowShift: verdict.windowShift, nodes: verdict.nodes)
+                      gaps: verdict.gaps, point: verdict.point, windowShift: verdict.windowShift, nodes: verdict.nodes,
+                      webAreaReads: verdict.webAreaReads)  // #316: the hit's walk, which this verdict was judged after
   }
   // Inside a node the record holds incompletely, or under one of its strips whose children it lacks (#301).
   if (!node.subtreeRecorded && isInside(pressed, current, reads)) || insideGap(pressed, verdict.gaps, reads) {
@@ -564,16 +649,34 @@ func pressAfterFinalCheck(holds: Bool, hold: () throws -> Void, finalCheck: (_ a
 struct StalePointGate<Element> {
   let first: StalePointVerdict<Element>
   let firstMs: Double
+  /// The first check's window-list read (#316's rule W, `StalePointRecord.windowsMs`), which the record this gate
+  /// answers replaces in the meta: it is kept there, the recheck reading no window list of its own.
+  var firstWindowsMs: Double? = nil
   let recheck: () -> StalePointVerdict<Element>
 
+  /// The first check's verdict and its record (`Engine.stalePointGuard`'s), whose time and window-list read this gate's
+  /// record carries on.
+  init(first: StalePointVerdict<Element>, record: StalePointRecord, recheck: @escaping () -> StalePointVerdict<Element>) {
+    self.init(first: first, firstMs: record.ms, firstWindowsMs: record.windowsMs, recheck: recheck)
+  }
+
+  init(first: StalePointVerdict<Element>, firstMs: Double, firstWindowsMs: Double? = nil, recheck: @escaping () -> StalePointVerdict<Element>) {
+    self.first = first
+    self.firstMs = firstMs
+    self.firstWindowsMs = firstWindowsMs
+    self.recheck = recheck
+  }
+
   /// The verdict on `pressed` just before the route acts on it: the first one, or after a wait the recheck's, each
-  /// judged by `stalePointPressVerdict`; its record (`rechecked` after a wait, the time both checks') and its refusal.
+  /// judged by `stalePointPressVerdict`; its record (`rechecked` after a wait, the time both checks', the first check's
+  /// window-list read) and its refusal.
   func check(_ pressed: Element, waited: Bool, afterActivation: Bool = false, now: () -> Double,
              reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
     let started = now()
     let verdict = stalePointPressVerdict(pressed, waited ? recheck() : first, reads: reads)
     let outcome = stalePointOutcome(verdict, ms: firstMs + (now() - started), afterActivation: afterActivation, reads: reads)
     var record = outcome.record
+    record.windowsMs = firstWindowsMs
     record.rechecked = waited
     record.afterActivation = afterActivation
     return (record, outcome.refusal)
@@ -596,6 +699,7 @@ func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: St
   switch reason {
   case .frameMoved: change = "has moved away from it"
   case .interactiveHit, .pressedOther: change = "is no longer what it reaches"
+  case .otherWebArea: change = "is in a page the point no longer reaches"
   default: change = "is gone"
   }
   let there = now.map { "; \($0) is there now" } ?? ""
@@ -603,13 +707,21 @@ func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: St
     "The screen changed since the screenshot: the \(was) it showed at this point \(change)\(there). \(afterActivation ? "The app was activated in the background, but nothing was pressed." : "Nothing was sent.") Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
 }
 
+/// #316's rule W's refusal: the same name as the guard's other refusals, since the model's remedy is the same (a new
+/// screenshot first), with its own sentence, since no element of the screenshot's is at fault. Nothing was posted.
+func newWindowOverScreenshot(app: String) -> EngineError {
+  EngineError(name: "screenChangedSinceScreenshot",
+    "The screen changed since the screenshot: \(app) has opened a window over the one the screenshot showed, which can take the click. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+}
+
 /// The guard's outcome at a point: its meta record, and the refusal to throw (nil when it kept the pointer). The refusal
 /// names what is there now (the verdict's hit; for `pressedOther` the element the route would act on) only when it is
 /// known (its role read) and is not the node itself (Chrome's hit-test may still answer a moved control's handle at its
-/// old point); otherwise it names nothing there.
-func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Double, afterActivation: Bool = false,
+/// old point); otherwise it names nothing there. A `newWindow` refusal names the app (`app`).
+func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Double, afterActivation: Bool = false, app: String = "The app",
                                 reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
   let record = StalePointRecord(verdict, ms: ms)
+  if verdict.reason == .newWindow { return (record, newWindowOverScreenshot(app: app)) }
   guard verdict.refused, let node = verdict.node else { return (record, nil) }
   let was = stalePointName(role: node.role, title: node.title, description: node.description)
   var now: String?
@@ -627,16 +739,26 @@ extension ConnectionState {
 extension Engine {
   /// The guard at a coordinate pointer's posted point, live (`stalePointVerdict` over the Accessibility API), with `hit` the
   /// hit-test the action already took there and `windowOrigin` the origin of the window the point was placed in, now; its
-  /// time covers the reads it adds. `rehit` hit-tests the point again (the action's own hit-test).
-  func stalePointGuard(at point: CGPoint, windowOrigin: CGPoint, hit: AXUIElement?, rehit: () -> AXUIElement?, app: ResolvedApp,
-                       context: ExecutionContext) -> (record: StalePointRecord, refusal: EngineError?, verdict: StalePointVerdict<AXUIElement>, shift: CGVector) {
+  /// time covers the reads it adds. `rehit` hit-tests the point again (the action's own hit-test). `windowID` is the number
+  /// of the window the point was placed in, which #316's rule W looks above among `appPid`'s windows.
+  func stalePointGuard(at point: CGPoint, windowOrigin: CGPoint, windowID: CGWindowID?, hit: AXUIElement?, rehit: () -> AXUIElement?,
+                       app: ResolvedApp, appPid: pid_t, context: ExecutionContext)
+    -> (record: StalePointRecord, refusal: EngineError?, verdict: StalePointVerdict<AXUIElement>, shift: CGVector) {
     let started = monotonicMilliseconds()
     let reads = StalePointReads<AXUIElement>.live
     let screenshot = context.connection.observedScreenshot(app: app)
     let shift = screenshot.map { CGVector(dx: windowOrigin.x - $0.windowOrigin.x, dy: windowOrigin.y - $0.windowOrigin.y) } ?? .zero
-    let verdict = stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], hit: hit, rehit: rehit,
-                                    sleep: { usleep(UInt32($0 * 1000)) }, reads: reads)
-    let outcome = stalePointOutcome(verdict, ms: monotonicMilliseconds() - started, reads: reads)
+    var windowsMs: Double?
+    let verdict = guardedPointVerdict(at: point, hit: hit, target: windowID, pid: appPid, recorded: screenshot?.windowList, windows: {
+      let read = monotonicMilliseconds()
+      defer { windowsMs = monotonicMilliseconds() - read }
+      return onScreenWindowList()
+    }) {
+      stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], hit: hit, rehit: rehit,
+                        sleep: { usleep(UInt32($0 * 1000)) }, reads: reads)
+    }
+    var outcome = stalePointOutcome(verdict, ms: monotonicMilliseconds() - started, app: app.displayName, reads: reads)
+    outcome.record.windowsMs = windowsMs
     return (outcome.record, outcome.refusal, verdict, shift)
   }
 

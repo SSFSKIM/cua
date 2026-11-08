@@ -1149,3 +1149,312 @@ final class StalePointDeliveryTests: XCTestCase {
     XCTAssertTrue(seam.posts.contains { $0.kind == .mouse(.leftMouseDown) })
   }
 }
+
+// MARK: #316's rule W: a new window of the app's over the screenshot's (the design session's ruling 4701abd8)
+
+final class NewWindowGuardTests: XCTestCase {
+  private let app: pid_t = 990_011, other: pid_t = 990_012
+  private let target: CGWindowID = 41
+  /// What the screenshot's window list held: the target, a window of the app's already over it (Chrome's omnibox popup
+  /// open at the screenshot), and another app's.
+  private let recorded: Set<CGWindowID> = [41, 50, 60]
+  private let point = CGPoint(x: 300, y: 400)
+
+  private func window(_ number: CGWindowID, _ owner: pid_t, layer: Int = 0) -> ListedWindow {
+    ListedWindow(number: number, owner: owner, layer: layer, bounds: CGRect(x: 80, y: 60, width: 610, height: 860))
+  }
+  private var targetWindow: ListedWindow { window(target, app) }
+
+  /// The guard over `list` (front to back): its verdict, and whether the tree was read and the window list read.
+  private func guarded(_ list: [ListedWindow], recorded: Set<CGWindowID>? = nil, target: CGWindowID? = 41)
+    -> (verdict: StalePointVerdict<Node>, treeRead: Bool, listRead: Bool) {
+    var treeRead = false, listRead = false
+    let verdict = guardedPointVerdict(at: point, hit: Node?.none, target: target, pid: app, recorded: recorded ?? self.recorded,
+                                      windows: { listRead = true; return list }) {
+      treeRead = true
+      return StalePointVerdict<Node>(reason: .sameElement)
+    }
+    return (verdict, treeRead, listRead)
+  }
+
+  /// Safari's ⌘L overlay: a window of Safari's own at layer 0 above the browser window, not in the screenshot's list.
+  /// Refused before the tree is read, with the guard's name and a sentence of its own.
+  func testANewLayerZeroWindowOfTheAppsAboveTheTargetRefuses() {
+    let (verdict, treeRead, _) = guarded([window(77, app), window(50, app), targetWindow])
+    XCTAssertEqual(verdict.reason, .newWindow)
+    XCTAssertTrue(verdict.refused)
+    XCTAssertEqual(verdict.newWindow?.number, 77)
+    XCTAssertFalse(treeRead, "nothing of the tree read")
+    var outcome = stalePointOutcome(verdict, ms: 0.5, app: "Safari", reads: reads)
+    outcome.record.windowsMs = 0.3
+    XCTAssertEqual(outcome.refusal?.errorName, "screenChangedSinceScreenshot")
+    XCTAssertEqual(outcome.refusal?.message,
+                   "The screen changed since the screenshot: Safari has opened a window over the one the screenshot showed, which can take the click. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    XCTAssertEqual(outcome.record.wire as NSDictionary, ["verdict": "refused", "reason": "newWindow", "newWindow": 77, "windowsMs": 0.3,
+                                                         "ms": 0.5] as NSDictionary)
+    // The frontmost of two new ones is named.
+    XCTAssertEqual(guarded([window(78, app), window(77, app), targetWindow]).verdict.newWindow?.number, 78)
+    // Wherever it lies: one far from the point refuses too.
+    let far = ListedWindow(number: 79, owner: app, layer: 0, bounds: CGRect(x: 2000, y: 0, width: 10, height: 10))
+    XCTAssertEqual(guarded([far, targetWindow]).verdict.reason, .newWindow)
+  }
+
+  /// What W leaves to the tree: a window the screenshot's list held (Chrome's popup open at the screenshot), one below the
+  /// target, one at another layer (a menu, a floating panel, the system's), another app's, a list without the target, and
+  /// a screenshot or a click without the numbers to compare (the list then never read).
+  func testWhatTheRuleLeavesToTheTree() {
+    let kept: [(String, [ListedWindow])] = [
+      ("in the screenshot's list", [window(50, app), targetWindow]),
+      ("below the target", [targetWindow, window(77, app)]),
+      ("a pop-up menu's layer", [window(77, app, layer: 101), targetWindow]),
+      ("a floating panel's layer", [window(77, app, layer: 3), targetWindow]),
+      ("another app's window", [window(77, other), targetWindow]),
+      ("no target in the list", [window(77, app)]),
+    ]
+    for (name, list) in kept {
+      let (verdict, treeRead, _) = guarded(list)
+      XCTAssertEqual(verdict.reason, .sameElement, name)
+      XCTAssertTrue(treeRead, name)
+    }
+    var listRead = false
+    let none = guardedPointVerdict(at: point, hit: Node?.none, target: target, pid: app, recorded: nil,
+                                   windows: { listRead = true; return [self.window(77, self.app), self.targetWindow] }) {
+      StalePointVerdict<Node>(reason: .sameElement)
+    }
+    XCTAssertEqual(none.reason, .sameElement, "no recorded list: nothing to compare")
+    XCTAssertFalse(listRead, "and the list is not read")
+    let noTarget = guarded([window(77, app), targetWindow], target: nil)
+    XCTAssertEqual(noTarget.verdict.reason, .sameElement, "no window number for the click's window")
+    XCTAssertFalse(noTarget.listRead)
+  }
+
+  /// The screenshot keeps the window list its capture read.
+  func testTheScreenshotKeepsItsWindowList() {
+    let image = CapturedScreenshot(url: "file:///x.jpg", width: 1220, height: 1720, frame: CGRect(x: 0, y: 0, width: 610, height: 860), scale: 2,
+                                   windowList: [41, 50])
+    XCTAssertEqual(ObservedScreenshot(window: AXUIElementCreateApplication(app), image: image).windowList, [41, 50])
+  }
+
+  /// The refusal reaches the pointer's delivery as every guard refusal does: a click's and a drag's start alike, nothing
+  /// posted, activated or held.
+  func testTheRefusalPostsNothingForAClickOrADragStart() {
+    let verdict = guarded([window(77, app), targetWindow]).verdict
+    let refusal = stalePointOutcome(verdict, ms: 0, app: "Safari", reads: reads).refusal
+    let frame = CGRect(x: 80, y: 60, width: 610, height: 860)
+    let activations = HeldActivations()
+    for drag in [false, true] {
+      let seam = GuardSeam(frontmost: other)
+      seam.activationPoint = CGPoint(x: 300, y: 70)
+      let activation = FakeActivation(pid: app, window: AXUIElementCreateApplication(app), windowFrame: frame, windowID: target, system: seam.system)
+      let connection = ConnectionState(id: 1, fd: -1)
+      var meta = InputMeta(ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+      var pointer = PointerTarget(view: .acceptsFirstMouse, app: "Safari")
+      pointer.staleRefusal = refusal
+      XCTAssertThrowsError(try {
+        if drag {
+          try deliverPointer(to: app, route: .activation, activation: activation, activations: activations, pointer: pointer,
+                             post: seam.system.post, meta: &meta) {
+            dragEvents(from: point, to: CGPoint(x: 400, y: 500), window: ClickTarget(point: point, windowFrame: frame, windowID: target, pid: app),
+                       flags: [])
+          }
+        } else {
+          try deliverClick(ClickTarget(point: point, windowFrame: frame, windowID: target, pid: app), route: .activation, button: .left, count: 1,
+                           activation: activation, activations: activations, pointer: pointer, targetActive: { false }, post: seam.system.post, meta: &meta)
+        }
+      }()) { XCTAssertEqual(($0 as? EngineError)?.errorName, "screenChangedSinceScreenshot") }
+      XCTAssertEqual(seam.posts.count, 0, drag ? "a drag" : "a click")
+      XCTAssertEqual(seam.holds, 0)
+      XCTAssertEqual(activations.holders(app), 0)
+      XCTAssertNil(meta.startedAt)
+    }
+  }
+}
+
+// MARK: #316's rule G: the hit in the document the screenshot showed (the design session's ruling 4701abd8)
+
+final class WebAreaGuardTests: XCTestCase {
+  /// A browser window: the address field in the toolbar, the page's web area with a link and an iframe whose own web area
+  /// holds a button (same-origin or cross-origin, the tree is the same).
+  private struct Browser {
+    let window = Node("AXWindow", CGRect(x: 0, y: 25, width: 800, height: 700))
+    let toolbar = Node("AXToolbar", CGRect(x: 0, y: 25, width: 800, height: 50))
+    let address = Node("AXTextField", CGRect(x: 200, y: 35, width: 400, height: 30), description: "Address")
+    let page = Node("AXWebArea", CGRect(x: 0, y: 75, width: 800, height: 650))
+    let link = Node("AXLink", CGRect(x: 40, y: 100, width: 120, height: 20), title: "Docs")
+    let text = Node("AXStaticText", CGRect(x: 40, y: 200, width: 300, height: 20), description: "Some text")
+    let frame = Node("AXGroup", CGRect(x: 400, y: 300, width: 300, height: 200))
+    let inner = Node("AXWebArea", CGRect(x: 400, y: 300, width: 300, height: 200))
+    let pay = Node("AXButton", CGRect(x: 450, y: 350, width: 100, height: 30), title: "Pay")
+    init() {
+      window.add(toolbar)
+      toolbar.add(address)
+      window.add(page)
+      page.add(link)
+      page.add(text)
+      page.add(frame)
+      frame.add(inner)
+      inner.add(pay)
+    }
+  }
+  private let linkPoint = CGPoint(x: 100, y: 110)
+  private let payPoint = CGPoint(x: 500, y: 365)
+
+  /// Chrome keeps the page a tab has left: the old link still reads its frame at the point, while the hit-test answers the
+  /// new page's text there, a non-interactive hit #296 kept (48 of 48 clicks landed on the new page). Its link refuses
+  /// too, now as the other web area.
+  func testAHitInAnotherWebAreaRefuses() {
+    let browser = Browser()
+    let nodes = recorded(browser.window)
+    let next = Node("AXWebArea", CGRect(x: 0, y: 75, width: 800, height: 650))
+    let heading = Node("AXStaticText", CGRect(x: 40, y: 100, width: 300, height: 30), description: "Welcome")
+    let newLink = Node("AXLink", CGRect(x: 40, y: 100, width: 120, height: 20), title: "Sign in")
+    next.add(heading)
+    next.add(newLink)
+    browser.window.add(next)
+    let refused = verdict(nodes, at: linkPoint, hit: heading)
+    XCTAssertEqual(refused.reason, .otherWebArea)
+    XCTAssertTrue(refused.refused)
+    XCTAssertEqual(refused.webAreaReads, 3, "the heading's parents to the application: the new page, the window, none")
+    let outcome = stalePointOutcome(refused, ms: 0.4, reads: reads)
+    XCTAssertEqual(outcome.refusal?.errorName, "screenChangedSinceScreenshot")
+    XCTAssertEqual(outcome.refusal?.message,
+                   "The screen changed since the screenshot: the AXLink \"Docs\" it showed at this point is in a page the point no longer reaches; AXStaticText \"Welcome\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    XCTAssertEqual(outcome.record.wire as NSDictionary, ["verdict": "refused", "reason": "otherWebArea", "identity": "handle", "recordedRole": "AXLink",
+                                                         "hitRole": "AXStaticText", "webAreaReads": 3, "ms": 0.4] as NSDictionary)
+    XCTAssertEqual(verdict(nodes, at: linkPoint, hit: newLink).reason, .otherWebArea)
+    // Firefox's urlbar list lies in the window's tree over the page: its row's text answers the point.
+    let list = Node("AXList", CGRect(x: 200, y: 65, width: 400, height: 300))
+    let row = Node("AXStaticText", CGRect(x: 200, y: 200, width: 400, height: 24), description: "example.com")
+    list.add(row)
+    browser.toolbar.add(list)
+    XCTAssertEqual(verdict(nodes, at: CGPoint(x: 300, y: 210), hit: row).reason, .otherWebArea)
+    // A recorded node that is the web area itself (a blank part of the page) is in its own document.
+    let blank = CGPoint(x: 600, y: 650)
+    XCTAssertEqual(deepestScreenshotNode(at: blank, in: nodes)?.element === browser.page, true)
+    XCTAssertEqual(verdict(nodes, at: blank, hit: next).reason, .otherWebArea)
+  }
+
+  /// A hit in the same web area is judged as before, the walk stopping at the area.
+  func testTheSameWebAreaPasses() {
+    let browser = Browser()
+    let nodes = recorded(browser.window)
+    let label = Node("AXStaticText", CGRect(x: 45, y: 102, width: 60, height: 16))
+    browser.link.add(label)  // exposed to the hit-test after the observation
+    let kept = verdict(nodes, at: linkPoint, hit: label)
+    XCTAssertEqual(kept.reason, .nonInteractiveHit)
+    XCTAssertEqual(kept.webAreaReads, 2, "the label's parents: the link, the page")
+    XCTAssertEqual(StalePointRecord(kept, ms: 0).wire["webAreaReads"] as? Int, 2)
+    let same = verdict(nodes, at: linkPoint, hit: browser.link)
+    XCTAssertEqual(same.reason, .sameElement)
+    XCTAssertNil(same.webAreaReads, "the node's own handle: nothing walked")
+    let blank = CGPoint(x: 600, y: 650)
+    XCTAssertEqual(verdict(nodes, at: blank, hit: browser.page).reason, .sameElement)
+    let group = Node("AXGroup", CGRect(x: 500, y: 600, width: 200, height: 100))
+    browser.page.add(group)
+    let inPage = verdict(nodes, at: blank, hit: group)
+    XCTAssertEqual(inPage.reason, .nonInteractiveHit)
+    XCTAssertEqual(inPage.webAreaReads, 1)
+  }
+
+  /// Nested documents pass while the page has not changed: a node of the page over an iframe whose interior the record
+  /// lacks, hit inside the iframe's own web area (the page's is further up), and a node inside the iframe hit inside the
+  /// iframe's document. A node in the iframe whose point now reaches the outer page refuses: its nearest web area decides.
+  func testNestedWebAreasPass() {
+    let iframeInPage = Browser()
+    let partial = recorded(iframeInPage.window, skipping: [ObjectIdentifier(iframeInPage.inner)])
+    XCTAssertEqual(deepestScreenshotNode(at: payPoint, in: partial)?.element === iframeInPage.frame, true, "the page's iframe group")
+    XCTAssertEqual(deepestScreenshotNode(at: payPoint, in: partial)?.webArea === iframeInPage.page, true)
+    let inFrame = verdict(partial, at: payPoint, hit: iframeInPage.pay)
+    XCTAssertEqual(inFrame.reason, .unrecordedDescendant, "the iframe's button, inside the page's iframe group")
+    XCTAssertEqual(inFrame.webAreaReads, 3, "the button's parents: the iframe's area, its group, the page")
+
+    let pageInIframe = Browser()
+    let nodes = recorded(pageInIframe.window)
+    XCTAssertEqual(deepestScreenshotNode(at: payPoint, in: nodes)?.webArea === pageInIframe.inner, true, "the iframe's own document")
+    let label = Node("AXStaticText", CGRect(x: 460, y: 355, width: 40, height: 16))
+    pageInIframe.pay.add(label)
+    XCTAssertEqual(verdict(nodes, at: payPoint, hit: label).reason, .nonInteractiveHit)
+    XCTAssertEqual(verdict(nodes, at: payPoint, hit: label).webAreaReads, 2)
+    let span = Node("AXGroup", CGRect(x: 440, y: 340, width: 150, height: 60))
+    pageInIframe.inner.add(span)
+    XCTAssertEqual(verdict(nodes, at: payPoint, hit: span).reason, .nonInteractiveHit, "a group of the iframe's document")
+
+    // The iframe gone from under the point: the outer page answers it.
+    let outer = Browser()
+    let before = recorded(outer.window)
+    let filler = Node("AXGroup", CGRect(x: 400, y: 300, width: 300, height: 200))
+    outer.page.add(filler)
+    XCTAssertEqual(verdict(before, at: payPoint, hit: filler).reason, .otherWebArea, "the iframe's node, the page's hit")
+  }
+
+  /// The review of 73b44561..e62a7454 (P2): an element route's record replaces the first check's in the meta, so it keeps
+  /// the first check's window-list read (W) and the walk its verdict was judged after (G), with no recheck and with one.
+  func testAnElementRoutesRecordKeepsTheRulesCosts() {
+    let browser = Browser()
+    let partial = recorded(browser.window, skipping: [ObjectIdentifier(browser.inner)])
+    let first = verdict(partial, at: payPoint, hit: browser.pay)
+    XCTAssertEqual(first.reason, .unrecordedDescendant)
+    var firstRecord = StalePointRecord(first, ms: 1.25)
+    firstRecord.windowsMs = 0.4
+    let gate = StalePointGate(first: first, record: firstRecord) { verdict(partial, at: self.payPoint, hit: browser.pay) }
+    for waited in [false, true] {
+      let checked = gate.check(browser.pay, waited: waited, now: { 0 }, reads: reads)
+      XCTAssertNil(checked.refusal)
+      XCTAssertEqual(checked.record.reason, .unrecordedDescendant, "the press verdict rebuilt: the button inside the iframe group")
+      XCTAssertEqual(checked.record.wire["windowsMs"] as? Double, 0.4, "waited: \(waited)")
+      XCTAssertEqual(checked.record.wire["webAreaReads"] as? Int, 3, "waited: \(waited)")
+      XCTAssertEqual(checked.record.ms, 1.25)
+    }
+  }
+
+  /// What G leaves as it was: a node outside every web area (the toolbar's), and an empty hit.
+  func testANodeOutsideAnyWebAreaAndAnEmptyHitAreUnchanged() {
+    let browser = Browser()
+    let nodes = recorded(browser.window)
+    let addressPoint = CGPoint(x: 300, y: 50)
+    XCTAssertNil(deepestScreenshotNode(at: addressPoint, in: nodes)?.webArea)
+    let popup = Node("AXStaticText", CGRect(x: 250, y: 40, width: 100, height: 20))
+    browser.page.add(popup)  // a page's text answering the toolbar's point
+    let outside = verdict(nodes, at: addressPoint, hit: popup)
+    XCTAssertEqual(outside.reason, .nonInteractiveHit, "as on main")
+    XCTAssertNil(outside.webAreaReads)
+    let button = Node("AXButton", CGRect(x: 250, y: 40, width: 100, height: 20))
+    browser.page.add(button)
+    XCTAssertEqual(verdict(nodes, at: addressPoint, hit: button).reason, .interactiveHit, "as on main")
+    // The page left, an empty hit: judged as before, by the node's frame.
+    let next = Node("AXWebArea", CGRect(x: 0, y: 75, width: 800, height: 650))
+    browser.window.add(next)
+    let empty = verdict(nodes, at: linkPoint, hit: nil)
+    XCTAssertEqual(empty.reason, .noHit)
+    XCTAssertNil(empty.webAreaReads)
+  }
+
+  /// The record finds the nearest web area through frameless nodes, a frameless web area included.
+  func testTheRecordFindsTheWebAreaThroughFramelessNodes() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 400))
+    let area = Node("AXWebArea", nil)
+    let wrapper = Node("AXGroup", nil)
+    let button = Node("AXButton", CGRect(x: 10, y: 10, width: 50, height: 20))
+    window.add(area)
+    area.add(wrapper)
+    wrapper.add(button)
+    let nodes = recorded(window)
+    XCTAssertEqual(nodes.first { $0.element === button }?.webArea === area, true)
+    XCTAssertNil(nodes.first { $0.element === window }?.webArea)
+  }
+
+  /// The walk is bounded: a hit more than `stalePointAncestorLevels` below the area is taken for outside.
+  func testTheWalkIsBounded() {
+    let area = Node("AXWebArea", CGRect(x: 0, y: 0, width: 10, height: 10))
+    var deepest = area
+    for _ in 0..<(stalePointAncestorLevels + 1) {
+      let child = Node("AXGroup", CGRect(x: 0, y: 0, width: 10, height: 10))
+      deepest.add(child)
+      deepest = child
+    }
+    let walk = liesIn(deepest, area, reads)
+    XCTAssertFalse(walk.inside)
+    XCTAssertEqual(walk.reads, stalePointAncestorLevels)
+    XCTAssertTrue(liesIn(deepest.parent!, area, reads).inside, "at the bound itself")
+  }
+}

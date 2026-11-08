@@ -499,11 +499,12 @@ extension Engine {
           }
           pointer = established
         }
-        // #296: what the screenshot showed at the point is checked against what is there now, every button and route; a
+        // #296: what the screenshot showed at the point is checked against what is there now (#316: and the app's windows
+        // above the screenshot's against the screenshot's window list), every button and route; a
         // refusal is thrown before anything is posted or pressed (deliverPointer), #282's element route included.
         let stale = signposted("click.stalePoint") {
-          stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, hit: pointerHit,
-                          rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app, context: context)
+          stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, windowID: windowID, hit: pointerHit,
+                          rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app, appPid: appPid, context: context)
         }
         meta.stalePoint = stale.record
         pointer.staleRefusal = stale.refusal
@@ -516,7 +517,7 @@ extension Engine {
         }
         if pointer.view.mayBeWebArea, let hit = pointerHit {
           // A kept point's element route presses only the node or its control, the guard run again after any wait.
-          let gate = StalePointGate(first: stale.verdict, firstMs: stale.record.ms) { [self] in
+          let gate = StalePointGate(first: stale.verdict, record: stale.record) { [self] in
             stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, appPid: appPid, app: app, context: context)
           }
           pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,

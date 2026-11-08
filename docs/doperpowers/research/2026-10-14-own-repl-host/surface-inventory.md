@@ -760,3 +760,14 @@ control inside a container that reports a collapsed (1-pt) frame can still be cu
 table columns and header groups take new tokens at every observation (#303). The paragraph:
 
 > When a window holds more than its accessibility tree can list, the tree lists what the window shows first, in its usual order, and ends with a line such as `[truncated: at least 1234 elements omitted, above and below the visible area]`, the count a lower bound and the words saying which way the omitted elements lie. To reach an element the tree does not list, scroll toward it and call `getAXState()` again. A visible control inside a container that reports a collapsed frame can still be left out. In a Chromium-based app, a table's column and header elements take new element IDs at every observation.
+
+### Table 3 addition (2026-11-08, #316)
+
+The design session's ruling 4701abd8 on #316 (the native engine spec's Decision Log, the #316 entry) widens the
+stale-point guard: it also refuses when the app has opened a new window over the screenshot's (Safari's address-field
+overlay) or when the point has left the page the screenshot showed (Chrome answering a page the tab has left, Firefox's
+urlbar list). The spike measured what it still misses: a page's own suggestion list over the control the click aims at,
+and text that moved within one text view. So the model has to know when to observe again before a coordinate click. The
+#296 paragraph keeps its first half and gains a second (a draft, final after the hosted A/B):
+
+> A click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, or has given way to another control, it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it. The check reads the accessibility tree at the point, and also refuses a click or drag when the app has opened a new window over the one in the screenshot, or when the point has left the page the screenshot showed. It still cannot see a page's own suggestion list, which can take a click aimed at a control under it, or text that has moved within the same text view (after Return or a paste in TextEdit). After typing into a field that offers suggestions, or editing text above the point, take a new screenshot before clicking at coordinates. When a screenshot shows a panel over the page, aim at what the screenshot shows, not at the page's elements under it.

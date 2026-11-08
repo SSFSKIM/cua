@@ -523,3 +523,43 @@ func secureTextField(role: String?, subrole: SubroleRead) -> Bool {
   case .failed: return true
   }
 }
+
+// MARK: Gecko's focus route (#315)
+//
+// #287's hosted cells: a shared-mode coordinate click into a background Firefox page is lost (34 of 34, pointer 0), since
+// Gecko refuses a click-through mouse down into its page (Routes.swift `geckoChromeView`). The design session's ruling
+// cb252e88 gives Gecko #282's element route and #283's focus route. But #313's A/B (run 42402098567) found a background
+// Firefox ignoring an AXFocused write, while AXPress focuses its fields (p99 234 ms, inside `textEntryFocusSettleMs`), with
+// Firefox kept behind. So on Gecko a text field takes #313's press and read-back, never #283's write.
+
+/// How a shared-mode plain left click into a web area's text entry is carried, by the page's engine (`PageEngine`, only
+/// Chromium's or Gecko's: `pointerView`'s web areas): Chromium's by #283's AXFocused write (`focusPlacingCaret`), Gecko's
+/// by the field's own action with its focus read back (`pressFocusingField`).
+enum WebAreaFocusCarrier: Equatable {
+  case focusWrite
+  case pressReadingFocus
+}
+
+func webAreaFocusCarrier(_ engine: PageEngine) -> WebAreaFocusCarrier {
+  engine == .gecko ? .pressReadingFocus : .focusWrite
+}
+
+/// Gecko's focus route for the text-entry element the walk reached (`webAreaFocusTarget`): its action (`webAreaAction`:
+/// AXPick, else AXPress) through `press`, then its focus read back as #313's is (`readingFocus`); only a read of true is
+/// success, recorded through `noted` (step `press`), and a field that never reads focused answers clickUnconfirmed. A
+/// field advertising neither action throws `WebAreaRefusal.noAction` with nothing pressed. Nothing writes AXFocused or
+/// the selection here. Answers the action taken.
+@discardableResult
+func pressFocusingField(role: String, actions: [String]?, app: String, press: (String) throws -> Void, focused: () -> Bool?,
+                        noted: (TextEntryFocusRecord) -> Void, now: () -> Double, sleep: (Double) -> Void) throws -> String {
+  guard let action = webAreaAction(role: role, actions: actions) else { throw WebAreaRefusal.noAction }
+  let found = try readingFocus(after: { try press(action) }, focused: focused, now: now, sleep: sleep)
+  noted(TextEntryFocusRecord(focus: found, step: .press))
+  if found != .readBack { throw textEntryFocusUnconfirmed(app, selected: false) }
+  return action
+}
+
+/// The note of a Gecko field focused by its action (#315): no caret was placed, so the place typing goes is Gecko's.
+func pressFocusNote(_ app: String) -> String {
+  "\(app)'s text field was focused through its accessibility action rather than a click at the point, so its caret is where \(app) put it, which need not be the point. Use select_text or set_value first if the position matters."
+}

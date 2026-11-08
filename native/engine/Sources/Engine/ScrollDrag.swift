@@ -158,7 +158,7 @@ extension Engine {
       let route = coordinateClickRoute(forced: forced, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
       let activation = route == .activation
         ? FakeActivation(pid: owner, appPid: appPid, window: start.window, windowFrame: start.windowFrame, windowID: windowID) : nil
-      // Where the drag's own down goes (#282): in shared mode one starting in a Chromium web area is refused, nothing posted.
+      // Where the drag's own down goes (#282): in shared mode one starting in a Chromium or (#315) Gecko web area is refused, nothing posted.
       var pointer = route == .activation ? pointerTarget(hit: hit, app: app, appPid: appPid, noun: "drag") : .acceptingFirstMouse
       // #296: the start point, where the drag presses, checked against the screenshot (the end is where it drops).
       let stale = stalePointGuard(at: start.point, windowOrigin: start.windowFrame.origin, hit: hit,

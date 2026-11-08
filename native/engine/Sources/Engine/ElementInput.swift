@@ -212,8 +212,8 @@ extension Engine {
   /// left; the in-flight intervention check just before the click's events.
   ///
   /// A left click by route 3 is a pointer into the view the hit-test answered (#282, `pointerTarget`): in shared mode,
-  /// one into a Chromium web area takes the hit's own action instead when `webAreaElementRoute` allows it (an element
-  /// click's, never focusField's fallback) and it advertises one, else it is refused with nothing posted.
+  /// one into a Chromium or (#315) Gecko web area takes the hit's own action instead when `webAreaElementRoute` allows it
+  /// (an element click's, never focusField's fallback) and it advertises one, else it is refused with nothing posted.
   func synthesizedClick(_ pointing: ElementPointing, route: InputRoute, button: MouseButton, count: Int, app: ResolvedApp, appPid: pid_t,
                         guarding: InterventionGuard, context: ExecutionContext, webAreaElementRoute: Bool = true, meta: inout InputMeta) throws {
     let connection = context.connection.id
@@ -258,7 +258,8 @@ extension Engine {
   /// focusFieldIfNeeded with its fallback click: a plain left click by the synthesized route the app takes (3, or 4
   /// under the owner's override), kept by `focusingClick`. In a minimized window the click is skipped rather than
   /// refused: set_value and select_text act through Accessibility, which needs no window on screen (Minimized.swift).
-  /// Inside a Chromium web area in shared mode the click is refused, never pressed (#282): an action is no focusing.
+  /// Inside a Chromium or Gecko web area in shared mode the click is refused, never pressed (#282, #315): an action is no
+  /// focusing.
   func focusField(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
                   meta: inout InputMeta) throws {
     let connection = context.connection
@@ -273,13 +274,13 @@ extension Engine {
     }
   }
 
-  /// What a left pointer by route 3 aims at (#282, Routes.swift `pointerView`): the view `hit` is in `app`'s process, a
-  /// web area seen there or not (`WebAccessibility`), with the app's name for the sentences. No element route: the
-  /// caller adds one where a plain click may take it (`webAreaPress`).
+  /// What a left pointer by route 3 aims at (#282, #315; Routes.swift `pointerView`): the view `hit` is in `app`'s
+  /// process, by its page engine, a web area seen there or not (`WebAccessibility`), with the app's name for the
+  /// sentences. No element route: the caller adds one where a plain click may take it (`webAreaPress`).
   func pointerTarget(hit: AXUIElement?, app: ResolvedApp, appPid: pid_t, noun: String = "click") -> PointerTarget {
-    let chromium = webAccessibility.isChromiumFamily(app.appPath)
-    let seen = chromium && webAccessibility.hasSeenWebArea(pid: appPid, launched: processGeneration(launchDate: app.running?.launchDate, pid: appPid))
-    let view = pointerView(chromium: chromium, webAreaSeen: seen, hit: hit, role: { attribute($0, kAXRoleAttribute) as? String },
+    let engine = webAccessibility.pageEngine(app.appPath)
+    let seen = engine != .other && webAccessibility.hasSeenWebArea(pid: appPid, launched: processGeneration(launchDate: app.running?.launchDate, pid: appPid))
+    let view = pointerView(engine: engine, webAreaSeen: seen, hit: hit, role: { attribute($0, kAXRoleAttribute) as? String },
                            parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead)
     return PointerTarget(view: view, app: app.displayName, noun: noun)
   }
@@ -290,16 +291,16 @@ extension Engine {
   /// it was read from, which the element route walks; the establishment's record goes in the meta.
   func clickPointerTarget(hit: AXUIElement?, window: AXUIElement?, rehit: @escaping () -> AXUIElement?, app: ResolvedApp, appPid: pid_t,
                           meta: inout InputMeta) -> (target: PointerTarget, hit: AXUIElement?) {
-    let chromium = webAccessibility.isChromiumFamily(app.appPath)
+    let engine = webAccessibility.pageEngine(app.appPath)
     let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
-    let seen = chromium && webAccessibility.hasSeenWebArea(pid: appPid, launched: generation)
+    let seen = engine != .other && webAccessibility.hasSeenWebArea(pid: appPid, launched: generation)
     let application = prepare(AXUIElementCreateApplication(appPid))
     let establish = PointerEstablishing<AXUIElement>(
       readAppRole: { _ = attribute(application, kAXRoleAttribute) },
       windowHasWebArea: { (window ?? primaryWindow(of: application)).map(containsWebArea) ?? false },
       noteWebArea: { [webAccessibility] in webAccessibility.noteWebArea(pid: appPid, launched: generation) },
       rehit: rehit, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
-    let established = establishedPointerView(chromium: chromium, webAreaSeen: seen, hit: hit, role: { attribute($0, kAXRoleAttribute) as? String },
+    let established = establishedPointerView(engine: engine, webAreaSeen: seen, hit: hit, role: { attribute($0, kAXRoleAttribute) as? String },
                                              parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead,
                                              establish: establish)
     if let record = established.record { meta.pointerEstablish = record }
@@ -333,9 +334,16 @@ extension Engine {
     }
     guard case .success(let resolved) = resolution else {
       guard case .failure(let why) = resolution else { return nil }
-      // A text field is focused instead (#283), with no re-read: AXFocused works before complete mode.
+      // A text field is focused instead: on Chromium by AXFocused (#283), with no re-read, since it works before complete
+      // mode; on Gecko by its own action, its focus read back (#315), since a background Firefox ignores the write.
       if why == .editable {
-        return webAreaFocus(hit, point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context, stalePoint: stalePoint)
+        switch webAreaFocusCarrier(webAccessibility.pageEngine(app.appPath)) {
+        case .focusWrite:
+          return webAreaFocus(hit, point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context, stalePoint: stalePoint)
+        case .pressReadingFocus:
+          return webAreaFocusPress(hit, point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context,
+                                   stalePoint: stalePoint)
+        }
       }
       return { meta in
         refused(why, &meta)
@@ -374,14 +382,72 @@ extension Engine {
                                sleep: { usleep(UInt32($0 * 1000)) }) {
         try elementActionClick(control, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
                                point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context,
-                               finalCheck: stalePoint.map { gate in { afterHold, meta in
-                                 // Only a hold can have waited since the early check: re-read then, else the early verdict stands.
-                                 guard afterHold else { return }
-                                 let checked = gate.check(control, waited: true, afterActivation: true, now: monotonicMilliseconds, reads: .live)
-                                 meta.stalePoint = checked.record
-                                 if let refusal = checked.refusal { throw refusal }
-                               } }, meta: &meta)
+                               finalCheck: finalStalePointCheck(stalePoint, pressing: control), meta: &meta)
       }
+    }
+  }
+
+  /// #296's last check of an element route's target, after its focus hold (`elementActionClick`'s `finalCheck`): only a
+  /// hold can have waited since the early check, so the guard runs again then, else the early verdict stands.
+  func finalStalePointCheck(_ stalePoint: StalePointGate<AXUIElement>?,
+                            pressing element: AXUIElement) -> ((_ afterHold: Bool, _ meta: inout InputMeta) throws -> Void)? {
+    stalePoint.map { gate in { afterHold, meta in
+      guard afterHold else { return }
+      let checked = gate.check(element, waited: true, afterActivation: true, now: monotonicMilliseconds, reads: .live)
+      meta.stalePoint = checked.record
+      if let refusal = checked.refusal { throw refusal }
+    } }
+  }
+
+  /// The focus route a plain left click into a Gecko web area's text field takes (#315, WebAreaFocus.swift
+  /// `pressFocusingField`): the text-entry element the hit resolves to (`webAreaFocusTarget`, #283's walk), refused as
+  /// #282's walk is when there is none; else its own action (AXPick, else AXPress) as an element click's, by route 3's
+  /// held activation when Firefox does not believe it has focus (measured not raising Firefox, #287 and #313), accepted
+  /// once the field reads focused, else `clickUnconfirmed`. A field advertising no action is refused, nothing done.
+  /// Nothing writes AXFocused or a selection; the caret is where Gecko puts it, and the note says so. Records the walk,
+  /// the field's role, whether it was the hit, and the read-back (`elementClick` reason `webArea`, `focus`, `focusStep`).
+  func webAreaFocusPress(_ hit: AXUIElement, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
+                         context: ExecutionContext, stalePoint: StalePointGate<AXUIElement>? = nil) -> (inout InputMeta) throws -> Void {
+    var walk: [String] = []
+    let resolution = webAreaFocusTarget(hit, role: { attribute($0, kAXRoleAttribute) as? String }, subrole: subroleRead,
+                                        parent: { elementAttribute($0, kAXParentAttribute) }, editable: { attribute($0, "AXEditableAncestor") != nil },
+                                        focusSettable: { AXOps.live.isSettable($0, kAXFocusedAttribute) }, walk: &walk)
+    func refused(_ why: WebAreaRefusal, _ meta: inout InputMeta) {
+      if meta.elementClick == nil { meta.elementClick = ElementClickRecord(plan: .synthesized(.activation), reason: .webArea) }
+      meta.elementClick?.walk = walk
+      meta.elementClick?.walkStopped = why.rawValue
+    }
+    guard case .success(let target) = resolution else {
+      let why: WebAreaRefusal
+      if case .failure(let refusal) = resolution { why = refusal } else { why = .incompleteAncestry }
+      return { meta in
+        refused(why, &meta)
+        throw backgroundClickRefused(app.displayName)
+      }
+    }
+    let field = target.element
+    return { [self] meta in
+      // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is pressed.
+      try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
+      let owner = ownerPid(of: field, fallback: appPid)
+      try refuseForbiddenOwner(owner)
+      actionTargets(owner, app: app, connection: context.connection)
+      do {
+        try pressFocusingField(role: target.role, actions: establishedActionNames(of: field), app: app.displayName, press: { action in
+          meta.elementClick = ElementClickRecord(plan: .action(action), reason: .webArea, hit: nil, pressedRole: target.role,
+                                                 pressedAncestor: target.ancestor, walk: walk)
+          try elementActionClick(field, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
+                                 point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context,
+                                 finalCheck: finalStalePointCheck(stalePoint, pressing: field), meta: &meta)
+        }, focused: { bool(attribute(field, kAXFocusedAttribute)) }, noted: { record in
+          meta.elementClick?.focus = record.focus.rawValue
+          meta.elementClick?.focusStep = record.step.rawValue
+        }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
+      } catch WebAreaRefusal.noAction {
+        refused(.noAction, &meta)
+        throw backgroundClickRefusedObserveFirst(app.displayName)
+      }
+      meta.note = pressFocusNote(app.displayName)
     }
   }
 

@@ -224,7 +224,7 @@ struct PointerTarget {
 /// consumed its arm.
 ///
 /// #282 (Routes.swift), by the connection's device mode, for a left pointer (`postsLeftMouseDown`) under route 3: in
-/// shared mode one into a Chromium web area, or a Chromium hit not established outside one (`pointer.view.mayBeWebArea`), meeting an activation that clicks no activation point is
+/// shared mode one into a Chromium or (#315) Gecko web area, or such a hit not established outside one (`pointer.view.mayBeWebArea`), meeting an activation that clicks no activation point is
 /// refused by the registry before anything is posted, and answers by `pointer.elementRoute` when it has one, else as
 /// `backgroundClickRefused`; only one into a view known to accept first mouse re-arms a spent hold. In dedicated mode the
 /// arm's inert click goes early, no hold is re-armed, and the events go out with no delivery guard and no after-action
@@ -475,8 +475,8 @@ extension Engine {
           return (route, route == .activation
             ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing) : nil)
         }
-        // What a left click by route 3 points into (#282): in shared mode a Chromium web area's plain click takes the hit's
-        // own action when it has one, any other is refused, before anything is posted.
+        // What a left click by route 3 points into (#282, #315): in shared mode a Chromium or Gecko web area's plain click
+        // takes the hit's own action when it has one, any other is refused, before anything is posted.
         var pointer = PointerTarget.acceptingFirstMouse
         var pointerHit = hit
         if route == .activation, button == .left {

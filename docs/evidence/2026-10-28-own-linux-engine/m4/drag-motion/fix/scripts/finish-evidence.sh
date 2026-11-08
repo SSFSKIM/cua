@@ -19,10 +19,11 @@ done
 grep -E '^test result|FAILED|panicked' "$f/live-suite-6e9e5b20.txt" > "$e/tests/live-suite-6e9e5b20.txt"
 grep -E '^test result|FAILED|panicked' "$f/unit.txt" > "$e/tests/unit.txt"
 grep -E '^ℹ ' "$f/suite-harness.txt" > "$e/tests/suite-harness.txt"
-for x in plan-compare.sh live-red.sh live-one.sh live-suite.sh probe-held-cost.sh xorg-two.sh fix-idle.sh drag.sh env.sh \
-  private.sh private-run.mjs norecord.mjs build-musl.sh copy-evidence.py finish-evidence.sh; do
+for x in plan-compare.sh live-red.sh live-one.sh live-suite.sh probe-held-cost.sh fix-idle.sh drag.sh env.sh \
+  private.sh private-run.mjs norecord.mjs build-musl.sh copy-evidence.py finish-evidence.sh two-screens-red.sh; do
   label "$f/scripts/$x" > "$e/scripts/$x"
 done
-cp "$f/xorg/two-screens.conf" "$e/scripts/xorg-two-screens.conf"
+# the two-screen Xorg and its configuration: native/linux-engine/tests/two-screens.sh and xorg-two-screens.conf (the
+# follow-up; they replaced this wave's host copies)
 du -sh "$e"
 grep -rl "$HOME" "$e" || echo "no home paths"

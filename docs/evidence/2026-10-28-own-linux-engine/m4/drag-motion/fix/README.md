@@ -36,11 +36,39 @@ release lands where the pointer is, as before T11. `Engine::shutdown` ends a hel
   that the pointer is then on screen 1, there, with no button down.
 - On a two-screen Xvfb of the test's own (as the gate runs them), both fail on 59c30d64 (`tests/tdd-red-screens.txt`):
   a motion before the release. Xvfb puts both screens at one origin, so that motion stays on screen 1.
-- On a private Xorg with the dummy driver whose layout puts the screens side by side (`scripts/xorg-two.sh`,
-  `scripts/xorg-two-screens.conf`; `CUA_LIVE_TWO_SCREENS` names it to the tests), both fail on 59c30d64 as the
-  reviewer described (`tests/tdd-red-screens-xorg.txt`): the motion carries the held pointer back to screen 0 and the
-  release lands there, `Release { root: 1058 … }` against screen 1's 1060.
-- Both pass on the fix, on both servers (`tests/tdd-green-screens.txt`, `tests/tdd-green-screens-xorg.txt`).
+- On a private Xorg with the dummy driver whose layout puts the screens side by side (`CUA_LIVE_TWO_SCREENS` names
+  it to the tests), both fail on 59c30d64 as the reviewer described: the motion carries the held pointer back to
+  screen 0 and the release lands there, `Release { root: 1058 … }` against screen 1's 1060. This is the real proof of
+  the finding.
+- Both pass on the fix, on both servers.
+
+**The side-by-side run, one command** (the follow-up's; the first runs, `tests/tdd-*-screens-xorg.txt`, used a host
+copy of the same configuration):
+
+```bash
+cd native/linux-engine && tests/two-screens.sh
+```
+
+`native/linux-engine/tests/two-screens.sh` starts `/usr/lib/xorg/Xorg` from the committed
+`tests/xorg-two-screens.conf` on a display it picks itself (`-displayfd`; it refuses `:0`), runs the two two-screen
+live tests under `dbus-run-session` with `CUA_LIVE_TWO_SCREENS` set and the gate's `--release --locked --target
+x86_64-unknown-linux-musl --features live` flags, terminates the server, and fails if its socket is still there. It
+exits 0 only when both tests ran and passed. It sits with the engine's other live-test tooling (`tests/dbus-daemon-quiet`,
+`tests/support/`) under the `engine-linux` gate's path filter, so a gate step can call it from the directory the gate
+already works in.
+
+- **What it needs from the host**: the packages `xserver-xorg-core` and `xserver-xorg-video-dummy`, and the engine's
+  build (rustup's musl target, as the gate installs it) and `dbus` (`dbus-run-session`). No rights beyond an ordinary
+  user's: it runs `/usr/lib/xorg/Xorg` itself, not the setuid `Xorg.wrap` (whose `allowed_users=console` would refuse a
+  non-console user), on a seat of its own with the VT shared and no VT switch, and with no input devices it opens no
+  `/dev/input` nor `/dev/dri` (the dummy driver draws to memory). Here it ran as a user in no group but its own. **A
+  GitHub-hosted Ubuntu runner should run it** after `sudo apt-get install -y xserver-xorg-core xserver-xorg-video-dummy`:
+  it needs no console, GPU or root. That is not yet verified on one; T18's gate run would be the first.
+- **On the head** (`tests/two-screens-head.txt`, the follow-up's tree; its engine sources are 6e9e5b20's): `two-screens: Xorg on :1`, both tests `ok`,
+  `test result: ok. 2 passed`, exit 0, no socket left.
+- **On 59c30d64** (`tests/two-screens-59c30d64.txt`, its engine sources with the head's tests and tooling,
+  `scripts/two-screens-red.sh`): both `FAILED`, each `left: [Motion { root: 1058, x: 200, y: 120 }, Motion { root:
+  1058, … }, Release { root: 1058, … }]  right: [Release { root: 1060, x: 200, y: 120 }]`, exit 1, no socket left.
 - A killed Xvfb left its socket behind, and the harness suite's private server then refused that display as another
   server's (`engine-a11y-bus.test.mjs`, one failure in the first suite run); db379829 terminates it instead.
 

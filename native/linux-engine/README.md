@@ -23,6 +23,8 @@ target/release/cua-engine --version   # cua-engine <version> (<git sha>)
 cargo test
 # the live tests (an X display, a session bus with AT-SPI, yad for a GTK 3 window), as the engine-linux gate runs them
 xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --features live -- --test-threads 1
+# the two-screen tests on a private Xorg whose screens sit side by side (xserver-xorg-core, xserver-xorg-video-dummy)
+tests/two-screens.sh
 ```
 
 Releases are built, tested and attested by `.github/workflows/linux-engine.yml` from the version in `Cargo.toml`

@@ -2362,7 +2362,8 @@ fn a_browser_s_drag_handle_rests_at_each_held_move_s_end_and_before_its_release(
 /// An X server of the test's own with two screens, each its own root (`Xvfb -screen 0 … -screen 1 …`), on a display it
 /// picks itself (`-displayfd`); killed on drop. `CUA_LIVE_TWO_SCREENS` names a running two-screen display to use in
 /// its place: Xvfb puts both screens at one origin, so a motion on one screen's root moves the pointer within the
-/// screen it is on, where an Xorg whose layout puts the screens side by side carries it across.
+/// screen it is on, where an Xorg whose layout puts the screens side by side carries it across (`tests/two-screens.sh`
+/// runs the two-screen tests on such a server).
 struct TwoScreens {
     server: Option<std::process::Child>,
     display: String,

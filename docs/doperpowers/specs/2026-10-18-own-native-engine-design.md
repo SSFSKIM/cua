@@ -3210,8 +3210,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   2. **The rule** (`chooseChildren`). Above 499 children, with no visible subset, the children kept are
      `shownChildPositions`'s in what the element leaves showing of the window to its children (`childrenClip`, the
      walk's clipping rule): up to 512 children each by its own frame (one that shows beyond a strip, or has no frame), above
-     that the bisected run with the end samples that show (a fixed or sticky head or tail), checked by the middle samples.
-     The node carries `shown` with subset `"shown"`, and the service prints the vendor's `(showing lo-hi, … of N
+     that the bisected run with the end samples that show (a fixed or sticky head or tail), checked by the middle samples,
+     and then each candidate kept only when its own frame shows beyond a strip, or it has none: the bisection and the
+     samples place a child along the list's axis alone, which orders the walk's reads but would print a row moved off the
+     viewport sideways, and count it in the marker (the review of 3de863bb..937f49c9). The node carries `shown` with subset `"shown"`, and the service prints the vendor's `(showing lo-hi, … of N
      items)` from its ranges, unchanged. It keeps none, `"omitted"` as before, when there is nothing to judge in (no
      visible frame, or the element's ancestors leave nothing of it showing), when the frames do not settle it (no axis to
      bisect, a middle sample out of place, the deadline), and when no child is seen showing by its own frame (none shows,
@@ -3220,7 +3222,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      shows, all are printed unmarked, as the other tiers do. An element with a visible subset, and any element of 499
      children or fewer, is printed as before: the vendor's frame filter up to 499 still meets the window and keeps
      Chromium's offscreen strips, which this tier, judging in the clip beyond a strip, does not.
-  3. **The same children everywhere.** The token re-fetch (Lineage.swift `matching`) passes the clip it already keeps,
+  3. **The same children everywhere, within each caller's deadline.** Every caller passes its own deadline into the
+     search, which stops there and keeps none: the walk's, the re-fetch's (`ElementResolver.refetchDeadlineMs`, an
+     observation's 10 s) and the settle's busy walk's, which then gives no verdict rather than a quiet one, so a search the
+     deadline stopped can never read as a settled window (the same review: 500 offscreen children past a short deadline
+     had read quiet). The token re-fetch (Lineage.swift `matching`) passes the clip it already keeps,
      so a printed row is found again; the settle's busy walk, which keeps no clips, judges in the window frame, so a
      spinner among a wide page's shown children is seen.
   4. **The cost.** About 2 log2(N) + 96 frame reads per such element above 512 (#304's price, 0.06 ms a read on

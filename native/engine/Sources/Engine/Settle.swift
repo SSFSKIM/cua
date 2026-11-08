@@ -200,11 +200,15 @@ func busyWalk(_ window: AXUIElement, source: ElementSource, visibleFrame: CGRect
       reading.loadedWebArea = true
     }
     if depth < maxDepth {
-      for child in chooseChildren(of: element, data: data, source: source, visibleFrame: visibleFrame, shownIn: visibleFrame).children.reversed() {
+      let children = chooseChildren(of: element, data: data, source: source, visibleFrame: visibleFrame, shownIn: visibleFrame,
+                                    expired: { monotonicMilliseconds() >= deadline }).children
+      for child in children.reversed() {
         stack.append((prepare(child), depth + 1))
       }
     }
   }
+  // A walk the deadline cut, however its last element ended (a width-rule search it stopped keeps none), is no verdict.
+  guard monotonicMilliseconds() < deadline else { return reading }
   reading.busy = false
   return reading
 }

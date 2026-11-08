@@ -294,7 +294,8 @@ final class Lineage {
     var found: [AXUIElement] = []
     if before == 1 {
       let tree = resolver.tree(observed.menuRoot)
-      found = matching(entry.identity, ignoringValue: ignoringValue, window: tree.window, menuItems: tree.menuItems, source: source)
+      found = matching(entry.identity, ignoringValue: ignoringValue, window: tree.window, menuItems: tree.menuItems, source: source,
+                       deadlineMs: resolver.refetchDeadlineMs)
     }
     switch RefetchVerdict.of(before: before, after: found.count) {
     case .ambiguousBefore: throw ElementErrors.ambiguousBeforeRefetch
@@ -323,6 +324,8 @@ struct ElementResolver {
   /// the app's primary window now and the menu-bar elements an observation reads (the bar, then its items but the Apple
   /// menu; `menuBarElements`).
   var tree: (_ menuRoot: AXUIElement?) -> (window: AXUIElement?, menuItems: [AXUIElement])
+  /// How long the re-fetch's walk may take, from its start (an observation's deadline; a test's shorter one).
+  var refetchDeadlineMs = Double(observationDeadlineMs)
 
   /// The engine's: `lineage`'s watches, the live handle, and `pid`'s application element.
   static func live(_ lineage: Lineage, pid: pid_t) -> ElementResolver {
@@ -442,7 +445,7 @@ extension ConnectionState {
 /// attributes they list and without a Debug item, as the walk reads them) whose eleven attributes equal the identity's,
 /// whichever process serves them.
 private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: AXUIElement?, menuItems: [AXUIElement],
-                      source: ElementSource) -> [AXUIElement] {
+                      source: ElementSource, deadlineMs: Double) -> [AXUIElement] {
   struct Pending { let element: AXUIElement; let depth: Int; let descend: Bool; let path: [Int]; var clip: CGRect? = nil }
   var found: [AXUIElement] = []
   // Menu-bar elements are matched but never walked into, as the observation does.
@@ -458,7 +461,7 @@ private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: 
   }
   var visited = 0
   var seen = Set<ElementKey>()
-  let deadline = monotonicMilliseconds() + Double(observationDeadlineMs)
+  let deadline = monotonicMilliseconds() + deadlineMs
   while visited < maxObservedNodes, monotonicMilliseconds() < deadline {
     guard let next = stack.popLast() else {
       guard let resumed = deferred.popLast() else { break }
@@ -473,7 +476,8 @@ private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: 
     guard next.descend && next.depth < maxDepth else { continue }
     // What it leaves showing to its children: the walk's clipping rule (`childrenClip`), which the width rule judges in.
     let clip = childrenClip(next.clip, frame: data.frame, role: data.role, actions: source.actions(next.element))
-    let children = chooseChildren(of: next.element, data: data, source: source, visibleFrame: windowFrame, shownIn: clip).children
+    let children = chooseChildren(of: next.element, data: data, source: source, visibleFrame: windowFrame, shownIn: clip,
+                                  expired: { monotonicMilliseconds() >= deadline }).children
     let unplaced = data.frame.map { unplacedFrame($0) && clipsDescendants(role: data.role, actions: source.actions(next.element)) } ?? false
     if next.depth == 0 || next.clip == nil || unplaced || data.frame.map({ showsBeyondStrip($0, in: next.clip!) }) ?? true {
       push(children, depth: next.depth + 1, path: next.path, clip: clip)

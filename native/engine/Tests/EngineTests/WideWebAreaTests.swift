@@ -112,6 +112,60 @@ final class WideWebAreaTests: XCTestCase {
     XCTAssertNil(all.nodes[1]["shown"])
   }
 
+  /// Above 512 the bisection and the samples place a row along the list's axis alone: each candidate is kept only when
+  /// its own frame shows beyond a strip, or it has none, as up to 512 (the review of 3de863bb..937f49c9). A row in the
+  /// run moved off the viewport sideways, and a collapsed 1-pt one, are not printed, a frameless one is, and the marker
+  /// counts what is printed.
+  func testABisectedCandidateMovedOffSidewaysIsNotPrinted() {
+    let tree = page(count: 600, scroll: 200)
+    tree.frames[row(210)] = CGRect(x: 2_000, y: viewport.minY + 10 * 20, width: 1000, height: 20)
+    tree.frames[row(220)] = CGRect(x: 0, y: viewport.minY + 20 * 20, width: 1000, height: 1)
+    tree.frames[row(225)] = nil
+    let walked = walk(tree, Lineage(), visibleFrame: windowFrame)
+    XCTAssertEqual(ids(walked), [0, 1] + (200..<210).map(row) + (211..<220).map(row) + (221..<235).map(row))
+    XCTAssertEqual(shown(walked), ["count": 33, "of": 600, "subset": "shown", "ranges": [[200, 210], [211, 220], [221, 235]]])
+  }
+
+  /// The deadline stops the candidates' check too: a search whose deadline passes at the first frame only the check
+  /// reads (row 215: neither bisection nor any sample reads it) keeps none.
+  func testTheDeadlineStopsTheCandidatesCheck() throws {
+    let tree = page(count: 600, scroll: 200)
+    let source = FakeSource(tree)
+    let data = try XCTUnwrap(source.data(Engine.element(1)))
+    let chosen = chooseChildren(of: Engine.element(1), data: data, source: source, visibleFrame: windowFrame, shownIn: viewport,
+                                expired: { source.frameReads[row(215)] != nil })
+    XCTAssertEqual(chosen.children.count, 0)
+    XCTAssertEqual(chosen.shown?.subset, "omitted")
+  }
+
+  /// The callers' deadlines reach the width rule's search (the review of 3de863bb..937f49c9): the settle's busy walk
+  /// over a page whose 500 frames each take 2 ms stops at its deadline, with no verdict rather than a quiet one.
+  func testTheBusyWalksDeadlineStopsTheSearchAndGivesNoVerdict() {
+    let tree = page(count: 500, scroll: -100)
+    for i in 0..<500 { tree.slowFrames[row(i)] = 2_000 }
+    let started = monotonicMilliseconds()
+    let reading = busyWalk(Engine.element(0), source: FakeSource(tree), visibleFrame: windowFrame, deadline: started + 50)
+    XCTAssertNil(reading.busy, "cut by the deadline: no verdict")
+    XCTAssertLessThan(monotonicMilliseconds() - started, 400, "the search stopped near the deadline, not after 500 reads")
+  }
+
+  /// The token re-fetch's deadline reaches the search too: a re-fetch over such a page stops near its deadline.
+  func testTheRefetchsDeadlineStopsTheSearch() throws {
+    let tree = page(count: 500, scroll: 0)
+    let lineage = Lineage()
+    let token = try XCTUnwrap(walk(tree, lineage, visibleFrame: windowFrame).token(of: Engine.element(row(10))))
+    tree.unreadable = [row(10)]
+    tree.children[1]![10] = 99_999
+    tree.extra[99_999] = ["AXTitle": "node \(row(10))" as CFString]
+    tree.frames[99_999] = tree.frames[row(10)]
+    for i in 0..<500 { tree.slowFrames[row(i)] = 2_000 }
+    let resolver = ElementResolver(invalidated: { _ in true }, stillValid: { _ in true }, source: { FakeSource(tree) },
+                                   tree: { _ in (Engine.element(0), []) }, refetchDeadlineMs: 50)
+    let started = monotonicMilliseconds()
+    XCTAssertThrowsError(try lineage.resolve(token, resolver: resolver))
+    XCTAssertLessThan(monotonicMilliseconds() - started, 400, "the search stopped near the deadline, not after 500 reads")
+  }
+
   /// The token re-fetch (Lineage.swift `matching`) keeps the children the walk printed, so a printed row the page
   /// re-rendered is found again.
   func testTheRefetchFindsAPrintedRowOfAWideWebArea() throws {

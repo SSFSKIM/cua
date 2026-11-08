@@ -123,7 +123,9 @@ func positionRanges(_ positions: [Int]) -> [[Int]] {
 /// answers no AXVisibleChildren, so a big page's web area printed none of its children. It keeps the children that show
 /// in `shownIn`, what the element leaves showing of the window to its children (`childrenClip`), as #304's rule finds
 /// them for the walk to read first (`shownChildPositions`): up to 512 children each by its own frame, above that the
-/// bisected run with the end samples that show; subset "shown". It keeps none, as the vendor, when there is nothing to
+/// bisected run with the end samples that show, each candidate then kept only when its own frame shows beyond a strip
+/// in `shownIn` or it has none (the bisection and the samples judge a place along the list's axis alone, so a row
+/// moved off it sideways would be kept); subset "shown". It keeps none, as the vendor, when there is nothing to
 /// judge them in (no visible frame, or nothing of `shownIn` shows), when the frames do not settle it (no axis to
 /// bisect, a middle sample out of place, `expired`), and when no child is seen showing by its own frame (none shows,
 /// or every one kept has no frame): the guard's record then looks for them itself (`recordedChildPositions`).
@@ -144,8 +146,13 @@ func chooseChildren(of element: AXUIElement, data: ElementData, source: ElementS
   if total > widthOmitAbove {
     let omitted = Shown(count: 0, of: total, subset: "omitted", ranges: [])
     guard let shownIn, showsBeyondStrip(shownIn, in: shownIn),
-          let kept = shownChildPositions(all, frame: { source.frame($0) }, window: shownIn, expired: expired),
-          kept.contains(where: { source.frame(all[$0]) != nil }) else { return ([], omitted) }
+          let candidates = shownChildPositions(all, frame: { source.frame($0) }, window: shownIn, expired: expired) else { return ([], omitted) }
+    var kept: [Int] = []
+    for position in candidates {
+      guard !expired() else { return ([], omitted) }
+      if source.frame(all[position]).map({ showsBeyondStrip($0, in: shownIn) }) ?? true { kept.append(position) }
+    }
+    guard kept.contains(where: { source.frame(all[$0]) != nil }) else { return ([], omitted) }
     guard kept.count < total else { return (all, nil) }
     return (kept.map { all[$0] }, Shown(count: kept.count, of: total, subset: "shown", ranges: positionRanges(kept)))
   }

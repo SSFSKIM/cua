@@ -1,6 +1,8 @@
-# Shared paths for task 67's runs (sourced).
-T=$HOME/.local/share/cua-171/task67
-WT=$HOME/Developer/GitHub/cua/.claude/worktrees/cua-171
+# Shared paths for task 67's runs (sourced). S is this scripts directory, wherever it is checked out; T is the work
+# directory the runs write (builds, harness exports, sittings), overridable from the environment.
+S=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+T=${T:-$HOME/.local/share/cua-171/task67}
+WT=${WT:-$HOME/Developer/GitHub/cua/.claude/worktrees/cua-171}
 PINNED=$HOME/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64
 NEWEST=$HOME/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64
 SKY=$HOME/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky

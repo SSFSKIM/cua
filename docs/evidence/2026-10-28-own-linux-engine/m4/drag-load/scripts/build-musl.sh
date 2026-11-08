@@ -2,13 +2,15 @@
 # A musl build of cua-engine made the release workflow's way (.github/workflows/linux-engine.yml, "Build cua-engine"),
 # from a commit's tree exported apart from the shared checkout: a hermetic Cargo home, the remapped paths, the commit
 # stamped, `cargo build --release --locked --target x86_64-unknown-linux-musl`, stripped, checked static.
-# usage: build-musl.sh <commit>   (prints the binary's path last)
+# usage: build-musl.sh <commit>   (builds under $T/build/<commit>; prints the binary's path last, the candidate that
+# drag.sh and sitting.sh take)
 set -euo pipefail
-commit=$(git -C $HOME/Developer/GitHub/cua/.claude/worktrees/cua-171 rev-parse "$1")
-root=$HOME/.local/share/cua-171/task67/build/$commit
+. "$(dirname "$0")/env.sh"
+commit=$(git -C "$WT" rev-parse "$1")
+root=$T/build/$commit
 rm -rf "$root"
 mkdir -p "$root/src"
-git -C $HOME/Developer/GitHub/cua/.claude/worktrees/cua-171 archive "$commit" native/linux-engine | tar -x -C "$root/src"
+git -C "$WT" archive "$commit" native/linux-engine | tar -x -C "$root/src"
 cd "$root/src/native/linux-engine"
 rustc --version | grep -q '^rustc 1\.94\.1 '
 cargo_home="$root/.cargo-home"

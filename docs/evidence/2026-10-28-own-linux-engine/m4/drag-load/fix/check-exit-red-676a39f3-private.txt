@@ -1,0 +1,29 @@
+ok   private.sh, runner exits 0: exit 0
+ok   drag.sh, runner exits 0: exit 0
+ok   sitting.sh, runner exits 0: exit 0
+FAIL private.sh, runner exits 7: exit 0, want 7
+     private run stub-7 exit 7 22:47:24
+FAIL drag.sh, runner exits 7: exit 0, want 7
+     private run stub-7 exit 7 22:47:24
+FAIL sitting.sh, runner exits 7: exit 0, want 7
+     private run stub-7 exit 7 22:47:24
+FAIL sitting.sh, the real runner crashing: exit 0, want 1
+     node:internal/modules/cjs/loader:1568
+       throw err;
+       ^
+     
+     Error: Cannot find module '<tmp>/scripts/private-run.mjs'
+         at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+         at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+         at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+         at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+         at Module._load (node:internal/modules/cjs/loader:1341:5)
+         at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+         at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+         at node:internal/main/run_main_module:33:47 {
+       code: 'MODULE_NOT_FOUND',
+       requireStack: []
+     }
+     
+     Node.js v24.22.1
+     private run crash exit 1 22:47:24

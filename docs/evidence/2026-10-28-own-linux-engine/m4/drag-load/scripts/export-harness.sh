@@ -1,11 +1,12 @@
 #!/bin/bash
 # The harness of a commit exported apart from the shared checkout (git archive), its node_modules linked to the
 # checkout's, and xprobe built there (prints the export's path last).
-# usage: export-harness.sh <commit>
+# usage: export-harness.sh <commit>   (exports to $T/harness-<commit>)
 set -euo pipefail
-wt=$HOME/Developer/GitHub/cua/.claude/worktrees/cua-171
+. "$(dirname "$0")/env.sh"
+wt=$WT
 commit=$(git -C "$wt" rev-parse --short=8 "$1")
-dir=$HOME/.local/share/cua-171/task67/harness-$commit
+dir=$T/harness-$commit
 rm -rf "$dir"
 mkdir -p "$dir"
 git -C "$wt" archive "$commit" | tar -x -C "$dir"

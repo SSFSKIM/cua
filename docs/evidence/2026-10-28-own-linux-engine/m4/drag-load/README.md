@@ -20,7 +20,8 @@ every cell, 40 of 40, where the pinned build also landed 40 of 40. No engine or 
 - 40 drags a side, in the harness's rotating blocks of 10 on fresh engines. Lanes: `pinned` (26.928.40906), `cua`
   (the head as it ships), `cua:before` (the head with Chromium's pacing before T11: 500 µs a sample and no rest, the
   control). The witness was clean in every run of every lane, and the activating stub failed it (the negative check).
-- Command: `scripts/sitting.sh <harness> load2-head` (21:36–21:57Z, 2026-11-08). Exit 0, judges' verdict for `cua`: PASS.
+- Command: `scripts/sitting.sh <harness> <candidate> load2-head` (21:36–21:57Z, 2026-11-08; "Rerunning it" below).
+  Exit 0, judges' verdict for `cua`: PASS.
 
 | family | kind | pinned landed | `cua` landed | `cua:before` landed | distance px, pinned (min, median, max) | `cua` | `cua:before` |
 |---|---|---:|---:|---:|---|---|---|
@@ -55,6 +56,24 @@ within the run-to-run spread (T10's first load sitting had it the other way, 40 
 
 T11's own loaded sitting (`m4/drag-motion/load2/`, ae04d620 with the 30 ms rest that shipped) had the same result, 40
 of 40 for both thumbs and both ranges, so this is the second independent loaded sitting at 40 of 40.
+
+## Rerunning it
+
+From this directory, on the #171 VM. It needs the pinned and newest vendor builds and Firefox where `scripts/env.sh`
+names them. `T` (default `~/.local/share/cua-171/task67`) is where the build, the harness export and the sitting are
+written, and `WT` (default the shared checkout) is the checkout the commit is taken from:
+
+```bash
+h=$(scripts/export-harness.sh 7d464cb2)   # the harness of the commit, exported to $T/harness-7d464cb2
+c=$(scripts/build-musl.sh 7d464cb2)       # the musl candidate, built the release workflow's way; its path printed last
+scripts/sitting.sh "$h" "$c" load2-head   # writes $T/runs/load2-head; exits with the run's status
+```
+
+Each script finds its siblings in its own directory. `sitting.sh`, `drag.sh` and `private.sh` exit with the private
+runner's status, which is nonzero when a judge failed, the display's watchdog was unclean or the runner crashed.
+`scripts/check-exit.sh` checks that without a display, a load or a build (a stub runner, then the real one crashing on a
+missing harness): `fix/check-exit-green.txt`. Against the first commit's `private.sh` (676a39f3), every failing status
+came back 0, and the runner was looked for in `$T/scripts/`: `fix/check-exit-red-676a39f3-private.txt`.
 
 ## Limits
 

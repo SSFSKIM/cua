@@ -78,7 +78,7 @@ for (const [browser, list] of Object.entries(byBrowser)) {
       if (!c.clicks?.length) { console.log(`| ${r.target} | ${r.pos} | ${r.rep} | ${c.head} | ${shown} | ${c.none ?? c.error?.name ?? c.exception?.slice(0, 80)} | | |`); continue; }
       for (const k of c.clicks) {
         const ans = k.answer.error ? `${k.answer.error.name}: ${k.answer.error.message.slice(0, 60)}` : `ok ${k.answer.result?.meta?.inputRoute ?? ''}`;
-        console.log(`| ${r.target} | ${r.pos} | ${r.rep} | ${c.head} | ${shown} | ${k.kind} ${k.row} (${k.role.replace('AX', '')} "${k.label}") | ${ans} ${k.ms} ms | ${k.page.map(p => `${p.text?.trim()}${p.trusted ? '' : ' (untrusted)'}`).join(', ') || 'nothing'} |`);
+        console.log(`| ${r.target} | ${r.pos} | ${r.rep} | ${c.head}${c.desktop ? ` ${c.desktop}` : ''} | ${shown} | ${k.kind} ${k.row} (${k.role.replace('AX', '')} "${k.label}") | ${ans} ${k.ms} ms | ${k.page.map(p => `${p.text?.trim()}${p.trusted ? '' : ' (untrusted)'}`).join(', ') || 'nothing'} |`);
       }
     }
   }

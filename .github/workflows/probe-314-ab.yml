@@ -20,15 +20,15 @@ env:
   # Quoted: YAML reads an all-digit-and-e SHA as a float.
   P314_A_REF: '3de863bbea6c75cc320319588b10874cbad186af'
   P314_B_REF: '937f49c90298cee8f5b6e1bec5f3566c45db8a7e'
-  # The pages a run is limited to (empty for every page of the group's list): this push's smoke check of the kit.
-  P314_TARGETS: 'local-fixed-tail,py-docs'
+  # The pages a run is limited to (empty for every page of the group's list).
+  P314_TARGETS: ''
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
-        rep: [1]
-        group: ${{ fromJSON(github.event.inputs.groups || '["firefox"]') }}
+        rep: [1, 2, 3]
+        group: ${{ fromJSON(github.event.inputs.groups || '["firefox","safari","chrome-a","chrome-b","chrome-c"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -41,7 +41,7 @@ jobs:
           GROUP: ${{ matrix.group }}
         run: |
           case "$GROUP" in
-            firefox) bash scripts/probe-287/install.sh firefox ;;
+            firefox*) bash scripts/probe-287/install.sh firefox ;;
             *) bash scripts/probe-287/install.sh ;;
           esac
       - name: Build both engines and the tool

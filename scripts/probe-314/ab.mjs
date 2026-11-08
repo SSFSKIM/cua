@@ -67,6 +67,9 @@ const GROUPS = {
   // The kit's pages likely to hold an element of more than 499 children (the truth says which do).
   firefox: ['local-fixed-tail', 'local-table', 'local-table-bar', 'local-table-6k', 'py-docs', 'wiki-article', 'hn-thread', 'iana-media'],
   safari: ['local-fixed-tail', 'local-table', 'py-docs', 'wiki-article', 'hn-thread', 'iana-media', 'mdn-float'],
+  // The confirmation pass's shorter lists.
+  'chrome-confirm': ['py-docs', 'wiki-article', 'local-fixed-tail', 'local-table-6k', 'hn-thread', 'iana-media'],
+  'safari-confirm': ['local-fixed-tail', 'py-docs'],
 };
 const TARGETS = GROUPS[GROUP]?.map(name => ({name, ...PAGES[name]}));
 if (!TARGETS) { console.error(`unknown group ${GROUP}`); process.exit(2); }
@@ -309,10 +312,12 @@ function wides(sky, truth) {
       ordered: ys.every((y, k) => k === 0 || y >= ys[k - 1] - 0.5), firstRows: rowsNamed.slice(0, 3), lastRows: rowsNamed.slice(-3)};
     if (t) {
       const truthShown = new Set(positionsOf(t.shown));
-      const kept = n.shown ? positionsOf(n.shown.ranges ?? []) : positionsOf([[0, total]]);
-      const keptSet = new Set(kept);
+      // With no `shown` every child was kept by the width rule; when the budget then cut some, which were printed is
+      // not known by position, so missing and extra are not judged (null).
+      const kept = n.shown ? positionsOf(n.shown.ranges ?? []) : kids.length >= total ? positionsOf([[0, total]]) : null;
+      const keptSet = new Set(kept ?? []);
       row.truth = {shownCount: t.shownCount, shown: t.shown, visibleChildren: t.visibleChildren, visibleRows: t.visibleRows, frameless: t.frameless, clip: t.clip,
-        missing: [...truthShown].filter(p => !keptSet.has(p)).length, extra: kept.filter(p => !truthShown.has(p)).length};
+        missing: kept && [...truthShown].filter(p => !keptSet.has(p)).length, extra: kept && kept.filter(p => !truthShown.has(p)).length};
     }
     out.push(row);
   }
@@ -343,17 +348,20 @@ function compare(slots) {
   return out;
 }
 
-const lean = r => r.error ? {error: {name: r.error.data?.name ?? r.error.name, message: String(r.error.message ?? '').slice(0, 300)}}
+const lean = r => r.error ? {error: {name: r.error.data?.name ?? r.error.name ?? r.error.data?.code ?? r.error.code, message: String(r.error.message ?? '').slice(0, 300),
+  data: JSON.parse(JSON.stringify(r.error.data ?? null)), code: r.error.code ?? null}}
   : {result: JSON.parse(JSON.stringify(r.result ?? null, (k, v) => (k === 'nodes' || k === 'screenshot' ? undefined : v)))};
-/// Each head, on a fresh shared-mode connection: an observation, then a click by token on the row in the middle of the
-/// widest element's printed run, then on the fixed toolbar's button; the page's report of each.
+/// Each head, on a fresh connection in each desktop mode (shared, then dedicated): an observation, then a click by token
+/// on the row in the middle of the widest element's printed run, then on the fixed toolbar's button; the page's report
+/// of each. A token that resolves reaches delivery; run 42443438470's shared-mode row clicks in Firefox resolved and
+/// came back unconfirmed, so dedicated mode separates resolution from Firefox's background delivery.
 async function clickCells(ctx, label, order) {
   const out = [];
-  for (const head of order) {
-    const w = await engines[head].connect('shared');
+  for (const [head, desktop] of order.flatMap(h => [[h, 'shared'], [h, 'dedicated']])) {
+    const w = await engines[head].connect(desktop);
     try {
       const o = await w.execute('get_app_state', {pid: ctx.pid});
-      if (o.error) { out.push({head, error: lean(o).error}); continue; }
+      if (o.error) { out.push({head, desktop, error: lean(o).error}); continue; }
       const sky = o.result, nodes = sky.nodes;
       const totalOf = n => n.shown?.of ?? n.children;
       const wide = nodes.map((n, i) => [n, i]).filter(([n]) => totalOf(n) > 499).sort((x, y) => totalOf(y[0]) - totalOf(x[0]))[0];
@@ -372,7 +380,7 @@ async function clickCells(ctx, label, order) {
       }
       const bar = nodes.findIndex(n => n.role === 'AXButton' && /^(Tail|Tool) 3$/.test(labelOf(n)));
       if (bar >= 0) targets.push({kind: 'bar', j: bar, row: labelOf(nodes[bar])});
-      const cell = {head, nodes: nodes.length, wide: wide ? {children: totalOf(wide[0]), shown: wide[0].shown ?? null} : null, clicks: []};
+      const cell = {head, desktop, nodes: nodes.length, wide: wide ? {children: totalOf(wide[0]), shown: wide[0].shown ?? null} : null, clicks: []};
       if (!targets.length) cell.none = 'no row or bar printed';
       for (const t of targets) {
         const n = nodes[t.j];
@@ -386,10 +394,10 @@ async function clickCells(ctx, label, order) {
       }
       out.push(cell);
     } catch (e) {
-      out.push({head, exception: String(e?.stack || e).slice(0, 1500)});
+      out.push({head, desktop, exception: String(e?.stack || e).slice(0, 1500)});
     } finally { w.close(); }
   }
-  log(`${label} clicks: ${JSON.stringify(out.map(c => [c.head, c.none ?? c.error ?? c.exception ?? c.clicks.map(k => [k.kind, k.row, k.answer.error?.name ?? 'ok', k.page.map(p => p.text?.trim())])]))}`);
+  log(`${label} clicks: ${JSON.stringify(out.map(c => [c.head, c.desktop, c.none ?? c.error ?? c.exception ?? c.clicks.map(k => [k.kind, k.row, k.answer.error?.name ?? 'ok', k.page.map(p => p.text?.trim())])]))}`);
   return out;
 }
 

@@ -120,6 +120,13 @@ fn turn_deg(a: (i16, i16), b: (i16, i16), c: (i16, i16)) -> f64 {
     ((ux * vx + uy * vy) / (nu * nv)).clamp(-1.0, 1.0).acos().to_degrees()
 }
 
+/// Whether a drag rests before its sample `next` ([`drag_plan`]): where its plan rests, unless it is on its floor after a
+/// take (`dnd::RELEASE_AFTER_TAKE`), whose spacing brings the steps to the floor's end and whose keepalives then hold the
+/// pointer at the end, so a rest there would only push the release past the floor.
+fn rests_before(rests: &[usize], next: usize, floored: bool) -> bool {
+    !floored && rests.contains(&next)
+}
+
 /// When a drag's next sample is due, the previous one having been due at `due` and sent at `sent`: after a rest
 /// (`rest`), the rest after it was sent; by elapsed time ([`DragPacing::elapsed`]), a step after it was due, so a sample
 /// sent late does not delay the ones after it; else a step after it was sent.
@@ -391,19 +398,29 @@ fn drag_along(
         let mut due = Instant::now();
         for (i, &(sx, sy)) in samples.iter().enumerate().skip(first) {
             route.place_again(x, sx, sy)?;
-            due = next_due(due, Instant::now(), pacing, rests.contains(&(i + 1)));
-            let mut wait = due.saturating_duration_since(Instant::now());
+            let sent = Instant::now();
+            // when the floor after a take spaces this step to, if it does
+            let mut floor = None;
             if let Some((watch, _)) = hold.as_mut() {
                 match taken {
                     Some((at, left)) if !after_take.is_zero() => {
                         since_take += 1;
-                        let due = crate::dnd::step_due(at, after_take, since_take, left);
-                        wait = wait.max(due.saturating_duration_since(Instant::now()).min(crate::dnd::KEEPALIVE));
+                        floor = Some(crate::dnd::step_due(at, after_take, since_take, left));
                     }
                     Some(_) => {}
                     None if watch.started(x) => taken = Some((Instant::now(), count - 1 - i)),
                     None => {}
                 }
+            }
+            let floored = taken.is_some() && !after_take.is_zero();
+            due = next_due(due, sent, pacing, rests_before(&rests, i + 1, floored));
+            let mut wait = due.saturating_duration_since(Instant::now());
+            if let Some(floor) = floor {
+                wait = wait.max(
+                    floor
+                        .saturating_duration_since(Instant::now())
+                        .min(crate::dnd::KEEPALIVE),
+                );
             }
             std::thread::sleep(wait);
             if let Some(guard) = guard.as_deref_mut()
@@ -1236,6 +1253,17 @@ mod tests {
         // a zero-length segment has no direction: no corner there
         let still = drag_plan(&[(0, 0), (0, 0), (10, 0)], true);
         assert_eq!(still.rests, vec![still.samples.len() - 1]);
+    }
+
+    #[test]
+    fn a_drag_on_its_floor_after_a_take_does_not_rest_again() {
+        let rests = [41];
+        assert!(rests_before(&rests, 41, false), "a planned rest");
+        assert!(!rests_before(&rests, 40, false), "no rest where none is planned");
+        assert!(
+            !rests_before(&rests, 41, true),
+            "the floor after a take spaces the steps to its end and holds the pointer there with keepalives"
+        );
     }
 
     #[test]

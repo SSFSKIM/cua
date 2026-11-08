@@ -508,7 +508,10 @@ variants included; their evidence is written either way. The run's `end` row kee
   witness span, its effect read back after it. The lanes: the pinned build (the reference), the newest build
   (recorded, not judged), `cua` as it ships (each drag paced by its target's family, `families.rs`), `cua:0ms` (no
   wait after a sample, the press or before the release) and the variants (for example a dwell,
-  `--variant dwell='--drag-step-ms 0 --drag-press-dwell-ms 30 --drag-release-dwell-ms 30'`).
+  `--variant dwell='--drag-step-ms 0 --drag-press-dwell-ms 30 --drag-release-dwell-ms 30'`; T11's motion model,
+  `--drag-elapsed` to pace the step by elapsed time and `--drag-rest-ms` for the rest at corners and at the end, so
+  `--drag-step-us 500 --drag-elapsed --drag-rest-ms 20` is Chromium's row and `--drag-step-us 500` its row before
+  T11).
 - **Kinds**: `select` (a text-selection drag: the page's selection, an editor's AT-SPI selection, a terminal's
   PRIMARY), `range` (an HTML range input), `scale` (a GTK 3 scale, `pages/gtk-scale.py`), `scroller` (a page
   element's scrollbar thumb), `scrollbar` (an editor's vertical scroll bar, gedit with classic scroll bars), `dnd`
@@ -551,12 +554,14 @@ variants included; their evidence is written either way. The run's `end` row kee
     rotating from block to block and the top-ups continuing it (`blockPlan`); each block's first request is cold.
   - *Named only* (`OPTIONAL_KINDS`, by `--ops`): `select-unprimed` on Writer, every run a fresh window's first drag,
     judged absolutely by the text its path spans (`selectionCovers`), beside the primed `select` cell, whose even runs
-    that took the judge must take too (REFERENCE MISMATCH otherwise); and `handle-canvas`, `handle-dnd` on Firefox,
+    that took the judge must take too (REFERENCE MISMATCH otherwise); and `handle-canvas`, `handle-dnd` on Firefox (and
+    on Chrome and Electron, whose held moves T11 reran as the controls of Gecko's),
     `drag_handle`'s start, a held move to each point and its end, its requests spaced by cua's service's own
     `drag_handle` settle (`HANDLE_GAP_MS`), with a `cua:no-press` control lane that moves along the same points without
-    pressing and must miss every run (CONTROL NON-DISCRIMINATING otherwise). Gecko's `held_lead_pause` question
-    (Decision Log, T9) compares `cua` with `--variant nolead='--drag-step-us 300 --drag-release-dwell-ms 30'` (any drag
-    flag fixes the pacing with no lead pause).
+    pressing and must miss every run (CONTROL NON-DISCRIMINATING otherwise). A held move's pacing is measured with the
+    engine's flags as variants (any drag flag fixes the pacing for every target, the ones it does not name at zero):
+    `--held-step-ms`/`-us` between its points, `--held-rest-ms` at its end, `--held-lead-pause` after its leading
+    motion; `--drag-step-us 300 --drag-release-dwell-ms 30 --held-lead-pause` is Gecko's held pacing before T11.
 
 ## M2's additions: text, clipboard and the paste safety cases
 

@@ -292,6 +292,29 @@ final class FocusHoldTests: XCTestCase {
                    "the hold's start is the guard's own, on the release's Unix clock")
   }
 
+  /// #321: the held activation clicked its in-window activation point, so a click inside it holds its own hold until the
+  /// order reads back, past main's 100 ms cap.
+  func testAClickInsideAHeldActivationThatClickedItsPointHoldsUntilTheOrderReadsBack() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    XCTAssertEqual(meta.activationClickKind, .activationPoint)
+    seam.targetAbove = false
+    var raisedAt: Double?
+    seam.onMouseDown = { raisedAt = seam.clock; seam.targetAbove = true }
+    seam.onFrontmostRead = { if let raisedAt, seam.clock < raisedAt + 155 { seam.targetAbove = true } }
+    var clickMeta = self.meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
+                     targetActive: { false }, post: seam.system.post, meta: &clickMeta)
+    let delivery = try XCTUnwrap(clickMeta.delivery), heldAt = try XCTUnwrap(seam.heldAt)
+    XCTAssertEqual(try XCTUnwrap(seam.releasedAt) - heldAt, 180, "read back 160 ms after the click, then three stable samples")
+    XCTAssertFalse(delivery.capped)
+    XCTAssertEqual(seam.repairsOutsideHold, 0)
+    XCTAssertEqual(delivery.transientRaise.outlivedHold, false)
+    connection.endFocusHold()
+  }
+
   /// #200: inside a held activation the delivery guard takes its own hold before the events; the action interval starts
   /// as the events go out, after that setup (InputMeta.posting's contract).
   func testAClickInsideAHeldActivationStartsItsIntervalAtTheEventsAfterTheGuardsSetup() throws {

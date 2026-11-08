@@ -114,10 +114,11 @@ func fieldNeedingFocus(_ element: AXUIElement, ax: AXOps) -> String? {
 // the held activation's own, about 120 ms. On an AppKit field the caret and the press both fail and the AXFocused write
 // works (16 of 16, no raise), so only a WebKit page's field takes this route (the design session's ruling 8c206e91).
 
-/// Whether a password field (AXSecureTextField, or a subrole that cannot be read) takes the caret-first route too. Off
-/// until the hosted check measures caret-first on password fields at 20 of 20 delivered with no raise; until then they
-/// keep main's AXFocused write and fallback click.
-let caretFirstCoversSecureFields = false
+/// Whether a password field (AXSecureTextField, or a subrole that cannot be read) takes the caret-first route too. On
+/// since the hosted check measured it (runs 42480471918, 42480982911; ruling eecaccfe): Safari's password set_value
+/// 20 of 20 delivered, 0 raises, no page events, a 124 ms freeze. Off, a password field keeps main's AXFocused write and
+/// fallback click. Its value and range are never read either way.
+let caretFirstCoversSecureFields = true
 
 /// How focusField focuses a field that needs it (#324).
 enum FieldFocusRoute: Equatable {
@@ -130,7 +131,7 @@ enum FieldFocusRoute: Equatable {
 }
 
 /// The route of a field focusField must focus (`role` its role): caret first for a text-entry role in a web area in a
-/// WebKit process, unless it is a password field (`caretFirstCoversSecureFields`); focusFieldIfNeeded's otherwise, an
+/// WebKit process, a password field included while `caretFirstCoversSecureFields` is on; focusFieldIfNeeded's otherwise, an
 /// AppKit field, a field outside every web area and a Chromium or Gecko page's included. Only a process that is
 /// neither Chromium's nor Gecko's reads the field's parents.
 func fieldFocusRoute<Element>(_ element: Element, role: String, engine: PageEngine, roleOf: (Element) -> String?, parent: (Element) -> Element?,

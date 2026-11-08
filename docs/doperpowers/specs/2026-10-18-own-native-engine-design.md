@@ -3417,11 +3417,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - **Chrome for Testing and Safari 27.2:** identical to main, cell by cell.
   Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #315.
 - Decision (#324, 2026-11-08, `fix/324-caret-first`; the design session's ruling 8c206e91 on the spike's findings,
-  issue comment https://github.com/SSFSKIM/cua/issues/324#issuecomment-6721180433, kit `probe/324-measure` 1b1b69a6;
-  amends #321's item 3 and corrects #315's item 11): **set_value and select_text focus a WebKit page's text field caret
-  first: its caret written, then its AXPress, each read back, and never an AXFocused write or a posted click. AppKit
-  fields keep the AXFocused write. #321's hold is capped 200 ms after the click's events, under a 300 ms ceiling from the
-  hold's start. The delivery record now reaches set_value's meta and records the hold's real release.**
+  issue comment https://github.com/SSFSKIM/cua/issues/324#issuecomment-6721180433, kit `probe/324-measure` 1b1b69a6,
+  and ruling eecaccfe on the hosted A/B, item 1's second half; amends #321's item 3 and corrects #315's item 11): **set_value
+  and select_text focus a WebKit page's text field, a password field included, caret first: its caret written, then its
+  AXPress, each read back, and never an AXFocused write or a posted click. AppKit fields keep the AXFocused write.
+  #321's hold is capped 200 ms after the click's events, under a 300 ms ceiling from the hold's start, and its timers
+  are made strict. The delivery record now reaches set_value's meta and records the hold's real release.**
   1. **The spike's findings** (runs 42468407027, 42472740707 and 42476788546; runner-only patches,
      `scripts/probe-324/patch.py`, which timed SLSDisableUpdate and SLSReenableUpdate directly and judged visibility
      against the real frozen spans):
@@ -3442,6 +3443,23 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        median 12 to 26 ms past `screenHoldMs`, up to about 100 ms.
      - **The reorder is hidden, not prevented:** pointer clicks and drags still reorder inside the hold in 55 to 90% of
        cases.
+     **The hosted A/B** (main 74fe29f8 against 2821788e, confirmed on e2e452c9; runs
+     https://github.com/SSFSKIM/cua/actions/runs/42480471918 and https://github.com/SSFSKIM/cua/actions/runs/42480982911,
+     kit `probe/324-measure` 302a9e47):
+     - **Caret first held** on Safari's page fields in both modes, and on its password fields with the switch on:
+       set_value 20 of 20, 0 raises, no page events, a 124 ms freeze. Hence item 2's password fields are on.
+     - **Dedicated mode:** main answered set_value and select_text on Safari with success while writing nothing (its
+       posted click focused the field, then the value read "", 24 of 24). The caret route delivered 24 of 24.
+     - **The slow-activation residue** (`P324_DELAY_MS`): main 47 of 60 visible, this branch 4 of 60, all 4 with their
+       events at or past 300 ms into the hold, where the ceiling ends the hold before the cap can.
+     - **The natural freeze** (corrected 2026-11-08, hosted A/B): natural clicks' events go about 40 to 50 ms into the
+       hold, not the 60 item 5 first assumed, so the hold runs a median of about 197 ms (p95 205 to 215, the largest
+       218).
+     - **Only a timer's release runs late** (corrected 2026-11-08, hosted A/B; the spike's 12 to 26 ms above was the
+       mix): a release the guard makes at its own end comes on time (`frozenMs` less `screenHoldMs`, a median 0.1 ms),
+       while one the hold's timer makes comes late: at the 300 ms ceiling `frozenMs` was 349 to 377 ms, a median 68 ms
+       late (the logged return reached 398 ms), and main's 200 ms cap a median 26 ms late, up to 79. Item 6b is the
+       remedy.
   2. **Caret first on a WebKit page's field** (ElementInput.swift `fieldFocusRoute`, `focusByCaretFirst`,
      `caretFirstFocus`; `focusField`):
      - **Which fields:** in `focusField`, a field focusFieldIfNeeded would focus (AXTextField, AXTextArea or
@@ -3459,15 +3477,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - **The record:** `meta.fieldFocus {focus, focusStep "selection" | "press", caretWriteError?}`, the last step and
        its read-back. The engine's meta only: the service does not forward it, so the hosted kit reads it from the
        engine.
-     - **Password fields keep main's path** (`caretFirstCoversSecureFields`, off): a field whose role or subrole is
-       AXSecureTextField, or whose subrole cannot be read (#283's rule), gets the AXFocused write and the fallback
-       click, until the hosted check measures caret first on password fields at 20 of 20 delivered with 0 raises.
-       Turning them on is that one constant.
+     - **Password fields take it too** (`caretFirstCoversSecureFields`, on since the hosted A/B measured them at 20 of
+       20 delivered with 0 raises, ruling eecaccfe): a field whose role or subrole is AXSecureTextField, or whose
+       subrole cannot be read (#283's rule). Its value and range are never read. The first build kept them on main's
+       AXFocused write and fallback click until that measurement; turning them back is the one constant.
      - **Both device modes (the implementer's decision).** The route posts nothing, so the reason dedicated mode
        differs elsewhere (no person's window to protect, so a raise costs nothing) gives it nothing to gain from the
        posted click, while the click still reaches the page's own handlers. One route keeps set_value on a Safari page
-       the same on both desktops. The hosted check measures dedicated mode; if caret first loses fields there that the
-       posted click delivered, dedicated mode goes back to main's path.
+       the same on both desktops. Measured (item 1, the hosted A/B): main's posted click answered success there while
+       the value read "", 24 of 24; the caret route delivered 24 of 24. So dedicated mode keeps it.
   3. **AppKit fields keep main's AXFocused write** (16 of 16, no raise), and so does every field the classification
      does not take: a native field in Safari's window, and a Chromium or Gecko page's field (whose fallbacks are #282's
      refusal and #315's press, unchanged).
@@ -3478,9 +3496,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      scope, unchanged) is released when its guard ends, or by its timers at 200 ms after the click's events or at
      300 ms from the hold's start, whichever comes first. The activation's timer is set at the ceiling as the hold
      opens; the events' timer once they go. **There is no uncapped variant.** The worst-case freeze is 300 ms, on
-     about 2% of clicks (those whose activation is slow). A typical click's events go about 60 ms into the hold, so
-     its guard's 150 ms least wait now ends it at about 210 ms, where the cap held it to 200. Any later raise of the
-     ceiling goes back to the design session. Every other hold keeps main's 100 ms cap from its start.
+     about 2% of clicks (those whose activation is slow). A natural click's events go about 40 to 50 ms into the hold
+     and its guard's 150 ms least wait ends it: a median of about 197 ms, p95 205 to 215, the largest 218 (corrected
+     2026-11-08 from the hosted A/B: this item first assumed 60 ms and about 210). Any later raise of the ceiling goes
+     back to the design session. Every other hold keeps main's 100 ms cap from its start. The 300 ms worst case holds in
+     `screenHoldMs`; the real freeze past it was the timer's lateness, item 6b.
   6. **The real release time:** `delivery.frozenMs`, the hold's span from its start to the moment its
      SLSReenableUpdate is called, stamped on the release queue just before the call (`ReenableStamp`). `screenHoldMs`
      is unchanged, the guard's reading bounded by the cap. The delivery guard waits up to 100 ms of real time
@@ -3490,7 +3510,25 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      a47484f9). The record's Unix times (`holdStartedAt`, `releasedAt`, `postedAt`) are anchored on the Unix clock read
      at the guard's end, before the release and the wait, so the wait never shifts them (the review of
      74fe29f8..2821788e, one P2: read after the wait, they moved by its length, 59 ms in the reviewer's repro). It is
-     this hold's own span: SkyLight re-enables the display only once every hold on the connection is released.
+     this hold's own span: SkyLight re-enables the display only once every hold on the connection is released. The
+     overrun of `frozenMs` past `screenHoldMs` comes only from a timer's release (item 1's hosted A/B): a release the
+     guard makes at its own end is on time.
+  6b. **The hold's timers are strict, and the hold keeps the process latency-critical** (ruling eecaccfe; Activation.swift
+     `holdTimerStrict`, `holdHoldsActivity`, `scheduleHoldTimer`, `FakeActivation.takeHold`). The lateness is the timer's,
+     most likely dispatch timer coalescing in a background process with no UI, and App Nap may add to it. Two remedies,
+     each behind its own constant, both on until the hosted re-measure keeps the smallest that brings the real freeze to
+     about 300 ms at worst; the other is then removed:
+     - **`holdTimerStrict`:** every hold timer (#321's cap and ceiling, main's 100 ms cap, the guard's own hold's) is a
+       one-shot dispatch source timer with the `.strict` flag and no leeway (`holdTimerFlags`, `holdTimerLeewayNs`), on
+       a serial userInteractive queue of its own (`cua.engine.hold-timer`), cancelled as it fires. Off, the global
+       queue's `asyncAfter` as before.
+     - **`holdHoldsActivity`:** each screen-update hold begins `ProcessInfo.beginActivity([.userInitiated,
+       .latencyCritical])` just before SLSDisableUpdate and ends it with the hold's one release, whichever path makes it
+       (the guard's end, the cap's or the ceiling's timer, a refused activation, a stop before the events). The release
+       only enqueues the re-enable, so the activity covers the timer and the enqueue, not the queue's hop to
+       SLSReenableUpdate; that hop is the one a guard-ended release takes on time.
+     - **Measured** (the hosted re-measure, to be filled in): strict timer alone: TBD; activity alone: TBD; both: TBD
+       (`frozenMs` at the ceiling, median and largest; main's cap's overrun). Kept: TBD.
   7. **select_text on an unfocused NSTextField** answered `selectionNotSettable` before trying to focus, since AppKit
      makes the range settable only once the field editor is attached. Folded in (TextSelection.swift
      `selectionSettableBeforeFocus`, `selectionSettableAfterFocus`): a field whose range is not settable but which
@@ -3503,7 +3541,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      point for set_value (it needs none: the value replaces the text, and select_text writes its own range).
   10. **Model-facing text.** `docs/cua-api/agent-cursor.md` does not describe set_value's focus, so it is unchanged;
      the refusal carries its own sentence.
-  Proven offline (`CaretFirstFocusTests`, 12; `ClickDeliveryTests`, 3 new and the cap test widened; `ValueSettingTests`,
+  Proven offline (`CaretFirstFocusTests`, 12; `ClickDeliveryTests`, 5 new and the cap test widened; `ValueSettingTests`,
   1 new; with FakeAX for the field and the fake clock for the hold):
   - set_value and select_text on a Safari page's unfocused field focus it by the caret write at {0, 0}, read at once,
     with no AXFocused write, nothing pressed and no fallback click, Safari's DOM element included;
@@ -3511,7 +3549,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     refused after both settles with nothing of the method's written, and one with no AXPress after the caret's settle,
     nothing pressed; a failed caret write is recorded and the press still follows; the in-flight check stops the
     route before each step;
-  - a password field, by its subrole or an unreadable one, keeps main's write and click, and the one switch moves it;
+  - a password field, by its subrole or an unreadable one, takes the caret route with its switch on, its caret
+    written and no AXFocused write or click, and main's write with the switch off;
   - an AppKit field, Safari's native field, and a Chromium or Gecko page's field keep main's write, then the click
     only when it did not take; a focused field, a combo box and a field whose focus is not settable are left alone;
   - the fallback click's delivery record rides in the method's meta;
@@ -3519,28 +3558,39 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     ceiling after a slow one's (events 150 ms in), also while each repair blocks for 300 ms; a slower activation's
     click is held past 200 ms from the hold's start until its guard ends;
   - `frozenMs` is the hold's span to the stamped re-enable, at the cap's timer and at the guard's end, beside
-    `screenHoldMs`, on the wire; an unarmed stamp is never waited for, and the first stamp wins; a stamp 60 ms late leaves the Unix times on the guard's end, and one that never comes is waited for 100 ms and no longer, with no field;
+    `screenHoldMs`, on the wire; an unarmed stamp is never waited for, and the first stamp wins; through the seam's
+    wait and Unix clock (`ActivationSystem.awaitReenable`, `unixNow`), both on the fake clock so nothing depends on the
+    scheduler, a stamp 60 ms into the wait is recorded with the Unix times left where the hold, the events and the
+    release happened, and one that never comes is waited for the 100 ms bound and no longer, with no field (the first
+    version used a real-time 60 ms stamp against the real 100 ms bound, which a loaded hosted runner missed, run
+    42480881696);
+  - the latency-critical activity is begun before each hold and ended with its release, exactly once, on the guard's
+    end, the cap's timer, the ceiling's, a refused activation, a stop before the events and the guard's own hold;
+  - the hold's timer is strict with no leeway, both remedies are on, and it fires once and not before its time;
   - select_text focuses an unfocused AppKit field whose range is not settable and checks it again; a range that stays
     unsettable is refused after the focus, and an element needing no focus before anything is written;
   - `fieldFocus` on the wire.
   Every other suite passes unchanged (#313's `TextEntryClickTests`, #315's `GeckoPointerTests`, #282's
-  `BackgroundPointerTests`, the paste and focus-hold suites). Each of 49 rules and bounds removed in turn
+  `BackgroundPointerTests`, the paste and focus-hold suites). Each of 60 rules and bounds removed in turn
   (`~/.local/share/187/mutate-324.py`) fails a test. focusField's glue (the page engine, the live subrole read, the
-  method's interval and the settle mark) reads live AX and is not unit tested: the hosted check covers it.
+  method's interval and the settle mark) reads live AX and is not unit tested, nor are the live ProcessInfo activity
+  and whether the strict timer fires on time under coalescing: the hosted check covers them.
   **What the hosted check must verify** (`probe/324-measure`'s cells, against main, each behind a frontmost TextEdit,
   with SLSDisableUpdate and SLSReenableUpdate timed):
   - **Safari, shared:** set_value and select_text on an unfocused page text field and textarea answer success with
     `fieldFocus` `readBack` (`focusStep` `selection`; `press` where the caret did not focus), the value or selection
     right, no pointer event on the page, no delivery record, no raise, and a freeze near the held activation's 120 ms;
   - **Safari, dedicated:** the same, every cell delivered;
-  - **Safari password fields, shared, 20 reps** on a branch build with `caretFirstCoversSecureFields` on: delivered
-    20 of 20 with 0 raises is the condition for turning it on; on this head they take main's path (posted click,
-    `delivery` now in the meta);
+  - **Safari password fields, shared, 20 reps:** measured 20 of 20, 0 raises, a 124 ms freeze (item 1), so now on;
   - **AppKit fields** (the probe app, TextEdit): set_value as on main, the AXFocused write, no raise; select_text on
     an unfocused NSTextField succeeds where main answered `selectionNotSettable`;
   - **the cap:** Safari shared clicks with `P324_DELAY_MS`'s slow activation give no visible raise where main's cap
-    showed 51 of 60, with `screenHoldMs` at most 300; natural clicks' `screenHoldMs` near 210; `frozenMs` present on
-    every delivery record, a median 12 to 26 ms above `screenHoldMs`, and within the measured SLSReenableUpdate times;
+    showed 51 of 60, with `screenHoldMs` at most 300 (measured: main 47 of 60, this branch 4 of 60, item 1); natural
+    clicks' `screenHoldMs` a median of about 197; `frozenMs` present on every delivery record and within the measured
+    SLSReenableUpdate times;
+  - **the strict timer and the activity (item 6b),** each alone and both: `frozenMs` at the ceiling within a few ms of
+    300 at worst, main's 100 ms and #321's timer-driven releases within a few ms of their caps, guard-ended releases
+    unchanged;
   - **Chromium and Gecko:** identical to main, set_value's fallbacks included.
   Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 8c206e91 on #324.
 

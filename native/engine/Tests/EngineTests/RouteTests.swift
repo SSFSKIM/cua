@@ -995,34 +995,122 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(armed.wait(upToMs: 5), 42, "the first call's")
   }
 
-  /// The review of 74fe29f8..2821788e (one P2): the wait for the release's stamp never shifts the record's Unix times.
-  /// The fake clock costs no real time, so the guard's end is the moment the click call began, give or take its own
-  /// run; a stamp that comes 60 ms of real time late is still recorded, and the Unix times stay on the guard's end. A
-  /// stamp that never comes is waited for 100 ms and no longer (ruling a47484f9), and the record answers without it.
-  func testTheWaitForTheReleasesStampLeavesTheUnixTimesWhereTheyHappened() throws {
-    for (delay, stamped) in [(60.0, true), (Double.infinity, false)] {
-      let seam = GuardSeam(frontmost: user)
-      seam.reenableStampRealDelayMs = delay
-      var meta = meta()
-      let before = unixMilliseconds()
-      let started = Date()
-      try click(seam, activation: activation(seam, at: insidePoint), meta: &meta)
-      let waited = Date().timeIntervalSince(started) * 1000
-      let delivery = try XCTUnwrap(meta.delivery)
-      let label = stamped ? "a stamp 60 ms late" : "no stamp"
-      // The guard's end on the Unix clock: the events' time plus the guard's span after them (one fake clock for both).
-      let guardEnded = Double(delivery.postedAt) + delivery.guardMs
-      XCTAssertLessThan(guardEnded - Double(before), 25, "\(label): the anchor read before the wait, not after it")
-      XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), delivery.screenHoldMs, accuracy: 1, label)
-      if stamped {
-        XCTAssertEqual(delivery.frozenMs, 10 + activationPointGuardMinimumMs, label)
-        XCTAssertGreaterThanOrEqual(waited, 55, "\(label): waited for")
-      } else {
-        XCTAssertNil(delivery.frozenMs, label)
-        XCTAssertGreaterThanOrEqual(waited, screenReenableStampWaitMs - 5, label)
-        XCTAssertLessThan(waited, screenReenableStampWaitMs + 150, "\(label): never longer than the bound")
-      }
+  /// #324 (ruling eecaccfe): every screen-update hold holds the latency-critical activity from before its SLSDisableUpdate
+  /// to its release, and ends it exactly once on every path that releases: the guard's own end, the cap's timer after
+  /// the events, the ceiling's after a slow activation, a refused activation, a stop before the events, and the guard's
+  /// own hold inside a held activation.
+  func testTheHoldsActivityEndsOnEveryReleasePath() throws {
+    XCTAssertTrue(holdHoldsActivity)
+    func check(_ seam: GuardSeam, _ label: String, endedAt: Double? = nil) {
+      XCTAssertGreaterThan(seam.holds, 0, label)
+      XCTAssertEqual(seam.activityBegins, seam.holds, "\(label): one activity a hold")
+      XCTAssertEqual(seam.activityEnds, seam.activityBegins, "\(label): each ended")
+      XCTAssertEqual(seam.activityLiveAtHold, Array(repeating: true, count: seam.holds), "\(label): begun before the hold")
+      XCTAssertEqual(seam.activityLiveAtRelease, Array(repeating: true, count: seam.releases), "\(label): ended with the release")
+      if let endedAt { XCTAssertEqual(seam.activityEndedAt, endedAt, "\(label): ended at the release, not the guard's end") }
     }
+    let settled = GuardSeam(frontmost: user)
+    var meta = meta()
+    try click(settled, activation: activation(settled, at: insidePoint), meta: &meta)
+    check(settled, "the guard's end", endedAt: 10 + activationPointGuardMinimumMs)
+
+    let capped = GuardSeam(frontmost: user)
+    reordering(capped, until: .infinity)
+    meta = self.meta()
+    try click(capped, activation: activation(capped, at: insidePoint), meta: &meta)
+    check(capped, "the cap's timer", endedAt: 210)
+
+    let slow = GuardSeam(frontmost: user)
+    slow.targetAbove = false
+    let subject = activation(slow, at: insidePoint)
+    subject.holdsThroughDelivery = true
+    subject.holdsUntilOrderReadsBack = true
+    try subject.activate()
+    slow.advance(140)
+    var raised = false
+    slow.onFrontmostRead = { if raised { slow.targetAbove = true } }
+    _ = subject.deliver(window: 41, pointer: true, ranBy: subject) { raised = true }
+    check(slow, "the ceiling's timer", endedAt: 300)
+
+    let refused = GuardSeam(frontmost: user, frontmostAfterPost: target)
+    meta = self.meta()
+    XCTAssertThrowsError(try click(refused, activation: freshActivation(refused), meta: &meta))
+    check(refused, "a refused activation")
+
+    let stopped = GuardSeam(frontmost: user)
+    meta = self.meta()
+    XCTAssertThrowsError(try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: freshActivation(stopped),
+                                          targetActive: { false }, beforePosting: { throw userChanged("TextEdit") },
+                                          post: stopped.system.post, meta: &meta))
+    check(stopped, "a stop before the events")
+
+    let held = GuardSeam(frontmost: user)
+    held.targetAbove = false
+    let standing = activation(held, at: insidePoint)
+    try standing.activate()
+    _ = standing.deliver(window: 41, pointer: true, ranBy: nil) {}
+    XCTAssertEqual(held.holds, 2)
+    check(held, "the guard's own hold inside a held activation")
+  }
+
+  /// #324 (ruling eecaccfe): the hold's timers are strict, with no leeway, and fire once at their time, not before.
+  func testTheHoldsTimerIsStrictWithNoLeewayAndFiresOnce() {
+    XCTAssertTrue(holdTimerStrict)
+    XCTAssertEqual(holdTimerFlags, .strict)
+    XCTAssertEqual(holdTimerLeewayNs, 0)
+    final class Firings: @unchecked Sendable {
+      let lock = NSLock()
+      var count = 0
+      var elapsedMs = 0.0
+    }
+    let fired = expectation(description: "the timer fired")
+    let firings = Firings()
+    let started = DispatchTime.now()
+    scheduleHoldTimer(30) {
+      firings.lock.withLock {
+        firings.count += 1
+        firings.elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1e6
+      }
+      fired.fulfill()
+    }
+    wait(for: [fired], timeout: 10)
+    Thread.sleep(forTimeInterval: 0.06)
+    firings.lock.withLock {
+      XCTAssertEqual(firings.count, 1, "a one-shot")
+      XCTAssertGreaterThanOrEqual(firings.elapsedMs, 29.5, "not before its time")
+    }
+  }
+
+  /// The review of 74fe29f8..2821788e (one P2): the wait for the release's stamp never shifts the record's Unix times.
+  /// The seam's wait runs on the fake clock and its Unix clock is the fake one past an epoch, so the timing is exact:
+  /// the hold at 0, the events at 10, the guard's end and release at 160. A stamp that comes 60 ms into the wait is
+  /// recorded (frozen to 220) and the Unix times stay where things happened; a stamp that never comes is waited for
+  /// the bound alone, 100 ms (ruling a47484f9), and the record answers without it, its Unix times unshifted too.
+  func testTheWaitForTheReleasesStampLeavesTheUnixTimesWhereTheyHappened() throws {
+    for (after, frozen) in [(60.0, 220.0), (Double.infinity, nil)] as [(Double, Double?)] {
+      let seam = GuardSeam(frontmost: user)
+      seam.reenableStampAfterMs = after
+      var meta = meta()
+      try click(seam, activation: activation(seam, at: insidePoint), meta: &meta)
+      let delivery = try XCTUnwrap(meta.delivery)
+      let label = frozen == nil ? "no stamp" : "a stamp 60 ms into the wait"
+      XCTAssertEqual(seam.releasedAt, 160, label)
+      XCTAssertEqual(seam.reenableWaitBounds, [screenReenableStampWaitMs], "\(label): one wait, at the bound")
+      XCTAssertEqual(seam.clock, 160 + min(after, screenReenableStampWaitMs), "\(label): waited until the stamp, or the bound and no longer")
+      XCTAssertEqual(delivery.frozenMs, frozen, label)
+      XCTAssertEqual(delivery.holdStartedAt, GuardSeam.unixEpoch, "\(label): the hold began at 0")
+      XCTAssertEqual(delivery.postedAt, GuardSeam.unixEpoch + 10, "\(label): the events at 10")
+      XCTAssertEqual(delivery.releasedAt, GuardSeam.unixEpoch + 160, "\(label): the release at 160, not after the wait")
+    }
+    XCTAssertEqual(screenReenableStampWaitMs, 100)
+    // The live wait: never longer than its bound (a loose upper bound, real time on a loaded runner).
+    let armed = ReenableStamp()
+    armed.arm()
+    let started = Date()
+    XCTAssertNil(armed.wait(upToMs: 50))
+    let waited = Date().timeIntervalSince(started) * 1000
+    XCTAssertGreaterThanOrEqual(waited, 45)
+    XCTAssertLessThan(waited, 2_000)
   }
 
   /// A click without the in-window activation click pays nothing: Chrome's point outside its frame, or no point, keeps
@@ -1694,9 +1782,22 @@ final class GuardSeam {
   var releasedAt: Double?
   /// How long after a release its SLSReenableUpdate is called (#324: the release's queue runs late).
   var reenableLagMs: Double = 0
-  /// When set, the release's stamp comes this many milliseconds of real time after the release, on another thread (the
-  /// release queue's late call, #324); `.infinity`: it never comes.
-  var reenableStampRealDelayMs: Double?
+  /// When set, the release's stamp is not made at the release: it comes this many milliseconds after the delivery guard
+  /// begins waiting for it, on the fake clock (the release queue's late call, #324), or never when that is past the
+  /// bound the guard waits (`.infinity`: never). Unset, it is made at the release.
+  var reenableStampAfterMs: Double?
+  /// The bounds each wait for a stamp was given, and the stamps still to come.
+  var reenableWaitBounds: [Double] = []
+  private var pendingStamps: [ReenableStamp] = []
+  /// The Unix clock the delivery record reads: the fake clock past a fixed epoch.
+  static let unixEpoch: Int64 = 1_000_000
+  /// The latency-critical activity (#324, `holdHoldsActivity`): begun and ended, whether one was live as each hold was
+  /// taken and as each was released, and when (on the fake clock) the last one ended.
+  var activityBegins = 0
+  var activityEnds = 0
+  var activityLiveAtHold: [Bool] = []
+  var activityLiveAtRelease: [Bool] = []
+  var activityEndedAt: Double?
   /// When the last screen-update hold was taken, on the fake clock.
   var heldAt: Double?
   var reactivated: [pid_t] = []
@@ -1770,22 +1871,44 @@ final class GuardSeam {
     }
     system.keyFocus = { nil }
     system.secondsSinceInput = { self.secondsSinceInput }
+    system.beginLatencyCriticalActivity = {
+      self.activityBegins += 1
+      var ended = false
+      return {
+        XCTAssertFalse(ended, "an activity ended twice")
+        ended = true
+        self.activityEnds += 1
+        self.activityEndedAt = self.clock
+      }
+    }
     system.holdScreenUpdates = { stamp in
       self.holds += 1
       self.heldAt = self.clock
+      self.activityLiveAtHold.append(self.activityBegins > self.activityEnds)
       stamp.arm()
       self.onHold?()
       return {
         self.releases += 1
         self.releasedAt = self.clock
+        self.activityLiveAtRelease.append(self.activityBegins > self.activityEnds)
         let at = self.clock + self.reenableLagMs
-        if let delay = self.reenableStampRealDelayMs {
-          if delay.isFinite { DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(Int(delay))) { stamp.stamp(at) } }
-        } else {
-          stamp.stamp(at)
-        }
+        if self.reenableStampAfterMs == nil { stamp.stamp(at) } else { self.pendingStamps.append(stamp) }
         self.onRelease?()
       }
+    }
+    system.unixNow = { GuardSeam.unixEpoch + Int64(self.clock.rounded()) }
+    system.awaitReenable = { stamp, bound in
+      self.reenableWaitBounds.append(bound)
+      if let index = self.pendingStamps.firstIndex(where: { $0 === stamp }) {
+        let pending = self.pendingStamps.remove(at: index)
+        if let after = self.reenableStampAfterMs, after <= bound {
+          self.advance(after)
+          pending.stamp(self.clock + self.reenableLagMs)
+        } else {
+          self.advance(bound)
+        }
+      }
+      return stamp.wait(upToMs: 0)
     }
     system.reactivate = { pid in
       self.reactivated.append(pid)

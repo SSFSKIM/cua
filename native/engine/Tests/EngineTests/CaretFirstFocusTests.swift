@@ -167,23 +167,25 @@ final class CaretFirstFocusTests: XCTestCase {
 
   // MARK: Who keeps main's path
 
-  /// A password field keeps main's AXFocused write and fallback click, by its subrole or a subrole that cannot be read,
-  /// until the hosted check measures it; the one switch puts it on the caret route.
-  func testAPasswordFieldKeepsMainsPathUntilItsSwitchIsOn() throws {
-    XCTAssertFalse(caretFirstCoversSecureFields)
+  /// A password field takes the caret route since the hosted check measured it (20 of 20, ruling eecaccfe), by its
+  /// subrole or a subrole that cannot be read: its caret written, no AXFocused write, no click, nothing of it read
+  /// beyond its focus. With the one switch off it keeps main's write and click.
+  func testAPasswordFieldTakesTheCaretRouteWhileItsSwitchIsOn() throws {
+    XCTAssertTrue(caretFirstCoversSecureFields)
     let ax = field(subrole: "AXSecureTextField")
     var done = Focused()
-    XCTAssertTrue(try focus(ax, &done), "the fallback click ran")
-    XCTAssertEqual(ax.writes.map(\.attribute), [kAXFocusedAttribute], "main's write, then its click")
-    XCTAssertEqual(done.clicks, 1)
-    XCTAssertNil(done.record)
-    let unreadable = field()
-    let route = fieldFocusRoute(el(1), role: kAXTextFieldRole, engine: .other, roleOf: unreadable.ops.role, parent: unreadable.ops.parent,
-                                subrole: { .failed })
-    XCTAssertEqual(route, .focusWrite, "an unreadable subrole counts as a password field's")
-    let on = fieldFocusRoute(el(1), role: kAXTextFieldRole, engine: .other, roleOf: ax.ops.role, parent: ax.ops.parent,
-                             subrole: { .subrole("AXSecureTextField") }, coversSecure: true)
-    XCTAssertEqual(on, .caretFirst, "the switch on")
+    XCTAssertFalse(try focus(ax, &done), "no fallback click")
+    XCTAssertEqual(ax.writes.map(\.attribute), [kAXSelectedTextRangeAttribute], "its caret, no AXFocused write")
+    XCTAssertEqual(done.clicks, 0)
+    XCTAssertEqual(done.record, TextEntryFocusRecord(focus: .readBack, step: .selection))
+    for subrole in [SubroleRead.subrole("AXSecureTextField"), .failed] {
+      XCTAssertEqual(fieldFocusRoute(el(1), role: kAXTextFieldRole, engine: .other, roleOf: ax.ops.role, parent: ax.ops.parent,
+                                     subrole: { subrole }), .caretFirst, "\(subrole), the switch on")
+      XCTAssertEqual(fieldFocusRoute(el(1), role: kAXTextFieldRole, engine: .other, roleOf: ax.ops.role, parent: ax.ops.parent,
+                                     subrole: { subrole }, coversSecure: false), .focusWrite, "\(subrole), the switch off")
+    }
+    XCTAssertEqual(fieldFocusRoute(el(1), role: kAXTextFieldRole, engine: .other, roleOf: ax.ops.role, parent: ax.ops.parent,
+                                   subrole: { .none }, coversSecure: false), .caretFirst, "not a password field: the switch is no matter")
   }
 
   /// An AppKit field, a native field in a WebKit app (no web area above it) and a Chromium or Gecko page's field keep

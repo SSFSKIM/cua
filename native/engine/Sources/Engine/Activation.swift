@@ -59,6 +59,43 @@ let activationHoldCapMs: Double = 100
 let activationPointHoldCapMs: Double = 200
 let activationPointHoldCeilingMs: Double = 300
 let activationPointGuardMinimumMs: Double = 150
+/// #324's hosted A/B (runs 42480471918, 42480982911): a release by the hold's timer came late, the real freeze a
+/// median 68 ms past the 300 ms ceiling (349 to 377 ms frozen) and 26 ms past main's 200 ms cap (up to 79), while a
+/// release at the guard's own end came on time (a median 0.1 ms), so the lateness is the timer's, most likely the
+/// dispatch timer's coalescing in a background process with no UI. Two remedies, each one constant, both on until the
+/// hosted re-measure
+/// keeps the smaller (ruling eecaccfe):
+/// - `holdTimerStrict`: the hold's timers are a strict dispatch source with no leeway on a queue of their own
+///   (`scheduleHoldTimer`); off, the global queue's `asyncAfter` as before.
+/// - `holdHoldsActivity`: the process holds a latency-critical activity (`ProcessInfo.beginActivity`, user initiated)
+///   from just before SLSDisableUpdate to the hold's release, whichever path releases it (`FakeActivation.takeHold`).
+let holdTimerStrict = true
+let holdHoldsActivity = true
+/// The strict timer's dispatch flags and leeway (`scheduleHoldTimer`).
+var holdTimerFlags: DispatchSource.TimerFlags { .strict }
+let holdTimerLeewayNs = 0
+
+/// The queue the hold's strict timers fire on: its own, so no other work starves them; the release they run only
+/// enqueues the re-enable (ScreenUpdateReleases).
+private let holdTimerQueue = DispatchQueue(label: "cua.engine.hold-timer", qos: .userInteractive)
+
+/// Runs `work` once, `ms` milliseconds from now: under `holdTimerStrict` by a one-shot dispatch source timer
+/// (`holdTimerFlags`, `holdTimerLeewayNs`) on `holdTimerQueue`, cancelled as it fires; else as before.
+func scheduleHoldTimer(_ ms: Double, _ work: @escaping @Sendable () -> Void) {
+  let deadline = DispatchTime.now() + .microseconds(Int(max(0, ms) * 1000))
+  guard holdTimerStrict else {
+    DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: deadline, execute: work)
+    return
+  }
+  let timer = DispatchSource.makeTimerSource(flags: holdTimerFlags, queue: holdTimerQueue)
+  timer.schedule(deadline: deadline, repeating: .never, leeway: .nanoseconds(holdTimerLeewayNs))
+  timer.setEventHandler {
+    timer.cancel()  // a one-shot: the cancel also lets the source and this handler go
+    work()
+  }
+  timer.resume()
+}
+
 /// How long a delivery guard waits, in real time, for its hold's SLSReenableUpdate to be called on
 /// ScreenUpdateReleases' queue (`frozenMs`, #324) before it answers without it.
 let screenReenableStampWaitMs: Double = 100
@@ -164,10 +201,19 @@ struct ActivationSystem {
   /// Seconds since the last input of any type on the HID system state: a person's input since an action's events stops
   /// the delivery guard's repairs after the hold's release.
   var secondsSinceInput: () -> Double = { CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: CGEventType(rawValue: ~0)!) }
-  /// Runs `work` after the given milliseconds on another thread (the hold's cap, kept while the guard is blocked).
-  var schedule: (Double, @escaping @Sendable () -> Void) -> Void = { ms, work in
-    DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
+  /// Runs `work` after the given milliseconds on another thread (the hold's cap, kept while the guard is blocked):
+  /// `scheduleHoldTimer`, strict under `holdTimerStrict` (#324).
+  var schedule: (Double, @escaping @Sendable () -> Void) -> Void = scheduleHoldTimer
+  /// Begins the process's latency-critical activity and answers its end (#324, `holdHoldsActivity`): held for a
+  /// screen-update hold's lifetime, so App Nap's timer coalescing never delays the hold's release.
+  var beginLatencyCriticalActivity: () -> () -> Void = {
+    let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "cua screen-update hold")
+    return { ProcessInfo.processInfo.endActivity(activity) }
   }
+  /// The wall clock the delivery record's Unix times are read on (Unix ms).
+  var unixNow: () -> Int64 = unixMilliseconds
+  /// Waits up to the given milliseconds of real time for a hold's re-enable stamp (#324, `ReenableStamp.wait`).
+  var awaitReenable: (ReenableStamp, Double) -> Double? = { stamp, ms in stamp.wait(upToMs: ms) }
 
   func believesItHasFocus(_ pid: pid_t) -> Bool { frontmost() == pid || keyFocus() == pid }
 }
@@ -488,7 +534,7 @@ final class FakeActivation {
     let userWindow = guarded.window
     let holdStarted = system.now()
     let stamp = ReenableStamp()
-    let release = OnceRelease(system.holdScreenUpdates(stamp))
+    let release = takeHold(stamp)
     var keepsHold = false
     defer { if !keepsHold { release() } }
     let untilOrderReadsBack = holdsThroughDelivery && holdsUntilOrderReadsBack && planned.kind == .activationPoint
@@ -527,6 +573,18 @@ final class FakeActivation {
       openHoldLock.withLock {
         openHold = OpenHold(release: release, startedAt: holdStarted, user: guarded, stamp: stamp, untilOrderReadsBack: untilOrderReadsBack)
       }
+    }
+  }
+
+  /// A screen-update hold and its one release (#324): under `holdHoldsActivity` the latency-critical activity begins
+  /// just before SLSDisableUpdate and ends with the release, whichever path asks for it first (the guard's end, the
+  /// cap's or the ceiling's timer, a throw, a stop before the events), since every one goes through this release.
+  private func takeHold(_ stamp: ReenableStamp) -> OnceRelease {
+    let endActivity = holdHoldsActivity ? system.beginLatencyCriticalActivity() : {}
+    let release = system.holdScreenUpdates(stamp)
+    return OnceRelease {
+      release()
+      endActivity()
     }
   }
 
@@ -595,7 +653,7 @@ final class FakeActivation {
       let guarded = guardedUser(user)
       let started = system.now()
       let stamp = ReenableStamp()
-      let release = OnceRelease(system.holdScreenUpdates(stamp))
+      let release = takeHold(stamp)
       let opened = OpenHold(release: release, startedAt: started, user: guarded, stamp: stamp,
                             untilOrderReadsBack: pointer && clickKind == .activationPoint)
       system.schedule(opened.openingCapMs) { release() }
@@ -701,9 +759,9 @@ final class FakeActivation {
     let held = ended - hold.startedAt
     // The Unix anchor is read with `ended`, before the release and the wait for its stamp (up to
     // `screenReenableStampWaitMs`), so the wait never shifts the hold's, the release's or the events' Unix times.
-    let now = unixMilliseconds()
+    let now = system.unixNow()
     hold.release()
-    outcome.frozenMs = hold.stamp.wait(upToMs: screenReenableStampWaitMs).map { round($0 - hold.startedAt) }
+    outcome.frozenMs = system.awaitReenable(hold.stamp, screenReenableStampWaitMs).map { round($0 - hold.startedAt) }
     outcome.holdStartedAt = now - Int64(held.rounded())
     outcome.releasedAt = outcome.holdStartedAt + Int64(min(held, capMs).rounded())
     outcome.postedAt = now - Int64((ended - posted).rounded())

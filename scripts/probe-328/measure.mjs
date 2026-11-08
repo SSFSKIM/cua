@@ -95,11 +95,14 @@ function setOf(name) {
       ['annotated', {tap: 'annotated'}]];
     for (const pointer of ['over', 'away']) for (const [n, p] of v) out.push(post({pointer, post: p, name: `split/${n}/${pointer}`}));
     for (const pointer of ['over', 'away']) out.push({...post({pointer, name: `split/appPid/${pointer}`}), pidFrom: 'app'});
+    // To the topmost window under the point, its owner and its number (WindowServer's routing, by pid).
+    for (const pointer of ['over', 'away']) out.push({...post({pointer, name: `split/cgWindow/${pointer}`}), pidFrom: 'cg'});
   }
   if (name === 'smoke') {
     out.push(post({name: 'post/pid/away/none/pixel/vendor'}), post({pointer: 'over', post: {tap: 'hid'}, name: 'post/hid/over/none/pixel/vendor'}),
       post({pointer: 'over', name: 'post/pid/over/none/pixel/vendor'}), post({post: {phase: 'gesture'}, name: 'post/pid/away/gesture/pixel/vendor'}));
     for (const route of ['barWrite', 'scrollToVisible', 'none']) out.push({route, pointer: 'away', name: `ax/${route}`});
+    out.push({...post({name: 'split/cgWindow/away'}), pidFrom: 'cg'}, {...post({post: {fields: 'none'}, name: 'post/pid/away/none/pixel/none'})});
   }
   if (name === 'routes' || name === 'smoke-routes') {
     for (const route of ['barWrite', 'barIncrement', 'pagePress', 'arrowPress', 'scrollByPage', 'scrollToVisible', 'visibleRange', 'makeRectVisible', 'none'])
@@ -158,7 +161,9 @@ const areaBy = (scan, pred) => {
   for (const w of scan.windows ?? []) for (const a of w.areas ?? []) if (pred(a, w)) return {win: w.index, area: a.index, title: w.title};
   return null;
 };
-const scrollableAreas = scan => (scan.windows ?? []).flatMap(w => (w.areas ?? []).filter(a => a.scrollable === true || (a.bar && a.bar.enabled !== false)).map(a => ({win: w.index, area: a.index, title: w.title, id: a.id, role: a.content?.role})));
+// Scrollable: its content taller than it, an enabled bar, or (no AXScrollArea in the window: Catalyst) a page scroll advertised.
+const scrollableAreas = scan => (scan.windows ?? []).flatMap(w => (w.areas ?? []).filter(a => a.scrollable === true || (a.bar && a.bar.enabled !== false)
+  || (a.role && a.role !== 'AXScrollArea' && (a.actions ?? []).includes('AXScrollDownByPage'))).map(a => ({win: w.index, area: a.index, title: w.title, id: a.id, role: a.content?.role ?? a.role})));
 const barReset = (pid, win, area) => async () => { t328('setbar', pid, win, area, 0); await sleep(150); };
 
 async function probeTargets() {
@@ -346,7 +351,7 @@ async function engineCells(connect, target, desktop, reps) {
       const a = lean(await w.execute('scroll', {pid: target.pid, ...args}, sky.lineage));
       row.ms = Date.now() - t0;
       await Promise.race([exited, sleep(15_000)]);
-      try { const r = JSON.parse(tout.trim().split('\n').pop()); row.read = {movedPx: r.movedPx, movedBy: r.movedBy, measures: r.measures, firstMoveMs: r.firstMoveMs, raised: r.raised, frontOther: r.frontOther, keysBefore: r.keysBefore, keysAfter: r.keysAfter}; } catch { row.read = {bad: tout.slice(-300)}; }
+      try { const r = JSON.parse(tout.trim().split('\n').pop()); row.read = {movedPx: r.movedPx, movedBy: r.movedBy, measures: r.measures, barDelta: r.barDelta, firstMoveMs: r.firstMoveMs, raised: r.raised, frontOther: r.frontOther, keysBefore: r.keysBefore, keysAfter: r.keysAfter}; } catch { row.read = {bad: tout.slice(-300)}; }
       const after = t328('read', target.pid, target.win, target.area).pos;
       row.args = {...args, element: args.element ? 'token' : undefined};
       row.answer = a.error ? a.error.name : 'success';

@@ -30,6 +30,13 @@ case "$GROUP" in
     if [ -n "$catalyst" ]; then m catalyst smoke-catalyst --sets smoke --catalyst "$catalyst"; fi
     m engine smoke-engine --reps 1
     repro324 1 ;;
+  smoke2)
+    # The blocks the second smoke left open: Catalyst (no AXScrollArea), Notes' content, Settings' pane, SwiftUI's List.
+    m catalyst328 smoke2-catalyst328 --sets smoke
+    if [ -n "$catalyst" ]; then m catalyst smoke2-catalyst --sets smoke --catalyst "$catalyst"; fi
+    m notes smoke2-notes --sets smoke
+    m settings smoke2-settings --sets smoke
+    m swiftui smoke2-swiftui --sets smoke ;;
   appkit)
     m probe probe --sets full,split,routes,outside,active,bottom --reps 2
     m textedit textedit --sets full,split,routes,outside,active,bottom --reps 2

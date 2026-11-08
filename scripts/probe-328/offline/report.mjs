@@ -28,7 +28,9 @@ function judge(r) {
     || kb.targetFocused !== ka.targetFocused || kb.targetMain !== ka.targetMain;
   const truth = r.truth?.y && r.truth.y[0] != null && r.truth.y[1] != null ? (r.truth.y[1] - r.truth.y[0]) * sign
     : r.truth?.offsets ? (() => { const k = /list/.test(r.target) ? 'list' : 'scroll'; const b = r.truth.offsets[0]?.[k], a = r.truth.offsets[1]?.[k]; return a != null && b != null ? (a - b) * sign : null; })() : null;
-  return {delivered: px != null && px > 2, px, raised: !!r.raised, keyChange, truth, reached: r.truth?.reached ?? null, wheels: r.truth?.wheels ?? null};
+  // Moved the asked way: by more than 2 points, or (no length to scale it: SwiftUI's List) its bar the asked way.
+  const barMoved = r.barDelta != null && r.barDelta * sign > 0.0005;
+  return {delivered: (px != null && px > 2) || barMoved, barMoved, px, raised: !!r.raised, keyChange, truth, reached: r.truth?.reached ?? null, wheels: r.truth?.wheels ?? null};
 }
 const table = (head, body) => { console.log(`| ${head.join(' | ')} |`); console.log(`|${head.map(() => '---').join('|')}|`); for (const b of body) console.log(`| ${b.join(' | ')} |`); };
 
@@ -69,7 +71,7 @@ if (eng.length) {
   table(['desktop', 'target', 'how', 'answers', 'route', 'moved n/N (AX)', 'truth', 'ms'], [...g].map(([k, rs]) => {
     const [d, t, n] = k.split('\t');
     const ans = {}; rs.forEach(r => { const a = r.answer ?? r.problem?.error?.name ?? (r.problem ? 'problem' : r.exception ? 'exception' : '?'); ans[a] = (ans[a] ?? 0) + 1; });
-    const moved = rs.filter(r => (r.movedPx ?? 0) > 2 || (r.trackedPx ?? 0) > 2 || (r.bar?.[1] ?? 0) - (r.bar?.[0] ?? 0) > 0.001);
+    const moved = rs.filter(r => (r.read?.movedPx ?? r.movedPx ?? 0) > 2 || (r.read?.barDelta ?? 0) > 0.0005 || (r.bar?.[1] ?? 0) - (r.bar?.[0] ?? 0) > 0.0005);
     const tr = rs.map(r => r.truth?.y ? r.truth.y[1] - r.truth.y[0] : r.truth?.offsets ? null : null).filter(x => x != null);
     return [d, t, n, JSON.stringify(ans), [...new Set(rs.map(r => r.route))].join(','), `${moved.length}/${rs.length}`, tr.length ? tr.join(',') : '-', f1(med(rs.map(r => r.ms)))];
   }));

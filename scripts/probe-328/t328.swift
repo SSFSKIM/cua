@@ -63,7 +63,40 @@ func scrollAreas(_ root: AXUIElement) -> [AXUIElement] {
     for k in els(attr(e, kAXChildrenAttribute)) { walk(k, d + 1) }
   }
   walk(root, 0)
+  if !out.isEmpty { return out }
+  // No AXScrollArea (Catalyst's UIKit, smoke run 42524809432): what advertises a page scroll or answers a vertical bar.
+  budget = 3000
+  func walk2(_ e: AXUIElement, _ d: Int) {
+    budget -= 1
+    guard budget > 0, d < 30 else { return }
+    if e != root, actions(e).contains("AXScrollDownByPage") || el(attr(e, kAXVerticalScrollBarAttribute)) != nil { out.append(e); return }
+    for k in els(attr(e, kAXChildrenAttribute)) { walk2(k, d + 1) }
+  }
+  walk2(root, 0)
   return out
+}
+/// The window's tree to `depth`, at most `limit` nodes: role, subrole, identifier, frame, actions, child count.
+func tree(_ root: AXUIElement, depth: Int = 8, limit: Int = 220) -> [[String: Any]] {
+  var out: [[String: Any]] = []
+  func walk(_ e: AXUIElement, _ d: Int) {
+    guard out.count < limit, d <= depth else { return }
+    let kids = els(attr(e, kAXChildrenAttribute))
+    out.append(["d": d, "role": role(e), "sub": n(str(e, kAXSubroleAttribute)), "id": n(str(e, "AXIdentifier")), "frame": rect(frameOf(e)),
+                "actions": actions(e).filter { !$0.hasPrefix("AXShow") }, "kids": kids.count, "title": n(str(e, kAXTitleAttribute).map { String($0.prefix(40)) })])
+    for k in kids { walk(k, d + 1) }
+  }
+  walk(root, 0)
+  return out
+}
+/// The on-screen windows under `point`, front to back (WindowServer's view of who gets a wheel there): owner, pid,
+/// number, layer, bounds.
+func windowsAt(_ point: CGPoint) -> [[String: Any]] {
+  let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+  return list.compactMap { w -> [String: Any]? in
+    guard let b = w[kCGWindowBounds as String] as? [String: Any], let r = CGRect(dictionaryRepresentation: b as CFDictionary), r.contains(point) else { return nil }
+    return ["owner": w[kCGWindowOwnerName as String] ?? "?", "pid": w[kCGWindowOwnerPID as String] ?? 0, "number": w[kCGWindowNumber as String] ?? 0,
+            "layer": w[kCGWindowLayer as String] ?? 0, "bounds": rect(r), "alpha": w[kCGWindowAlpha as String] ?? 1]
+  }.prefix(4).map { $0 }
 }
 func findWindow(_ pid: pid_t, _ spec: Any?) -> AXUIElement? {
   let ws = windowsOf(pid)
@@ -86,6 +119,7 @@ func belowFold(_ area: AXUIElement, viewport: CGRect, min: CGFloat) -> AXUIEleme
     budget -= 1
     guard budget > 0, d < 14, byAction == nil else { return }
     let r = role(e)
+    if r == kAXScrollBarRole { return }
     if r != kAXScrollBarRole, e != area, let f = frameOf(e), f.minY > viewport.maxY + min, f.height > 0, f.height < viewport.height {
       if actions(e).contains("AXScrollToVisible") { byAction = e; return }
       if byAttribute == nil, settable(e, "AXScrollToVisible") { byAttribute = e }
@@ -104,6 +138,7 @@ func tracked(_ area: AXUIElement, viewport: CGRect) -> AXUIElement? {
     budget -= 1
     guard budget > 0, d < 10 else { return }
     let r = role(e)
+    if r == kAXScrollBarRole { return }
     if r != kAXScrollBarRole, e != area, let f = frameOf(e), f.height > 2, f.height < viewport.height * 0.6, f.minY >= viewport.minY, f.minY < viewport.midY {
       if best == nil || f.minY < best!.1 { best = (e, f.minY) }
     }
@@ -133,6 +168,10 @@ func read(_ area: AXUIElement, trackedEl: AXUIElement?) -> Pos {
   if let b = bar(area) { p.bar = num(b, kAXValueAttribute) }
   if let c = contentOf(area), let cf = frameOf(c), let af {
     p.offset = Double(af.minY - cf.minY); p.contentH = Double(cf.height)
+    var size = CGSize.zero
+    if cf.height <= af.height + 1, let v = attr(area, "AXContentSize"), CFGetTypeID(v) == AXValueGetTypeID(), AXValueGetValue(v as! AXValue, .cgSize, &size), size.height > af.height {
+      p.contentH = Double(size.height)
+    }
     if role(c) == kAXTextAreaRole { p.vis = rangeOf(c, "AXVisibleCharacterRange") }
   }
   if let t = trackedEl, let f = frameOf(t) { p.trackedY = Double(f.minY) }
@@ -275,11 +314,18 @@ case "scan":
                     "children": els(attr(b, kAXChildrenAttribute)).map { ["role": role($0), "subrole": n(str($0, kAXSubroleAttribute)), "actions": actions($0)] as [String: Any] }]
       }
       e["scrollable"] = { if let c = contentOf(s).flatMap(frameOf), let f { return c.height > f.height + 4 } else { return NSNull() } }() as Any
+      if let f { e["windowsAt"] = windowsAt(CGPoint(x: f.midX, y: f.midY)) }
+      var areaPid: pid_t = 0
+      AXUIElementGetPid(s, &areaPid)
+      e["pid"] = Int(areaPid)
+      e["role"] = role(s)
       if let f, let t = belowFold(s, viewport: f, min: 10) { e["belowFold"] = ["role": role(t), "frame": rect(frameOf(t)), "actions": actions(t), "settableSTV": settable(t, "AXScrollToVisible")] }
       areas.append(e)
     }
-    ws.append(["index": wi, "title": str(w, kAXTitleAttribute) ?? NSNull(), "frame": rect(frameOf(w)), "number": windowNumber(w).map { Int($0) } ?? NSNull(),
-               "focused": focused.map { CFEqual($0, w) } ?? false, "main": main.map { CFEqual($0, w) } ?? false, "areas": areas])
+    var entry: [String: Any] = ["index": wi, "title": n(str(w, kAXTitleAttribute)), "frame": rect(frameOf(w)), "number": n(windowNumber(w).map { Int($0) }),
+               "focused": focused.map { CFEqual($0, w) } ?? false, "main": main.map { CFEqual($0, w) } ?? false, "areas": areas]
+    if !areas.contains(where: { ($0["scrollable"] as? Bool) == true }) { entry["tree"] = tree(w) }
+    ws.append(entry)
   }
   emit(["pid": Int(pid), "windows": ws, "setWindowLocation": setWindowLocation != nil, "getWindow": getWindow != nil])
 case "read", "setbar":
@@ -309,7 +355,15 @@ case "trial":
   // The process the events go to: the area's own (an out-of-process view's, as the engine's hit-test owner), or the app's.
   var areaPid: pid_t = 0
   AXUIElementGetPid(area, &areaPid)
-  let postPid = (spec["pidFrom"] as? String) == "app" || areaPid == 0 ? pid : areaPid
+  let under = windowsAt(point)
+  out["windowsAt"] = under
+  let cgTop = under.first { ($0["layer"] as? Int ?? 0) >= 0 && ($0["alpha"] as? Double ?? 1) > 0 }
+  let postPid: pid_t
+  switch spec["pidFrom"] as? String {
+  case "app": postPid = pid
+  case "cg": postPid = (cgTop?["pid"] as? Int).map { pid_t($0) } ?? pid
+  default: postPid = areaPid == 0 ? pid : areaPid
+  }
   out["areaPid"] = Int(areaPid); out["postPid"] = Int(postPid)
   out["window"] = ["title": n(str(w, kAXTitleAttribute)), "number": n(wid.map { Int($0) }), "frame": rect(wf)] as [String: Any]
   out["viewport"] = rect(viewport); out["point"] = [point.x, point.y]
@@ -339,7 +393,12 @@ case "trial":
   var detail: [String: Any] = [:]
   // Anything prepared before the clock starts: the events, the route's element.
   let p = spec["post"] as? [String: Any] ?? [:]
-  let events = route == "post" ? scrollEvents(p, point: point, window: wid, windowFrame: wf, down: down) : []
+  // pidFrom cg: the window the events name is the topmost one under the point (its owner's), as WindowServer would route.
+  var stampId = wid, stampFrame = wf
+  if (spec["pidFrom"] as? String) == "cg", let top = cgTop, let num = top["number"] as? Int, let b = top["bounds"] as? [Double] {
+    stampId = CGWindowID(num); stampFrame = CGRect(x: b[0], y: b[1], width: b[2], height: b[3])
+  }
+  let events = route == "post" ? scrollEvents(p, point: point, window: stampId, windowFrame: stampFrame, down: down) : []
   if route == "external" { emit(["ready": true]); _ = readLine() }
   let t0 = unixMs()
   let watch = Watch(target: pid, cover: cover, ms: watchMs)

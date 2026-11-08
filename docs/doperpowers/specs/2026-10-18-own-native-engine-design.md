@@ -3152,7 +3152,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - **The hold:** the delivery guard reads the order every `deliveryGuardSampleMs` for at least 150 ms after the
        click's events (the window in which the reorder was measured to come), repairs what it reads as before, and
        ends on its three stable samples; the hold is released then, at once. The cap is 200 ms (from 100), by the
-       hold's timer, so **the hold always releases at the cap, even when the order never reads back** and even while a
+       hold's timer (amended 2026-11-08 by #324's entry below: counted from the click's events, under a 300 ms ceiling
+       from the hold's start), so **the hold always releases at the cap, even when the order never reads back** and even while a
        repair blocks: nothing can freeze the screen for longer. Past the cap the guard repairs on, as #200 has it. Any
        later raise of the cap goes back to the design session.
      - **`transientRaise`** in the delivery record, on every delivery guard: `seen`, whether a sample saw the target's
@@ -3361,9 +3362,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   11. **The hosted A/B of acb88f72 against main** (run https://github.com/SSFSKIM/cua/actions/runs/42457001051,
      confirmations 42459610340 and 42460845888; Firefox 159 behind a frontmost TextEdit). On main, set_value on an
      unfocused background Firefox text field was not lost: its posted fallback click succeeded, 3 of 3, and the value
-     was set, though it raised Firefox's window above TextEdit for 26 to 30 ms after the hold (4 of 5 tries in all). On
-     acb88f72 it was refused and the value not set: a working capability lost, hence item 7's press. An element click on
-     the field, then set_value, set it 4 of 4 with no raise.
+     was set. Firefox's window reordered above TextEdit's in 4 of 5 tries, **inside the screen hold, none of it
+     visible** (corrected 2026-11-08 (#324): this item first said the raise showed for 26 to 30 ms after the hold. Main's
+     `focusingClick` dropped the fallback click's `delivery` record, so the kit judged the reorder against no hold; the
+     fallback click joins set_value's held activation and takes #321's hold, and #324's spike, timing SLSDisableUpdate
+     and SLSReenableUpdate directly, found 0 visible on that path, 75 of 112 Safari fallback clicks reordering inside
+     the hold and none after it; https://github.com/SSFSKIM/cua/issues/324#issuecomment-6721180433). On acb88f72 it was
+     refused and the value not set: a working capability lost, hence item 7's press. An element click on the field,
+     then set_value, set it 4 of 4 with no raise.
   Proven offline (`GeckoPointerTests`, 14, over Firefox 159's tree and its activation, the AXActivationPoint inside the
   frame on a toolbar button):
   - Firefox's page is a web area whether or not an observation saw it; no hit, the scroll area over the web area and an
@@ -3402,7 +3408,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     type_text lands in them; a `/fixedtail` row below the top by token is pressed (`pressed` `ancestor`, its AXLink),
     12 of 12; a coordinate click on plain text is `backgroundClickRefused` with nothing posted and item 10's
     sentence; set_value and select_text on a field Firefox has not focused succeed with no posted click (the press, read
-    back) and no raise, where main raised Firefox for 26 to 30 ms; toolbar Reload reloads and answers `clickUnconfirmed`
+    back) and no raise, where main reordered Firefox inside its hold (item 11, corrected 2026-11-08 (#324)); toolbar Reload reloads and answers `clickUnconfirmed`
     as on main; a drag in the page is refused, nothing posted; Firefox never frontmost and its window never left above
     TextEdit;
   - **Firefox, dedicated:** every cell as on main (delivered, the window coming forward);
@@ -3410,6 +3416,210 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     AXWebArea, which item 4's step needs;
   - **Chrome for Testing and Safari 27.2:** identical to main, cell by cell.
   Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #315.
+- Decision (#324, 2026-11-08, `fix/324-caret-first`; the design session's ruling 8c206e91 on the spike's findings,
+  issue comment https://github.com/SSFSKIM/cua/issues/324#issuecomment-6721180433, kit `probe/324-measure` 1b1b69a6,
+  and ruling eecaccfe on the hosted A/B, item 1's second half; amends #321's item 3 and corrects #315's item 11): **set_value
+  and select_text focus a WebKit page's text field, a password field included, caret first: its caret written, then its
+  AXPress, each read back, and never an AXFocused write or a posted click. AppKit fields keep the AXFocused write.
+  #321's hold is capped 200 ms after the click's events, under a 300 ms ceiling from the hold's start, and its timers
+  are made strict. The delivery record now reaches set_value's meta and records the hold's real release.**
+  1. **The spike's findings** (runs 42468407027, 42472740707 and 42476788546; runner-only patches,
+     `scripts/probe-324/patch.py`, which timed SLSDisableUpdate and SLSReenableUpdate directly and judged visibility
+     against the real frozen spans):
+     - **#315's set_value raises were hidden, not visible.** Main's `focusingClick` copied part of the fallback
+       click's meta and dropped its `delivery` record, so #315's kit judged every reorder on the fallback against no
+       hold. The fallback click joins set_value's held activation, which clicked its activation point, so it takes
+       #321's hold until the order reads back: 75 of 112 Safari fallback clicks reordered inside the hold, 0 after it.
+       On main nothing was visible after the hold across 458 steps in Safari, an AppKit probe app and TextEdit
+       (set_value, select_text, coordinate click, type_text, press_key, scroll, drag), nor on 0 of 150 natural residue
+       clicks.
+     - **#321's residue is real but rare.** A slow activation made on purpose (the events 183 to 323 ms into the hold)
+       gave 51 of 60 visible, but only about 2% of natural clicks have a gap over 100 ms (the largest 193 ms).
+     - **Caret first on Safari's page fields:** 32 of 32 delivered, 0 raises, no pointer event on the page; the freeze
+       fell from about 300 ms (the held activation's hold, then the fallback click's) to about 120 ms (the held
+       activation's alone).
+     - **AppKit fields:** the AXFocused write took 16 of 16 with no raise; the press and the caret both fail there.
+     - **The release runs late:** the cap's timer and the release's enqueue fire late, so the display stays frozen a
+       median 12 to 26 ms past `screenHoldMs`, up to about 100 ms.
+     - **The reorder is hidden, not prevented:** pointer clicks and drags still reorder inside the hold in 55 to 90% of
+       cases.
+     **The hosted A/B** (main 74fe29f8 against 2821788e, confirmed on e2e452c9; runs
+     https://github.com/SSFSKIM/cua/actions/runs/42480471918 and https://github.com/SSFSKIM/cua/actions/runs/42480982911,
+     kit `probe/324-measure` 302a9e47):
+     - **Caret first held** on Safari's page fields in both modes, and on its password fields with the switch on:
+       set_value 20 of 20, 0 raises, no page events, a 124 ms freeze. Hence item 2's password fields are on.
+     - **Dedicated mode:** main answered set_value and select_text on Safari with success while writing nothing (its
+       posted click focused the field, then the value read "", 24 of 24). The caret route delivered 24 of 24.
+     - **The slow-activation residue** (`P324_DELAY_MS`): main 47 of 60 visible, this branch 4 of 60, all 4 with their
+       events at or past 300 ms into the hold, where the ceiling ends the hold before the cap can.
+     - **The natural freeze** (corrected 2026-11-08, hosted A/B): natural clicks' events go about 40 to 50 ms into the
+       hold, not the 60 item 5 first assumed, so the hold runs a median of about 197 ms (p95 205 to 215, the largest
+       218).
+     - **Only a timer's release runs late** (corrected 2026-11-08, hosted A/B; the spike's 12 to 26 ms above was the
+       mix): a release the guard makes at its own end comes on time (`frozenMs` less `screenHoldMs`, a median 0.1 ms),
+       while one the hold's timer makes comes late: at the 300 ms ceiling `frozenMs` was 349 to 377 ms, a median 68 ms
+       late (the logged return reached 398 ms), and main's 200 ms cap a median 26 ms late, up to 79. Item 6b is the
+       remedy.
+  2. **Caret first on a WebKit page's field** (ElementInput.swift `fieldFocusRoute`, `focusByCaretFirst`,
+     `caretFirstFocus`; `focusField`):
+     - **Which fields:** in `focusField`, a field focusFieldIfNeeded would focus (AXTextField, AXTextArea or
+       AXDateTimeArea, AXFocused settable, not focused) that #313 classifies as a WebKit page's text entry
+       (`textEntryClickRoute`'s `selecting`: a `webAreaEditableRoles` role under an AXWebArea, in a process that is
+       neither Chromium's nor Gecko's). In practice a Safari page's text field or textarea.
+     - **The route:** the in-flight check, AXSelectedTextRange {0, 0}, its focus read back (#313's `readingFocus`,
+       300 ms). Still unfocused: the in-flight check again and the field's AXPress where it advertises one, read back
+       again. Still unfocused: refused as `clickUnconfirmed` with the method's value or selection not written: "<App>'s
+       text field could not be focused: its caret was written through accessibility[, then its accessibility action
+       was performed], but the field does not report focus, so the requested value or selection was not written.
+       Observe <App> with get_app_state before any retry, and never retry blindly."
+     - **What it never does:** write AXFocused or post a click. It replaces the posted fallback click, and Safari's
+       DOM elements (which focusFieldIfNeeded sent straight to the click) take it too.
+     - **The record:** `meta.fieldFocus {focus, focusStep "selection" | "press", caretWriteError?}`, the last step and
+       its read-back. The engine's meta only: the service does not forward it, so the hosted kit reads it from the
+       engine.
+     - **Password fields take it too** (`caretFirstCoversSecureFields`, on since the hosted A/B measured them at 20 of
+       20 delivered with 0 raises, ruling eecaccfe): a field whose role or subrole is AXSecureTextField, or whose
+       subrole cannot be read (#283's rule). Its value and range are never read. The first build kept them on main's
+       AXFocused write and fallback click until that measurement; turning them back is the one constant.
+     - **Both device modes (the implementer's decision).** The route posts nothing, so the reason dedicated mode
+       differs elsewhere (no person's window to protect, so a raise costs nothing) gives it nothing to gain from the
+       posted click, while the click still reaches the page's own handlers. One route keeps set_value on a Safari page
+       the same on both desktops. Measured (item 1, the hosted A/B): main's posted click answered success there while
+       the value read "", 24 of 24; the caret route delivered 24 of 24. So dedicated mode keeps it.
+  3. **AppKit fields keep main's AXFocused write** (16 of 16, no raise), and so does every field the classification
+     does not take: a native field in Safari's window, and a Chromium or Gecko page's field (whose fallbacks are #282's
+     refusal and #315's press, unchanged).
+  4. **The fallback click's `delivery` record** rides in the method's meta (`focusingClick`), as its guard time does.
+     Its absence is what caused #315's misread.
+  5. **The cap starts at the events, with a ceiling** (Activation.swift `activationPointHoldCapMs` 200,
+     `activationPointHoldCeilingMs` 300, `OpenHold.capMs(eventsAt:)`). A hold kept until the order reads back (#321's
+     scope, unchanged) is released when its guard ends, or by its timers at 200 ms after the click's events or at
+     300 ms from the hold's start, whichever comes first. The activation's timer is set at the ceiling as the hold
+     opens; the events' timer once they go. **There is no uncapped variant.** The worst-case freeze is 300 ms, on
+     about 2% of clicks (those whose activation is slow). A natural click's events go about 40 to 50 ms into the hold
+     and its guard's 150 ms least wait ends it: a median of about 197 ms, p95 205 to 215, the largest 218 (corrected
+     2026-11-08 from the hosted A/B: this item first assumed 60 ms and about 210). Any later raise of the ceiling goes
+     back to the design session. Every other hold keeps main's 100 ms cap from its start. The 300 ms worst case holds in
+     `screenHoldMs`; the real freeze past it was the timer's lateness, item 6b.
+  6. **The real release time:** `delivery.frozenMs`, the hold's span from its start to the moment its
+     SLSReenableUpdate is called, stamped on the release queue just before the call (`ReenableStamp`). `screenHoldMs`
+     is unchanged, the guard's reading bounded by the cap. The delivery guard waits up to 100 ms of real time
+     (`screenReenableStampWaitMs`) for the stamp after releasing; it is normally already there or a queue hop away. The
+     wait is for the call to start, not for the frame SLSReenableUpdate waits on, which #235 moved off the request path.
+     No stamp by then, or no hold taken (SLSDisableUpdate absent or gated): no field, and never a longer wait (ruling
+     a47484f9). The record's Unix times (`holdStartedAt`, `releasedAt`, `postedAt`) are anchored on the Unix clock read
+     at the guard's end, before the release and the wait, so the wait never shifts them (the review of
+     74fe29f8..2821788e, one P2: read after the wait, they moved by its length, 59 ms in the reviewer's repro). It is
+     this hold's own span: SkyLight re-enables the display only once every hold on the connection is released. The
+     overrun of `frozenMs` past `screenHoldMs` comes only from a timer's release (item 1's hosted A/B): a release the
+     guard makes at its own end is on time.
+  6b. **The hold's timers are strict** (rulings eecaccfe and 5e4f745d; Activation.swift `holdTimerStrict`,
+     `scheduleHoldTimer`, `holdTimerFlags`, `holdTimerLeewayNs`). The lateness item 1 found is the timer's, most likely
+     dispatch timer coalescing in a background process with no UI. Every hold timer (#321's cap and ceiling, main's
+     100 ms cap, the guard's own hold's) is a one-shot dispatch source timer with the `.strict` flag and no leeway, on
+     a serial userInteractive queue of its own (`cua.engine.hold-timer`), cancelled as it fires; off, the global
+     queue's `asyncAfter` as before. **Kept: strict alone.** The hold's releases have a scheduler of their own
+     (`ActivationSystem.scheduleHoldRelease`), used only by those timers, each of which only enqueues the re-enable;
+     the after-action watch's samples, which read the window order and repair (an AXRaise may block for the 1 s AX
+     timeout), stay on `schedule`, the global queue's `asyncAfter` (the review of e2e452c9..5dc2e65b, one P1: with one
+     scheduler for both, a 300 ms release fired at 514 ms behind a blocking sample, and `.strict` cannot preempt work
+     already running on its queue).
+     - **Measured** (run https://github.com/SSFSKIM/cua/actions/runs/42487558851, kit `probe/324-measure` b279af95; the
+       real freeze at the 300 ms ceiling, p50 / p95 / max, in ms):
+
+       | Variant | To the SLSReenableUpdate call | To its return |
+       |---|---|---|
+       | none (the timers as before) | 368.5 / 375.6 / 378.2 | 379.7 / 392.0 / 395.4 |
+       | strict timer | 300.7 / 302.8 / 303.6 | 308.5 / 321.6 / 326.3 |
+       | latency-critical activity | 360.5 / 375.8 / 377.9 | 372.3 / 392.5 / 394.4 |
+       | both | 300.5 / 305.6 / 311.4 | 309.1 / 320.1 / 324.5 |
+
+     - **Main's 100 ms activation hold, when its timer releases it:** with no change a freeze of 124.3 / 149.9 / 158.1
+       (24 to 58 ms late); strict, 100.8 / 103.2 / 103.2. So strict also makes caret-first set_value's freeze a flat
+       about 100 ms, against 118 to 158.
+     - **Guard-ended releases stay on time:** a median 0.1 ms after the guard. No natural click's hold was released by
+       the cap's timer.
+     - **The display re-enables 8 to 26 ms after the call.** That wait is the window server's frame inside
+       SLSReenableUpdate; the engine does not control it.
+     - **The App Nap lead, ruled out:** holding a latency-critical ProcessInfo activity (`beginActivity([.userInitiated,
+       .latencyCritical])`) for the hold's lifetime was built and measured; it made no measurable difference, alone or
+       with the strict timer, and was removed.
+     - **The stated trade:** with the timers on time, a click whose events land past about 250 ms into the hold gets
+       less than 50 ms of hold after them. Under an injected slow activation 3 of 60 clicks raised visibly with strict,
+       every one with its events 252 to 313 ms into the hold. The late timers had been hiding a few of these by
+       freezing about 70 ms longer.
+     - **The worst-case freeze, as the ruling states it:** 300 ms to the SLSReenableUpdate call (measured max 303.6),
+       with the display back within about 26 ms after it.
+  7. **select_text on an unfocused NSTextField** answered `selectionNotSettable` before trying to focus, since AppKit
+     makes the range settable only once the field editor is attached. Folded in (TextSelection.swift
+     `selectionSettableBeforeFocus`, `selectionSettableAfterFocus`): a field whose range is not settable but which
+     needs focusing goes on to its focus (main's AXFocused write, item 3) and is checked again after it; any other
+     element is refused as before, nothing written.
+  8. **Corrections in place**, each marked "corrected 2026-11-08 (#324)": #315's item 11 and its hosted-check line, and
+     `docs/evidence/2026-11-08-gecko-routes/README.md` (Firefox's set_value and select_text rows, Safari's line).
+  9. **The limits: invisible, not absent.** Pointer clicks and drags still reorder the target's window inside the hold
+     (55 to 90%, item 1); the hold hides it. The ceiling bounds what it can hide: a click whose events land 250 ms or
+     more into the hold, about 2% of natural clicks, gets under 50 ms of hold after them, and under an injected slow
+     activation 3 of 60 such clicks showed a visible raise (item 6b). Any raise of the ceiling goes back to the design
+     session.
+     **Not done:** dedicated mode's raise on pointer clicks (#282's ruling: nobody is at that desktop); the reorder
+     itself on pointer clicks and drags; #321's long first-click guards; a caret at the point for set_value (it needs
+     none: the value replaces the text, and select_text writes its own range).
+  10. **Model-facing text.** `docs/cua-api/agent-cursor.md` does not describe set_value's focus, so it is unchanged;
+     the refusal carries its own sentence.
+  Proven offline (`CaretFirstFocusTests`, 12; `ClickDeliveryTests`, 6 new and the cap test widened; `ValueSettingTests`,
+  1 new; with FakeAX for the field and the fake clock for the hold):
+  - set_value and select_text on a Safari page's unfocused field focus it by the caret write at {0, 0}, read at once,
+    with no AXFocused write, nothing pressed and no fallback click, Safari's DOM element included;
+  - a field the caret leaves unfocused is focused by its AXPress after the caret's settle; one neither step focuses is
+    refused after both settles with nothing of the method's written, and one with no AXPress after the caret's settle,
+    nothing pressed; a failed caret write is recorded and the press still follows; the in-flight check stops the
+    route before each step;
+  - a password field, by its subrole or an unreadable one, takes the caret route with its switch on, its caret
+    written and no AXFocused write or click, and main's write with the switch off;
+  - an AppKit field, Safari's native field, and a Chromium or Gecko page's field keep main's write, then the click
+    only when it did not take; a focused field, a combo box and a field whose focus is not settable are left alone;
+  - the fallback click's delivery record rides in the method's meta;
+  - an order that never reads back is released 200 ms after the events of a quick activation and at the 300 ms
+    ceiling after a slow one's (events 150 ms in), also while each repair blocks for 300 ms; a slower activation's
+    click is held past 200 ms from the hold's start until its guard ends;
+  - `frozenMs` is the hold's span to the stamped re-enable, at the cap's timer and at the guard's end, beside
+    `screenHoldMs`, on the wire; an unarmed stamp is never waited for, and the first stamp wins; through the seam's
+    wait and Unix clock (`ActivationSystem.awaitReenable`, `unixNow`), both on the fake clock so nothing depends on the
+    scheduler, a stamp 60 ms into the wait is recorded with the Unix times left where the hold, the events and the
+    release happened, and one that never comes is waited for the 100 ms bound and no longer, with no field (the first
+    version used a real-time 60 ms stamp against the real 100 ms bound, which a loaded hosted runner missed, run
+    42480881696);
+  - the hold's timer is strict with no leeway, and it fires once and not before its time; every hold's release (the
+    activation's, the guard's own hold's opening, the cap after the events) goes through `scheduleHoldRelease` and
+    the watch's samples through `schedule`, and a live block blocking on `schedule` leaves a release on
+    `scheduleHoldRelease` to fire before it ends;
+  - select_text focuses an unfocused AppKit field whose range is not settable and checks it again; a range that stays
+    unsettable is refused after the focus, and an element needing no focus before anything is written;
+  - `fieldFocus` on the wire.
+  Every other suite passes unchanged (#313's `TextEntryClickTests`, #315's `GeckoPointerTests`, #282's
+  `BackgroundPointerTests`, the paste and focus-hold suites). Each of 59 rules and bounds removed in turn
+  (`~/.local/share/187/mutate-324.py`) fails a test. focusField's glue (the page engine, the live subrole read, the
+  method's interval and the settle mark) reads live AX and is not unit tested, nor is whether the strict timer fires
+  on time under coalescing: the hosted check covered them (item 6b).
+  **What the hosted check must verify** (`probe/324-measure`'s cells, against main, each behind a frontmost TextEdit,
+  with SLSDisableUpdate and SLSReenableUpdate timed):
+  - **Safari, shared:** set_value and select_text on an unfocused page text field and textarea answer success with
+    `fieldFocus` `readBack` (`focusStep` `selection`; `press` where the caret did not focus), the value or selection
+    right, no pointer event on the page, no delivery record, no raise, and a freeze near the held activation's 120 ms
+    (about 100 ms with the strict timer, item 6b);
+  - **Safari, dedicated:** the same, every cell delivered;
+  - **Safari password fields, shared, 20 reps:** measured 20 of 20, 0 raises, a 124 ms freeze (item 1), so now on;
+  - **AppKit fields** (the probe app, TextEdit): set_value as on main, the AXFocused write, no raise; select_text on
+    an unfocused NSTextField succeeds where main answered `selectionNotSettable`;
+  - **the cap:** Safari shared clicks with `P324_DELAY_MS`'s slow activation give no visible raise where main's cap
+    showed 51 of 60, with `screenHoldMs` at most 300 (measured: main 47 of 60, this branch 4 of 60, item 1); natural
+    clicks' `screenHoldMs` a median of about 197; `frozenMs` present on every delivery record and within the measured
+    SLSReenableUpdate times;
+  - **the strict timer (item 6b):** measured, the ceiling's real freeze to the call at most 303.6 ms and main's 100 ms
+    cap at most 103.2, guard-ended releases unchanged;
+  - **Chromium and Gecko:** identical to main, set_value's fallbacks included.
+  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 8c206e91 on #324.
 
 ## Outcomes & Retrospective
 

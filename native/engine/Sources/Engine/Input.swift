@@ -96,6 +96,9 @@ struct InputMeta {
   var paste: PasteDiagnostics?
   /// An element click's plan, the ladder's reason and the hit-test's answer (#188, Routes.swift ElementClickRecord).
   var elementClick: ElementClickRecord?
+  /// set_value's and select_text's focus of a WebKit page's field by its caret, then its press (#324,
+  /// `focusByCaretFirst`): the last step and its read-back, and the caret write's AXError when it was not success.
+  var fieldFocus: TextEntryFocusRecord?
   /// The sentence a success carries to the model beside the meta (the result's `note`; a focusing click's, #283).
   var note: String? = nil
   /// A coordinate click's placement, from the screenshot point to the posted events (#259, Routes.swift).
@@ -158,6 +161,11 @@ struct InputMeta {
     if let delivery { wire["delivery"] = delivery.wire }
     if let paste { wire["paste"] = paste.wire }
     if let elementClick { wire["elementClick"] = elementClick.wire }
+    if let fieldFocus {
+      var focus: [String: Any] = ["focus": fieldFocus.focus.rawValue, "focusStep": fieldFocus.step.rawValue]
+      if let error = fieldFocus.caretWriteError { focus["caretWriteError"] = Int(error) }
+      wire["fieldFocus"] = focus
+    }
     if let coordinateClick { wire["coordinateClick"] = coordinateClick.wire }
     if let pointerEstablish { wire["pointerEstablish"] = pointerEstablish.wire }
     if let stalePoint { wire["stalePoint"] = stalePoint.wire }
@@ -220,7 +228,8 @@ struct PointerTarget {
 /// just before the events, and `announce` once they are made and about to be posted. Under route 3 the events go out
 /// through the standing activation's delivery guard (`FakeActivation.deliver`, #200), inside the activation's own
 /// screen-update hold when this action ran it, on the window the events name; in shared mode held until the window order
-/// reads back, to a 200 ms cap, when that activation clicked its in-window activation point (#321). An action whose
+/// reads back, to a 200 ms cap after the events under a 300 ms ceiling from the hold's start (#324), when that
+/// activation clicked its in-window activation point (#321). An action whose
 /// events open with a left mouse down (`postsLeftMouseDown`: a left click, a drag) lets that consume the activation's
 /// arm, as before #187's inert click: no inert click goes before it, and one goes at the release only when none went (a
 /// stop before the events); the click that consumed it rides in the meta when this action ran the activation or

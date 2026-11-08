@@ -892,28 +892,167 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(delivery.transientRaise, TransientRaise(seen: true, ms: 10, outlivedHold: false))
   }
 
-  /// The ruling's test: an order that never reads back still has its hold released at the cap, by the timer, also while
-  /// a restore blocks; the guard repairs on after it, inside the repair window, and leaves the raise reported.
-  func testTheHoldReleasesAtTheCapWhenTheOrderNeverReadsBack() throws {
+  /// The ruling's test (#321), for the cap and the ceiling (#324): an order that never reads back still has its hold
+  /// released by the timer, also while a restore blocks. After a quick activation (the click's events at 10) that is 200
+  /// ms after the events; after a slow one (the events 150 ms into the hold, #321's residue) it is the 300 ms ceiling
+  /// from the hold's start, before the cap after the events would come. The guard repairs on after it, inside the
+  /// repair window, and leaves the raise reported.
+  func testTheHoldReleasesAtTheCapOrTheCeilingWhenTheOrderNeverReadsBack() throws {
     for raiseCost in [0.0, 300] {
       let seam = GuardSeam(frontmost: user, raiseCost: raiseCost)
       reordering(seam, until: .infinity)
       var meta = meta()
       try click(seam, activation: activation(seam, at: insidePoint), meta: &meta)
-      let delivery = try XCTUnwrap(meta.delivery)
-      let label = "restore costs \(raiseCost) ms"
-      XCTAssertEqual(seam.holds, 1, label)
-      XCTAssertEqual(seam.releases, 1, label)
-      XCTAssertEqual(seam.releasedAt, activationPointHoldCapMs, label)
-      XCTAssertEqual(delivery.screenHoldMs, activationPointHoldCapMs, label)
-      XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), activationPointHoldCapMs, label)
-      XCTAssertTrue(delivery.capped, label)
-      XCTAssertTrue(delivery.raiseLeft, label)
-      XCTAssertTrue(delivery.repairedAfterRelease, label)
-      XCTAssertTrue(delivery.transientRaise.seen, label)
-      XCTAssertTrue(delivery.transientRaise.outlivedHold, label)
-      XCTAssertGreaterThanOrEqual(delivery.transientRaise.ms ?? 0, deliveryRepairWindowMs - 20, label)
+      let quick = try XCTUnwrap(meta.delivery)
+      XCTAssertEqual(seam.holds, 1)
+      XCTAssertEqual(seam.releases, 1)
+
+      let slow = GuardSeam(frontmost: user, raiseCost: raiseCost)
+      slow.targetAbove = false
+      let subject = activation(slow, at: insidePoint)
+      subject.holdsThroughDelivery = true
+      subject.holdsUntilOrderReadsBack = true
+      try subject.activate()
+      slow.advance(140)  // the activation's guard ended at 10: the events go at 150
+      var raised = false
+      slow.onFrontmostRead = { if raised { slow.targetAbove = true } }
+      let late = try XCTUnwrap(subject.deliver(window: 41, pointer: true, ranBy: subject) { raised = true })
+      XCTAssertEqual(slow.holds, 1)
+      XCTAssertEqual(slow.releases, 1)
+
+      // The ruling's numbers: 200 ms after the events at 10, and the 300 ms ceiling.
+      for (name, delivery, released, at) in [("quick", quick, seam.releasedAt, 210.0), ("slow", late, slow.releasedAt, 300.0)] {
+        let label = "\(name), restore costs \(raiseCost) ms"
+        XCTAssertEqual(released, at, label)
+        XCTAssertEqual(delivery.screenHoldMs, at, label)
+        XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), at, label)
+        XCTAssertTrue(delivery.capped, label)
+        XCTAssertTrue(delivery.raiseLeft, label)
+        XCTAssertTrue(delivery.repairedAfterRelease, label)
+        XCTAssertTrue(delivery.transientRaise.seen, label)
+        XCTAssertTrue(delivery.transientRaise.outlivedHold, label)
+        XCTAssertGreaterThanOrEqual(delivery.transientRaise.ms ?? 0, deliveryRepairWindowMs - 20, label)
+      }
     }
+  }
+
+  /// #324: the cap counts from the click's events, so a slower activation's click (its events 60 ms into the hold) is
+  /// held for the guard's least wait after them, past 200 ms from the hold's start, and released by the guard; the
+  /// guard's own release comes first whenever its samples end before the cap
+  /// (`testTheHoldWaitsUntilTheOrderReadsBackThenReleasesAtOnce`).
+  func testASlowerActivationsClickIsHeldPastTheOldCapUntilTheGuardEnds() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let subject = activation(seam, at: insidePoint)
+    subject.holdsThroughDelivery = true
+    subject.holdsUntilOrderReadsBack = true
+    try subject.activate()
+    seam.advance(50)  // the events at 60
+    var raised = false
+    seam.onFrontmostRead = { if raised, seam.clock < 175 { seam.targetAbove = true } }
+    let delivery = try XCTUnwrap(subject.deliver(window: 41, pointer: true, ranBy: subject) { raised = true })
+    XCTAssertEqual(seam.releasedAt, 210, "read back at 180, then the least wait to 210, past 200 from the hold's start")
+    XCTAssertEqual(delivery.screenHoldMs, 210)
+    XCTAssertFalse(delivery.capped)
+    XCTAssertFalse(delivery.raiseLeft)
+    XCTAssertEqual(delivery.transientRaise.outlivedHold, false)
+    XCTAssertEqual(seam.repairsOutsideHold, 0)
+  }
+
+  /// #324: the delivery record carries the hold's real span, to the moment its SLSReenableUpdate was called
+  /// (`frozenMs`), which the release's queue makes later than the release `screenHoldMs` reports, at the cap's timer
+  /// and at the guard's own end alike; `screenHoldMs` is as before. A hold whose stamp was never armed (no
+  /// SLSDisableUpdate) gives none, at once.
+  func testTheRealReleaseTimeIsRecordedBesideTheScreenHold() throws {
+    let capped = GuardSeam(frontmost: user)
+    capped.reenableLagMs = 23
+    reordering(capped, until: .infinity)
+    var meta = meta()
+    try click(capped, activation: activation(capped, at: insidePoint), meta: &meta)
+    var delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(delivery.screenHoldMs, 10 + activationPointHoldCapMs)
+    XCTAssertEqual(delivery.frozenMs, 10 + activationPointHoldCapMs + 23)
+    XCTAssertEqual(delivery.wire["frozenMs"] as? Double, 233)
+
+    let settled = GuardSeam(frontmost: user)
+    settled.reenableLagMs = 12
+    meta = self.meta()
+    try click(settled, activation: activation(settled, at: insidePoint), meta: &meta)
+    delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(delivery.screenHoldMs, 10 + activationPointGuardMinimumMs)
+    XCTAssertEqual(delivery.frozenMs, 10 + activationPointGuardMinimumMs + 12)
+
+    XCTAssertNil(DeliveryGuardOutcome().wire["frozenMs"])
+    XCTAssertEqual(screenReenableStampWaitMs, 100, "ruling a47484f9's bound")
+    let started = Date()
+    XCTAssertNil(ReenableStamp().wait(upToMs: 10_000), "never armed: no wait")
+    XCTAssertLessThan(Date().timeIntervalSince(started), 1)
+    let armed = ReenableStamp()
+    armed.arm()
+    XCTAssertNil(armed.wait(upToMs: 5), "armed, never stamped: none after the wait")
+    armed.stamp(42)
+    armed.stamp(50)
+    XCTAssertEqual(armed.wait(upToMs: 5), 42, "the first call's")
+  }
+
+  /// #324 (ruling eecaccfe): the hold's timers are strict, with no leeway, and fire once at their time, not before.
+  func testTheHoldsTimerIsStrictWithNoLeewayAndFiresOnce() {
+    XCTAssertTrue(holdTimerStrict)
+    XCTAssertEqual(holdTimerFlags, .strict)
+    XCTAssertEqual(holdTimerLeewayNs, 0)
+    final class Firings: @unchecked Sendable {
+      let lock = NSLock()
+      var count = 0
+      var elapsedMs = 0.0
+    }
+    let fired = expectation(description: "the timer fired")
+    let firings = Firings()
+    let started = DispatchTime.now()
+    scheduleHoldTimer(30) {
+      firings.lock.withLock {
+        firings.count += 1
+        firings.elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1e6
+      }
+      fired.fulfill()
+    }
+    wait(for: [fired], timeout: 10)
+    Thread.sleep(forTimeInterval: 0.06)
+    firings.lock.withLock {
+      XCTAssertEqual(firings.count, 1, "a one-shot")
+      XCTAssertGreaterThanOrEqual(firings.elapsedMs, 29.5, "not before its time")
+    }
+  }
+
+  /// The review of 74fe29f8..2821788e (one P2): the wait for the release's stamp never shifts the record's Unix times.
+  /// The seam's wait runs on the fake clock and its Unix clock is the fake one past an epoch, so the timing is exact:
+  /// the hold at 0, the events at 10, the guard's end and release at 160. A stamp that comes 60 ms into the wait is
+  /// recorded (frozen to 220) and the Unix times stay where things happened; a stamp that never comes is waited for
+  /// the bound alone, 100 ms (ruling a47484f9), and the record answers without it, its Unix times unshifted too.
+  func testTheWaitForTheReleasesStampLeavesTheUnixTimesWhereTheyHappened() throws {
+    for (after, frozen) in [(60.0, 220.0), (Double.infinity, nil)] as [(Double, Double?)] {
+      let seam = GuardSeam(frontmost: user)
+      seam.reenableStampAfterMs = after
+      var meta = meta()
+      try click(seam, activation: activation(seam, at: insidePoint), meta: &meta)
+      let delivery = try XCTUnwrap(meta.delivery)
+      let label = frozen == nil ? "no stamp" : "a stamp 60 ms into the wait"
+      XCTAssertEqual(seam.releasedAt, 160, label)
+      XCTAssertEqual(seam.reenableWaitBounds, [screenReenableStampWaitMs], "\(label): one wait, at the bound")
+      XCTAssertEqual(seam.clock, 160 + min(after, screenReenableStampWaitMs), "\(label): waited until the stamp, or the bound and no longer")
+      XCTAssertEqual(delivery.frozenMs, frozen, label)
+      XCTAssertEqual(delivery.holdStartedAt, GuardSeam.unixEpoch, "\(label): the hold began at 0")
+      XCTAssertEqual(delivery.postedAt, GuardSeam.unixEpoch + 10, "\(label): the events at 10")
+      XCTAssertEqual(delivery.releasedAt, GuardSeam.unixEpoch + 160, "\(label): the release at 160, not after the wait")
+    }
+    XCTAssertEqual(screenReenableStampWaitMs, 100)
+    // The live wait: never longer than its bound (a loose upper bound, real time on a loaded runner).
+    let armed = ReenableStamp()
+    armed.arm()
+    let started = Date()
+    XCTAssertNil(armed.wait(upToMs: 50))
+    let waited = Date().timeIntervalSince(started) * 1000
+    XCTAssertGreaterThanOrEqual(waited, 45)
+    XCTAssertLessThan(waited, 2_000)
   }
 
   /// A click without the in-window activation click pays nothing: Chrome's point outside its frame, or no point, keeps
@@ -1120,6 +1259,52 @@ final class ClickDeliveryTests: XCTestCase {
     seam.advance(deliveryRepairWindowMs)
     XCTAssertEqual(seam.targetAbove, true, "past post + 1 s the watch has ended")
     XCTAssertEqual(seam.posts.count, posts)
+  }
+
+  /// The review of e2e452c9..5dc2e65b (one P1): the hold's release timers (here the ceiling's, set at the activation, and
+  /// the cap's after the events) go through `scheduleHoldRelease` alone, and the after-action watch's samples, which
+  /// read the window order and repair, through `schedule`, so a blocking sample can never queue ahead of a release.
+  func testTheWatchsSamplesAndTheHoldsReleasesGoThroughTheirOwnSchedulers() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    var meta = meta()
+    try click(seam, activation: activation(seam, at: insidePoint), meta: &meta)
+    XCTAssertEqual(Array(seam.scheduledBy.prefix(2)), [.holdRelease, .holdRelease], "the ceiling, then the cap after the events")
+    seam.advance(100)
+    XCTAssertEqual(seam.scheduledBy.filter { $0 == .holdRelease }.count, 2, "no watch sample on the release scheduler")
+    XCTAssertGreaterThanOrEqual(seam.scheduledBy.filter { $0 == .watch }.count, 2, "the watch sampled on")
+    XCTAssertEqual(seam.scheduledBy.dropFirst(2).filter { $0 == .holdRelease }.count, 0)
+    // A held activation's hold (main's 100 ms cap), then the guard's own hold inside it (its opening ceiling and its cap
+    // after the events): every one a release's.
+    let held = GuardSeam(frontmost: user)
+    held.targetAbove = false
+    let standing = activation(held, at: insidePoint)
+    try standing.activate()
+    _ = standing.deliver(window: 41, pointer: true, ranBy: nil) {}
+    XCTAssertEqual(held.scheduledBy, [.holdRelease, .holdRelease, .holdRelease])
+  }
+
+  /// The live schedulers: a block that blocks on `schedule` (a watch sample stuck in an AXRaise) leaves a hold's release
+  /// on `scheduleHoldRelease` to fire on time, before the block ends.
+  func testABlockingWatchSampleDoesNotDelayAHoldsRelease() {
+    final class Order: @unchecked Sendable {
+      let lock = NSLock()
+      var blockerEnded = false
+      var releasedBeforeBlockerEnded: Bool?
+    }
+    let order = Order()
+    let system = ActivationSystem()
+    let released = expectation(description: "the release fired")
+    system.schedule(0) {
+      Thread.sleep(forTimeInterval: 1.5)
+      order.lock.withLock { order.blockerEnded = true }
+    }
+    system.scheduleHoldRelease(30) {
+      order.lock.withLock { order.releasedBeforeBlockerEnded = !order.blockerEnded }
+      released.fulfill()
+    }
+    wait(for: [released], timeout: 10)
+    order.lock.withLock { XCTAssertEqual(order.releasedBeforeBlockerEnded, true) }
   }
 
   /// The target's process taking the front after the release: the user's app made frontmost again, only that app.
@@ -1583,6 +1768,20 @@ final class GuardSeam {
   var onHold: (() -> Void)?
   var onRelease: (() -> Void)?
   var releasedAt: Double?
+  /// How long after a release its SLSReenableUpdate is called (#324: the release's queue runs late).
+  var reenableLagMs: Double = 0
+  /// When set, the release's stamp is not made at the release: it comes this many milliseconds after the delivery guard
+  /// begins waiting for it, on the fake clock (the release queue's late call, #324), or never when that is past the
+  /// bound the guard waits (`.infinity`: never). Unset, it is made at the release.
+  var reenableStampAfterMs: Double?
+  /// The bounds each wait for a stamp was given, and the stamps still to come.
+  var reenableWaitBounds: [Double] = []
+  private var pendingStamps: [ReenableStamp] = []
+  /// The Unix clock the delivery record reads: the fake clock past a fixed epoch.
+  static let unixEpoch: Int64 = 1_000_000
+  /// Which scheduler each piece of scheduled work went through, in order (#324: the hold's releases apart from the rest).
+  enum Scheduler: Equatable { case holdRelease, watch }
+  var scheduledBy: [Scheduler] = []
   /// When the last screen-update hold was taken, on the fake clock.
   var heldAt: Double?
   var reactivated: [pid_t] = []
@@ -1656,11 +1855,32 @@ final class GuardSeam {
     }
     system.keyFocus = { nil }
     system.secondsSinceInput = { self.secondsSinceInput }
-    system.holdScreenUpdates = {
+    system.holdScreenUpdates = { stamp in
       self.holds += 1
       self.heldAt = self.clock
+      stamp.arm()
       self.onHold?()
-      return { self.releases += 1; self.releasedAt = self.clock; self.onRelease?() }
+      return {
+        self.releases += 1
+        self.releasedAt = self.clock
+        let at = self.clock + self.reenableLagMs
+        if self.reenableStampAfterMs == nil { stamp.stamp(at) } else { self.pendingStamps.append(stamp) }
+        self.onRelease?()
+      }
+    }
+    system.unixNow = { GuardSeam.unixEpoch + Int64(self.clock.rounded()) }
+    system.awaitReenable = { stamp, bound in
+      self.reenableWaitBounds.append(bound)
+      if let index = self.pendingStamps.firstIndex(where: { $0 === stamp }) {
+        let pending = self.pendingStamps.remove(at: index)
+        if let after = self.reenableStampAfterMs, after <= bound {
+          self.advance(after)
+          pending.stamp(self.clock + self.reenableLagMs)
+        } else {
+          self.advance(bound)
+        }
+      }
+      return stamp.wait(upToMs: 0)
     }
     system.reactivate = { pid in
       self.reactivated.append(pid)
@@ -1692,7 +1912,14 @@ final class GuardSeam {
     system.hitAt = { _, _ in self.activationHit }
     system.now = { self.clock }
     system.sleep = { _ in self.advance(self.step) }
-    system.schedule = { ms, work in self.timers.append((self.clock + ms, work)) }
+    system.schedule = { ms, work in
+      self.scheduledBy.append(.watch)
+      self.timers.append((self.clock + ms, work))
+    }
+    system.scheduleHoldRelease = { ms, work in
+      self.scheduledBy.append(.holdRelease)
+      self.timers.append((self.clock + ms, work))
+    }
     return system
   }
 }

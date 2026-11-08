@@ -7,7 +7,7 @@ import Foundation
 // `suffix` immediately adjacent, overlapping occurrences counted, exactly one match required; a Markdown match maps to
 // the source's UTF-16 offsets with syntax at its edges skipped inward; `selection_type` text, cursor_before or
 // cursor_after gives (L, N), (L, 0) or (L + N, 0), written as AXSelectedTextRange after the settable check and the
-// field's focus. No scroll into view. Route 1, or route 3 when the app does not believe it has focus (its activation
+// field's focus (a field needing focus checked again after it, #324). No scroll into view. Route 1, or route 3 when the app does not believe it has focus (its activation
 // held, FocusHold.swift): nothing is posted to the field unless the focus fallback clicks.
 
 /// A text element's value as an attributed string over its first `length` UTF-16 units (the parameterized read the
@@ -134,6 +134,21 @@ let selectTextNotSettable = EngineError(name: "selectionNotSettable",
   "Cannot select text for an element that does not support a settable selected text range")
 let selectTextNotFound = EngineError(name: "textNotFound", "Could not find the requested text to select in the element")
 
+/// select_text's range check before the field's focus (#324): an unfocused AppKit text field answers its
+/// AXSelectedTextRange not settable until it is focused (its field editor holds the range), so a field that needs
+/// focusing (`fieldNeedingFocus`) goes on to its focus and is checked again after it (`selectionSettableAfterFocus`);
+/// any other element whose range is not settable is refused here. Answers whether the check after the focus is due.
+func selectionSettableBeforeFocus(_ element: AXUIElement, ax: AXOps) throws -> Bool {
+  if ax.isSettable(element, kAXSelectedTextRangeAttribute) { return false }
+  guard fieldNeedingFocus(element, ax: ax) != nil else { throw selectTextNotSettable }
+  return true
+}
+
+/// The check after the focus, when `selectionSettableBeforeFocus` made it due: a range still not settable is refused.
+func selectionSettableAfterFocus(_ element: AXUIElement, ax: AXOps, due: Bool) throws {
+  guard !due || ax.isSettable(element, kAXSelectedTextRangeAttribute) else { throw selectTextNotSettable }
+}
+
 extension Engine {
   /// `select_text {app, element, text, prefix?, suffix?, selection_type?}`.
   func selectText(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
@@ -151,7 +166,7 @@ extension Engine {
       let target = try targetElement(token, app: app, appPid: appPid, context: context)
       meta.inputRoute = .action
       let ax = AXOps.live
-      guard ax.isSettable(target.element, kAXSelectedTextRangeAttribute) else { throw selectTextNotSettable }
+      let checkAfterFocus = try selectionSettableBeforeFocus(target.element, ax: ax)
       let value = ax.read(target.element, kAXValueAttribute)
       let plain = plainText(value)
       let length = plain?.utf16.count ?? 0
@@ -164,6 +179,7 @@ extension Engine {
         try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
       }
       try focusField(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+      try selectionSettableAfterFocus(target.element, ax: ax, due: checkAfterFocus)
       try guarding.checkInFlight()
       var written = AXError.failure
       cursor.afterElementAction(connection: context.connection.id, app: app.key, element: target.element, storedFrame: target.entry.frame) {

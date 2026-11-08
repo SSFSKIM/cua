@@ -46,7 +46,9 @@
 //   stopped it), cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
 //   row for the app) and cua/delivery (route 3's delivery guard after a pointer action's events, #200: the restores it
 //   made, whether it brought the user's app back to the front, the latency of the first, its own time, the screen hold's,
-//   whether it reached the hold's cap and left a raise, when the events were posted; a paste's too), cua/elementClick (an
+//   whether it reached the hold's cap and left a raise, when the events were posted, the hold's real span to its
+//   SLSReenableUpdate call, `frozenMs`, #324; a paste's too, and set_value's and select_text's fallback click's),
+//   cua/elementClick (an
 //   element click's plan, the ladder's reason and the hit-test's answer, #188), cua/coordinateClick (a coordinate
 //   click's placement, #259: the screenshot point, the window-local point, the posted global and window locations, the
 //   window frame used and the one read just before the events, numbers only), cua/pointerEstablish (#288: a left

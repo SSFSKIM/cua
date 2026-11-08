@@ -1387,6 +1387,26 @@ final class WebAreaGuardTests: XCTestCase {
     XCTAssertEqual(verdict(before, at: payPoint, hit: filler).reason, .otherWebArea, "the iframe's node, the page's hit")
   }
 
+  /// The review of 73b44561..e62a7454 (P2): an element route's record replaces the first check's in the meta, so it keeps
+  /// the first check's window-list read (W) and the walk its verdict was judged after (G), with no recheck and with one.
+  func testAnElementRoutesRecordKeepsTheRulesCosts() {
+    let browser = Browser()
+    let partial = recorded(browser.window, skipping: [ObjectIdentifier(browser.inner)])
+    let first = verdict(partial, at: payPoint, hit: browser.pay)
+    XCTAssertEqual(first.reason, .unrecordedDescendant)
+    var firstRecord = StalePointRecord(first, ms: 1.25)
+    firstRecord.windowsMs = 0.4
+    let gate = StalePointGate(first: first, record: firstRecord) { verdict(partial, at: self.payPoint, hit: browser.pay) }
+    for waited in [false, true] {
+      let checked = gate.check(browser.pay, waited: waited, now: { 0 }, reads: reads)
+      XCTAssertNil(checked.refusal)
+      XCTAssertEqual(checked.record.reason, .unrecordedDescendant, "the press verdict rebuilt: the button inside the iframe group")
+      XCTAssertEqual(checked.record.wire["windowsMs"] as? Double, 0.4, "waited: \(waited)")
+      XCTAssertEqual(checked.record.wire["webAreaReads"] as? Int, 3, "waited: \(waited)")
+      XCTAssertEqual(checked.record.ms, 1.25)
+    }
+  }
+
   /// What G leaves as it was: a node outside every web area (the toolbar's), and an empty hit.
   func testANodeOutsideAnyWebAreaAndAnEmptyHitAreUnchanged() {
     let browser = Browser()

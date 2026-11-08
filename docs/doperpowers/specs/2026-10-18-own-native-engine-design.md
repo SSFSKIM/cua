@@ -3684,8 +3684,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      `docs/cua-api/agent-cursor.md`'s guard paragraph gains a second half that states them and what to do (a draft,
      final after the hosted A/B; the surface inventory's Table 3 addition of 2026-11-08, the docs test and parity's docs
      oracle carry it).
-  Proven offline: `NewWindowGuardTests` (4) and `WebAreaGuardTests` (6) in `StalePointTests.swift`; #296's, #305's and
-  #301's suites unchanged; 997 engine tests pass. Each of 25 rule parts and bounds removed in turn
+  An element route's record (`StalePointGate.check`), which replaces the first check's in the meta, keeps the first
+  check's `windowsMs` and the `webAreaReads` its verdict was judged after (the review of 73b44561..e62a7454, one P2).
+  Proven offline: `NewWindowGuardTests` (4) and `WebAreaGuardTests` (7) in `StalePointTests.swift`; #296's, #305's and
+  #301's suites unchanged; 998 engine tests pass. Each of 28 rule parts and bounds removed in turn
   (`~/.local/share/187/mutate-316.py`) fails a test. Three mutations survive by design, since only a live click reaches
   them: the capture's list not kept with its image, and the click's or the drag's call site passing no window number.
   **What the hosted check must verify** (`probe/316-measure`'s cells, against main, both desktop modes):

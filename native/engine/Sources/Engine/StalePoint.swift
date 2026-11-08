@@ -603,7 +603,8 @@ func stalePointPressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVe
   if reads.same(pressed, current) || isInside(current, pressed, reads) { return verdict }
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
     StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: reads.role(pressed), hit: pressed,
-                      gaps: verdict.gaps, point: verdict.point, windowShift: verdict.windowShift, nodes: verdict.nodes)
+                      gaps: verdict.gaps, point: verdict.point, windowShift: verdict.windowShift, nodes: verdict.nodes,
+                      webAreaReads: verdict.webAreaReads)  // #316: the hit's walk, which this verdict was judged after
   }
   // Inside a node the record holds incompletely, or under one of its strips whose children it lacks (#301).
   if (!node.subtreeRecorded && isInside(pressed, current, reads)) || insideGap(pressed, verdict.gaps, reads) {
@@ -648,16 +649,34 @@ func pressAfterFinalCheck(holds: Bool, hold: () throws -> Void, finalCheck: (_ a
 struct StalePointGate<Element> {
   let first: StalePointVerdict<Element>
   let firstMs: Double
+  /// The first check's window-list read (#316's rule W, `StalePointRecord.windowsMs`), which the record this gate
+  /// answers replaces in the meta: it is kept there, the recheck reading no window list of its own.
+  var firstWindowsMs: Double? = nil
   let recheck: () -> StalePointVerdict<Element>
 
+  /// The first check's verdict and its record (`Engine.stalePointGuard`'s), whose time and window-list read this gate's
+  /// record carries on.
+  init(first: StalePointVerdict<Element>, record: StalePointRecord, recheck: @escaping () -> StalePointVerdict<Element>) {
+    self.init(first: first, firstMs: record.ms, firstWindowsMs: record.windowsMs, recheck: recheck)
+  }
+
+  init(first: StalePointVerdict<Element>, firstMs: Double, firstWindowsMs: Double? = nil, recheck: @escaping () -> StalePointVerdict<Element>) {
+    self.first = first
+    self.firstMs = firstMs
+    self.firstWindowsMs = firstWindowsMs
+    self.recheck = recheck
+  }
+
   /// The verdict on `pressed` just before the route acts on it: the first one, or after a wait the recheck's, each
-  /// judged by `stalePointPressVerdict`; its record (`rechecked` after a wait, the time both checks') and its refusal.
+  /// judged by `stalePointPressVerdict`; its record (`rechecked` after a wait, the time both checks', the first check's
+  /// window-list read) and its refusal.
   func check(_ pressed: Element, waited: Bool, afterActivation: Bool = false, now: () -> Double,
              reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
     let started = now()
     let verdict = stalePointPressVerdict(pressed, waited ? recheck() : first, reads: reads)
     let outcome = stalePointOutcome(verdict, ms: firstMs + (now() - started), afterActivation: afterActivation, reads: reads)
     var record = outcome.record
+    record.windowsMs = firstWindowsMs
     record.rechecked = waited
     record.afterActivation = afterActivation
     return (record, outcome.refusal)

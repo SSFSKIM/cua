@@ -62,7 +62,7 @@ def deliver_ok(c):
     return (c.get('answer') or {}).get('answer') == 'success' and pointer and own
 
 
-cells = defaultdict(lambda: {'n': 0, 'delivered': 0, 'judged': 0, 'inside': 0, 'after': 0, 'front': 0, 'key': 0, 'stuck': 0, 'answers': defaultdict(int), 'kinds': defaultdict(int), 'fails': []})
+cells = defaultdict(lambda: {'n': 0, 'delivered': 0, 'judged': 0, 'inside': 0, 'after': 0, 'front': 0, 'key': 0, 'stuck': 0, 'capped': 0, 'repaired': 0, 'held': 0, 'answers': defaultdict(int), 'kinds': defaultdict(int), 'fails': []})
 for top in sys.argv[1:]:
     for root, _, files in os.walk(top):
         if 'results.json' not in files:
@@ -95,6 +95,11 @@ for top in sys.argv[1:]:
                 s['delivered'] += 1
             elif ok is False:
                 s['fails'].append(f"{art}/{c.get('label')}")
+            dl = (c.get('p321') or {}).get('delivery') if 'p321' in c else c.get('delivery')
+            if dl:
+                s['held'] += 1
+                s['capped'] += bool(dl.get('capped'))
+                s['repaired'] += bool((dl.get('restores') or 0) > 0 or dl.get('repairedAfterRelease'))
             if j:
                 s['judged'] += 1
                 s['inside'] += bool(j.get('raisedInsideHold'))
@@ -106,5 +111,5 @@ for top in sys.argv[1:]:
 for key in sorted(cells):
     s = cells[key]
     print(f"{key[0]:5} {key[1]:12} {key[2]:28} n={s['n']:3} delivered={s['delivered']:3} raised inside hold={s['inside']:3} after hold={s['after']:3} "
-          f"stuck={s['stuck']:3} front held={s['front']}/{s['judged']} key held={s['key']}/{s['judged']} answers={dict(s['answers'])} kinds={dict(s['kinds'])}"
+          f"stuck={s['stuck']:3} capped={s['capped']}/{s['held']} repaired={s['repaired']}/{s['held']} front held={s['front']}/{s['judged']} key held={s['key']}/{s['judged']} answers={dict(s['answers'])} kinds={dict(s['kinds'])}"
           + (f" fails={s['fails'][:4]}" if s['fails'] else ''))

@@ -197,14 +197,15 @@ pub const FAMILIES: &[Family] = &[
     // nothing (Firefox's drop misses on private displays, where the motions are faster than on `:0`). Their drags keep
     // the pinned build's samples, paced by elapsed time (Chromium 500 µs a sample, Gecko 300 µs), and rest a frame
     // (`BROWSER_REST`) at each sharp corner and at the end, the point then visited again; Gecko's drop also keeps its
-    // 30 ms before the release (without it 3 of 30 dropped). Gecko's held `drag_handle` moves rest at their end the
-    // same way: Firefox merged held points 300 µs apart into two or three events, losing the stroke and the drop. Chromium's
-    // held moves, rerun as controls, keep their pacing. The other families of M0.4's matrix matched the pinned build
-    // with no wait at all. Fully covered, a
-    // Chromium window ignores background text-selection, scrollbar-thumb and drag-and-drop drags in every engine
-    // (range and canvas drags still land); with half the window covered and the path visible every drag lands, and
-    // with the path under the cover the drags miss as fully covered (M3.1): its drags are refused unless their whole
-    // path is visible, which a covered range or canvas drag that would land loses (deviations.mjs).
+    // 30 ms before the release (without it 3 of 30 dropped). Their held `drag_handle` moves rest at their end the same
+    // way, and the handle's end rests and visits the pointer's place once more before the release: Firefox merged held
+    // points 300 µs apart into two or three events, losing the stroke and the drop, and Chromium's, rerun as controls,
+    // merged the same way. The other families of M0.4's matrix matched the pinned build with no wait at all.
+    //
+    // Fully covered, a Chromium window ignores background text-selection, scrollbar-thumb and drag-and-drop drags in
+    // every engine (range and canvas drags still land); with half the window covered and the path visible every drag
+    // lands, and with the path under the cover the drags miss as fully covered (M3.1): its drags are refused unless
+    // their whole path is visible, which a covered range or canvas drag that would land loses (deviations.mjs).
     //
     // Chrome (by its X11 classes) is Chromium whose HTML5 drop activates, focuses and raises its window, in every
     // engine, and nothing puts them back; Electron's drop, the same engine's, changes nothing (M3.1). Chromium browsers
@@ -219,7 +220,7 @@ pub const FAMILIES: &[Family] = &[
             elapsed: true,
             rest: BROWSER_REST,
             held_step: Duration::from_micros(500),
-            held_rest: Duration::ZERO,
+            held_rest: BROWSER_REST,
             press: Duration::ZERO,
             release: Duration::ZERO,
             held_lead_pause: false,
@@ -249,7 +250,7 @@ pub const FAMILIES: &[Family] = &[
             elapsed: true,
             rest: BROWSER_REST,
             held_step: Duration::from_micros(500),
-            held_rest: Duration::ZERO,
+            held_rest: BROWSER_REST,
             press: Duration::ZERO,
             release: Duration::ZERO,
             held_lead_pause: false,
@@ -965,18 +966,19 @@ mod tests {
             ms(30),
             "Gecko's drop still needs the dwell before the release"
         );
-        // Gecko's held moves rest at their end, the end then visited again, with no pause after the leading motion
-        // (T11's held-move sittings: Firefox merged 300 µs spaced points into two or three events)
+        // the browsers' held moves rest at their end, the end then visited again, with no pause after the leading
+        // motion (T11's held-move sittings: Firefox merged 300 µs spaced points into two or three events)
         let firefox = drag("firefox");
         assert_eq!(
             (firefox.held_step, firefox.held_rest, firefox.held_lead_pause),
             (Duration::from_micros(300), BROWSER_REST, false)
         );
-        // Chromium's held moves keep their pacing: no rest, no lead pause
+        // Chromium's held moves, rerun as controls, showed the same merging (three events where the vendor builds' gave
+        // seventeen; strokes and drops lost), so they rest the same way
         let chrome = drag("Google-chrome");
         assert_eq!(
             (chrome.held_step, chrome.held_rest, chrome.held_lead_pause),
-            (Duration::from_micros(500), Duration::ZERO, false)
+            (Duration::from_micros(500), BROWSER_REST, false)
         );
     }
 

@@ -1028,11 +1028,27 @@ impl Engine {
         Ok(Value::Null)
     }
 
-    /// `drag_handle`'s end: the release dwell its start found, then button 1 up where the pointer is. It arms no
-    /// after-release watch. The engine's exit ends a handle still held the same way (`Engine::shutdown`).
+    /// `drag_handle`'s end: for a family that rests at a held move's end (`held_rest`), a rest and the pointer's place
+    /// visited once more, so the last position before the release comes after the target answered the ones before it
+    /// (a drop target accepts only such a position, and a cold window's drag can start after the last move; evidence
+    /// `m4/drag-motion/`); then the release dwell its start found, then button 1 up where the pointer is. The release
+    /// is sent whatever the visit did. It arms no after-release watch. The engine's exit ends a handle still held the
+    /// same way (`Engine::shutdown`).
     pub(super) fn end_drag_handle(&mut self) -> Result<()> {
-        std::thread::sleep(self.handle_pacing.end().release);
-        Desktop::button(&self.x, 1, false)
+        let pacing = self.handle_pacing.end();
+        let mut revisited = Ok(());
+        if !pacing.held_rest.is_zero() {
+            std::thread::sleep(pacing.held_rest);
+            revisited = self
+                .x
+                .conn
+                .query_pointer(self.x.root)
+                .map_err(anyhow::Error::from)
+                .and_then(|cookie| Ok(cookie.reply()?))
+                .and_then(|p| Desktop::motion(&self.x, p.root_x, p.root_y));
+        }
+        std::thread::sleep(pacing.release);
+        Desktop::button(&self.x, 1, false).and(revisited)
     }
 
     /// Whether a `drag_handle` has begun and not ended.
@@ -1132,10 +1148,10 @@ mod tests {
     }
 
     /// T9's review kept Gecko's pause after a held move's leading motion until Firefox's held moves were measured; T11
-    /// measured them (evidence `m4/drag-motion/`): a Gecko held move rests at its end and visits it again, with no
-    /// pause after the leading motion, while a Chromium one keeps its pacing (no rest; no lead pause, as T9 left it).
+    /// measured them, and Chromium's as their controls (evidence `m4/drag-motion/`): a browser's held move rests at its
+    /// end and visits it again, with no pause after the leading motion; an unlisted family pauses nowhere.
     #[test]
-    fn a_gecko_held_move_rests_at_its_end_with_no_lead_pause_and_a_chromium_one_keeps_its_pacing() {
+    fn a_browser_s_held_move_rests_at_its_end_with_no_lead_pause() {
         use crate::desktop::{held_points, path_points, paused_before};
         use crate::families::{FAMILIES, Toolkit, family};
         let drag = |class: &str, toolkit: &str| {
@@ -1152,25 +1168,26 @@ mod tests {
                 .map(|i| paused_before(&points, start, i, pacing.held_lead_pause))
                 .collect()
         };
-        let gecko = drag("firefox", "Gecko");
-        assert!(!pauses(gecko)[0], "no pause after the leading motion");
-        let rested = held_points(start, (700, 500), !gecko.held_rest.is_zero());
-        assert_eq!(rested.len(), points.len() + 1);
-        assert_eq!(
-            rested[rested.len() - 2..],
-            [(700, 500), (700, 500)],
-            "the end, then the end again after the rest"
-        );
-        for class in ["Google-chrome", "Electron"] {
-            let chromium = drag(class, "Chromium");
-            assert!(!pauses(chromium)[0], "{class}: no pause after the leading motion");
-            assert!(chromium.held_rest.is_zero(), "{class}: no rest");
-            assert_eq!(held_points(start, (700, 500), false), points, "{class}");
+        for (class, toolkit) in [
+            ("firefox", "Gecko"),
+            ("Google-chrome", "Chromium"),
+            ("Electron", "Chromium"),
+        ] {
+            let pacing = drag(class, toolkit);
+            assert!(!pauses(pacing)[0], "{class}: no pause after the leading motion");
+            let rested = held_points(start, (700, 500), !pacing.held_rest.is_zero());
+            assert_eq!(rested.len(), points.len() + 1, "{class}");
+            assert_eq!(
+                rested[rested.len() - 2..],
+                [(700, 500), (700, 500)],
+                "{class}: the end, then the end again after the rest"
+            );
         }
         assert!(
             !pauses(DragPacing::NONE)[0],
             "an unlisted family pauses nowhere after it (nor does the desktop path)"
         );
+        assert!(DragPacing::NONE.held_rest.is_zero(), "nor rests");
     }
 
     #[test]

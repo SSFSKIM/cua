@@ -2258,3 +2258,103 @@ fn a_desktop_move_pauses_between_two_positions_and_not_after_the_pointer_s_own()
     }
     assert!(gap(12) < 8, "a one-step move pauses nowhere ({} ms)", gap(12));
 }
+
+/// What a held-move listener received: a motion, the press or the release, at its root position and server time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Held {
+    Motion(i16, i16, u32),
+    Press(u32),
+    Release(u32),
+}
+
+/// A top-level window of the test's own with this `WM_CLASS`, over `rect`, recording the pointer motions and button 1's
+/// press and release it receives until told to stop: what a `drag_handle` over a family's window sends it.
+fn held_listener(class: &str, rect: (i16, i16, u16, u16)) -> (mpsc::Sender<()>, std::thread::JoinHandle<Vec<Held>>) {
+    let probe = Probe::open(class, rect);
+    probe
+        .conn
+        .change_window_attributes(
+            probe.id,
+            &x11rb::protocol::xproto::ChangeWindowAttributesAux::new()
+                .event_mask(EventMask::POINTER_MOTION | EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE),
+        )
+        .unwrap();
+    probe.conn.sync().unwrap();
+    managed(probe.id);
+    let (stop, stopped) = mpsc::channel::<()>();
+    let listening = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        loop {
+            let done = stopped.try_recv().is_ok();
+            probe.conn.sync().unwrap();
+            while let Some(event) = probe.conn.poll_for_event().unwrap() {
+                match event {
+                    Event::MotionNotify(e) => seen.push(Held::Motion(e.root_x, e.root_y, e.time)),
+                    Event::ButtonPress(e) if e.detail == 1 => seen.push(Held::Press(e.time)),
+                    Event::ButtonRelease(e) if e.detail == 1 => seen.push(Held::Release(e.time)),
+                    _ => {}
+                }
+            }
+            if done {
+                return seen;
+            }
+            sleep(Duration::from_millis(2));
+        }
+    });
+    (stop, listening)
+}
+
+/// M4's T11: a browser's held move rests at its end and visits it again (Firefox and Chromium merged held points under
+/// a millisecond apart into two or three events and lost the stroke's corners), and the handle's end rests and visits
+/// the pointer's place once more before its release (a drop target accepts only a position after it has answered an
+/// earlier one, and a cold window's drag can start after the last move). A family that does not rest (xterm) gets
+/// neither. Read from the events' server times.
+#[test]
+fn a_browser_s_drag_handle_rests_at_each_held_move_s_end_and_before_its_release() {
+    for (class, rests) in [("firefox", true), ("Google-chrome", true), ("XTerm", false)] {
+        let mut engine = Engine::start();
+        engine.request("move", json!({"x": 20, "y": 20})).unwrap();
+        let (stop, listening) = held_listener(class, (100, 100, 400, 300));
+        sleep(Duration::from_millis(100));
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 330, "y": 250}))
+            .unwrap();
+        engine.request("drag_handle", json!({"action": "end"})).unwrap();
+        sleep(Duration::from_millis(100));
+        stop.send(()).unwrap();
+        let seen = listening.join().unwrap();
+        let pressed = seen.iter().position(|h| matches!(h, Held::Press(_))).expect("a press");
+        let Some(&Held::Release(released)) = seen.last() else {
+            panic!("{class}: the release comes last: {seen:?}")
+        };
+        let held: Vec<(i16, i16, u32)> = seen[pressed..]
+            .iter()
+            .filter_map(|h| match *h {
+                Held::Motion(x, y, t) => Some((x, y, t)),
+                _ => None,
+            })
+            .collect();
+        let at_end: Vec<u32> = held.iter().filter(|m| (m.0, m.1) == (330, 250)).map(|m| m.2).collect();
+        if rests {
+            // the move's end, its second visit after the rest, and the end's visit before the release
+            assert_eq!(at_end.len(), 3, "{class}: {held:?}");
+            assert!(
+                at_end[1] - at_end[0] >= 18,
+                "{class}: the rest at the move's end: {at_end:?}"
+            );
+            assert!(
+                at_end[2] - at_end[1] >= 18,
+                "{class}: the rest before the release: {at_end:?}"
+            );
+            assert!(
+                released >= at_end[2],
+                "{class}: the release after it: {released} {at_end:?}"
+            );
+        } else {
+            assert_eq!(at_end.len(), 1, "{class}: the end once, no rest: {held:?}");
+        }
+    }
+}

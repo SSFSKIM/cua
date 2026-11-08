@@ -497,7 +497,10 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     point answered nothing or only a container (M1a.2); delivery: route 3's delivery guard after a pointer action's events
     or a paste's first event (#200; the paste route's since 2026-11-01), present when one ran: {restores, frontmostRestored, otherAppFront, restoreLatencyMs?, guardMs, screenHoldMs,
     capped, raiseLeft, holdStartedAt, releasedAt, postedAt, repairedAfterRelease, repairAfterReleaseLatencyMs?,
-    personInput}; frontmostRestored and raiseLeft are what the guard's samples saw, not what its requests answered;
+    personInput, transientRaise: {seen, ms?, outlivedHold}}; frontmostRestored and raiseLeft are what the guard's samples
+    saw, not what its requests answered; transientRaise (#321) is whether a sample saw the target's window above the
+    user's, from that sample to the one that read the order back after the last (to the guard's end when none did), and
+    whether the order had not read back by the hold's release;
     past the hold's cap the guard repairs on until 1 s after the events unless the person gave input since them
     (repairedAfterRelease, personInput); holdStartedAt, releasedAt and postedAt are Unix ms on one clock, the hold's start
     (the activation's when the action ran it, else the guard's own) read as releasedAt less the hold's monotonic span, so
@@ -1229,7 +1232,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   in front with the user's app made frontmost again, until three stable samples, before the hold is released; a click
   inside a held or shared activation takes a hold of its own, and the guard checks the action's own window (a shared
   activation may have been made for another window of the process); never a second hold for one action; the hold is
-  released at the 100 ms cap whatever the guard's state, and past it the guard repairs on until 1 s after the events
+  released at the 100 ms cap whatever the guard's state (200 ms, held until the order reads back, for a shared-mode
+  pointer whose activation clicked its in-window activation point: #321's entry, 2026-11-07), and past it the guard repairs on until 1 s after the events
   unless the person gave input since them (`delivery.repairedAfterRelease`, `personInput`), then leaves the order as it
   is, reported (`delivery.capped`, `raiseLeft`, both read from its samples rather than from what its requests
   answered); a third app in front is the user's, never undone: the guard restores only to the app that was frontmost
@@ -3117,6 +3121,75 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - on stable Chrome, ⌘L's suggestion popup gives a refusal whose message blames the page (#317).
      `docs/cua-api/agent-cursor.md` claims no measured set and states none of these, so it is unchanged.
   Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #287.
+
+- Decision (#321, 2026-11-07, `fix/321-hold`; the design session's rulings e48e53de (measure the candidates first) and
+  90ec27dd (build the hold); kit `probe/313-ab`, `scripts/probe-321/`; residue #324): **a shared-mode posted click whose
+  activation clicked its in-window activation point holds screen updates until the window order reads back as it was
+  before the click, capped at 200 ms, and always released at the cap. The reorder is invisible, not absent.**
+  1. **The defect** (repro runs 42413691234, 42415334525 and 42416500144, main b27ceb36). In shared mode, a posted click
+     into a background Safari behind a frontmost TextEdit made Safari's window order itself above TextEdit's on about 81
+     of 100 clicks (47 of 60 in one batch, 4 to 160 ms after the activation's first event, back below 8 to 129 ms
+     later). TextEdit stayed the frontmost app and the delivery guard repaired every one, but on about a quarter of
+     clicks the raise stayed on the display for 2 to 129 ms after the hold's 100 ms cap. The raw orders found the step:
+     subtype 1 and the activation-point click alone never raised Safari (0 of 36), while the engine's clicks did (34 of
+     40); the click's own mouse down, after the activation-point click had spent the activation, is what orders the
+     window front. TextEdit as the target, behind another app, raised too (1 of 10 after the hold), so it is AppKit's,
+     not WebKit's alone. Chrome for Testing never raised: its activation point lies outside its window, so its
+     activation clicks no point there.
+  2. **The candidates** (ruling e48e53de; runs 42417785329, 42419751182 and 42427423176; runner-only patches,
+     `scripts/probe-321/patch.py`):
+     - (a) skipping the activation-point click before the click's own mouse down delivers nothing: 0 of 220,
+       `clickUnconfirmed` throughout;
+     - (b) the inert click just outside the frame in its place still raises, 110 of 220, as often as main;
+     - the hold (the fallback): screen updates held until the order is verified, capped at 200 ms. Visible raises fell
+       from 102 to 2 of 240, delivery was unchanged, and the cap was hit 8 times in 230.
+  3. **The rule** (ruling 90ec27dd; Activation.swift `activationPointHoldCapMs`, `activationPointGuardMinimumMs`,
+     `FakeActivation.holdsUntilOrderReadsBack`, `deliver(pointer:)`; Input.swift `deliverPointer`):
+     - **Scope:** every shared-mode pointer action (a click of any button, a drag) whose activation, its own or the
+       held one it joins, clicked its in-window activation point (`activationClickKind` `activationPoint`), whatever
+       the app. A click without that activation click pays nothing, Chromium's included, and so does the paste route's
+       delivery: they keep the 100 ms cap and the 60 ms least wait.
+     - **The hold:** the delivery guard reads the order every `deliveryGuardSampleMs` for at least 150 ms after the
+       click's events (the window in which the reorder was measured to come), repairs what it reads as before, and
+       ends on its three stable samples; the hold is released then, at once. The cap is 200 ms (from 100), by the
+       hold's timer, so **the hold always releases at the cap, even when the order never reads back** and even while a
+       repair blocks: nothing can freeze the screen for longer. Past the cap the guard repairs on, as #200 has it. Any
+       later raise of the cap goes back to the design session.
+     - **`transientRaise`** in the delivery record, on every delivery guard: `seen`, whether a sample saw the target's
+       window above the user's; `ms`, from that sample to the one that read the order back after the last that saw
+       it (to the guard's end when none did); `outlivedHold`, whether the order had not read back by the hold's
+       release. `raiseLeft` stays as it is: what the guard's last sample saw.
+  4. **The cost:** about 200 ms of frozen screen per such click, against 100 before, and it is person-visible. The
+     click's answer waits for the guard as before, so it comes about 100 ms later too.
+  5. **The limits: invisible, not absent.** The target still orders its window above the person's; the guard repairs
+     that real reorder, and only the hold hides it. A click whose guard runs past the cap can still flash briefly (2 of
+     240 measured, both on cap hits). Finding a click sequence that delivers without the reorder, the guard that ran
+     1,816 ms, and dedicated mode's raise are #324.
+  6. **Dedicated mode is unchanged:** no delivery guard and no hold through the click, so the target's window rises
+     above the person's and stays there (60 of 60), as #282 ruled for a desktop nobody is at.
+  7. **Model-facing text.** `docs/cua-api/agent-cursor.md` describes neither the hold nor the guard, so it is unchanged.
+  Proven offline (`ClickDeliveryTests`, 7 new, and `FocusHoldTests`, 1 new, on the fake clock):
+  - the hold waits while the order reads wrong, past main's cap and the least wait, and is released at the guard's
+    stable samples once it reads back;
+  - a reorder after main's 60 ms least wait is still repaired inside the hold;
+  - an order that never reads back has its hold released at exactly 200 ms, also while each repair blocks for 300 ms,
+    with `capped`, `raiseLeft` and `transientRaise.outlivedHold`;
+  - Chrome's point outside the frame, no point, and a paste's delivery keep the 100 ms cap and the 60 ms least wait;
+  - a click inside a held activation that clicked its point holds its own hold until the order reads back, and a
+    paste's delivery there, and a click inside Chrome's held activation (which clicked no point), keep main's cap;
+  - dedicated mode takes no hold through the click and repairs nothing;
+  - `transientRaise` for a reorder repaired inside the hold, one read back only after the cap, one seen twice, and
+    none, on the wire; `raiseLeft` false for each reorder that read back.
+  Each of 29 rules and bounds removed in turn (`~/.local/share/187/mutate-321.py`) fails a test.
+  **What the hosted check must verify** (`probe/313-ab`'s `scripts/probe-321/` cells, against main):
+  - **Safari:** shared clicks deliver as on main; raises visible after the hold's release near the 2 of 240 the patch
+    measured; `transientRaise.seen` on about as many clicks as main raised, `outlivedHold` only on the visible ones;
+    `screenHoldMs` near 200 and `capped` rare;
+  - **TextEdit as the target:** the same, behind another app;
+  - **Chromium** (Chrome for Testing): `activationClickKind` not `activationPoint`, `screenHoldMs` and `guardMs` as on
+    main (the 100 ms cap, the 60 ms least wait), no raise;
+  - **dedicated mode:** unchanged, no delivery record.
+  Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling 90ec27dd on #321.
 
 ## Outcomes & Retrospective
 

@@ -49,6 +49,20 @@ case "$PART" in
         node scripts/probe-321/deliver.mjs --engine "$E" --win "$P321_WIN" --native --app "$T/Probe313.app/Contents/MacOS/Probe313" --batch "$b" --batches 1 --clicks 5 --out "$T/probe-321/$h/$PART/b$b/textedit"
       done
     done ;;
+  conf-*)
+    # The confirmation pass on a later B: shared cells only, two batches of three clicks per head.
+    case "$PART" in
+      conf-safari) export P287_BROWSER=safari; extra=(--cells safari/shared); sub=safari ;;
+      conf-chrome) export P287_BROWSER=chrome; extra=(--cells chrome/shared); sub=cft ;;
+      conf-textedit) extra=(--native --app "$T/Probe313.app/Contents/MacOS/Probe313" --cells textedit/shared); sub=textedit ;;
+      *) echo "unknown part $PART"; exit 2 ;;
+    esac
+    for b in 1 2; do
+      for h in $(order "$b"); do
+        use "$h" "$b"; stamp "$h $PART batch $b"
+        node scripts/probe-321/deliver.mjs --engine "$E" --win "$P321_WIN" "${extra[@]}" --batch "$b" --batches 1 --clicks 3 --out "$T/probe-321/$h/$PART/b$b/$sub"
+      done
+    done ;;
   *) echo "unknown part $PART"; exit 2 ;;
 esac
 stamp done

@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       parts:
-        description: the parts, a JSON list (k282-1..4, page-1, page-2, ctl-chrome, ctl-textedit)
+        description: the parts, a JSON list (k282-1..4, page-1, page-2, ctl-chrome, ctl-textedit, conf-safari, conf-textedit, conf-chrome)
         required: false
         default: ''
 permissions:
@@ -18,13 +18,13 @@ permissions:
 env:
   # Quoted: YAML reads an all-digit-and-e SHA as a float.
   P321_A_REF: '602b7093ac51b055eb9e238546b94c22fea9659e'
-  P321_B_REF: '6c96be259ac1521a46f2c2f890799b66b396d5b5'
+  P321_B_REF: '3436cfaa2bd39208985cd4465846c9854767508d'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
-        part: ${{ fromJSON(github.event.inputs.parts || '["k282-1", "k282-2", "k282-3", "k282-4", "page-1", "page-2", "ctl-chrome", "ctl-textedit"]') }}
+        part: ${{ fromJSON(github.event.inputs.parts || '["conf-safari", "conf-textedit", "conf-chrome"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:

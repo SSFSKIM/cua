@@ -27,9 +27,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {rep: 1, group: confirm3}
-          - {rep: 2, group: confirm3}
-          - {rep: 3, group: confirm3}
+          - {rep: 1, group: safari-sv}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -67,7 +65,13 @@ jobs:
         run: |
           T="$RUNNER_TEMP"
           common=(--a "$T/eng-a/release/cua-engine" --b "$T/eng-b/release/cua-engine" --tool "$T/probe-tool" --hit "$T/p282-hit" --win "$T/p321-win")
-          if [ "$GROUP" = confirm3 ]; then
+          if [ "$GROUP" = safari-sv ]; then
+            # Safari shared set_value on an unfocused field, 8 repetitions in one job (the heads' order alternating): the
+            # third confirmation (42462800495) saw B's window rise above TextEdit for about 20 ms in 2 of 2 and A's in 0 of 2.
+            for r in 1 2 3 4 5 6 7 8; do
+              P315_REP=$r node scripts/probe-315/ab.mjs --browser safari "${common[@]}" --blocks page --modes shared --cells setValue/name --out "$T/probe-315/safari-r$r"
+            done
+          elif [ "$GROUP" = confirm3 ]; then
             # set_value on an unfocused text field, an unfocused textarea and a focused field; select_text on an unfocused
             # and a focused field holding text: Firefox shared, every repetition.
             node scripts/probe-315/ab.mjs --browser firefox "${common[@]}" --blocks page --modes shared \

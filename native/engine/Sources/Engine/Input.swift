@@ -499,11 +499,12 @@ extension Engine {
           }
           pointer = established
         }
-        // #296: what the screenshot showed at the point is checked against what is there now, every button and route; a
+        // #296: what the screenshot showed at the point is checked against what is there now (#316: and the app's windows
+        // above the screenshot's against the screenshot's window list), every button and route; a
         // refusal is thrown before anything is posted or pressed (deliverPointer), #282's element route included.
         let stale = signposted("click.stalePoint") {
-          stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, hit: pointerHit,
-                          rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app, context: context)
+          stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, windowID: windowID, hit: pointerHit,
+                          rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app, appPid: appPid, context: context)
         }
         meta.stalePoint = stale.record
         pointer.staleRefusal = stale.refusal

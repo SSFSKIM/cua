@@ -44,19 +44,21 @@ final class ShareableWindowCache: @unchecked Sendable {
   private var content: SCShareableContent?
   private var windowIDs: Set<CGWindowID> = []
 
-  func window(_ id: CGWindowID, timings: inout Timings, refresh: Bool = false) throws -> (window: SCWindow?, cached: Bool) {
+  /// `onScreen` is the on-screen window list this lookup read (the engine's own windows left out), which the capture
+  /// keeps with its image as the windows the screenshot's moment held (#316's rule W, StalePoint.swift `newWindowAbove`).
+  func window(_ id: CGWindowID, timings: inout Timings, refresh: Bool = false) throws -> (window: SCWindow?, cached: Bool, onScreen: Set<CGWindowID>?) {
     lock.lock()
     defer { lock.unlock() }
     let onScreen = timings.time("screenshotWindowList") { onScreenWindowIDs().map { Set($0).subtracting(EngineWindows.shared.all) } }
     if !refresh, let content, onScreen == nil || onScreen == windowIDs, let window = content.windows.first(where: { $0.windowID == id }) {
       timings.set("screenshotContentCached", true)
-      return (window, true)
+      return (window, true, onScreen)
     }
     let fresh = try timings.time("screenshotContent") { try shareableContent() }
     content = fresh
     windowIDs = onScreen ?? []
     timings.set("screenshotContentCached", false)
-    return (fresh.windows.first(where: { $0.windowID == id }), false)
+    return (fresh.windows.first(where: { $0.windowID == id }), false, onScreen)
   }
 }
 
@@ -188,6 +190,8 @@ struct CapturedScreenshot {
   let height: Int
   let frame: CGRect
   let scale: CGFloat
+  /// The on-screen window numbers read just before the capture (#316): what the screenshot's window list held.
+  var windowList: Set<CGWindowID>? = nil
 
   var wire: [String: Any] { ["url": url, "width": width, "height": height, "scale": Double(scale)] }
 }
@@ -209,10 +213,14 @@ struct ObservedScreenshot {
   /// The window's origin (global points, top-left) when the image was captured, which the nodes' frames are relative to:
   /// a click into the moved window is compared in the screenshot's space (StalePoint.swift `stalePointVerdict`).
   let windowOrigin: CGPoint
+  /// The on-screen window numbers when the image was captured (#316's rule W, StalePoint.swift `newWindowAbove`): a
+  /// window of the app's above this one that the list did not hold is new since the screenshot. Nil when unread.
+  let windowList: Set<CGWindowID>?
 
   init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = []) {
     self.window = window
     windowOrigin = image.frame.origin
+    windowList = image.windowList
     scaleX = CGFloat(image.width) / image.frame.width  // the capture refuses a frame under one point
     scaleY = CGFloat(image.height) / image.frame.height
     self.nodes = nodes
@@ -270,7 +278,8 @@ extension Engine {
     }
     guard let data = timings.time("screenshotEncode", { jpegData(image) }) else { throw screenCaptureFailed("The image could not be encoded.") }
     let path = try timings.time("screenshotWrite") { try writePrivately(data, into: directory, name: screenshotFileName(revision: revision)) }
-    return CapturedScreenshot(url: URL(fileURLWithPath: path).absoluteString, width: image.width, height: image.height, frame: frame, scale: scale)
+    return CapturedScreenshot(url: URL(fileURLWithPath: path).absoluteString, width: image.width, height: image.height, frame: frame, scale: scale,
+                              windowList: lookup.onScreen)
   }
 }
 

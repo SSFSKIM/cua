@@ -920,8 +920,8 @@ final class ClickDeliveryTests: XCTestCase {
       XCTAssertEqual(slow.holds, 1)
       XCTAssertEqual(slow.releases, 1)
 
-      for (name, delivery, released, at) in [("quick", quick, seam.releasedAt, 10 + activationPointHoldCapMs),
-                                             ("slow", late, slow.releasedAt, activationPointHoldCeilingMs)] {
+      // The ruling's numbers: 200 ms after the events at 10, and the 300 ms ceiling.
+      for (name, delivery, released, at) in [("quick", quick, seam.releasedAt, 210.0), ("slow", late, slow.releasedAt, 300.0)] {
         let label = "\(name), restore costs \(raiseCost) ms"
         XCTAssertEqual(released, at, label)
         XCTAssertEqual(delivery.screenHoldMs, at, label)

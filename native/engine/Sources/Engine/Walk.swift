@@ -4,7 +4,8 @@ import Foundation
 // One walk of a window and the menu bar's top-level items (the spec's Design, "Observation (skyshot)"; F §1.5, §1.8).
 // Emitted in depth-first preorder, the document's order the text prints. Caps, each with its marker: the vendor's 200
 // levels (cua marks the cut, `truncated.depth`); the vendor's width rule (100 children, then the visible subset, children
-// omitted above 499, carried on the node as `shown`); and cua's own node budget (4,000), per-value cut (10,000
+// omitted above 499, carried on the node as `shown`), where cua prints the shown run of such an element instead (#314);
+// and cua's own node budget (4,000), per-value cut (10,000
 // characters, AX.swift), a 6 MiB budget for the serialized tree and a traversal deadline, the last three counted in
 // `truncated.count`, with how many of the omitted lie above and below what the window shows. The budgets are spent on
 // what the window shows first (#301, the design session's ruling aed3f041; a wide list's shown run first, #304's ruling
@@ -61,7 +62,8 @@ struct ClipRereadPoll {
 let skyshotByteBudget = 6 * 1024 * 1024
 /// The width rule (F §1.5): up to this many children an element shows them all.
 let widthThreshold = 100
-/// Above this many children, an element with no visible subset shows none.
+/// Above this many children, an element with no visible subset shows none in the vendor's rule; cua's shows the children
+/// its frames find showing (#314, `chooseChildren`).
 let widthOmitAbove = 499
 /// `valueMarkdown` is fetched only for text elements whose plain value is at most this long.
 let markdownMaxLength = 2_000
@@ -92,11 +94,13 @@ struct WalkLimits {
 }
 
 /// `shown` on a node whose children the width rule cut: how many it kept of how many, and the positions it kept among
-/// the element's children as half-open `[lower, upper]` runs (the vendor's `(showing lo-hi, … of N items)`).
+/// the element's children as half-open `[lower, upper]` runs (the vendor's `(showing lo-hi, … of N items)`). `subset`
+/// says which rule kept them: "visible", the vendor's (the element's visible subset, or the frame filter up to 499);
+/// "shown", cua's above 499 without a visible subset (#314); "omitted", none kept.
 struct Shown {
   let count: Int
   let of: Int
-  let subset: String  // "visible" | "omitted"
+  let subset: String  // "visible" | "shown" | "omitted"
   let ranges: [[Int]]
 
   var wire: [String: Any] { ["count": count, "of": of, "subset": subset, "ranges": ranges] }
@@ -112,9 +116,21 @@ func positionRanges(_ positions: [Int]) -> [[Int]] {
 }
 
 /// The width rule (F §1.5): all children up to 100; above that the element's visible subset (AXVisibleChildren, else
-/// AXVisibleRows); without one, none above 499, and below that the children whose frames meet `visibleFrame` (children
-/// with no frame kept; no frame to meet keeps them all). `shown` is set only when the rule left some out.
-func chooseChildren(of element: AXUIElement, data: ElementData, source: ElementSource, visibleFrame: CGRect?) -> (children: [AXUIElement], shown: Shown?) {
+/// AXVisibleRows); without one, up to 499 the children whose frames meet `visibleFrame` (children with no frame kept; no
+/// frame to meet keeps them all), and above 499 the vendor's none. `shown` is set only when the rule left some out.
+///
+/// Above 499 without a visible subset cua parts from the vendor (#314, the design session's ruling cb252e88): Firefox
+/// answers no AXVisibleChildren, so a big page's web area printed none of its children. It keeps the children that show
+/// in `shownIn`, what the element leaves showing of the window to its children (`childrenClip`), as #304's rule finds
+/// them for the walk to read first (`shownChildPositions`): up to 512 children each by its own frame, above that the
+/// bisected run with the end samples that show, each candidate then kept only when its own frame shows beyond a strip
+/// in `shownIn` or it has none (the bisection and the samples judge a place along the list's axis alone, so a row
+/// moved off it sideways would be kept); subset "shown". It keeps none, as the vendor, when there is nothing to
+/// judge them in (no visible frame, or nothing of `shownIn` shows), when the frames do not settle it (no axis to
+/// bisect, a middle sample out of place, `expired`), and when no child is seen showing by its own frame (none shows,
+/// or every one kept has no frame): the guard's record then looks for them itself (`recordedChildPositions`).
+func chooseChildren(of element: AXUIElement, data: ElementData, source: ElementSource, visibleFrame: CGRect?, shownIn: CGRect?,
+                    expired: @escaping () -> Bool = { false }) -> (children: [AXUIElement], shown: Shown?) {
   let all = data.children
   let total = all.count
   if total <= widthThreshold { return (all, nil) }
@@ -127,7 +143,19 @@ func chooseChildren(of element: AXUIElement, data: ElementData, source: ElementS
     let kept = visible.compactMap { positions[ElementKey(element: $0)] }
     return (visible, Shown(count: visible.count, of: total, subset: "visible", ranges: positionRanges(kept)))
   }
-  if total > widthOmitAbove { return ([], Shown(count: 0, of: total, subset: "omitted", ranges: [])) }
+  if total > widthOmitAbove {
+    let omitted = Shown(count: 0, of: total, subset: "omitted", ranges: [])
+    guard let shownIn, showsBeyondStrip(shownIn, in: shownIn),
+          let candidates = shownChildPositions(all, frame: { source.frame($0) }, window: shownIn, expired: expired) else { return ([], omitted) }
+    var kept: [Int] = []
+    for position in candidates {
+      guard !expired() else { return ([], omitted) }
+      if source.frame(all[position]).map({ showsBeyondStrip($0, in: shownIn) }) ?? true { kept.append(position) }
+    }
+    guard kept.contains(where: { source.frame(all[$0]) != nil }) else { return ([], omitted) }
+    guard kept.count < total else { return (all, nil) }
+    return (kept.map { all[$0] }, Shown(count: kept.count, of: total, subset: "shown", ranges: positionRanges(kept)))
+  }
   guard let visibleFrame else { return (all, nil) }
   let kept = all.indices.filter { source.frame(all[$0]).map { $0.intersects(visibleFrame) } ?? true }
   guard kept.count < total else { return (all, nil) }
@@ -166,6 +194,15 @@ func jsonStringBytes(_ string: String) -> Int {
 func showsBeyondStrip(_ frame: CGRect, in area: CGRect) -> Bool {
   let shown = frame.intersection(area)
   return !shown.isNull && shown.width > 1 && shown.height > 1
+}
+
+/// What an element leaves showing to its children of `clip`, what its ancestors leave showing of the window: `clip` cut
+/// by its frame when it clips its descendants (`clipsDescendants`, the guard's record's rule) and the frame is a place
+/// (`unplacedFrame`); nil with no clip.
+func childrenClip(_ clip: CGRect?, frame: CGRect?, role: String, actions: @autoclosure () -> [String]) -> CGRect? {
+  guard let clip else { return nil }
+  guard let frame, !unplacedFrame(frame), clipsDescendants(role: role, actions: actions()) else { return clip }
+  return clip.intersection(frame)
 }
 
 /// Where an omitted part of the tree lies (#301), by the frame of the read element it hangs from against what that
@@ -717,13 +754,9 @@ final class TreeWalk {
     return showsBeyondStrip(frame, in: clip)
   }
 
-  /// What a read element leaves showing to its children: its own clip, cut by its frame when it clips its descendants
-  /// (`clipsDescendants`, the guard's record's rule) and the frame is a place (`unplacedFrame`).
+  /// What a read element leaves showing to its children (`childrenClip`).
   private func childClip(_ item: Selected) -> CGRect? {
-    guard let clip = item.clip else { return nil }
-    guard clipsDescendants(role: item.read.data.role, actions: item.read.actions), let frame = item.read.data.frame,
-          !unplacedFrame(frame) else { return clip }
-    return clip.intersection(frame)
+    childrenClip(item.clip, frame: item.read.data.frame, role: item.read.data.role, actions: item.read.actions)
   }
 
   /// Takes up a read element's children (then its record-only ones), the first to be read next. In the tree's selection,
@@ -941,7 +974,7 @@ final class TreeWalk {
         markdownFetches += 1
       }
     }
-    let (children, shown, recordable) = choose(element, data, pending)
+    let (children, shown, recordable) = choose(element, data, actions, pending)
     if pastDeadline() { return .deadline }
     var read = Read(element: element, data: data, owner: owner, actions: actions, actionDescriptions: actionDescriptions,
                     descriptionKeys: described.map(\.key), flags: flags,
@@ -958,7 +991,7 @@ final class TreeWalk {
     if pastDeadline() { return .deadline }
     let actions = source.actions(element)
     settleUnplacedClip(element, &data, actions)
-    let (children, shown, recordable) = choose(element, data, pending)
+    let (children, shown, recordable) = choose(element, data, actions, pending)
     if pastDeadline() { return .deadline }
     return .read(Read(element: element, data: data, owner: 0, actions: actions, actionDescriptions: [], descriptionKeys: [], flags: NodeFlags(), url: nil,
                       valueMarkdown: nil, children: children, shown: shown, recordable: recordable))
@@ -981,15 +1014,18 @@ final class TreeWalk {
     unplacedClips += 1
   }
 
-  /// The children the width rule keeps (none in the menu bar, none past the depth cap), and, where it keeps none of more
-  /// than 499 and the walk keeps the guard's record, the ones whose frames meet the window, for the record alone.
-  private func choose(_ element: AXUIElement, _ data: ElementData, _ pending: Pending) -> ([AXUIElement], Shown?, Bool) {
+  /// The children the width rule keeps (none in the menu bar, none past the depth cap; above 499, those that show in what
+  /// the element leaves showing, #314), and whether, where it keeps none of more than 499 and the walk keeps the guard's
+  /// record, the record looks for the ones whose frames meet the window itself.
+  private func choose(_ element: AXUIElement, _ data: ElementData, _ actions: [String], _ pending: Pending) -> ([AXUIElement], Shown?, Bool) {
     guard !pending.inMenu else { return ([], nil, false) }
     guard pending.depth < limits.depth else {
       if !data.children.isEmpty, !pending.recordOnly { depthHit = true }
       return ([], nil, false)
     }
-    let (children, shown) = chooseChildren(of: element, data: data, source: source, visibleFrame: visibleFrame)
+    let shownIn = childrenClip(pending.clip, frame: data.frame, role: data.role, actions: actions)
+    let (children, shown) = chooseChildren(of: element, data: data, source: source, visibleFrame: visibleFrame, shownIn: shownIn,
+                                           expired: { [self] in pastDeadline() })
     return (children, shown, recordsScreenshot && visibleFrame != nil && shown?.subset == "omitted")
   }
 

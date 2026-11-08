@@ -316,9 +316,9 @@ final class WideListTests: XCTestCase {
     XCTAssertEqual(recordedChildPositions(rows, frame: overlapping, window: window, limit: 1000), [])
   }
 
-  /// #309 in the walk: Safari's body of more than 499 children, its last child framed at the body's origin, keeps its
-  /// shown children in the guard's record.
-  func testAWidthRuleOmittedListWhoseLastChildSitsAtItsOriginKeepsItsShownChildrenInTheRecord() {
+  /// #309 in the walk: Safari's body of more than 499 children, its last child framed at the body's origin, prints its
+  /// shown children (#314; before it the width rule printed none, and the guard's record kept them).
+  func testAWideBodyWhoseLastChildSitsAtItsOriginPrintsItsShownChildren() {
     let tree = FakeTree()
     tree.extra[0] = ["AXRole": "AXWindow" as CFString]
     tree.frames[0] = windowFrame
@@ -327,7 +327,7 @@ final class WideListTests: XCTestCase {
     for i in 0..<600 { tree.frames[100 + i] = CGRect(x: 0, y: Double(i - 200) * 20, width: 1000, height: 20) }
     tree.frames[699] = CGRect(x: 0, y: -4000, width: 1000, height: 10)
     let recording = walk(tree, Lineage(), visibleFrame: windowFrame, recordsScreenshot: true)
-    XCTAssertEqual(ids(recording), [0, 1])
-    XCTAssertEqual(Set(recording.screenshotReads.filter { $0.number < 0 }.map { tree.id($0.element) }), Set(300..<340))
+    XCTAssertEqual(ids(recording), [0, 1] + Array(300..<340))
+    XCTAssertEqual(recording.recordOnlyReads, 0)
   }
 }

@@ -73,6 +73,13 @@ private func payload(_ walk: TreeWalk) -> String {
   return String(decoding: data, as: UTF8.self)
 }
 
+/// Moves the 600-row list's first middle sample (position 48, of the rows from id `list`) past the window, so its frames
+/// do not settle a shown run (`shownChildPositions` answers nil) and the width rule prints none of its rows, leaving
+/// them to the guard's record (#314); the record's bisection never reads that row.
+private func misplaceASample(_ tree: FakeTree, list: Int) {
+  tree.frames[list + 48] = CGRect(x: 0, y: 5_000, width: 1000, height: 20)
+}
+
 final class VisibleFirstTests: XCTestCase {
   func testAWalkNothingCutsEmitsExactlyThePlainPreorder() {
     for chromium in [false, true] {
@@ -222,7 +229,8 @@ final class VisibleFirstTests: XCTestCase {
   }
 
   func testAWidthRuleOmittedListKeepsItsShownRowsInTheGuardsRecordOnly() {
-    // A list (1) of 600 rows 20 pt tall (100 + i), each with two cells (2000 + 2i, 2001 + 2i), scrolled 200 rows down.
+    // A list (1) of 600 rows 20 pt tall (100 + i), each with two cells (2000 + 2i, 2001 + 2i), scrolled 200 rows down,
+    // whose frames do not settle its shown run (`misplaceASample`), so the width rule prints none of them (#314).
     let tree = FakeTree()
     tree.extra[0] = ["AXRole": "AXWindow" as CFString]
     tree.frames[0] = windowFrame
@@ -235,9 +243,10 @@ final class VisibleFirstTests: XCTestCase {
       tree.frames[2000 + 2 * i] = CGRect(x: 0, y: y, width: 500, height: 20)
       tree.frames[2001 + 2 * i] = CGRect(x: 500, y: y, width: 500, height: 20)
     }
+    misplaceASample(tree, list: 100)
     let shownRows = Set((200..<240).map { 100 + $0 })
     let recording = walk(tree, Lineage(), visibleFrame: windowFrame, recordsScreenshot: true)
-    XCTAssertEqual(ids(recording), [0, 1], "the tree keeps the vendor's width rule")
+    XCTAssertEqual(ids(recording), [0, 1], "the tree keeps the vendor's none")
     XCTAssertEqual((recording.nodes[1]["shown"] as? [String: Any])?["subset"] as? String, "omitted")
     XCTAssertEqual(recording.omitted, 0, "nothing the tree's rules keep is omitted")
     let recorded = recording.screenshotReads
@@ -266,6 +275,7 @@ final class VisibleFirstTests: XCTestCase {
     tree.frames[1] = windowFrame
     tree.frames[2] = CGRect(x: 0, y: 700, width: 100, height: 30)
     for i in 0..<600 { tree.frames[100 + i] = CGRect(x: 0, y: Double(i - 200) * 20, width: 1000, height: 20) }
+    misplaceASample(tree, list: 100)
     let recording = walk(tree, Lineage(), limits: WalkLimits(deadline: monotonicMilliseconds() + 150), visibleFrame: windowFrame,
                          recordsScreenshot: true)
     XCTAssertEqual(ids(recording), [0, 1, 2], "the button after the list is printed")
@@ -289,11 +299,13 @@ final class VisibleFirstTests: XCTestCase {
       tree.frames[100 + i] = CGRect(x: 0, y: Double(i - 200) * 20, width: 1000, height: 20)
       tree.frames[1100 + i] = CGRect(x: 0, y: Double(i - 200) * 20, width: 1000, height: 20)
     }
+    misplaceASample(tree, list: 1100)
     let source = FakeSource(tree)
     let recording = walk(tree, Lineage(), visibleFrame: windowFrame, source: source, recordsScreenshot: true)
     let recorded = Set(recording.screenshotReads.filter { $0.number < 0 }.map { tree.id($0.element) })
     XCTAssertEqual(recorded, Set(1300..<1340), "the shown list's rows, none of the hidden list's")
     XCTAssertTrue((100..<700).allSatisfy { source.reads[$0] == nil }, "the hidden rows are never read")
+    XCTAssertTrue((100..<700).allSatisfy { source.frameReads[$0] == nil }, "nor their frames, by the width rule (#314)")
   }
 
   /// The re-reviews of 4e73574a..b2685041 and b2685041..c36c3c81: a strip whose children the record lacks counts only

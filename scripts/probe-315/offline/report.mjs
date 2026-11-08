@@ -12,7 +12,13 @@ for (const f of files) { const r = JSON.parse(readFileSync(f, 'utf8')); configs.
 const metaOf = a => a?.error ? a.error.meta : a?.result?.meta;
 const answerOf = a => (!a ? '-' : a.error ? (a.error.errorName ?? a.error.code) : 'success');
 const tally = xs => { const m = new Map(); for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1); return [...m].map(([k, v]) => (v > 1 ? `${k}×${v}` : k)).join(', '); };
-const raised = w => w ? (w.raisedAfterHold || w.raisedInsideHold || !w.frontHeld || w.stuck) : null;
+// A raise: the browser's window above TextEdit's front window at any sample (the kit's `aboveFront`), or the front app
+// not TextEdit, or the browser above it after. Before the kit kept `aboveFront`, the judged `aboveAny` stands for it only
+// where TextEdit held one window.
+const raisedRow = r => { const w = r.watch; if (!w) return null;
+  const above = 'aboveFront' in w ? w.aboveFront : ((r.orderBefore?.textEditIdx?.length ?? 2) === 1 && (w.raisedAfterHold || w.raisedInsideHold));
+  return !!(above || !w.frontHeld || r.orderAfter?.browserAbove); };
+const raised = w => w ? (('aboveFront' in w ? w.aboveFront : (w.raisedAfterHold || w.raisedInsideHold)) || !w.frontHeld) : null;
 
 function summarise(group) {
   const out = {n: group.length};
@@ -20,7 +26,7 @@ function summarise(group) {
   out.ec = tally(group.map(r => { const e = metaOf(r.answer)?.elementClick; return e ? [e.reason, e.plan === 'action' ? e.action : e.plan, e.pressed, e.pressedRole, e.focus && `focus:${e.focus}`, e.focusStep && `step:${e.focusStep}`, e.walkStopped && `stop:${e.walkStopped}`].filter(Boolean).join('/') : '-'; }));
   out.seen = `${group.filter(r => r.effect?.seen).length}/${group.length}`;
   out.posted = tally(group.map(r => r.effect?.posted ?? '-'));
-  out.raise = `${group.filter(r => raised(r.watch)).length}/${group.length}`;
+  out.raise = `${group.filter(raisedRow).length}/${group.length}`;
   out.above = `${group.filter(r => r.orderAfter?.browserAbove).length}/${group.length}`;
   out.frontAfter = tally(group.map(r => r.frontAfter ?? '-'));
   if (group.some(r => r.typed)) out.typed = `${group.filter(r => r.typed?.landed).length}/${group.length} (${tally(group.map(r => answerOf(r.typeAnswer)))})`;

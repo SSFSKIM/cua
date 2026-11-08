@@ -15,7 +15,8 @@ env:
   # Quoted: YAML reads an all-digit-and-e SHA as a float.
   P315_A_REF: 'fc3b08043dc57d74c85fef296aeb3f1135b19997'
   # The confirmation pass: B = acb88f72 (a refusal into a background Firefox page names what still works on its text
-  # fields), Firefox shared only; the full run on 9abdd7e8 is 42457001051 at kit c756d2bc.
+  # fields), Firefox shared only, and Firefox's sidebar and devtools again; the full run on 9abdd7e8 is 42457001051 at
+  # kit c756d2bc.
   P315_B_REF: 'acb88f724075a067bca86ad732feeed6f3f6cd81'
 jobs:
   probe:
@@ -65,6 +66,8 @@ jobs:
           if [ "$GROUP" = confirm ]; then
             node scripts/probe-315/ab.mjs --browser firefox "${common[@]}" --blocks page --modes shared \
               --cells coord/plain,drag/plain,double/plain,coord/name,setValue/name,token/name+setValue --out "$T/probe-315/firefox"
+            # Firefox's bookmarks sidebar and docked devtools again, with the clicks into each (the kit's region fix).
+            node scripts/probe-315/ab.mjs --browser firefox "${common[@]}" --blocks chrome --out "$T/probe-315/firefox-panes"
           elif [ "$GROUP" = firefox ]; then
             node scripts/probe-315/ab.mjs --browser firefox "${common[@]}" --out "$T/probe-315/firefox"
           else

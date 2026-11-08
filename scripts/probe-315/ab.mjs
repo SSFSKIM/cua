@@ -205,7 +205,7 @@ const frontmost = () => {
   const info = sh('lsappinfo', ['info', '-only', 'bundleid', asn]).out;
   return (info.match(/"CFBundleIdentifier"="([^"]*)"/) || [])[1] || info || null;
 };
-const TEXT_DOC = join(OUT, 'front.txt');
+const TEXT_DOC = join(process.env.RUNNER_TEMP || OUT, 'front315.txt');
 writeFileSync(TEXT_DOC, 'TextEdit is the frontmost window during each action.\n');
 async function frontTextEdit() {
   for (let i = 0; i < 4; i++) {
@@ -225,6 +225,13 @@ function order(pid) {
   const te = layer0.map((w, i) => [w, i]).filter(([w]) => w.owner === 'TextEdit').map(([, i]) => i);
   return {frontmost: d.frontmost, browserIdx: mine, textEditIdx: te, browserAbove: mine.length > 0 && te.length > 0 && Math.min(...mine) < Math.min(...te),
     owners: layer0.slice(0, 6).map(w => w.owner)};
+}
+
+/// The watch, judged (scripts/probe-321/watch.mjs) and with its changes kept: above TextEdit's front window is the raise.
+function watched(w, delivery) {
+  const j = judge(w, delivery, 'com.apple.TextEdit', 'TextEdit');
+  const changes = (w?.changes ?? []).map(c => [Math.round(c.t), c.aboveFront ? 1 : 0, c.aboveAny ? 1 : 0, c.frontmost, c.key]);
+  return {...j, aboveFront: changes.some(c => c[1]), changes: changes.length, trace: changes.slice(0, 12), firstOrder: w?.changes?.[0]?.order?.slice(0, 4) ?? null};
 }
 
 // ---- the browsers -------------------------------------------------------------------------------------------------
@@ -342,11 +349,7 @@ async function cell(ctx, spec) {
     await sleep(2500);
     row.after = counters();
     row.delta = delta(row.before, row.after);
-    const watched = await watcher.done();
-    const meta = metaOf(row.answer);
-    row.watch = judge(watched, meta?.delivery, 'com.apple.TextEdit', 'TextEdit');
-    row.watch.changes = (watched.changes ?? []).length;
-    row.watch.firstOrder = watched.changes?.[0]?.order?.slice(0, 4) ?? null;
+    row.watch = watched(await watcher.done(), metaOf(row.answer)?.delivery);
     row.orderAfter = order(pid);
     row.frontAfter = row.orderAfter.frontmost;
     if (spec.thenSetValue) {
@@ -467,11 +470,10 @@ async function fixedTailPosition(ctx, at) {
       const answer = lean(await w.execute('click', {pid, element: n.token}, {lineage: sky.lineage}));
       const ms = Date.now() - from;
       for (let k = 0; k < 20 && clicks.length === before; k++) await sleep(100);
-      const watched = await watcher.done();
-      const wj = judge(watched, metaOf(answer)?.delivery, 'com.apple.TextEdit', 'TextEdit');
+      const wj = watched(await watcher.done(), metaOf(answer)?.delivery);
       const page = clicks.slice(before).map(p => p.text?.trim());
       row.clicks.push({kind: t.kind, row: t.row, role: n.role, frame: n.frame, ms, answer, page,
-        seen: page.some(p => t.kind === 'bar' ? p === 'Tail 3' : p === `link ${t.row.split(' ')[1]}`), watch: {...wj, changes: (watched.changes ?? []).length}});
+        seen: page.some(p => t.kind === 'bar' ? p === 'Tail 3' : p === `link ${t.row.split(' ')[1]}`), watch: wj});
       await sleep(500);
       if (mode === 'dedicated' && frontmost() !== 'com.apple.TextEdit') await frontTextEdit();
     }
@@ -505,7 +507,7 @@ async function chromeBlock(ctx) {
     const sky = o.sky;
     row.window = sky.window?.frame;
     row.webAreas = sky.nodes.filter(n => n.role === 'AXWebArea').map(n => ({title: n.title, description: n.description, frame: n.frame}));
-    const page = sky.nodes.find(n => n.role === 'AXWebArea' && /probe315/.test(String(n.title ?? n.description ?? ''))) ?? sky.nodes.find(n => n.role === 'AXWebArea');
+    const page = sky.nodes.find(n => n.role === 'AXWebArea' && /probe315/.test(`${n.title ?? ''} ${n.description ?? ''}`)) ?? sky.nodes.find(n => n.role === 'AXWebArea');
     row.pageArea = page?.frame ?? null;
     const wf = sky.window.frame;
     const gridOut = join(OUT, `grid-${fileName(label)}.json`);
@@ -515,8 +517,8 @@ async function chromeBlock(ctx) {
     // Regions: left of the page's web area (the sidebar), below it (devtools), above it (the toolbar).
     const pa = row.pageArea;
     const regions = pa ? {
-      sidebar: {x: wf.x, y: pa.y, width: pa.x - wf.x, height: pa.height},
-      devtools: {x: wf.x, y: pa.y + pa.height, width: wf.width, height: wf.y + wf.height - (pa.y + pa.height)},
+      sidebar: {x: wf.x, y: pa.y, width: pa.x - wf.x, height: wf.y + wf.height - pa.y},
+      devtools: {x: pa.x, y: pa.y + pa.height, width: wf.x + wf.width - pa.x, height: wf.y + wf.height - (pa.y + pa.height)},
       toolbar: {x: wf.x, y: wf.y, width: wf.width, height: pa.y - wf.y},
       page: pa,
     } : {};
@@ -562,8 +564,7 @@ async function chromeBlock(ctx) {
       entry.answer = lean(await w.execute('click', {pid, x: px.x, y: px.y}, {lineage: o2.sky?.lineage}));
       entry.ms = Date.now() - t0;
       await sleep(1500);
-      const watched = await watcher.done();
-      entry.watch = {...judge(watched, metaOf(entry.answer)?.delivery, 'com.apple.TextEdit', 'TextEdit'), changes: (watched.changes ?? []).length};
+      entry.watch = watched(await watcher.done(), metaOf(entry.answer)?.delivery);
       entry.frontAfter = frontmost();
       row.clicks.push(entry);
     }
@@ -585,7 +586,7 @@ function verdict(r) {
   if (r.exception || r.problem) return `PROBLEM ${JSON.stringify(r.problem ?? '')} ${r.exception ?? ''}`.slice(0, 600);
   const m = metaOf(r.answer);
   return `${answerOf(r.answer)} ms=${r.ms} route=${m?.inputRoute} ec=${JSON.stringify(m?.elementClick ?? null)} effect=${JSON.stringify(r.effect)} delta=${JSON.stringify(r.delta)}`
-    + ` front=${r.frontBefore}->${r.frontAfter} raised=${r.watch?.raisedAfterHold || r.watch?.raisedInsideHold} frontHeld=${r.watch?.frontHeld} keyHeld=${r.watch?.keyHeld} above=${r.orderAfter?.browserAbove}`
+    + ` front=${r.frontBefore}->${r.frontAfter} aboveFront=${r.watch?.aboveFront} frontHeld=${r.watch?.frontHeld} keyHeld=${r.watch?.keyHeld} above=${r.orderAfter?.browserAbove}`
     + (r.typed ? ` typed=${answerOf(r.typeAnswer)} landed=${r.typed.landed} active=${r.typed.active}` : '')
     + (r.setValueAnswer ? ` setValue=${answerOf(r.setValueAnswer)} ${JSON.stringify(r.setValueEffect)}` : '')
     + (r.answer?.error ? ` message=${JSON.stringify(r.answer.error.message)}` : '') + (r.refronted ? ` refronted=${r.refronted}` : '');

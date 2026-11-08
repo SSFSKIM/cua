@@ -1,0 +1,90 @@
+# #328's hosted spike: why a posted scroll into a background AppKit window does not scroll, and which route does
+# (scripts/probe-328/: t328.swift's trials, the instrumented probe apps, measure.mjs's sets, main's engine for what it
+# answers). Runs only on a push to probe/328-measure (or by hand); not a ci-kit gate.
+name: probe-328
+on:
+  push:
+    branches: ['probe/328-measure']
+    paths-ignore: ['scripts/probe-328/offline/**', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      groups:
+        description: the groups, a JSON list (smoke, appkit, apps, web)
+        required: false
+        default: ''
+permissions:
+  contents: read
+env:
+  # Quoted: YAML reads an all-digit-and-e SHA as a float. origin/main at the spike's start.
+  P328_MAIN_REF: '81a430918e890cb98ead3a499c0b7b6a726ced93'
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(github.event.inputs.groups || '["smoke"]') }}
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apps
+        run: |
+          bash scripts/probe-287/install.sh
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+          defaults write com.apple.finder FXPreferredViewStyle -string Nlsv
+          killall Finder || true
+          mkdir -p "$RUNNER_TEMP/probe-328"
+          # The Catalyst apps on the image (their executable links iOSSupport's UIKit), the preferred first.
+          for app in /System/Applications/*.app; do
+            exe="$app/Contents/MacOS/$(defaults read "$app/Contents/Info" CFBundleExecutable 2>/dev/null)"
+            if otool -L "$exe" 2>/dev/null | grep -q iOSSupport; then echo "$app"; fi
+          done > "$RUNNER_TEMP/probe-328/catalyst-all.txt"
+          cat "$RUNNER_TEMP/probe-328/catalyst-all.txt"
+          { grep -E '/(Stocks|Home|News|Podcasts|Voice Memos)\.app$' "$RUNNER_TEMP/probe-328/catalyst-all.txt"; cat "$RUNNER_TEMP/probe-328/catalyst-all.txt"; } | head -1 > "$RUNNER_TEMP/probe-328/catalyst.txt"
+      - name: Build the tools and main's engine
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          sw_vers
+          git log -1 --format='kit %H %s'
+          if [ "$GROUP" = smoke ] || [ "$GROUP" = web ]; then
+            git worktree add "$RUNNER_TEMP/src" "$P328_MAIN_REF"
+            echo "P328_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/src" rev-parse HEAD)" >> "$GITHUB_ENV"
+            swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+          fi
+          swiftc -O -o "$RUNNER_TEMP/t328" scripts/probe-328/t328.swift
+          bundle() {  # <dir> <bundle id> <name> <executable> <source> [swiftc flags]
+            mkdir -p "$1/Contents/MacOS"
+            swiftc -O "${@:6}" -o "$1/Contents/MacOS/$4" "$5"
+            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+              '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+              '<plist version="1.0"><dict>' \
+              "<key>CFBundleIdentifier</key><string>$2</string>" \
+              "<key>CFBundleName</key><string>$3</string>" \
+              "<key>CFBundleExecutable</key><string>$4</string>" \
+              '<key>CFBundlePackageType</key><string>APPL</string>' \
+              '<key>NSPrincipalClass</key><string>NSApplication</string>' \
+              '</dict></plist>' > "$1/Contents/Info.plist"
+          }
+          bundle "$RUNNER_TEMP/Probe328.app" com.ssfskim.probe328 Probe328 Probe328 scripts/probe-328/app.swift
+          bundle "$RUNNER_TEMP/Cover328.app" com.ssfskim.cover328 Cover328 Probe328 scripts/probe-328/app.swift
+          bundle "$RUNNER_TEMP/SwiftUI328.app" com.ssfskim.swiftui328 SwiftUI328 SwiftUI328 scripts/probe-328/swiftui.swift -parse-as-library
+      - name: Measure
+        env:
+          GROUP: ${{ matrix.group }}
+        run: bash scripts/probe-328/run.sh
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-328-${{ matrix.group }}
+          path: |
+            ${{ runner.temp }}/probe-328/*/results-*.json
+            ${{ runner.temp }}/probe-328/*/scan-*.json
+            ${{ runner.temp }}/probe-328/*.txt
+            ${{ runner.temp }}/probe-287/*.txt
+          if-no-files-found: warn

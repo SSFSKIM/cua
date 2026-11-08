@@ -27,8 +27,9 @@ final class FakeTree {
   var descriptions: [String: String] = [:]
   /// The attributes an element lists (AXUIElementCopyAttributeNames), by id; unset lists everything it carries.
   var listed: [Int: Set<String>] = [:]
-  /// How long reading an element takes, in microseconds, by id (unset: at once).
+  /// How long reading an element takes, in microseconds, by id (unset: at once); and reading its frame alone.
   var slow: [Int: UInt32] = [:]
+  var slowFrames: [Int: UInt32] = [:]
   /// An element's own description of an action, by id then action name, over `descriptions`.
   var elementDescriptions: [Int: [String: String]] = [:]
   /// Called on every action-description query, by id and action name (a test's delay or count).
@@ -94,6 +95,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   var frameReads: [Int: Int] = [:]
   override func readFrame(_ element: AXUIElement) -> CGRect? {
     frameReads[tree.id(element), default: 0] += 1
+    if let delay = tree.slowFrames[tree.id(element)] { usleep(delay) }
     return tree.frames[tree.id(element)]
   }
 

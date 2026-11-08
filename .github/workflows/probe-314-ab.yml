@@ -1,0 +1,74 @@
+# #314's hosted A/B: A = main against B = fix/314-ff-wide (above 499 children with no visible subset, the width rule
+# prints the children that show), both engines built here uninstrumented from their refs, one engine process per head,
+# the heads' order alternating by repetition (scripts/probe-314/ab.mjs): Firefox and Safari on the kit's wide pages
+# (with clicks by token on the printed run), Chrome for Testing on #304's 21 pages. Runs only on a push to probe/314-ab
+# (or by hand); not a ci-kit gate.
+name: probe-314-ab
+on:
+  push:
+    branches: [probe/314-ab]
+    paths-ignore: ['scripts/probe-314/offline/**', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      groups:
+        description: the groups, a JSON list (empty for all)
+        required: false
+        default: ''
+permissions:
+  contents: read
+env:
+  # Quoted: YAML reads an all-digit-and-e SHA as a float.
+  P314_A_REF: '3de863bbea6c75cc320319588b10874cbad186af'
+  P314_B_REF: '937f49c90298cee8f5b6e1bec5f3566c45db8a7e'
+  # The pages a run is limited to (empty for every page of the group's list): this push's smoke check of the kit.
+  P314_TARGETS: 'local-fixed-tail,py-docs'
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1]
+        group: ${{ fromJSON(github.event.inputs.groups || '["firefox","safari","chrome-b"]') }}
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Browsers
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          case "$GROUP" in
+            firefox) bash scripts/probe-287/install.sh firefox ;;
+            *) bash scripts/probe-287/install.sh ;;
+          esac
+      - name: Build both engines and the tool
+        run: |
+          sw_vers
+          node --version
+          git worktree add "$RUNNER_TEMP/a" "$P314_A_REF"
+          git worktree add "$RUNNER_TEMP/b" "$P314_B_REF"
+          echo "P314_A_COMMIT=$(git -C "$RUNNER_TEMP/a" rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "P314_B_COMMIT=$(git -C "$RUNNER_TEMP/b" rev-parse HEAD)" >> "$GITHUB_ENV"
+          swiftc -O -o "$RUNNER_TEMP/probe-tool" scripts/probe-314/tool.swift
+          swift build -c release --package-path "$RUNNER_TEMP/a/native/engine" --scratch-path "$RUNNER_TEMP/eng-a"
+          swift build -c release --package-path "$RUNNER_TEMP/b/native/engine" --scratch-path "$RUNNER_TEMP/eng-b"
+      - name: Measure
+        env:
+          GROUP: ${{ matrix.group }}
+          P314_REP: ${{ matrix.rep }}
+        run: |
+          node scripts/probe-314/ab.mjs --group "$GROUP" --a "$RUNNER_TEMP/eng-a/release/cua-engine" --b "$RUNNER_TEMP/eng-b/release/cua-engine" \
+            --tool "$RUNNER_TEMP/probe-tool" --out "$RUNNER_TEMP/probe-314" ${P314_TARGETS:+--targets "$P314_TARGETS"}
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-314-ab-${{ matrix.group }}-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-314/*.json
+            ${{ runner.temp }}/probe-314/*.gz
+            ${{ runner.temp }}/probe-287/*.txt
+          if-no-files-found: warn

@@ -18,15 +18,18 @@ env:
   # fields), Firefox shared only, and Firefox's sidebar and devtools again; the full run on 9abdd7e8 is 42457001051 at
   # kit c756d2bc. The second confirmation: set_value on an unfocused field (in the first, 42459610340, the coordinate
   # click before it had focused the field on B).
-  P315_B_REF: 'acb88f724075a067bca86ad732feeed6f3f6cd81'
+  # The third confirmation (ruling 1cd6ed32): B = 146b76a7 (on a Gecko page in shared mode, set_value's and
+  # select_text's fallback is the field's own press with the focus read back, not a refusal).
+  P315_B_REF: '146b76a7c4217328237b977b7da940229225ef3d'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {rep: 1, group: confirm2}
-          - {rep: 2, group: confirm2}
+          - {rep: 1, group: confirm3}
+          - {rep: 2, group: confirm3}
+          - {rep: 3, group: confirm3}
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -64,7 +67,19 @@ jobs:
         run: |
           T="$RUNNER_TEMP"
           common=(--a "$T/eng-a/release/cua-engine" --b "$T/eng-b/release/cua-engine" --tool "$T/probe-tool" --hit "$T/p282-hit" --win "$T/p321-win")
-          if [ "$GROUP" = confirm2 ]; then
+          if [ "$GROUP" = confirm3 ]; then
+            # set_value on an unfocused text field, an unfocused textarea and a focused field; select_text on an unfocused
+            # and a focused field holding text: Firefox shared, every repetition.
+            node scripts/probe-315/ab.mjs --browser firefox "${common[@]}" --blocks page --modes shared \
+              --cells setValue/name,setValue/notes,setValue/name-focused,selectText/filled,selectText/filled-focused --out "$T/probe-315/firefox"
+            # The controls, two repetitions: set_value on an unfocused field in Firefox dedicated, Chrome for Testing and
+            # Safari shared.
+            if [ "$P315_REP" -le 2 ]; then
+              node scripts/probe-315/ab.mjs --browser firefox "${common[@]}" --blocks page --modes dedicated --cells setValue/name --out "$T/probe-315/firefox-ded"
+              node scripts/probe-315/ab.mjs --browser chrome "${common[@]}" --blocks page --modes shared --cells setValue/name --out "$T/probe-315/chrome"
+              node scripts/probe-315/ab.mjs --browser safari "${common[@]}" --blocks page --modes shared --cells setValue/name --out "$T/probe-315/safari"
+            fi
+          elif [ "$GROUP" = confirm2 ]; then
             # set_value on a text field nothing has focused (a fresh page), then after an element click on it.
             node scripts/probe-315/ab.mjs --browser firefox "${common[@]}" --blocks page --modes shared \
               --cells setValue/name,token/name+setValue --out "$T/probe-315/firefox"

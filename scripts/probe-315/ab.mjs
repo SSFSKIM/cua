@@ -58,14 +58,16 @@ const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset=
 <p id="plain">Plain words to read here, nothing to press.</p>
 <p><input id="name" type="text" placeholder="Probe name" aria-label="Probe name" size="30"></p>
 <p><input id="secret" type="password" placeholder="Probe secret" aria-label="Probe secret" size="30"></p>
+<p><input id="filled" type="text" aria-label="Probe filled" value="alpha beta gamma" size="30"></p>
 <p><textarea id="notes" aria-label="Probe notes" rows="5"></textarea></p>
 <p id="status">Ready</p>
-<script>(() => { const c = {pointerdown: 0, mousedown: 0, mouseup: 0, click: 0, dblclick: 0, applyClick: 0, optionChange: 0, radioChange: 0,
+<script>(() => { const c = {filledFocus: 0, pointerdown: 0, mousedown: 0, mouseup: 0, click: 0, dblclick: 0, applyClick: 0, optionChange: 0, radioChange: 0,
   linkClick: 0, link2Click: 0, nameFocus: 0, secretFocus: 0, notesFocus: 0, windowFocus: 0, windowBlur: 0, selChange: 0, input: 0};
 let seq = 0, lastClick = null; const load = Math.random().toString(36).slice(2, 10);
 const $ = id => document.getElementById(id);
 const send = () => { seq += 1; const s = $('secret').value; navigator.sendBeacon('/counters', JSON.stringify({load, seq, counts: c, checked: $('option').checked,
   radio: ['r1', 'r2', 'r3'].find(id => $(id).checked) ?? null, name: $('name').value, notes: $('notes').value, secretLen: s.length, secretMarker: /q315/.test(s),
+  filled: $('filled').value, filledSel: [$('filled').selectionStart, $('filled').selectionEnd],
   selection: String(getSelection()).length, lastClick, focused: document.hasFocus(), active: document.activeElement ? document.activeElement.id || document.activeElement.tagName : null})); };
 for (const k of ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick']) document.addEventListener(k, e => { c[k] += 1; if (k === 'click') lastClick = {trusted: e.isTrusted, detail: e.detail, target: e.target.id || e.target.tagName}; send(); }, true);
 $('apply').addEventListener('click', () => { c.applyClick += 1; send(); });
@@ -73,7 +75,7 @@ $('option').addEventListener('change', () => { c.optionChange += 1; send(); });
 for (const id of ['r1', 'r2', 'r3']) $(id).addEventListener('change', () => { c.radioChange += 1; send(); });
 $('lnk').addEventListener('click', e => { e.preventDefault(); c.linkClick += 1; send(); });
 $('lnk2').addEventListener('click', e => { e.preventDefault(); c.link2Click += 1; send(); });
-for (const id of ['name', 'secret', 'notes']) { $(id).addEventListener('focus', () => { c[id + 'Focus'] += 1; send(); }); $(id).addEventListener('input', () => { c.input += 1; send(); }); }
+for (const id of ['name', 'secret', 'notes', 'filled']) { $(id).addEventListener('focus', () => { c[id + 'Focus'] += 1; send(); }); $(id).addEventListener('input', () => { c.input += 1; send(); }); }
 document.addEventListener('selectionchange', () => { c.selChange += 1; send(); });
 window.addEventListener('focus', e => { if (e.target === window) { c.windowFocus += 1; send(); } });
 window.addEventListener('blur', e => { if (e.target === window) { c.windowBlur += 1; send(); } });
@@ -104,10 +106,10 @@ const server = createServer((req, res) => {
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const LOCAL = `http://127.0.0.1:${server.address().port}`;
-const COUNTS = ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick', 'applyClick', 'optionChange', 'radioChange', 'linkClick', 'link2Click',
+const COUNTS = ['filledFocus', 'pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick', 'applyClick', 'optionChange', 'radioChange', 'linkClick', 'link2Click',
   'nameFocus', 'secretFocus', 'notesFocus', 'windowFocus', 'windowBlur', 'selChange', 'input'];
 const counters = () => (latest ? {load: latest.load, ...latest.counts, checked: latest.checked, radio: latest.radio, name: latest.name, notes: latest.notes,
-  secretLen: latest.secretLen, secretMarker: latest.secretMarker, selection: latest.selection, lastClick: latest.lastClick, focused: latest.focused, active: latest.active, loads} : {loads});
+  secretLen: latest.secretLen, secretMarker: latest.secretMarker, filled: latest.filled, filledSel: latest.filledSel, selection: latest.selection, lastClick: latest.lastClick, focused: latest.focused, active: latest.active, loads} : {loads});
 // The change over an action; a reload (a new load id) counts from zero. Only the counters that moved.
 const delta = (before, after) => Object.fromEntries([...COUNTS.map(k => [k, (after[k] ?? 0) - (after.load === before.load ? before[k] ?? 0 : 0)]), ['loads', after.loads - before.loads]].filter(([, v]) => v));
 
@@ -280,6 +282,7 @@ const TARGETS = {
   link2: n => n.role === 'AXLink' && /Second link/.test(labelOf(n)),
   plain: n => n.role === 'AXStaticText' && /Plain words/.test(labelOf(n)),
   name: n => /AXTextField|AXSecureTextField|AXComboBox/.test(n.role) && /Probe name/.test(labelOf(n)),
+  filled: n => /AXTextField|AXComboBox/.test(n.role) && /Probe filled/.test(labelOf(n)),
   secret: n => (n.role === 'AXSecureTextField' || n.subrole === 'AXSecureTextField' || n.role === 'AXTextField') && /Probe secret/.test(labelOf(n)),
   notes: n => n.role === 'AXTextArea' || (n.role === 'AXTextField' && /Probe notes/.test(labelOf(n))),
   reload: n => n.role === 'AXButton' && /reload/i.test(labelOf(n)),
@@ -315,6 +318,15 @@ async function cell(ctx, spec) {
   const w = await engines[head].connect(mode);
   try {
     if (frontmost() !== 'com.apple.TextEdit' || order(pid).browserAbove) row.refronted = await frontTextEdit();
+    if (spec.prep === 'focus') {
+      // The field focused first by an element click on it (its own observation), so the measured action meets it focused.
+      const p = await observe(w, pid, `${label}-prep`);
+      const pn = p.sky && looseFind(p.sky.nodes, spec.target);
+      row.prep = pn ? lean(await w.execute('click', {pid, element: pn.token}, {lineage: p.sky.lineage})) : {problem: p.error ?? 'no target'};
+      await sleep(1200);
+      row.prepActive = counters().active;
+      if (frontmost() !== 'com.apple.TextEdit' || order(pid).browserAbove) row.refronted = await frontTextEdit();
+    }
     const o = await observe(w, pid, label);
     row.observationMs = o.ms;
     if (o.error) { row.problem = {getAppState: o.error}; return row; }
@@ -335,6 +347,7 @@ async function cell(ctx, spec) {
       const from = pixelOf(sky, f.x + 6, y), to = pixelOf(sky, f.x + f.width - 6, y);
       args = {pid, from_x: from.x, from_y: from.y, to_x: to.x, to_y: to.y};
     } else if (spec.kind === 'setValue') args = {pid, element: node.token, value: spec.value};
+    else if (spec.kind === 'selectText') args = {pid, element: node.token, text: spec.text};
     if (c) { row.point = {pixel: {x: c.x, y: c.y}, screen: c.screen}; row.hit = hitAt(pid, c.screen.x, c.screen.y); }
     row.orderBefore = order(pid);
     row.frontBefore = row.orderBefore.frontmost;
@@ -342,7 +355,7 @@ async function cell(ctx, spec) {
     row.before = counters();
     const watcher = await watch(WIN_BIN, pid, 'TextEdit', 4000);
     watcher.go();
-    const method = spec.kind === 'drag' ? 'drag' : spec.kind === 'setValue' ? 'set_value' : 'click';
+    const method = spec.kind === 'drag' ? 'drag' : spec.kind === 'setValue' ? 'set_value' : spec.kind === 'selectText' ? 'select_text' : 'click';
     const started = Date.now();
     row.answer = lean(await w.execute(method, args, {lineage: sky.lineage}));
     row.ms = Date.now() - started;
@@ -392,7 +405,8 @@ function effectOf(spec, row) {
     case 'focus': return {seen: a.active === spec.target, active: a.active, focusEvents: d[`${spec.target}Focus`] ?? 0, posted};
     case 'nothing': return {seen: posted === 0 && !(d.click) && !(d.dblclick), posted, clicks: d.click ?? 0, dblclicks: d.dblclick ?? 0, selection: a.selection};
     case 'reload': return {seen: (d.loads ?? 0) > 0, loads: d.loads ?? 0};
-    case 'value': return {seen: a.name === spec.value, name: a.name, posted, active: a.active};
+    case 'value': return {seen: a[spec.target] === spec.value, value: a[spec.target], posted, active: a.active};
+    case 'select': return {seen: JSON.stringify(a.filledSel) === JSON.stringify(spec.range) && a.filled === 'alpha beta gamma', sel: a.filledSel, filled: a.filled, posted, active: a.active};
     default: return null;
   }
 }
@@ -415,6 +429,10 @@ const PAGE_CELLS = [
   {name: 'token/notes', kind: 'token', target: 'notes', effect: 'focus', type: true},
   {name: 'token/secret', kind: 'token', target: 'secret', effect: 'focus', type: true},
   {name: 'setValue/name', kind: 'setValue', target: 'name', effect: 'value', value: 'sv315value'},
+  {name: 'setValue/notes', kind: 'setValue', target: 'notes', effect: 'value', value: 'sv315notes'},
+  {name: 'setValue/name-focused', kind: 'setValue', target: 'name', effect: 'value', value: 'sv315focused', prep: 'focus'},
+  {name: 'selectText/filled', kind: 'selectText', target: 'filled', effect: 'select', text: 'beta', range: [6, 10]},
+  {name: 'selectText/filled-focused', kind: 'selectText', target: 'filled', effect: 'select', text: 'gamma', range: [11, 16], prep: 'focus'},
   {name: 'token/name+setValue', kind: 'token', target: 'name', effect: 'focus', thenSetValue: 'sv315after'},
   {name: 'coord/reload', kind: 'coord', target: 'reload', effect: 'reload'},
 ].filter(c => !ONLY_CELLS || ONLY_CELLS.includes(c.name));

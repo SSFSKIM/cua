@@ -32,11 +32,13 @@ function summarise(group) {
   if (group.some(r => r.typed)) out.typed = `${group.filter(r => r.typed?.landed).length}/${group.length} (${tally(group.map(r => answerOf(r.typeAnswer)))})`;
   if (group.some(r => r.effect && 'checkedAfter' in r.effect)) out.checked = tally(group.map(r => `${r.effect.checkedBefore}->${r.effect.checkedAfter}`));
   if (group.some(r => r.setValueAnswer)) out.setValue = `${tally(group.map(r => answerOf(r.setValueAnswer)))} seen ${group.filter(r => r.setValueEffect?.seen).length}/${group.length}`;
+  if (group.some(r => r.effect && ('sel' in r.effect || 'value' in r.effect))) out.got = tally(group.map(r => JSON.stringify(r.effect.sel ?? r.effect.value)));
+  if (group.some(r => r.prep)) out.prep = tally(group.map(r => `${answerOf(r.prep)}:${r.prepActive}`));
   const msgs = [...new Set(group.map(r => r.answer?.error?.message).filter(Boolean))];
   if (msgs.length) out.messages = msgs;
   return out;
 }
-const fmt = s => `${s.answer} | ${s.ec} | seen ${s.seen} | posted ${s.posted} | raise ${s.raise}${s.typed ? ` | typed ${s.typed}` : ''}${s.checked ? ` | checked ${s.checked}` : ''}${s.setValue ? ` | setValue ${s.setValue}` : ''}`;
+const fmt = s => `${s.answer} | ${s.ec} | seen ${s.seen} | posted ${s.posted} | raise ${s.raise}${s.typed ? ` | typed ${s.typed}` : ''}${s.checked ? ` | checked ${s.checked}` : ''}${s.setValue ? ` | setValue ${s.setValue}` : ''}${s.got ? ` | got ${s.got}` : ''}${s.prep ? ` | prep ${s.prep}` : ''}`;
 
 const browsers = [...new Set(rows.map(r => r.browser).filter(Boolean))];
 for (const b of browsers) {

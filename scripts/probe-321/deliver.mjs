@@ -9,7 +9,7 @@
 //     TextEdit's caret is put at 0; delivered: the caret moved off 0 to the click's line.
 // Each click also records the full window list before and after, and the judgement of the watch against the hold.
 //
-//   node scripts/probe-321/deliver.mjs --engine <bin> --win <bin> --out <dir> [--native --app <bin>] [--batches 4 --clicks 5]
+//   node scripts/probe-321/deliver.mjs --engine <bin> --win <bin> --out <dir> [--native --app <bin>] [--batch 1 --batches 4 --clicks 5]
 import {spawn} from 'node:child_process';
 import {createServer} from 'node:http';
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
@@ -22,7 +22,7 @@ if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-3
 const arg = (name, d) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : d; };
 const OUT = arg('out'), ENGINE = arg('engine'), WIN = arg('win'), APP = arg('app');
 const NATIVE = process.argv.includes('--native');
-const BATCHES = Number(arg('batches', 4)), CLICKS = Number(arg('clicks', 5));
+const BATCHES = Number(arg('batches', 4)), CLICKS = Number(arg('clicks', 5)), FIRST = Number(arg('batch', 1));
 const ONLY = arg('cells')?.split(',').filter(Boolean);
 if (!OUT || !ENGINE || !WIN || (NATIVE && !APP)) { console.error('usage: deliver.mjs --engine --win --out [--native --app]'); process.exit(2); }
 mkdirSync(OUT, {recursive: true});
@@ -84,7 +84,7 @@ const delta = (a, b) => Object.fromEntries(Object.keys(b?.counts ?? {}).map(k =>
 const cfg = config({browser: NATIVE ? 'native' : BROWSER, browserVersion: NATIVE ? null : browserVersion(), engine: ENGINE, variant: process.env.P321_VARIANT ?? null});
 const rows = [];
 const save = () => writeResults(OUT, cfg, rows);
-const say = row => log(`${row.label}: ${row.answer?.answer ?? 'no click'} route=${row.answer?.route} kind=${JSON.stringify(row.answer?.activationClickKind ?? null)} delivered=${JSON.stringify(row.delivered ?? null)} judged=${JSON.stringify(row.judged ? {...row.judged, keys: undefined, fronts: undefined} : null)} restores=${row.delivery?.restores} repairedAfterRelease=${row.delivery?.repairedAfterRelease}${row.problem || row.exception ? ' PROBLEM ' + JSON.stringify(row.problem ?? row.exception).slice(0, 300) : ''}`);
+const say = row => log(`${row.label}: ${row.answer?.answer ?? 'no click'} route=${row.answer?.route} kind=${JSON.stringify(row.answer?.activationClickKind ?? null)} delivered=${JSON.stringify(row.delivered ?? null)} judged=${JSON.stringify(row.judged ? {...row.judged, keys: undefined, fronts: undefined} : null)} restores=${row.delivery?.restores} repairedAfterRelease=${row.delivery?.repairedAfterRelease} ms=${row.clickMs} guardMs=${row.delivery?.guardMs} screenHoldMs=${row.delivery?.screenHoldMs} transientRaise=${JSON.stringify(row.delivery?.transientRaise ?? null)}${row.problem || row.exception ? ' PROBLEM ' + JSON.stringify(row.problem ?? row.exception).slice(0, 300) : ''}`);
 
 // One click: the target below the cover, the dumps and the watch around the engine's coordinate click.
 async function clickOnce(w, row, pid, cover, coverBundle, coverName, locate, reset) {
@@ -102,7 +102,9 @@ async function clickOnce(w, row, pid, cover, coverBundle, coverName, locate, res
   const px = {x: Math.round((p.x - wf.x) * scale), y: Math.round((p.y - wf.y) * scale)};
   const watcher = await watch(WIN, pid, cover, 3000);
   const goAt = watcher.go();
+  row.clickSentAt = Date.now();
   const r = await w.execute('click', {pid, ...px});
+  row.clickMs = Date.now() - row.clickSentAt;
   const watched = await watcher.done();
   row.click = lean(r);
   const meta = r.error ? r.error.meta : r.result?.meta;
@@ -118,7 +120,7 @@ const WEB = Object.keys(TARGETS).flatMap(t => ['shared', 'dedicated'].map(d => (
 const NAT = ['shared', 'dedicated'].map(d => ({cell: `textedit/${d}/text`, desktop: d, target: 'text'}));
 const on = c => !ONLY || ONLY.some(p => c.cell.startsWith(p));
 
-for (const spec of (NATIVE ? NAT : WEB).filter(on)) for (let b = 1; b <= BATCHES; b++) {
+for (const spec of (NATIVE ? NAT : WEB).filter(on)) for (let b = FIRST; b < FIRST + BATCHES; b++) {
   let browser, engine, front;
   try {
     sh('pkill', ['-x', 'TextEdit']);

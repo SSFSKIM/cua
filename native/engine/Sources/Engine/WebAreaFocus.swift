@@ -562,7 +562,8 @@ func pressFocusingField(role: String, actions: [String]?, app: String, press: (S
 /// What a left pointer refused in a web area (#282's `PointerRefused`) is carried by instead (#315): an element click's or
 /// a coordinate click's by #282's element route from the hit (`webAreaPress`); focusField's fallback click (set_value's
 /// and select_text's) by the field's own press on a Gecko page (`focusFallbackByPress`, the design session's ruling
-/// 1cd6ed32: main's posted fallback set the value in a background Firefox, 3 of 3, while raising it for 26 to 30 ms),
+/// 1cd6ed32: main's posted fallback set the value in a background Firefox, 3 of 3, its reorder inside the screen hold,
+/// none visible; corrected 2026-11-08 (#324), the raise first read as 26 to 30 ms after the hold),
 /// and by nothing elsewhere, so it stays refused (#282's item 6: an action is no focusing on Chromium).
 enum RefusedPointerCarrier: Equatable {
   case elementRoute

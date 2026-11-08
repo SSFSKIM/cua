@@ -27,13 +27,21 @@ The final head, 80ee16cf, changes only the refusal texts.
 | A `/fixedtail` row below the top, by token | **0 of 18** | **18 of 18**, the AXLink ancestor pressed |
 | Plain text: coordinate click, drag, double click | `clickUnconfirmed`; a double click put 2 pointer events on the page | `backgroundClickRefused`, nothing reached the page |
 | Toolbar Reload | reloads, `clickUnconfirmed` | identical |
-| set_value, unfocused text field or textarea | succeeds through a posted click; **raises Firefox above TextEdit for 26–30 ms after the hold** in 6 of 11 tries; a pointerdown reaches the page | **succeeds, value set 3/3, no raise, no pointerdown** |
-| select_text, unfocused field | succeeds; **raised 3/3**; a pointerdown reaches the page | **succeeds, selection right 3/3, no raise, no pointerdown** |
+| set_value, unfocused text field or textarea | succeeds through a posted click; Firefox's window reordered above TextEdit's in 6 of 11 tries, **inside the screen hold, none visible** (corrected 2026-11-08 (#324), see below); a pointerdown reaches the page | **succeeds, value set 3/3, no raise, no pointerdown** |
+| select_text, unfocused field | succeeds; reordered 3/3, **inside the hold, none visible** (corrected 2026-11-08 (#324)); a pointerdown reaches the page | **succeeds, selection right 3/3, no raise, no pointerdown** |
 | set_value or select_text, field already focused | succeeds, no events | identical |
 | Raises in any shared cell | as above | **none** |
 
 - **What the page sees from B's press:** trusted mousedown, mouseup and click events, but no pointerdown. That is Gecko's own way of carrying AXPress, and it is the same on a page button.
 - **What B posted:** nothing reached the page.
+- **Corrected 2026-11-08 (#324): main's fallback raises were not visible.** This README first said main's posted
+  fallback raised Firefox visibly, 26–30 ms after the hold. That was a misread. On main, `focusingClick`
+  (ElementInput.swift) dropped the fallback click's `delivery` record, so the kit judged each reorder against no hold
+  at all. The fallback click joins set_value's held activation, which clicked its activation point, so it takes
+  #321's hold until the window order reads back, and the reorder fell inside that hold. #324's spike timed
+  SLSDisableUpdate and SLSReenableUpdate directly and found 75 of 112 Safari fallback clicks reordering inside the
+  hold and 0 after it; the Firefox fallback is the same path. The reorder is hidden, not prevented, and B's press
+  still takes it away, with no pointerdown. See https://github.com/SSFSKIM/cua/issues/324#issuecomment-6721180433.
 
 ## Firefox, dedicated mode
 
@@ -43,7 +51,7 @@ Every cell gave the same answer and effect on both heads, with the same raise.
 
 - **Same on both heads:** the answer, the element-click record, the effect, the page events, typing, and set_value.
 - **Safari raises in shared mode** differed by one in a few cells, in both directions.
-- **Safari's posted set_value fallback raises Safari 14–33 ms after the hold on both heads:** A 6 of 8 tries, B 5 of 8. That is main's behaviour, on a path B does not touch, and it is recorded on #324.
+- **Safari's posted set_value fallback reordered Safari's window on both heads:** A 6 of 8 tries, B 5 of 8. This first read as 14–33 ms after the hold; corrected 2026-11-08 (#324): it was inside the hold, with none visible, by the same misread as Firefox's above (https://github.com/SSFSKIM/cua/issues/324#issuecomment-6721180433). That is main's behaviour, on a path B does not touch; #324 replaces it with the caret-first route.
 
 ## Sidebar and devtools
 

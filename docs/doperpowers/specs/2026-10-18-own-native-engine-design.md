@@ -3513,22 +3513,38 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      this hold's own span: SkyLight re-enables the display only once every hold on the connection is released. The
      overrun of `frozenMs` past `screenHoldMs` comes only from a timer's release (item 1's hosted A/B): a release the
      guard makes at its own end is on time.
-  6b. **The hold's timers are strict, and the hold keeps the process latency-critical** (ruling eecaccfe; Activation.swift
-     `holdTimerStrict`, `holdHoldsActivity`, `scheduleHoldTimer`, `FakeActivation.takeHold`). The lateness is the timer's,
-     most likely dispatch timer coalescing in a background process with no UI, and App Nap may add to it. Two remedies,
-     each behind its own constant, both on until the hosted re-measure keeps the smallest that brings the real freeze to
-     about 300 ms at worst; the other is then removed:
-     - **`holdTimerStrict`:** every hold timer (#321's cap and ceiling, main's 100 ms cap, the guard's own hold's) is a
-       one-shot dispatch source timer with the `.strict` flag and no leeway (`holdTimerFlags`, `holdTimerLeewayNs`), on
-       a serial userInteractive queue of its own (`cua.engine.hold-timer`), cancelled as it fires. Off, the global
-       queue's `asyncAfter` as before.
-     - **`holdHoldsActivity`:** each screen-update hold begins `ProcessInfo.beginActivity([.userInitiated,
-       .latencyCritical])` just before SLSDisableUpdate and ends it with the hold's one release, whichever path makes it
-       (the guard's end, the cap's or the ceiling's timer, a refused activation, a stop before the events). The release
-       only enqueues the re-enable, so the activity covers the timer and the enqueue, not the queue's hop to
-       SLSReenableUpdate; that hop is the one a guard-ended release takes on time.
-     - **Measured** (the hosted re-measure, to be filled in): strict timer alone: TBD; activity alone: TBD; both: TBD
-       (`frozenMs` at the ceiling, median and largest; main's cap's overrun). Kept: TBD.
+  6b. **The hold's timers are strict** (rulings eecaccfe and 5e4f745d; Activation.swift `holdTimerStrict`,
+     `scheduleHoldTimer`, `holdTimerFlags`, `holdTimerLeewayNs`). The lateness item 1 found is the timer's, most likely
+     dispatch timer coalescing in a background process with no UI. Every hold timer (#321's cap and ceiling, main's
+     100 ms cap, the guard's own hold's) is a one-shot dispatch source timer with the `.strict` flag and no leeway, on
+     a serial userInteractive queue of its own (`cua.engine.hold-timer`), cancelled as it fires; off, the global
+     queue's `asyncAfter` as before. **Kept: strict alone.**
+     - **Measured** (run https://github.com/SSFSKIM/cua/actions/runs/42487558851, kit `probe/324-measure` b279af95; the
+       real freeze at the 300 ms ceiling, p50 / p95 / max, in ms):
+
+       | Variant | To the SLSReenableUpdate call | To its return |
+       |---|---|---|
+       | none (the timers as before) | 368.5 / 375.6 / 378.2 | 379.7 / 392.0 / 395.4 |
+       | strict timer | 300.7 / 302.8 / 303.6 | 308.5 / 321.6 / 326.3 |
+       | latency-critical activity | 360.5 / 375.8 / 377.9 | 372.3 / 392.5 / 394.4 |
+       | both | 300.5 / 305.6 / 311.4 | 309.1 / 320.1 / 324.5 |
+
+     - **Main's 100 ms activation hold, when its timer releases it:** with no change a freeze of 124.3 / 149.9 / 158.1
+       (24 to 58 ms late); strict, 100.8 / 103.2 / 103.2. So strict also makes caret-first set_value's freeze a flat
+       about 100 ms, against 118 to 158.
+     - **Guard-ended releases stay on time:** a median 0.1 ms after the guard. No natural click's hold was released by
+       the cap's timer.
+     - **The display re-enables 8 to 26 ms after the call.** That wait is the window server's frame inside
+       SLSReenableUpdate; the engine does not control it.
+     - **The App Nap lead, ruled out:** holding a latency-critical ProcessInfo activity (`beginActivity([.userInitiated,
+       .latencyCritical])`) for the hold's lifetime was built and measured; it made no measurable difference, alone or
+       with the strict timer, and was removed.
+     - **The stated trade:** with the timers on time, a click whose events land past about 250 ms into the hold gets
+       less than 50 ms of hold after them. Under an injected slow activation 3 of 60 clicks raised visibly with strict,
+       every one with its events 252 to 313 ms into the hold. The late timers had been hiding a few of these by
+       freezing about 70 ms longer.
+     - **The worst-case freeze, as the ruling states it:** 300 ms to the SLSReenableUpdate call (measured max 303.6),
+       with the display back within about 26 ms after it.
   7. **select_text on an unfocused NSTextField** answered `selectionNotSettable` before trying to focus, since AppKit
      makes the range settable only once the field editor is attached. Folded in (TextSelection.swift
      `selectionSettableBeforeFocus`, `selectionSettableAfterFocus`): a field whose range is not settable but which
@@ -3536,12 +3552,17 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      element is refused as before, nothing written.
   8. **Corrections in place**, each marked "corrected 2026-11-08 (#324)": #315's item 11 and its hosted-check line, and
      `docs/evidence/2026-11-08-gecko-routes/README.md` (Firefox's set_value and select_text rows, Safari's line).
-  9. **Not done:** dedicated mode's raise on pointer clicks (#282's ruling: nobody is at that desktop); the reorder
-     itself on pointer clicks and drags, which the hold hides (item 1); #321's long first-click guards; a caret at the
-     point for set_value (it needs none: the value replaces the text, and select_text writes its own range).
+  9. **The limits: invisible, not absent.** Pointer clicks and drags still reorder the target's window inside the hold
+     (55 to 90%, item 1); the hold hides it. The ceiling bounds what it can hide: a click whose events land 250 ms or
+     more into the hold, about 2% of natural clicks, gets under 50 ms of hold after them, and under an injected slow
+     activation 3 of 60 such clicks showed a visible raise (item 6b). Any raise of the ceiling goes back to the design
+     session.
+     **Not done:** dedicated mode's raise on pointer clicks (#282's ruling: nobody is at that desktop); the reorder
+     itself on pointer clicks and drags; #321's long first-click guards; a caret at the point for set_value (it needs
+     none: the value replaces the text, and select_text writes its own range).
   10. **Model-facing text.** `docs/cua-api/agent-cursor.md` does not describe set_value's focus, so it is unchanged;
      the refusal carries its own sentence.
-  Proven offline (`CaretFirstFocusTests`, 12; `ClickDeliveryTests`, 5 new and the cap test widened; `ValueSettingTests`,
+  Proven offline (`CaretFirstFocusTests`, 12; `ClickDeliveryTests`, 4 new and the cap test widened; `ValueSettingTests`,
   1 new; with FakeAX for the field and the fake clock for the hold):
   - set_value and select_text on a Safari page's unfocused field focus it by the caret write at {0, 0}, read at once,
     with no AXFocused write, nothing pressed and no fallback click, Safari's DOM element included;
@@ -3564,22 +3585,21 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     release happened, and one that never comes is waited for the 100 ms bound and no longer, with no field (the first
     version used a real-time 60 ms stamp against the real 100 ms bound, which a loaded hosted runner missed, run
     42480881696);
-  - the latency-critical activity is begun before each hold and ended with its release, exactly once, on the guard's
-    end, the cap's timer, the ceiling's, a refused activation, a stop before the events and the guard's own hold;
-  - the hold's timer is strict with no leeway, both remedies are on, and it fires once and not before its time;
+  - the hold's timer is strict with no leeway, and it fires once and not before its time;
   - select_text focuses an unfocused AppKit field whose range is not settable and checks it again; a range that stays
     unsettable is refused after the focus, and an element needing no focus before anything is written;
   - `fieldFocus` on the wire.
   Every other suite passes unchanged (#313's `TextEntryClickTests`, #315's `GeckoPointerTests`, #282's
-  `BackgroundPointerTests`, the paste and focus-hold suites). Each of 60 rules and bounds removed in turn
+  `BackgroundPointerTests`, the paste and focus-hold suites). Each of 54 rules and bounds removed in turn
   (`~/.local/share/187/mutate-324.py`) fails a test. focusField's glue (the page engine, the live subrole read, the
-  method's interval and the settle mark) reads live AX and is not unit tested, nor are the live ProcessInfo activity
-  and whether the strict timer fires on time under coalescing: the hosted check covers them.
+  method's interval and the settle mark) reads live AX and is not unit tested, nor is whether the strict timer fires
+  on time under coalescing: the hosted check covered them (item 6b).
   **What the hosted check must verify** (`probe/324-measure`'s cells, against main, each behind a frontmost TextEdit,
   with SLSDisableUpdate and SLSReenableUpdate timed):
   - **Safari, shared:** set_value and select_text on an unfocused page text field and textarea answer success with
     `fieldFocus` `readBack` (`focusStep` `selection`; `press` where the caret did not focus), the value or selection
-    right, no pointer event on the page, no delivery record, no raise, and a freeze near the held activation's 120 ms;
+    right, no pointer event on the page, no delivery record, no raise, and a freeze near the held activation's 120 ms
+    (about 100 ms with the strict timer, item 6b);
   - **Safari, dedicated:** the same, every cell delivered;
   - **Safari password fields, shared, 20 reps:** measured 20 of 20, 0 raises, a 124 ms freeze (item 1), so now on;
   - **AppKit fields** (the probe app, TextEdit): set_value as on main, the AXFocused write, no raise; select_text on
@@ -3588,9 +3608,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     showed 51 of 60, with `screenHoldMs` at most 300 (measured: main 47 of 60, this branch 4 of 60, item 1); natural
     clicks' `screenHoldMs` a median of about 197; `frozenMs` present on every delivery record and within the measured
     SLSReenableUpdate times;
-  - **the strict timer and the activity (item 6b),** each alone and both: `frozenMs` at the ceiling within a few ms of
-    300 at worst, main's 100 ms and #321's timer-driven releases within a few ms of their caps, guard-ended releases
-    unchanged;
+  - **the strict timer (item 6b):** measured, the ceiling's real freeze to the call at most 303.6 ms and main's 100 ms
+    cap at most 103.2, guard-ended releases unchanged;
   - **Chromium and Gecko:** identical to main, set_value's fallbacks included.
   Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 8c206e91 on #324.
 

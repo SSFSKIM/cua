@@ -995,64 +995,6 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(armed.wait(upToMs: 5), 42, "the first call's")
   }
 
-  /// #324 (ruling eecaccfe): every screen-update hold holds the latency-critical activity from before its SLSDisableUpdate
-  /// to its release, and ends it exactly once on every path that releases: the guard's own end, the cap's timer after
-  /// the events, the ceiling's after a slow activation, a refused activation, a stop before the events, and the guard's
-  /// own hold inside a held activation.
-  func testTheHoldsActivityEndsOnEveryReleasePath() throws {
-    XCTAssertTrue(holdHoldsActivity)
-    func check(_ seam: GuardSeam, _ label: String, endedAt: Double? = nil) {
-      XCTAssertGreaterThan(seam.holds, 0, label)
-      XCTAssertEqual(seam.activityBegins, seam.holds, "\(label): one activity a hold")
-      XCTAssertEqual(seam.activityEnds, seam.activityBegins, "\(label): each ended")
-      XCTAssertEqual(seam.activityLiveAtHold, Array(repeating: true, count: seam.holds), "\(label): begun before the hold")
-      XCTAssertEqual(seam.activityLiveAtRelease, Array(repeating: true, count: seam.releases), "\(label): ended with the release")
-      if let endedAt { XCTAssertEqual(seam.activityEndedAt, endedAt, "\(label): ended at the release, not the guard's end") }
-    }
-    let settled = GuardSeam(frontmost: user)
-    var meta = meta()
-    try click(settled, activation: activation(settled, at: insidePoint), meta: &meta)
-    check(settled, "the guard's end", endedAt: 10 + activationPointGuardMinimumMs)
-
-    let capped = GuardSeam(frontmost: user)
-    reordering(capped, until: .infinity)
-    meta = self.meta()
-    try click(capped, activation: activation(capped, at: insidePoint), meta: &meta)
-    check(capped, "the cap's timer", endedAt: 210)
-
-    let slow = GuardSeam(frontmost: user)
-    slow.targetAbove = false
-    let subject = activation(slow, at: insidePoint)
-    subject.holdsThroughDelivery = true
-    subject.holdsUntilOrderReadsBack = true
-    try subject.activate()
-    slow.advance(140)
-    var raised = false
-    slow.onFrontmostRead = { if raised { slow.targetAbove = true } }
-    _ = subject.deliver(window: 41, pointer: true, ranBy: subject) { raised = true }
-    check(slow, "the ceiling's timer", endedAt: 300)
-
-    let refused = GuardSeam(frontmost: user, frontmostAfterPost: target)
-    meta = self.meta()
-    XCTAssertThrowsError(try click(refused, activation: freshActivation(refused), meta: &meta))
-    check(refused, "a refused activation")
-
-    let stopped = GuardSeam(frontmost: user)
-    meta = self.meta()
-    XCTAssertThrowsError(try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: freshActivation(stopped),
-                                          targetActive: { false }, beforePosting: { throw userChanged("TextEdit") },
-                                          post: stopped.system.post, meta: &meta))
-    check(stopped, "a stop before the events")
-
-    let held = GuardSeam(frontmost: user)
-    held.targetAbove = false
-    let standing = activation(held, at: insidePoint)
-    try standing.activate()
-    _ = standing.deliver(window: 41, pointer: true, ranBy: nil) {}
-    XCTAssertEqual(held.holds, 2)
-    check(held, "the guard's own hold inside a held activation")
-  }
-
   /// #324 (ruling eecaccfe): the hold's timers are strict, with no leeway, and fire once at their time, not before.
   func testTheHoldsTimerIsStrictWithNoLeewayAndFiresOnce() {
     XCTAssertTrue(holdTimerStrict)
@@ -1791,13 +1733,6 @@ final class GuardSeam {
   private var pendingStamps: [ReenableStamp] = []
   /// The Unix clock the delivery record reads: the fake clock past a fixed epoch.
   static let unixEpoch: Int64 = 1_000_000
-  /// The latency-critical activity (#324, `holdHoldsActivity`): begun and ended, whether one was live as each hold was
-  /// taken and as each was released, and when (on the fake clock) the last one ended.
-  var activityBegins = 0
-  var activityEnds = 0
-  var activityLiveAtHold: [Bool] = []
-  var activityLiveAtRelease: [Bool] = []
-  var activityEndedAt: Double?
   /// When the last screen-update hold was taken, on the fake clock.
   var heldAt: Double?
   var reactivated: [pid_t] = []
@@ -1871,26 +1806,14 @@ final class GuardSeam {
     }
     system.keyFocus = { nil }
     system.secondsSinceInput = { self.secondsSinceInput }
-    system.beginLatencyCriticalActivity = {
-      self.activityBegins += 1
-      var ended = false
-      return {
-        XCTAssertFalse(ended, "an activity ended twice")
-        ended = true
-        self.activityEnds += 1
-        self.activityEndedAt = self.clock
-      }
-    }
     system.holdScreenUpdates = { stamp in
       self.holds += 1
       self.heldAt = self.clock
-      self.activityLiveAtHold.append(self.activityBegins > self.activityEnds)
       stamp.arm()
       self.onHold?()
       return {
         self.releases += 1
         self.releasedAt = self.clock
-        self.activityLiveAtRelease.append(self.activityBegins > self.activityEnds)
         let at = self.clock + self.reenableLagMs
         if self.reenableStampAfterMs == nil { stamp.stamp(at) } else { self.pendingStamps.append(stamp) }
         self.onRelease?()

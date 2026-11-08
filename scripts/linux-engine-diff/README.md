@@ -522,6 +522,35 @@ variants included; their evidence is written either way. The run's `end` row kee
   build never takes (GTK 4) is recorded, not judged. The run is complete only when every requested family and kind
   produced its cell and nothing threw (`dragCompleteness`); a family's error leaves its remaining kinds unmeasured
   and the run incomplete, while a lane that misses is a measured outcome.
+- **M4's judges** (T10, `drag-judge.mjs`; Acceptance 3; the Decision Log's M4 pre-flight). They decide the run's
+  verdict for the shipped `cua` lane, and the run exits nonzero when it fails; every other cua lane is measured, not
+  judged:
+  - *Effect*: every run of `cua` takes effect, wherever the pinned build missed too (the M1a.4 rule).
+  - *Thumbs*: Chrome's and Electron's `scroller` runs each land at or past the pinned build's mean distance, the mean
+    of its runs that took in the same sitting (`thumbReach`), never a stored constant.
+  - *Long paths* (Chrome's and Firefox's `canvas`, Chrome's `dnd`), warm, under Acceptance 3's interval rule
+    (stats.mjs `judgeSeriesSpeed`): a run that took is a usable sample, each engine's first request is cold and left
+    to the verdict run; 20 usable a side or the series is not judged; a vendor build sets the bar only with 20 usable,
+    and one short of that at 40 drags gives the bar up; an undetermined cell is topped up in rounds of 10 to 40 a side
+    (`topUpRuns`); the summary names the build that set the bar. Run them `--occlusion visible`: a covered Chromium
+    path or Gecko window is a declared refusal.
+  - *Chrome's drag and drop* runs in front for every lane (raised and activated before each drag), as its drop needs.
+  - *Under load* (`--load` or `--load-factor <n>`, the load lane, 40 drags a side by default and never fewer): the
+    landed counts decide, `cua`'s at least the pinned build's, with every side's distances reported (`loadCounts`);
+    speed and the thumb reach are reported, not judged. The load lane of #265:
+    `--experiment drag --load-factor 2 --family chrome,electron --ops scroller,range --occlusion visible --lanes pinned,cua`.
+  - *The motions Chrome received*: `pages/drag.html` counts, per press, the `pointerrawupdate` events (which Chrome
+    dispatches as it takes each motion, a scrollbar drag's included, where no `pointermove` reaches the page) and the
+    `pointermove` events; each page run keeps them as `received`, beside its `before` and `after`, for T11's plot of
+    distance against the motions received.
+  - *Named only* (`OPTIONAL_KINDS`, by `--ops`): `select-unprimed` on Writer, every run a fresh window's first drag,
+    judged absolutely by the text its path spans (`selectionCovers`), beside the primed `select` cell, whose even runs
+    that took the judge must take too (REFERENCE MISMATCH otherwise); and `handle-canvas`, `handle-dnd` on Firefox,
+    `drag_handle`'s start, a held move to each point and its end, its requests spaced by cua's service's own
+    `drag_handle` settle (`HANDLE_GAP_MS`), with a `cua:no-press` control lane that moves along the same points without
+    pressing and must miss every run (CONTROL NON-DISCRIMINATING otherwise). Gecko's `held_lead_pause` question
+    (Decision Log, T9) compares `cua` with `--variant nolead='--drag-step-us 300 --drag-release-dwell-ms 30'` (any drag
+    flag fixes the pacing with no lead pause).
 
 ## M2's additions: text, clipboard and the paste safety cases
 

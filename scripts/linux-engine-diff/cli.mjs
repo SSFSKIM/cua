@@ -184,6 +184,8 @@ export function parseArgs(argv) {
     if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd', 'atspi', 'focus-timer', 'engine-stop', 'qt-activation', 'settle'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
     if (['matrix', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) require('vendor', 'newest');
     if (['qt-bridge', 'engine-readiness', 'drag', 'kinds', 'dnd'].includes(a.experiment)) require('vendor');
+    // the drag experiment's load lane runs 40 drags a side (T10; drag.mjs `dragTrials`), refused before anything starts
+    if (a.experiment === 'drag' && a.load && a.samplesTrials !== undefined && a.samplesTrials < 40) throw new Error(`--trials ${a.samplesTrials}: the drag experiment under load runs 40 drags a side`);
     // the drag and kinds experiments also measure a window with its bottom half covered (Gecko's cover condition)
     if (!['covered', 'visible', ...(['drag', 'kinds'].includes(a.experiment) ? ['partial', 'partial-deep', 'partial-top'] : [])].includes(a.occlusion)) throw new Error(`--occlusion ${a.occlusion} is not one ${a.experiment} takes`);
     // the events experiment's desktop-only commands through OpenAI's JavaScript client

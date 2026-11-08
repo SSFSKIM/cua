@@ -170,6 +170,67 @@ export function noiseVerdict(interval, bar) {
   return interval[0] > 0 ? 'loss' : 'wide';
 }
 
+/** How far a series is topped up before an undetermined one fails (Acceptance 3: 20 a side, then to 40). */
+export const TOP_UP_SAMPLES = 2 * MIN_NOISE_SAMPLES;
+
+/**
+ * One series judged by Acceptance 3's interval rule where an engine's samples can be unusable (M4, T10: the long
+ * browser drags, whose vendor builds miss runs). `samples` maps each engine to `{usable, sampled}`: the times that count
+ * and how many samples it took. A vendor build sets the bar only with `MIN_NOISE_SAMPLES` usable; one short of that holds
+ * the series open until it has been sampled to `cap`, and then gives the bar up (`failed_bar`), the bar falling to the
+ * other build. The candidate needs `MIN_NOISE_SAMPLES` usable too. The bar is the faster median of the builds that set
+ * one, and `against` names that build. Then the interval guard, as `judgeOperation` applies it: a pass when the upper end
+ * of the bootstrap interval of the candidate's median minus the bar's is within `noiseBound` (`label`), a failure when
+ * the interval lies above 0 past it, and otherwise undetermined until both sides reach `cap`, when it fails. With every
+ * vendor build having given the bar up, the verdict is `no bar`: recorded, with nothing to judge the speed against.
+ * Returns `{verdict: 'pass'|'fail'|'undetermined'|'no bar', against, bar, candidate, interval, bound, label, failed_bar,
+ * reasons}`.
+ */
+export function judgeSeriesSpeed(samples, { vendors, candidate, interval, cap = TOP_UP_SAMPLES }) {
+  const shown = (v) => (v === null ? null : Math.round(v * 100) / 100);
+  const of = (engine) => samples[engine] ?? { usable: [], sampled: 0 };
+  const out = { verdict: 'undetermined', against: null, bar: null, candidate: shown(median(of(candidate).usable)), interval: null, bound: null, label: null, failed_bar: [], reasons: [] };
+  const present = vendors.filter((v) => samples[v]);
+  const setting = present.filter((v) => of(v).usable.length >= MIN_NOISE_SAMPLES);
+  const open = present.filter((v) => of(v).usable.length < MIN_NOISE_SAMPLES && of(v).sampled < cap);
+  out.failed_bar = present.filter((v) => of(v).usable.length < MIN_NOISE_SAMPLES && of(v).sampled >= cap).map((v) => ({ engine: v, usable: of(v).usable.length, sampled: of(v).sampled }));
+  const mine = of(candidate);
+  if (mine.usable.length < MIN_NOISE_SAMPLES) {
+    out.verdict = mine.sampled >= cap ? 'fail' : 'undetermined';
+    out.reasons.push(`${candidate}: ${mine.usable.length} usable samples of ${mine.sampled}, fewer than ${MIN_NOISE_SAMPLES}`);
+    return out;
+  }
+  if (open.length) {
+    out.reasons.push(`${open.map((v) => `${v} has ${of(v).usable.length} usable of ${of(v).sampled}`).join(', ')}: the bar is not settled before ${cap} samples`);
+    return out;
+  }
+  if (!setting.length) {
+    out.verdict = 'no bar';
+    out.reasons.push(`no vendor build has ${MIN_NOISE_SAMPLES} usable samples (${out.failed_bar.map((f) => `${f.engine} ${f.usable} of ${f.sampled}`).join(', ') || 'none ran'})`);
+    return out;
+  }
+  const against = setting.reduce((best, v) => (median(of(v).usable) < median(of(best).usable) ? v : best));
+  const bar = median(of(against).usable);
+  const ci = interval(mine.usable, of(against).usable);
+  const bound = noiseBound(bar);
+  Object.assign(out, { against, bar: shown(bar), interval: ci, bound: shown(bound) });
+  const at = `${candidate} ${out.candidate} ms against ${against}'s ${out.bar} ms`;
+  if (ci[1] <= bound) {
+    out.verdict = 'pass';
+    out.label = speedLabel(ci);
+    return out;
+  }
+  if (ci[0] > 0) {
+    out.verdict = 'fail';
+    out.reasons.push(`${at}, the interval [${ci.join(', ')}] above 0`);
+    return out;
+  }
+  const final = mine.sampled >= cap && of(against).sampled >= cap;
+  out.verdict = final ? 'fail' : 'undetermined';
+  out.reasons.push(`${at}, the interval [${ci.join(', ')}] reaches past ${out.bound} ms${final ? ` at ${cap} samples` : ''}`);
+  return out;
+}
+
 /**
  * The verdict for one operation and scene: the candidate's speed judged against the bar (the faster vendor build,
  * cold against cold, warm against warm), every request answered, its output equal, its witness clean wherever a

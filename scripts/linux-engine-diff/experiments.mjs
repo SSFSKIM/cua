@@ -356,7 +356,7 @@ export async function runExperiment(args) {
     writeSummary(args.out);
     return complete;
   }
-  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), started: new Date().toISOString() });
+  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), ...(args.experiment === 'drag' ? { load_factor: args.load ? (args.loadFactor ?? 1) : null, ops: args.ops, trials: args.samplesTrials ?? null } : {}), started: new Date().toISOString() });
   if (args.experiment === 'events') {
     // on a private X server of its own, watched as a Desktop's display is (events.mjs): no scene windows, no desktop
     const { md, pass } = await runEvents(args, emit);
@@ -389,7 +389,8 @@ export async function runExperiment(args) {
       const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd }[args.experiment];
       const result = await measure(args, { desktop, emit });
       md = result.md;
-      outcome = { complete: result.complete, failed: result.failed };
+      // the drag experiment's judges (T10) fail the run as an incomplete one does; the others report completeness only
+      outcome = { complete: result.complete && result.pass !== false, failed: result.failed };
     } else if (args.experiment === 'matrix') {
       const { names } = await runMatrix(args, { desktop, emit, run });
       const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);

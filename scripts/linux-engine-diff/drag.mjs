@@ -17,9 +17,30 @@
 // parity mostly end at (numbers within 1), one more drop for `dnd`, a new stroke within 12 canvas pixels of every
 // corner for `canvas`. A cell's verdict for each cua lane: every run position the pinned build took, the lane takes
 // too (the M1a.3 review's per-sample rule); a cell the pinned build never takes is recorded, not judged.
+//
+// M4's judges (T10; Acceptance 3; the Decision Log's M4 pre-flight, "Speed judging" and "Drags"; their verdicts in
+// drag-judge.mjs), which decide the run's verdict for the shipped `cua` lane (`dragVerdict`; every other cua lane is
+// measured, not judged):
+// - The long browser paths (`LONG_PATHS`: Chrome's and Firefox's canvas, Chrome's drag and drop) are judged on speed,
+//   warm, under Acceptance 3's interval rule (stats.mjs `judgeSeriesSpeed`): a run that took is a usable sample, an
+//   engine's first request is cold and left to the verdict run's scene drag, every side needs 20 usable, a vendor build
+//   sets the bar only with 20 usable, and an undetermined cell is topped up in rounds to 40 drags a side (`topUpRuns`).
+//   The verdict names the build that set the bar.
+// - Chrome's and Electron's scrollbar thumbs (`reachJudged`): every run lands at or past the pinned build's mean distance
+//   in the same sitting (`thumbReach`), beside the tolerance judge.
+// - Under load (`--load`, `--load-factor`; 40 drags a side, `dragTrials`) the landed counts decide in place of every run
+//   taking: cua's at least the pinned build's, with the distances reported (`loadCounts`). Speed is judged idle only.
+// - Chrome's drag and drop runs in front for every lane (`inFront`), as its drop needs; a covered path stays a declared
+//   refusal.
+// - The page reports the motions Chrome received between a press and its release (`received`, pointerrawupdate events,
+//   which Chrome dispatches during a scrollbar drag too), kept per run beside its distance.
+// - Named only (`OPTIONAL_KINDS`): Writer's unprimed first drag (`select-unprimed`, a fresh window a run, judged
+//   absolutely), and Firefox's held `drag_handle` moves (`handle-canvas`, `handle-dnd`) with a no-press control lane
+//   that must miss every run (`controlVerdict`).
 
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
 
+import { LOAD_RUNS, controlVerdict, dragSpeed, dragVerdict, judgeNotes, laneFailures, loadCounts, thumbReach, topUpRuns } from './drag-judge.mjs';
 import { Engine } from './engine.mjs';
 import { FAMILIES, familyNames, openFamily, readGtk4Status } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -27,10 +48,12 @@ import { Oracle } from './oracle.mjs';
 import { captureWindow, pixelsChanged } from './pixels.mjs';
 import { negativeCheck } from './run.mjs';
 import { XPROBE, xdotool } from './scenes.mjs';
-import { median } from './stats.mjs';
+import { blockOrder, median } from './stats.mjs';
 import { startWitness } from './witness.mjs';
+import { SETTLE_MS } from '../../src/services/engine/linux/settle.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const r1 = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : '–');
 
 export const PAGE = 'drag.html';
 export const WORDS = 'alpha bravo charlie delta echo foxtrot golf';
@@ -60,6 +83,35 @@ export const DRAG_FAMILIES = {
   'gnome-terminal': ['select'],
   'writer-gen': ['select'],
 };
+
+/**
+ * Kinds a run measures only when `--ops` names them: Writer's unprimed first drag (T16's measurement), and Firefox's
+ * held `drag_handle` moves (whether Gecko's `held_lead_pause` can go, Decision Log, T9).
+ */
+export const OPTIONAL_KINDS = { writer: ['select-unprimed'], firefox: ['handle-canvas', 'handle-dnd'] };
+
+/** The long browser paths Acceptance 3 judges from M4 on, on speed as well as effect. */
+export const LONG_PATHS = { chrome: ['canvas', 'dnd'], firefox: ['canvas'] };
+export const isLongPath = (family, kind) => LONG_PATHS[family]?.includes(kind) === true;
+
+/** Chromium's scrollbar thumbs, held to the pinned build's mean distance (Acceptance 3). */
+export const REACH_CELLS = { chrome: ['scroller'], electron: ['scroller'] };
+export const reachJudged = (family, kind) => REACH_CELLS[family]?.includes(kind) === true;
+
+/** Cells whose every lane drags with its window in front, the vendor builds' included: Chrome's drop is allowed there. */
+export const IN_FRONT_CELLS = { chrome: ['dnd'] };
+export const inFront = (family, kind) => IN_FRONT_CELLS[family]?.includes(kind) === true;
+
+/** The drags a lane makes per cell: `--trials`, else 30; under load 40, and never fewer. */
+export function dragTrials(args) {
+  if (!args.load) return args.samplesTrials ?? 30;
+  const n = args.samplesTrials ?? LOAD_RUNS;
+  if (n < LOAD_RUNS) throw new Error(`the drag experiment under load runs ${LOAD_RUNS} drags a side (the load lane), not ${n}`);
+  return n;
+}
+
+/** The no-press control of the held-move cells: the same points with the button never pressed. */
+export const CONTROL_LANE = 'cua:no-press';
 
 /**
  * The drag engines: the reference (the pinned build), the newest build (recorded beside it, not judged: its coarser
@@ -236,6 +288,40 @@ export const DRAG_PRIMING = {
 /** The priming drag's path: the odd runs' text, so the first measured run (even) never presses inside its selection. */
 export const primingPath = (at, kind) => runPath(at, kind, 1);
 
+/** The kind whose target and effect reader a kind uses: a held-move cell draws on its plain kind's target. */
+export const baseKind = (kind) => ({ 'handle-canvas': 'canvas', 'handle-dnd': 'dnd', 'select-unprimed': 'select' })[kind] ?? kind;
+
+/**
+ * A held-move cell's `drag_handle` requests, in root coordinates: its start at the path's first point, a held move to
+ * each later point, its end. The control (`control`) makes the same moves with no start and no end: the button is never
+ * pressed, so nothing can be drawn or dropped.
+ */
+export function handleSteps(at, kind, window, { control = false } = {}) {
+  const points = runPath(at, baseKind(kind), 0).map((p) => ({ x: window.x + p.x, y: window.y + p.y }));
+  if (control) return points.map((p) => ({ action: 'move_to', ...p }));
+  return [{ action: 'start', ...points[0] }, ...points.slice(1).map((p) => ({ action: 'move_to', ...p })), { action: 'end' }];
+}
+
+/**
+ * Whether a fresh window's first drag selected what its path spans: the first line's characters between the path's
+ * two ends, each end allowed to round one character either way; nothing, or text the path does not span, is a miss.
+ */
+export function selectionCovers(text, i) {
+  if (typeof text !== 'string' || text === '') return false;
+  const [a, b] = selectOffsets(i);
+  return WORDS.slice(Math.max(0, a - 1), b + 1).includes(text) && text.includes(WORDS.slice(a + 1, b - 1));
+}
+
+/**
+ * The unprimed judge's positive reference: of the primed `select` cell's even runs that took (every lane's, in the same
+ * sitting), how many `selectionCovers` takes too. Fewer than all, or none to check, and the judge could miss a first
+ * drag that selects: the run reports REFERENCE MISMATCH (`dragVerdict`).
+ */
+export function primedReference(primedRuns) {
+  const evens = primedRuns.filter((r) => r.i % 2 === 0 && r.took);
+  return { covers: evens.filter((r) => selectionCovers(r.after, 0)).length, n: evens.length };
+}
+
 /** A run's path, window-relative: `[{x, y}, ...]`. */
 export function runPath(at, kind, i) {
   let points;
@@ -278,7 +364,18 @@ export function parseDragStatus(texts) {
     dnd: Object.fromEntries(['starts', 'drops', 'downs', 'detail', 'gap', 'selects', 'ends', 'effect', 'lat', 'dur', 'ups', 'at'].map((key) => [key, num(line('dnd '), key)])),
     canvas: { strokes: num(line('canvas '), 'strokes'), moves: num(line('canvas '), 'moves'), dev: num(line('canvas '), 'dev') },
     moves: parsePointerLog(line('moves ')),
+    received: parseReceived(line('received ')),
   };
+}
+
+/**
+ * The page's count of the motions Chrome received during the last press (`received seq <press> target <id> raw <n>
+ * moves <n>`): `raw` the pointerrawupdate events, which Chrome dispatches as it takes each motion, during a scrollbar
+ * drag too (where no pointermove reaches the page), and `moves` the pointermove events. Null without the line.
+ */
+function parseReceived(text) {
+  const m = text?.match(/^received seq (\d+) target (\S+) raw (\d+) moves (\d+)$/);
+  return m ? { seq: Number(m[1]), target: m[2], raw: Number(m[3]), moves: Number(m[4]) } : null;
 }
 
 /** Blink's drag threshold off the Mac (`mouse_event_manager.cc` `kDragThresholdX/Y`): a press starts a drag on a move this far out in x or y. */
@@ -325,8 +422,10 @@ function claimPrimary() {
 }
 
 /** The value a kind's effect is judged by. */
-export async function readEffect(ctx, scene, at, kind) {
+export async function readEffect(ctx, scene, at, cellKind) {
   const { desktop, oracle } = ctx;
+  // a held-move cell reads its plain kind's target, Writer's unprimed drag its selection
+  const kind = baseKind(cellKind);
   if (at.page) {
     const nodes = preorder((await desktop.state(scene)).ax_tree);
     const status = parseDragStatus(nodes.flatMap((n) => [n.name, n.value, n.text].filter((s) => typeof s === 'string')));
@@ -390,7 +489,7 @@ export function judgeRuns(kind, runs) {
       const moved = median(moves);
       expected[parity] = moved === null || moved === 0 ? null : { moved };
     }
-  } else if (!['dnd', 'canvas'].includes(kind)) {
+  } else if (!['dnd', 'canvas'].includes(baseKind(kind)) && kind !== 'select-unprimed') {
     for (const parity of [0, 1]) {
       const values = runs.filter((r) => r.engine === 'pinned' && r.i % 2 === parity && r.ok && r.after !== null && r.after !== '' && !same(r.after, r.before)).map((r) => r.after);
       expected[parity] = values.length ? mode(values) : null;
@@ -398,10 +497,12 @@ export function judgeRuns(kind, runs) {
   }
   const took = (r) => {
     if (!r.ok || r.after === null || r.after === undefined) return false;
+    // a fresh window's first drag, every run on the even path: judged against the text the path spans
+    if (kind === 'select-unprimed') return selectionCovers(r.after, 0);
     // Writer through gen, whose selection reads only as its pixels: the capture after the drag differs from before
     if (r.after?.capture !== undefined) return r.pixels_changed === true;
-    if (kind === 'dnd') return r.after.drops === (r.before?.drops ?? -2) + 1;
-    if (kind === 'canvas') return r.after.strokes === (r.before?.strokes ?? -2) + 1 && r.after.dev >= 0 && r.after.dev <= CANVAS_TOLERANCE;
+    if (baseKind(kind) === 'dnd') return r.after.drops === (r.before?.drops ?? -2) + 1;
+    if (baseKind(kind) === 'canvas') return r.after.strokes === (r.before?.strokes ?? -2) + 1 && r.after.dev >= 0 && r.after.dev <= CANVAS_TOLERANCE;
     if (THUMB_KINDS.includes(kind)) {
       const want = expected[r.i % 2];
       if (!want || typeof r.before !== 'number' || typeof r.after !== 'number') return false;
@@ -417,14 +518,15 @@ export function judgeRuns(kind, runs) {
  * A cell's verdict per cua lane, absolute once the cell has a usable reference (Decision Log, M1a.4): every one of the
  * lane's runs must take effect, wherever the pinned build missed too. The reference is usable when the pinned build
  * took at least one run (the reader works) and, for a kind judged against the pinned build's values (`expected`),
- * every parity the runs use has one; a cell without it is recorded, not judged (`pass: null`).
+ * every parity the runs use has one; a cell without it is recorded, not judged (`pass: null`). With `absolute` the kind's
+ * effect needs no reference (Writer's unprimed first drag, which every engine's may miss): the cell is always judged.
  */
-export function judgeCell(runs, lanes, expected = {}) {
+export function judgeCell(runs, lanes, expected = {}, { absolute = false } = {}) {
   const pinnedRuns = runs.filter((r) => r.engine === 'pinned');
   const pinnedTook = pinnedRuns.filter((r) => r.took).length;
   const positions = [...new Set(pinnedRuns.map((r) => r.i))].sort((a, b) => a - b);
   const parities = [...new Set(runs.map((r) => r.i % 2))];
-  const usable = pinnedTook > 0 && (Object.keys(expected).length === 0 || parities.every((p) => expected[p] !== null && expected[p] !== undefined));
+  const usable = absolute || (pinnedTook > 0 && (Object.keys(expected).length === 0 || parities.every((p) => expected[p] !== null && expected[p] !== undefined)));
   // the witness is required of a lane where every pinned run kept it: Chrome's own drag and drop changes the stacking
   // (and its first one the focus), whichever engine drags
   const pinnedClean = pinnedRuns.every((r) => r.witness === true);
@@ -441,7 +543,39 @@ export function judgeCell(runs, lanes, expected = {}) {
 // ---------------------------------------------------------------------------------------------------------------
 // the run
 
-async function series(ctx, spec, scene, at, kind, n, { prime = false } = {}) {
+/**
+ * The spacing of a held-move cell's `drag_handle` requests, every lane alike: cua's service defers each by its settle
+ * (settle.mjs), so no caller through it sends them closer. Back to back, Firefox merged one held move's motions into the
+ * next's and missed the canvas and the drop in every engine but the pinned build (task 65's probe); that would measure
+ * a sequence no agent can send.
+ */
+export const HANDLE_GAP_MS = SETTLE_MS.drag_handle;
+
+/**
+ * A held-move cell's drag: its `drag_handle` requests in turn (`handleSteps`), `gapMs` apart, timed as the sum of the
+ * requests, answered as the first that failed; a handle that pressed and then failed is ended, so no button stays down.
+ */
+export async function handleDrag(engine, steps, { gapMs = HANDLE_GAP_MS } = {}) {
+  let ms = 0;
+  for (const [k, step] of steps.entries()) {
+    if (k > 0 && gapMs > 0) await sleep(gapMs);
+    const value = await engine.request('drag_handle', step);
+    ms += value.ms;
+    if (!value.response.ok) {
+      if (steps[0].action === 'start' && k > 0 && step.action !== 'end') await engine.request('drag_handle', { action: 'end' });
+      return { response: value.response, ms };
+    }
+  }
+  return { response: { ok: true }, ms };
+}
+
+/** The page's motion count of the drag's press (`received`), read once its effect has settled. */
+async function readReceived(ctx, scene) {
+  const nodes = preorder((await ctx.desktop.state(scene)).ax_tree);
+  return parseDragStatus(nodes.flatMap((n) => [n.name, n.value, n.text].filter((s) => typeof s === 'string'))).received;
+}
+
+async function series(ctx, spec, scene, at, kind, n, { prime = false, start = 0 } = {}) {
   const { witness, emit, family } = ctx;
   const engine = new Engine(spec).start();
   const runs = [];
@@ -452,7 +586,7 @@ async function series(ctx, spec, scene, at, kind, n, { prime = false } = {}) {
       emit({ kind: 'drag-prime', family, drag: kind, engine: spec.label, ok: value.response.ok === true, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, reason: DRAG_PRIMING[family].reason });
       await sleep(700);
     }
-    for (let i = 0; i < n; i++) {
+    for (let i = start; i < start + n; i++) {
       if (kind === 'select' && scene.kindOf === 'terminal') {
         // the marker must own PRIMARY before the drag: an xclip slow to start would take it after the selection
         claimPrimary();
@@ -462,20 +596,32 @@ async function series(ctx, spec, scene, at, kind, n, { prime = false } = {}) {
       // the page's scroller goes back to its top by itself; the drag waits for it
       if (kind === 'scroller') for (let tries = 0; (await read()) !== 0 && tries < 40; tries++) await sleep(200);
       ctx.desktop.arrange(scene, ctx.occlusion);
+      if (inFront(family, kind)) {
+        // the window in front for every lane, the device case's way (dnd.mjs): raised, then activated
+        xdotool('windowactivate', '--sync', scene.id);
+        await sleep(400);
+      }
       const before = await read();
-      const path = runPath(at, kind, i);
+      const handle = kind.startsWith('handle-');
+      const path = handle ? handleSteps(at, kind, scene.window, { control: spec.handleControl }) : runPath(at, kind, i);
+      const tag = `${spec.label}:${family}:drag:${kind}`;
       let sent;
-      if (spec.control) {
+      if (handle) sent = await witness.span(tag, () => handleDrag(engine, path));
+      else if (spec.control) {
         xdotool('windowactivate', '--sync', scene.id);
         await sleep(150);
         const root = path.map((p) => ({ x: scene.window.x + p.x, y: scene.window.y + p.y }));
-        sent = await witness.span(`${spec.label}:${family}:drag:${kind}`, () => engine.request('drag', { path: root }));
-      } else sent = await witness.span(`${spec.label}:${family}:drag:${kind}`, () => engine.request('drag', { window: { id: scene.id }, path }));
+        sent = await witness.span(tag, () => engine.request('drag', { path: root }));
+      } else sent = await witness.span(tag, () => engine.request('drag', { window: { id: scene.id }, path }));
       const { value, witness: w } = sent;
       const ok = value.response.ok === true;
+      // the no-press control is answered success, and its effect is read like any other: it must show none
       const after = ok ? (at.text?.pixels ? await read() : await settled(read, before)) : null;
-      const run = { family, drag: kind, occlusion: ctx.occlusion, engine: spec.label, i, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before, after, path };
+      // an engine's first request is cold: the long paths' speed is judged warm (dragSpeed)
+      const run = { family, drag: kind, occlusion: ctx.occlusion, engine: spec.label, i, first_request: i === start && !prime, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before, after, path };
+      if (inFront(family, kind)) run.in_front = true;
       if (at.text?.pixels) run.pixels_changed = ok ? pixelsChanged(before.capture, after.capture) : false;
+      if (at.page && ok) run.received = await readReceived(ctx, scene);
       runs.push(run);
       // what the application changed (Chrome's drag and drop activates and restacks, the control activates) is put
       // back for the next run by its arrangement
@@ -490,7 +636,11 @@ async function series(ctx, spec, scene, at, kind, n, { prime = false } = {}) {
 
 /** The cells a run asks for: each family's kinds (`--ops` narrows them), in the order the run measures them. */
 export function dragPlan(names, kindsAsked) {
-  return names.flatMap((family) => (DRAG_FAMILIES[family] ?? []).filter((k) => !kindsAsked || kindsAsked.includes(k)).map((kind) => ({ family, kind })));
+  return names.flatMap((family) =>
+    [...(DRAG_FAMILIES[family] ?? []), ...(OPTIONAL_KINDS[family] ?? [])]
+      .filter((k) => (kindsAsked ? kindsAsked.includes(k) : !OPTIONAL_KINDS[family]?.includes(k)))
+      .map((kind) => ({ family, kind })),
+  );
 }
 
 /**
@@ -508,76 +658,173 @@ export function dragCompleteness(plan, cells, errors) {
   return { complete: failed.length === 0, failed };
 }
 
+/**
+ * Writer's unprimed lane (T16's measurement): every run a fresh window's first drag, no priming, the lanes taking turns
+ * round by round, each lane on one engine throughout. The even path every run, judged by `selectionCovers`.
+ */
+async function unprimedRuns(ctx, lanes, n, open) {
+  const { desktop, witness, family } = ctx;
+  const engines = Object.fromEntries(lanes.map((l) => [l.label, new Engine(l).start()]));
+  const runs = [];
+  try {
+    for (let i = 0; i < n; i++) {
+      for (const spec of blockOrder(lanes, i)) {
+        const scene = await open(`dragu${spec.label.replace(/[^a-z0-9]+/gi, '')}${i}`);
+        try {
+          desktop.arrangeFront(ctx.occlusion === 'covered' ? 'covered' : 'visible');
+          await sleep(1000);
+          if (ctx.occlusion !== 'covered') desktop.raise(scene);
+          const at = await locate(ctx, scene, ['select']);
+          const read = () => readEffect(ctx, scene, at, 'select-unprimed');
+          desktop.arrange(scene, ctx.occlusion);
+          const before = await read();
+          const path = runPath(at, 'select', 0);
+          const { value, witness: w } = await witness.span(`${spec.label}:${family}:drag:select-unprimed`, () => engines[spec.label].request('drag', { window: { id: scene.id }, path }));
+          const ok = value.response.ok === true;
+          const after = ok ? await settled(read, before) : null;
+          runs.push({ family, drag: 'select-unprimed', occlusion: ctx.occlusion, engine: spec.label, i, first_request: i === 0, unprimed: true, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before, after, path });
+        } finally {
+          await desktop.close([scene]);
+        }
+      }
+    }
+  } finally {
+    await Promise.all(Object.values(engines).map((e) => e.close()));
+  }
+  return runs;
+}
+
 export async function runDrag(args, { desktop, emit }) {
   if (!args.vendor) throw new Error('the drag experiment needs --vendor (the pinned build is its reference)');
   const names = familyNames(args.families?.length ? args.families : Object.keys(DRAG_FAMILIES));
   const kindsAsked = args.ops && args.ops !== 'all' ? args.ops : null;
   const plan = dragPlan(names, kindsAsked);
   if (!plan.length) throw new Error(`no drag cell in families ${names.join(', ')} with kinds ${kindsAsked?.join(', ') ?? 'all'}: nothing to measure`);
-  const n = args.samplesTrials ?? 30;
+  const n = dragTrials(args);
+  // the unprimed lane's judge is checked against the primed cell's selections of the same sitting (primedReference)
+  for (const { family } of plan.filter((p) => p.kind === 'select-unprimed')) {
+    if (!plan.some((p) => p.family === family && p.kind === 'select')) throw new Error(`${family} select-unprimed needs the primed select cell beside it (--ops select,select-unprimed): its judge's positive reference`);
+  }
   const lanes = dragEngines(args);
   const cuaLanes = lanes.filter((l) => l.label.startsWith('cua')).map((l) => l.label);
+  const vendors = lanes.filter((l) => ['pinned', 'newest'].includes(l.label)).map((l) => l.label);
   const oracle = new Oracle();
   const stubScene = await desktop.openChrome('stub', 'scene.html');
   await desktop.openFront(args.occlusion === 'covered' ? 'covered' : 'visible');
   const witness = await startWitness(XPROBE);
   const md = [
-    `Every engine drags the same path ${n} times per family and kind, in its own window (${args.occlusion}), each drag in a witness span; a run took effect when its result is the pinned build's (module header, drag.mjs). \`cua:0ms\` has no wait after a sample, after the press or before the release.`,
+    `Every engine drags the same path ${n} times per family and kind, in its own window (${args.occlusion}${args.load ? `, under load: ${args.loadFactor ?? 1} stress-ng worker${(args.loadFactor ?? 1) === 1 ? '' : 's'} per core` : ''}), each drag in a witness span; a run took effect when its result is the pinned build's (module header, drag.mjs). \`cua:0ms\` has no wait after a sample, after the press or before the release.`,
+    `The judges (T10), for the shipped lane \`cua\`: ${args.load ? "under load the landed counts decide, cua's at least the pinned build's, 40 a side" : "every run takes effect; Chrome's and Electron's thumbs land at or past the pinned build's mean distance of the same sitting; the long paths (Chrome's and Firefox's canvas, Chrome's drag and drop in front) pass on warm speed under Acceptance 3's interval rule, topped up to 40 a side"}. Every other cua lane is measured, not judged.`,
     '',
-    `| family | kind | ${lanes.map((l) => `${l.label} took`).join(' | ')} | ${lanes.slice(1).map((l) => `${l.label} drag ms`).join(' | ')} | pinned drag ms | witness | verdict |`,
-    `|---|---|${lanes.map(() => '---:').join('|')}|${lanes.slice(1).map(() => '---:').join('|')}|---:|---|---|`,
+    `| family | kind | ${lanes.map((l) => `${l.label} took`).join(' | ')} | ${lanes.slice(1).map((l) => `${l.label} drag ms`).join(' | ')} | pinned drag ms | witness | judges | verdict |`,
+    `|---|---|${lanes.map(() => '---:').join('|')}|${lanes.slice(1).map(() => '---:').join('|')}|---:|---|---|---|`,
   ];
   const cells = [];
   const errors = [];
+  // each family's primed select runs, the unprimed lane's reference
+  const primedSelect = {};
+  const record = (family, kind, runs, { absolute = false, primed = null } = {}) => {
+    const judged = judgeRuns(kind, runs);
+    const cell = judgeCell(judged.runs.filter((r) => r.engine !== CONTROL_LANE), cuaLanes, judged.expected, { absolute });
+    const reach = reachJudged(family, kind) ? thumbReach(judged.runs, cuaLanes) : null;
+    for (const r of reach ? reach.runs : judged.runs) emit({ kind: 'drag-run', ...r });
+    const speedOf = (lane) => {
+      const { samples, ...verdict } = dragSpeed(judged.runs, { candidate: lane, vendors });
+      return { ...verdict, usable: Object.fromEntries(Object.entries(samples).map(([e, s]) => [e, s.usable.length])), sampled: Object.fromEntries(Object.entries(samples).map(([e, s]) => [e, s.sampled])) };
+    };
+    const ms = (label) => median(judged.runs.filter((r) => r.engine === label && r.ok && !r.first_request).map((r) => r.ms));
+    const withReceived = judged.runs.filter((r) => r.received);
+    const row = {
+      kind: 'drag-cell',
+      family,
+      drag: kind,
+      expected: judged.expected,
+      ...cell,
+      ms: Object.fromEntries(lanes.map((l) => [l.label, ms(l.label)])),
+      ...(reach ? { reach: { pinned_mean: reach.pinned_mean, lanes: reach.lanes } } : {}),
+      ...(isLongPath(family, kind) && !args.load && vendors.length ? { speed: Object.fromEntries(cuaLanes.map((l) => [l, speedOf(l)])) } : {}),
+      ...(args.load ? { load: loadCounts(judged.runs, cuaLanes) } : {}),
+      ...(kind.startsWith('handle-') ? { control: controlVerdict(judged.runs.filter((r) => r.engine === CONTROL_LANE)) } : {}),
+      ...(primed ? { primed_reference: primedReference(primed) } : {}),
+      ...(withReceived.length ? { received: Object.fromEntries(lanes.map((l) => [l.label, { raw: median(withReceived.filter((r) => r.engine === l.label).map((r) => r.received.raw)), moves: median(withReceived.filter((r) => r.engine === l.label).map((r) => r.received.moves)) }])) } : {}),
+    };
+    emit(row);
+    cells.push(row);
+    if (kind === 'select') primedSelect[family] = judged.runs;
+    const took = (label) => `${judged.runs.filter((r) => r.engine === label && r.took).length}/${judged.runs.filter((r) => r.engine === label).length}`;
+    const verdict = !cell.reference && !row.load ? (cell.pinned_took === 0 ? 'no pinned effect: not judged' : 'no usable pinned reference: not judged') : cuaLanes.map((l) => `${l} ${laneFailures(row, l).length ? '**FAIL**' : 'PASS'}`).join(', ');
+    const witnessClean = judged.runs.every((r) => r.witness) ? 'clean' : '**changed**';
+    md.push(`| ${FAMILIES[family].title} | ${kind} | ${lanes.map((l) => took(l.label)).join(' | ')} | ${lanes.slice(1).map((l) => r1(row.ms[l.label])).join(' | ')} | ${r1(row.ms.pinned)} | ${witnessClean} | ${judgeNotes(row, cuaLanes)} | ${verdict} |`);
+    process.stdout.write(`${md.at(-1)}\n`);
+  };
   try {
     if (!(await negativeCheck(desktop, witness, stubScene, emit))) throw new Error('the witness did not fail the activating stub; the run is invalid');
     for (const family of names) {
       const kinds = plan.filter((p) => p.family === family).map((p) => p.kind);
       if (!kinds.length) continue;
+      const plain = kinds.filter((k) => k !== 'select-unprimed');
       let measuring = null;
       process.stdout.write(`family ${family}: ${kinds.join(', ')}\n`);
       const scenes = {};
       const ctx = { desktop, oracle, witness, emit, family, occlusion: args.occlusion, cua: args.cua };
+      // the browsers show the drag page; gedit gets classic scroll bars (GTK 3's overlay ones hide until hovered)
+      const page = ['chrome', 'firefox', 'electron'].includes(family) ? PAGE : null;
+      const env = family === 'gedit' ? { GTK_OVERLAY_SCROLLING: '0' } : {};
+      // Firefox opens maximized unless its profile asks for a size, and a maximized window is under the front window's
+      // corner, where Gecko ignores coordinate input (Device mode, `unless_unobscured`)
+      const geometry = ['firefox', 'writer-gen'].includes(family) ? FAMILIES[family].geometry : null;
+      const open = async (label) => {
+        const scene = await openFamily(desktop, oracle, family, label, { page, doc: DRAG_DOC, env, geometry });
+        if (page) scene.kindOf = 'page';
+        return scene;
+      };
       try {
-        // the browsers show the drag page; gedit gets classic scroll bars (GTK 3's overlay ones hide until hovered)
-        const page = ['chrome', 'firefox', 'electron'].includes(family) ? PAGE : null;
-        const env = family === 'gedit' ? { GTK_OVERLAY_SCROLLING: '0' } : {};
-        for (const l of lanes) {
-          // Firefox opens maximized unless its profile asks for a size, and a maximized window is under the front
-          // window's corner, where Gecko ignores coordinate input (Device mode, `unless_unobscured`)
-          const geometry = ['firefox', 'writer-gen'].includes(family) ? FAMILIES[family].geometry : null;
-          scenes[l.label] = await openFamily(desktop, oracle, family, `drag${l.label.replace(/[^a-z0-9]+/gi, '')}`, { page, doc: DRAG_DOC, env, geometry });
-          if (page) scenes[l.label].kindOf = 'page';
+        if (plain.length) {
+          for (const l of lanes) scenes[l.label] = await open(`drag${l.label.replace(/[^a-z0-9]+/gi, '')}`);
+          desktop.arrangeFront(args.occlusion === 'covered' ? 'covered' : 'visible');
+          await sleep(1000);
         }
-        desktop.arrangeFront(args.occlusion === 'covered' ? 'covered' : 'visible');
-        await sleep(1000);
         const at = {};
-        for (const l of lanes) {
+        for (const l of plain.length ? lanes : []) {
           if (args.occlusion !== 'covered') desktop.raise(scenes[l.label]);
-          at[l.label] = await locate(ctx, scenes[l.label], kinds);
+          at[l.label] = await locate(ctx, scenes[l.label], plain.map(baseKind));
         }
-        for (const [k, kind] of kinds.entries()) {
+        for (const [k, kind] of plain.entries()) {
           measuring = kind;
           const runs = [];
           // the lanes rotate per kind, so no lane always goes first
           const order = [...lanes.slice(k % lanes.length), ...lanes.slice(0, k % lanes.length)];
-          for (const spec of order) {
-            runs.push(...(await series(ctx, spec, scenes[spec.label], at[spec.label], kind, n, { prime: k === 0 && Boolean(DRAG_PRIMING[family]) })));
+          const measure = async (count, start) => {
+            for (const spec of order) {
+              runs.push(...(await series(ctx, spec, scenes[spec.label], at[spec.label], kind, count, { prime: start === 0 && k === 0 && Boolean(DRAG_PRIMING[family]), start })));
+              desktop.focusFront();
+            }
+          };
+          await measure(n, 0);
+          // a long path's speed still undetermined is sampled on, every lane alike, to 40 a side (topUpRuns), for the
+          // shipped lane where the run has one (a measurement lane that misses would otherwise always run to 40)
+          const topUpLanes = cuaLanes.includes('cua') ? ['cua'] : cuaLanes;
+          for (let total = n; isLongPath(family, kind) && !args.load; ) {
+            const now = judgeRuns(kind, runs).runs;
+            const more = Math.max(0, ...topUpLanes.map((l) => topUpRuns(dragSpeed(now, { candidate: l, vendors }), total)));
+            if (!more) break;
+            emit({ kind: 'drag-top-up', family, drag: kind, from: total, more });
+            process.stdout.write(`${family} ${kind}: speed undetermined at ${total} a side, ${more} more\n`);
+            await measure(more, total);
+            total += more;
+          }
+          if (kind.startsWith('handle-')) {
+            // the no-press control, in the shipped lane's window: the same points, the button never pressed
+            const host = cuaLanes.includes('cua') ? 'cua' : cuaLanes[0];
+            runs.push(...(await series(ctx, { label: CONTROL_LANE, bin: args.cua, args: [], handleControl: true }, scenes[host], at[host], kind, n)));
             desktop.focusFront();
           }
-          const judged = judgeRuns(kind, runs);
-          for (const r of judged.runs) emit({ kind: 'drag-run', ...r });
-          const cell = judgeCell(judged.runs, cuaLanes, judged.expected);
-          const ms = (label) => median(judged.runs.filter((r) => r.engine === label && r.ok).map((r) => r.ms));
-          const row = { kind: 'drag-cell', family, drag: kind, expected: judged.expected, ...cell, ms: Object.fromEntries(lanes.map((l) => [l.label, ms(l.label)])) };
-          emit(row);
-          cells.push(row);
-          const took = (label) => `${judged.runs.filter((r) => r.engine === label && r.took).length}/${n}`;
-          const verdict = !cell.reference ? (cell.pinned_took === 0 ? 'no pinned effect: not judged' : 'no usable pinned reference: not judged') : cuaLanes.map((l) => `${l} ${cell.lanes[l].pass ? 'PASS' : `**misses ${cell.lanes[l].misses.length}${cell.lanes[l].witness || !cell.pinned_witness ? '' : ', witness changed'}**`}`).join(', ');
-          const witnessClean = judged.runs.every((r) => r.witness) ? 'clean' : '**changed**';
-          const f = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : '–');
-          md.push(`| ${FAMILIES[family].title} | ${kind} | ${lanes.map((l) => took(l.label)).join(' | ')} | ${lanes.slice(1).map((l) => f(row.ms[l.label])).join(' | ')} | ${f(row.ms.pinned)} | ${witnessClean} | ${verdict} |`);
-          process.stdout.write(`${md.at(-1)}\n`);
+          record(family, kind, runs);
+          measuring = null;
+        }
+        if (kinds.includes('select-unprimed')) {
+          measuring = 'select-unprimed';
+          record(family, 'select-unprimed', await unprimedRuns(ctx, lanes, n, open), { absolute: true, primed: primedSelect[family] ?? [] });
           measuring = null;
         }
       } catch (error) {
@@ -595,5 +842,8 @@ export async function runDrag(args, { desktop, emit }) {
   }
   const missing = cells.filter((c) => c.pinned_took > 0 && Object.values(c.lanes).some((l) => !l.pass));
   md.push('', missing.length ? `Cells where a cua lane missed a run the pinned build took: ${missing.map((c) => `${c.family} ${c.drag} (${Object.entries(c.lanes).filter(([, l]) => !l.pass).map(([k]) => k).join(', ')})`).join('; ')}.` : 'No cua lane missed a run the pinned build took.');
-  return { md, ...dragCompleteness(plan, cells, errors) };
+  const verdict = dragVerdict(cells);
+  const completeness = dragCompleteness(plan, cells, errors);
+  md.push('', cuaLanes.includes('cua') ? `The judges' verdict for \`cua\`: ${verdict.pass ? 'PASS' : `**FAIL**: ${verdict.failed.join('; ')}`}.` : 'No shipped `cua` lane: measured, not judged.');
+  return { md, complete: completeness.complete, pass: verdict.pass, failed: [...completeness.failed, ...verdict.failed] };
 }

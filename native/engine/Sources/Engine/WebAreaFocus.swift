@@ -559,6 +559,47 @@ func pressFocusingField(role: String, actions: [String]?, app: String, press: (S
   return action
 }
 
+/// What a left pointer refused in a web area (#282's `PointerRefused`) is carried by instead (#315): an element click's or
+/// a coordinate click's by #282's element route from the hit (`webAreaPress`); focusField's fallback click (set_value's
+/// and select_text's) by the field's own press on a Gecko page (`focusFallbackByPress`, the design session's ruling
+/// 1cd6ed32: main's posted fallback set the value in a background Firefox, 3 of 3, while raising it for 26 to 30 ms),
+/// and by nothing elsewhere, so it stays refused (#282's item 6: an action is no focusing on Chromium).
+enum RefusedPointerCarrier: Equatable {
+  case elementRoute
+  case focusPress
+  case none
+}
+
+func refusedPointerCarrier(focusingFallback: Bool, engine: PageEngine) -> RefusedPointerCarrier {
+  guard focusingFallback else { return .elementRoute }
+  return webAreaFocusCarrier(engine) == .pressReadingFocus ? .focusPress : .none
+}
+
+/// focusField's fallback click on a Gecko page in shared mode, carried by the field's own action (AXPick, else AXPress)
+/// through `press`, then its focus read back as #313's is (`readingFocus`, `textEntryFocusSettleMs`), so set_value or
+/// select_text proceeds once it reads focused. Nothing writes AXFocused or a selection here. A field advertising neither
+/// action is refused with nothing done (`focusFallbackUnfocusable`); one whose focus never reads back answers
+/// `focusFallbackUnconfirmed`. Neither names an element click on the field, which would take the same press.
+func focusFallbackByPress(role: String, actions: [String]?, app: String, press: (String) throws -> Void, focused: () -> Bool?,
+                          now: () -> Double, sleep: (Double) -> Void) throws {
+  guard let action = webAreaAction(role: role, actions: actions) else { throw focusFallbackUnfocusable(app) }
+  let found = try readingFocus(after: { try press(action) }, focused: focused, now: now, sleep: sleep)
+  if found != .readBack { throw focusFallbackUnconfirmed(app) }
+}
+
+/// The refusal of focusField's fallback on a Gecko page whose field has no action to focus it: nothing was done.
+func focusFallbackUnfocusable(_ app: String) -> EngineError {
+  EngineError(name: "backgroundClickRefused",
+    "\(app)'s text field cannot be focused in the background: \(app)'s web page does not accept a background click, and the field exposes no accessibility action to focus it instead, so nothing was changed. Bring \(app) forward or use a dedicated desktop")
+}
+
+/// focusField's fallback on a Gecko page whose press did not leave the field reading focused: the action went, the
+/// value or selection was not changed.
+func focusFallbackUnconfirmed(_ app: String) -> EngineError {
+  EngineError(name: "clickUnconfirmed",
+    "\(app)'s text field could not be focused in the background: its accessibility action was performed, but the field does not report focus, so nothing was changed. Observe \(app) with get_app_state before any retry, and never retry blindly; to change the field, bring \(app) forward or use a dedicated desktop")
+}
+
 /// The note of a Gecko field focused by its action (#315): no caret was placed, so the place typing goes is Gecko's.
 func pressFocusNote(_ app: String) -> String {
   "\(app)'s text field was focused through its accessibility action rather than a click at the point, so its caret is where \(app) put it, which need not be the point. Use select_text or set_value first if the position matters."

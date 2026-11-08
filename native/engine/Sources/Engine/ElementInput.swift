@@ -230,9 +230,29 @@ extension Engine {
       (pointer, pointerHit) = clickPointerTarget(hit: pointing.hitElement, window: pointing.window, rehit: { hitTest(application: owner, at: point) },
                                                  app: app, appPid: appPid, meta: &meta)
     }
-    if webAreaElementRoute, pointer.view.mayBeWebArea, let hit = pointerHit {
-      pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: point, windowID: pointing.windowID, app: app,
-                                          appPid: appPid, guarding: guarding, context: context)
+    if pointer.view.mayBeWebArea {
+      switch refusedPointerCarrier(focusingFallback: !webAreaElementRoute, engine: pointer.engine) {
+      case .elementRoute:
+        if let hit = pointerHit {
+          pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: point, windowID: pointing.windowID, app: app,
+                                              appPid: appPid, guarding: guarding, context: context)
+        }
+      case .focusPress:
+        // #315 (ruling 1cd6ed32): set_value's and select_text's fallback on a Gecko page focuses the field by its press.
+        let field = pointing.element
+        pointer.elementRoute = { [self] meta in
+          let owner = ownerPid(of: field, fallback: appPid)
+          try refuseForbiddenOwner(owner)
+          actionTargets(owner, app: app, connection: context.connection)
+          try focusFallbackByPress(role: attribute(field, kAXRoleAttribute) as? String ?? "", actions: establishedActionNames(of: field),
+                                   app: app.displayName, press: { action in
+            try elementActionClick(field, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
+                                   point: point, windowID: pointing.windowID, app: app, appPid: appPid, guarding: guarding, context: context,
+                                   meta: &meta)
+          }, focused: { bool(attribute(field, kAXFocusedAttribute)) }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
+        }
+      case .none: break
+      }
     }
     let sparing = activationSparing(button: button, target: pointing.visible)
     let owner = pointing.owner
@@ -258,8 +278,8 @@ extension Engine {
   /// focusFieldIfNeeded with its fallback click: a plain left click by the synthesized route the app takes (3, or 4
   /// under the owner's override), kept by `focusingClick`. In a minimized window the click is skipped rather than
   /// refused: set_value and select_text act through Accessibility, which needs no window on screen (Minimized.swift).
-  /// Inside a Chromium or Gecko web area in shared mode the click is refused, never pressed (#282, #315): an action is no
-  /// focusing.
+  /// Inside a Chromium web area in shared mode the click is refused, never pressed (#282): an action is no focusing there.
+  /// Inside a Gecko one it is carried by the field's own press, its focus read back (#315, `focusFallbackByPress`).
   func focusField(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
                   meta: inout InputMeta) throws {
     let connection = context.connection

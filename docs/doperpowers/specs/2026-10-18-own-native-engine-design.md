@@ -3301,32 +3301,56 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      unchanged, and #313's "no AXFocused write outside Chromium" stays true.
   7. **Drags into Gecko in shared mode** follow #282's Chromium handling: one starting in the page, where the
      activation clicked no activation point, is refused with nothing posted (`backgroundClickRefused`); a double click
-     likewise. A drag from the toolbar is posted and answers `clickUnconfirmed` as before. focusField's fallback click
-     into a Firefox page (set_value, select_text) is now refused as `backgroundClickRefused` where it was posted and lost
-     as `clickUnconfirmed`: it is a pointer like any other, and an action is no focusing (#282's item 6).
+     likewise. A drag from the toolbar is posted and answers `clickUnconfirmed` as before. **focusField's fallback
+     click** into a Firefox page (set_value's and select_text's, after focusFieldIfNeeded's AXFocused write, which a
+     background Firefox ignores) is carried by the field's own press (the design session's ruling 1cd6ed32 on item 11's
+     A/B; WebAreaFocus.swift `refusedPointerCarrier`, `focusFallbackByPress`; ElementInput.swift `synthesizedClick`).
+     The first build refused it as `backgroundClickRefused`, on the premise that main's posted fallback was lost; item
+     11 found it was not. Where #282 refuses the fallback's pointer (shared mode, the field in a Gecko web area, the
+     activation clicking no point), the field's AXPick, else AXPress, goes as an element click's does (route 3's held
+     activation), its AXFocused is read back within `textEntryFocusSettleMs`, and the method proceeds once it reads
+     focused. Nothing writes AXFocused or a selection on that path. A field with no action is refused, nothing done
+     (`focusFallbackUnfocusable`); a field whose focus never reads back answers `focusFallbackUnconfirmed`
+     (`clickUnconfirmed`, the press having gone); neither sets the value or the selection. On Chromium the fallback stays
+     refused (#282's item 6: an action is no focusing there), and on every other engine and in dedicated mode it is
+     posted as before.
   8. **What changes for the model:** a background Firefox page's buttons, checkboxes, links and fields now act; plain
-     text, a heading or a control with no action is refused with nothing sent, where it was posted and lost; the toolbar
-     is as before. `docs/cua-api/agent-cursor.md`'s second paragraph names Firefox beside the Chromium-based apps and
+     text, a heading or a control with no action is refused with nothing sent, where it was posted and lost; set_value
+     and select_text on a page field focus it by its press instead of a posted click, with no raise; the toolbar is as
+     before. `docs/cua-api/agent-cursor.md`'s second paragraph names Firefox beside the Chromium-based apps and
      says its field is focused by its own action without the caret at the point (the surface inventory's "Table 3
      addition (2026-11-07, #315)"; repl-parity's docs oracle, `scripts/repl-parity/docs-oracle.mjs`, carries the new
      text, so parity's expected diff is that paragraph alone).
   9. **Not done:** the toolbar's `clickUnconfirmed` (item 4, #318); a Firefox field's caret at the point (no
-     AXSelectedTextRange step was measured on Gecko); focusField's fallback carried by the field's press.
+     AXSelectedTextRange step was measured on Gecko).
   10. **The refusal names what still works** (the design session's ruling 99e45959, which accepted the web-area scope
-     and item 7's refusal of the fallback click). On a Gecko page, `backgroundClickRefused` and its observe-first form
+     and the first build's refusal of the fallback click, since replaced by item 7's press). On a Gecko page, `backgroundClickRefused` and its observe-first form
      add a sentence (Routes.swift `backgroundFieldAlternative`, keyed on the page engine the pointer carries,
      `PointerTarget.engine`, never on an app name):
      `Firefox's web page does not accept a background click; bring Firefox forward or use a dedicated desktop. A text
      field on the page still works in the background: click the field by its element ID, which focuses it through
-     accessibility, then type or set its value`. It reaches set_value's and select_text's fallback click, a drag, a
-     double click, and a click on something with no action (the element route's walk refusal and its no-action
-     refusal). An element click on a Firefox field is carried by #313's press and read-back, or by item 6's route when
-     its point lands inside it, and a focused field takes set_value with no fallback click. The focus route's own
-     refusals (a field with no action, a walk that reaches no text-entry element) name no alternative, since an element
-     click there meets the same refusal. Chromium's and every other engine's wording is unchanged: its JS tests
+     accessibility, then type or set its value`. It reaches a drag, a double click, and a click on something with no
+     action (the element route's walk refusal and its no-action refusal). An element click on a Firefox field is carried
+     by #313's press and read-back, or by item 6's route when its point lands inside it, and a focused field takes
+     set_value with no fallback click. Where the press on that very field is what failed, the sentence would not be
+     true, so it is not given: the focus route's own refusals (a field with no action, a walk that reaches no text-entry
+     element) name no alternative, and the fallback's two failures (ruling 1cd6ed32) name only Firefox brought forward
+     and a dedicated desktop:
+     `Firefox's text field cannot be focused in the background: Firefox's web page does not accept a background click,
+     and the field exposes no accessibility action to focus it instead, so nothing was changed. Bring Firefox forward or
+     use a dedicated desktop` (`backgroundClickRefused`), and `Firefox's text field could not be focused in the
+     background: its accessibility action was performed, but the field does not report focus, so nothing was changed.
+     Observe Firefox with get_app_state before any retry, and never retry blindly; to change the field, bring Firefox
+     forward or use a dedicated desktop` (`clickUnconfirmed`). Chromium's and every other engine's wording is unchanged: its JS tests
      (`test/services-engine-service.test.mjs`) and `agent-cursor.md`, which quotes the sentence's first clause, still
      hold as they are.
-  Proven offline (`GeckoPointerTests`, 11, over Firefox 159's tree and its activation, the AXActivationPoint inside the
+  11. **The hosted A/B of acb88f72 against main** (run https://github.com/SSFSKIM/cua/actions/runs/42457001051,
+     confirmations 42459610340 and 42460845888; Firefox 159 behind a frontmost TextEdit). On main, set_value on an
+     unfocused background Firefox text field was not lost: its posted fallback click succeeded, 3 of 3, and the value
+     was set, though it raised Firefox's window above TextEdit for 26 to 30 ms after the hold (4 of 5 tries in all). On
+     acb88f72 it was refused and the value not set: a working capability lost, hence item 7's press. An element click on
+     the field, then set_value, set it 4 of 4 with no raise.
+  Proven offline (`GeckoPointerTests`, 14, over Firefox 159's tree and its activation, the AXActivationPoint inside the
   frame on a toolbar button):
   - Firefox's page is a web area whether or not an observation saw it; no hit, the scroll area over the web area and an
     unreadable role are possible web areas; the toolbar is `unknown`, seen or not, never known to accept;
@@ -3341,15 +3365,21 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - a field its press leaves unfocused answers `clickUnconfirmed` after the settle; one with no action, or unread
     actions, is refused with nothing pressed or read;
   - the toolbar's click is posted and answers `clickUnconfirmed`;
-  - a refused click with no element route (the fallback's) and a refused drag into a Gecko page carry item 10's
-    sentence, as do both refusal forms on Gecko, while Chromium's and another engine's stay word for word;
+  - a refused click with no element route and a refused drag into a Gecko page carry item 10's sentence, as do both
+    refusal forms on Gecko, while Chromium's and another engine's stay word for word;
+  - set_value's fallback on a Gecko page, after focusFieldIfNeeded's ignored write, is carried by the field's AXPress,
+    reads back focused and proceeds, nothing posted and no write of its own;
+  - a fallback whose field has no action is refused with nothing pressed, and one whose focus never reads back answers
+    `clickUnconfirmed` after the settle, nothing posted, each with item 10's exact sentence and no element click named;
+  - the fallback on Chromium stays refused with its own sentence, a Safari field's is posted, dedicated mode's is
+    posted on Gecko with no press, and every engine's element and coordinate clicks keep #282's element route;
   - dedicated mode posts a page click and a drag with the inert click first, no element route and no delivery guard;
   - Safari's page and a native button stay `unknown`, Safari's click is posted after its activation-point click, and
     Chromium's toolbar and page answers are unchanged.
   `BackgroundPointerTests`, `StalePointTests`, `WebAreaFocusTests` and `TextEntryClickTests` pass unchanged, apart from
-  `pointerView`'s new parameter. Each of 13 rules and bounds removed in turn (`~/.local/share/187/mutate-315.py`)
-  fails a test. The engine's glue (`webAreaPress`'s carrier switch, `webAreaFocusPress`) reads live AX and is not unit
-  tested: the hosted check covers it.
+  `pointerView`'s new parameter. Each of 23 rules and bounds removed in turn (`~/.local/share/187/mutate-315.py`)
+  fails a test. The engine's glue (`webAreaPress`'s carrier switch and engine, `webAreaFocusPress`, `synthesizedClick`'s
+  carrier switch and its press of the field) reads live AX and is not unit tested: the hosted check covers it.
   **What the hosted check must verify** (#287's and #314's kits, Firefox 159, 2 reps, against main, each cell behind a
   frontmost TextEdit, reading the frontmost app and Firefox's window order before and after):
   - **Firefox, shared:** coordinate clicks on a page button, checkbox, link and radio button answer success with
@@ -3357,9 +3387,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     check passes; text fields and textareas (and a password field) answer `focus` `readBack`, `focusStep` `press`, and
     type_text lands in them; a `/fixedtail` row below the top by token is pressed (`pressed` `ancestor`, its AXLink),
     12 of 12; a coordinate click on plain text is `backgroundClickRefused` with nothing posted and item 10's
-    sentence, and set_value on a field Firefox has not focused is refused with it too, then succeeds after an element
-    click on that field; toolbar Reload reloads and answers `clickUnconfirmed` as on main; a drag in the page is refused, nothing posted; Firefox never frontmost
-    and its window never left above TextEdit;
+    sentence; set_value and select_text on a field Firefox has not focused succeed with no posted click (the press, read
+    back) and no raise, where main raised Firefox for 26 to 30 ms; toolbar Reload reloads and answers `clickUnconfirmed`
+    as on main; a drag in the page is refused, nothing posted; Firefox never frontmost and its window never left above
+    TextEdit;
   - **Firefox, dedicated:** every cell as on main (delivered, the window coming forward);
   - **Firefox sidebar or devtools** (one cell each, if the kit can open them): whether their hits answer inside an
     AXWebArea, which item 4's step needs;

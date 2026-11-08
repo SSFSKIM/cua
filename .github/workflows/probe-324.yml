@@ -1,0 +1,73 @@
+# #324's hosted spike: main's engine, patched on the runner only (scripts/probe-324/patch.py: the hold log on stderr, the
+# fallback click's delivery record kept, and the modes press, c, ev and ev300 behind P324_MODE), on Safari, an AppKit
+# app and TextEdit behind a frontmost cover app (scripts/probe-324/run.sh). Runs only on a push to probe/324-measure (or by
+# hand); not a ci-kit gate.
+name: probe-324
+on:
+  push:
+    branches: ['probe/324-measure']
+    paths-ignore: ['scripts/probe-324/offline/**', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      groups:
+        description: the groups, a JSON list (smoke, safari, native, residue)
+        required: false
+        default: ''
+permissions:
+  contents: read
+env:
+  # Quoted: YAML reads an all-digit-and-e SHA as a float. origin/main after #327.
+  P324_MAIN_REF: '74fe29f8ac876d425ca6d743b510a601ae466a3b'
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(github.event.inputs.groups || '["smoke"]') }}
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Browsers
+        run: |
+          bash scripts/probe-287/install.sh
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+      - name: Build the engine and the tools
+        run: |
+          sw_vers
+          git log -1 --format='kit %H %s'
+          git worktree add "$RUNNER_TEMP/src" "$P324_MAIN_REF"
+          echo "P324_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/src" rev-parse HEAD)" >> "$GITHUB_ENV"
+          python3 -I scripts/probe-324/patch.py "$RUNNER_TEMP/src/native/engine/Sources/Engine"
+          swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+          swiftc -O -o "$RUNNER_TEMP/p321-win" scripts/probe-321/win.swift
+          swiftc -O -o "$RUNNER_TEMP/ax324" scripts/probe-324/ax.swift
+          app="$RUNNER_TEMP/Probe324.app/Contents"
+          mkdir -p "$app/MacOS"
+          swiftc -O -o "$app/MacOS/Probe324" scripts/probe-324/app.swift
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict>' \
+            '<key>CFBundleIdentifier</key><string>com.ssfskim.probe324</string>' \
+            '<key>CFBundleName</key><string>Probe324</string>' \
+            '<key>CFBundleExecutable</key><string>Probe324</string>' \
+            '<key>CFBundlePackageType</key><string>APPL</string>' \
+            '<key>NSPrincipalClass</key><string>NSApplication</string>' \
+            '</dict></plist>' > "$app/Info.plist"
+      - name: Measure
+        env:
+          GROUP: ${{ matrix.group }}
+        run: bash scripts/probe-324/run.sh
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-324-${{ matrix.group }}
+          path: |
+            ${{ runner.temp }}/probe-324/*/results-*.json
+            ${{ runner.temp }}/probe-287/*.txt
+          if-no-files-found: warn

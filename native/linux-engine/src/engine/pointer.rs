@@ -85,18 +85,18 @@ pub struct DragPlan {
 }
 
 /// A drag's motions (`families.rs` `DragPacing.rest`): the pinned build's samples ([`drag_samples`]) and, for a
-/// family that rests, a rest at each joint that turns by [`CORNER_TURN_DEG`] or more, between the joint's two visits,
-/// and a rest at the end, which is then visited once more. A browser takes pointer input once a frame: Chromium and
-/// Gecko hand a page one move a frame (the latest), so a corner the pointer passes within a frame is cut, and
-/// Chromium's scrollbar takes at most one move a frame and drops the rest, so a thumb stops where the last frame's
-/// first move left it and the release, which carries no position for it, does not move it on (`cc/input/
+/// family that rests, a rest at each joint that turns by [`CORNER_TURN_DEG`] or more ([`corner_at`]), between the
+/// joint's first two visits, and a rest at the end, which is then visited once more. A browser takes pointer input
+/// once a frame: Chromium and Gecko hand a page one move a frame (the latest), so a corner the pointer passes within a
+/// frame is cut, and Chromium's scrollbar takes at most one move a frame and drops the rest, so a thumb stops where the
+/// last frame's first move left it and the release, which carries no position for it, does not move it on (`cc/input/
 /// scrollbar_controller.cc`, `drag_processed_for_current_frame_`; evidence `m4/drag-motion/`). A rest of a frame at a
 /// point puts it in a frame of its own, and the second visit after it reaches a scrollbar that took nothing since.
 pub fn drag_plan(points: &[(i16, i16)], rests: bool) -> DragPlan {
     let mut samples = Vec::new();
     let mut at = Vec::new();
     for (j, pair) in points.windows(2).enumerate() {
-        if rests && j > 0 && turn_deg(points[j - 1], points[j], points[j + 1]) >= CORNER_TURN_DEG {
+        if rests && corner_at(points, j) {
             at.push(samples.len());
         }
         samples.extend(drag_samples(pair));
@@ -106,6 +106,20 @@ pub fn drag_plan(points: &[(i16, i16)], rests: bool) -> DragPlan {
         samples.push(last);
     }
     DragPlan { samples, rests: at }
+}
+
+/// Whether a path turns by [`CORNER_TURN_DEG`] or more at its point `j` on arriving there: the turn between the
+/// position it came from and the next one it goes to, a point the path repeats counted once, so a repeat neither
+/// hides the corner (each turn around it would have a zero-length side) nor puts a second rest there.
+fn corner_at(points: &[(i16, i16)], j: usize) -> bool {
+    let at = points[j];
+    if j == 0 || points[j - 1] == at {
+        return false;
+    }
+    points[j + 1..]
+        .iter()
+        .find(|&&p| p != at)
+        .is_some_and(|&next| turn_deg(points[j - 1], at, next) >= CORNER_TURN_DEG)
 }
 
 /// The turn at `b` between a→b and b→c, in degrees (0 straight on, 180 straight back); a zero-length side has no
@@ -1270,6 +1284,35 @@ mod tests {
         // a zero-length segment has no direction: no corner there
         let still = drag_plan(&[(0, 0), (0, 0), (10, 0)], true);
         assert_eq!(still.rests, vec![still.samples.len() - 1]);
+    }
+
+    #[test]
+    fn a_point_repeated_inside_a_resting_drag_s_path_neither_hides_its_corner_nor_rests_there_twice() {
+        // the bend at (200, 0) turns 90° whether or not the path names it twice: the turn is read between the distinct
+        // positions around it, and the rest comes once, after the bend's first visit, as without the repeat
+        let bend = [(0, 0), (200, 0), (200, 200)];
+        for repeated in [
+            vec![(0, 0), (200, 0), (200, 0), (200, 200)],
+            vec![(0, 0), (200, 0), (200, 0), (200, 0), (200, 200)],
+        ] {
+            let plan = drag_plan(&repeated, true);
+            let mut samples = drag_samples(&repeated);
+            samples.push((200, 200));
+            assert_eq!(
+                plan.samples, samples,
+                "the samples the path's own points give, the end's second visit last"
+            );
+            let first = drag_samples(&bend[..2]).len();
+            assert_eq!(plan.rests, vec![first, plan.samples.len() - 1], "{repeated:?}");
+            assert_eq!(plan.samples[first], (200, 0), "between two visits of the bend");
+            assert_eq!(plan.samples[first - 1], (200, 0));
+        }
+        // a straight path with a point repeated in it has no corner there
+        let straight = drag_plan(&[(0, 0), (100, 0), (100, 0), (200, 0)], true);
+        assert_eq!(straight.rests, vec![straight.samples.len() - 1]);
+        // a repeated end is no corner: the bend before it rests, and the end once, before its last visit
+        let end = drag_plan(&[(0, 0), (100, 0), (100, 100), (100, 100)], true);
+        assert_eq!(end.rests, vec![101, end.samples.len() - 1]);
     }
 
     #[test]

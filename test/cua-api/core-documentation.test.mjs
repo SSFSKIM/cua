@@ -97,13 +97,17 @@ const BACKGROUND_CLICKS = '\nA web page in a Chromium-based app (Chrome, Electro
 // The third (the surface inventory's "Table 3 addition (2026-11-06, #296)", its second half "(2026-11-08, #316)"): the
 // stale-point guard's refusal, and what it still cannot see.
 const STALE_POINT = '\nA click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, or has given way to another control, it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it. The check reads the accessibility tree at the point, and also refuses a click or drag when the app has opened a new window over the one in the screenshot, or when the point has left the page the screenshot showed. It still cannot see a page\'s own suggestion list, which can take a click aimed at a control under it, or text that has moved within the same text view (after Return or a paste in TextEdit). After typing into a field that offers suggestions, or editing text above the point, take a new screenshot before clicking at coordinates. When a screenshot shows a panel over the page, aim at what the screenshot shows, not at the page\'s elements under it.\n';
+// The fourth (the surface inventory's "Table 3 addition (2026-11-08, #328)"): a point outside the screenshot refused,
+// so a drag cannot leave the window (#334), and a scroll's answer: success when it moved or was at its end (with the
+// text saying so), else scrollUnconfirmed.
+const OUTSIDE_AND_SCROLL = '\nA click, scroll or drag at coordinates outside the screenshot they came from fails with `pointOutsideScreenshot` and nothing is sent: give a point inside it, from 0 to its width less one across and from 0 to its height less one down, in its pixels. So a drag cannot end outside the app\'s window, on another app or the desktop. A scroll succeeds only once what is at its point was seen to move, or when that was already scrolled as far as it goes that way, in which case the result\'s text says nothing moved. Otherwise it fails with `scrollUnconfirmed`: the scroll was sent but nothing was seen to move, so observe the app (a new screenshot or `getAXState()`) before scrolling again.\n';
 
-// The fourth (the surface inventory's "Table 3 addition (2026-11-06, #301)"): the truncation marker of a walk the
+// The fifth (the surface inventory's "Table 3 addition (2026-11-06, #301)"): the truncation marker of a walk the
 // node budget cut, which keeps what the window shows first.
 const TRUNCATION = '\nWhen a window holds more than its accessibility tree can list, the tree lists what the window shows first, in its usual order, and ends with a line such as `[truncated: at least 1234 elements omitted, above and below the visible area]`, the count a lower bound and the words saying which way the omitted elements lie. To reach an element the tree does not list, scroll toward it and call `getAXState()` again. A visible control inside a container that reports a collapsed frame can still be left out. In a Chromium-based app, a table\'s column and header elements take new element IDs at every observation.\n';
 
 test('agent-cursor.md is the Table 3 additions\' paragraphs, and the core carries it only where the facade asks for it', async () => {
-  assert.equal(read(DOCS, 'agent-cursor.md'), AGENT_CURSOR + BACKGROUND_CLICKS + STALE_POINT + TRUNCATION);
+  assert.equal(read(DOCS, 'agent-cursor.md'), AGENT_CURSOR + BACKGROUND_CLICKS + STALE_POINT + OUTSIDE_AND_SCROLL + TRUNCATION);
   const read_ = async name => `<${name}>`;
   assert.equal(await create_documentation(read_).read_core(), '<core-cua-repl>\n<confirmations>');
   assert.equal(await create_documentation(read_, {agentCursor: () => false}).read_core(), '<core-cua-repl>\n<confirmations>');

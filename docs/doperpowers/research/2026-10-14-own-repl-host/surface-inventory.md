@@ -771,3 +771,14 @@ and text that moved within one text view. So the model has to know when to obser
 #296 paragraph keeps its first half and gains a second (a draft, final after the hosted A/B):
 
 > A click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, or has given way to another control, it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it. The check reads the accessibility tree at the point, and also refuses a click or drag when the app has opened a new window over the one in the screenshot, or when the point has left the page the screenshot showed. It still cannot see a page's own suggestion list, which can take a click aimed at a control under it, or text that has moved within the same text view (after Return or a paste in TextEdit). After typing into a field that offers suggestions, or editing text above the point, take a new screenshot before clicking at coordinates. When a screenshot shows a panel over the page, aim at what the screenshot shows, not at the page's elements under it.
+
+### Table 3 addition (2026-11-08, #328)
+
+The design session's ruling b1921fc3 on #328 (the native engine spec's Decision Log, the #328 entry) adds two answers
+the model has to read. A click, scroll or drag at a point outside the screenshot is refused with
+`pointOutsideScreenshot`, nothing posted; #324's kit had aimed scrolls below their windows and got success, and so a drag
+can no longer end outside the window (#334 is the cross-window drop). A scroll is confirmed: success when what is at the
+point moved, success with a note when it was already at its end, else `scrollUnconfirmed`, which tells the model to
+observe before scrolling again. A paragraph after the stale-point one:
+
+> A click, scroll or drag at coordinates outside the screenshot they came from fails with `pointOutsideScreenshot` and nothing is sent: give a point inside it, from 0 to its width less one across and from 0 to its height less one down, in its pixels. So a drag cannot end outside the app's window, on another app or the desktop. A scroll succeeds only once what is at its point was seen to move, or when that was already scrolled as far as it goes that way, in which case the result's text says nothing moved. Otherwise it fails with `scrollUnconfirmed`: the scroll was sent but nothing was seen to move, so observe the app (a new screenshot or `getAXState()`) before scrolling again.

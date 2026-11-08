@@ -19,7 +19,9 @@ permissions:
 env:
   # Quoted: YAML reads an all-digit-and-e SHA as a float.
   P314_A_REF: '3de863bbea6c75cc320319588b10874cbad186af'
-  P314_B_REF: '937f49c90298cee8f5b6e1bec5f3566c45db8a7e'
+  # B: 937f49c9 in the full run 42444011917; the fix head 4737987b (each candidate kept by its own frame, every caller's
+  # deadline stopping the search) in this confirmation pass.
+  P314_B_REF: '4737987bab57a93500ed06307a7c19567dcbff13'
   # The pages a run is limited to (empty for every page of the group's list).
   P314_TARGETS: ''
 jobs:
@@ -27,8 +29,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rep: [1, 2, 3]
-        group: ${{ fromJSON(github.event.inputs.groups || '["firefox","safari","chrome-a","chrome-b","chrome-c"]') }}
+        rep: [1, 2]
+        group: ${{ fromJSON(github.event.inputs.groups || '["firefox","safari-confirm","chrome-confirm"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:

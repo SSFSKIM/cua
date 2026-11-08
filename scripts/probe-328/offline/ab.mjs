@@ -20,6 +20,9 @@ const med = xs => { const v = xs.filter(x => x != null && Number.isFinite(x)).so
 const p95 = xs => { const v = xs.filter(x => x != null && Number.isFinite(x)).sort((a, b) => a - b); return v.length ? v[Math.min(v.length - 1, Math.floor(0.95 * v.length))] : null; };
 const f0 = v => (v == null ? '-' : Math.round(v));
 const tally = xs => { const t = {}; for (const x of xs) t[x] = (t[x] ?? 0) + 1; return Object.entries(t).map(([k, v]) => `${k} ${v}`).join(', '); };
+/// A scroll meta's outcome: moved, at the end (endBefore: answered before any poll), unconfirmed; a bar write; a skipped
+/// fallback (web, clipped); the container's kind and the measure that saw the move.
+const outcomeOf = s => `${s.outcome}${s.endBefore ? '(endBefore)' : ''}${s.barWrite != null ? '+write' : ''}${s.fallbackSkipped ? `/skip:${s.fallbackSkipped}` : ''}:${s.container}${s.by ? `/${s.by}` : ''}`;
 const table = (head, rows) => { console.log(`| ${head.join(' | ')} |`); console.log(`|${head.map(() => '---').join('|')}|`); rows.forEach(r => console.log(`| ${r.join(' | ')} |`)); };
 
 // ---- engine cells -------------------------------------------------------------------------------------------------------
@@ -37,7 +40,7 @@ if (eng.length) {
     const falseSuccess = ok.filter(r => r.answer === 'success' && !moved(r) && !r.meta?.scroll?.atEnd).length;
     const falseUnconf = ok.filter(r => r.answer === 'scrollUnconfirmed' && moved(r)).length;
     const sc = ok.map(r => r.meta?.scroll).filter(Boolean);
-    const meta = sc.length ? `first ${f0(med(sc.map(s => s.firstMoveMs)))}/${f0(p95(sc.map(s => s.firstMoveMs)))}, read ${f0(med(sc.map(s => s.readMs)))}, ms ${f0(med(sc.map(s => s.ms)))}, walked ${f0(med(sc.map(s => s.walked)))}, ${tally(sc.map(s => `${s.outcome}${s.barWrite != null ? '+write' : ''}:${s.container}`))}` : '';
+    const meta = sc.length ? `first ${f0(med(sc.map(s => s.firstMoveMs)))}/${f0(p95(sc.map(s => s.firstMoveMs)))}, read ${f0(med(sc.map(s => s.readMs)))}, ms ${f0(med(sc.map(s => s.ms)))}, walked ${f0(med(sc.map(s => s.walked)))}, ${tally(sc.map(outcomeOf))}` : '';
     return [`${tally(ans)}; moved ${ok.filter(moved).length}/${ok.length}${falseSuccess ? `; FALSE SUCCESS ${falseSuccess}` : ''}${falseUnconf ? `; FALSE UNCONFIRMED ${falseUnconf}` : ''}`, f0(med(ok.map(r => r.ms))), meta];
   };
   table(['desktop', 'target', 'cell', 'a: answers', 'a ms', 'b: answers', 'b ms', 'b scroll meta (firstMoveMs p50/p95, readMs, ms, walked, outcomes)'],
@@ -60,7 +63,7 @@ if (web.length) {
     const sc = ok.map(r => r.meta?.scroll).filter(Boolean);
     return [`${tally(rs.map(r => r.answer ?? r.problem ?? 'exception'))}; moved ${ok.filter(mv).length}/${ok.length}${falseSuccess ? `; FALSE SUCCESS ${falseSuccess}` : ''}${falseUnconf ? `; FALSE UNCONFIRMED ${falseUnconf}` : ''}${elsewhere.length ? `; also moved: ${tally(elsewhere)}` : ''}`,
       `${f0(med(ok.filter(mv).map(r => r.truth.firstMs)))}/${f0(p95(ok.filter(mv).map(r => r.truth.firstMs)))}`,
-      sc.length ? `first ${f0(med(sc.map(s => s.firstMoveMs)))}/${f0(p95(sc.map(s => s.firstMoveMs)))}, read ${f0(med(sc.map(s => s.readMs)))}, ms ${f0(med(sc.map(s => s.ms)))}, walked ${f0(med(sc.map(s => s.walked)))}, ${tally(sc.map(s => `${s.outcome}${s.barWrite != null ? '+write' : ''}:${s.container}${s.by ? `/${s.by}` : ''}`))}, answer ${f0(med(ok.map(r => r.answerMs)))}` : `answer ${f0(med(ok.map(r => r.answerMs)))}`];
+      sc.length ? `first ${f0(med(sc.map(s => s.firstMoveMs)))}/${f0(p95(sc.map(s => s.firstMoveMs)))}, read ${f0(med(sc.map(s => s.readMs)))}, ms ${f0(med(sc.map(s => s.ms)))}, walked ${f0(med(sc.map(s => s.walked)))}, ${tally(sc.map(outcomeOf))}, answer ${f0(med(ok.map(r => r.answerMs)))}` : `answer ${f0(med(ok.map(r => r.answerMs)))}`];
   };
   table(['browser', 'cell', 'a: answers', 'a truth first p50/p95', 'a', 'b: answers', 'b truth first p50/p95', 'b scroll meta'],
     [...g].sort().map(([k, v]) => { const [br, c] = k.split('\t'); const a = cell(v.a), b = cell(v.b); return [br, c, a[0], a[1], a[2], b[0], b[1], b[2]]; }));

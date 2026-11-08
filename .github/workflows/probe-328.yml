@@ -18,7 +18,7 @@ env:
   # Quoted: YAML reads an all-digit-and-e SHA as a float. origin/main f859ce68 (0.27.11; its scroll path is 81a43091's).
   P328_MAIN_REF: 'f859ce6881f91fcbe559634673899c2b72e59971'
   # The A/B's B (the ab-* groups): fix/328-scroll-confirm, the build of ruling b1921fc3.
-  P328_B_REF: 'b2281926cd219e4dc73907246655648a25779cde'
+  P328_B_REF: 'e0c24b814e213bc360b0063e057a06fe83243f5d'
 jobs:
   probe:
     strategy:

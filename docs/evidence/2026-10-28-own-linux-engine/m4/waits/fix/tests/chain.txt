@@ -1,0 +1,15 @@
+== readiness-gtk4-idle 00:49:46
+run exit 0; watchdog clean
+private run readiness-gtk4-idle exit 0 00:52:00
+== readiness-all-idle 00:52:00
+run exit 1; watchdog clean
+private run readiness-all-idle exit 1 01:12:53
+== readiness-gtk4-load2 01:12:53
+run exit 0; watchdog clean
+private run readiness-gtk4-load2 exit 0 01:15:38
+== readiness-all-load2 01:15:38
+run exit 0; watchdog clean
+private run readiness-all-load2 exit 0 01:45:42
+== activate-click-load2 01:45:42
+   exit 0 "kind":"settle-verdict","pass":true
+== all done 01:53:29

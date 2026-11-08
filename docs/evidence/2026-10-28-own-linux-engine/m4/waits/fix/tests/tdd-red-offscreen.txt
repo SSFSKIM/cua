@@ -1,0 +1,24 @@
+   Compiling cua-linux-engine v0.3.0 (<home>/Developer/GitHub/cua/.claude/worktrees/cua-171/native/linux-engine)
+    Finished `release` profile [optimized] target(s) in 1m 02s
+     Running unittests src/main.rs (target/x86_64-unknown-linux-musl/release/deps/cua_engine-fe88ff4bf993e0e1)
+
+running 1 test
+test x11::tests::a_window_kept_offscreen_is_captured_without_a_first_damage_only_where_nothing_covers_it_inside_its_frame ... FAILED
+
+failures:
+
+---- x11::tests::a_window_kept_offscreen_is_captured_without_a_first_damage_only_where_nothing_covers_it_inside_its_frame stdout ----
+
+thread 'x11::tests::a_window_kept_offscreen_is_captured_without_a_first_damage_only_where_nothing_covers_it_inside_its_frame' (501913) panicked at src/x11.rs:1453:13:
+assertion `left == right` failed: covered by a sibling in its frame: 2400 of 2400 pixels not the window's own green (Waited { waited: 10.047435ms, reason: Offscreen, unobscured: false, offscreen: true, ignored: 0, counted: 0, first: None })
+  left: 2400
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    x11::tests::a_window_kept_offscreen_is_captured_without_a_first_damage_only_where_nothing_covers_it_inside_its_frame
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 385 filtered out; finished in 0.31s
+
+error: test failed, to rerun pass `--bin cua-engine`

@@ -138,10 +138,17 @@ Why GTK 4 waited the 150 ms cap: its window and its Openbox frame are 32-bit (vi
 frame by itself, so the window's contents are kept offscreen and complete whatever covers it; the engine's redirect
 copies them, and GTK 4 never repaints. Every other family's chain keeps one depth.
 
-The rule (`readiness.rs` `kept_offscreen`, `depth_changes`): a window that is, or lies inside, a window of another
-depth than its parent counts as complete at the redirect, as an unobscured one does, and waits only for 10 ms of
-quiet (still capped at 150). Any read error is doubt, and doubt waits for damage as before. A resize or remap makes a
-new pixmap that waits for damage again. The capture's stats name it (`reason: offscreen`).
+The rule, as the fix wave left it (`cover.rs` `complete_offscreen`, judged in `x11.rs` with the unobscured shortcut
+from the same stacking read, before the redirect): a window of another depth than its parent owns a pixmap the server
+keeps complete. A window inside such a window (GTK 4's client in its ARGB frame) counts as complete only when it lies
+wholly inside every ancestor up to that window and no sibling above it, or above an ancestor inside that window,
+overlaps it, judged by outer rectangles as the unobscured shortcut judges the screen (InputOnly and unmapped siblings
+draw nothing). Such a window counts as complete at the redirect, as an unobscured one does, and waits only for 10 ms of
+quiet (still capped at 150). Every other window, a read error included, waits for its first damage as before. A
+resize or remap makes a new pixmap that waits for damage again. The capture's stats name it (`reason: offscreen`).
+T9's first form (`readiness.rs` `kept_offscreen`: any depth change in the ancestry) was unsafe, as its review found: a
+same-depth sibling over the window inside the frame is drawn in the frame's pixmap, and the window's new pixmap is
+copied from there with its inferiors (Xorg's `compNewPixmap`), so the capture showed the sibling (`fix/`).
 
 The judge (`readiness-check.mjs`): a window that never repaints shows the same pixels in its first and later capture,
 right or wrong, so an `offscreen` capture is also judged against the same window's unobscured capture.
@@ -153,16 +160,24 @@ right or wrong, so an `offscreen` capture is also judged against the same window
 | `final/readiness-gtk4-load2` | final | 60 of 60 right | 10.1 median, 12.6 max |
 | `final/readiness-all-idle` | final | every family, 396 of 396 right; only GTK 4 took the rule | – |
 | `final/readiness-all-load2` | final, twice the load | every family, 396 of 396 right; only GTK 4 took the rule | – |
+| `fix/readiness-gtk4-idle` | the fix wave's (958db275) | 60 of 60 right, every one `offscreen` | 10.0 median, 10.1 max |
+| `fix/readiness-gtk4-load2` | the fix wave's, twice the load | 60 of 60 right, every one `offscreen` | 10.0 median, 12.4 max |
+| `fix/readiness-all-idle` | the fix wave's | every family, 396 of 396 right; only GTK 4 took the rule | – |
+| `fix/readiness-all-load2` | the fix wave's, twice the load | every family, 396 of 396 right; only GTK 4 took the rule; PASS | – |
 
 The cold window screenshot of a covered GTK 4 window answers about 90 ms where it took about 230.
 
 **The control** (`--variant control=--capture-wait quiet`: every pixmap taken as complete, the first damage dropped
 for every window): idle it captured every first frame right too (`no-pause/readiness-all-idle`, 0 of 396 wrong:
 idle, every family's first damage comes within 2–5 ms, inside the 10 ms of quiet), so idle it shows nothing. At twice
-the load it missed twice (`final/readiness-all-load2`): a partly covered Firefox window (67,696 pixels off) and a covered Chrome window (16,451 off), each captured after 10 ms of quiet with no damage yet, where the shipped rule waits for the first damage; so the run passes, and the first damage is shown needed where the server does not keep the window offscreen. The readiness check fails a run whose control misses nothing, which is why the idle
-all-families sittings read FAIL; the shipped lane's own verdict is in each summary. Those sittings also show the
+the load it missed twice (`final/readiness-all-load2`): a partly covered Firefox window (67,696 pixels off) and a covered Chrome window (16,451 off), each captured after 10 ms of quiet with no damage yet, where the shipped rule waits for the first damage; so the run passes, and the first damage is shown needed where the server does not keep the window offscreen. A sitting whose control misses nothing could not have failed the rule. T9's check read it as
+FAIL; since the fix wave it is labelled CONTROL NON-DISCRIMINATING (the design session, 2026-11-07), still no pass, and
+the twice-the-load sitting, where the control missed, stays the proof (`fix/readiness-all-load2`: the control 2 of 396
+wrong, both a covered Chrome window; the shipped rule 396 of 396 and PASS). Those sittings also show the
 pinned build's capture of the unobscured Chrome page off its truth by 4,482 pixels (1 and 2 of 2), in both engines'
-sittings alike: a vendor-side difference, not this rule's.
+sittings alike: a vendor-side difference, not this rule's. Since the fix wave such a sitting reads REFERENCE MISMATCH
+(`fix/readiness-all-idle`: `REFERENCE MISMATCH, CONTROL NON-DISCRIMINATING`, the pinned build's Chrome capture 4,500
+pixels off, 2 of 2), never a pass.
 
 ## The inventory: every fixed wait in the engine
 
@@ -173,18 +188,20 @@ at most so long) are listed after them, since they cost nothing when the conditi
 
 | wait | where | before | after | kept or changed, and why |
 |---|---|---:|---:|---|
-| after a desktop path's leading motion, the one at the pointer's own position | `desktop.rs` `paused_before` (desktop `move`; the desktop and foreground routes' placing for `click`, `scroll`, `drag`, the element right click and the paste's focusing click; `drag_handle`'s `start` and held moves) | 8 ms (the family's drag step for `drag_handle`'s held moves) | 0 | **changed**: that motion moves nothing (it is still sent, since the server delivers it), so the pause after it separates no two positions. Closes M1a's declared gap. Every pointer and move cell of the settle experiment on every family, 30 consecutive idle and at twice the load. |
+| after a desktop path's leading motion, the one at the pointer's own position | `desktop.rs` `paused_before` (desktop `move`; the desktop and foreground routes' placing for `click`, `scroll`, `drag`, the element right click and the paste's focusing click; `drag_handle`'s `start`, and its held moves on every family but Gecko) | 8 ms (the family's drag step, 500 µs on Chromium, for `drag_handle`'s held moves) | 0 | **changed**: that motion moves nothing (it is still sent, since the server delivers it), so the pause after it separates no two positions. Closes M1a's declared gap. Every pointer and move cell of the settle experiment on every family, 30 consecutive idle and at twice the load; held moves measured on Chrome and Electron (their `drag_handle` cells). |
+| after a Gecko held `drag_handle` move's leading motion | `families.rs` `DragPacing.held_lead_pause` (Gecko's row) → `desktop.rs` `move_path_paced` | 300 µs | 300 µs (T9 had dropped it; the fix wave restored it) | **kept, T-drag owns it**: no Firefox held-move cell measured it gone. The design session (2026-11-07): keep it, and measure removing it with Firefox held-move cells in the drag tasks, T10 to T16. |
 | between two positions of a desktop path | `desktop.rs` `PATH_STEP` | 8 ms | 8 ms | **kept**: 0 to 6 ms each missed the service's move settle on an Electron page (and 0 to 4 on Chrome's), idle; 7 held one step above a miss and closes nothing. `--path-step-ms` sets it for measurement. |
 | between `drag_handle`'s held moves' positions | `engine/pointer.rs` `drag_handle` → `move_path_paced` with the family's `DragPacing.step` | the family's step (0; Chromium 500 µs; Gecko 300 µs) | unchanged | **kept**: the drag pacing M1a.4 measured per family and kind (T11 owns the Chromium and Gecko motion model). It never used the 8 ms. |
-| a click's hold (no `duration`) | `engine/pointer.rs` `CLICK_HOLD` | 12 ms | 12 ms | **kept**: the vendor's (behaviour §10.1). Not measured (the row: only if the task has room). |
-| a wheel step's hold | `engine/pointer.rs` `WHEEL_HOLD` | 36 ms | 36 ms | **kept**: the vendor's (behaviour §10.3). Not measured (the row: only if the task has room). |
+| after every sample of a `drag`, the last included | `engine/pointer.rs` `drag_along` (`let mut wait = pacing.step` … `sleep(wait)`), the family's `DragPacing.step` | 0; Chromium 500 µs; Gecko 300 µs | unchanged | **kept, T-drag owns it**: M1a.4's per-family spacing between motions (Chromium missed the canvas and the scroller thumb without it, Gecko drag and drop and the canvas). The drag motion model is T11's (coarse segments or pacing by elapsed time); the pause after the last sample goes or stays with it. After a take, the drop's keepalive may lengthen a step (`dnd.rs`, T14's). |
+| a click's hold (no `duration`) | `engine/pointer.rs` `CLICK_HOLD` | 12 ms | 12 ms | **kept**: the vendor's (behaviour §10.1). Not measured (the row: only if the task has room); its measurement is ticket #323. |
+| a wheel step's hold | `engine/pointer.rs` `WHEEL_HOLD` | 36 ms | 36 ms | **kept**: the vendor's (behaviour §10.3). Not measured (the row: only if the task has room); its measurement is ticket #323. |
 | a drag's press and release dwells | `families.rs` `DragPacing` (Gecko 30 ms before the release) | as measured | unchanged | **kept**: M1a.4's, T11's to revisit. |
 | key pacing | `input.rs` `Pacing.key` | 0 | 0 | **kept** at 0 (M0.4). |
 | input settle after a fresh redirect | `x11.rs` `retain`, `--settle-ms` | 0 | 0 | **kept** at 0 (M0.3: input needs no wait after the redirect). |
 | `FocusOut` teardown | `route.rs`, `--teardown-ms` | 0 | 0 | **kept** at 0 (T7 revised). |
 | capture fallback without DAMAGE | `readiness.rs` `FIXED` | 100 ms once per pixmap | unchanged | **kept**: only a server without DAMAGE takes it. |
 | the capture's quiet period | `readiness.rs` `QUIET` | 10 ms | 10 ms | **kept**: M0.4's rule. |
-| the capture's cap | `readiness.rs` `CAP` | 150 ms | 150 ms; no longer reached by a window the server keeps offscreen | **changed where nothing repaints**: a window that is, or lies inside, a window of another depth than its parent (GTK 4's ARGB frame) needs no first damage and waits 10 ms of quiet. The cap stays for every window whose pixmap needs a repaint. |
+| the capture's cap | `readiness.rs` `CAP` | 150 ms | 150 ms; no longer reached by a window whose whole contents the server keeps offscreen | **changed where nothing repaints**: a window of another depth than its parent, or one inside such a window (GTK 4's ARGB frame) with nothing over it inside that window and none of it past it (`cover.rs` `complete_offscreen`, the fix wave's form), needs no first damage and waits 10 ms of quiet. The cap stays for every window whose pixmap needs a repaint. |
 | the paste settle after keys / after clicks | `settle.rs` `PASTE_SETTLE`, `PASTE_CLICK_SETTLE` | 100 / 25 ms | unchanged | **kept**: T7 revised measured them by the wait rule. |
 | the exit settle | `settle.rs` `EXIT_SETTLE` | 300 ms | unchanged | **kept**: T7's SIGTERM series. |
 | the Chromium drop's hold and floor | `dnd.rs` `TAKE_HOLD_AFTER_PRESS`, `RELEASE_AFTER_TAKE` | 250 / 350 ms | unchanged | **kept**: the pre-flight ruling, T13/T14's. |

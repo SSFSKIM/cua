@@ -206,6 +206,6 @@ patch('ElementInput.swift', [
     ("    let connection = context.connection\n"
      "    try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live, beforeMutating: guarding.checkInFlight) {\n",
      "    let connection = context.connection\n"
-     "    if p324Mode == \"press\" { return try p324PressFocus(target.element, beforeMutating: guarding.checkInFlight) }\n"
+     "    if p324Mode == \"press\" || p324Mode == \"caret\" { return try p324PressFocus(target.element, beforeMutating: guarding.checkInFlight) }\n"
      "    try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live, beforeMutating: guarding.checkInFlight) {\n"),
 ])

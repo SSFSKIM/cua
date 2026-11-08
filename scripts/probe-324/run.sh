@@ -5,6 +5,7 @@
 #   native    Probe324.app behind TextEdit, then TextEdit behind Probe324.app: main, press and c, $REPS repetitions
 #   residue   #321's residue: Safari page coordinate clicks, main, ev and ev300 alternating by batch, $BATCHES batches
 #   run2      the second run (below)
+#   run3      the third run (below)
 set -u
 T="$RUNNER_TEMP"
 common=(--engine "$T/eng/release/cua-engine" --win "$T/p321-win" --ax "$T/ax324" --app "$T/Probe324.app/Contents/MacOS/Probe324")
@@ -42,6 +43,12 @@ case "$GROUP" in
     node scripts/probe-324/measure.mjs --block appkit "${common[@]}" --modes main,press --reps 4 --cells st/notes,st/notes-focused --out "$T/probe-324/appkit2"
     stamp slow
     node scripts/probe-324/measure.mjs --block residue "${common[@]}" --modes main,ev,ev300 --batches 12 --clicks 5 --delay 100-190 --out "$T/probe-324/slow" ;;
+  run3)
+    # The third run: caret-first against press on the WebKit fields (run 42472740707's caret mode never reached
+    # focusField: the patch gated press mode alone), eight repetitions.
+    stamp safari3
+    node scripts/probe-324/measure.mjs --block safari "${common[@]}" --modes press,caret --reps 8 \
+      --cells sv/name,sv/notes,st/filled,st/area --out "$T/probe-324/safari3" ;;
   *) echo "unknown group $GROUP"; exit 2 ;;
 esac
 stamp done

@@ -802,6 +802,20 @@ impl X11 {
             .unwrap_or(false)
     }
 
+    /// What a fresh pixmap of `window` would hold, from one read of its stacking (`cover.rs`): whether it is fully
+    /// unobscured, and whether the server already keeps its whole contents offscreen (`complete_offscreen`). Any X
+    /// error is doubt for both, and doubt waits for the first damage.
+    fn complete_now(&self, window: Window, geometry: &GetGeometryReply) -> (bool, bool) {
+        self.cover(window, geometry)
+            .map(|(rect, levels)| {
+                (
+                    crate::cover::fully_unobscured(rect, &levels),
+                    crate::cover::complete_offscreen(rect, geometry.depth, &levels),
+                )
+            })
+            .unwrap_or((false, false))
+    }
+
     /// The window's rectangle in root coordinates and its ancestry's stacking, from its parent up to the root.
     fn cover(
         &self,
@@ -843,6 +857,7 @@ impl X11 {
                     w: parent_geometry.width as i32,
                     h: parent_geometry.height as i32,
                 },
+                depth: parent_geometry.depth,
                 above: Vec::with_capacity(pending.len()),
             };
             for (&w, (attributes, geometry)) in above.iter().zip(pending) {
@@ -882,7 +897,7 @@ impl X11 {
             mode => {
                 self.ensure_composite()?;
                 let geometry = self.conn.get_geometry(window)?.reply()?;
-                let unobscured = self.fully_unobscured(window, &geometry);
+                let (unobscured, offscreen) = self.complete_now(window, &geometry);
                 self.readiness().watch(window, (geometry.width, geometry.height))?;
                 let redirect = self
                     .conn
@@ -895,7 +910,7 @@ impl X11 {
                     self.readiness().forget(window);
                     return Err(error);
                 }
-                self.readiness().redirected(window, unobscured)?;
+                self.readiness().redirected(window, unobscured, offscreen)?;
                 if mode == Retention::Session {
                     // Our own event selection on the window, so its destruction ends the retention record.
                     let aux = ChangeWindowAttributesAux::new().event_mask(EventMask::STRUCTURE_NOTIFY);
@@ -1315,5 +1330,179 @@ mod tests {
         assert!(!iconic(MapState::UNMAPPED, &[1, 0]), "NormalState");
         assert!(!iconic(MapState::UNMAPPED, &[0, 0]), "WithdrawnState");
         assert!(!iconic(MapState::UNMAPPED, &[]), "no WM_STATE");
+    }
+
+    /// Capture readiness for windows the server already keeps offscreen (M4's T9 and its review), through the engine's
+    /// own redirect and wait. An ARGB frame on the 24-bit root holds its children in a pixmap of its own, complete
+    /// whatever covers the frame; a child's new pixmap is filled from that one (`compNewPixmap` copies the parent's
+    /// contents, inferiors included). So a child with nothing over it inside the frame is captured as itself with no
+    /// first damage, as is an ARGB top-level, which owns its pixmap. A child that a same-depth sibling covers inside the
+    /// frame, or that reaches past the frame, has the sibling's pixels or nothing there in its new pixmap, and its
+    /// capture must wait for its own repaint, which the test's application draws 40 ms after the exposure. A 24-bit
+    /// covered top-level waits for its damage as before. Everything lies under a 24-bit window covering it on the
+    /// screen, so no window is fully unobscured. Needs an X display with Composite and a 32-bit visual
+    /// (`--features live`; Xvfb has both).
+    #[test]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+    fn a_window_kept_offscreen_is_captured_without_a_first_damage_only_where_nothing_covers_it_inside_its_frame() {
+        use crate::readiness::Reason;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use x11rb::wrapper::ConnectionExt as _;
+        const GREEN: u32 = 0xff00_ff00;
+        let (conn, screen) = x11rb::connect(None).unwrap();
+        let (root, root_depth, root_visual) = {
+            let s = &conn.setup().roots[screen];
+            (s.root, s.root_depth, s.root_visual)
+        };
+        assert_eq!(root_depth, 24, "a 24-bit screen, as the VM's and the gate's");
+        let argb = conn.setup().roots[screen]
+            .allowed_depths
+            .iter()
+            .find(|d| d.depth == 32)
+            .and_then(|d| d.visuals.iter().find(|v| v.class == VisualClass::TRUE_COLOR))
+            .expect("a 32-bit TrueColor visual (Composite's)")
+            .visual_id;
+        let colormap = conn.generate_id().unwrap();
+        conn.create_colormap(ColormapAlloc::NONE, colormap, root, argb).unwrap();
+        // background None unless a pixel is given: the server paints nothing into an exposed child, as a toolkit's
+        let window = |parent: Window, depth: u8, (x, y, w, h): (i16, i16, u16, u16), pixel: Option<u32>| {
+            let id = conn.generate_id().unwrap();
+            let mut aux = CreateWindowAux::new().override_redirect(1).border_pixel(0);
+            if let Some(pixel) = pixel {
+                aux = aux.background_pixel(pixel);
+            }
+            let visual = if depth == 32 {
+                aux = aux.colormap(colormap);
+                argb
+            } else {
+                root_visual
+            };
+            conn.create_window(
+                depth,
+                id,
+                parent,
+                x,
+                y,
+                w,
+                h,
+                0,
+                WindowClass::INPUT_OUTPUT,
+                visual,
+                &aux,
+            )
+            .unwrap()
+            .check()
+            .unwrap();
+            id
+        };
+        let paint = |c: &RustConnection, w: Window| {
+            let gc = c.generate_id().unwrap();
+            c.create_gc(gc, w, &CreateGCAux::new().foreground(GREEN)).unwrap();
+            c.poly_fill_rectangle(
+                w,
+                gc,
+                &[Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 60,
+                    height: 40,
+                }],
+            )
+            .unwrap();
+            c.free_gc(gc).unwrap();
+        };
+        let frame = window(root, 32, (0, 0, 200, 100), Some(0xff80_8080));
+        let sheltered = window(frame, 32, (10, 10, 60, 40), None);
+        let sibling = window(frame, 32, (10, 10, 60, 40), Some(0xffff_0000));
+        let alone = window(frame, 32, (100, 10, 60, 40), None);
+        let past = window(frame, 32, (170, 55, 60, 40), None);
+        let argb_top = window(root, 32, (300, 0, 60, 40), Some(GREEN));
+        let plain = window(root, root_depth, (400, 0, 60, 40), Some(GREEN & 0xff_ffff));
+        let painted = [sheltered, alone, past];
+        for w in [frame, sheltered, alone, past, argb_top, plain] {
+            conn.map_window(w).unwrap();
+        }
+        conn.sync().unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        for w in painted {
+            paint(&conn, w);
+        }
+        conn.sync().unwrap();
+        // the sibling over `sheltered` inside the frame, then a window over everything on the screen
+        conn.map_window(sibling).unwrap();
+        let cover = window(root, root_depth, (0, 0, 500, 100), Some(0x00ff_0000));
+        conn.map_window(cover).unwrap();
+        conn.sync().unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        // the application: it repaints an exposed window of its own 40 ms after the exposure, as a slow toolkit does
+        let (app, _) = x11rb::connect(None).unwrap();
+        for w in painted {
+            app.change_window_attributes(w, &ChangeWindowAttributesAux::new().event_mask(EventMask::EXPOSURE))
+                .unwrap()
+                .check()
+                .unwrap();
+        }
+        let done = Arc::new(AtomicBool::new(false));
+        let repaints = {
+            let done = done.clone();
+            std::thread::spawn(move || {
+                let mut repainted = Vec::new();
+                while !done.load(Ordering::SeqCst) {
+                    match app.poll_for_event().unwrap() {
+                        Some(Event::Expose(e)) if e.count == 0 => {
+                            std::thread::sleep(Duration::from_millis(40));
+                            paint(&app, e.window);
+                            app.flush().unwrap();
+                            repainted.push(e.window);
+                        }
+                        Some(_) => {}
+                        None => std::thread::sleep(Duration::from_millis(1)),
+                    }
+                }
+                repainted
+            })
+        };
+        let mut x11 = X11::connect(Retention::Session, Duration::ZERO, CaptureWait::Damage).unwrap();
+        let mut capture = |w: Window| {
+            let (rgb, _, _) = x11.capture_window(w).unwrap();
+            let waited = x11.last_capture_wait.unwrap();
+            let off = rgb.chunks(3).filter(|p| *p != [0, 0xff, 0]).count();
+            (waited, off)
+        };
+        let results: Vec<_> = [sheltered, alone, past, argb_top, plain]
+            .into_iter()
+            .map(&mut capture)
+            .collect();
+        done.store(true, Ordering::SeqCst);
+        let repainted = repaints.join().unwrap();
+        for w in [cover, frame, argb_top, plain] {
+            conn.destroy_window(w).unwrap();
+        }
+        conn.free_colormap(colormap).unwrap();
+        conn.sync().unwrap();
+        let [sheltered_r, alone_r, past_r, argb_r, plain_r] = results.try_into().unwrap();
+        for (name, (waited, off)) in [
+            ("covered by a sibling in its frame", sheltered_r),
+            ("alone in its frame", alone_r),
+            ("past its frame", past_r),
+            ("an ARGB top-level", argb_r),
+            ("a 24-bit top-level", plain_r),
+        ] {
+            assert_eq!(
+                off, 0,
+                "{name}: {off} of 2400 pixels not the window's own green ({waited:?})"
+            );
+        }
+        assert_eq!(alone_r.0.reason, Reason::Offscreen, "{alone_r:?}");
+        assert!(alone_r.0.waited < Duration::from_millis(40), "{alone_r:?}");
+        assert_eq!(argb_r.0.reason, Reason::Offscreen, "{argb_r:?}");
+        for (name, waited) in [("sheltered", sheltered_r.0), ("past", past_r.0), ("plain", plain_r.0)] {
+            assert_ne!(waited.reason, Reason::Offscreen, "{name}: {waited:?}");
+        }
+        assert!(
+            repainted.contains(&sheltered) && repainted.contains(&past),
+            "the redirect exposed the parts the frame's pixmap did not hold: {repainted:?}"
+        );
     }
 }

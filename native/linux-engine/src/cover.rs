@@ -67,10 +67,11 @@ pub struct Above {
 }
 
 /// One level of the window's ancestry: the parent's inside rectangle, which clips its children (the root's is the
-/// screen), and the parent's children stacked above this level's window.
+/// screen), the parent's depth, and the parent's children stacked above this level's window.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Level {
     pub clip: Rect,
+    pub depth: u8,
     pub above: Vec<Above>,
 }
 
@@ -85,6 +86,26 @@ pub fn fully_unobscured(window: Rect, levels: &[Level]) -> bool {
                     .iter()
                     .any(|a| a.viewable && !a.input_only && a.rect.overlaps(&window))
         })
+}
+
+/// Whether the server already keeps the window's whole contents in an offscreen pixmap, complete whatever covers it on
+/// the screen (M4's T9 and its review, capture readiness): the window, or the nearest ancestor of another depth than its
+/// own parent (an ARGB frame on the 24-bit root), can be shown only from a pixmap of its own (Composite's implicit
+/// redirection). A window that is that ancestor owns the pixmap. A window inside it has its contents there only where
+/// they are drawn: the whole window inside every ancestor up to it, and no sibling stacked above the window, or above an
+/// ancestor inside it, overlapping the window, judged by outer rectangles as [`fully_unobscured`] judges the screen.
+/// Otherwise the window's own new pixmap is filled from that ancestor's (`compNewPixmap` copies the parent with its
+/// inferiors), the sibling's pixels or nothing where they fall, and only the window's repaint can mend it. `depth` is
+/// the window's; no change of depth up to the root, or no levels read, is doubt.
+pub fn complete_offscreen(window: Rect, depth: u8, levels: &[Level]) -> bool {
+    let mut below = depth;
+    for (i, level) in levels.iter().enumerate() {
+        if level.depth != below {
+            return i == 0 || fully_unobscured(window, &levels[..i]);
+        }
+        below = level.depth;
+    }
+    false
 }
 
 /// Whether every point of `points` (root coordinates; a drag's every sample, so its vertices and the segments between
@@ -202,10 +223,12 @@ mod tests {
             vec![
                 Level {
                     clip: frame,
+                    depth: 24,
                     above: vec![],
                 },
                 Level {
                     clip: SCREEN,
+                    depth: 24,
                     above: over_frame,
                 },
             ],
@@ -254,6 +277,7 @@ mod tests {
             window,
             vec![Level {
                 clip: SCREEN,
+                depth: 24,
                 above: vec![],
             }],
         )
@@ -273,6 +297,7 @@ mod tests {
         assert!(!fully_unobscured(w, &levels), "past the bottom edge");
         let levels = vec![Level {
             clip: rect(0, 0, 50, 50),
+            depth: 24,
             above: vec![],
         }];
         assert!(
@@ -366,6 +391,96 @@ mod tests {
         assert!(!fully_unobscured(rect(0, 0, 10, 10), &[]));
         let (_, levels) = framed(rect(10, 30, 900, 700), vec![]);
         assert!(!fully_unobscured(rect(10, 30, 0, 700), &levels));
+    }
+
+    /// GTK 4 under Openbox: a 32-bit client in a 32-bit frame on the 24-bit root, the screen over the frame covered.
+    fn argb_framed(client: Rect) -> (Rect, Vec<Level>) {
+        let (w, mut levels) = framed(client, vec![above(SCREEN)]);
+        levels[0].depth = 32;
+        (w, levels)
+    }
+
+    #[test]
+    fn a_window_inside_a_frame_of_another_depth_is_complete_offscreen_where_nothing_inside_the_frame_covers_it() {
+        let (w, levels) = argb_framed(rect(10, 30, 900, 700));
+        assert!(!fully_unobscured(w, &levels), "covered on the screen");
+        assert!(complete_offscreen(w, 32, &levels), "whole in its frame's pixmap");
+        // what covers the frame on the screen never reaches the frame's pixmap; InputOnly and unmapped siblings draw
+        // nothing there, and a sibling beside it nothing over it
+        let (w, mut levels) = argb_framed(rect(10, 30, 900, 700));
+        levels[0].above.extend([
+            Above {
+                input_only: true,
+                ..above(rect(10, 30, 900, 700))
+            },
+            Above {
+                viewable: false,
+                ..above(rect(10, 30, 900, 700))
+            },
+            above(rect(5, 5, 905, 25)),
+        ]);
+        assert!(complete_offscreen(w, 32, &levels));
+    }
+
+    #[test]
+    fn a_same_depth_sibling_over_it_or_a_frame_that_cuts_it_leaves_its_pixmap_to_its_repaint() {
+        // the review's case: ancestry depths [32, 32, 24] and a same-depth sibling over it inside the frame, whose
+        // pixels the frame's pixmap holds there
+        let (w, mut levels) = argb_framed(rect(10, 30, 900, 700));
+        levels[0].above.push(above(rect(500, 400, 20, 20)));
+        assert!(!complete_offscreen(w, 32, &levels), "one sibling over a corner");
+        // a sibling over an ancestor inside the frame covers it as well
+        let middle = rect(10, 30, 900, 700);
+        let levels = vec![
+            Level {
+                clip: middle,
+                depth: 32,
+                above: vec![],
+            },
+            Level {
+                clip: rect(5, 5, 910, 730),
+                depth: 32,
+                above: vec![above(rect(100, 100, 10, 10))],
+            },
+            Level {
+                clip: SCREEN,
+                depth: 24,
+                above: vec![],
+            },
+        ];
+        assert!(!complete_offscreen(rect(10, 30, 900, 700), 32, &levels));
+        // the window reaching past its frame: the part outside was never drawn in the frame's pixmap
+        let (_, levels) = argb_framed(rect(10, 30, 900, 700));
+        assert!(
+            complete_offscreen(rect(10, 30, 905, 700), 32, &levels),
+            "flush with the frame's edge"
+        );
+        assert!(
+            !complete_offscreen(rect(10, 30, 906, 700), 32, &levels),
+            "one pixel past it"
+        );
+    }
+
+    #[test]
+    fn a_window_of_another_depth_than_its_parent_owns_its_pixmap() {
+        // an ARGB top-level, and a 24-bit window in an ARGB frame: whatever lies over them, their own pixmap
+        let (w, mut levels) = on_root(rect(10, 30, 900, 700));
+        levels[0].above.push(above(SCREEN));
+        assert!(complete_offscreen(w, 32, &levels));
+        let (w, mut levels) = argb_framed(rect(10, 30, 900, 700));
+        levels[0].above.push(above(rect(10, 30, 900, 700)));
+        assert!(complete_offscreen(w, 24, &levels));
+    }
+
+    #[test]
+    fn one_depth_all_the_way_or_no_ancestry_is_doubt() {
+        let (w, levels) = framed(rect(10, 30, 900, 700), vec![]);
+        assert!(fully_unobscured(w, &levels));
+        assert!(
+            !complete_offscreen(w, 24, &levels),
+            "the screen shows it: its fully unobscured shortcut is another rule's"
+        );
+        assert!(!complete_offscreen(w, 32, &[]), "no levels read");
     }
 
     #[test]

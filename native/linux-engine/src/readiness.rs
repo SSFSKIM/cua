@@ -6,13 +6,15 @@
 //! pixmap followed by 10 ms with no further damage, capped at 150 ms (`--capture-wait damage`, the default), or
 //! for a fixed 100 ms once per pixmap (`--capture-wait fixed`, the fallback the harness can select). A window fully
 //! unobscured at the redirect needs no first damage: the server's copy of it is already complete and only an
-//! application repaint can follow, so it waits for 10 ms with no damage (still capped at 150 ms). So does a window the
-//! server already keeps offscreen: one that is, or lies inside, a window of another depth than its parent (an ARGB
-//! window, or GTK 4's ARGB frame, on the 24-bit root), which the server shows only through a pixmap of its own
-//! (Composite's implicit redirection). Its new pixmap is filled from those complete contents whatever covers it, and
-//! no repaint follows: GTK 4's covered windows sent no damage after the redirect in any trial, and every such capture
-//! was right (M4's T9, evidence `m4/waits/`). `--capture-wait quiet` takes every pixmap as complete, a control lane
-//! that shows the first damage is needed elsewhere.
+//! application repaint can follow, so it waits for 10 ms with no damage (still capped at 150 ms). So does a window
+//! whose whole contents the server already keeps offscreen (`cover.rs` `complete_offscreen`): one of another depth than
+//! its parent (an ARGB window on the 24-bit root), or one inside such a window (GTK 4's ARGB frame) with nothing over it
+//! inside that window and none of it past it. Its new pixmap is filled from those complete contents whatever covers it
+//! on the screen, and no repaint follows: GTK 4's covered windows sent no damage after the redirect in any trial, and
+//! every such capture was right (M4's T9, evidence `m4/waits/`). Where a same-depth sibling covers it inside that
+//! window, the copy holds the sibling's pixels, so it waits for its damage like any other (the review of T9). The
+//! caller judges both at the redirect ([`Readiness::redirected`]). `--capture-wait quiet` takes every pixmap as
+//! complete, a control lane that shows the first damage is needed elsewhere.
 //!
 //! Events are read on a connection of their own by a thread of their own, so they are consumed as they arrive
 //! (the server never queues them for an engine waiting on stdin) and their times are when they happened: each
@@ -49,8 +51,8 @@ pub const CAP: Duration = Duration::from_millis(150);
 pub const FIXED: Duration = Duration::from_millis(100);
 
 /// One pixmap's readiness: when it was created, whether the window was fully unobscured then, whether the server
-/// already kept its contents offscreen ([`depth_changes`]), the last damage drawn into it, and whether a capture
-/// already found it ready.
+/// already kept its whole contents offscreen then (`cover.rs` `complete_offscreen`), the last damage drawn into it, and
+/// whether a capture already found it ready.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pixmap {
     pub since: Instant,
@@ -70,34 +72,6 @@ impl Pixmap {
             ready: false,
         }
     }
-}
-
-/// Whether the depths from a window up to the root (`[window, parent, …, root]`) change anywhere: a window of another
-/// depth than its parent can be shown only from a pixmap of its own, so the server keeps it, and everything inside it,
-/// offscreen and complete. A chain with no parent read is doubt: false.
-pub fn depth_changes(depths: &[u8]) -> bool {
-    depths.windows(2).any(|pair| pair[0] != pair[1])
-}
-
-/// [`depth_changes`] for `window`, read on `conn`; any error is doubt: false.
-fn kept_offscreen(conn: &impl Connection, window: Window) -> bool {
-    let mut depths = Vec::new();
-    let mut current = window;
-    // a window's ancestry is a handful of levels; the bound only stops a tree that changes under the walk
-    for _ in 0..16 {
-        let Ok(Ok(geometry)) = conn.get_geometry(current).map(|c| c.reply()) else {
-            return false;
-        };
-        depths.push(geometry.depth);
-        if current == geometry.root {
-            return depth_changes(&depths);
-        }
-        let Ok(Ok(tree)) = conn.query_tree(current).map(|c| c.reply()) else {
-            return false;
-        };
-        current = tree.parent;
-    }
-    false
 }
 
 /// Why a capture went ahead.
@@ -197,8 +171,6 @@ struct Watched {
     /// None without the DAMAGE extension.
     damage: Option<Damage>,
     size: (u16, u16),
-    /// The server kept the window offscreen when its watch began ([`kept_offscreen`]).
-    offscreen: bool,
     pixmap: Pixmap,
     /// Damage counts toward readiness only from this request's sequence on; None until the redirect is known to
     /// have taken effect, with the damage seen meanwhile kept by sequence.
@@ -330,7 +302,6 @@ impl Readiness {
         let mut watched = Watched {
             damage: None,
             size,
-            offscreen: false,
             pixmap: Pixmap::fresh(Instant::now(), false),
             barrier: None,
             passed: false,
@@ -345,7 +316,6 @@ impl Readiness {
         };
         let aux = ChangeWindowAttributesAux::new().event_mask(EventMask::STRUCTURE_NOTIFY);
         conn.change_window_attributes(window, &aux)?.check()?;
-        watched.offscreen = kept_offscreen(conn.as_ref(), window);
         if !self.damage {
             self.shared.state.lock().unwrap().windows.insert(window, watched);
             return Ok(());
@@ -365,9 +335,10 @@ impl Readiness {
     }
 
     /// The redirect of `window` has taken effect: its pixmap is new from here, and only damage the server
-    /// generates after a request sent now counts. `unobscured`: the window was fully unobscured at the redirect; a
-    /// window the server kept offscreen when its watch began counts as complete too.
-    pub fn redirected(&self, window: Window, unobscured: bool) -> Result<()> {
+    /// generates after a request sent now counts. `unobscured`: the window was fully unobscured at the redirect;
+    /// `offscreen`: the server kept its whole contents offscreen then (`cover.rs` `complete_offscreen`). Either makes
+    /// the pixmap complete from the start.
+    pub fn redirected(&self, window: Window, unobscured: bool, offscreen: bool) -> Result<()> {
         let barrier = match (&self.conn, self.damage) {
             (Some(conn), true) => {
                 let cookie = conn.get_input_focus()?;
@@ -380,7 +351,6 @@ impl Readiness {
         let now = Instant::now();
         let mut state = self.shared.state.lock().unwrap();
         if let Some(watched) = state.windows.get_mut(&window) {
-            let offscreen = watched.offscreen;
             watched.renew(now, unobscured, offscreen);
             watched.barrier = barrier;
             watched.passed = false;
@@ -568,22 +538,6 @@ mod tests {
     }
 
     #[test]
-    fn a_depth_change_on_the_way_to_the_root_is_a_window_the_server_keeps_offscreen() {
-        assert!(
-            depth_changes(&[32, 32, 24]),
-            "GTK 4 under Openbox: its ARGB frame on the 24-bit root"
-        );
-        assert!(depth_changes(&[32, 24]), "an ARGB top-level");
-        assert!(depth_changes(&[24, 32, 24]), "a 24-bit window inside an ARGB frame");
-        assert!(
-            !depth_changes(&[24, 24, 24]),
-            "one depth all the way: the screen shows it"
-        );
-        assert!(!depth_changes(&[24]), "no ancestry read: doubt");
-        assert!(!depth_changes(&[]));
-    }
-
-    #[test]
     fn the_quiet_only_control_takes_every_pixmap_as_complete() {
         let t0 = Instant::now();
         let p = Pixmap::fresh(t0, false);
@@ -652,7 +606,7 @@ mod tests {
         let readiness = Readiness::over(None, false, CaptureWait::Damage);
         assert!(!readiness.watches_structure());
         readiness.watch(7, (40, 40)).unwrap();
-        readiness.redirected(7, true).unwrap();
+        readiness.redirected(7, true, false).unwrap();
         let first = readiness.wait(7);
         assert_eq!(
             first.reason,
@@ -703,7 +657,7 @@ mod tests {
             .unwrap()
             .check()
             .unwrap();
-        readiness.redirected(window, false).unwrap();
+        readiness.redirected(window, false, false).unwrap();
         let first = readiness.wait(window);
         let settle = || std::thread::sleep(Duration::from_millis(50));
         conn.configure_window(window, &ConfigureWindowAux::new().width(60).height(60))
@@ -728,95 +682,5 @@ mod tests {
             Reason::Fixed,
             "a remapped pixmap takes the fallback wait again"
         );
-    }
-
-    /// GTK 4's case without GTK 4 (task 64): a window the server keeps offscreen (ARGB, so of another depth than the
-    /// 24-bit root) under a window that covers it is captured as itself after 10 ms of quiet, with no first damage,
-    /// while a 24-bit window covered the same way still waits for its own. Needs an X display with Composite and a
-    /// 32-bit visual (`--features live`; Xvfb has both).
-    #[test]
-    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
-    fn a_covered_window_the_server_keeps_offscreen_is_captured_as_itself_without_a_first_damage() {
-        use x11rb::protocol::composite::{ConnectionExt as _, Redirect};
-        use x11rb::protocol::xproto::{ColormapAlloc, CreateWindowAux, ImageFormat, VisualClass, WindowClass};
-        use x11rb::wrapper::ConnectionExt as _;
-        let (conn, screen) = x11rb::connect(None).unwrap();
-        let setup = conn.setup();
-        let (root, root_depth, root_visual) = {
-            let s = &setup.roots[screen];
-            (s.root, s.root_depth, s.root_visual)
-        };
-        assert_eq!(root_depth, 24, "a 24-bit screen, as the VM's and the gate's");
-        let argb = setup.roots[screen]
-            .allowed_depths
-            .iter()
-            .find(|d| d.depth == 32)
-            .and_then(|d| d.visuals.iter().find(|v| v.class == VisualClass::TRUE_COLOR))
-            .expect("a 32-bit TrueColor visual (Composite's)")
-            .visual_id;
-        conn.composite_query_version(0, 4).unwrap().reply().unwrap();
-        let window = |depth: u8, visual: u32, pixel: u32| {
-            let id = conn.generate_id().unwrap();
-            let mut aux = CreateWindowAux::new()
-                .override_redirect(1)
-                .background_pixel(pixel)
-                .border_pixel(0);
-            if depth == 32 {
-                let colormap = conn.generate_id().unwrap();
-                conn.create_colormap(ColormapAlloc::NONE, colormap, root, visual)
-                    .unwrap();
-                aux = aux.colormap(colormap);
-            }
-            conn.create_window(
-                depth,
-                id,
-                root,
-                0,
-                0,
-                60,
-                40,
-                0,
-                WindowClass::INPUT_OUTPUT,
-                visual,
-                &aux,
-            )
-            .unwrap()
-            .check()
-            .unwrap();
-            conn.map_window(id).unwrap().check().unwrap();
-            id
-        };
-        let green = window(32, argb, 0xff00_ff00);
-        let plain = window(root_depth, root_visual, 0x0000_00ff);
-        let cover = window(root_depth, root_visual, 0x00ff_0000);
-        conn.sync().unwrap();
-        std::thread::sleep(Duration::from_millis(50));
-        let readiness = Readiness::connect(CaptureWait::Damage);
-        let capture = |w: Window| {
-            readiness.watch(w, (60, 40)).unwrap();
-            conn.composite_redirect_window(w, Redirect::AUTOMATIC)
-                .unwrap()
-                .check()
-                .unwrap();
-            readiness.redirected(w, false).unwrap();
-            let waited = readiness.wait(w);
-            let image = conn
-                .get_image(ImageFormat::Z_PIXMAP, w, 0, 0, 60, 40, !0)
-                .unwrap()
-                .reply()
-                .unwrap();
-            (waited, image.data)
-        };
-        let (offscreen, pixels) = capture(green);
-        let (covered, _) = capture(plain);
-        for id in [green, plain, cover] {
-            conn.destroy_window(id).unwrap();
-        }
-        conn.sync().unwrap();
-        assert_eq!(offscreen.reason, Reason::Offscreen, "{offscreen:?}");
-        assert!(offscreen.waited < Duration::from_millis(100), "{offscreen:?}");
-        // B, G, R, A in each 32-bit pixel: green, not the red window over it
-        assert!(pixels.chunks(4).all(|p| p[..3] == [0, 0xff, 0]), "captured as itself");
-        assert_ne!(covered.reason, Reason::Offscreen, "{covered:?}");
     }
 }

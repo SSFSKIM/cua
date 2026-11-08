@@ -826,6 +826,255 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(seam.holds, 0)
   }
 
+  // MARK: The hold until the order reads back (#321)
+
+  /// Safari's and TextEdit's activation point: inside the window's frame, on the window itself.
+  private let insidePoint = CGPoint(x: 110, y: 76)
+  /// Chrome's: the screen's bottom-left corner, outside its frame (U13).
+  private let chromePoint = CGPoint(x: -1, y: 1441)
+
+  /// A target that orders its window above the user's at the action's own mouse down (the activation's click goes at
+  /// clock 0, the action's after the activation's sample), and again at every sample until the clock reaches `until`;
+  /// at `only`, a single reorder at that sample instead.
+  private func reordering(_ seam: GuardSeam, until: Double = 0, only: Double? = nil) {
+    seam.targetAbove = false
+    var down = false
+    seam.onMouseDown = {
+      guard seam.clock > 0 else { return }
+      down = true
+      if only == nil { seam.targetAbove = true }
+    }
+    seam.onFrontmostRead = {
+      guard down else { return }
+      if let only { if seam.clock == only { seam.targetAbove = true } } else if seam.clock < until { seam.targetAbove = true }
+    }
+  }
+
+  private func activation(_ seam: GuardSeam, at point: CGPoint?) -> FakeActivation {
+    seam.activationPoint = point
+    return freshActivation(seam)
+  }
+
+  /// A click whose activation clicked its in-window activation point: the hold stays while the order reads wrong, past
+  /// the old 100 ms cap and the guard's least wait, and is released at the guard's stable samples once it reads back.
+  func testTheHoldWaitsUntilTheOrderReadsBackThenReleasesAtOnce() throws {
+    let seam = GuardSeam(frontmost: user)
+    reordering(seam, until: 165)
+    let subject = activation(seam, at: insidePoint)
+    var meta = meta()
+    try click(seam, activation: subject, meta: &meta)
+    XCTAssertEqual(subject.clickKind, .activationPoint)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(seam.holds, 1)
+    XCTAssertEqual(seam.releases, 1)
+    XCTAssertEqual(seam.releasedAt, 190, "read back at 170, then three stable samples: released then, not at the cap")
+    XCTAssertLessThan(try XCTUnwrap(seam.releasedAt), activationPointHoldCapMs)
+    XCTAssertEqual(delivery.screenHoldMs, 190)
+    XCTAssertFalse(delivery.capped)
+    XCTAssertFalse(delivery.raiseLeft)
+    XCTAssertEqual(seam.repairsOutsideHold, 0, "every repair inside the hold")
+    XCTAssertEqual(delivery.restores, 15)
+    XCTAssertEqual(delivery.transientRaise, TransientRaise(seen: true, ms: 150, outlivedHold: false))
+  }
+
+  /// A reorder that comes late, after main's 60 ms least wait, is still read and repaired inside the hold: the guard
+  /// reads on for `activationPointGuardMinimumMs` after the events.
+  func testALateReorderIsRepairedInsideTheHold() throws {
+    let seam = GuardSeam(frontmost: user)
+    reordering(seam, only: 120)
+    var meta = meta()
+    try click(seam, activation: activation(seam, at: insidePoint), meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(delivery.restores, 1)
+    XCTAssertEqual(delivery.guardMs, activationPointGuardMinimumMs, "posted at 10, the least wait to 160")
+    XCTAssertEqual(seam.releasedAt, 160)
+    XCTAssertEqual(seam.repairsOutsideHold, 0)
+    XCTAssertEqual(delivery.transientRaise, TransientRaise(seen: true, ms: 10, outlivedHold: false))
+  }
+
+  /// The ruling's test: an order that never reads back still has its hold released at the cap, by the timer, also while
+  /// a restore blocks; the guard repairs on after it, inside the repair window, and leaves the raise reported.
+  func testTheHoldReleasesAtTheCapWhenTheOrderNeverReadsBack() throws {
+    for raiseCost in [0.0, 300] {
+      let seam = GuardSeam(frontmost: user, raiseCost: raiseCost)
+      reordering(seam, until: .infinity)
+      var meta = meta()
+      try click(seam, activation: activation(seam, at: insidePoint), meta: &meta)
+      let delivery = try XCTUnwrap(meta.delivery)
+      let label = "restore costs \(raiseCost) ms"
+      XCTAssertEqual(seam.holds, 1, label)
+      XCTAssertEqual(seam.releases, 1, label)
+      XCTAssertEqual(seam.releasedAt, activationPointHoldCapMs, label)
+      XCTAssertEqual(delivery.screenHoldMs, activationPointHoldCapMs, label)
+      XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), activationPointHoldCapMs, label)
+      XCTAssertTrue(delivery.capped, label)
+      XCTAssertTrue(delivery.raiseLeft, label)
+      XCTAssertTrue(delivery.repairedAfterRelease, label)
+      XCTAssertTrue(delivery.transientRaise.seen, label)
+      XCTAssertTrue(delivery.transientRaise.outlivedHold, label)
+      XCTAssertGreaterThanOrEqual(delivery.transientRaise.ms ?? 0, deliveryRepairWindowMs - 20, label)
+    }
+  }
+
+  /// A click without the in-window activation click pays nothing: Chrome's point outside its frame, or no point, keeps
+  /// main's 100 ms cap and 60 ms least wait under the same reorder; so does a delivery that is no pointer's (the paste's)
+  /// on an activation that did click its point.
+  func testNoHoldExtensionForAClickWithoutTheInWindowActivationClick() throws {
+    for (name, point) in [("Chrome's point", chromePoint), ("no point", nil)] as [(String, CGPoint?)] {
+      let seam = GuardSeam(frontmost: user)
+      reordering(seam, until: 165)
+      let subject = activation(seam, at: point)
+      var meta = meta()
+      try click(seam, activation: subject, meta: &meta)
+      XCTAssertNotEqual(subject.clickKind, .activationPoint, name)
+      let delivery = try XCTUnwrap(meta.delivery)
+      XCTAssertEqual(seam.releasedAt, activationHoldCapMs, name)
+      XCTAssertEqual(delivery.screenHoldMs, activationHoldCapMs, name)
+      XCTAssertTrue(delivery.capped, name)
+      XCTAssertTrue(delivery.transientRaise.outlivedHold, name)
+    }
+    let late = GuardSeam(frontmost: user)
+    reordering(late, only: 120)
+    var meta = meta()
+    try click(late, activation: activation(late, at: chromePoint), meta: &meta)
+    XCTAssertEqual(meta.delivery?.guardMs, deliveryGuardMinimumMs, "Chrome's: main's least wait")
+    XCTAssertEqual(late.releasedAt, 70)
+
+    let paste = GuardSeam(frontmost: user)
+    paste.targetAbove = false
+    let subject = activation(paste, at: insidePoint)
+    subject.holdsThroughDelivery = true
+    try subject.activate()
+    XCTAssertEqual(subject.clickKind, .activationPoint)
+    var raised = false
+    paste.onFrontmostRead = { if raised, paste.clock < 165 { paste.targetAbove = true } }
+    let delivery = try XCTUnwrap(subject.deliver(window: 41, ranBy: subject) { raised = true })
+    XCTAssertEqual(paste.releasedAt, activationHoldCapMs, "the paste's: main's cap")
+    XCTAssertTrue(delivery.capped)
+  }
+
+  /// A click inside a held activation (an element action's) that clicked its point takes a hold of its own, held until
+  /// the order reads back too; a paste's delivery there, and a click inside one that clicked no point (Chrome's), keep
+  /// main's cap.
+  func testAClickInsideAHeldActivationThatClickedItsPointHoldsUntilTheOrderReadsBack() throws {
+    for pointer in [true, false] {
+      let seam = GuardSeam(frontmost: user)
+      seam.targetAbove = false
+      let subject = activation(seam, at: insidePoint)
+      try subject.activate()  // the held activation's: three stable samples, its hold released at 30
+      XCTAssertEqual(seam.releasedAt, 30)
+      var raised = false
+      seam.onFrontmostRead = { if raised, seam.clock < 185 { seam.targetAbove = true } }
+      let delivery = try XCTUnwrap(subject.deliver(window: 41, pointer: pointer, ranBy: nil) { raised = true })
+      XCTAssertEqual(seam.holds, 2)
+      XCTAssertEqual(seam.heldAt, 30)
+      if pointer {
+        XCTAssertEqual(seam.releasedAt, 210, "read back at 190, three stable samples")
+        XCTAssertFalse(delivery.capped)
+      } else {
+        XCTAssertEqual(seam.releasedAt, 30 + activationHoldCapMs)
+        XCTAssertTrue(delivery.capped)
+      }
+    }
+    // Chrome's held activation clicked no point (its inert click went early): a click inside it keeps main's cap.
+    let chrome = GuardSeam(frontmost: user)
+    chrome.targetAbove = false
+    let held = activation(chrome, at: chromePoint)
+    try held.activate()
+    XCTAssertEqual(held.clickKind, .inertOutside(.activationPoint, .early))
+    var raised = false
+    chrome.onFrontmostRead = { if raised, chrome.clock < 185 { chrome.targetAbove = true } }
+    let delivery = try XCTUnwrap(held.deliver(window: 41, pointer: true, ranBy: nil) { raised = true })
+    XCTAssertEqual(chrome.releasedAt, 30 + activationHoldCapMs)
+    XCTAssertTrue(delivery.capped)
+  }
+
+  /// #321's review: a pointer of another connection that shares a paste's activation before the paste's events never
+  /// takes the paste's pending hold (main's cap): it takes its own, held until the order reads back under its own 200 ms
+  /// cap, and the paste's pending hold is left for the paste.
+  func testAPointerSharingAPastesPendingHoldTakesItsOwnUnderItsOwnCap() throws {
+    let seam = GuardSeam(frontmost: user)
+    let registry = HeldActivations()
+    let paste = activation(seam, at: insidePoint)
+    paste.holdsThroughDelivery = true
+    var pasteMeta = meta()
+    let pasteRelease = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), beforeActivating: {}, make: { paste },
+                                            meta: &pasteMeta)
+    XCTAssertEqual(paste.clickKind, .activationPoint)
+    XCTAssertEqual(seam.holds - seam.releases, 1, "the paste's hold pending")
+    reordering(seam, until: 165)
+    let connection = ConnectionState(id: 2, fd: -1)
+    var meta = InputMeta(ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: freshActivation(seam), activations: registry,
+                     targetActive: { false }, post: seam.system.post, meta: &meta)
+    XCTAssertEqual(meta.activationJoin, .shared)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(seam.holds, 2, "the pointer's own hold beside the paste's")
+    XCTAssertEqual(seam.heldAt, 10)
+    XCTAssertFalse(delivery.capped, "its own 200 ms cap: read back at 170, released at 190")
+    XCTAssertEqual(delivery.screenHoldMs, 180)
+    let pasted = try XCTUnwrap(paste.deliver(window: 41, ranBy: paste) {})
+    XCTAssertEqual(seam.holds, 2, "the paste took its own pending hold")
+    XCTAssertTrue(pasted.capped, "released by its 100 ms timer while the pointer's guard ran")
+    _ = pasteRelease()
+  }
+
+  /// Dedicated mode is unchanged: no delivery guard and no hold through the click, whatever the activation clicked.
+  func testDedicatedModeTakesNoHoldThroughTheClick() throws {
+    let seam = GuardSeam(frontmost: user)
+    reordering(seam, until: .infinity)
+    let connection = ConnectionState(id: 1, fd: -1)
+    connection.desktop = .dedicated
+    var meta = InputMeta(ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    try click(seam, activation: activation(seam, at: insidePoint), meta: &meta)
+    XCTAssertNil(meta.delivery)
+    XCTAssertEqual(seam.holds, 1)
+    XCTAssertEqual(seam.releasedAt, 30, "the activation's own guard, three stable samples, before the click's events")
+    XCTAssertEqual(seam.raises, 0, "nothing puts the order back")
+  }
+
+  /// `transientRaise`: a reorder repaired inside the hold, one that outlived it, and none. `raiseLeft` stays what the
+  /// last sample saw: false for both reorders, whose order read back.
+  func testTheTransientRaiseRecordsAReorderInsideTheHoldAndOneThatOutlivedIt() throws {
+    let inside = GuardSeam(frontmost: user)
+    reordering(inside)  // at the action's down only, repaired at the first sample
+    var meta = meta()
+    try click(inside, activation: activation(inside, at: insidePoint), meta: &meta)
+    var delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(delivery.transientRaise, TransientRaise(seen: true, ms: 10, outlivedHold: false))
+    XCTAssertFalse(delivery.raiseLeft)
+    XCTAssertEqual(delivery.transientRaise.wire as NSDictionary, ["seen": true, "ms": 10.0, "outlivedHold": false])
+
+    let outlived = GuardSeam(frontmost: user)
+    reordering(outlived, until: 215)
+    meta = self.meta()
+    try click(outlived, activation: activation(outlived, at: insidePoint), meta: &meta)
+    delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(delivery.transientRaise, TransientRaise(seen: true, ms: 200, outlivedHold: true), "read back at 220, past the cap")
+    XCTAssertFalse(delivery.raiseLeft, "the order read back after the release")
+    XCTAssertTrue(delivery.repairedAfterRelease)
+
+    // Ordered above at the click and again at 120: the reading runs from the first sample to the read-back after the last.
+    let twice = GuardSeam(frontmost: user)
+    twice.targetAbove = false
+    var down = false
+    twice.onMouseDown = { if twice.clock > 0 { down = true; twice.targetAbove = true } }
+    twice.onFrontmostRead = { if down, twice.clock == 120 { twice.targetAbove = true } }
+    meta = self.meta()
+    try click(twice, activation: activation(twice, at: insidePoint), meta: &meta)
+    delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(delivery.restores, 2)
+    XCTAssertEqual(delivery.transientRaise, TransientRaise(seen: true, ms: 110, outlivedHold: false))
+
+    let none = GuardSeam(frontmost: user)
+    meta = self.meta()
+    try click(none, activation: activation(none, at: insidePoint), meta: &meta)
+    delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(delivery.transientRaise, TransientRaise())
+    XCTAssertEqual(delivery.wire["transientRaise"] as? NSDictionary, ["seen": false, "outlivedHold": false])
+    XCTAssertEqual(none.releasedAt, 10 + activationPointGuardMinimumMs, "nothing reordered: the least wait, then the release")
+  }
+
   // MARK: The after-release watch (#200)
 
   /// A click on `connection`, whose meta's context carries it (the watch's registry is the connection's).

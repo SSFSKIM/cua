@@ -216,10 +216,12 @@ struct PointerTarget {
 /// behind another holder's activation stops it before its activation and activation click; `beforePosting` runs again
 /// just before the events, and `announce` once they are made and about to be posted. Under route 3 the events go out
 /// through the standing activation's delivery guard (`FakeActivation.deliver`, #200), inside the activation's own
-/// screen-update hold when this action ran it, on the window the events name. An action whose events open with a left
-/// mouse down (`postsLeftMouseDown`: a left click, a drag) lets that consume the activation's arm, as before #187's
-/// inert click: no inert click goes before it, and one goes at the release only when none went (a stop before the
-/// events); the click that consumed it rides in the meta when this action ran the activation or consumed its arm.
+/// screen-update hold when this action ran it, on the window the events name; in shared mode held until the window order
+/// reads back, to a 200 ms cap, when that activation clicked its in-window activation point (#321). An action whose
+/// events open with a left mouse down (`postsLeftMouseDown`: a left click, a drag) lets that consume the activation's
+/// arm, as before #187's inert click: no inert click goes before it, and one goes at the release only when none went (a
+/// stop before the events); the click that consumed it rides in the meta when this action ran the activation or
+/// consumed its arm.
 ///
 /// #282 (Routes.swift), by the connection's device mode, for a left pointer (`postsLeftMouseDown`) under route 3: in
 /// shared mode one into a Chromium web area, or a Chromium hit not established outside one (`pointer.view.mayBeWebArea`), meeting an activation that clicks no activation point is
@@ -253,6 +255,7 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
   defer { activation?.releaseOpenHold() }  // a stop before the events ends the activation's hold with the action
   if route == .activation, let activation {
     activation.holdsThroughDelivery = shared
+    activation.holdsUntilOrderReadsBack = shared  // #321: when its activation clicks its in-window activation point
     let hold = postsLeftMouseDown
       ? PointerHold(defersArmClick: shared, rearmsSpentArm: shared && pointer.view == .acceptsFirstMouse,
                     refusedWithoutActivationPointClick: shared && pointer.view.mayBeWebArea)
@@ -284,7 +287,9 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
       if let standing { if standing.postAction(made, postAll) { reportsArm = true; consumedArm = true } } else { postAll() }
     }
     // Dedicated mode puts nothing back: no delivery guard, no after-action watch (the Linux foreground route's choice).
-    if let standing, shared { meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, postEvents) } else { postEvents() }
+    if let standing, shared {
+      meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, pointer: true, ranBy: activation, postEvents)
+    } else { postEvents() }
   }
   if route == .foreground, let foreground {
     defer { meta.keyWindowRestored = foreground.keyWindowRestored }  // on a restore failure too

@@ -983,6 +983,7 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(delivery.frozenMs, 10 + activationPointGuardMinimumMs + 12)
 
     XCTAssertNil(DeliveryGuardOutcome().wire["frozenMs"])
+    XCTAssertEqual(screenReenableStampWaitMs, 100, "ruling a47484f9's bound")
     let started = Date()
     XCTAssertNil(ReenableStamp().wait(upToMs: 10_000), "never armed: no wait")
     XCTAssertLessThan(Date().timeIntervalSince(started), 1)
@@ -992,6 +993,36 @@ final class ClickDeliveryTests: XCTestCase {
     armed.stamp(42)
     armed.stamp(50)
     XCTAssertEqual(armed.wait(upToMs: 5), 42, "the first call's")
+  }
+
+  /// The review of 74fe29f8..2821788e (one P2): the wait for the release's stamp never shifts the record's Unix times.
+  /// The fake clock costs no real time, so the guard's end is the moment the click call began, give or take its own
+  /// run; a stamp that comes 60 ms of real time late is still recorded, and the Unix times stay on the guard's end. A
+  /// stamp that never comes is waited for 100 ms and no longer (ruling a47484f9), and the record answers without it.
+  func testTheWaitForTheReleasesStampLeavesTheUnixTimesWhereTheyHappened() throws {
+    for (delay, stamped) in [(60.0, true), (Double.infinity, false)] {
+      let seam = GuardSeam(frontmost: user)
+      seam.reenableStampRealDelayMs = delay
+      var meta = meta()
+      let before = unixMilliseconds()
+      let started = Date()
+      try click(seam, activation: activation(seam, at: insidePoint), meta: &meta)
+      let waited = Date().timeIntervalSince(started) * 1000
+      let delivery = try XCTUnwrap(meta.delivery)
+      let label = stamped ? "a stamp 60 ms late" : "no stamp"
+      // The guard's end on the Unix clock: the events' time plus the guard's span after them (one fake clock for both).
+      let guardEnded = Double(delivery.postedAt) + delivery.guardMs
+      XCTAssertLessThan(guardEnded - Double(before), 25, "\(label): the anchor read before the wait, not after it")
+      XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), delivery.screenHoldMs, accuracy: 1, label)
+      if stamped {
+        XCTAssertEqual(delivery.frozenMs, 10 + activationPointGuardMinimumMs, label)
+        XCTAssertGreaterThanOrEqual(waited, 55, "\(label): waited for")
+      } else {
+        XCTAssertNil(delivery.frozenMs, label)
+        XCTAssertGreaterThanOrEqual(waited, screenReenableStampWaitMs - 5, label)
+        XCTAssertLessThan(waited, screenReenableStampWaitMs + 150, "\(label): never longer than the bound")
+      }
+    }
   }
 
   /// A click without the in-window activation click pays nothing: Chrome's point outside its frame, or no point, keeps
@@ -1663,6 +1694,9 @@ final class GuardSeam {
   var releasedAt: Double?
   /// How long after a release its SLSReenableUpdate is called (#324: the release's queue runs late).
   var reenableLagMs: Double = 0
+  /// When set, the release's stamp comes this many milliseconds of real time after the release, on another thread (the
+  /// release queue's late call, #324); `.infinity`: it never comes.
+  var reenableStampRealDelayMs: Double?
   /// When the last screen-update hold was taken, on the fake clock.
   var heldAt: Double?
   var reactivated: [pid_t] = []
@@ -1744,7 +1778,12 @@ final class GuardSeam {
       return {
         self.releases += 1
         self.releasedAt = self.clock
-        stamp.stamp(self.clock + self.reenableLagMs)
+        let at = self.clock + self.reenableLagMs
+        if let delay = self.reenableStampRealDelayMs {
+          if delay.isFinite { DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(Int(delay))) { stamp.stamp(at) } }
+        } else {
+          stamp.stamp(at)
+        }
         self.onRelease?()
       }
     }

@@ -3486,8 +3486,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      is unchanged, the guard's reading bounded by the cap. The delivery guard waits up to 100 ms of real time
      (`screenReenableStampWaitMs`) for the stamp after releasing; it is normally already there or a queue hop away. The
      wait is for the call to start, not for the frame SLSReenableUpdate waits on, which #235 moved off the request path.
-     No stamp by then, or no hold taken (SLSDisableUpdate absent or gated): no field. It is this hold's own span: SkyLight
-     re-enables the display only once every hold on the connection is released.
+     No stamp by then, or no hold taken (SLSDisableUpdate absent or gated): no field, and never a longer wait (ruling
+     a47484f9). The record's Unix times (`holdStartedAt`, `releasedAt`, `postedAt`) are anchored on the Unix clock read
+     at the guard's end, before the release and the wait, so the wait never shifts them (the review of
+     74fe29f8..2821788e, one P2: read after the wait, they moved by its length, 59 ms in the reviewer's repro). It is
+     this hold's own span: SkyLight re-enables the display only once every hold on the connection is released.
   7. **select_text on an unfocused NSTextField** answered `selectionNotSettable` before trying to focus, since AppKit
      makes the range settable only once the field editor is attached. Folded in (TextSelection.swift
      `selectionSettableBeforeFocus`, `selectionSettableAfterFocus`): a field whose range is not settable but which
@@ -3500,7 +3503,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      point for set_value (it needs none: the value replaces the text, and select_text writes its own range).
   10. **Model-facing text.** `docs/cua-api/agent-cursor.md` does not describe set_value's focus, so it is unchanged;
      the refusal carries its own sentence.
-  Proven offline (`CaretFirstFocusTests`, 12; `ClickDeliveryTests`, 2 new and the cap test widened; `ValueSettingTests`,
+  Proven offline (`CaretFirstFocusTests`, 12; `ClickDeliveryTests`, 3 new and the cap test widened; `ValueSettingTests`,
   1 new; with FakeAX for the field and the fake clock for the hold):
   - set_value and select_text on a Safari page's unfocused field focus it by the caret write at {0, 0}, read at once,
     with no AXFocused write, nothing pressed and no fallback click, Safari's DOM element included;
@@ -3516,12 +3519,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     ceiling after a slow one's (events 150 ms in), also while each repair blocks for 300 ms; a slower activation's
     click is held past 200 ms from the hold's start until its guard ends;
   - `frozenMs` is the hold's span to the stamped re-enable, at the cap's timer and at the guard's end, beside
-    `screenHoldMs`, on the wire; an unarmed stamp is never waited for, and the first stamp wins;
+    `screenHoldMs`, on the wire; an unarmed stamp is never waited for, and the first stamp wins; a stamp 60 ms late leaves the Unix times on the guard's end, and one that never comes is waited for 100 ms and no longer, with no field;
   - select_text focuses an unfocused AppKit field whose range is not settable and checks it again; a range that stays
     unsettable is refused after the focus, and an element needing no focus before anything is written;
   - `fieldFocus` on the wire.
   Every other suite passes unchanged (#313's `TextEntryClickTests`, #315's `GeckoPointerTests`, #282's
-  `BackgroundPointerTests`, the paste and focus-hold suites). Each of 45 rules and bounds removed in turn
+  `BackgroundPointerTests`, the paste and focus-hold suites). Each of 49 rules and bounds removed in turn
   (`~/.local/share/187/mutate-324.py`) fails a test. focusField's glue (the page engine, the live subrole read, the
   method's interval and the settle mark) reads live AX and is not unit tested: the hosted check covers it.
   **What the hosted check must verify** (`probe/324-measure`'s cells, against main, each behind a frontmost TextEdit,

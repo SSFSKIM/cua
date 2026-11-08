@@ -699,9 +699,11 @@ final class FakeActivation {
       outcome.transientRaise = TransientRaise(seen: true, ms: round((orderReadBack ?? ended) - raiseSeen), outlivedHold: !readBackInsideHold)
     }
     let held = ended - hold.startedAt
+    // The Unix anchor is read with `ended`, before the release and the wait for its stamp (up to
+    // `screenReenableStampWaitMs`), so the wait never shifts the hold's, the release's or the events' Unix times.
+    let now = unixMilliseconds()
     hold.release()
     outcome.frozenMs = hold.stamp.wait(upToMs: screenReenableStampWaitMs).map { round($0 - hold.startedAt) }
-    let now = unixMilliseconds()
     outcome.holdStartedAt = now - Int64(held.rounded())
     outcome.releasedAt = outcome.holdStartedAt + Int64(min(held, capMs).rounded())
     outcome.postedAt = now - Int64((ended - posted).rounded())

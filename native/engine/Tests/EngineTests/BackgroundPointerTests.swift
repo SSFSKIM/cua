@@ -532,7 +532,9 @@ final class BackgroundPointerTests: XCTestCase {
     let before = monotonicMilliseconds()
     var timings = Timings()
     let step = web.observeEnablement(eligible: true, pid: 7, launched: nil, connection: 1, access: access, timings: &timings)
-    XCTAssertEqual(writes, 1, "the write was attempted")
+    // The write was attempted; Electron's computed getter cannot confirm that a failed AXManualAccessibility write did
+    // not take, so it is rolled back too (#293's re-review).
+    XCTAssertEqual(writes, 2, "the write was attempted, then rolled back")
     XCTAssertNil(step?.set, "and failed")
     XCTAssertEqual(timings.wire["enablementWrite"] as? String, "failed")
     XCTAssertEqual(timings.wire["enablementWriteError"] as? Int, Int(AXError.cannotComplete.rawValue))

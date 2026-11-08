@@ -282,7 +282,7 @@ extension Engine {
     let seen = engine != .other && webAccessibility.hasSeenWebArea(pid: appPid, launched: processGeneration(launchDate: app.running?.launchDate, pid: appPid))
     let view = pointerView(engine: engine, webAreaSeen: seen, hit: hit, role: { attribute($0, kAXRoleAttribute) as? String },
                            parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead)
-    return PointerTarget(view: view, app: app.displayName, noun: noun)
+    return PointerTarget(view: view, app: app.displayName, noun: noun, engine: engine)
   }
 
   /// `pointerTarget` for a left click by route 3, with #288's establishment first (Routes.swift `establishedPointerView`)
@@ -304,7 +304,7 @@ extension Engine {
                                              parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead,
                                              establish: establish)
     if let record = established.record { meta.pointerEstablish = record }
-    return (PointerTarget(view: established.view, app: app.displayName), established.hit)
+    return (PointerTarget(view: established.view, app: app.displayName, engine: engine), established.hit)
   }
 
   /// The element route a plain left click refused in a web area takes (#282): the control the hit resolves to
@@ -323,6 +323,7 @@ extension Engine {
                     appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
                     stalePoint: StalePointGate<AXUIElement>? = nil) -> ((inout InputMeta) throws -> Void)? {
     guard button == .left, count == 1 else { return nil }
+    let engine = webAccessibility.pageEngine(app.appPath)
     var walk: [String] = []
     let resolution = webAreaControl(hit, role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
                                     editable: { attribute($0, "AXEditableAncestor") != nil }, walk: &walk)
@@ -337,7 +338,7 @@ extension Engine {
       // A text field is focused instead: on Chromium by AXFocused (#283), with no re-read, since it works before complete
       // mode; on Gecko by its own action, its focus read back (#315), since a background Firefox ignores the write.
       if why == .editable {
-        switch webAreaFocusCarrier(webAccessibility.pageEngine(app.appPath)) {
+        switch webAreaFocusCarrier(engine) {
         case .focusWrite:
           return webAreaFocus(hit, point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context, stalePoint: stalePoint)
         case .pressReadingFocus:
@@ -347,7 +348,7 @@ extension Engine {
       }
       return { meta in
         refused(why, &meta)
-        throw backgroundClickRefused(app.displayName)
+        throw backgroundClickRefused(app.displayName, engine: engine)
       }
     }
     let control = resolved.control
@@ -368,7 +369,8 @@ extension Engine {
       case .success(let pressed): (action, role) = (pressed.action, pressed.role)
       case .failure(let why):
         refused(why, &meta)
-        throw why == .noAction ? backgroundClickRefusedObserveFirst(app.displayName) : backgroundClickRefused(app.displayName)
+        throw why == .noAction ? backgroundClickRefusedObserveFirst(app.displayName, engine: engine)
+                               : backgroundClickRefused(app.displayName, engine: engine)
       }
       // The early check, after the action's re-read; the final one runs at the perform, after any focus hold.
       try checkStalePoint(stalePoint, pressing: control, waited: waited, meta: &meta)
@@ -404,7 +406,8 @@ extension Engine {
   /// #282's walk is when there is none; else its own action (AXPick, else AXPress) as an element click's, by route 3's
   /// held activation when Firefox does not believe it has focus (measured not raising Firefox, #287 and #313), accepted
   /// once the field reads focused, else `clickUnconfirmed`. A field advertising no action is refused, nothing done.
-  /// Nothing writes AXFocused or a selection; the caret is where Gecko puts it, and the note says so. Records the walk,
+  /// Nothing writes AXFocused or a selection; the caret is where Gecko puts it, and the note says so. Its refusals name no
+  /// alternative (`backgroundFieldAlternative`): a field this route cannot carry, an element click cannot either. Records the walk,
   /// the field's role, whether it was the hit, and the read-back (`elementClick` reason `webArea`, `focus`, `focusStep`).
   func webAreaFocusPress(_ hit: AXUIElement, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
                          context: ExecutionContext, stalePoint: StalePointGate<AXUIElement>? = nil) -> (inout InputMeta) throws -> Void {

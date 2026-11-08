@@ -200,6 +200,9 @@ struct PointerTarget {
   let view: PointerView
   let app: String
   var noun = "click"
+  /// The page engine of the app the pointer aims at (#315): its refusal names what still works there
+  /// (`backgroundFieldAlternative`).
+  var engine: PageEngine = .other
   var elementRoute: ((inout InputMeta) throws -> Void)? = nil
   /// #296's refusal of a stale point (StalePoint.swift), thrown before anything is posted on every path that would post
   /// the pointer's events; nil when the guard kept the point or did not run (an element's own point).
@@ -267,7 +270,7 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
       release = try activations.acquire(pid: activation.pid, holder: ActivationHolder(connection: meta.context.connection.id),
                                         pointer: hold, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
     } catch is PointerRefused {
-      guard let elementRoute = pointer.elementRoute else { throw backgroundClickRefused(pointer.app) }
+      guard let elementRoute = pointer.elementRoute else { throw backgroundClickRefused(pointer.app, engine: pointer.engine) }
       try elementRoute(&meta)
       return
     }

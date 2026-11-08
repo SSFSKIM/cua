@@ -17,6 +17,8 @@ final class GeckoPointerTests: XCTestCase {
   private let window = CGRect(x: 80, y: 60, width: 610, height: 860)
   private let point = CGPoint(x: 300, y: 400)
   private let activations = HeldActivations()
+  /// The refusal into Firefox's page, naming what still works on its fields (the design session's ruling 99e45959).
+  private let refusal = "Firefox's web page does not accept a background click; bring Firefox forward or use a dedicated desktop. A text field on the page still works in the background: click the field by its element ID, which focuses it through accessibility, then type or set its value"
 
   private final class Node {
     let role: String?
@@ -72,7 +74,7 @@ final class GeckoPointerTests: XCTestCase {
   }
 
   private func pointer(_ view: PointerView, noun: String = "click", _ route: ((inout InputMeta) throws -> Void)? = nil) -> PointerTarget {
-    PointerTarget(view: view, app: "Firefox", noun: noun, elementRoute: route)
+    PointerTarget(view: view, app: "Firefox", noun: noun, engine: .gecko, elementRoute: route)
   }
 
   private func click(_ seam: GuardSeam, activation: FakeActivation, pointer: PointerTarget, count: Int = 1, meta: inout InputMeta) throws {
@@ -96,11 +98,11 @@ final class GeckoPointerTests: XCTestCase {
   /// (`pressed`), or the refusal thrown with nothing pressed.
   private func elementRoute(_ hit: Node, pressed: @escaping (Node, String) -> Void) -> (inout InputMeta) throws -> Void {
     { _ in
-      guard case .success(let resolved) = self.control(hit) else { throw backgroundClickRefused("Firefox") }
+      guard case .success(let resolved) = self.control(hit) else { throw backgroundClickRefused("Firefox", engine: .gecko) }
       let decision = webAreaPressDecision(resolved.control, walkedRole: resolved.role, fresh: false, actions: { $0.actions },
                                           role: { $0.role }, parent: { $0.parent }, editable: { _ in false },
                                           now: { 0 }, sleep: { _ in XCTFail("no wait where not fresh") })
-      guard case .success(let press) = decision else { throw backgroundClickRefused("Firefox") }
+      guard case .success(let press) = decision else { throw backgroundClickRefused("Firefox", engine: .gecko) }
       pressed(resolved.control, press.action)
     }
   }
@@ -164,8 +166,7 @@ final class GeckoPointerTests: XCTestCase {
       }
       XCTAssertThrowsError(try attempt(), name) {
         XCTAssertEqual(($0 as? EngineError)?.errorName, "backgroundClickRefused", name)
-        XCTAssertEqual(($0 as? EngineError)?.message,
-                       "Firefox's web page does not accept a background click; bring Firefox forward or use a dedicated desktop", name)
+        XCTAssertEqual(($0 as? EngineError)?.message, self.refusal, name)
       }
       XCTAssertEqual(refused.posts.count, 0, "nothing posted: \(name)")
       XCTAssertEqual(refused.holds, 0, name)
@@ -213,6 +214,39 @@ final class GeckoPointerTests: XCTestCase {
         XCTAssertEqual(($0 as? EngineError)?.errorName, "backgroundClickRefused")
       }
       XCTAssertEqual(seam.posts.count, 0, hit.role ?? "")
+    }
+  }
+
+  /// The ruling 99e45959: a refusal into a Gecko page names what still works on its fields, by the page engine the
+  /// pointer carries: set_value's and select_text's fallback click (a plain click with no element route), a drag, and
+  /// the observe-first refusal of a control with no action yet. Chromium's and any other app's wording is unchanged.
+  func testAGeckoRefusalNamesWhatStillWorksOnItsFields() {
+    let firefox = Firefox()
+    let field = Node("AXTextArea", actions: ["AXPress"], parent: Node("AXGroup", parent: firefox.page))
+    for noun in ["click", "drag"] {
+      let seam = GuardSeam(frontmost: user)
+      var refusedMeta = meta(connection())
+      let fallback = pointer(view(field), noun: noun)  // focusField's fallback takes no element route
+      XCTAssertThrowsError(try noun == "drag" ? drag(seam, activation: firefoxActivation(seam), pointer: fallback, meta: &refusedMeta)
+                                              : click(seam, activation: firefoxActivation(seam), pointer: fallback, meta: &refusedMeta)) {
+        XCTAssertEqual(($0 as? EngineError)?.message, refusal, noun)
+      }
+      XCTAssertEqual(seam.posts.count, 0, noun)
+    }
+    XCTAssertEqual(backgroundClickRefused("Firefox", engine: .gecko).message, refusal)
+    XCTAssertEqual(backgroundClickRefusedObserveFirst("Firefox", engine: .gecko).message,
+                   "Firefox's web page does not accept a background click, and the control there exposes no action yet; observe Firefox with get_app_state first and click again, or bring Firefox forward or use a dedicated desktop. A text field on the page still works in the background: click the field by its element ID, which focuses it through accessibility, then type or set its value")
+    for engine in [PageEngine.chromium, .other] {
+      XCTAssertEqual(backgroundClickRefused("Chrome", engine: engine).message,
+                     "Chrome's web page does not accept a background click; bring Chrome forward or use a dedicated desktop", "\(engine)")
+      XCTAssertFalse(backgroundClickRefusedObserveFirst("Chrome", engine: engine).message.contains("text field"), "\(engine)")
+      let seam = GuardSeam(frontmost: user)
+      var refusedMeta = meta(connection())
+      let chrome = PointerTarget(view: .webArea, app: "Chrome", engine: engine)
+      XCTAssertThrowsError(try click(seam, activation: firefoxActivation(seam), pointer: chrome, meta: &refusedMeta)) {
+        XCTAssertEqual(($0 as? EngineError)?.message,
+                       "Chrome's web page does not accept a background click; bring Chrome forward or use a dedicated desktop", "\(engine)")
+      }
     }
   }
 

@@ -3312,7 +3312,21 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      text, so parity's expected diff is that paragraph alone).
   9. **Not done:** the toolbar's `clickUnconfirmed` (item 4, #318); a Firefox field's caret at the point (no
      AXSelectedTextRange step was measured on Gecko); focusField's fallback carried by the field's press.
-  Proven offline (`GeckoPointerTests`, 10, over Firefox 159's tree and its activation, the AXActivationPoint inside the
+  10. **The refusal names what still works** (the design session's ruling 99e45959, which accepted the web-area scope
+     and item 7's refusal of the fallback click). On a Gecko page, `backgroundClickRefused` and its observe-first form
+     add a sentence (Routes.swift `backgroundFieldAlternative`, keyed on the page engine the pointer carries,
+     `PointerTarget.engine`, never on an app name):
+     `Firefox's web page does not accept a background click; bring Firefox forward or use a dedicated desktop. A text
+     field on the page still works in the background: click the field by its element ID, which focuses it through
+     accessibility, then type or set its value`. It reaches set_value's and select_text's fallback click, a drag, a
+     double click, and a click on something with no action (the element route's walk refusal and its no-action
+     refusal). An element click on a Firefox field is carried by #313's press and read-back, or by item 6's route when
+     its point lands inside it, and a focused field takes set_value with no fallback click. The focus route's own
+     refusals (a field with no action, a walk that reaches no text-entry element) name no alternative, since an element
+     click there meets the same refusal. Chromium's and every other engine's wording is unchanged: its JS tests
+     (`test/services-engine-service.test.mjs`) and `agent-cursor.md`, which quotes the sentence's first clause, still
+     hold as they are.
+  Proven offline (`GeckoPointerTests`, 11, over Firefox 159's tree and its activation, the AXActivationPoint inside the
   frame on a toolbar button):
   - Firefox's page is a web area whether or not an observation saw it; no hit, the scroll area over the web area and an
     unreadable role are possible web areas; the toolbar is `unknown`, seen or not, never known to accept;
@@ -3327,6 +3341,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - a field its press leaves unfocused answers `clickUnconfirmed` after the settle; one with no action, or unread
     actions, is refused with nothing pressed or read;
   - the toolbar's click is posted and answers `clickUnconfirmed`;
+  - a refused click with no element route (the fallback's) and a refused drag into a Gecko page carry item 10's
+    sentence, as do both refusal forms on Gecko, while Chromium's and another engine's stay word for word;
   - dedicated mode posts a page click and a drag with the inert click first, no element route and no delivery guard;
   - Safari's page and a native button stay `unknown`, Safari's click is posted after its activation-point click, and
     Chromium's toolbar and page answers are unchanged.
@@ -3340,8 +3356,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     `elementClick.reason` `webArea`, pointerdown from Gecko's own action only, and the effect seen; a checkbox's value
     check passes; text fields and textareas (and a password field) answer `focus` `readBack`, `focusStep` `press`, and
     type_text lands in them; a `/fixedtail` row below the top by token is pressed (`pressed` `ancestor`, its AXLink),
-    12 of 12; a coordinate click on plain text is `backgroundClickRefused` with nothing posted; toolbar Reload reloads
-    and answers `clickUnconfirmed` as on main; a drag in the page is refused, nothing posted; Firefox never frontmost
+    12 of 12; a coordinate click on plain text is `backgroundClickRefused` with nothing posted and item 10's
+    sentence, and set_value on a field Firefox has not focused is refused with it too, then succeeds after an element
+    click on that field; toolbar Reload reloads and answers `clickUnconfirmed` as on main; a drag in the page is refused, nothing posted; Firefox never frontmost
     and its window never left above TextEdit;
   - **Firefox, dedicated:** every cell as on main (delivered, the window coming forward);
   - **Firefox sidebar or devtools** (one cell each, if the kit can open them): whether their hits answer inside an

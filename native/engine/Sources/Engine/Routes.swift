@@ -640,17 +640,30 @@ func pressConfirmingValue(app: String, checksValue: Bool, readValue: () -> Strin
   throw pressUnconfirmed(app)
 }
 
-/// Shared mode's refusal of a left pointer into a Chromium or (#315) Gecko web area (#282), in the Linux engine's form (the cause, then
-/// the remedy): nothing was posted.
-func backgroundClickRefused(_ app: String) -> EngineError {
-  EngineError(name: "backgroundClickRefused", "\(app)'s web page does not accept a background click; bring \(app) forward or use a dedicated desktop")
+/// Shared mode's refusal of a left pointer into a Chromium or (#315) Gecko web area (#282), in the Linux engine's form (the
+/// cause, then the remedy): nothing was posted. `engine`, the page's, adds what still works there in the background
+/// (`backgroundFieldAlternative`); Chromium's wording is unchanged.
+func backgroundClickRefused(_ app: String, engine: PageEngine = .other) -> EngineError {
+  EngineError(name: "backgroundClickRefused",
+    "\(app)'s web page does not accept a background click; bring \(app) forward or use a dedicated desktop" + backgroundFieldAlternative(engine))
 }
 
 /// The refusal of a control whose action the page has not exposed yet (`WebAreaRefusal.noAction`): its accessibility may
 /// still be coming up, so observing the app first may let the next click through.
-func backgroundClickRefusedObserveFirst(_ app: String) -> EngineError {
+func backgroundClickRefusedObserveFirst(_ app: String, engine: PageEngine = .other) -> EngineError {
   EngineError(name: "backgroundClickRefused",
-    "\(app)'s web page does not accept a background click, and the control there exposes no action yet; observe \(app) with get_app_state first and click again, or bring \(app) forward or use a dedicated desktop")
+    "\(app)'s web page does not accept a background click, and the control there exposes no action yet; observe \(app) with get_app_state first and click again, or bring \(app) forward or use a dedicated desktop"
+      + backgroundFieldAlternative(engine))
+}
+
+/// #315 (the design session's ruling 99e45959): a refusal into a Gecko page names what still works on its text fields in
+/// the background, an element click on the field, which Gecko's AXPress focuses (read back, `pressFocusingField` and
+/// #313's `carryActionClick`), besides the dedicated desktop the sentence already names. It reaches set_value's and
+/// select_text's fallback click, a drag, and a click on something with no action. Empty for any other engine.
+func backgroundFieldAlternative(_ engine: PageEngine) -> String {
+  engine == .gecko
+    ? ". A text field on the page still works in the background: click the field by its element ID, which focuses it through accessibility, then type or set its value"
+    : ""
 }
 
 /// The answer of a pointer whose own mouse down consumed route 3's activation arm in a view not known to accept first

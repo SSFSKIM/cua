@@ -9,7 +9,8 @@ import Foundation
 // chrome that is no control) and inside the window's frame (cua's declared differences, U13 and the focus hold's review),
 // else at an inert point outside the frame. Around it, when another app is frontmost: screen updates held with the
 // private SLSDisableUpdate/SLSReenableUpdate, released when the guard ends or, by a timer, at `activationHoldCapMs`
-// (`activationPointHoldCapMs` for a shared-mode pointer whose activation clicked its in-window activation point, #321),
+// (for a shared-mode pointer whose activation clicked its in-window activation point, #321 and #324:
+// `activationPointHoldCapMs` after the pointer's events, never past `activationPointHoldCeilingMs` from the hold's start),
 // whichever is first, so a slow guard (a raise waiting out its AX timeout included) never freezes the display for long;
 // the release itself runs on a serial queue of its own, off the request path (ScreenUpdateReleases), since it blocks
 // while one of the engine's own windows animates (the agent cursor's panel, #235); and a 10 ms poll for up to 1 s that
@@ -49,8 +50,18 @@ let activationHoldCapMs: Double = 100
 /// released then, or by the timer at this cap even when the order never reads back. A click without that activation
 /// click (Chromium's point lies outside its window) keeps `activationHoldCapMs` and `deliveryGuardMinimumMs`. Any
 /// raise of this cap goes back to the design session.
+///
+/// #324 (the design session's ruling 8c206e91): the cap counts from the pointer's events, not the hold's start, so a
+/// slow activation (#321's residue: events 133 to 201 ms into the hold, 65 ms or less of hold after them) still holds
+/// 200 ms past its events; and the hold never outlasts `activationPointHoldCeilingMs` from its start, whichever comes
+/// first. The worst freeze is the ceiling, on the about 2% of clicks whose activation is slow. Any raise of the ceiling
+/// goes back to the design session.
 let activationPointHoldCapMs: Double = 200
+let activationPointHoldCeilingMs: Double = 300
 let activationPointGuardMinimumMs: Double = 150
+/// How long a delivery guard waits, in real time, for its hold's SLSReenableUpdate to be called on
+/// ScreenUpdateReleases' queue (`frozenMs`, #324) before it answers without it.
+let screenReenableStampWaitMs: Double = 100
 /// The guard's poll: every 10 ms for up to 1 s (F §5.5).
 let activationGuardTimeoutMs: Double = 1_000
 let activationGuardSampleMs: Double = 10
@@ -79,10 +90,15 @@ private enum SkyLight {
   static let reenableUpdate: Update? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSReenableUpdate").map { unsafeBitCast($0, to: Update.self) }
 
   /// Holds screen updates on the main connection and answers the release (nothing to release when the calls are absent).
-  static func hold() -> () -> Void {
-    guard let connection = mainConnectionID?() else { return {} }
-    _ = disableUpdate?(connection)
-    return { _ = reenableUpdate?(connection) }
+  /// `stamp` (#324) is armed once the update is disabled, and stamped just before SLSReenableUpdate is called.
+  static func hold(stamping stamp: ReenableStamp) -> () -> Void {
+    guard let connection = mainConnectionID?(), let disableUpdate, let reenableUpdate else { return {} }
+    _ = disableUpdate(connection)
+    stamp.arm()
+    return {
+      stamp.stamp(monotonicMilliseconds())
+      _ = reenableUpdate(connection)
+    }
   }
 }
 
@@ -116,8 +132,11 @@ struct ActivationSystem {
   var post: (CGEvent, pid_t) -> Void = gatedPost
   var frontmost: () -> pid_t? = frontmostPid
   var keyFocus: () -> pid_t? = { KeyFocus.pid() }
-  /// Answers the release, which returns at once: the re-enable runs on ScreenUpdateReleases' queue.
-  var holdScreenUpdates: () -> () -> Void = { DesktopGate.allows("SLSDisableUpdate") ? ScreenUpdateReleases.shared.hold(SkyLight.hold) : {} }
+  /// Answers the release, which returns at once: the re-enable runs on ScreenUpdateReleases' queue, and stamps its
+  /// `ReenableStamp` as it is called (#324).
+  var holdScreenUpdates: (ReenableStamp) -> () -> Void = { stamp in
+    DesktopGate.allows("SLSDisableUpdate") ? ScreenUpdateReleases.shared.hold { SkyLight.hold(stamping: stamp) } : {}
+  }
   var reactivate: (pid_t) -> Bool = { DesktopGate.allows("NSRunningApplication.activate") && (NSRunningApplication(processIdentifier: $0)?.activate(options: []) ?? false) }
   /// The user's focused window and its window number, the one the target's window must stay behind.
   var userWindow: (pid_t) -> (element: AXUIElement, id: CGWindowID)? = { user in
@@ -220,6 +239,35 @@ final class ScreenUpdateReleases: @unchecked Sendable {
   func drain() { queue.sync {} }
 }
 
+/// When a screen-update hold's SLSReenableUpdate was really called (#324), on the monotonic clock: the cap's timer and
+/// the release's queue both run late (the spike measured the display frozen a median 12 to 26 ms past `screenHoldMs`,
+/// up to about 100 ms), so the release stamps it itself, just before the call. Armed only once a hold was really taken
+/// (SLSDisableUpdate called): an unarmed stamp is never waited for.
+final class ReenableStamp: @unchecked Sendable {
+  private let condition = NSCondition()
+  private var armed = false
+  private var at: Double?
+
+  func arm() { condition.withLock { armed = true } }
+
+  func stamp(_ time: Double) {
+    condition.withLock {
+      if at == nil { at = time }
+      condition.broadcast()
+    }
+  }
+
+  /// The stamp, waited for up to `ms` of real time when the hold was taken; nil when it was not, or not stamped by then.
+  func wait(upToMs ms: Double) -> Double? {
+    condition.lock()
+    defer { condition.unlock() }
+    guard armed else { return nil }
+    let deadline = Date(timeIntervalSinceNow: ms / 1000)
+    while at == nil, condition.wait(until: deadline) {}
+    return at
+  }
+}
+
 /// A release that runs once, however many times and from whichever thread it is asked for (the guard's own end, or the
 /// cap's timer).
 private final class OnceRelease: @unchecked Sendable {
@@ -251,6 +299,11 @@ struct DeliveryGuardOutcome: Equatable {
   /// The screen-update hold, from its start (the activation's, or the guard's own inside a held activation) to its
   /// release, at most the cap.
   var screenHoldMs: Double = 0
+  /// #324: the hold's real span, from its start to the moment its SLSReenableUpdate was called (`ReenableStamp`, on the
+  /// release's queue), which the cap's timer and the queue make later than `screenHoldMs`'s release; nil when no hold
+  /// was taken or the call had not come within `screenReenableStampWaitMs`. It is this hold's own span: SkyLight
+  /// re-enables the display only once every hold on the connection is released.
+  var frozenMs: Double?
   /// The guard reached the hold's cap before its stable samples: the display was released, the guard ended there.
   var capped = false
   /// The guard's last sample saw the target's window above the user's, or the target's process (or the bound app's) in
@@ -280,6 +333,7 @@ struct DeliveryGuardOutcome: Equatable {
                                "holdStartedAt": Int(holdStartedAt), "releasedAt": Int(releasedAt), "postedAt": Int(postedAt),
                                "repairedAfterRelease": repairedAfterRelease, "personInput": personInput]
     if let restoreLatencyMs { wire["restoreLatencyMs"] = restoreLatencyMs }
+    if let frozenMs { wire["frozenMs"] = frozenMs }
     if let repairAfterReleaseLatencyMs { wire["repairAfterReleaseLatencyMs"] = repairAfterReleaseLatencyMs }
     wire["transientRaise"] = transientRaise.wire
     return wire
@@ -310,14 +364,22 @@ fileprivate struct GuardedUser {
 }
 
 /// A screen-update hold kept open for a delivery guard: its release (once, by the guard or the cap's timer), when it
-/// began, and the user it keeps in front.
+/// began, the user it keeps in front, and when its SLSReenableUpdate was called (`stamp`, #324).
 private struct OpenHold {
   let release: OnceRelease
   let startedAt: Double
   let user: GuardedUser
-  /// Held until the order reads back, to `activationPointHoldCapMs` (#321); else to `activationHoldCapMs`.
+  let stamp: ReenableStamp
+  /// Held until the order reads back (#321), to `activationPointHoldCapMs` after the events and never past
+  /// `activationPointHoldCeilingMs` from its start (#324); else to `activationHoldCapMs`.
   var untilOrderReadsBack = false
-  var capMs: Double { untilOrderReadsBack ? activationPointHoldCapMs : activationHoldCapMs }
+  /// The timer set as the hold opens, before any events: the ceiling, or main's cap.
+  var openingCapMs: Double { untilOrderReadsBack ? activationPointHoldCeilingMs : activationHoldCapMs }
+  /// The cap from the hold's start once the events went at `posted` (#324): whichever comes first of the cap after the
+  /// events and the ceiling; main's cap for any other hold.
+  func capMs(eventsAt posted: Double) -> Double {
+    untilOrderReadsBack ? min(posted - startedAt + activationPointHoldCapMs, activationPointHoldCeilingMs) : activationHoldCapMs
+  }
 }
 
 /// One action's fake activation of the app `pid` for its window.
@@ -343,7 +405,7 @@ final class FakeActivation {
   var holdsThroughDelivery = false
   /// Set by a shared-mode pointer action before its activation runs (#321): when the activation clicks its in-window
   /// activation point, the hold it leaves open for the delivery guard is held until the order reads back
-  /// (`activationPointHoldCapMs`).
+  /// (`activationPointHoldCapMs` after the events, `activationPointHoldCeilingMs` from its start).
   var holdsUntilOrderReadsBack = false
   private let openHoldLock = NSLock()
   private var openHold: OpenHold?
@@ -425,11 +487,14 @@ final class FakeActivation {
     let guarded = guardedUser(user)
     let userWindow = guarded.window
     let holdStarted = system.now()
-    let release = OnceRelease(system.holdScreenUpdates())
+    let stamp = ReenableStamp()
+    let release = OnceRelease(system.holdScreenUpdates(stamp))
     var keepsHold = false
     defer { if !keepsHold { release() } }
     let untilOrderReadsBack = holdsThroughDelivery && holdsUntilOrderReadsBack && planned.kind == .activationPoint
-    system.schedule(untilOrderReadsBack ? activationPointHoldCapMs : activationHoldCapMs) { release() }
+    // #324: a hold kept until the order reads back is timed at its ceiling here; its cap after the events is set once
+    // they go (`deliver`).
+    system.schedule(untilOrderReadsBack ? activationPointHoldCeilingMs : activationHoldCapMs) { release() }
     postActivation(planned)
     let started = system.now()
     defer { guardMs = ((system.now() - started) * 1000).rounded() / 1000 }
@@ -460,7 +525,7 @@ final class FakeActivation {
     if holdsThroughDelivery {
       keepsHold = true
       openHoldLock.withLock {
-        openHold = OpenHold(release: release, startedAt: holdStarted, user: guarded, untilOrderReadsBack: untilOrderReadsBack)
+        openHold = OpenHold(release: release, startedAt: holdStarted, user: guarded, stamp: stamp, untilOrderReadsBack: untilOrderReadsBack)
       }
     }
   }
@@ -508,8 +573,9 @@ final class FakeActivation {
   /// #321: a shared-mode pointer action (`pointer`) whose activation, its own or the one it shares, clicked its
   /// in-window activation point (`clickKind`) holds until the order reads back: the guard samples for at least
   /// `activationPointGuardMinimumMs` after the events and ends on its stable samples as ever, and the hold is released
-  /// then, or at `activationPointHoldCapMs` by the timer whatever the order. Every other delivery is as before. Each
-  /// records what its samples saw of a reorder (`transientRaise`).
+  /// then, or by the timer whatever the order at `activationPointHoldCapMs` after the events or
+  /// `activationPointHoldCeilingMs` after the hold's start, whichever is first (#324). Every other delivery is as
+  /// before. Each records what its samples saw of a reorder (`transientRaise`) and the hold's real span (`frozenMs`).
   ///
   /// `ranBy` is the activation the calling action made (nil when it made none): the hold this activation's guard left
   /// open is its own action's alone, cap and least wait included, so an action of another connection sharing the
@@ -528,17 +594,24 @@ final class FakeActivation {
       }
       let guarded = guardedUser(user)
       let started = system.now()
-      let release = OnceRelease(system.holdScreenUpdates())
-      let opened = OpenHold(release: release, startedAt: started, user: guarded, untilOrderReadsBack: pointer && clickKind == .activationPoint)
-      system.schedule(opened.capMs) { release() }
+      let stamp = ReenableStamp()
+      let release = OnceRelease(system.holdScreenUpdates(stamp))
+      let opened = OpenHold(release: release, startedAt: started, user: guarded, stamp: stamp,
+                            untilOrderReadsBack: pointer && clickKind == .activationPoint)
+      system.schedule(opened.openingCapMs) { release() }
       hold = opened
     }
-    let capMs = hold.capMs
     let minimumMs = hold.untilOrderReadsBack ? activationPointGuardMinimumMs : deliveryGuardMinimumMs
     let targetWindow = window ?? windowID
     var outcome = DeliveryGuardOutcome()
     post()
     let posted = system.now()
+    // #324: a hold kept until the order reads back is capped from its events, by a timer of its own beside the ceiling's.
+    let capMs = hold.capMs(eventsAt: posted)
+    if hold.untilOrderReadsBack {
+      let release = hold.release
+      system.schedule(max(0, hold.startedAt + capMs - posted)) { release() }
+    }
     let round = { (ms: Double) in (ms * 1000).rounded() / 1000 }
     // The cap's timer releases the hold on its own, so the deadline is read again after whatever may block (the poll's
     // sleep, the reads, a restore). Past it a repair shows on the display, so it is made only inside the repair window
@@ -627,6 +700,7 @@ final class FakeActivation {
     }
     let held = ended - hold.startedAt
     hold.release()
+    outcome.frozenMs = hold.stamp.wait(upToMs: screenReenableStampWaitMs).map { round($0 - hold.startedAt) }
     let now = unixMilliseconds()
     outcome.holdStartedAt = now - Int64(held.rounded())
     outcome.releasedAt = outcome.holdStartedAt + Int64(min(held, capMs).rounded())

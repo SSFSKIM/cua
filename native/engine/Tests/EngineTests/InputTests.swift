@@ -448,7 +448,7 @@ final class SeamStub {
     }
     system.frontmost = { self.frontmost }
     system.keyFocus = { self.keyFocus }
-    system.holdScreenUpdates = { self.holds += 1; return { self.releases += 1 } }
+    system.holdScreenUpdates = { _ in self.holds += 1; return { self.releases += 1 } }
     system.reactivate = { pid in self.reactivated.append(pid); return self.reactivates }
     system.userWindow = { _ in nil }
     system.activationPoint = { _ in nil }

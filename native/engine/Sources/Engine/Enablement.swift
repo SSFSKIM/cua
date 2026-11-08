@@ -181,10 +181,14 @@ private final class EnabledProcess: @unchecked Sendable {
   /// The process's entry in the enablement record (#293), filed by its pid and start time, while the engine owns its
   /// attribute; nil when it does not, or none could be written.
   var recorded: (pid: pid_t, start: Int64)?
+  /// The process's kernel start time as read with its first observation (#293's review): the identity its record entry
+  /// is filed under, nil without a record or when it could not be read.
+  let start: Int64?
 
-  init(access: EnablementAccess, generationKnown: Bool) {
+  init(access: EnablementAccess, generationKnown: Bool, start: Int64? = nil) {
     self.access = access
     self.generationKnown = generationKnown
+    self.start = start
   }
 }
 
@@ -238,13 +242,14 @@ final class WebAccessibility: @unchecked Sendable {
   }
 
   /// The engine's start (#293), before any connection: restores what dead engines left on (`EnablementRecord.restore`)
-  /// and remembers each restored process as written back, so its next observation sets the attribute again, owned,
-  /// whatever it reads (Chromium's readback after a write-back, Decision Log 2026-10-22). Nil without a record.
+  /// and remembers each restored process as written back, under its own generation and only while its pid still runs the
+  /// entry's process (`currentGeneration`), so its next observation sets the attribute again, owned, whatever it reads
+  /// (Chromium's readback after a write-back, Decision Log 2026-10-22). Nil without a record.
   @discardableResult
   func restoreRecorded() -> EnablementRestore? {
     guard let record else { return nil }
     let report = record.restore()
-    let keys = report.restored.compactMap { entry in record.generation(entry.pid).map { Self.process(entry.pid, $0) } }
+    let keys = report.restored.compactMap { entry in record.currentGeneration(of: entry).map { Self.process(entry.pid, $0) } }
     lock.lock()
     writtenBack.formUnion(keys)
     lock.unlock()
@@ -382,7 +387,7 @@ final class WebAccessibility: @unchecked Sendable {
       lock.unlock()
       return (nil, nil, nil)
     }
-    let entry = processes[key] ?? EnabledProcess(access: access, generationKnown: launched != nil)
+    let entry = processes[key] ?? EnabledProcess(access: access, generationKnown: launched != nil, start: record?.startTime(pid))
     processes[key] = entry
     observers[key, default: []].insert(connection)
     let token = armLocked(key)
@@ -411,15 +416,46 @@ final class WebAccessibility: @unchecked Sendable {
     // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's. A value
     // the engine itself wrote back is its own whatever it reads now. What will be owned is recorded before the write
     // (#293), so an engine killed right after the write leaves an entry the next start restores.
+    // The entry is filed under the identity captured with the process's first observation (`EnabledProcess.start`):
+    // a pid another process took since is neither recorded nor written.
     let owning = read == false || reEnabling
-    let recorded = owning ? record?.add(pid: pid, attribute: name).map { (pid: pid, start: $0) } : nil
+    var recorded: (pid: pid_t, start: Int64)?
+    if owning, let record {
+      switch record.add(pid: pid, start: entry.start, attribute: name) {
+      case .recorded(let start): recorded = (pid, start)
+      case .notWritten: break  // logged; the enablement goes ahead, unrecorded
+      case .otherProcess:
+        entry.on = false
+        return (nil, prior, nil)
+      }
+    }
     let written = entry.access.write(name, true)
     lock.lock()
     freshSinceByProcess[key] = monotonicMilliseconds()
     lock.unlock()
-    guard written == .success || (written == .notImplemented && entry.access.read(name) == true) else {
-      if let recorded { record?.remove(pid: recorded.pid, start: recorded.start) }  // not set: nothing to restore
+    let after = written == .success ? true : entry.access.read(name)
+    guard written == .success || (written == .notImplemented && after == true) else {
       entry.on = false
+      // Not set. Read back false, nothing took: the entry goes. An owned write whose outcome is uncertain (it reads
+      // true or cannot be read after a failing answer) is rolled back; a rollback that fails too keeps the ownership
+      // and the entry, so a release or the next start writes it back.
+      guard owning, after != false else {
+        if let recorded { record?.remove(pid: recorded.pid, start: recorded.start) }
+        return (nil, prior, written)
+      }
+      if [.success, .notImplemented].contains(entry.access.write(name, false)) {
+        if let recorded { record?.remove(pid: recorded.pid, start: recorded.start) }
+        lock.lock()
+        if entry.generationKnown { writtenBack.insert(key) }
+        lock.unlock()
+      } else {
+        entry.owned = name
+        entry.recorded = recorded
+        lock.lock()
+        writtenBack.remove(key)
+        lock.unlock()
+        releaseFailed("enablement write uncertain and its rollback failed: \(name) on pid \(pid); kept owned for a later release")
+      }
       return (nil, prior, written)
     }
     entry.on = true

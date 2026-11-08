@@ -3735,8 +3735,17 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        or written back by the engine since), and before the attribute is written. An engine killed between the two
        leaves an entry for a process that read false; writing it back is harmless. A value read true or unreadable gets
        no entry.
-     - **Removed** in `releaseIfUnobserved` once the write back is done or the process has ended. A write that did not
-       take removes its entry at once. A failed write back keeps the entry, with the ownership.
+     - **Filed under the observed process's identity.** The start time is read when the engine first observes the
+       process (`EnabledProcess.start`), and the entry is filed only while the pid still runs a process with that start
+       time (`EnablementRecord.add`). If another process has taken the pid since, nothing is filed and the attribute is
+       not written.
+     - **Removed** in `releaseIfUnobserved` once the write back is done or the process has ended. A failed write back
+       keeps the entry, with the ownership.
+     - **A write that did not take.** If it reads back false, nothing took, and the entry goes at once. If the outcome
+       is uncertain (-25208 and a read back that fails, or a failing answer and a read back of true), the write is
+       rolled back with a write of false. If the rollback succeeds, the entry goes and the process is remembered as
+       written back. If it fails too, the entry and the ownership are kept (logged), so a release or the next start
+       writes it back.
   4. **Concurrency.** Each file is written whole under a temporary name and renamed into place (Foundation's atomic
      write). A writer that dies mid-write leaves at most a temporary file, which no reader takes (only `.json` names are
      read), and no other entry is touched. Connection threads write different files. One engine runs per directory
@@ -3757,7 +3766,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   6. **After a restore.** A restored process is remembered as written back (`writtenBack`). So the new engine's first
      observation of it sets the attribute again, owned, whatever it reads, as after its own write back. This follows the
      readback rule (Decision Log 2026-10-22): without it, a true readback would leave Chrome out of complete mode while
-     the engine counted it on.
+     the engine counted it on. The memory is keyed by that process's own generation. The generation is read, then the
+     pid is checked to still run a process with the entry's start time (`EnablementRecord.currentGeneration`); if it
+     does not, nothing is remembered, so a pid reused during the restore keeps A3.
   7. **Limits.**
      - **The gap.** EUI stays on from the kill until the next engine starts. Nothing starts an engine only to restore.
      - **One directory.** The record is per engine directory: an engine at another socket (a harness's
@@ -3767,8 +3778,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - **Another client.** An attribute that another client also wants on after cua's write (VoiceOver) is written back,
        as #292's release already does.
   Proven offline:
-  - `EnablementRecordTests`, 12:
+  - `EnablementRecordTests`, 16:
     - the entry filed before the write, in the stated format, once while owned;
+    - for the review of 81a43091..bc44b120 (three P2s, all fixed):
+      - a pid another process took between the false read and the filing is neither filed nor written;
+      - a pid reused during the restore inherits no write-back memory, so a true value there is never written;
+      - an uncertain write is rolled back, and only then its entry removed;
+      - when the rollback fails too, the entry and the ownership are kept until the release writes it back;
     - none for a value read true, an unreadable one, or a write that did not take;
     - the entry removed at the close's and the stop's write back and when the process ended, and kept by a failed
       write back;
@@ -3784,9 +3800,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     - the kernel start time exact and gone with its process.
   - `native-engine.test.mjs`'s start test: the real engine drops 4,001 dead entries and skips a malformed one before
     its socket first answers.
-  - Every other suite passes (1,010 engine tests, the node file's 21).
-  - Each of 30 rule parts and bounds removed in turn (`~/.local/share/187/mutate-293.py`) fails a test. That includes
-    the restore moved after the socket's bind, and the server keeping no record.
+  - Every other suite passes (1,014 engine tests, the node file's 21).
+  - Each of 39 rule parts and bounds removed in turn (`~/.local/share/187/mutate-293.py`) fails a test. That includes
+    the restore moved after the socket's bind, the server keeping no record, and the review's three fixes: 3 mutations
+    for the identity, 1 for the restore's memory, 5 for the uncertain write.
   - Not unit tested: the live AX write and its timeout, and NSRunningApplication's generation.
   **What the hosted check must verify** (`c7/` and `c8/` on Chrome for Testing, behind a frontmost TextEdit, against
   main):

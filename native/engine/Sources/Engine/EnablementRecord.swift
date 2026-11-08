@@ -10,8 +10,10 @@ import os
 // only one it read false, or wrote back itself, then set), in its own state directory beside engine.sock, one file per
 // process, `enablement/<pid>-<start>.json`: the target's pid and kernel start time (microseconds), the attribute
 // written, and the owning engine's pid and start time. The file is written before the attribute is set (an engine
-// killed between the two leaves an entry for a process that read false, whose write back is harmless) and removed
-// once the write back is done or the process has ended. Each file is written whole to a temporary name and renamed
+// killed between the two leaves an entry for a process that read false, whose write back is harmless), under the start
+// time read with the process's first observation and only while the pid still runs that process (else nothing is
+// written at all), and removed once the write back is done, the process has ended, or a write that did not take is
+// confirmed (read back false) or rolled back; a write whose outcome stays uncertain keeps it. Each file is written whole to a temporary name and renamed
 // into place, so a writer that dies mid-write leaves at most a temporary file no reader takes, and never touches
 // another process's entry. No fsync: the record serves only while its target runs, and a machine crash ends the target
 // too.
@@ -122,19 +124,37 @@ final class EnablementRecord: @unchecked Sendable {
       })
   }
 
-  /// Records that this engine owns `attribute` on process `pid`, before it is written. Answers the start time the entry
-  /// is filed under, or nil when nothing was recorded (no such process, or the file could not be written: logged).
-  func add(pid: pid_t, attribute: String) -> Int64? {
-    guard let start = startTime(pid) else { return nil }
+  /// What `add` did.
+  enum Filing: Equatable {
+    /// Filed under the start time given.
+    case recorded(Int64)
+    /// The file could not be written (logged): the enablement goes ahead unrecorded.
+    case notWritten
+    /// The pid is not the process observed (no start time was captured, or the pid runs another process now): nothing
+    /// is filed, and the attribute must not be written.
+    case otherProcess
+  }
+
+  /// Records that this engine owns `attribute` on process `pid`, whose start time `start` was captured with its
+  /// observation, before the attribute is written; only while the pid still runs that process.
+  func add(pid: pid_t, start: Int64?, attribute: String) -> Filing {
+    guard let start, startTime(pid) == start else { return .otherProcess }
     let entry = EnablementRecordEntry(pid: pid, start: start, attribute: attribute, ownerPid: ownerPid, ownerStart: ownerStart)
     do {
       if mkdir(directory, 0o700) != 0 && errno != EEXIST { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
       try JSONEncoder().encode(entry).write(to: URL(fileURLWithPath: directory + "/" + entry.fileName), options: .atomic)
-      return start
+      return .recorded(start)
     } catch {
       log("enablement record: cannot write \(entry.fileName): \(error.localizedDescription); a crash would leave \(attribute) on")
-      return nil
+      return .notWritten
     }
+  }
+
+  /// The generation of a restored entry's process (`generation`), read only while its pid still runs the process the
+  /// entry names, checked after the read; nil otherwise, so a pid reused before or during the read inherits nothing.
+  func currentGeneration(of entry: EnablementRecordEntry) -> Date? {
+    guard let found = generation(entry.pid), startTime(entry.pid) == entry.start else { return nil }
+    return found
   }
 
   /// The entry of process `pid` filed under `start` is done with: its write back is made, or the process ended.

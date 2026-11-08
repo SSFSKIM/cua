@@ -18,21 +18,30 @@ private final class Processes: @unchecked Sendable {
 private final class Chrome: @unchecked Sendable {
   var value: Bool? = false
   var answer: AXError = .notImplemented
+  /// Answers for the next writes, in order, before `answer`.
+  var answers: [AXError] = []
+  /// A write true that takes leaves the attribute unreadable (an uncertain outcome).
+  var unreadableAfterWrite = false
   var writes: [Bool] = []
   var current = true
-  /// Runs inside every write before it takes effect.
+  /// Runs inside every write before it takes effect, and inside every read.
   var duringWrite: () -> Void = {}
+  var duringRead: () -> Void = {}
 
   var access: EnablementAccess {
     EnablementAccess(
       listed: { ["AXEnhancedUserInterface"] },
       readRole: {},
-      read: { _ in self.value },
+      read: { _ in
+        self.duringRead()
+        return self.value
+      },
       write: { _, value in
         self.duringWrite()
         self.writes.append(value)
-        if self.answer == .success || self.answer == .notImplemented { self.value = value }
-        return self.answer
+        let answer = self.answers.isEmpty ? self.answer : self.answers.removeFirst()
+        if answer == .success || answer == .notImplemented { self.value = value && self.unreadableAfterWrite ? nil : value }
+        return answer
       },
       current: { self.current })
   }
@@ -69,9 +78,9 @@ final class EnablementRecordTests: XCTestCase {
 
   /// The record of engine `owner` (started at `ownerStart`) in the test's directory.
   private func record(owner: pid_t, ownerStart: Int64, _ processes: Processes, restores: Restores = Restores(),
-                      log: @escaping (String) -> Void = { _ in }) -> EnablementRecord {
+                      generation: ((pid_t) -> Date?)? = nil, log: @escaping (String) -> Void = { _ in }) -> EnablementRecord {
     EnablementRecord(directory: directory + "/enablement", ownerPid: owner, ownerStart: ownerStart, startTime: processes.start,
-                     writeFalse: restores.write, generation: { [launched] _ in launched }, now: { restores.clock }, log: log)
+                     writeFalse: restores.write, generation: generation ?? { [launched] _ in launched }, now: { restores.clock }, log: log)
   }
 
   private func entry(_ pid: pid_t, _ start: Int64, owner: pid_t = 900, ownerStart: Int64 = 9_000) -> EnablementRecordEntry {
@@ -228,7 +237,7 @@ final class EnablementRecordTests: XCTestCase {
     let processes = Processes(Dictionary(uniqueKeysWithValues: (0..<count).map { (pid_t(1_000 + $0), Int64(50_000 + $0)) }))
     let writers = [record(owner: 900, ownerStart: 9_000, processes), record(owner: 901, ownerStart: 9_100, processes)]
     DispatchQueue.concurrentPerform(iterations: count) { i in
-      XCTAssertNotNil(writers[i % 2].add(pid: pid_t(1_000 + i), attribute: eui))
+      XCTAssertEqual(writers[i % 2].add(pid: pid_t(1_000 + i), start: Int64(50_000 + i), attribute: eui), .recorded(Int64(50_000 + i)))
     }
     let entries = writers[0].entries()
     XCTAssertEqual(entries.count, count)
@@ -269,6 +278,73 @@ final class EnablementRecordTests: XCTestCase {
     XCTAssertEqual(filed(first), [entry(9, 9_500)])
     XCTAssertEqual(enablementRestoreBudgetMs, 2_000)
     XCTAssertEqual(enablementRestoreTimeout, 0.5)
+  }
+
+  // The review of 81a43091..bc44b120 (three P2s).
+
+  func testAPidAnotherProcessTookSinceTheObservationIsNeitherRecordedNorWritten() {
+    // The identity is the start time read with the process's first observation: a pid reused between the false read
+    // and the filing would name the replacement, which the next start would write false after a crash.
+    let processes = Processes([7: 7_000, 900: 9_000])
+    let first = record(owner: 900, ownerStart: 9_000, processes)
+    let web = WebAccessibility(releaseGraceMs: 0, record: first)
+    let chrome = Chrome()
+    chrome.duringRead = { processes.set(7, 7_001) }  // Chrome quits and another launch takes its pid
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: chrome.access))
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: chrome.access), "still not the process observed")
+    XCTAssertEqual(chrome.writes, [], "nothing written to the replacement")
+    XCTAssertEqual(filed(first), [], "nothing filed under its start")
+    XCTAssertEqual(first.add(pid: 7, start: nil, attribute: eui), .otherProcess, "no captured identity: not filed")
+  }
+
+  func testARestoredPidReusedMeanwhileInheritsNoWriteBack() {
+    // The write-back memory is filed under the restored entry's own process: a pid reused during the restore must not
+    // be re-enabled as the engine's (A3) and later written false.
+    let processes = Processes([7: 7_000, 900: 9_000])
+    let first = record(owner: 900, ownerStart: 9_000, processes)
+    _ = WebAccessibility(releaseGraceMs: 0, record: first).enable(pid: 7, launched: launched, connection: 1, access: Chrome().access)
+    processes.set(900, nil)
+    let restores = Restores()
+    let reused = record(owner: 901, ownerStart: 9_100, processes, restores: restores,
+                        generation: { [launched] _ in processes.set(7, 7_001); return launched })
+    let next = WebAccessibility(releaseGraceMs: 0, record: reused)
+    XCTAssertEqual(next.restoreRecorded()?.restored, [entry(7, 7_000)], "the write went to the recorded process")
+    let replacement = Chrome()
+    replacement.value = true  // another client's, in the new launch
+    XCTAssertNil(next.enable(pid: 7, launched: launched, connection: 1, access: replacement.access))
+    next.release(connection: 1)
+    XCTAssertEqual(replacement.writes, [], "not taken for the process the restore wrote back")
+  }
+
+  func testAnUncertainWriteIsRolledBackAndOnlyThenItsEntryRemoved() {
+    // -25208 with a read back that fails: it may have taken. The rollback's success settles it.
+    let processes = Processes([7: 7_000, 900: 9_000])
+    let first = record(owner: 900, ownerStart: 9_000, processes)
+    let web = WebAccessibility(releaseGraceMs: 0, record: first)
+    let chrome = Chrome()
+    chrome.unreadableAfterWrite = true
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: chrome.access))
+    XCTAssertEqual(chrome.writes, [true, false], "rolled back")
+    XCTAssertEqual(filed(first), [])
+    XCTAssertFalse(web.enablementHolds(pid: 7, launched: launched))
+  }
+
+  func testAnUncertainWriteWhoseRollbackFailsKeepsItsEntryAndOwnership() {
+    let processes = Processes([7: 7_000, 900: 9_000])
+    let first = record(owner: 900, ownerStart: 9_000, processes)
+    var failures: [String] = []
+    let web = WebAccessibility(releaseGraceMs: 0, releaseFailed: { failures.append($0) }, record: first)
+    let chrome = Chrome()
+    chrome.unreadableAfterWrite = true
+    chrome.answers = [.notImplemented, .cannotComplete]  // the rollback times out
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: chrome.access))
+    XCTAssertEqual(filed(first), [entry(7, 7_000)], "kept: a crash now leaves it for the next start")
+    XCTAssertEqual(failures.count, 1, "logged")
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: chrome.access), "owned: not written again")
+    XCTAssertEqual(chrome.writes, [true, false])
+    web.release(connection: 1)
+    XCTAssertEqual(chrome.writes, [true, false, false], "the release writes it back")
+    XCTAssertEqual(filed(first), [])
   }
 
   func testTheKernelStartTimeIsExactAndGoneWithItsProcess() throws {

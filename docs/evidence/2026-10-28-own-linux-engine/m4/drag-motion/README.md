@@ -235,12 +235,16 @@ T11): three pointermove events against the vendor builds' seventeen, Chrome's st
 | Electron handle-canvas | 30/30 | 30/30 | 30/30 | 17/30 | 144.3 | 299.1 |
 | Electron handle-dnd | 30/30 | 30/30 | 30/30 | 24/30 | 144.8 | 183.5 |
 
-**The cost** (as shipped, 30 ms): a held move adds 30 ms at its end (its points, 300 µs or 500 µs apart, take under 3 ms),
-and the handle's end adds 30 ms before its release; the vendor's held move spends 8 ms before each point, up to 88 ms
-for a long move. In `final-idle/` the handle stroke of three moves takes 208.4 ms (Firefox) and 184.6 (Chromium)
-against the pinned build's 299.3 and 298.6, and the handle drop of two moves 204.8 and 174.3 against 182.8: a short
-held move costs more than the vendor's, a long one less. **`held_lead_pause`**: dropped; with the rest it changes
-nothing (30 of 30 either way, 149.9 ms either way, `held-rest/`).
+**The cost** (as shipped, 30 ms): a held move adds 30 ms at its end, and the handle's end adds 30 ms before its release.
+Its points take their steps and their sends: the longest held move sends twelve motions (the vendor's eleven points, the
+pointer's own included, then the end once more after the rest) with a step before nine of them, 2.7 ms of sleeps on
+Gecko (300 µs) and 4.5 ms on Chromium (500 µs); by the server's clock its first motion to its end's first visit takes 5
+to 6 ms on Gecko and 6 to 7 ms on Chromium, and its request answers in 35.6 and 36.4 ms (medians of 40, idle; corrected
+by the fix wave, `fix/held-cost/`, where this line first said "under 3 ms"). The vendor's held move spends 8 ms before
+each point, up to 88 ms for a long move. In `final-idle/` the handle stroke of three moves takes 208.4 ms (Firefox) and
+184.6 (Chromium) against the pinned build's 299.3 and 298.6, and the handle drop of two moves 204.8 and 174.3 against
+182.8: a short held move costs more than the vendor's, a long one less. **`held_lead_pause`**: dropped; with the rest it
+changes nothing (30 of 30 either way, 149.9 ms either way, `held-rest/`).
 
 ## At twice the load (two stress-ng workers per core, 40 a side; the landed counts decide, cua's at least the pinned build's)
 
@@ -322,3 +326,4 @@ the take, `dnd.rs`); `drag_handle` has none, and its Chromium protections are T1
 | `held-rest-load2/` | ae04d620 | Firefox's held moves at twice the load: the held rest at 20, 30 and 40 ms |
 | `load2/` | ae04d620 | every Chromium and Gecko kind, plain and held, at twice the load: 20 ms against 30 |
 | `final-idle/` | d92a56f6 | every Chromium and Gecko kind, plain and held, as shipped (30 ms), idle |
+| `fix/` | 6e9e5b20 (the engine of db379829) | the fix wave after the review: the repeated-point corner, the handle end on another screen, the held-move cost, an idle sitting |

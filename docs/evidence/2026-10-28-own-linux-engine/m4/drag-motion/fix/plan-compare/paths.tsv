@@ -1,0 +1,47 @@
+chrome:scroller	317,247 317,307
+chrome:dnd	414,242 444,247 664,257
+chrome:canvas	44,457 404,477 224,617 64,537
+electron:scroller	313,160 313,220
+electron:dnd	410,155 440,160 660,170
+electron:canvas	40,370 400,390 220,530 60,450
+firefox:scroller	313,245 313,305
+firefox:dnd	410,240 440,245 660,255
+firefox:canvas	40,455 400,475 220,615 60,535
+chrome:select	54,119 270,119
+chrome:select	318,119 510,119
+chrome:range	32,169 320,169
+chrome:range	320,169 128,169
+electron:select	50,32 266,32
+electron:select	314,32 506,32
+electron:range	28,82 316,82
+electron:range	316,82 124,82
+firefox:select	50,117 266,117
+firefox:select	314,117 506,117
+firefox:range	28,167 316,167
+firefox:range	316,167 124,167
+gedit:select	63,60 225,60
+gedit:select	261,60 405,60
+gedit:scrollbar	888,81 888,231
+gedit:scrollbar	888,231 888,81
+gtk-scale:scale	32,57 434,57
+gtk-scale:scale	434,57 166,57
+gnome-text-editor:select	37,70 217,70
+gnome-text-editor:select	257,70 417,70
+kate:select	176,111 317,111
+kate:select	348,111 473,111
+kate:scrollbar	869,141 869,291
+kate:scrollbar	869,291 869,141
+qtcreator:select	376,56 505,56
+qtcreator:select	534,56 649,56
+qtcreator:scrollbar	1093,78 1093,228
+qtcreator:scrollbar	1093,228 1093,78
+writer:select	302,207 446,207
+writer:select	478,207 606,207
+xterm:select	17,8 125,8
+xterm:select	149,8 245,8
+gtk4-input:scale4	32,40 434,40
+gtk4-input:scale4	434,40 166,40
+gnome-terminal:select	23,37 185,37
+gnome-terminal:select	221,37 365,37
+writer-gen:select	218,203 362,203
+writer-gen:select	394,203 522,203

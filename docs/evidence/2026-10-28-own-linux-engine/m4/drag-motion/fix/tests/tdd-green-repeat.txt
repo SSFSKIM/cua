@@ -1,0 +1,15 @@
+test engine::pointer::tests::a_drag_handle_keeps_the_pacing_its_start_found_until_its_end ... ok
+test engine::pointer::tests::a_drag_on_its_floor_after_a_take_does_not_rest_again ... ok
+test cover::tests::pointer_input_reaches_the_window_only_where_nothing_is_stacked_above_it ... ok
+test desktop::tests::a_path_pauses_between_two_positions_but_not_after_the_motion_at_the_pointer_s_own_position ... ok
+test engine::pointer::tests::a_browser_s_held_move_rests_at_its_end_with_no_lead_pause ... ok
+test engine::pointer::tests::a_forty_pixel_drag_visits_forty_one_points ... ok
+test engine::pointer::tests::a_drag_that_does_not_rest_sends_the_pinned_build_s_samples ... ok
+test engine::pointer::tests::by_elapsed_time_a_sample_is_due_a_step_after_the_last_was_due_and_a_rest_counts_from_the_last_sent ... ok
+test engine::pointer::tests::the_atomic_press_ends_with_the_first_sample_past_blink_s_drag_threshold ... ok
+test engine::pointer::tests::a_point_repeated_inside_a_resting_drag_s_path_neither_hides_its_corner_nor_rests_there_twice ... ok
+test engine::pointer::tests::wheel_steps_round_half_away_from_zero_with_one_at_least ... ok
+test engine::pointer::tests::drag_samples_truncate_toward_zero_and_repeat_the_joint ... ok
+test engine::pointer::tests::a_resting_drag_rests_before_its_end_s_second_visit_and_at_each_sharp_corner ... ok
+test engine::pointer::tests::the_atomic_press_sends_at_most_its_cap_under_the_grab_whatever_the_path ... ok
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 382 filtered out; finished in 0.00s

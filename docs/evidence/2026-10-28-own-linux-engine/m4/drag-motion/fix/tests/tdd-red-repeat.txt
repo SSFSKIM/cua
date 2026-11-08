@@ -1,0 +1,6 @@
+test engine::pointer::tests::a_point_repeated_inside_a_resting_drag_s_path_neither_hides_its_corner_nor_rests_there_twice ... FAILED
+thread 'engine::pointer::tests::a_point_repeated_inside_a_resting_drag_s_path_neither_hides_its_corner_nor_rests_there_twice' (1902100) panicked at src/engine/pointer.rs:1289:13:
+assertion `left == right` failed: [(0, 0), (200, 0), (200, 0), (200, 200)]
+  left: [404]
+ right: [201, 404]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 395 filtered out; finished in 0.00s

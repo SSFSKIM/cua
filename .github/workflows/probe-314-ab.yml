@@ -28,7 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         rep: [1]
-        group: ${{ fromJSON(github.event.inputs.groups || '["firefox","safari","chrome-b"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["firefox"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:

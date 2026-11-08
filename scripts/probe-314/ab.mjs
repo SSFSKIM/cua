@@ -297,17 +297,19 @@ function wides(sky, truth) {
   const out = [];
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
-    if (!(n.children > 499)) continue;
+    // `children` is the count the width rule kept; `shown.of` the element's own.
+    const total = n.shown?.of ?? n.children;
+    if (!(total > 499)) continue;
     const kids = directChildren(nodes, i);
     const ys = kids.map(j => nodes[j].frame?.y).filter(y => y != null);
     const rowsNamed = kids.map(j => rowLabel(nodes, j)).filter(Boolean);
     const frame = rectOf(n.frame);
-    const t = truth?.wide?.find(w => w.role === n.role && w.children === n.children && near(w.frame, frame));
-    const row = {i, role: n.role, children: n.children, frame, shown: n.shown ?? null, printedChildren: kids.length,
+    const t = truth?.wide?.find(w => w.role === n.role && w.children === total && near(w.frame, frame));
+    const row = {i, role: n.role, children: total, frame, shown: n.shown ?? null, printedChildren: kids.length,
       ordered: ys.every((y, k) => k === 0 || y >= ys[k - 1] - 0.5), firstRows: rowsNamed.slice(0, 3), lastRows: rowsNamed.slice(-3)};
     if (t) {
       const truthShown = new Set(positionsOf(t.shown));
-      const kept = n.shown ? positionsOf(n.shown.ranges ?? []) : (kids.length === n.children ? positionsOf([[0, n.children]]) : []);
+      const kept = n.shown ? positionsOf(n.shown.ranges ?? []) : positionsOf([[0, total]]);
       const keptSet = new Set(kept);
       row.truth = {shownCount: t.shownCount, shown: t.shown, visibleChildren: t.visibleChildren, visibleRows: t.visibleRows, frameless: t.frameless, clip: t.clip,
         missing: [...truthShown].filter(p => !keptSet.has(p)).length, extra: kept.filter(p => !truthShown.has(p)).length};
@@ -353,7 +355,8 @@ async function clickCells(ctx, label, order) {
       const o = await w.execute('get_app_state', {pid: ctx.pid});
       if (o.error) { out.push({head, error: lean(o).error}); continue; }
       const sky = o.result, nodes = sky.nodes;
-      const wide = nodes.map((n, i) => [n, i]).filter(([n]) => n.children > 499).sort((x, y) => y[0].children - x[0].children)[0];
+      const totalOf = n => n.shown?.of ?? n.children;
+      const wide = nodes.map((n, i) => [n, i]).filter(([n]) => totalOf(n) > 499).sort((x, y) => totalOf(y[0]) - totalOf(x[0]))[0];
       const targets = [];
       if (wide) {
         const kids = directChildren(nodes, wide[1]);
@@ -369,7 +372,7 @@ async function clickCells(ctx, label, order) {
       }
       const bar = nodes.findIndex(n => n.role === 'AXButton' && /^(Tail|Tool) 3$/.test(labelOf(n)));
       if (bar >= 0) targets.push({kind: 'bar', j: bar, row: labelOf(nodes[bar])});
-      const cell = {head, nodes: nodes.length, wide: wide ? {children: wide[0].children, shown: wide[0].shown ?? null} : null, clicks: []};
+      const cell = {head, nodes: nodes.length, wide: wide ? {children: totalOf(wide[0]), shown: wide[0].shown ?? null} : null, clicks: []};
       if (!targets.length) cell.none = 'no row or bar printed';
       for (const t of targets) {
         const n = nodes[t.j];
@@ -496,7 +499,9 @@ async function runOther(ctx) {
     log(`${target.name}: warm ${JSON.stringify(warmed)}`);
     for (const [posIndex, at] of POSITIONS.entries()) {
       const info = {title: osa(`tell application "System Events" to get name of window 1 of (first process whose unix id is ${child.pid})`).out};
-      info.scroll = await ctx.tool.ask({op: 'axscroll', pid: ctx.pid, window: [WIN.x, WIN.y, WIN.w, WIN.h], frac: at.frac});
+      // Safari through its scroll bar's AXValue; Firefox exposes no scroll bar (run 42442898846), so through
+      // AXScrollToVisible on the content element where the viewport's bottom should fall (the tool's `scrollto`).
+      info.scroll = await ctx.tool.ask({op: BROWSER === 'firefox' ? 'scrollto' : 'axscroll', pid: ctx.pid, window: [WIN.x, WIN.y, WIN.w, WIN.h], frac: at.frac});
       if (at.frac > 0 && info.scroll?.after != null && Math.abs(info.scroll.after - at.frac) > 0.05) info.scrollMissed = true;
       if (at.frac > 0 && info.scroll?.after == null) { results.push({label: `${GROUP}/${target.name}/${at.name}`, skipped: 'not positioned', pageInfo: info}); save(); continue; }
       await sleep(2500);

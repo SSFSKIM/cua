@@ -290,6 +290,46 @@ func wide(_ req: [String: Any]) -> [String: Any] {
   return ["wide": found, "visited": visited, "cut": cut, "ms": r1(nowMs() - started)]
 }
 
+/// Positions the window's web area at `frac` of its content where no scroll bar is exposed (Firefox): the web area's
+/// descendants' frames, depth first (at most 30,000), give the content's extent; the element whose bottom lies nearest
+/// where the viewport's bottom should be is scrolled to with AXScrollToVisible (a minimal scroll: positions are taken in
+/// increasing order, so each scrolls down). Answers the fraction reached, read from the topmost element's frame after.
+func scrollto(_ req: [String: Any]) -> [String: Any] {
+  guard let pid = (req["pid"] as? NSNumber)?.int32Value, let window = rectArg(req["window"]), let frac = (req["frac"] as? NSNumber)?.doubleValue else {
+    return ["error": "bad scrollto args"]
+  }
+  guard let root = findWindow(pid: pid, frame: window) else { return ["error": "no window"] }
+  let started = nowMs()
+  var stack = [root], visited = 0
+  var web: AXUIElement?, webFrame: CGRect?
+  while let e = stack.popLast(), visited < 3000 {
+    visited += 1
+    let v = multi(e, [kAXRoleAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXChildrenAttribute])
+    if (v[0] as? String) == "AXWebArea" { web = e; webFrame = rect(v[1], v[2]); break }
+    stack.append(contentsOf: asElements(v[3]).reversed())
+  }
+  guard let web, let webFrame, webFrame.height > 0 else { return ["error": "no web area"] }
+  var items: [(AXUIElement, CGRect)] = []
+  var queue: [AXUIElement] = Array(asElements(multi(web, [kAXChildrenAttribute])[0]).reversed())
+  var read = 0
+  while let e = queue.popLast(), read < 30_000 {
+    read += 1
+    let v = multi(e, [kAXPositionAttribute, kAXSizeAttribute, kAXChildrenAttribute])
+    if let f = rect(v[0], v[1]), f.width > 0, f.height > 0, f.height <= webFrame.height / 2 { items.append((e, f)) }
+    queue.append(contentsOf: asElements(v[2]).reversed())
+  }
+  guard let top = items.min(by: { $0.1.minY < $1.1.minY }), let bottom = items.map({ $0.1.maxY }).max() else { return ["error": "no framed content"] }
+  let range = max(0, bottom - top.1.minY - webFrame.height)
+  let wantedBottom = top.1.minY + CGFloat(frac) * range + webFrame.height
+  let pick = frac == 0 ? top : items.min(by: { abs($0.1.maxY - wantedBottom) < abs($1.1.maxY - wantedBottom) })!
+  let error = AXUIElementPerformAction(pick.0, "AXScrollToVisible" as CFString)
+  usleep(500_000)
+  let after = multi(top.0, [kAXPositionAttribute, kAXSizeAttribute])
+  let reached: Double? = rect(after[0], after[1]).map { range > 0 ? Double((webFrame.minY - $0.minY) / range) : 0 }
+  return ["error": Int(error.rawValue), "range": r1(Double(range)), "read": read, "cut": read >= 30_000,
+          "after": reached.map { r3($0) } ?? NSNull(), "ms": r1(nowMs() - started)]
+}
+
 let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
 while let line = readLine() {
   guard let data = line.data(using: .utf8), let req = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -307,6 +347,7 @@ while let line = readLine() {
   case "axscroll": emit(axscroll(req))
   case "kids": emit(kids(req))
   case "wide": emit(wide(req))
+  case "scrollto": emit(scrollto(req))
   default: emit(["error": "unknown op"])
   }
 }

@@ -3199,6 +3199,109 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - **dedicated mode:** unchanged, no delivery record.
   Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling 90ec27dd on #321.
 
+- Decision (#315, 2026-11-07, `fix/315-gecko-routes`; the design session's ruling cb252e88 on #287's findings, issue
+  comment 6709964394, and ruling 026204f4 filing #314's A/B evidence on the issue; amends #282's items 3, 4 and 6 and
+  #283's item 2): **a shared-mode left pointer into a background Firefox page follows #282's rule, as on Chromium: a plain
+  click is carried by the action of the element under the point, a text field is focused by its own action and its focus
+  read back (never an AXFocused write), and anything else is refused with nothing posted. Firefox's toolbar is not a web
+  area, and dedicated mode is unchanged.**
+  1. **The defect** (#287's hosted cells, run 42379297174; #314's A/B, run 42444787545). In shared mode, 34 of 34
+     coordinate clicks on a background Firefox page answered `clickUnconfirmed` with pointer 0. Firefox's
+     AXActivationPoint lies on a toolbar control (`activationClick` `control`), so the activation clicks no point there,
+     the click's own mouse down consumes the arm, and Gecko does not deliver it to the page. A click by token whose
+     point lands on a descendant (`elementClick.reason` `descendant`) took the same posted path: 9 of 12 row clicks
+     below the top of `/fixedtail` (an AXLink over its AXStaticText) were lost. Element clicks that ended in an action
+     worked, 6 of 6, with TextEdit kept frontmost.
+  2. **How the engine recognises Gecko:** by its Info.plist's principal class, `GeckoNSApplication` (`pageEngineOf`,
+     #313's), read on the hosted runner by #287's recon (`probe-287` run 42376355521, Firefox 159.0,
+     `org.mozilla.firefox`) beside `BrowserCrApplication` for both Chromes and `BrowserApplication` for Safari 27.2.
+     A bundle id names one build, while the class is the Gecko widget code's own (only Firefox 159.0's was
+     read; other channels and Gecko-based apps are presumed to carry it). `pointerView` now takes the page
+     engine (`PageEngine`) in place of #282's Chromium flag; its Chromium answers are unchanged, and a WebKit or native
+     process stays `unknown`.
+  3. **Where in the window the rule applies: the web area only.** Settled offline from Gecko's source
+     (mozilla-central `widget/cocoa/nsCocoaWindow.mm`, `dom/events/EventStateManager.cpp`, read 2026-11-07). Gecko's
+     ChildView answers YES to `acceptsFirstMouse:` for the whole window and keeps the event; its `mouseDown:` then
+     passes a click-through mouse down into an inactive top-level window to Gecko (`ChildViewMouseTracker::
+     WindowAcceptsEvent`, `inactiveWindowAcceptsMouseEvent:`'s eMouseActivate), and `NodeAllowsClickThrough` refuses it
+     only when its target is inside a XUL `<browser>` (the page) or `<tree>`. So the toolbar, the tabs and the address
+     bar take the click, which matches #287's toolbar Reload cell: posted by route 3, its own down consuming the arm,
+     and the page reloaded (`loads` 1), 3 of 3. In `pointerView`, a Gecko hit inside an AXWebArea is `webArea`, one not
+     established outside every web area (no hit, an incomplete walk, the scroll area that holds the web area) is
+     `possibleWebArea`, and one established outside is `geckoChromeView`. #288's establishment stays Chromium's: Gecko
+     exposes its tree at an AX client's first contact (#287) and has no Basic mode to wait through.
+  4. **The toolbar keeps `clickUnconfirmed`** (`geckoChromeView` is `unknown`): the click is posted as before and still
+     answers `clickUnconfirmed`, #318's stated limit. Gecko's source says the chrome takes the click, but a XUL tree
+     outside any web area refuses it too, and whether every `<browser>` (a sidebar, a devtools pane) is exposed as an
+     AXWebArea is not known, so making the chrome known to accept is a separate measured step. It is one line
+     (`webAreaSeen ? .acceptsFirstMouse : .unknown` in `pointerView`'s Gecko branch), gated on a seen web area as
+     Chromium's is, since before Gecko's tree is exposed a page point answers a plain group outside every web area.
+  5. **The element route** is #282's unchanged (`webAreaPress`): the allowlist, the walk through passable children
+     (the `/fixedtail` row's AXStaticText resolves to its AXLink), the action re-read where the process is fresh, the
+     requalification, #282's value check on a checkbox or radio button, and #296's stale-point gate on a coordinate
+     click's press. The press goes as an element click's does (`elementActionClick`: route 3's held activation, then the
+     action), the route #287 and #313 measured as leaving Firefox behind TextEdit. A click by token reaches it through
+     its synthesized path, as on Chromium.
+  6. **The focus route on Gecko is #313's press, not #283's write** (`webAreaFocusCarrier`, `pressFocusingField`;
+     ElementInput.swift `webAreaFocusPress`). A walk that stops at an editable element resolves the text-entry
+     element as #283 does (`webAreaFocusTarget`); on Gecko it is pressed by its own action (AXPick, else AXPress) as an
+     element click is, and its AXFocused read back (#313's `readingFocus`, `textEntryFocusSettleMs` 300 ms, which holds
+     the 234 ms p99 #313 measured for Firefox's press). Only a read of true is success; otherwise `clickUnconfirmed`. A
+     field advertising neither action is refused (`noAction`), nothing done. Nothing writes AXFocused or a selection,
+     so no caret is placed at the point, and the result's note says the caret is where Firefox put it. Recorded as
+     `elementClick {plan action, action AXPress, reason webArea, pressedRole, pressed, walk, focus, focusStep press}`.
+     A password field is pressed and read back with nothing of it read. Chromium keeps #283's AXFocused route
+     unchanged, and #313's "no AXFocused write outside Chromium" stays true.
+  7. **Drags into Gecko in shared mode** follow #282's Chromium handling: one starting in the page, where the
+     activation clicked no activation point, is refused with nothing posted (`backgroundClickRefused`); a double click
+     likewise. A drag from the toolbar is posted and answers `clickUnconfirmed` as before. focusField's fallback click
+     into a Firefox page (set_value, select_text) is now refused as `backgroundClickRefused` where it was posted and lost
+     as `clickUnconfirmed`: it is a pointer like any other, and an action is no focusing (#282's item 6).
+  8. **What changes for the model:** a background Firefox page's buttons, checkboxes, links and fields now act; plain
+     text, a heading or a control with no action is refused with nothing sent, where it was posted and lost; the toolbar
+     is as before. `docs/cua-api/agent-cursor.md`'s second paragraph names Firefox beside the Chromium-based apps and
+     says its field is focused by its own action without the caret at the point (the surface inventory's "Table 3
+     addition (2026-11-07, #315)"; repl-parity's docs oracle, `scripts/repl-parity/docs-oracle.mjs`, carries the new
+     text, so parity's expected diff is that paragraph alone).
+  9. **Not done:** the toolbar's `clickUnconfirmed` (item 4, #318); a Firefox field's caret at the point (no
+     AXSelectedTextRange step was measured on Gecko); focusField's fallback carried by the field's press.
+  Proven offline (`GeckoPointerTests`, 10, over Firefox 159's tree and its activation, the AXActivationPoint inside the
+  frame on a toolbar button):
+  - Firefox's page is a web area whether or not an observation saw it; no hit, the scroll area over the web area and an
+    unreadable role are possible web areas; the toolbar is `unknown`, seen or not, never known to accept;
+  - a Gecko process runs no #288 establishment;
+  - a shared page click is carried by the button's action with nothing posted, and without an element route a click, a
+    double click and a drag are refused with nothing posted and no hold;
+  - a click by token whose point lands on a link's text is synthesized by the ladder, then element-routed to the link;
+  - plain text under no control and a control with no action are refused, nothing posted or pressed;
+  - every text-entry role stops the walk as editable, resolves as #283's target and is focused by its AXPress, read back
+    200 ms late, by a route that has no write at all; Chromium's carrier stays the AXFocused write; the note claims no
+    caret at the point;
+  - a field its press leaves unfocused answers `clickUnconfirmed` after the settle; one with no action, or unread
+    actions, is refused with nothing pressed or read;
+  - the toolbar's click is posted and answers `clickUnconfirmed`;
+  - dedicated mode posts a page click and a drag with the inert click first, no element route and no delivery guard;
+  - Safari's page and a native button stay `unknown`, Safari's click is posted after its activation-point click, and
+    Chromium's toolbar and page answers are unchanged.
+  `BackgroundPointerTests`, `StalePointTests`, `WebAreaFocusTests` and `TextEntryClickTests` pass unchanged, apart from
+  `pointerView`'s new parameter. Each of 13 rules and bounds removed in turn (`~/.local/share/187/mutate-315.py`)
+  fails a test. The engine's glue (`webAreaPress`'s carrier switch, `webAreaFocusPress`) reads live AX and is not unit
+  tested: the hosted check covers it.
+  **What the hosted check must verify** (#287's and #314's kits, Firefox 159, 2 reps, against main, each cell behind a
+  frontmost TextEdit, reading the frontmost app and Firefox's window order before and after):
+  - **Firefox, shared:** coordinate clicks on a page button, checkbox, link and radio button answer success with
+    `elementClick.reason` `webArea`, pointerdown from Gecko's own action only, and the effect seen; a checkbox's value
+    check passes; text fields and textareas (and a password field) answer `focus` `readBack`, `focusStep` `press`, and
+    type_text lands in them; a `/fixedtail` row below the top by token is pressed (`pressed` `ancestor`, its AXLink),
+    12 of 12; a coordinate click on plain text is `backgroundClickRefused` with nothing posted; toolbar Reload reloads
+    and answers `clickUnconfirmed` as on main; a drag in the page is refused, nothing posted; Firefox never frontmost
+    and its window never left above TextEdit;
+  - **Firefox, dedicated:** every cell as on main (delivered, the window coming forward);
+  - **Firefox sidebar or devtools** (one cell each, if the kit can open them): whether their hits answer inside an
+    AXWebArea, which item 4's step needs;
+  - **Chrome for Testing and Safari 27.2:** identical to main, cell by cell.
+  Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #315.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

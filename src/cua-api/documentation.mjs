@@ -12,7 +12,8 @@
 // client's, not a product name, and stays.
 // One addition of cua's own, not the vendor's (the surface inventory's Table 3 addition of 2026-10-30, #235): with
 // `agentCursor()` true, agent-cursor.md (what the person sees while the agent acts: cua's agent cursor; and, since #282,
-// the engine's refusal of a background click into a Chromium web page and its `clickUnconfirmed`) follows the core,
+// the engine's refusal of a background click into a Chromium or, since #315, Firefox web page and its
+// `clickUnconfirmed`) follows the core,
 // before the policy. The facade answers it from the computer surface's target: on macOS this host serves only cua's
 // own engine (src/runtime/launch.mjs refuses cua's host with the vendor engine, whose helper takes only the vendor
 // host as a peer), so a macOS computer surface here is always one cua's agent cursor draws for.

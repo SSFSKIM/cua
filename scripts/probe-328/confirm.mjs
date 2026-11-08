@@ -8,7 +8,8 @@
 // Cells: page (the page itself), div (an overflow div), iframe (a same-origin iframe's scroller), hdiv (a horizontal
 // overflow div, scrolled right), raf / mid / late (overflow divs a script scrolls itself on the wheel: at once over
 // 300 ms, after 150 ms over 200 ms, after 350 ms over 200 ms), divEnd (the div already at its end: the hit's container
-// cannot move; the page may, by scroll chaining), smooth (a page with `scroll-behavior: smooth`).
+// cannot move; the page may, by scroll chaining, and its bar must not be written), divTop (the div scrolled from 3 pt below
+// its top edge: the hit row scrolls out, clipped), pageEnd (the page at its end), smooth (a page with `scroll-behavior: smooth`).
 import {spawn, spawnSync} from 'node:child_process';
 import {createServer} from 'node:http';
 import {createConnection} from 'node:net';
@@ -119,6 +120,8 @@ const CELLS = [
   {name: 'mid', text: 'mid row 3', id: 'mid', direction: 'down'},
   {name: 'late', text: 'late row 3', id: 'late', direction: 'down'},
   {name: 'divEnd', text: 'div row 57', id: 'div', direction: 'down', setup: 'end:div'},
+  // A point 3 pt below the div's top edge (its first row's top): the row under it scrolls out, so the hit is clipped.
+  {name: 'divTop', text: 'div row 0', id: 'div', direction: 'down', at: 'top'},
   {name: 'pageEnd', text: 'tail row 118', id: 'page', direction: 'down', setup: 'endpage'},
   {name: 'smooth', text: 'smooth row 3', id: 'smooth', direction: 'down', page: '/smooth'},
 ].filter(c => !ONLY || ONLY.includes(c.name));
@@ -136,7 +139,7 @@ for (let rep = 1; rep <= REPS; rep++) for (const cell of CELLS) {
     if (front() !== 'com.ssfskim.cover328') await refront();
     const f = t328('find', child.pid, cell.text);
     if (!f.found || !Array.isArray(f.frame)) { row.problem = `no ${cell.text}`; results.push(row); continue; }
-    const pt = [f.frame[0] + Math.min(f.frame[2] / 2, 40), f.frame[1] + f.frame[3] / 2];
+    const pt = [f.frame[0] + Math.min(f.frame[2] / 2, 40), cell.at === 'top' ? f.frame[1] + 3 : f.frame[1] + f.frame[3] / 2];
     row.point = pt; row.hitText = f.role;
     const shots = join(T, 'shots328c'); mkdirSync(shots, {recursive: true});
     const o = await w.execute('get_app_state', {pid: child.pid, includeScreenshot: true, outputDirectory: shots});

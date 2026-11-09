@@ -881,7 +881,24 @@ final class TreeWalk {
       // A node that kept its token has its children matched against the previous revision's; a new node's are new.
       let inherited: [Int?]
       if let previous, visit.inherited != nil {
-        inherited = matchSiblings(old: previous.siblings(of: number, menu: false), new: children)
+        let old = previous.siblings(of: number, menu: false)
+        // #303: then Chromium's re-created synthesized elements (`keepRecreated`), judged on what the walk read of them.
+        inherited = keepRecreated(matchSiblings(old: old, new: children), old: old, oldListed: previous.entries[number]?.listed,
+                                  entry: { previous.entries[$0] }, new: children.count, newListed: item.read.data.children.count,
+                                  read: { position in
+                                    self.selected[ElementKey(element: children[position])].map {
+                                      SiblingRead(identity: ElementIdentity($0.read.data, pid: $0.read.owner), frame: $0.read.data.frame,
+                                                  firstChild: $0.read.data.children.first)
+                                    }
+                                  },
+                                  parentRole: item.read.data.role, parentShift: {
+                                    guard let now = item.read.data.frame, let before = previous.entries[number]?.frame else { return .zero }
+                                    return CGVector(dx: now.minX - before.minX, dy: now.minY - before.minY)
+                                  }, gone: { [self] in
+                                    // The one AX read emission makes: none past the observation's deadline, where the
+                                    // candidate keeps the vendor's rule and takes a new token.
+                                    !pastDeadline() && source.isGone($0)
+                                  })
       } else {
         inherited = Array(repeating: nil, count: children.count)
       }
@@ -1082,7 +1099,8 @@ final class TreeWalk {
       titles.append((inMenu, inMenu ? menuBar.count : nodes.count, targets))
     }
     if inMenu { menuBar.append(node) } else { nodes.append(node) }
-    revision.entries[number] = LineageEntry(element: read.element, identity: ElementIdentity(read.data, pid: read.owner), actions: read.actions, frame: read.data.frame)
+    revision.entries[number] = LineageEntry(element: read.element, identity: ElementIdentity(read.data, pid: read.owner), actions: read.actions,
+                                            frame: read.data.frame, firstChild: read.data.children.first, listed: read.data.children.count)
     if !inMenu {
       screenshotReads.append(ScreenshotNodeRead(element: read.element, number: number, parent: parent, depth: depth, role: read.data.role,
                                                 title: read.data.title, description: read.data.description, frame: read.data.frame,

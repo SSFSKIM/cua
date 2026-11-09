@@ -204,6 +204,12 @@ class ElementSource: @unchecked Sendable {
 
   func owner(_ element: AXUIElement) -> pid_t { pid(of: element) }
 
+  /// Whether the element's handle names a destroyed element: its AXRole read answers kAXErrorInvalidUIElement (#303,
+  /// the previous revision's handle of an element Chromium re-created). Uncached: asked of a handle the walk does not read.
+  func isGone(_ element: AXUIElement) -> Bool {
+    costs.time("gone") { copyAttribute(element, kAXRoleAttribute).error == .invalidUIElement }
+  }
+
   func actions(_ element: AXUIElement) -> [String] {
     costs.time("actions") {
       var names: CFArray?

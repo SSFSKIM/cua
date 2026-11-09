@@ -8,7 +8,9 @@ import Foundation
 // element keeps its token when its handle is CFEqual to the previous revision's at a matched position (sibling list
 // against sibling list under matched parents); a new element takes a new token; a token absent from one revision is
 // retired there and never reissued in the lineage, so an element that returns gets a new one (N = 1, the vendor's
-// identity rule). A walk cut short by the node or byte budget or the deadline retires nothing it left unread: the
+// identity rule). cua's one departure (#303, `keepRecreated`): an element of a role Chromium synthesizes for a table
+// (an AXColumn, a table's AXGroup header), re-created since the previous revision, keeps its token when it is the old
+// element in every way the engine can read, every sibling known on both sides, and the old handle is gone. A walk cut short by the node or byte budget or the deadline retires nothing it left unread: the
 // walk spends its budget on what the window shows first (#301), so what it leaves unread lies scattered through the
 // tree, and each unread child of a read element has the previous revision's entry for it, with its subtree, carried over
 // in its place among its siblings. An action names its lineage and a token; the engine
@@ -141,6 +143,10 @@ struct LineageEntry {
   var identity: ElementIdentity
   var actions: [String]
   let frame: CGRect?
+  /// The element's first child as it was read (#303: a re-created column is the old one only if it heads the same cells).
+  var firstChild: AXUIElement? = nil
+  /// How many children it had, before the width rule (#303: its old children are all known only when that many were kept).
+  var listed: Int? = nil
 }
 
 extension ElementIdentity {
@@ -366,6 +372,86 @@ func matchSiblings(old: [(index: Int, element: AXUIElement)], new: [AXUIElement]
   for chosen in longestIncreasingRun(candidates.map(\.offset)) {
     let candidate = candidates[chosen]
     result[candidate.position] = old[candidate.offset].index
+  }
+  return result
+}
+
+/// A new sibling as `keepRecreated` sees it once read: its identity, its frame and its first child.
+struct SiblingRead {
+  let identity: ElementIdentity
+  let frame: CGRect?
+  let firstChild: AXUIElement?
+}
+
+/// cua's departure from the vendor's sibling rule (#303): Chromium re-creates the AXColumn elements it synthesizes for
+/// a table, and a table's header AXGroup, between observations (run 42243553112), so under `matchSiblings` alone they
+/// took new tokens every time. After it, a new sibling it left unmatched keeps the token of the old sibling it left
+/// unkept when the two are the same in everything the engine reads: a synthesized role (AXColumn under any parent, an
+/// AXGroup under an AXTable or AXOutline), the same place among that role's siblings, the eleven identity attributes
+/// equal, the frame equal within a point once the parent's own move is taken out (`parentShift`: a scroll moves table
+/// and columns together), the same first child (CFEqual: a column heads its cells, which Chromium does not re-create),
+/// and, asked last and only then, the old handle gone (`gone`). A frame or a first child missing on either side is no
+/// match: a frameless or childless element takes a new token, as under the vendor's rule. So is a first child that
+/// heads more than one sibling of the role on either side (a header cell spanning several columns is every one of their
+/// first children): it tells no column apart, and with Chromium framing every column as the whole table nothing else
+/// would. Places and first children are only known when every sibling is: the previous observation emitted (or
+/// carried) all of the `oldListed` children the parent had, and this walk kept all `newListed` (the width rule showed
+/// them all, `count` of them) and read every one; otherwise nothing is kept, since an unknown sibling could head the
+/// same first child (the reviews of 9062cda7..80b493d1 and of c08c3ac5: a walk cut, or a width rule's subset shown,
+/// after an inserted column under a widened spanning header handed it the first column's token). A real replacement fails one of these:
+/// an element of any other role, an old element still alive, a column inserted (the columns after it head other cells
+/// than the old ones at their places), a changed header. `entry` is the previous revision's entry by number; `read` a
+/// new sibling's by position, nil where the walk did not read it. Nothing is read, built or asked unless the vendor's
+/// rule left both a new sibling and an old synthesized one unmatched.
+func keepRecreated(_ matched: [Int?], old: [(index: Int, element: AXUIElement)], oldListed: Int?, entry: (Int) -> LineageEntry?,
+                   new count: Int, newListed: Int, read: (Int) -> SiblingRead?, parentRole: String?,
+                   parentShift: () -> CGVector, gone: (AXUIElement) -> Bool) -> [Int?] {
+  guard matched.contains(where: { $0 == nil }) else { return matched }
+  let synthesized = { (role: String) in
+    role == kAXColumnRole || (role == kAXGroupRole && (parentRole == kAXTableRole || parentRole == kAXOutlineRole))
+  }
+  let kept = Set(matched.compactMap { $0 })
+  var oldAt: [String: [(index: Int, entry: LineageEntry)?]] = [:]
+  var unkept = false
+  for sibling in old {
+    guard let found = entry(sibling.index), synthesized(found.identity.role) else { continue }
+    let free = !kept.contains(sibling.index)
+    unkept = unkept || free
+    oldAt[found.identity.role, default: []].append(free ? (sibling.index, found) : nil)
+  }
+  guard unkept, old.count == oldListed, count == newListed else { return matched }
+  let all = (0..<count).map(read)
+  guard !all.contains(where: { $0 == nil }) else { return matched }
+  let shift = parentShift()
+  let reads = all.map { $0.flatMap { synthesized($0.identity.role) ? $0 : nil } }
+  // How many siblings of a role each first child heads, on each side: only a first child heading one is an anchor.
+  var oldHeads: [String: [ElementKey: Int]] = [:], newHeads: [String: [ElementKey: Int]] = [:]
+  for sibling in old {
+    guard let found = entry(sibling.index), synthesized(found.identity.role), let child = found.firstChild else { continue }
+    oldHeads[found.identity.role, default: [:]][ElementKey(element: child), default: 0] += 1
+  }
+  for found in reads.compactMap({ $0 }) {
+    guard let child = found.firstChild else { continue }
+    newHeads[found.identity.role, default: [:]][ElementKey(element: child), default: 0] += 1
+  }
+  var result = matched
+  var places: [String: Int] = [:]
+  for position in 0..<count {
+    guard let read = reads[position] else { continue }
+    let role = read.identity.role
+    let place = places[role, default: 0]
+    places[role] = place + 1
+    guard result[position] == nil, let candidates = oldAt[role], place < candidates.count, let candidate = candidates[place] else { continue }
+    let entry = candidate.entry
+    guard read.identity.matches(entry.identity) else { continue }
+    // Nothing missing counts as a match: a frameless or childless element keeps the vendor's rule (a new token).
+    guard let now = read.frame, let before = entry.frame,
+          abs(now.minX - shift.dx - before.minX) <= 1, abs(now.minY - shift.dy - before.minY) <= 1,
+          abs(now.width - before.width) <= 1, abs(now.height - before.height) <= 1,
+          let child = read.firstChild, let oldChild = entry.firstChild, CFEqual(child, oldChild),
+          oldHeads[role]?[ElementKey(element: oldChild)] == 1, newHeads[role]?[ElementKey(element: child)] == 1 else { continue }
+    guard gone(entry.element) else { continue }
+    result[position] = candidate.index
   }
   return result
 }

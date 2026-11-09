@@ -4168,6 +4168,71 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   other tests pass unchanged. Not unit tested: `drag`'s glue, which passes the flag for the end (it reads live AX).
   Date/Author: 2026-11-08, cursor235's lane-2 implementer for #334.
 
+- Decision (#290, 2026-11-08, `fix/290-caret-search`; the issue's intent, spawned by #283's 5,000-character bound; the
+  design session's ruling 31a62775 on the stated limits; amends #283's entry on the caret's offset): **the caret's
+  offset is searched over the field's character boxes, by line and then by x, and #283's linear scan decides only the
+  few characters the search ends at, or what the search cannot.**
+  1. **Why.** #283 placed the caret by reading `AXBoundsForRange` for each character from the start until one held the
+     point, and refused a field longer than 5,000 characters (`pointOutsideText`). A click deep in a long field cost
+     one read per character before it (about 0.1 ms each on the hosted runner), and any field past 5,000 characters
+     could not be clicked into at a point at all.
+  2. **The rule** (`caretOffset`, WebAreaFocus.swift). A bisection over the boxes in reading order finds the point's
+     line by box y, and a second finds its place on that line by box x. The linear scan then runs over the window from
+     the last usable box before that place through it, and an offset is taken from the search only where that scan
+     places one. Anything else gets the linear scan over the whole range when it is at most 5,000 characters, so the
+     answer, offset or reason, is #283's. Over 5,000 characters it gets a 5,000-character window around where the
+     search ended. Each box is read at most once. An unusable box (empty, or a failed read) at a probe is stepped past
+     to the nearest usable one, at most 64 of them (`caretSearchStepLimit`), and is never inferred across. Two usable
+     boxes read out of reading order (a vertical or right-to-left layout) end the search with no offset taken from it,
+     and past 5,000 characters are #283's refusal, since no window near the point is known (the review of 93bc212e: a
+     vertical layout of 10,000 characters answered 5,001 from that window where the point is at 1). The text's
+     direction is read first, from the first two neighbouring characters with boxes that do not wrap (within 64): on one
+     line running leftward, or stacked in a column, the text is not searched (the review of 66017fb1: four characters
+     of vertical text in two columns, where sampling never saw the order broken). A text whose first characters have no
+     boxes at all is not searched either: the linear scan within 5,000 characters, and past that `noCharacterBoxes`,
+     which the wait on boxes re-reads (the review of a2fd1e11: vertical text whose first boxes were still missing). Every way out of the search checks the
+     boxes it read for order, so a search stopped early by empty boxes cannot hide what it saw. An offset
+     is taken from the search only where the linear scan over its window places it, and a line end only where the next
+     character lies wholly below (the linear scan's wrap test). Characters of other sizes on one line (a contenteditable
+     region's mixed styles) overlap vertically, so a line the bisections cut short at one fails that test and the
+     linear scan answers. A limit: a character set wholly below its line by vertical-align would pass it.
+  3. **Right-to-left text is not searched** (`holdsRightToLeft`: Hebrew, Arabic, Syriac, Thaana, N'Ko and the scripts
+     up to U+08FF, their presentation forms, the right-to-left marks and overrides, and the supplementary right-to-left
+     blocks). Its short lines may show the search too few boxes to see the order broken. Such a text is #283's
+     exactly: the linear scan within 5,000 characters, and past that `pointOutsideText` with nothing read, since no
+     search gives a window near the point.
+  4. **Limits** (stated, ruling 31a62775):
+     - Chromium serves at most 10,000 characters of a field's `AXValue` (the probe's 20,499-character textarea read
+       10,000). A point on text past that is a miss.
+     - A miss, meaning a point outside the text or past the 10,000, still costs the bounded linear scan: up to 5,000
+       reads, about 500 ms at the runner's 0.1 ms per read. In the replay it was 5,002 reads for the point past the cap
+       and at most 3,074 on the 3,074-character field.
+     - A right-to-left text over 5,000 characters is refused, as on main.
+     - In a scrolled textarea the offset is the one under the point in the field's top-scrolled layout, as on main
+       (#341, registered from this A/B and built after this change).
+  Found while measuring, and not this change's: #341, a scrolled textarea's caret placed on the line under the point
+  as the field would show it scrolled to its top (focusing Chromium's textarea scrolls it to its caret before
+  `focusPlacingCaret` reads the offset). Live, both engines therefore place offset 96 on the 3,074-character field and
+  the branch 96 on the 20,499-character one, where the boxes put the point at 1,408 and 9,526; the search's
+  correctness rests on the offline replay below.
+  Proven offline (`CaretSearchTests`, 11):
+  - a property test against a frozen copy of #283's linear scan, over generated layouts with wrapped lines, empty and
+    failed boxes and points everywhere, and over shortened ranges;
+  - the 3,074-character field placed in at most 32 reads and a 20,000-character field in at most 40;
+  - a long field's miss bounded by the 5,000-character window;
+  - boxes out of reading order falling back to the linear scan, and refused past 5,000 characters; vertical text
+    known from its first characters, short and long, also with a run of empty boxes; runs of empty boxes stepped past;
+  - right-to-left text not searched (over 5,000 characters refused with 0 reads), and its characters and marks known.
+  `WebAreaFocusTests`' too-long case now expects a placement.
+  Proven live (`docs/evidence/2026-11-08-caret-search/`; run 42560301611, two runners, main 364e017d against 93bc212e):
+  - on the 3,074-character field, both engines place the same offset in all 12 cells each, and the branch's late
+    click takes 122 ms at the median against main's 188;
+  - on the 20,499-character field, main refuses `pointOutsideText` in all 24 cells (fresh and late, at a line, past a
+    line's end and at the far point) and the branch places in all 24, typing landing at the placed offset;
+  - the offline replay over the runners' box dumps (unfocused, scrolled) answers exactly as the linear scan at all
+    24,400 grid points of each dump, and at the click in 29 reads against the linear scan's 1,409 and 9,527.
+  Date/Author: 2026-11-08, cursor235's lane-3 implementer for #290.
+
 - Decision (#303, 2026-11-08, `fix/303-recreated-tokens`; the issue's intent, spawned by #301's limit (ruling 66f90453's
   entry, item 4); the design session's condition on an element with no first child, relayed 2026-11-08; amends the
   Design's **Indexes, tokens and handles** and Lineage.swift's rule): **an element of a role Chromium synthesizes for a

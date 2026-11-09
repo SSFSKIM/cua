@@ -377,8 +377,12 @@ extension Engine {
       let joined = timings.time("screenshotJoin") { pendingCapture.wait() }
       timings.merge(joined.timings)
       let image = try joined.result.get()
-      // What this window's coordinate clicks divide by, and the tree they are checked against (#296).
-      lineage.screenshot = ObservedScreenshot(window: window, image: image, nodes: timings.time("stalePointRecord") { screenshotNodes(walk.screenshotReads) })
+      // What this window's coordinate clicks divide by, and the tree they are checked against (#296), every element of it
+      // with whether its children all were recorded (#330).
+      let record = timings.time("stalePointRecord") {
+        (screenshotNodes(walk.screenshotReads), screenshotChildrenRecorded(walk.screenshotReads) { ElementKey(element: $0) })
+      }
+      lineage.screenshot = ObservedScreenshot(window: window, image: image, nodes: record.0, recorded: record.1)
       return image.wire
     }
     timings.add("total", monotonicMilliseconds() - started)

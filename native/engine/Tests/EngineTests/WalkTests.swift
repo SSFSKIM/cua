@@ -38,6 +38,8 @@ final class FakeTree {
   var elementDescriptions: [Int: [String: String]] = [:]
   /// Called on every action-description query, by id and action name (a test's delay or count).
   var onDescription: ((Int, String) -> Void)?
+  /// Elements whose AXChildren read fails (its slot an error, so the decoded data has none).
+  var childrenUnread: Set<Int> = []
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
 }
@@ -64,6 +66,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     var values: [String: CFTypeRef] = ["AXRole": "AXGroup" as CFString, "AXTitle": "node \(id)" as CFString,
                                        "AXChildren": (tree.children[id] ?? []).map(Engine.element) as CFArray]
     for (name, value) in tree.extra[id] ?? [:] { values[name] = value }
+    if tree.childrenUnread.contains(id) { values.removeValue(forKey: "AXChildren") }
     if let frame = tree.frames[id] {
       var origin = frame.origin, extent = frame.size
       values["AXPosition"] = AXValueCreate(.cgPoint, &origin)!

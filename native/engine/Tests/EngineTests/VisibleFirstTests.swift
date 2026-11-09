@@ -228,9 +228,9 @@ final class VisibleFirstTests: XCTestCase {
     XCTAssertGreaterThan(cut.omitted, cut.omittedAbove, "the collapsed container's blocks are placed nowhere")
   }
 
-  func testAWidthRuleOmittedListKeepsItsShownRowsInTheGuardsRecordOnly() {
-    // A list (1) of 600 rows 20 pt tall (100 + i), each with two cells (2000 + 2i, 2001 + 2i), scrolled 200 rows down,
-    // whose frames do not settle its shown run (`misplaceASample`), so the width rule prints none of them (#314).
+  /// A list (1) of 600 rows 20 pt tall (100 + i), each with two cells (2000 + 2i, 2001 + 2i), scrolled 200 rows down,
+  /// whose frames do not settle its shown run (`misplaceASample`), so the width rule prints none of them (#314).
+  private func omittedList() -> FakeTree {
     let tree = FakeTree()
     tree.extra[0] = ["AXRole": "AXWindow" as CFString]
     tree.frames[0] = windowFrame
@@ -244,6 +244,23 @@ final class VisibleFirstTests: XCTestCase {
       tree.frames[2001 + 2 * i] = CGRect(x: 500, y: y, width: 500, height: 20)
     }
     misplaceASample(tree, list: 100)
+    return tree
+  }
+
+  /// #330 (the review of 364e017d..51ce4138): the guard's record-only reads say, as the tree's do, whether each element's
+  /// AXChildren was read; a shown row whose read failed is not recorded with every child.
+  func testTheGuardsRecordOnlyReadsCarryAFailedChildrenRead() {
+    let tree = omittedList()
+    tree.childrenUnread = [310]
+    let recording = walk(tree, Lineage(), visibleFrame: windowFrame, recordsScreenshot: true)
+    XCTAssertTrue(recording.screenshotReads.contains { tree.id($0.element) == 310 && $0.number < 0 }, "a record-only row")
+    let complete = screenshotChildrenRecorded(recording.screenshotReads) { tree.id($0) }
+    XCTAssertEqual(complete[310], false)
+    XCTAssertEqual(complete[311], true)
+  }
+
+  func testAWidthRuleOmittedListKeepsItsShownRowsInTheGuardsRecordOnly() {
+    let tree = omittedList()
     let shownRows = Set((200..<240).map { 100 + $0 })
     let recording = walk(tree, Lineage(), visibleFrame: windowFrame, recordsScreenshot: true)
     XCTAssertEqual(ids(recording), [0, 1], "the tree keeps the vendor's none")

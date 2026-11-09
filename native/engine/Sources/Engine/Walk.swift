@@ -926,7 +926,7 @@ final class TreeWalk {
       let data = item.read.data
       screenshotReads.append(ScreenshotNodeRead(element: item.read.element, number: number, parent: parent, depth: depth, role: data.role,
                                                 title: data.title, description: data.description, frame: data.frame,
-                                                actions: item.read.actions, childCount: data.children.count))
+                                                actions: item.read.actions, childCount: data.children.count, childrenRead: data.childrenRead))
       emitRecord(item.read.children + item.recordChildren, parent: number, depth: depth + 1)
     }
   }
@@ -1111,7 +1111,7 @@ final class TreeWalk {
     if !inMenu {
       screenshotReads.append(ScreenshotNodeRead(element: read.element, number: number, parent: parent, depth: depth, role: read.data.role,
                                                 title: read.data.title, description: read.data.description, frame: read.data.frame,
-                                                actions: read.actions, childCount: read.data.children.count))
+                                                actions: read.actions, childCount: read.data.children.count, childrenRead: read.data.childrenRead))
     }
     attach(number, parent: parent, inMenu: inMenu)
     return number

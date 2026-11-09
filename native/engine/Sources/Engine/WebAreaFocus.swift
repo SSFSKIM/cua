@@ -445,8 +445,8 @@ struct WebAreaFocusRecord: Equatable {
 /// check, and AXSelectedTextRange {offset, 0} (`writeSelection`), which focuses Chromium's field; focus polled for the
 /// settle; not focused, the in-flight check, AXFocused and its poll. Then the selection read back (`selection`, polled
 /// for the same settle) and the reference box read again: placed only where the caret reads {offset, 0} and the box
-/// moved no more than `caretMarkTolerance` (an empty text, which has no box, needs none). `noted` gets the step that
-/// focused the field and the box's shift.
+/// moved no more than `caretMarkTolerance` (a text still empty at read-back, which has no box, needs none). `noted`
+/// gets the step that focused the field and the box's shift.
 func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, freshSince: Double? = nil, beforeMutating: () throws -> Void,
                        beforeCaret: () throws -> Void = {}, writeFocused: () -> Void,
                        focused: () -> Bool?, offset: () -> Result<Int, CaretNotPlaced>, sameTarget: () -> Bool, valueLength: () -> Int?,
@@ -482,7 +482,6 @@ func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, freshSince: Doubl
   case .success(let offset): target = offset
   }
   let markBefore = layoutMark()
-  let needsMark = !(target == 0 && valueLength() == 0)
   try beforeMutating()
   writeSelection(target)
   var step = WebAreaFocusRecord.Step.selection
@@ -498,7 +497,10 @@ func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, freshSince: Doubl
   }
   noted(record)
   guard caretRead else { return .notPlaced(.selectionMismatch) }
-  guard !needsMark || record.markShift.map({ $0 <= Double(caretMarkTolerance) }) == true else { return .notPlaced(.layoutMoved) }
+  // An empty field has no box to read and no text to scroll: exempt only while it is still empty at read-back (the
+  // review of #341: a focus handler that fills it leaves the caret's place unproven).
+  let stillEmpty = target == 0 && valueLength() == 0
+  guard stillEmpty || record.markShift.map({ $0 <= Double(caretMarkTolerance) }) == true else { return .notPlaced(.layoutMoved) }
   return .placed(target)
 }
 

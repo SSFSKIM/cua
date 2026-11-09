@@ -91,6 +91,8 @@ final class WebAreaFocusTests: XCTestCase {
     /// How far each write moves the field's text on screen (a scroll), in points.
     var focusScrolls: CGFloat = 0
     var selectionScrolls: CGFloat = 0
+    /// The value's length after the caret's write (a focus handler filling the field), where it changes.
+    var lengthAfterSelection: Int? = nil
     /// The reference character's box can be read.
     var markReadable = true
     var markY: CGFloat = 100
@@ -158,6 +160,7 @@ final class WebAreaFocusTests: XCTestCase {
         if field.takesSelection { field.selection = (offset, 0) }
         if field.selectionFocuses { field.focused = true }
         field.markY -= field.selectionScrolls
+        if let filled = field.lengthAfterSelection { field.length = filled }
       },
       selection: { field.selection },
       noted: { field.record = $0 },
@@ -280,6 +283,15 @@ final class WebAreaFocusTests: XCTestCase {
   func testAnEmptyFieldIsPlacedWithoutAReferenceBox() throws {
     var field = Field(markReadable: false, length: 0)
     XCTAssertEqual(try focus(&field, offset: .success(0)), .placed(0))
+    XCTAssertEqual(field.writes, ["AXSelectedTextRange 0"])
+  }
+
+  /// The review of #341 (round 1, P2): the empty field's exemption holds only while it is still empty at read-back. A
+  /// focus handler that fills it (and may scroll it) while the caret reads {0, 0} leaves its place unproven, with no
+  /// reference box from before the writes.
+  func testAFieldFilledWhileTakingFocusIsNotPlacedWithoutAReferenceBox() throws {
+    var field = Field(lengthAfterSelection: 100, markReadable: false, length: 0)
+    XCTAssertEqual(try focus(&field, offset: .success(0)), .notPlaced(.layoutMoved))
     XCTAssertEqual(field.writes, ["AXSelectedTextRange 0"])
   }
 

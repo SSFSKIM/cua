@@ -4333,8 +4333,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      the caret's read-back, and may move at most 1 pt in x and y (`caretMarkTolerance`). A move past that, or a box
      that cannot be read again, answers `focusedNotPlaced` with the new caret reason `layoutMoved`, and a note that
      the caret was written at the point but its place against the screenshot is not confirmed, so take a new
-     screenshot. An empty field needs no box (offset 0 in a text of length 0). A caret read back elsewhere is
-     `selectionMismatch`, as before.
+     screenshot. An empty field needs no box (offset 0 in a text of length 0, re-checked at read-back: a field filled
+     meanwhile, by a focus handler say, needs the box, and with none read before the writes is `layoutMoved`; the
+     review of round 1). A caret read back elsewhere is `selectionMismatch`, as before.
   4. **The record.** `elementClick` keeps `reason focusField | focusedNotPlaced`. Its `action` is now the write the field
      took focus from (`AXSelectedTextRange`, or `AXFocused` on the fallback and the no-offset paths), `focusStep` says
      the same (`selection` | `focused`), and `caretMarkShift` gives the box's move in points where it was read twice.
@@ -4351,13 +4352,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - A fresh click still costs the wait for boxes, now before focus (1.5 to 2.0 s in the A/B, as on main).
      - Not measured live: the AXFocused fallback after a caret's write that does not focus (no Chromium cell needed it),
        a contenteditable region and an empty field; the unit tests cover them.
-  Proven offline (`WebAreaFocusTests`, 46): the caret written first and nothing else; the fallback to AXFocused with the
+  Proven offline (`WebAreaFocusTests`, 47): the caret written first and nothing else; the fallback to AXFocused with the
   caret re-read, and a focus that puts the caret back elsewhere; a field scrolled by focus or by the caret's write and a
   reference box that cannot be read again not placed, a shift within a point placed; an empty field placed without a
-  box; no offset and a password field focused by AXFocused with nothing read; the in-flight check stopping the click
-  before any write, and between the caret's write and the fallback; the guard after the wait refusing with nothing
+  box, and one filled while taking focus not placed; no offset and a password field focused by AXFocused with nothing
+  read; the in-flight check stopping the click before any write, and between the caret's write and the fallback; the guard after the wait refusing with nothing
   written; the wait's re-validation without focus; the reference character's choice; the record and the `layoutMoved`
-  note. The engine's `swift test` passes (1,086).
+  note. The engine's `swift test` passes (1,087).
   Proven live (`docs/evidence/2026-11-08-scrolled-caret/`; run 42578081142,
   https://github.com/SSFSKIM/cua/actions/runs/42578081142, kit `probe/341-ab` at e91c1e6c, two runners, main 4cb51b3b
   against de3973ef; coordinate clicks on six textareas, top, scrolled by script with overflow hidden and auto, at the

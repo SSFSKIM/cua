@@ -85,6 +85,16 @@ case "$GROUP" in
         sweep $h $b
       done
     done ;;
+  ab-pass)
+    # A confirming pass on a fix head: the nested web cells (clipped hit, div, iframe, horizontal, scripted) and divEnd.
+    for h in a b; do
+      for b in safari chrome firefox; do
+        echo "== $(date -u +%H:%M:%S) confirm $b $h"
+        node scripts/probe-328/confirm.mjs --browser "$b" --t328 "$T/t328" --cover "$T/Cover328.app/Contents/MacOS/Probe328" \
+          --engine "$T/$(engdir $h)/release/cua-engine" --pages 1 --reps 4 --cells divTop,div,iframe,hdiv,raf,mid,divEnd \
+          --out "$T/probe-328/ab-confirm-$b-$h"
+      done
+    done ;;
   confirmb)
     # Gate (b)'s early read (ruling b1921fc3): main's engine scrolls nested web scrollers, t328 emulates the approved
     # confirmation around it, the page's scroll events are the truth (scripts/probe-328/confirm.mjs).

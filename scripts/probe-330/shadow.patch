@@ -28,7 +28,7 @@ index cbecb3c4..231d00e6 100644
          // The guard may have recovered a hit the first hit-test missed (a node mid-replacement, `stalePointRehits`): the
          // route and the view it is classified by are read from that one.
 diff --git a/native/engine/Sources/Engine/Screenshot.swift b/native/engine/Sources/Engine/Screenshot.swift
-index d343dee0..a84c30d0 100644
+index d343dee0..f7bfdfae 100644
 --- a/native/engine/Sources/Engine/Screenshot.swift
 +++ b/native/engine/Sources/Engine/Screenshot.swift
 @@ -219,6 +219,10 @@ struct ObservedScreenshot {
@@ -37,17 +37,17 @@ index d343dee0..a84c30d0 100644
    let height: Int
 +  /// #330's spike (runner-only): each recorded element and whether its direct children were all recorded, and the app's
 +  /// notifications since the screenshot (Shadow330.swift).
-+  var members: [ElementKey: Bool] = [:]
++  var members: [ElementKey: ShadowMember] = [:]
 +  var watch: ShadowWatch? = nil
  
    init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = []) {
      self.window = window
 diff --git a/native/engine/Sources/Engine/Shadow330.swift b/native/engine/Sources/Engine/Shadow330.swift
 new file mode 100644
-index 00000000..6ecc1cde
+index 00000000..f16e1dde
 --- /dev/null
 +++ b/native/engine/Sources/Engine/Shadow330.swift
-@@ -0,0 +1,227 @@
+@@ -0,0 +1,252 @@
 +import ApplicationServices
 +import CoreGraphics
 +import Foundation
@@ -58,13 +58,22 @@ index 00000000..6ecc1cde
 +
 +/// Each element the screenshot's walk recorded, framed or not, and whether the walk recorded every one of its direct
 +/// children (so a live child it lacks is new since the screenshot).
-+func shadowMembers(_ reads: [ScreenshotNodeRead<AXUIElement>]) -> [ElementKey: Bool] {
++struct ShadowMember { let complete: Bool; let childCount: Int }
++func shadowMembers(_ reads: [ScreenshotNodeRead<AXUIElement>]) -> [ElementKey: ShadowMember] {
 +  var recorded: [Int: Int] = [:]
 +  for read in reads { if let parent = read.parent { recorded[parent, default: 0] += 1 } }
-+  var out: [ElementKey: Bool] = [:]
++  var out: [ElementKey: ShadowMember] = [:]
 +  out.reserveCapacity(reads.count)
-+  for read in reads { out[ElementKey(element: read.element)] = (recorded[read.number] ?? 0) >= read.childCount }
++  for read in reads {
++    out[ElementKey(element: read.element)] = ShadowMember(complete: (recorded[read.number] ?? 0) >= read.childCount, childCount: read.childCount)
++  }
 +  return out
++}
++
++/// The element's live AXChildren count (one read), nil when unread.
++private func liveChildCount(_ e: AXUIElement) -> Int? {
++  var count: CFIndex = 0
++  return AXUIElementGetAttributeValueCount(e, kAXChildrenAttribute as CFString, &count) == .success ? count : nil
 +}
 +
 +let shadowWatchNames: [String] = [
@@ -143,7 +152,7 @@ index 00000000..6ecc1cde
 +    func childStatus(_ key: ElementKey, parent: AXUIElement, parentStatus: ShadowStatus) -> ShadowStatus {
 +      if members[key] != nil { return .rec }
 +      if parentStatus == .new || parentStatus == .inNew { return .inNew }
-+      if parentStatus == .rec, members[ElementKey(element: parent)] == true { return .new }
++      if parentStatus == .rec, members[ElementKey(element: parent)]?.complete == true { return .new }
 +      return .unk
 +    }
 +    let start = area ?? screenshot.window
@@ -151,7 +160,10 @@ index 00000000..6ecc1cde
 +
 +    // (a) and (b): the point-pruned descent (a frame holding the point, no frame or one under 2 pt either way, or a node
 +    // the record lacks, is descended), then the bounded full walk.
-+    func walk(pruned: Bool, cap: Int) -> (stab: [[Any]], reads: Int, cut: Bool, visited: Int, newAnywhere: Int, ms: Double) {
++    // mode 0: the full walk; 1: point-pruned; 2: point-pruned, also entering a recorded node whose live child count differs
++    // from the record's (a container that gained a child, whose overflowing list its own frame does not hold).
++    func walk(mode: Int, cap: Int) -> (stab: [[Any]], reads: Int, cut: Bool, visited: Int, newAnywhere: Int, ms: Double) {
++      let pruned = mode != 0
 +      let t0 = monotonicMilliseconds()
 +      var queue: [(AXUIElement, ShadowStatus, Int, Bool)] = [(start, startStatus, 0, false)]
 +      var head = 0, reads = 0, cut = false, newAnywhere = 0
@@ -177,7 +189,12 @@ index 00000000..6ecc1cde
 +            stab.append([role, sSub(k) ?? NSNull(), st.rawValue, level + 1, nodeAncestors.contains(key), kUnder, isNode, fw(f)])
 +          }
 +          let thin = f.map { $0.width < 2 || $0.height < 2 } ?? true
-+          if !pruned || holds || thin || st == .new || st == .inNew { queue.append((k, st, level + 1, kUnder)) }
++          var enter = !pruned || holds || thin || st == .new || st == .inNew
++          if !enter, mode == 2, let m = members[key] {
++            reads += 1
++            if let live = liveChildCount(k), live != m.childCount { enter = true }
++          }
++          if enter { queue.append((k, st, level + 1, kUnder)) }
 +        }
 +      }
 +      return (stab, reads, cut, head, newAnywhere, monotonicMilliseconds() - t0)
@@ -185,14 +202,15 @@ index 00000000..6ecc1cde
 +    let popup: Set<String> = ["AXList", "AXMenu", "AXComboBox", "AXTable", "AXOutline", "AXListBox", "AXPopover", "AXGrid", "AXTree"]
 +    func summarize(_ w: (stab: [[Any]], reads: Int, cut: Bool, visited: Int, newAnywhere: Int, ms: Double), _ name: String) {
 +      // A node the record lacks (new or inside a new one) holding the point, neither containing the node nor inside it.
-+      let fresh = w.stab.filter { ["new", "in-new"].contains($0[2] as! String) && !($0[4] as! Bool) && !($0[5] as! Bool) }
++      let fresh = w.stab.filter { ["new", "in-new"].contains($0[2] as! String) && !($0[4] as! Bool) && !($0[5] as! Bool) && ($0[0] as! String) != "AXColumn" }
 +      out[name] = ["a": !fresh.isEmpty, "b": fresh.contains { popup.contains($0[0] as! String) },
 +                   "freshRoles": Array(Set(fresh.map { "\($0[0])\(($0[1] as? String).map { "/" + $0 } ?? "")" })).sorted(),
 +                   "stab": Array(w.stab.prefix(40)), "stabCount": w.stab.count, "reads": w.reads, "cut": w.cut, "visited": w.visited,
 +                   "newAnywhere": w.newAnywhere, "ms": (w.ms * 100).rounded() / 100] as [String: Any]
 +    }
-+    summarize(walk(pruned: true, cap: 1500), "pruned")
-+    summarize(walk(pruned: false, cap: 4000), "full")
++    summarize(walk(mode: 1, cap: 1500), "pruned")
++    summarize(walk(mode: 2, cap: 1500), "changed")
++    summarize(walk(mode: 0, cap: 2500), "full")
 +
 +    // (c): the focused element.
 +    let appElement = prepare(AXUIElementCreateApplication(appPid))
@@ -236,16 +254,23 @@ index 00000000..6ecc1cde
 +      }
 +      let reachedArea = area.map { a in list.contains { CFEqual($0, a) } } ?? false
 +      let isNew = { (s: ShadowStatus) in s == .new || s == .inNew }
++      // The topmost new element: whether its parent's live AXChildren lists it (Chromium's hit-test answers a button's
++      // label text, which no AXChildren lists and the walk never records).
++      var listed: Any = NSNull()
++      var topNew: Int? = nil
++      if let i = statuses.lastIndex(where: { $0 == .new }), i + 1 < list.count {
++        topNew = i
++        listed = (childrenRead(list[i + 1]) ?? []).contains { CFEqual($0, list[i]) }
++      }
++      let listedNew = (listed as? Bool) == true
 +      return ["d": statuses.contains(where: isNew), "dAnc": statuses.dropFirst().contains(where: isNew), "hitNew": isNew(statuses[0]),
++              "listed": listed, "dL": listedNew, "dLAnc": listedNew && (topNew ?? 0) > 0 && statuses.dropFirst().contains(where: isNew),
 +              "reachedArea": reachedArea, "hitIsNode": currentKey.map { $0 == ElementKey(element: h) } ?? false,
 +              "chain": zip(list, statuses).prefix(12).map { pair -> [Any] in [sRole(pair.0), sSub(pair.0) ?? NSNull(), pair.1.rawValue] }]
 +    }
 +    let t1 = monotonicMilliseconds()
 +    var hits: [[String: Any]] = [chain(verdict.hit ?? hit)]
-+    for wait in [0.0, 60.0, 120.0] {
-+      if wait > 0 { usleep(UInt32(wait * 1000)) }
-+      hits.append(chain(hitTest(window: window, pid: appPid, at: point)))
-+    }
++    hits.append(chain(hitTest(window: window, pid: appPid, at: point)))
 +    out["hits"] = hits
 +    out["hitsMs"] = ((monotonicMilliseconds() - t1) * 100).rounded() / 100
 +

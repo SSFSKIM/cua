@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["suggest-chrome", "suggest-safari", "suggest-firefox", "sweep-chrome", "sweep-safari", "sweep-firefox", "sweep-native"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["suggest-chrome", "suggest-safari", "suggest-firefox", "sweep-chrome", "sweep-safari", "sweep-firefox"]') }}
     runs-on: macos-latest
     timeout-minutes: 130
     steps:

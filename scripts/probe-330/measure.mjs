@@ -111,7 +111,9 @@ const RESULTS = `<!doctype html><html lang="en"><head><meta charset="utf-8"><tit
 //   combo     ARIA 1.2: the field role=combobox (aria-expanded, aria-controls), its role=listbox list positioned in the
 //             field's own wrapper (position:relative, the field's size), so the list overflows its parent's frame
 //   portal    a role=listbox of role=option divs appended at the end of the body, after every covered control
-//   datalist  a native <datalist> on the field (the browser's own popup)
+//   datalist  a native <datalist> on the field (the browser's own popup; run 1 only: W, G or a pass-through popup)
+//   filled    a role=listbox present and empty (so recorded) until typing fills it with role=option divs
+//   opacity   #316's listbox always in the tree, shown by opacity (hidden: opacity 0 and pointer-events none)
 const sItems = (tag, extra) => Array.from({length: 6}, (_, i) => `<${tag} id="s${i + 1}" ${extra(i + 1)} style="display:block;padding:6px 8px;cursor:pointer;margin:0">Suggestion ${i + 1}</${tag}>`).join('');
 function suggestPage(kind) {
   const field = kind === 'combo'
@@ -121,6 +123,10 @@ function suggestPage(kind) {
       : `<input id="q" name="q" aria-label="Search" placeholder="Search" autocomplete="off" size="22">`;
   const list = kind === 'listbox' ? `<div id="sugg" class="drop" role="listbox" aria-label="Suggestions" style="top:100px;width:300px">${sItems('a', n => `href="/results?q=s${n}" role="option"`)}</div>`
     : kind === 'div' ? `<div id="sugg" class="drop" style="top:100px;width:300px">${sItems('div', n => `data-href="/results?q=s${n}"`)}</div>` : '';
+  const filled = kind === 'filled' ? `<div id="fl" role="listbox" aria-label="Suggestions" style="position:absolute;left:16px;top:100px;width:300px;background:#fff;z-index:5"></div>
+<script>(() => { const q = document.getElementById('q'), fl = document.getElementById('fl'); q.addEventListener('input', () => { fl.innerHTML = q.value ? '${sItems('div', n => `role="option" data-href="/results?q=s${n}"`)}' : ''; fl.style.border = q.value ? '1px solid #888' : 'none'; }); document.addEventListener('keydown', e => { if (e.key === 'Escape') fl.innerHTML = ''; }); })();</script>` : '';
+  const opacity = kind === 'opacity' ? `<div id="op" role="listbox" aria-label="Suggestions" style="position:absolute;left:16px;top:100px;width:300px;background:#fff;border:1px solid #888;z-index:5;opacity:0;pointer-events:none">${sItems('a', n => `href="/results?q=s${n}" role="option"`)}</div>
+<script>(() => { const q = document.getElementById('q'), op = document.getElementById('op'); const show = v => { op.style.opacity = v ? '1' : '0'; op.style.pointerEvents = v ? 'auto' : 'none'; }; q.addEventListener('input', () => show(q.value)); document.addEventListener('keydown', e => { if (e.key === 'Escape') show(''); }); })();</script>` : '';
   const portal = kind === 'portal' ? `<div id="sugg" class="drop" role="listbox" aria-label="Suggestions" style="top:100px;width:300px">${sItems('div', n => `role="option" data-href="/results?q=s${n}"`)}</div>` : '';
   return `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe330 ${kind}</title>
 <style>body{font:15px -apple-system,Helvetica,sans-serif;margin:0} .a{position:absolute;left:16px} .drop{position:absolute;left:16px;display:none;background:#fff;border:1px solid #888;z-index:5;box-shadow:0 2px 6px #0004}</style></head>
@@ -134,7 +140,7 @@ ${list}
 <div class="a" style="top:206px"><button id="b1" type="button">Alpha</button> <button id="b2" type="button">Beta</button> <button id="b3" type="button">Gamma</button> <button id="b4" type="button">Delta</button></div>
 <div class="a" style="top:244px"><a id="l1" href="#one">Link one</a> &nbsp; <a id="l2" href="#two">Link two</a></div>
 <textarea id="notes" class="a" aria-label="Notes" style="top:300px;width:420px;height:150px"></textarea>
-</div>${portal}${SCRIPT}</body></html>`;
+</div>${portal}${filled}${opacity}${SCRIPT}</body></html>`;
 }
 // The near page: five controls in a column, and one change `window.__change` makes between the screenshot and the click
 // (the probe's command), near the controls and covering none of them:
@@ -279,7 +285,7 @@ const ask = (o, timeout = 30_000) => new Promise(resolve => { const t = setTimeo
 
 // ---- shared steps -------------------------------------------------------------------------------------------------
 /// The shadow's candidates in one line: a (pruned/full), b (pruned/full), c, d on the engine's hit and the three re-hits, e.
-const shadowLine = sh => !sh ? 'noshadow' : `a=${+!!sh.pruned?.a}/${+!!sh.full?.a} b=${+!!sh.pruned?.b}/${+!!sh.full?.b} c=${+!!sh.c} d=${(sh.hits ?? []).map(h => +!!h.d).join('')} e=${sh.e == null ? '-' : +!!sh.e} fresh=${JSON.stringify(sh.full?.freshRoles ?? [])} ms=${sh.ms}`;
+const shadowLine = sh => !sh ? 'noshadow' : `a=${+!!sh.pruned?.a}/${+!!sh.changed?.a}/${+!!sh.full?.a} c=${+!!sh.c} d=${(sh.hits ?? []).map(h => +!!h.d).join('')} dL=${(sh.hits ?? []).map(h => +!!h.dL).join('')} e=${sh.e == null ? '-' : +!!sh.e} fresh=${JSON.stringify(sh.full?.freshRoles ?? [])} web=${sh.inWebArea} ms=${sh.ms}`;
 const lean = r => JSON.parse(JSON.stringify(r ?? null, (k, v) => (k === 'nodes' || k === 'menuBar' ? `[${Array.isArray(v) ? v.length : '?'}]` : v)));
 const errName = r => r?.error ? (r.error.data?.errorName ?? r.error.data?.name ?? r.error.errorName ?? r.error.name ?? r.error.code ?? 'error') : null;
 const metaOf = r => r?.error ? (r.error.data?.meta ?? r.error.meta ?? null) : (r?.result?.meta ?? null);
@@ -920,7 +926,8 @@ const FRAME_KIND = {Top: 'page', Bottom: 'page', Same: 'same-origin', Cross: 'cr
 async function stillBrowser(kind) {
   config[`${kind}Version`] = version(kind);
   const h = await stillHarness(kind);
-  const scenes = [...Object.keys(NEAR_CHANGES).map(c => [`near:${c}`, `${URL_}n?change=${c}`]), ['frames', `${URL_}frames`], ['toolbar', URL_], ['page', URL_], ['wiki', 'https://en.wikipedia.org/wiki/Hacker_News']];
+  const scenes = [...Object.keys(NEAR_CHANGES).map(c => [`near:${c}`, `${URL_}n?change=${c}`]), ['frames', `${URL_}frames`], ['toolbar', URL_], ['page', URL_], ['wiki', 'https://en.wikipedia.org/wiki/Hacker_News'], ['hn', 'https://news.ycombinator.com/'],
+    ['mdn', 'https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/select']];
   for (let rep = 1; rep <= REPS; rep++) for (const [scene, url] of scenes) {
     if (scene.startsWith('near:')) {
       let k = 0;
@@ -967,7 +974,7 @@ async function stillBrowser(kind) {
     const w = await connect('shared');
     const sky = await observe(w, h.pid(), `${kind}-${scene}-pick-${rep}`);
     w.close();
-    const picks = sweepPicks(sky);
+    const picks = sweepPicks(sky, ['hn', 'mdn'].includes(scene) ? 10 : 20);
     config[`picks-${kind}-${scene}`] = picks.map(p => `${p.bucket}:${p.role}:${(p.title ?? p.description ?? '').slice(0, 24)}`);
     let k = 0;
     for (const p of picks) {
@@ -1057,7 +1064,7 @@ async function stillFinder() {
 // targets the list covers (button Beta, checkbox Option, link one) and two it does not (Go beside the field, the Notes
 // textarea below the list); `suggestReobs` (the same, a re-observation, then a click placed in it) on Beta and on the
 // second suggestion; and `none` (no typing) on the covered targets and Go, the baseline.
-const SKINDS = ['listbox', 'div', 'combo', 'portal', 'datalist'];
+const SKINDS = ['listbox', 'div', 'combo', 'portal', 'filled', 'opacity'];
 const STARGETS = {button: [['AXButton'], 'Beta', ['b2']], checkbox: [['AXCheckBox'], 'Option', ['opt', 'optl']], link: [['AXLink'], 'Link one', ['l1']],
   go: [['AXButton'], 'Go', ['go']], textarea: [['AXTextArea'], 'Notes', ['notes']]};
 const SSEQ = {none: [], suggest: ['click:q', 'type:pro'], suggestReobs: ['click:q', 'type:pro', 'reobserve']};
@@ -1071,6 +1078,70 @@ function findSuggestion(sky, n) {
   const re = new RegExp(`^(Suggestion|probe) ${n}$`);
   const hits = sky.nodes.filter(x => x.frame && x.frame.width > 2 && x.frame.height > 2 && [x.title, x.description, x.value].some(v => typeof v === 'string' && re.test(v.trim())));
   return hits.sort((a, b) => a.frame.width * a.frame.height - b.frame.width * b.frame.height)[0] ?? null;
+}
+// Wikipedia's Special:Search field and its own suggestion list: connection A observes, clicks the field and types; a
+// second connection observes to find the list (its observation is its own, so A's record stays the first screenshot);
+// then A clicks the target-th control of A's screenshot whose centre the list covers. Where it went: the window's title
+// after, and the hit's chain in the side tool's signals.
+const WIKI_SEARCH = 'https://en.wikipedia.org/wiki/Special:Search';
+async function runWikiSuggest(h, kind) {
+  for (let rep = 1; rep <= REPS; rep++) for (const mode of ['shared', 'dedicated']) for (let t = 0; t < 4; t++) {
+    if (overBudget()) { config.budgetStop = true; save(); return; }
+    const lab = `${kind}-wiki-${mode}-suggest-t${t}-${rep}`;
+    const row = {part: 'suggest', label: lab, app: kind, skind: 'wiki', mode, seq: 'suggest', target: `t${t}`, rep, steps: []};
+    results.push(row);
+    let w, w2;
+    try {
+      row.reset = await h.reset(WIKI_SEARCH);
+      const pid = h.pid();
+      w = await connect(mode);
+      const sky = await observe(w, pid, `${lab}-obs`);
+      const area = sky.nodes.find(n => n.role === 'AXWebArea' && n.frame);
+      const inPage = n => area && n.frame && n.frame.y >= area.frame.y;
+      const field = sky.nodes.find(n => ['AXSearchField', 'AXTextField', 'AXComboBox'].includes(n.role) && inPage(n) && /search/i.test(`${n.title ?? ''} ${n.description ?? ''} ${n.placeholder ?? ''}`));
+      if (!field) { row.problem = 'no search field'; row.seen = sky.nodes.filter(n => /AX(TextField|SearchField|ComboBox)/.test(n.role)).map(n => `${n.role}:${label(n)}`).slice(0, 20); h.dirty(); continue; }
+      const win = s => [s.window.frame.x, s.window.frame.y, s.window.frame.width, s.window.frame.height];
+      const r1 = await w.execute('click', {pid, ...toPixels(sky, centre(field)).px});
+      row.steps.push({step: 'click:field', answer: brief(r1)});
+      await sleep(STEP_MS);
+      const r2 = await w.execute('type_text', {pid, text: 'pro'});
+      row.steps.push({step: 'type:pro', answer: brief(r2)});
+      await sleep(1800);
+      w2 = await connect('shared');
+      const sky2 = await observe(w2, pid, `${lab}-side`);
+      w2.close(); w2 = null;
+      const had = new Set(sky.nodes.map(n => `${n.role}|${n.title ?? ''}|${n.description ?? ''}|${Math.round(n.frame?.x ?? -1)}|${Math.round(n.frame?.y ?? -1)}`));
+      const fresh = sky2.nodes.filter(n => n.frame && inPage(n) && !had.has(`${n.role}|${n.title ?? ''}|${n.description ?? ''}|${Math.round(n.frame.x)}|${Math.round(n.frame.y)}`));
+      const lists = fresh.filter(n => /AXList|AXMenu|AXListBox/.test(n.role) && n.frame.width > 80 && n.frame.height > 40 && n.frame.y >= field.frame.y);
+      const list = lists.sort((a, b) => b.frame.width * b.frame.height - a.frame.width * a.frame.height)[0];
+      row.list = list ? {role: list.role, frame: list.frame} : null;
+      row.freshRoles = [...new Set(fresh.map(n => n.role))].slice(0, 20);
+      if (!list) { row.problem = 'no suggestion list'; h.dirty(); continue; }
+      const inList = n => { const c = centre(n); const f = list.frame; return c.x > f.x + 2 && c.x < f.x + f.width - 2 && c.y > f.y + 2 && c.y < f.y + f.height - 2; };
+      const under = sky.nodes.filter(n => ['AXLink', 'AXButton', 'AXRadioButton', 'AXCheckBox', 'AXTab', 'AXPopUpButton', 'AXTextField'].includes(n.role) && n.frame && n.frame.width > 6 && n.frame.height > 6 && inPage(n) && inList(n) && n !== field)
+        .sort((a, b) => a.frame.y - b.frame.y || a.frame.x - b.frame.x);
+      row.underCount = under.length;
+      const tnode = under[Math.floor((t + 0.5) * under.length / 4)];
+      if (!tnode) { row.problem = 'nothing under the list'; h.dirty(); continue; }
+      row.targetNode = {role: tnode.role, title: tnode.title ?? null, description: tnode.description ?? null, frame: tnode.frame};
+      const {px, screen} = toPixels(sky, centre(tnode));
+      row.point = {px, screen};
+      row.signals = await ask({op: 'signals', pid, x: screen.x, y: screen.y, window: win(sky)});
+      sh('screencapture', ['-x', '-t', 'jpg', join(OUT, 'screens', `${fileName(lab)}.jpg`)]);
+      const titleBefore = osa(`tell application "System Events" to get name of window 1 of (first process whose unix id is ${pid})`).out;
+      const r = await w.execute('click', {pid, x: px.x, y: px.y});
+      row.click = brief(r);
+      await sleep(2500);
+      const titleAfter = osa(`tell application "System Events" to get name of window 1 of (first process whose unix id is ${pid})`).out;
+      row.result = {titleBefore, titleAfter, landing: row.click.error ? `refused:${row.click.error}` : titleAfter === titleBefore ? 'same-title' : 'navigated'};
+      h.dirty();
+    } catch (e) { row.exception = String(e?.stack || e).slice(0, 1500); h.dirty(); }
+    finally {
+      w?.close(); w2?.close(); save();
+      const sp = row.click?.stalePoint;
+      log(`${lab}: ${row.problem ?? row.exception?.split('\n')[0] ?? `${row.result?.landing} ${sp ? `${sp.verdict}/${sp.reason} rec=${sp.recordedRole} hit=${sp.hitRole}` : 'no stalePoint'} ${shadowLine(row.click?.shadow)} target=${row.targetNode?.role}:${row.targetNode?.title ?? row.targetNode?.description} title=${row.result?.titleAfter} list=${JSON.stringify(row.list?.frame)} under=${row.underCount}`}`);
+    }
+  }
 }
 async function runSuggest(kind) {
   config[`${kind}Version`] = version(kind);
@@ -1130,6 +1201,7 @@ async function runSuggest(kind) {
       log(`${lab}: ${row.problem ?? row.exception?.split('\n')[0] ?? `${row.result?.landing} ${sp ? `${sp.verdict}/${sp.reason} rec=${sp.recordedRole} hit=${sp.hitRole}` : 'no stalePoint'} ${shadowLine(row.click?.shadow)} others=${JSON.stringify(row.result?.others ?? [])} setup=${JSON.stringify(row.steps.filter(s => s.setup).map(s => s.setup))} reobs=${row.reobs ? `${row.reobs.suggestionSeen}/${row.reobs.listed.length}` : '-'}`}`);
     }
   }
+  await runWikiSuggest(h, kind);
   await h.close();
 }
 

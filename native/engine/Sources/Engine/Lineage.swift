@@ -145,7 +145,7 @@ struct LineageEntry {
   let frame: CGRect?
   /// The element's first child as it was read (#303: a re-created column is the old one only if it heads the same cells).
   var firstChild: AXUIElement? = nil
-  /// How many children the walk listed for it (#303: its old children are all known only when that many were kept).
+  /// How many children it had, before the width rule (#303: its old children are all known only when that many were kept).
   var listed: Int? = nil
 }
 
@@ -395,16 +395,17 @@ struct SiblingRead {
 /// heads more than one sibling of the role on either side (a header cell spanning several columns is every one of their
 /// first children): it tells no column apart, and with Chromium framing every column as the whole table nothing else
 /// would. Places and first children are only known when every sibling is: the previous observation emitted (or
-/// carried) all of the `oldListed` children, and the walk read all `count` new ones; otherwise nothing is kept, since an
-/// unknown sibling could head the same first child (the review of 9062cda7..80b493d1 found a walk cut after an inserted
-/// column under a widened spanning header handing it the first column's token). A real replacement fails one of these:
+/// carried) all of the `oldListed` children the parent had, and this walk kept all `newListed` (the width rule showed
+/// them all, `count` of them) and read every one; otherwise nothing is kept, since an unknown sibling could head the
+/// same first child (the reviews of 9062cda7..80b493d1 and of c08c3ac5: a walk cut, or a width rule's subset shown,
+/// after an inserted column under a widened spanning header handed it the first column's token). A real replacement fails one of these:
 /// an element of any other role, an old element still alive, a column inserted (the columns after it head other cells
 /// than the old ones at their places), a changed header. `entry` is the previous revision's entry by number; `read` a
 /// new sibling's by position, nil where the walk did not read it. Nothing is read, built or asked unless the vendor's
 /// rule left both a new sibling and an old synthesized one unmatched.
 func keepRecreated(_ matched: [Int?], old: [(index: Int, element: AXUIElement)], oldListed: Int?, entry: (Int) -> LineageEntry?,
-                   new count: Int, read: (Int) -> SiblingRead?, parentRole: String?, parentShift: () -> CGVector,
-                   gone: (AXUIElement) -> Bool) -> [Int?] {
+                   new count: Int, newListed: Int, read: (Int) -> SiblingRead?, parentRole: String?,
+                   parentShift: () -> CGVector, gone: (AXUIElement) -> Bool) -> [Int?] {
   guard matched.contains(where: { $0 == nil }) else { return matched }
   let synthesized = { (role: String) in
     role == kAXColumnRole || (role == kAXGroupRole && (parentRole == kAXTableRole || parentRole == kAXOutlineRole))
@@ -418,7 +419,7 @@ func keepRecreated(_ matched: [Int?], old: [(index: Int, element: AXUIElement)],
     unkept = unkept || free
     oldAt[found.identity.role, default: []].append(free ? (sibling.index, found) : nil)
   }
-  guard unkept, old.count == oldListed else { return matched }
+  guard unkept, old.count == oldListed, count == newListed else { return matched }
   let all = (0..<count).map(read)
   guard !all.contains(where: { $0 == nil }) else { return matched }
   let shift = parentShift()

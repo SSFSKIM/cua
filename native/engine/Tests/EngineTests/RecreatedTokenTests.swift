@@ -200,6 +200,27 @@ final class RecreatedTokenTests: XCTestCase {
     XCTAssertTrue(Set(tokens(walk(tree, lineage), "AXColumn")).isDisjoint(with: columns))
   }
 
+  /// The width rule's subset is not every sibling either: a table of more than 100 children whose visible subset showed
+  /// both columns, then only a column inserted under a header widened over the first (the review of c08c3ac5).
+  func testNoColumnIsKeptWhenTheWidthRuleShowedASubset() {
+    let tree = table(), lineage = Lineage()
+    let rows = Array(1000...1100)
+    for id in rows { tree.extra[id] = ["AXRole": "AXRow" as CFString] }
+    tree.children[2] = rows + [5, 6, 7]
+    tree.visible[2] = [5, 6]
+    let columns = tokens(walk(tree, lineage), "AXColumn")
+    XCTAssertEqual(columns.count, 2)
+    recreate(tree, [5: 15, 6: 16])
+    tree.extra[14] = tree.extra[15]
+    tree.frames[14] = tree.frames[15]
+    tree.children[14] = [12, 40, 41]
+    tree.children[2] = rows + [14, 15, 16, 7]
+    tree.visible[2] = [14]
+    let now = tokens(walk(tree, lineage), "AXColumn")
+    XCTAssertEqual(now.count, 1, "the inserted column alone shown")
+    XCTAssertTrue(Set(now).isDisjoint(with: columns))
+  }
+
   /// Emission's gone checks stop at the observation's deadline: an app that stopped answering after the selection is
   /// asked once, and the columns not asked take new tokens.
   func testNoGoneCheckIsMadePastTheDeadline() {

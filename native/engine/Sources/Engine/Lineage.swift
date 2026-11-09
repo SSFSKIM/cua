@@ -145,6 +145,8 @@ struct LineageEntry {
   let frame: CGRect?
   /// The element's first child as it was read (#303: a re-created column is the old one only if it heads the same cells).
   var firstChild: AXUIElement? = nil
+  /// How many children the walk listed for it (#303: its old children are all known only when that many were kept).
+  var listed: Int? = nil
 }
 
 extension ElementIdentity {
@@ -385,20 +387,24 @@ struct SiblingRead {
 /// a table, and a table's header AXGroup, between observations (run 42243553112), so under `matchSiblings` alone they
 /// took new tokens every time. After it, a new sibling it left unmatched keeps the token of the old sibling it left
 /// unkept when the two are the same in everything the engine reads: a synthesized role (AXColumn under any parent, an
-/// AXGroup under an AXTable or AXOutline), the same place among that role's siblings (old: every listed sibling of the
-/// role; new: the read ones), the eleven identity attributes equal, the frame equal within a point once the parent's
-/// own move is taken out (`parentShift`: a scroll moves table and columns together), the same first child (CFEqual:
-/// a column heads its cells, which Chromium does not re-create), and, asked last and only then, the old handle gone
-/// (`gone`). A frame or a first child missing on either side is no match: a frameless or childless element takes a new
-/// token, as under the vendor's rule. So is a first child that heads more than one sibling of the role on either side
-/// (a header cell spanning several columns is every one of their first children): it tells no column apart, and with
-/// Chromium framing every column as the whole table nothing else would. A real replacement fails one of these: an element of any other role, an old
-/// element still alive, a column inserted (the columns after it head other cells than the old ones at their places), a
-/// changed header. `entry` is the previous revision's entry by number; `read` a new sibling's by position, nil where the walk
-/// did not read it. Nothing is read, built or asked unless the vendor's rule left both a new sibling and an old
-/// synthesized one unmatched.
-func keepRecreated(_ matched: [Int?], old: [(index: Int, element: AXUIElement)], entry: (Int) -> LineageEntry?, new count: Int,
-                   read: (Int) -> SiblingRead?, parentRole: String?, parentShift: () -> CGVector, gone: (AXUIElement) -> Bool) -> [Int?] {
+/// AXGroup under an AXTable or AXOutline), the same place among that role's siblings, the eleven identity attributes
+/// equal, the frame equal within a point once the parent's own move is taken out (`parentShift`: a scroll moves table
+/// and columns together), the same first child (CFEqual: a column heads its cells, which Chromium does not re-create),
+/// and, asked last and only then, the old handle gone (`gone`). A frame or a first child missing on either side is no
+/// match: a frameless or childless element takes a new token, as under the vendor's rule. So is a first child that
+/// heads more than one sibling of the role on either side (a header cell spanning several columns is every one of their
+/// first children): it tells no column apart, and with Chromium framing every column as the whole table nothing else
+/// would. Places and first children are only known when every sibling is: the previous observation emitted (or
+/// carried) all of the `oldListed` children, and the walk read all `count` new ones; otherwise nothing is kept, since an
+/// unknown sibling could head the same first child (the review of 9062cda7..80b493d1 found a walk cut after an inserted
+/// column under a widened spanning header handing it the first column's token). A real replacement fails one of these:
+/// an element of any other role, an old element still alive, a column inserted (the columns after it head other cells
+/// than the old ones at their places), a changed header. `entry` is the previous revision's entry by number; `read` a
+/// new sibling's by position, nil where the walk did not read it. Nothing is read, built or asked unless the vendor's
+/// rule left both a new sibling and an old synthesized one unmatched.
+func keepRecreated(_ matched: [Int?], old: [(index: Int, element: AXUIElement)], oldListed: Int?, entry: (Int) -> LineageEntry?,
+                   new count: Int, read: (Int) -> SiblingRead?, parentRole: String?, parentShift: () -> CGVector,
+                   gone: (AXUIElement) -> Bool) -> [Int?] {
   guard matched.contains(where: { $0 == nil }) else { return matched }
   let synthesized = { (role: String) in
     role == kAXColumnRole || (role == kAXGroupRole && (parentRole == kAXTableRole || parentRole == kAXOutlineRole))
@@ -412,9 +418,11 @@ func keepRecreated(_ matched: [Int?], old: [(index: Int, element: AXUIElement)],
     unkept = unkept || free
     oldAt[found.identity.role, default: []].append(free ? (sibling.index, found) : nil)
   }
-  guard unkept else { return matched }
+  guard unkept, old.count == oldListed else { return matched }
+  let all = (0..<count).map(read)
+  guard !all.contains(where: { $0 == nil }) else { return matched }
   let shift = parentShift()
-  let reads = (0..<count).map { position in read(position).flatMap { synthesized($0.identity.role) ? $0 : nil } }
+  let reads = all.map { $0.flatMap { synthesized($0.identity.role) ? $0 : nil } }
   // How many siblings of a role each first child heads, on each side: only a first child heading one is an anchor.
   var oldHeads: [String: [ElementKey: Int]] = [:], newHeads: [String: [ElementKey: Int]] = [:]
   for sibling in old {

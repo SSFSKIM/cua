@@ -166,6 +166,40 @@ final class RecreatedTokenTests: XCTestCase {
     XCTAssertTrue(Set(tokens(walk(tree, lineage), "AXColumn")).isDisjoint(with: again), "a column inserted under it")
   }
 
+  /// A first child is an anchor only when every sibling is known: a sibling the walk left unread could head it too.
+  /// The review's case on the new side: a column inserted under a header widened to span it and the first column, the
+  /// walk cut after the inserted column, which would have taken the first column's token.
+  /// A node budget that reads the window, web area, table, both rows and their cells, then the first column alone.
+  private let cutAfterInserted = 10, cutAfterFirstColumn = 10
+
+  func testNoColumnIsKeptWhenTheWalkLeftASiblingUnread() {
+    let tree = table(), lineage = Lineage()
+    let columns = tokens(walk(tree, lineage), "AXColumn")
+    recreate(tree, [5: 15, 6: 16])
+    tree.extra[14] = tree.extra[15]
+    tree.frames[14] = tree.frames[15]
+    tree.children[14] = [12, 40, 41]
+    tree.children[2] = [3, 4, 14, 15, 16, 7]
+    let cut = walk(tree, lineage, limits: WalkLimits(nodes: cutAfterInserted, deadline: .infinity))
+    XCTAssertEqual(cut.nodes.filter { $0["role"] as? String == "AXColumn" }.count, 1, "the cut reads the inserted column alone")
+    XCTAssertTrue(Set(tokens(cut, "AXColumn")).isDisjoint(with: columns))
+  }
+
+  /// The same on the old side: a column the previous observation left unread could have headed the anchor too, so a
+  /// first child is compared with the old siblings only when that observation emitted all of them.
+  func testNoColumnIsKeptWhenThePreviousObservationLeftASiblingUnread() {
+    let tree = table(), lineage = Lineage()
+    tree.children[6] = [12, 10, 11]  // a header spanning both columns
+    let cut = walk(tree, lineage, limits: WalkLimits(nodes: cutAfterFirstColumn, deadline: .infinity))
+    let columns = tokens(cut, "AXColumn")
+    XCTAssertEqual(columns.count, 1, "the previous observation emitted the first column alone")
+    // The first column removed, the header unspanned: the second, re-created, is now the only column under it.
+    tree.children[2] = [3, 4, 6, 7]
+    recreate(tree, [6: 16])
+    tree.gone.insert(5)
+    XCTAssertTrue(Set(tokens(walk(tree, lineage), "AXColumn")).isDisjoint(with: columns))
+  }
+
   /// Emission's gone checks stop at the observation's deadline: an app that stopped answering after the selection is
   /// asked once, and the columns not asked take new tokens.
   func testNoGoneCheckIsMadePastTheDeadline() {

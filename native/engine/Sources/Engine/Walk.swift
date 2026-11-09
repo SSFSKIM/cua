@@ -883,7 +883,8 @@ final class TreeWalk {
       if let previous, visit.inherited != nil {
         let old = previous.siblings(of: number, menu: false)
         // #303: then Chromium's re-created synthesized elements (`keepRecreated`), judged on what the walk read of them.
-        inherited = keepRecreated(matchSiblings(old: old, new: children), old: old, entry: { previous.entries[$0] }, new: children.count,
+        inherited = keepRecreated(matchSiblings(old: old, new: children), old: old, oldListed: previous.entries[number]?.listed,
+                                  entry: { previous.entries[$0] }, new: children.count,
                                   read: { position in
                                     self.selected[ElementKey(element: children[position])].map {
                                       SiblingRead(identity: ElementIdentity($0.read.data, pid: $0.read.owner), frame: $0.read.data.frame,
@@ -1099,7 +1100,7 @@ final class TreeWalk {
     }
     if inMenu { menuBar.append(node) } else { nodes.append(node) }
     revision.entries[number] = LineageEntry(element: read.element, identity: ElementIdentity(read.data, pid: read.owner), actions: read.actions,
-                                            frame: read.data.frame, firstChild: read.data.children.first)
+                                            frame: read.data.frame, firstChild: read.data.children.first, listed: read.children.count)
     if !inMenu {
       screenshotReads.append(ScreenshotNodeRead(element: read.element, number: number, parent: parent, depth: depth, role: read.data.role,
                                                 title: read.data.title, description: read.data.description, frame: read.data.frame,

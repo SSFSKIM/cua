@@ -89,6 +89,30 @@ case "$GROUP" in
     # Gate (a) again, each cell's points planned from its own screenshot (run 42536017630's were planned from the first
     # observation, and windows that had shrunk put some edge pixels outside their cells' screenshots).
     for h in a b; do for app in textedit finder probe safari chrome firefox; do sweep $h $app; done; done ;;
+  ab-final-web)
+    # The fix head's confirming pass (ruling e70575e5), web: gate (b)'s cells, pageEnd and divEnd, per head.
+    for h in a b; do
+      for b in safari chrome firefox; do
+        echo "== $(date -u +%H:%M:%S) confirm $b $h"
+        node scripts/probe-328/confirm.mjs --browser "$b" --t328 "$T/t328" --cover "$T/Cover328.app/Contents/MacOS/Probe328" \
+          --engine "$T/$(engdir $h)/release/cua-engine" --pages 1 --reps 4 --cells divTop,div,iframe,hdiv,raf,mid,late,smooth,pageEnd,divEnd \
+          --out "$T/probe-328/ab-confirm-$b-$h"
+      done
+    done ;;
+  ab-final-native)
+    # The native engine cells (Catalyst over 4 repetitions among them), then a short edge and corner re-check of gate (a).
+    for h in a b; do
+      e="$T/$(engdir $h)/release/cua-engine"
+      echo "== $(date -u +%H:%M:%S) engine $h"
+      node scripts/probe-328/measure.mjs --block engine --engine "$e" --t328 "$T/t328" --app "$T/Probe328.app/Contents/MacOS/Probe328" \
+        --cover "$T/Cover328.app/Contents/MacOS/Probe328" --swiftui "$T/SwiftUI328.app/Contents/MacOS/SwiftUI328" \
+        --catalyst-app "$T/Catalyst328.app" --reps 4 --out "$T/probe-328/ab-engine-$h"
+    done
+    for h in a b; do for app in textedit probe safari chrome; do
+      echo "== $(date -u +%H:%M:%S) sweep $app $h (edges and corners)"
+      node scripts/probe-328/sweep.mjs --app "$app" --engine "$T/$(engdir $h)/release/cua-engine" --head "$h" --t328 "$T/t328" --kinds edge,corner \
+        --cover "$T/Cover328.app/Contents/MacOS/Probe328" --probe-app "$T/Probe328.app/Contents/MacOS/Probe328" --out "$T/probe-328/ab-sweep-$app-$h"
+    done; done ;;
   ab-pass)
     # A confirming pass on a fix head: the nested web cells (clipped hit, div, iframe, horizontal, scripted) and divEnd.
     for h in a b; do

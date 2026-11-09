@@ -57,7 +57,7 @@ const own=(id,delay,dur)=>$(id).addEventListener('wheel',e=>{e.preventDefault();
   setTimeout(()=>{const s=performance.now();const step=n=>{const k=Math.min(1,(n-s)/dur);el.scrollTop=from+by*k;if(k<1)requestAnimationFrame(step)};requestAnimationFrame(step)},delay)},{passive:false});
 own('raf',0,300);own('mid',150,200);own('late',350,200);
 const reset=()=>{for(const id of ['div','raf','mid','late']) $(id).scrollTop=0;$('hdiv').scrollLeft=0;try{ifr().scrollTo(0,0)}catch{};scrollTo(0,0)};
-const report=()=>{let f=0;try{f=ifr().scrollY}catch{};navigator.sendBeacon('/e',JSON.stringify({id:'report',pos:{page:scrollY,div:$('div').scrollTop,iframe:f,hdiv:$('hdiv').scrollLeft,raf:$('raf').scrollTop,mid:$('mid').scrollTop,late:$('late').scrollTop},t:Date.now()}))};
+const report=()=>{let f=0;try{f=ifr().scrollY}catch{};navigator.sendBeacon('/e',JSON.stringify({id:'report',pos:{page:scrollY,pageMax:document.documentElement.scrollHeight-innerHeight,div:$('div').scrollTop,iframe:f,hdiv:$('hdiv').scrollLeft,raf:$('raf').scrollTop,mid:$('mid').scrollTop,late:$('late').scrollTop},t:Date.now()}))};
 setInterval(()=>fetch('/cmd',{cache:'no-store'}).then(r=>r.text()).then(t=>{if(t==='report')report();if(t==='reset')reset();if(t.startsWith('end:')){reset();const el=$(t.slice(4));el.scrollTop=el.scrollHeight}if(t==='endpage'){reset();scrollTo(0,document.documentElement.scrollHeight)}
   if(t.startsWith('go:'))location.href=t.slice(3)}).catch(()=>{}),50);
 addEventListener('load',()=>{reset();navigator.sendBeacon('/ready')});</script></body></html>`;

@@ -15,6 +15,7 @@ import {join} from 'node:path';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('sweep.mjs: runs only on a GitHub-hosted runner'); process.exit(2); }
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : d; };
+const KINDS = arg('kinds')?.split(',') ?? null;  // a short re-check: only these point kinds (edge, corner, outside, inside)
 const APP = arg('app'), ENGINE = arg('engine'), HEAD = arg('head', 'a'), T328 = arg('t328'), COVER = arg('cover'), PROBE = arg('probe-app'), OUT = arg('out');
 const BROWSERS = ['safari', 'chrome', 'firefox'];
 process.env.P287_BROWSER = BROWSERS.includes(APP) ? APP : 'safari';
@@ -134,7 +135,7 @@ if (!sky0?.screenshot) { results.push({problem: 'no first observation'}); save()
 const plan = points(sky0);
 config.screenshot = {width: plan.W, height: plan.H};
 const cells = [...plan.list.map(p => ({action: 'click', p})), ...plan.list.filter(p => p.kind !== 'inside').map(p => ({action: 'dragTo', p})),
-  ...plan.list.filter(p => p.kind === 'edge').map(p => ({action: 'dragFrom', p}))];
+  ...plan.list.filter(p => p.kind === 'edge').map(p => ({action: 'dragFrom', p}))].filter(c => !KINDS || KINDS.includes(c.p.kind));
 for (const c of cells) {
   const row = {app: APP, head: HEAD, action: c.action, kind: c.p.kind, name: c.p.name, x: c.p.x, y: c.p.y};
   const w = await connect();

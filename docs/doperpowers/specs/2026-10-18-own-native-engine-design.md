@@ -4275,12 +4275,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      record and still takes a click aimed under it. In Chrome, a list that overflows its field's container (the
      combobox's link cells, 6 of Chrome's 30) is missed, Chrome's hit-test answering the covered control; only the full
      walk or (c) caught them. Chrome's own `<datalist>` popup lets a click pass through to the page. The rule runs only
-     in web areas. Not measured: a new child listed inside a control found by its own handle (a link whose text node is
-     replaced) is refused, though the click would reach the control; the still sweep and the near-point scenes met none.
+     in web areas. A link whose text node is replaced at the same width was measured live and kept (6 of 6, recorded as
+     AXLink and as AXStaticText); replaced with a width change it is refused `nodeGone` by #296 on both heads, before dL
+     (#340).
      `docs/cua-api/agent-cursor.md`'s stale-point paragraph says which lists the guard refuses, which it misses, and to
      press Escape or take a new screenshot after typing into a field that offers suggestions (the ruling's limit text as
      approved, and Chrome's `<datalist>`); the surface inventory's Table 3 addition of 2026-11-08 (#330), the docs test,
-     parity's docs oracle and PROVENANCE.md carry it. The plugin version is bumped at the merge turn, since the document the server serves changed.
+     parity's docs oracle and PROVENANCE.md carry it. Plugin 0.27.23, since the document the server serves changed.
   Proven offline: `NewElementGuardTests` (11) in `StalePointTests.swift`: a new listed element under a fully recorded
   parent refusing (Safari's and Firefox's list, Chrome's end-of-body list with unlisted row text, a frameless parent, an
   empty list filled; a link row keeping `interactiveHit`), silent with the parent's children cut, on an unlisted
@@ -4303,7 +4304,22 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - **A shared sweep for #298,** built once as a reusable group (pages whose labels change on their own, Finder, a
     native AppKit table whose rows update), so #298's `relabelled` rule is gated on the same cells.
   - **The cost:** `stalePoint.ms` per click on the branch against main (p50, p95, max), and `newElementReads`.
-  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 11bec0ed on #330.
+  **Hosted results** (https://github.com/SSFSKIM/cua/actions/runs/42585577476, kit `probe/330-measure` c0d0644b, main
+  e31bb1f5 against 7f6eb3dc; `docs/evidence/2026-11-09-new-element-over-point/`):
+  - **0 `newElementOverPoint` refusals on 967 branch gate-click attempts.** The lazy feed, the SPA re-render, the late
+    banner and #296-style re-created controls were each kept and landed 6 of 6 across the three browsers. The budget-cut
+    page was kept 3 of 3 as `unrecordedDescendant`, so dL stayed silent there. Native: Finder 25, TextEdit 16 and an
+    AppKit mail-like table updating 119 times 14 were all kept.
+  - **The catches** match the shadow: Safari 30/30, Firefox 30/30, Chrome 24/30. The opacity kind is 0/6 per browser.
+    Wikipedia: every click main kept wrong was caught. All 98 dL refusals were these suggestion catches.
+  - **The cost:** the whole guard's `stalePoint.ms` p50/p95/max was Chrome 1.1/2.9/7.3 ms (main 1.3/3.5/12.1), Firefox
+    1.1/2.9/24.1 (main 0.9/2.6/20.5) and Safari 0.9/2.3/5.1 (main 1.0/2.7/7.9). Most clicks read nothing more.
+  - **Not priced here:** dL on a steadily ticking clock. The fixture's paragraph filled on its first tick and moved the
+    target, so both heads refused those clicks through #296 (`nodeGone`, `frameMoved`). The design session made a
+    clock run a merge condition (1ea561bc:554): the line reserved before the screenshot and clicked on its ticking text,
+    and a ticking "N s ago" inside a clickable list row, in three browsers, 0 `newElementOverPoint` required.
+  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 11bec0ed on #330; hosted results
+  2026-11-09.
 
 - Decision (#290, 2026-11-08, `fix/290-caret-search`; the issue's intent, spawned by #283's 5,000-character bound; the
   design session's ruling 31a62775 on the stated limits; amends #283's entry on the caret's offset): **the caret's

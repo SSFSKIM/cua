@@ -32,8 +32,8 @@ permissions:
   contents: read
 env:
   # Quote refs: YAML reads an all-digit-and-e SHA as a float.
-  P330_REF_DEFAULT: '494857c8dd02beef17c960939ec91cb7d4c446d5'
-  P330_BRANCH_DEFAULT: 'b9236c78695c1455a469b319d0729a1150c62e81'
+  P330_REF_DEFAULT: '3c669314e0a5f35aedf20f9b792604fc09628c45'
+  P330_BRANCH_DEFAULT: '562274758e30c6d7ce6b3511a785c1a2d44db9b0'
 jobs:
   probe:
     strategy:

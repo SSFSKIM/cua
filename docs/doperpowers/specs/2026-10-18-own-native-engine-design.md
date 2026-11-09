@@ -4182,10 +4182,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      rule left unmatched keeps the token of an old sibling it left unkept when all of these hold:
      - the role is synthesized: AXColumn under any parent, or AXGroup under an AXTable or AXOutline;
      - every sibling is known on both sides: the previous observation emitted or carried every child it listed for the
-       parent (`LineageEntry.listed`), and this walk read every child the parent lists. An unknown sibling could head
-       the same first child, so places and first children are compared only over complete lists (the review of
-       9062cda7..80b493d1 found a walk cut after an inserted column under a widened spanning header handing it the
-       first column's token, and the coordinator's acceptance of 2026-11-08: a wrong token is a wrong click target, which
+       parent (`LineageEntry.listed`, counted before the width rule), and this walk showed and read every
+       child the parent lists. An unknown sibling could head the same first child, so places and first children are
+       compared only over complete lists (the reviews of 9062cda7..80b493d1 and c08c3ac5 found a walk cut, and a width
+       rule's visible subset, after an inserted column under a widened spanning header handing it the first column's
+       token, and the coordinator's acceptance of 2026-11-08: a wrong token is a wrong click target, which
        outweighs the churn);
      - it has the same place among that role's siblings;
      - the eleven identity attributes are equal (`ElementIdentity.matches`, value included);
@@ -4212,12 +4213,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      though not a header group's) is left as residue. An AppKit table that re-creates an identical column (same
      identity, frame and first cell) keeps its token too, which is the same element to the model. The walk's read
      failures on a column re-created mid-walk are not addressed; the A/B saw none on the branch.
-  Proven offline (`RecreatedTokenTests`, 11): re-created columns and header group kept over three observations, a
+  Proven offline (`RecreatedTokenTests`, 12): re-created columns and header group kept over three observations, a
   column moved with its scrolled table kept, a live old handle, an inserted column, a changed title, frame or first
   child, a childless or frameless pair, other roles and a group outside a table each taking a new token, and the gone
   check asked only of a candidate (one read) and not past the deadline; a first child shared by two columns anchoring
   neither, also with a column inserted under it; nothing kept when the walk was cut after an inserted column under a
-  spanning header, or when the previous observation was cut after the first of two columns sharing one. With the rule
+  spanning header, or when the previous observation was cut after the first of two columns sharing one, or when the width rule's
+  visible subset showed the inserted column alone. With the rule
   removed, or the gone check, the keeping tests fail.
   Proven live (`docs/evidence/2026-11-08-recreated-tokens/`; run 42558781067 on two runners, main 364e017d and
   6baaa12a against fd51d41b): on the 20×5 table, 3,000 and 6,000 rows and the HN thread, the branch kept every column

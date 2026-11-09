@@ -628,22 +628,39 @@ extension Engine {
       let freshSince = webAccessibility.freshSince(pid: appPid, launched: generation)
       let fresh = webAreaAccessibilityFresh(freshSince: freshSince,
                                             now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
+      // The agent cursor at the point as the first write goes out, once.
+      var cursorShown = false
+      func showCursor() {
+        guard !cursorShown else { return }
+        cursorShown = true
+        cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point))
+      }
+      // #341: the element whose boxes gave the offset and the offset in its own text; the reference character, chosen at
+      // the first read of its box (`caretMarkIndex`).
+      var markAt: (element: AXUIElement, offset: Int)?
+      var markIndex: Int?
+      var focusRecord: WebAreaFocusRecord?
       let outcome = try focusPlacingCaret(
         app: app.displayName, secure: target.secure, fresh: fresh, freshSince: freshSince, beforeMutating: guarding.checkInFlight,
         beforeCaret: {
-          // After the focus's settle or the boxes' re-read, the guard again: a changed page places no caret.
-          guard waited, let stalePoint else { return nil }
+          // After the boxes' re-read, which precedes every write (#341), the guard again: a changed page is refused with
+          // nothing written.
+          guard waited, let stalePoint else { return }
           let checked = stalePoint.check(field, waited: true, now: monotonicMilliseconds, reads: .live)
           meta.stalePoint = checked.record
-          return checked.refusal == nil ? nil : .screenChanged
+          if let refusal = checked.refusal { throw refusal }
         },
         writeFocused: {
-          cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point))
+          showCursor()
           _ = meta.posting { _ = gatedWrite(field, kAXFocusedAttribute, kCFBooleanTrue); return true }
         },
         focused: { bool(attribute(field, kAXFocusedAttribute)) },
         offset: {
-          guard target.ancestor else { return fieldCaretOffset(field, at: point) }
+          guard target.ancestor else {
+            let found = fieldCaretOffset(field, at: point)
+            markAt = (try? found.get()).map { (field, $0) }
+            return found
+          }
           // A contenteditable region: the hit's own boxes give its text's offset, mapped into the region's.
           guard role(hit) == "AXStaticText" else { return .failure(.unmapped) }
           let local = fieldCaretOffset(hit, at: point)
@@ -652,6 +669,7 @@ extension Engine {
                                             value: { attribute($0, kAXValueAttribute) }, same: { CFEqual($0, $1) }) else {
             return .failure(.unmapped)
           }
+          markAt = (hit, offset)
           return .success(start + offset)
         },
         sameTarget: {
@@ -661,7 +679,17 @@ extension Engine {
           return CFEqual(now.element, field) && !now.secure
         },
         valueLength: { (attribute(field, kAXValueAttribute) as? String).map { ($0 as NSString).length } },
+        layoutMark: {
+          guard let (element, local) = markAt else { return nil }
+          let usableBox = { (index: Int) -> CGRect? in characterBounds(element, index).flatMap { $0.height > 0 ? $0 : nil } }
+          if markIndex == nil {
+            let length = (attribute(element, kAXValueAttribute) as? String).map { ($0 as NSString).length } ?? 0
+            markIndex = caretMarkIndex(offset: local, length: length, usable: { usableBox($0) != nil })
+          }
+          return markIndex.flatMap(usableBox)
+        },
         writeSelection: { offset in
+          showCursor()
           _ = meta.posting { _ = gatedWrite(field, kAXSelectedTextRangeAttribute, axRangeValue(CFRange(location: offset, length: 0))); return true }
         },
         selection: {
@@ -669,14 +697,20 @@ extension Engine {
                 let length = range["length"] else { return nil }
           return (location, length)
         },
+        noted: { focusRecord = $0 },
         now: monotonicMilliseconds, sleep: sleep)
+      // The plan's action is the write the field took focus from (#341).
+      let action = focusRecord?.step == .selection ? kAXSelectedTextRangeAttribute : kAXFocusedAttribute
       switch outcome {
       case .placed:
-        meta.elementClick?.caret = "placed"
+        meta.elementClick = ElementClickRecord(plan: .action(action), reason: .focusField, pressedRole: target.role,
+                                               pressedAncestor: target.ancestor, walk: walk, caret: "placed")
       case .notPlaced(let why):
-        meta.elementClick = ElementClickRecord(plan: .action(kAXFocusedAttribute), reason: .focusedNotPlaced, pressedRole: target.role,
+        meta.elementClick = ElementClickRecord(plan: .action(action), reason: .focusedNotPlaced, pressedRole: target.role,
                                                pressedAncestor: target.ancestor, walk: walk, caret: why.rawValue)
       }
+      meta.elementClick?.focusStep = focusRecord?.step.rawValue
+      meta.elementClick?.caretMarkShift = focusRecord?.markShift
       meta.note = focusNote(app.displayName, outcome)
     }
   }

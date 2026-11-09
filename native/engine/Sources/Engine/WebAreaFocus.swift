@@ -392,9 +392,10 @@ enum CaretNotPlaced: String, Error, Equatable {
   /// The hit's text could not be mapped to the focused field's offsets: a contenteditable region's hit that is not an
   /// AXStaticText, or one `regionTextStart` does not place.
   case unmapped
-  /// #296: after the focus's waits, the stale-point guard found the screen changed at the point (`beforeCaret`), so
-  /// the caret the point names is not placed.
-  case screenChanged
+  /// #341: the caret was written at the point's offset and read back, but the field's text did not read where it was
+  /// before the writes (the reference character's box moved by more than `caretMarkTolerance`, or could not be read
+  /// again), so the caret's place against the screenshot is not shown.
+  case layoutMoved
 }
 
 enum WebAreaFocusOutcome: Equatable {
@@ -402,16 +403,54 @@ enum WebAreaFocusOutcome: Equatable {
   case notPlaced(CaretNotPlaced)
 }
 
-/// The focusing click itself, once the target is known: `beforeMutating` (the in-flight intervention check), AXFocused
-/// written (`writeFocused`, its answer never counted) and polled (`focused`) for up to `webAreaFocusSettleMs`; still not
-/// reading true, the click answers `focusUnconfirmed`. A secure field stops there. Otherwise the caret's offset
-/// (`offset`, read once the field holds focus; `caretAwaitingBoxes` where it finds no character boxes yet), written
-/// (`writeSelection`) and read back (`selection`, polled for the same settle) as {offset, 0}.
+// #341: AXFocused scrolls Chromium's textarea to its existing caret (scrollTop to 0 within 0 to 8 ms), so boxes read after
+// focus describe a layout the screenshot never showed: 46 of 60 placed claims were wrong in a scrolled textarea (run
+// 42568677106, https://github.com/SSFSKIM/cua/actions/runs/42568677106). In the same run AXSelectedTextRange {k, 0}
+// written on the unfocused textarea focused it by itself (read focused 11 to 63 ms later) with its scroll unchanged,
+// 72 of 72 cells right, late and fresh; a fresh Chromium fills the boxes unfocused 1.24 to 1.91 s after the observation.
+// So the offset is computed before any write, the caret's write focuses the field, and AXFocused is the fallback. The
+// design session's ruling 1ea561bc:544: placed only where the read-back shows the caret at the offset and the field's
+// text where it was (`layoutMark`, within `caretMarkTolerance`).
+
+/// How far, in points, the reference character's box may move between the read before the writes and the read after
+/// the caret's read-back and still count as the field not having scrolled (#341).
+let caretMarkTolerance: CGFloat = 1
+
+/// The character whose box shows whether the field scrolled (#341): the one after the caret where its box is usable
+/// (`usable`), else the one before it; nil in an empty text, or when neither has one.
+func caretMarkIndex(offset: Int, length: Int, usable: (Int) -> Bool) -> Int? {
+  [offset, offset - 1].first { $0 >= 0 && $0 < length && usable($0) }
+}
+
+/// What a focusing click did besides its outcome (#341): which write the field took focus from, and how far the
+/// reference character's box moved over the writes (the larger of its x and y shifts; nil where it was not read twice).
+struct WebAreaFocusRecord: Equatable {
+  enum Step: String {
+    /// AXSelectedTextRange {offset, 0}, written on the unfocused field.
+    case selection
+    /// AXFocused: no offset to write, a secure field, or a caret's write that did not focus the field.
+    case focused
+  }
+  let step: Step
+  var markShift: Double? = nil
+}
+
+/// The focusing click itself, once the target is known (#341's order; #283's before it). A secure field is focused
+/// only: `beforeMutating` (the in-flight intervention check), AXFocused written (`writeFocused`, its answer never
+/// counted) and polled (`focused`) for up to `webAreaFocusSettleMs`; still not reading true, the click answers
+/// `focusUnconfirmed`. Otherwise the caret's offset first, with nothing written (`offset`; `caretAwaitingBoxes` where it
+/// finds no character boxes yet), then `beforeCaret` (#296's guard after the boxes' wait, which throws its refusal:
+/// nothing has been written yet). With no offset, the field is focused as a secure one is and the reason answered. With one, the reference character's box (`layoutMark`), the in-flight
+/// check, and AXSelectedTextRange {offset, 0} (`writeSelection`), which focuses Chromium's field; focus polled for the
+/// settle; not focused, the in-flight check, AXFocused and its poll. Then the selection read back (`selection`, polled
+/// for the same settle) and the reference box read again: placed only where the caret reads {offset, 0} and the box
+/// moved no more than `caretMarkTolerance` (an empty text, which has no box, needs none). `noted` gets the step that
+/// focused the field and the box's shift.
 func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, freshSince: Double? = nil, beforeMutating: () throws -> Void,
-                       beforeCaret: () -> CaretNotPlaced? = { nil }, writeFocused: () -> Void,
+                       beforeCaret: () throws -> Void = {}, writeFocused: () -> Void,
                        focused: () -> Bool?, offset: () -> Result<Int, CaretNotPlaced>, sameTarget: () -> Bool, valueLength: () -> Int?,
-                       writeSelection: (Int) -> Void, selection: () -> (location: Int, length: Int)?,
-                       now: () -> Double, sleep: (Double) -> Void) throws -> WebAreaFocusOutcome {
+                       layoutMark: () -> CGRect?, writeSelection: (Int) -> Void, selection: () -> (location: Int, length: Int)?,
+                       noted: (WebAreaFocusRecord) -> Void = { _ in }, now: () -> Double, sleep: (Double) -> Void) throws -> WebAreaFocusOutcome {
   func settles(_ condition: () -> Bool) -> Bool {
     let started = now()
     repeat {
@@ -420,34 +459,61 @@ func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, freshSince: Doubl
     } while now() - started < webAreaFocusSettleMs
     return condition()
   }
-  try beforeMutating()
-  writeFocused()
-  guard settles({ focused() == true }) else { throw focusUnconfirmed(app) }
-  if secure { return .notPlaced(.secure) }
-  let target: Int
-  switch caretAwaitingBoxes(fresh: fresh, freshSince: freshSince, offset: offset, focused: focused, sameTarget: sameTarget, valueLength: valueLength,
-                            now: now, sleep: sleep) {
-  case .failure(let why): return .notPlaced(why)
-  case .success(let found): target = found
+  /// AXFocused, its read-back required; a field that never reads focused answers clickUnconfirmed.
+  func focusByWrite() throws {
+    try beforeMutating()
+    writeFocused()
+    guard settles({ focused() == true }) else { throw focusUnconfirmed(app) }
   }
-  if let why = beforeCaret() { return .notPlaced(why) }
+  /// The field focused by AXFocused with no caret written, and why.
+  func focusedOnly(_ why: CaretNotPlaced) throws -> WebAreaFocusOutcome {
+    try focusByWrite()
+    noted(WebAreaFocusRecord(step: .focused))
+    return .notPlaced(why)
+  }
+  if secure { return try focusedOnly(.secure) }
+  let found = caretAwaitingBoxes(fresh: fresh, freshSince: freshSince, offset: offset, sameTarget: sameTarget, valueLength: valueLength,
+                                 now: now, sleep: sleep)
+  try beforeCaret()
+  let target: Int
+  switch found {
+  case .failure(let why): return try focusedOnly(why)
+  case .success(let offset): target = offset
+  }
+  let markBefore = layoutMark()
+  let needsMark = !(target == 0 && valueLength() == 0)
   try beforeMutating()
   writeSelection(target)
-  return settles({ selection().map { $0.location == target && $0.length == 0 } == true }) ? .placed(target) : .notPlaced(.selectionMismatch)
+  var step = WebAreaFocusRecord.Step.selection
+  if !settles({ focused() == true }) {
+    try focusByWrite()
+    step = .focused
+  }
+  let caretRead = settles({ selection().map { $0.location == target && $0.length == 0 } == true })
+  let markAfter = layoutMark()
+  var record = WebAreaFocusRecord(step: step)
+  if let markBefore, let markAfter {
+    record.markShift = Double(max(abs(markAfter.minX - markBefore.minX), abs(markAfter.minY - markBefore.minY)))
+  }
+  noted(record)
+  guard caretRead else { return .notPlaced(.selectionMismatch) }
+  guard !needsMark || record.markShift.map({ $0 <= Double(caretMarkTolerance) }) == true else { return .notPlaced(.layoutMoved) }
+  return .placed(target)
 }
 
-/// The caret's offset where a focused field's boxes may not exist yet (#283, the design session's ruling 37d4c12c): before
-/// Chromium's complete accessibility mode every character box is empty (`noCharacterBoxes`), and while they arrive some
-/// are (`boxesIncomplete`, run 42152333871; widened from 37d4c12c under 9ba80c48). In a process whose accessibility is
-/// `fresh` (#282's rule) the offset is computed again every `webAreaActionRereadSampleMs` until
-/// `webAreaRereadDeadline` (2 s, or up to 3 s just after an enablement write, #292), posting nothing, until it answers anything else (an offset, or a complete miss
-/// `pointOutsideText` or `unmapped`, which then is the answer). Each re-read waits on `sameTarget` (still the element
-/// the click focused, and not a secure one): failing, nothing more is read. An offset found by a re-read counts only
-/// if the field still reads focused, is still that element and its value's length (`valueLength`) is the one read
-/// when the wait began. Otherwise, as when the boxes stay empty or the process is not fresh or that length cannot be
-/// read (no wait at all), `noCharacterBoxes`; an incomplete miss not waited for, or still incomplete at the bound, is
+/// The caret's offset where a field's boxes may not exist yet (#283, the design session's ruling 37d4c12c), read before
+/// anything is written to the field (#341): before Chromium's complete accessibility mode every character box is empty
+/// (`noCharacterBoxes`), and while they arrive some are (`boxesIncomplete`, run 42152333871; widened from 37d4c12c under
+/// 9ba80c48). In a process whose accessibility is `fresh` (#282's rule) the offset is computed again every
+/// `webAreaActionRereadSampleMs` until `webAreaRereadDeadline` (2 s, or up to 3 s just after an enablement write, #292),
+/// posting nothing, until it answers anything else (an offset, or a complete miss `pointOutsideText` or `unmapped`,
+/// which then is the answer). Each re-read waits on `sameTarget` (still the element the click resolved to, and not a
+/// secure one): failing, nothing more is read. An offset found by a re-read counts only if the field is still that
+/// element and its value's length (`valueLength`) is the one read when the wait began; it is not focused yet, so focus
+/// is no condition. Otherwise, as when the boxes stay empty or the process is not fresh or that length cannot be read
+/// (no wait at all), `noCharacterBoxes`; an incomplete miss not waited for, or still incomplete at the bound, is
 /// `pointOutsideText`.
-func caretAwaitingBoxes(fresh: Bool, freshSince: Double? = nil, offset: () -> Result<Int, CaretNotPlaced>, focused: () -> Bool?, sameTarget: () -> Bool,
+func caretAwaitingBoxes(fresh: Bool, freshSince: Double? = nil, offset: () -> Result<Int, CaretNotPlaced>, sameTarget: () -> Bool,
                         valueLength: () -> Int?, now: () -> Double, sleep: (Double) -> Void) -> Result<Int, CaretNotPlaced> {
   func awaited(_ answer: Result<Int, CaretNotPlaced>) -> Bool {
     answer == .failure(.noCharacterBoxes) || answer == .failure(.boxesIncomplete)
@@ -467,7 +533,7 @@ func caretAwaitingBoxes(fresh: Bool, freshSince: Double? = nil, offset: () -> Re
     answer = offset()
   }
   guard case .success = answer else { return settled(answer) }
-  guard focused() == true, sameTarget(), valueLength() == length else { return .failure(.noCharacterBoxes) }
+  guard sameTarget(), valueLength() == length else { return .failure(.noCharacterBoxes) }
   return answer
 }
 
@@ -483,8 +549,8 @@ func focusNote(_ app: String, _ outcome: WebAreaFocusOutcome) -> String {
   switch outcome {
   case .placed:
     return "\(app)'s text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click."
-  case .notPlaced(.screenChanged):
-    return "\(app)'s text field was focused through accessibility, but the page changed at the point while the caret waited, so the caret was not placed: typing goes to the field's existing selection, or to its start if it had none. Take a new screenshot before typing if the position matters. No mouse event was sent."
+  case .notPlaced(.layoutMoved):
+    return "\(app)'s text field was focused through accessibility and its caret was written at the point, but the field's text moved on screen as it took focus, so where the caret is against the screenshot is not confirmed. Take a new screenshot before typing if the position matters. No mouse event was sent."
   case .notPlaced:
     return "\(app)'s text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent."
   }

@@ -4519,21 +4519,24 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   titles and descriptions keeping exact equality; the frame condition; the reason, the sentence, the meta, a recheck
   after a route's wait, and a truncated container; the record keeping the value and subrole, through both of the walk's
   emitters (`VisibleFirstTests` for the record-only one). #296's `testASurvivingHandleRelabelledInPlacePasses` now
-  refuses (`testASurvivingHandleRelabelledInPlaceRefuses`). The exemption: `RelabelledEditableTests` (4): typed text
+  refuses (`testASurvivingHandleRelabelledInPlaceRefuses`). The exemption: `RelabelledEditableTests` (7): typed text
   in a contenteditable passing by its `AXEditableAncestor`, by an `AXTextArea`, by a contenteditable group, as a text
   run, and re-created at the same width; a relabelled link, button or AXPress chip inside the region refusing; a text
   whose editable ancestor differs (another region, none now, none recorded) still judged; the record and the walk's
-  batch keeping it (`VisibleFirstTests` for the record-only reads). The failed reads: `UnreadableLabelTests` (4): a
+  batch keeping it (`VisibleFirstTests` for the record-only reads); and, after the review of b2f00ad5..25b23fbb,
+  partial exposure (a link answering the editor around text answering nothing refused, a paragraph's text and a text
+  answering alone passing), the text's own read failing on one side only still passing, and a wrapper whose role or
+  action names cannot be read withholding the exemption while an empty action list does not. The failed reads: `UnreadableLabelTests` (4): a
   title unreadable now and one unreadable at the observation not refusing, while an absent title still falls to the
   description; a lower-priority unreadable attribute changing nothing, and an unreadable description or value ahead
   of a text's value keeping the point; what counts as a failed slot and a failed single read, and the record keeping
-  it through the walk (`VisibleFirstTests` for the record-only reads). 1,113 engine tests pass, 1 skipped as before. Of
-  72 parts and bounds of the rule, the exemption and the failed-read handling changed in turn
-  (`~/.local/share/187/mutate-298.py`), 65 fail a test. Seven survive by design. Two are equivalent: the number's
+  it through the walk (`VisibleFirstTests` for the record-only reads). 1,116 engine tests pass, 1 skipped as before. Of
+  77 parts and bounds of the rule, the exemption and the failed-read handling changed in turn
+  (`~/.local/share/187/mutate-298.py`), 70 fail a test. Seven survive by design. One is equivalent: the number's
   internal separators, whose removal changes no output (a separator followed by a digit starts another number, which
-  sets the following words aside just the same), and taking the record's editable ancestor at an element itself, which
-  only an editable `AXStaticText` could tell. Five are reached only by a live click: the live seam's value, editable
-  ancestor, actions and label-error reads, and the batched read's keeping of failed slots.
+  sets the following words aside just the same). Six are reached only by a live click: the live seam's value, editable
+  ancestor, actions (none, or a failed read taken for none) and label-error reads, and the batched read's keeping of
+  failed slots.
   **The merge gate** (the ruling; #305's lesson: a replay of #296's spike isn't enough on its own): the branch's real
   engine clicks live, with 0 `relabelled` refusals, across unchanged real pages and apps, including pages whose labels
   change on their own: Hacker News, a GitHub pull request page, a page with a live clock or relative times, Finder and

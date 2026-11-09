@@ -2219,6 +2219,14 @@ final class RelabelledEditableTests: XCTestCase {
       editor.text.value = "Goodbye"
       XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
     }
+    do {  // Only the text answers: a group region nothing above it names.
+      let editor = Editor(role: "AXGroup", exposed: false)
+      editor.text.editableAncestor = editor.region
+      let nodes = recorded(editor.window)
+      XCTAssertTrue(nodes.first { $0.element === editor.text }?.editableAncestor === editor.region)
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
+    }
   }
 
   /// The review of b2f00ad5..25b23fbb (P2 2): an element between the text and the region whose role or action names

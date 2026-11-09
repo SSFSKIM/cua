@@ -4613,7 +4613,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      for content), untouched by this rule and left for its own ticket.
      `docs/cua-api/agent-cursor.md`'s stale-point paragraph names the relabel refusal and limits 1 and 5, the ones a
      model can act on; the surface inventory's Table 3 addition of 2026-11-09 (#298), the docs test, parity's docs oracle
-     and PROVENANCE.md carry it. The plugin version is bumped at the merge turn.
+     and PROVENANCE.md carry it. Plugin 0.27.24, since the document the server serves changed.
   7. **The edited-text exemption** (the design session's ruling 1ea561bc:553, on the build's concern that the model's
      own typing would be refused; the review of 7f6eb3dc..b2f00ad5, P2 1, found the same). An `AXStaticText`, or a
      text run inside one, whose nearest editable ancestor is the one recorded for it is not compared: a click there only
@@ -4668,7 +4668,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   title unreadable now and one unreadable at the observation not refusing, while an absent title still falls to the
   description; a lower-priority unreadable attribute changing nothing, and an unreadable description or value ahead
   of a text's value keeping the point; what counts as a failed slot and a failed single read, and the record keeping
-  it through the walk (`VisibleFirstTests` for the record-only reads). 1,116 engine tests pass, 1 skipped as before. Of
+  it through the walk (`VisibleFirstTests` for the record-only reads). 1,127 engine tests pass after the merge of main (#330, #310, #341), 1 skipped as before. Of
   77 parts and bounds of the rule, the exemption and the failed-read handling changed in turn
   (`~/.local/share/187/mutate-298.py`), 70 fail a test. Seven survive by design. One is equivalent: the number's
   internal separators, whose removal changes no output (a separator followed by a digit starts another number, which

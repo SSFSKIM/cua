@@ -1638,6 +1638,14 @@ final class NewElementGuardTests: XCTestCase {
                    "The screen changed since the screenshot: a new element, such as a suggestion list or popup, has appeared over the AXButton \"Go\" it showed at this point. The app was activated in the background, but nothing was pressed. Call getScreenshot for a new screenshot, or press Escape to dismiss what appeared, before clicking.")
   }
 
+  /// The observed screenshot keeps the record's elements the guard looks the chain up in.
+  func testTheScreenshotKeepsItsRecordedElements() {
+    let element = AXUIElementCreateApplication(990_003)
+    let image = CapturedScreenshot(url: "file:///x.jpg", width: 1220, height: 1720, frame: CGRect(x: 0, y: 0, width: 610, height: 860), scale: 2)
+    let observed = ObservedScreenshot(window: element, image: image, recorded: [ElementKey(element: element): false])
+    XCTAssertEqual(observed.recorded[ElementKey(element: element)], false)
+  }
+
   /// The recorded node as found now is never new over itself: #296's control re-created in place (its handle new, under
   /// its recorded parent) is kept, and so is one whose wrapper was re-created with it, the hit its label or the control.
   func testTheReCreatedNodeAndWhatHoldsItAreNotNew() {

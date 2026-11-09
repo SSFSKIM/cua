@@ -19,8 +19,9 @@ import Foundation
 // viewport (Chrome clips the frame of an element that scrolls off the top, so not one near it). Added here: the element
 // under the point itself, when it lies inside the container and is smaller than it, since a nested scroller the tree
 // exposes as no boundary at all (an overflow div with no scroll area and no page action) moves it while the container's
-// own measures stay put; and both edges of each element on the axis, since one clipped at its scroller's leading edge
-// moves only its trailing one. The container is the nearest boundary of any kind, so the tracked descendant and the
+// own measures stay put; and the trailing edge of the tracked descendant and of the hit when, and only when, the
+// leading edge sits pinned at a clipping edge before and after (`ScrollClips`), since one clipped there moves only its
+// trailing edge. An element that merely grows (content appended below) is no move. The container is the nearest boundary of any kind, so the tracked descendant and the
 // fallback's bar are both that boundary's own.
 
 /// The poll after the wheel: every `scrollConfirmIntervalMs` until a move reads, at most `scrollConfirmWindowMs` from
@@ -117,6 +118,8 @@ struct ScrollGeometry {
   let hit: AXUIElement?
   /// The nodes the tracked descendant's walk read.
   let walked: Int
+  /// The leading edges a measure may sit clipped at.
+  var clips = ScrollClips()
 
   /// The content's length beyond the viewport on the axis, which a bar's 0…1 spans; nil when it does not scroll.
   var scrollableLength: CGFloat? {
@@ -128,7 +131,8 @@ struct ScrollGeometry {
 
 /// An element's leading and trailing edges on the scroll's axis. Both are kept: an element clipped at its scroller's
 /// leading edge keeps that edge while the scroll shrinks it from there, and moves only its trailing one (#328's review,
-/// P2: an overflow div's text under the point, clipped at the div's top).
+/// P2: an overflow div's text under the point, clipped at the div's top). The trailing edge counts only for such a
+/// clipped element (`ScrollClips`, the re-review's P2).
 struct ScrollEdges: Equatable {
   var lead: CGFloat
   var trail: CGFloat
@@ -141,6 +145,15 @@ struct ScrollReading: Equatable {
   var content: ScrollEdges?
   var tracked: ScrollEdges?
   var hit: ScrollEdges?
+}
+
+/// The clipping edges, on the axis, a measure's leading edge can sit pinned at: the viewport's (the container's frame)
+/// for the tracked descendant and the hit, and for the hit also each ancestor's between it and the container (an
+/// unexposed scroller clips it at its own edge), read once before the wheel. The content has none: a scroll area's
+/// document is not clipped, and a web area's frame does not move.
+struct ScrollClips {
+  var viewport: CGFloat?
+  var hitAncestors: [CGFloat] = []
 }
 
 private func edges(_ frame: CGRect?, horizontal: Bool) -> ScrollEdges? {
@@ -185,7 +198,8 @@ private func trackedDescendant(of container: AXUIElement, viewport: CGRect, hori
 
 /// The container's fixed parts for a scroll on `horizontal`'s axis, and the element under the point when it lies inside
 /// the container (not the container itself) and is shorter than the viewport on the axis.
-func scrollGeometry(_ container: AXUIElement, kind: ScrollContainerKind, hit: AXUIElement?, horizontal: Bool, ax: AXOps) -> ScrollGeometry {
+func scrollGeometry(_ container: AXUIElement, kind: ScrollContainerKind, hit: AXUIElement?, horizontal: Bool, ax: AXOps,
+                    hitAncestors: [AXUIElement] = []) -> ScrollGeometry {
   let viewport = ax.frame(container)
   let content = scrollContent(container, kind: kind, ax: ax)
   let bar = ax.element(container, horizontal ? kAXHorizontalScrollBarAttribute : kAXVerticalScrollBarAttribute)
@@ -201,8 +215,10 @@ func scrollGeometry(_ container: AXUIElement, kind: ScrollContainerKind, hit: AX
      (horizontal ? frame.width : frame.height) < (horizontal ? viewport.width : viewport.height) {
     counted = hit
   }
+  let lead = { (frame: CGRect) in horizontal ? frame.minX : frame.minY }
+  let clips = ScrollClips(viewport: viewport.map(lead), hitAncestors: counted == nil ? [] : hitAncestors.compactMap { ax.frame($0).map(lead) })
   return ScrollGeometry(container: container, kind: kind, horizontal: horizontal, viewport: viewport, content: content, bar: bar,
-                        contentLength: contentLength, tracked: tracked.element, hit: counted, walked: tracked.walked)
+                        contentLength: contentLength, tracked: tracked.element, hit: counted, walked: tracked.walked, clips: clips)
 }
 
 func readScroll(_ geometry: ScrollGeometry, ax: AXOps) -> ScrollReading {
@@ -223,18 +239,24 @@ func scrollSign(_ direction: ScrollDirection) -> Double { direction == .down || 
 
 /// The move between two readings the asked way, in points (positive: the way asked), by the first measure that moved
 /// at least the minimum that way: the content, the tracked descendant, the element under the point (each moves against
-/// the scroll, by its leading edge or else its trailing one), then the bar times the scrollable length. A bar alone, its length unread, counts by its own minimum
+/// the scroll, by its leading edge, or for the descendant and the hit by the trailing one while the leading edge sits
+/// pinned at one of `clips`' edges before and after), then the bar times the scrollable length. A bar alone, its length unread, counts by its own minimum
 /// with no points. Nil when nothing moved the asked way. `countsBar` false leaves the bar out: after the fallback's
 /// write it reads back the value written whether or not the view moved.
 func scrollMove(_ before: ScrollReading, _ after: ScrollReading, direction: ScrollDirection, scrollable: CGFloat?,
-                countsBar: Bool = true) -> (points: Double?, by: String)? {
+                countsBar: Bool = true, clips: ScrollClips = ScrollClips()) -> (points: Double?, by: String)? {
   let sign = scrollSign(direction)
-  let measures: [(String, ScrollEdges?, ScrollEdges?)] = [("content", before.content, after.content), ("tracked", before.tracked, after.tracked),
-                                                          ("hit", before.hit, after.hit)]
-  for (name, a, b) in measures {
+  let viewport = clips.viewport.map { [$0] } ?? []
+  let measures: [(String, ScrollEdges?, ScrollEdges?, [CGFloat])] = [("content", before.content, after.content, []),
+                                                                     ("tracked", before.tracked, after.tracked, viewport),
+                                                                     ("hit", before.hit, after.hit, viewport + clips.hitAncestors)]
+  for (name, a, b, pins) in measures {
     guard let a, let b else { continue }
     let lead = Double(a.lead - b.lead) * sign
     if lead >= scrollMovedMinimumPoints { return (lead, name) }
+    // Clipped at a pin before and after: its visible size changes the way the asked scroll clips it (down or right
+    // shrinks it from the pinned edge, up or left uncovers it there), which is its trailing edge moving the asked way.
+    guard pins.contains(where: { abs(a.lead - $0) <= 0.5 && abs(b.lead - $0) <= 0.5 }) else { continue }
     let trail = Double(a.trail - b.trail) * sign
     if trail >= scrollMovedMinimumPoints { return (trail, name) }
   }
@@ -323,7 +345,8 @@ private func confirming(_ record: inout ScrollConfirmRecord, hit: AXUIElement?, 
                         post: () throws -> Void, beforeWriting: () throws -> Void) throws {
   let started = ax.now()
   let found = hit.flatMap { scrollContainerPath(of: $0, ax: ax) }
-  let geometry = found.map { scrollGeometry($0.element, kind: $0.kind, hit: hit, horizontal: direction.horizontal, ax: ax) }
+  let geometry = found.map { scrollGeometry($0.element, kind: $0.kind, hit: hit, horizontal: direction.horizontal, ax: ax,
+                                            hitAncestors: $0.path.dropFirst().map(\.element)) }
   let before = geometry.map { readScroll($0, ax: ax) }
   record.container = found?.kind
   record.walked = geometry?.walked ?? 0
@@ -347,7 +370,8 @@ private func confirming(_ record: inout ScrollConfirmRecord, hit: AXUIElement?, 
       ax.sleep(scrollConfirmIntervalMs)
       last = readScroll(geometry, ax: ax)
       record.polls += 1
-      if let move = scrollMove(before, last, direction: direction, scrollable: geometry.scrollableLength, countsBar: countsBar) {
+      if let move = scrollMove(before, last, direction: direction, scrollable: geometry.scrollableLength, countsBar: countsBar,
+                               clips: geometry.clips) {
         record.outcome = .moved
         (record.moved, record.by) = move
         record.firstMoveMs = ax.now() - from

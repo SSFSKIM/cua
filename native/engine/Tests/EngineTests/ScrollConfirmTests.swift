@@ -415,7 +415,9 @@ final class ScrollConfirmTests: XCTestCase {
   func testAClippedHitIsSeenByItsTrailingEdge() throws {
     let scene = ScrollScene(offset: 200)
     let ax = scene.ax
-    ax.roles[60] = kAXStaticTextRole; ax.parents[60] = 107
+    ax.roles[61] = kAXGroupRole; ax.parents[61] = 107  // the div: a plain group, its top at 240
+    ax.frames[61] = CGRect(x: 10, y: 240, width: 100, height: 60)
+    ax.roles[60] = kAXStaticTextRole; ax.parents[60] = 61
     ax.frames[60] = CGRect(x: 10, y: 240, width: 100, height: 40)  // clipped at the div's top, 240
     let record = try confirmScroll(hit: el(60), direction: .down, delta: 120, ax: ax.ops,
                                    post: { ax.frames[60] = CGRect(x: 10, y: 240, width: 100, height: 10) })
@@ -463,6 +465,23 @@ final class ScrollConfirmTests: XCTestCase {
     XCTAssertEqual(record.outcome, .moved)
     XCTAssertEqual(record.by, "hit")
     XCTAssertEqual(record.moved, 120)
+  }
+
+  /// The re-review's P2: an element that grows, its leading edge not clipped (content appended below the visible rows
+  /// while an upward wheel goes unanswered, in a container with no readable bar), is no move: the content's trailing
+  /// edge never counts, and the hit's only while pinned at a clipping edge.
+  func testAnElementThatOnlyGrowsIsNoMove() throws {
+    let scene = ScrollScene(offset: 0)
+    let ax = scene.ax
+    ax.values[2]?[kAXVerticalScrollBarAttribute] = nil  // no readable end: the poll runs its whole window
+    let hit = scene.row(at: 200)
+    let record = try confirmScroll(hit: hit, direction: .up, delta: 100, ax: ax.ops, post: {
+      ax.frames[3] = CGRect(x: 0, y: 100, width: 390, height: 1100)       // content appended below
+      ax.frames[FakeAX.id(hit)] = CGRect(x: 0, y: 200, width: 390, height: 120)  // the row under the point grows
+    })
+    XCTAssertEqual(record.outcome, .unconfirmed)
+    XCTAssertNil(record.moved)
+    XCTAssertEqual(scene.offset, 0, "the offset never changed")
   }
 
   func testAHorizontalScrollReadsTheHorizontalBarAndTheXEdges() throws {

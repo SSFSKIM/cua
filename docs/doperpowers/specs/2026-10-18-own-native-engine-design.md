@@ -3879,11 +3879,19 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      **Added to the spike's measures:** the element under the point itself, when it lies inside the container and is
      shorter than the viewport on the axis, since a nested scroller the tree exposes as no boundary at all (an overflow
      div with no scroll area and no page action) moves it while the container's own measures stay put. Each element
-     measure (the content, the descendant, the hit) keeps both its edges on the axis (the same review, P2): an element
-     clipped at its scroller's leading edge keeps that edge while the scroll shrinks it from there, so only its
-     trailing edge moves. The descendant is chosen inside the container, the nearest boundary. After the post the
+     measure keeps both its edges on the axis (the same review, P2): an element clipped at its scroller's leading edge
+     keeps that edge while the scroll shrinks it from there, so only its trailing edge moves. The trailing edge counts
+     only for such a clipped element (corrected by the re-review, P2, since an element that merely grows, content
+     appended below the visible rows, moves its trailing edge too): the descendant's or the hit's leading edge sits
+     pinned, within 0.5 point, at a clipping edge both before and after (`ScrollClips`: the viewport's leading edge,
+     and for the hit also each ancestor's between it and the container, read once before the wheel), and its visible
+     size changes the way the asked scroll clips it (down or right shrinks it from that edge, up or left uncovers it
+     there), which is its trailing edge moving the asked way. The content's trailing edge never counts: a scroll area's
+     document is not clipped, and a web area's frame does not move. The descendant is chosen inside the container, the
+     nearest boundary. After the post the
      container is read every `scrollConfirmIntervalMs` (15) for at most `scrollConfirmWindowMs` (800), stopping at the
-     first reading that moved: the content's, the descendant's or the hit's leading edge, else its trailing edge, at least
+     first reading that moved: the content's, the descendant's or the hit's leading edge, else a pinned element's
+     trailing edge, at least
      `scrollMovedMinimumPoints` (0.5) against the scroll, or the bar that much times the scrollable length (or by
      `scrollBarMovedMinimum`, 0.0005, when that length does not read). Only a move the asked way counts. The constants
      are named so the hosted gate can re-price them. **The window, 800 ms** (first built at 300; the hosted early read
@@ -3946,7 +3954,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     a scroll's, a drag's start and end), the sentence; the edge points (0, 0), (W−1, H−1) and a fraction short of the
     width pass; the drag's middle between its ends. `TuningTests`' two coordinate tests now aim inside the image (one
     aimed at its far corner, which the rule refuses).
-  - `ScrollConfirmTests` (22): moved up and down, the move in the meta; a move the wrong way is none; the bar at its
+  - `ScrollConfirmTests` (23): moved up and down, the move in the meta; a move the wrong way is none; the bar at its
     end before the wheel (down and up) answered `atEnd` and `endBefore` at once, the wheel posted, nothing polled or
     written; the fallback written
     with the converted value and confirmed, a fallback that moves nothing unconfirmed though its bar reads the value
@@ -3960,19 +3968,24 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     written; for gate (c), the nearest page scroller's own settable bar written (by delta over its AXContentSize less
     its frame) and never the outer one, a plain group clipping the hit skipped `clipped` with the outer bar unwritten,
     the same group holding the hit wholly letting the outer bar be written, and a page's web area on the path skipped
-    `web`; for P2, an overflow div's text clipped at the div's top seen by its trailing edge; a web page seen on the
+    `web`; for P2, an overflow div's text clipped at the div's top (pinned at the div's edge) seen by its trailing
+    edge, and for the re-review's P2 content appended below and a row under the point growing during an unanswered
+    upward wheel, with no bar, answering unconfirmed; a web page seen on the
     descendant 40% down while its top rows clip, its container the page's scroll area; a nested scroller seen on the
     hit; a horizontal scroll on the horizontal bar.
   - `ScrollWheelUnchangedTests` (1): the posted wheel's units, source, phases, deltas and field 51.
   - `services-engine-service.test.mjs`' #328 test: `cua/scroll`, the at-end note in the tool result's text, and both
     errors with their sentence, name and meta.
-  - Each of 59 rule parts and bounds removed in turn (`~/.local/share/187/mutate-328.py`) fails a test: 9 for the
-    refusal, 13 for the read and the poll (the window pinned at 800 from both sides, the hit's trailing edge), 10 for
+  - Each of 62 rule parts and bounds removed in turn (`~/.local/share/187/mutate-328.py`) fails a test: 9 for the
+    refusal, 16 for the read and the poll (the window pinned at 800 from both sides; the hit's trailing edge unread,
+    and for the re-review the content's trailing edge counted, the trailing edge counted unpinned, the hit's clipping
+    ancestors unread), 10 for
     the container (3 for the review's P1: the first scroll area winning, a page's web area not deferring, only
     AXScrollDownByPage), 8 for the answers (3 for the end before the wheel: polled first, the wheel skipped, endBefore
-    off the wire), 15 for the fallback (4 for gate (c)), 4 for the wheel. Three survive by design, since only a live scroll reaches them: the method not confirming, the coordinate's
-    hit not passed to the confirmation, and the meta dropping `scroll`.
-  - Every other suite passes (1,042 engine tests, 1 skipped as before), and the docs test, repl-parity's docs oracle
+    off the wire), 15 for the fallback (4 for gate (c)), 4 for the wheel. Three survive by design, since only a live
+    scroll reaches them: the method not confirming, the coordinate's hit not passed to the confirmation, and the meta
+    dropping `scroll`.
+  - Every other suite passes (1,043 engine tests, 1 skipped as before), and the docs test, repl-parity's docs oracle
     suites and the service file's focused tests.
   **What the hosted check must verify** (main against the branch, background targets behind a frontmost cover, as the
   spike ran):

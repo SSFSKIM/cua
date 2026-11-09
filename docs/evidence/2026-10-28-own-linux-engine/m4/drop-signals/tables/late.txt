@@ -1,0 +1,1 @@
+{"late":47,"activation":0,"answered_ok":47,"landed":0,"accept_shown":0,"escaped":0,"cells":{"idle freeze-250":21,"gate-windows freeze-250":20,"load2 freeze-250":4,"load2 freeze-240":2}}

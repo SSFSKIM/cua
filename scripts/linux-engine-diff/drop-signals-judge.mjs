@@ -15,6 +15,9 @@ export const MIN_DRAGS = 300;
 /** How long after the release a drop's signal may come and still count: the late-take watch's lifetime (`dnd::SETTLE`). */
 export const AFTER_RELEASE_WINDOW_MS = 300;
 
+/** How far a change may read before the engine's release stamp and still be the release's own (load2: 2.7 ms). */
+export const RELEASE_STAMP_MARGIN_MS = 5;
+
 /** The X server's resource-id mask on the harness's servers (Xvfb and Xorg): a client's windows share the bits above. */
 export const RESOURCE_ID_MASK = 0x1fffff;
 
@@ -108,16 +111,21 @@ function acceptIndex(cursors, take) {
  * A drag's signals from the drop watch's lines (`xprobe drop-watch`, each with `wall_ms`), against the engine's press
  * and release wall clock (`--stats` `wall`): the target's client's take of `XdndSelection` (after the press), whether it
  * came only after the release (with `engineTook`, the engine's own record of a take by its release decides), Chrome's
- * `_NET_ACTIVE_WINDOW` request for its window after the release (source 1, an application's), every cursor change from
+ * `_NET_ACTIVE_WINDOW` request for its window after the take (source 1, an application's; its latency from the engine's
+ * release stamp, which can be slightly negative), every cursor change from
  * the press on, and whether the accept rule's change was shown before the release.
  */
 export function signalsOf(lines, { target, pressMs, releaseMs, engineTook = null, mask = RESOURCE_ID_MASK }) {
   const takeLine = lines.find((l) => l.kind === 'take' && sameClient(l.owner, target, mask) && l.wall_ms >= pressMs - 5) ?? null;
   const take = takeLine ? takeLine.wall_ms : null;
   const lateByWall = take !== null && typeof releaseMs === 'number' && take > releaseMs;
-  const act = typeof releaseMs === 'number' ? lines.find((l) => l.kind === 'activate' && l.source === 1 && sameClient(l.window, target, mask) && l.wall_ms >= releaseMs) : null;
+  // the drop's activation: Chrome's own request after the take (the engine stamps its release only after sending it, so
+  // the request can read up to a few ms before the stamp; no activation precedes a release in the server's order)
+  const act = typeof releaseMs === 'number' && take !== null ? lines.find((l) => l.kind === 'activate' && l.source === 1 && sameClient(l.window, target, mask) && l.wall_ms >= take) : null;
   const cursors = lines.filter((l) => l.kind === 'cursor' && l.wall_ms >= pressMs);
-  const beforeRelease = typeof releaseMs === 'number' ? cursors.filter((c) => c.wall_ms <= releaseMs) : cursors;
+  // shown before the release: the engine stamps its release after sending it (up to 2.7 ms later at twice the load), so
+  // the release's own cursor reset can read before the stamp; a change within the margin is left out
+  const beforeRelease = typeof releaseMs === 'number' ? cursors.filter((c) => c.wall_ms <= releaseMs - RELEASE_STAMP_MARGIN_MS) : cursors;
   return {
     take_after_press_ms: take === null ? null : round1(take - pressMs),
     take_after_release_ms: take === null || typeof releaseMs !== 'number' ? null : round1(take - releaseMs),

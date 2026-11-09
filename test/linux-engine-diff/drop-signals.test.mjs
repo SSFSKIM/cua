@@ -75,12 +75,19 @@ test("a drag's signals from the watch: the take, a late take after the release, 
   assert.equal(s.accept_shown, true, "the accept rule's change (the second strictly after the take, server time) came before the release");
   // the first status in the take's own millisecond: not counted, so no accept is read (accept.rs)
   assert.equal(signalsOf([cursor(1003, 81), take(1004), cursor(1004, 82), cursor(1020, 83)], { target: TARGET, pressMs: 1000, releaseMs: 1050 }).accept_shown, false);
+  // the release's own reset to the loop's cursor, read up to a few ms before the engine's release stamp (the engine
+  // stamps after sending; load2's selected-text drags): not a change before the release
+  assert.equal(signalsOf([cursor(1003, 81), take(1004), cursor(1008, 82), cursor(1047, 81)], { target: TARGET, pressMs: 1000, releaseMs: 1050 }).accept_shown, false);
   // a leave: the take, the first status, no accept, no activation
   const leave = signalsOf([cursor(1003, 81), take(1004), cursor(1007, 82), cursor(1051, 81)], { target: TARGET, pressMs: 1000, releaseMs: 1050 });
   assert.equal(leave.activation_after_release_ms, null);
   assert.equal(leave.accept_shown, false);
-  // an activation before the release is not the drop's (the harness's own activation comes before the press)
-  assert.equal(signalsOf([activate(1040), take(1004)], { target: TARGET, pressMs: 1000, releaseMs: 1050 }).activation_after_release_ms, null);
+  // an activation before the take is not the drop's (the harness's own activation comes before the press); one after
+  // the take and a little before the engine's release stamp is (load2: the engine stamps its release after sending it,
+  // and the drop's request came up to 2 ms before the stamp), its latency negative
+  assert.equal(signalsOf([activate(1002), take(1004)], { target: TARGET, pressMs: 1000, releaseMs: 1050 }).activation_after_release_ms, null);
+  assert.equal(signalsOf([take(1004), activate(1048)], { target: TARGET, pressMs: 1000, releaseMs: 1050 }).activation_after_release_ms, -2);
+  assert.equal(signalsOf([activate(1060)], { target: TARGET, pressMs: 1000, releaseMs: 1050 }).activation_after_release_ms, null, 'no take: no drop to answer for');
   assert.equal(signalsOf([activate(1060, 0x0140000c, 2)], { target: TARGET, pressMs: 1000, releaseMs: 1050 }).activation_after_release_ms, null, 'a pager-sourced request is the harness');
   // a late take: the selection taken after the release
   const late = signalsOf([take(1300)], { target: TARGET, pressMs: 1000, releaseMs: 1250 });

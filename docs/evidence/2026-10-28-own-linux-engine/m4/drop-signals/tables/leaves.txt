@@ -1,0 +1,8 @@
+idle-main activation latency min 0.3 max 7.4 negative 0 of 583
+ leaves: cua nozone 30, cua seltext 30, cua:accept nozone 30, cua:floor0 plain 7
+gate-main activation latency min 0.3 max 52.9 negative 0 of 641
+ leaves: cua nozone 30, cua seltext 30, cua:accept nozone 30, cua:floor0 plain 8
+load2-main activation latency min -2.7 max 34.7 negative 20 of 561
+ leaves: cua nozone 30, cua seltext 30, cua:accept nozone 30, cua:floor0 plain 22
+idle-electron activation latency min undefined max undefined negative 0 of 0
+ leaves: cua nozone 30, cua:floor0 plain 4

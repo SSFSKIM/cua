@@ -246,6 +246,12 @@ func pointOutsideScreenshot(_ x: Double, _ y: Double, width: Int, height: Int) -
     "The point (\(coordinateText(x)), \(coordinateText(y))) lies outside the screenshot, which is \(width) × \(height) pixels. Give a point inside it: x from 0 to \(width - 1) and y from 0 to \(height - 1).")
 }
 
+/// #334: a drag's end outside the screenshot, which is a drop onto another window or the desktop. That is not
+/// supported, so the refusal says the drop cannot be done and gives no range to clamp into, since a clamped end would
+/// drop at the source window's edge. Still `pointOutsideScreenshot`. A start outside keeps the sentence above.
+let dragEndOutsideScreenshot = EngineError(name: "pointOutsideScreenshot",
+  "A drag cannot end outside the window the screenshot shows: dropping onto another app's window or the desktop is not supported. Nothing was sent.")
+
 /// A coordinate as the model wrote it: an integer without a fraction, else at most two decimals.
 private func coordinateText(_ value: Double) -> String {
   value == value.rounded() && abs(value) < 1e15 ? String(Int64(value)) : String(format: "%.2f", value)
@@ -262,11 +268,14 @@ extension ConnectionState {
   /// app's primary window is no longer the window the screenshot shows. Refused too when the point lies outside that
   /// screenshot (#328, `pointOutsideScreenshot`): every coordinate a pointer action takes passes here (a click's, a
   /// scroll's, a drag's start and end), so this is the one check. A drag's middle event lies between its two ends, so
-  /// inside the screenshot whenever they are.
-  func screenshotPoint(_ x: Double, _ y: Double, app: ResolvedApp, window: AXUIElement, lineage wanted: String?) throws -> CGPoint {
+  /// inside the screenshot whenever they are. A drag's end (`dragEnd`) outside is refused with #334's sentence.
+  func screenshotPoint(_ x: Double, _ y: Double, app: ResolvedApp, window: AXUIElement, lineage wanted: String?,
+                       dragEnd: Bool = false) throws -> CGPoint {
     guard let lineage = lineages[app.key], wanted == nil || wanted == lineage.id,
           let screenshot = lineage.screenshot, CFEqual(screenshot.window, window) else { throw noScreenshotForCoordinates }
-    guard screenshot.contains(x, y) else { throw pointOutsideScreenshot(x, y, width: screenshot.width, height: screenshot.height) }
+    guard screenshot.contains(x, y) else {
+      throw dragEnd ? dragEndOutsideScreenshot : pointOutsideScreenshot(x, y, width: screenshot.width, height: screenshot.height)
+    }
     return screenshot.windowPoint(x, y)
   }
 }

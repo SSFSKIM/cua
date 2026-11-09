@@ -216,9 +216,14 @@ struct ObservedScreenshot {
   /// The on-screen window numbers when the image was captured (#316's rule W, StalePoint.swift `newWindowAbove`): a
   /// window of the app's above this one that the list did not hold is new since the screenshot. Nil when unread.
   let windowList: Set<CGWindowID>?
+  /// The image's size in pixels, the space the model's coordinates arrive in (#328: a point outside it is refused).
+  let width: Int
+  let height: Int
 
   init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = []) {
     self.window = window
+    width = image.width
+    height = image.height
     windowOrigin = image.frame.origin
     windowList = image.windowList
     scaleX = CGFloat(image.width) / image.frame.width  // the capture refuses a frame under one point
@@ -228,6 +233,22 @@ struct ObservedScreenshot {
 
   /// A point in the image's pixels as the window-local point in points.
   func windowPoint(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: CGFloat(x) / scaleX, y: CGFloat(y) / scaleY) }
+
+  /// Whether a point in the image's pixels lies in the image: 0 ≤ x < width and 0 ≤ y < height.
+  func contains(_ x: Double, _ y: Double) -> Bool { x >= 0 && x < Double(width) && y >= 0 && y < Double(height) }
+}
+
+/// #328: a pointer action's point outside the screenshot it was given in, refused before anything is posted. Such a
+/// point lies outside the window the screenshot shows, where an event lands on whatever is there (another app's window,
+/// the desktop) or nowhere.
+func pointOutsideScreenshot(_ x: Double, _ y: Double, width: Int, height: Int) -> EngineError {
+  EngineError(name: "pointOutsideScreenshot",
+    "The point (\(coordinateText(x)), \(coordinateText(y))) lies outside the screenshot, which is \(width) × \(height) pixels. Give a point inside it: x from 0 to \(width - 1) and y from 0 to \(height - 1).")
+}
+
+/// A coordinate as the model wrote it: an integer without a fraction, else at most two decimals.
+private func coordinateText(_ value: Double) -> String {
+  value == value.rounded() && abs(value) < 1e15 ? String(Int64(value)) : String(format: "%.2f", value)
 }
 
 let noScreenshotForCoordinates = EngineError(name: "noScreenshotForCoordinates",
@@ -238,10 +259,14 @@ extension ConnectionState {
   /// screenshot the app's last observation on this connection returned, divided by that screenshot's scale. Refused,
   /// before anything is posted, when there is no screenshot of `window` to place them in: no observation of the app
   /// returned one yet, the request names a lineage that is not the app's current one (as for an element index), or the
-  /// app's primary window is no longer the window the screenshot shows.
+  /// app's primary window is no longer the window the screenshot shows. Refused too when the point lies outside that
+  /// screenshot (#328, `pointOutsideScreenshot`): every coordinate a pointer action takes passes here (a click's, a
+  /// scroll's, a drag's start and end), so this is the one check. A drag's middle event lies between its two ends, so
+  /// inside the screenshot whenever they are.
   func screenshotPoint(_ x: Double, _ y: Double, app: ResolvedApp, window: AXUIElement, lineage wanted: String?) throws -> CGPoint {
     guard let lineage = lineages[app.key], wanted == nil || wanted == lineage.id,
           let screenshot = lineage.screenshot, CFEqual(screenshot.window, window) else { throw noScreenshotForCoordinates }
+    guard screenshot.contains(x, y) else { throw pointOutsideScreenshot(x, y, width: screenshot.width, height: screenshot.height) }
     return screenshot.windowPoint(x, y)
   }
 }

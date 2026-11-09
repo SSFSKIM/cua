@@ -83,6 +83,10 @@
 //   interactive element (`screenChangedSinceScreenshot`, an input error with the meta, its sentence asking for a new
 //   screenshot); a background page click #282 carries by an element's action is refused the same way, nothing pressed,
 //   and presses only what the screenshot showed there.
+// - The screenshot's bounds and the scroll's confirmation (#328): a click, scroll or drag at a point outside the
+//   screenshot its coordinates came from is refused, nothing posted (`pointOutsideScreenshot`); a scroll answers success
+//   only when the content under the point was seen to move, or with a note when it was already at its end, else
+//   `scrollUnconfirmed`. Both are input errors with the meta; the scroll's record rides as cua/scroll.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
@@ -112,19 +116,21 @@ const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
-  'cua/pointerEstablish': null, 'cua/stalePoint': null,
+  'cua/pointerEstablish': null, 'cua/stalePoint': null, 'cua/scroll': null,
 };
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
-// background web page's text field that focused it instead, #283), and its bound.
-const NOTED_METHODS = new Set(['paste', 'type_text', 'click']);
+// background web page's text field that focused it instead, #283; a scroll whose content was already at its end, #328),
+// and its bound.
+const NOTED_METHODS = new Set(['paste', 'type_text', 'click', 'scroll']);
 const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
 // value-free diagnostics, #187; `elementClick`: an element click's plan, the ladder's reason and the hit-test's answer,
 // #188; `coordinateClick`: a coordinate click's placement from the screenshot point to the posted events, #259;
 // `pointerEstablish`: a left click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}, #288;
-// `stalePoint`: the stale-point guard's verdict at a coordinate pointer's point, #296).
+// `stalePoint`: the stale-point guard's verdict at a coordinate pointer's point, #296; `scroll`: a scroll's confirmation,
+// the container under the point read before and after the wheel, the move seen, the end, the fallback's bar write, #328).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
-  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint'];
+  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application

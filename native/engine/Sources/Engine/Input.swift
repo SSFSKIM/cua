@@ -107,6 +107,8 @@ struct InputMeta {
   var pointerEstablish: PointerEstablishRecord?
   /// #296's stale-point guard at a coordinate pointer's point (StalePoint.swift): kept or refused and why, rechecked after an element route's wait.
   var stalePoint: StalePointRecord?
+  /// #328's scroll confirmation (ScrollConfirm.swift): the container read, the move seen, the end, the fallback's write.
+  var scroll: ScrollConfirmRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -169,6 +171,7 @@ struct InputMeta {
     if let coordinateClick { wire["coordinateClick"] = coordinateClick.wire }
     if let pointerEstablish { wire["pointerEstablish"] = pointerEstablish.wire }
     if let stalePoint { wire["stalePoint"] = stalePoint.wire }
+    if let scroll { wire["scroll"] = scroll.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }

@@ -388,10 +388,11 @@ struct SiblingRead {
 /// AXGroup under an AXTable or AXOutline), the same place among that role's siblings (old: every listed sibling of the
 /// role; new: the read ones), the eleven identity attributes equal, the frame equal within a point once the parent's
 /// own move is taken out (`parentShift`: a scroll moves table and columns together), the same first child (CFEqual:
-/// a column heads its cells, which Chromium does not re-create) or none on both, and, asked last and only then, the old
-/// handle gone (`gone`). A real replacement fails one of these: an element of any other role, an old element still
-/// alive, a column inserted (the columns after it head other cells than the old ones at their places), a changed
-/// header. `entry` is the previous revision's entry by number; `read` a new sibling's by position, nil where the walk
+/// a column heads its cells, which Chromium does not re-create), and, asked last and only then, the old handle gone
+/// (`gone`). A frame or a first child missing on either side is no match: a frameless or childless element takes a new
+/// token, as under the vendor's rule. A real replacement fails one of these: an element of any other role, an old
+/// element still alive, a column inserted (the columns after it head other cells than the old ones at their places), a
+/// changed header. `entry` is the previous revision's entry by number; `read` a new sibling's by position, nil where the walk
 /// did not read it. Nothing is read, built or asked unless the vendor's rule left both a new sibling and an old
 /// synthesized one unmatched.
 func keepRecreated(_ matched: [Int?], old: [(index: Int, element: AXUIElement)], entry: (Int) -> LineageEntry?, new count: Int,
@@ -421,18 +422,11 @@ func keepRecreated(_ matched: [Int?], old: [(index: Int, element: AXUIElement)],
     guard result[position] == nil, let candidates = oldAt[role], place < candidates.count, let candidate = candidates[place] else { continue }
     let entry = candidate.entry
     guard read.identity.matches(entry.identity) else { continue }
-    switch (read.frame, entry.frame) {
-    case (nil, nil): break
-    case let (now?, before?):
-      guard abs(now.minX - shift.dx - before.minX) <= 1, abs(now.minY - shift.dy - before.minY) <= 1,
-            abs(now.width - before.width) <= 1, abs(now.height - before.height) <= 1 else { continue }
-    default: continue
-    }
-    switch (read.firstChild, entry.firstChild) {
-    case (nil, nil): break
-    case let (now?, before?): guard CFEqual(now, before) else { continue }
-    default: continue
-    }
+    // Nothing missing counts as a match: a frameless or childless element keeps the vendor's rule (a new token).
+    guard let now = read.frame, let before = entry.frame,
+          abs(now.minX - shift.dx - before.minX) <= 1, abs(now.minY - shift.dy - before.minY) <= 1,
+          abs(now.width - before.width) <= 1, abs(now.height - before.height) <= 1,
+          let child = read.firstChild, let oldChild = entry.firstChild, CFEqual(child, oldChild) else { continue }
     guard gone(entry.element) else { continue }
     result[position] = candidate.index
   }

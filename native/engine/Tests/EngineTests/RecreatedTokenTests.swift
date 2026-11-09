@@ -99,6 +99,22 @@ final class RecreatedTokenTests: XCTestCase {
       ("frame", { $0.frames[16]!.origin.x += 40 }),
       ("first child", { $0.children[16] = [40, 10, 11] }),
     ]
+    // Nothing missing counts as a match: a column re-created childless, or frameless, takes a new token even when the old
+    // one was childless or frameless too.
+    let missing: [(String, (FakeTree) -> Void)] = [
+      ("no children on either side", { $0.children[6] = []; $0.children[16] = [] }),
+      ("no frame on either side", { $0.frames[6] = nil; $0.frames[16] = nil }),
+    ]
+    for (what, strip) in missing {
+      let tree = table(), lineage = Lineage()
+      strip(tree)
+      let columns = tokens(walk(tree, lineage), "AXColumn")
+      recreate(tree, [5: 15, 6: 16])
+      strip(tree)
+      let now = tokens(walk(tree, lineage), "AXColumn")
+      XCTAssertEqual(now.first, columns.first, what)
+      XCTAssertNotEqual(now.last, columns.last, what)
+    }
     for (what, change) in changes {
       let tree = table(), lineage = Lineage()
       let columns = tokens(walk(tree, lineage), "AXColumn")

@@ -115,11 +115,13 @@ func webAreaFocusTarget<Element>(_ hit: Element, role: (Element) -> String?, sub
 /// `caretSearchStepLimit` of them; two usable boxes read out of that order (a vertical or right-to-left layout), or a
 /// step limit reached, end the search with no offset taken from it. `searchable` false skips the search: a text holding
 /// right-to-left characters (`holdsRightToLeft`), whose short lines may show the search too few boxes to see the order
-/// broken.
+/// broken. Such a text is #283's exactly: the linear scan within `caretScanLimit` characters, and past it
+/// `pointOutsideText` with nothing read, since without the search no window near the point is known.
 func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int) -> CGRect?,
                  isLineBreak: (Int) -> Bool, mayLackBox: (Int) -> Bool, searchable: Bool = true) -> Result<Int, CaretNotPlaced> {
   if length == 0 { return .success(0) }
   let scanned = range.clamped(to: 0..<length)
+  if !searchable, scanned.count > caretScanLimit { return .failure(.pointOutsideText) }
   var read: [Int: CGRect?] = [:]
   func box(_ index: Int) -> CGRect? {
     if let known = read[index] { return known }

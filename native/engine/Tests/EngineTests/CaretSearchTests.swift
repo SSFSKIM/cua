@@ -241,6 +241,12 @@ final class CaretSearchTests: XCTestCase {
       XCTAssertLessThanOrEqual(counter.reads, most, value.prefix(1).description)
       if most == 600 { XCTAssertEqual(counter.reads, 361, "every box up to the point's") }
     }
+    // Past the linear scan's reach a right-to-left text is #283's refusal, nothing read: no search, so no window near
+    // the point is known.
+    let counter = Counter()
+    XCTAssertEqual(textCaretOffset(at: point, value: String(repeating: "א", count: caretScanLimit + 1), bounds: { counter.reads += 1; return bounds($0) }),
+                   .failure(.pointOutsideText))
+    XCTAssertEqual(counter.reads, 0)
   }
 
   func testRightToLeftCharactersAndMarksAreKnown() {

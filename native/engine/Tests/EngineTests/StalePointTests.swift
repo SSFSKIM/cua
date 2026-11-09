@@ -2191,6 +2191,53 @@ final class RelabelledEditableTests: XCTestCase {
     }
   }
 
+  /// The review of b2f00ad5..25b23fbb (P2 1): where the text answers no AXEditableAncestor, its editable ancestor is the
+  /// region its nearest answering ancestor names, not that ancestor. So a link that answers the editor, around text that
+  /// answers nothing, is a wrapper the exemption checks (refused), while a plain paragraph's text passes.
+  func testPartialExposureResolvesToTheRegionNamed() {
+    do {
+      let editor = Editor()
+      let link = Node("AXLink", CGRect(x: 40, y: 105, width: 200, height: 20))
+      link.actions = ["AXPress"]
+      link.editableAncestor = editor.region
+      editor.paragraph.add(link)
+      let label = Node("AXStaticText", CGRect(x: 40, y: 105, width: 200, height: 20), value: "Save")
+      link.add(label)
+      let nodes = recorded(editor.window)
+      XCTAssertTrue(nodes.first { $0.element === label }?.editableAncestor === editor.region)
+      label.value = "Delete"
+      XCTAssertEqual(judged(nodes, hit: label), .relabelled)
+    }
+    do {
+      let editor = Editor()
+      editor.text.editableAncestor = nil
+      let nodes = recorded(editor.window)
+      XCTAssertTrue(nodes.first { $0.element === editor.text }?.editableAncestor === editor.region)
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
+    }
+  }
+
+  /// The text's own AXEditableAncestor read failing on one side only (it decodes as none) still names the same region,
+  /// through its paragraph: typed text passes either way.
+  func testATextsOwnAncestorReadFailingOnOneSideStillPasses() {
+    do {  // Failed at the observation.
+      let editor = Editor()
+      editor.text.editableAncestor = nil
+      let nodes = recorded(editor.window)
+      editor.text.editableAncestor = editor.region
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
+    }
+    do {  // Failed now.
+      let editor = Editor()
+      let nodes = recorded(editor.window)
+      editor.text.editableAncestor = nil
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
+    }
+  }
+
   /// A relabelled link, button or chip inside the edited region is still refused: its text is the node at the point, but
   /// an actionable element lies between it and the region.
   func testARelabelledActionableElementInsideTheRegionStillRefuses() {
@@ -2260,7 +2307,7 @@ final class RelabelledEditableTests: XCTestCase {
     let group = Editor(role: "AXGroup", exposed: false)
     XCTAssertNil(recordedAncestor(group, group.text), "nothing says the group is editable")
     group.paragraph.editableAncestor = group.region
-    XCTAssertTrue(recordedAncestor(group, group.text) === group.paragraph, "the nearest that answers one")
+    XCTAssertTrue(recordedAncestor(group, group.text) === group.region, "the region the nearest that answers one names")
     // Through the walk's batch.
     XCTAssertTrue(observedAttributes.contains("AXEditableAncestor"))
     let region = AXUIElementCreateApplication(990_004)

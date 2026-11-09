@@ -4479,13 +4479,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   7. **The edited-text exemption** (the design session's ruling 1ea561bc:553, on the build's concern that the model's
      own typing would be refused; the review of 7f6eb3dc..b2f00ad5, P2 1, found the same). An `AXStaticText`, or a
      text run inside one, whose nearest editable ancestor is the one recorded for it is not compared: a click there only
-     places a caret, and the text changing is the model's own typing. The editable ancestor is the text's
-     `AXEditableAncestor` where the app exposes it (Chromium, WebKit), else its nearest editable ancestor: an
-     `AXTextArea` (a text area, or a contenteditable region as the browsers expose it), or a contenteditable group that
-     answers an `AXEditableAncestor` of its own (`stalePointEditable`). **The record:** the walk reads
+     places a caret, and the text changing is the model's own typing. The editable ancestor is the region the text's
+     `AXEditableAncestor` names where the app exposes it (Chromium, WebKit), else the one its nearest ancestor names: an
+     `AXTextArea` itself (a text area, or a contenteditable region as the browsers expose it), or the region an
+     ancestor's own `AXEditableAncestor` names (`stalePointRegion`). Never the ancestor answering the attribute: the
+     review of b2f00ad5..25b23fbb (P2 1) found that taking it recorded a link that answers the editor as the region,
+     exempting its relabelled text, and that a text whose own read failed on one side only resolved to its paragraph on
+     that side and refused typed text. Both sides resolve the same way. **The record:** the walk reads
      `AXEditableAncestor` in its batched attribute read (one more slot per element, the record-only reads included), and
-     each `AXStaticText` node keeps its editable ancestor (`ScreenshotNode.editableAncestor`), found through the
-     record's parents where the attribute is absent. **What stays judged:** anything actionable inside the region. Every
+     each `AXStaticText` node keeps its region (`ScreenshotNode.editableAncestor`), found through the record's parents
+     where the attribute is absent. **What stays judged:** anything actionable inside the region. Every
      element strictly between the text and the region is read, and one of the interactive roles (a link, a button) or
      one whose actions include AXPress (a mention, a chip) keeps the text judged (`editedInPlace`), as does a text whose
      editable ancestor now is another one or none, or a text recorded with none. **Both paths:** on the same handle the

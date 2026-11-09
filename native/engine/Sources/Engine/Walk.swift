@@ -536,7 +536,8 @@ final class TreeWalk {
 
   /// The selection's state: what it read, for the tree and for the record, what failed, and its queues: `stack`, the
   /// elements to read next (depth first); `deferred`, what waits because nothing of it shows (`Waiting`); and `lastly`,
-  /// the children of AXColumn elements, taken up only once nothing else is left (#304). Each queue is latest in the
+  /// the children of AXColumn elements (#304) and, unread, the AXColumn elements a wide list's shown children hold
+  /// (#310), taken up only once nothing else is left. Each queue is latest in the
   /// document's order first.
   private var selected: [ElementKey: Selected] = [:]
   private var recorded: [ElementKey: Selected] = [:]
@@ -761,7 +762,8 @@ final class TreeWalk {
 
   /// Takes up a read element's children (then its record-only ones), the first to be read next. In the tree's selection,
   /// a list of more than 100 whose clip shows has the children that show taken up (`shownChildPositions`); the runs of
-  /// the others wait, unread, in `deferred` (#304). Without them (main's behaviour for that list) all are taken up.
+  /// the others wait, unread, in `deferred` (#304), and an AXColumn among those that show waits, unread, in `lastly`
+  /// (#310). Without them (main's behaviour for that list) all are taken up.
   private func expand(_ item: Selected, judging: Bool = true) {
     item.expanded = true
     let count = item.read.children.count + item.recordChildren.count
@@ -773,7 +775,12 @@ final class TreeWalk {
         if position > start { insertInOrder(.unread(item, start..<position), into: &deferred) }
         start = position + 1
       }
-      push(item, first)
+      // #310 (the design session's ruling d9f6902b): an AXColumn among them, known by the role its frame read brought,
+      // waits unread in `lastly`; its cells are read through their rows, and its own read would take its whole cell list.
+      let columns = Set(first.filter { source.roleReadWithFrame(item.read.children[$0]) == kAXColumnRole })
+      for position in columns.sorted() { insertInOrder(.unread(item, position..<(position + 1)), into: &lastly) }
+      if !columns.isEmpty { source.costs.count("wideListColumnsLast", columns.count) }
+      push(item, columns.isEmpty ? first : first.filter { !columns.contains($0) })
     } else {
       push(item, Array(0..<count))
     }

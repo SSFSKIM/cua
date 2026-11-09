@@ -75,47 +75,98 @@ final class WebAreaFocusTests: XCTestCase {
 
   // MARK: the focusing click
 
+  /// A Chromium textarea as #341's measurement found it (run 42568677106): AXSelectedTextRange written on it unfocused
+  /// focuses it and leaves its scroll; AXFocused focuses it and scrolls it to its existing caret, so a character's box
+  /// read after focus need not be where it was.
   private struct Field {
     var focused = false
+    /// AXFocused focuses it.
     var takesFocus = true
+    /// AXSelectedTextRange focuses it (Chromium's textarea, #341).
+    var selectionFocuses = true
     var selection: (location: Int, length: Int)? = (0, 0)
     var takesSelection = true
+    /// AXFocused puts the selection back where the field kept it (its existing caret).
+    var focusRestoresSelection = false
+    /// How far each write moves the field's text on screen (a scroll), in points.
+    var focusScrolls: CGFloat = 0
+    var selectionScrolls: CGFloat = 0
+    /// The value's length after the caret's write (a focus handler filling the field), where it changes.
+    var lengthAfterSelection: Int? = nil
+    /// The caret's write leaves the reference character's box unreadable (a focus handler clearing the field).
+    var selectionHidesMark = false
+    /// The reference character's box can be read.
+    var markReadable = true
+    var markY: CGFloat = 100
     var writes: [String] = []
+    /// Every read and write in order: `offset`, `check` (the in-flight check), `mark`, and the writes.
+    var trace: [String] = []
     var offsetAsked = 0
     var checks = 0
+    /// The in-flight check throws on this call (1-based).
+    var intervenesOnCheck: Int? = nil
     /// The process's accessibility is fresh (#282's rule): empty boxes are waited for.
     var fresh = false
-    /// What the re-validation after a wait reads (the clock past 0): focus, the element, the value's length (5 before).
-    var losesFocus = false
+    /// What the re-validation after a wait reads (the clock past 0): the element, the value's length (5 before).
     var sameTarget = true
     var lengthAfterWait: Int? = 5
+    /// The value's length when nothing has waited (5, or 0 for an empty field).
+    var length = 5
     /// From this time the field is a password field: it no longer requalifies, and no read may follow.
     var secureFrom: Double = .infinity
     var readsWhileSecure = 0
     var elapsed: Double = 0
+    var record: WebAreaFocusRecord? = nil
   }
 
-  private func focus(_ field: inout Field, secure: Bool = false, offset: Result<Int, CaretNotPlaced> = .success(7)) throws -> WebAreaFocusOutcome {
-    try focus(&field, secure: secure, offsetAt: { _ in offset })
+  private func focus(_ field: inout Field, secure: Bool = false, offset: Result<Int, CaretNotPlaced> = .success(7),
+                     beforeCaret: @escaping () throws -> Void = {}) throws -> WebAreaFocusOutcome {
+    try focus(&field, secure: secure, offsetAt: { _ in offset }, beforeCaret: beforeCaret)
   }
 
-  /// `offsetAt` answers by the clock (ms since the focus was confirmed), so boxes can appear during the wait.
-  private func focus(_ field: inout Field, secure: Bool = false, offsetAt: @escaping (Double) -> Result<Int, CaretNotPlaced>) throws -> WebAreaFocusOutcome {
+  /// `offsetAt` answers by the clock (ms since the click began), so boxes can appear during the wait.
+  private func focus(_ field: inout Field, secure: Bool = false, offsetAt: @escaping (Double) -> Result<Int, CaretNotPlaced>,
+                     beforeCaret: @escaping () throws -> Void = {}) throws -> WebAreaFocusOutcome {
     var clock: Double = 0
     defer { field.elapsed = clock }
     return try focusPlacingCaret(
-      app: "Chrome", secure: secure, fresh: field.fresh, beforeMutating: { field.checks += 1 },
-      writeFocused: { field.writes.append("AXFocused"); if field.takesFocus { field.focused = true } },
-      focused: { clock > 0 && field.losesFocus ? false : field.focused },
+      app: "Chrome", secure: secure, fresh: field.fresh,
+      beforeMutating: {
+        field.checks += 1
+        field.trace.append("check")
+        if field.checks == field.intervenesOnCheck { throw EngineError(name: "userIntervened", "stop") }
+      },
+      beforeCaret: beforeCaret,
+      writeFocused: {
+        field.writes.append("AXFocused"); field.trace.append("AXFocused")
+        guard field.takesFocus else { return }
+        field.focused = true
+        field.markY -= field.focusScrolls
+        if field.focusRestoresSelection { field.selection = (0, 0) }
+      },
+      focused: { field.focused },
       offset: {
         field.offsetAsked += 1
+        field.trace.append("offset")
         if clock >= field.secureFrom { field.readsWhileSecure += 1 }
         return offsetAt(clock)
       },
       sameTarget: { field.sameTarget && clock < field.secureFrom },
-      valueLength: { clock > 0 ? field.lengthAfterWait : 5 },
-      writeSelection: { offset in field.writes.append("AXSelectedTextRange \(offset)"); if field.takesSelection { field.selection = (offset, 0) } },
+      valueLength: { clock > 0 ? field.lengthAfterWait : field.length },
+      layoutMark: {
+        field.trace.append("mark")
+        return field.markReadable ? CGRect(x: 40, y: field.markY, width: 10, height: 20) : nil
+      },
+      writeSelection: { offset in
+        field.writes.append("AXSelectedTextRange \(offset)"); field.trace.append("AXSelectedTextRange \(offset)")
+        if field.takesSelection { field.selection = (offset, 0) }
+        if field.selectionFocuses { field.focused = true }
+        field.markY -= field.selectionScrolls
+        if let filled = field.lengthAfterSelection { field.length = filled }
+        if field.selectionHidesMark { field.markReadable = false }
+      },
       selection: { field.selection },
+      noted: { field.record = $0 },
       now: { clock }, sleep: { clock += $0 })
   }
 
@@ -125,19 +176,25 @@ final class WebAreaFocusTests: XCTestCase {
     { $0 >= ms ? .success(7) : .failure(.noCharacterBoxes) }
   }
 
-  func testBoxesThatAppearDuringTheWaitInAFreshProcessArePlaced() throws {
+  /// #341: the boxes are waited for before any write (a fresh Chromium fills them unfocused), so the offset comes from
+  /// the layout the screenshot showed; the caret's write then focuses the field.
+  func testBoxesThatAppearDuringTheWaitInAFreshProcessArePlacedWithNothingWrittenBefore() throws {
     var field = Field(fresh: true)
     XCTAssertEqual(try focus(&field, offsetAt: boxesFrom(1_600)), .placed(7))
-    XCTAssertEqual(field.writes, ["AXFocused", "AXSelectedTextRange 7"], "focus at once, the range only once the boxes came")
+    XCTAssertEqual(field.writes, ["AXSelectedTextRange 7"], "nothing written until the boxes came, then the caret alone")
     XCTAssertEqual(field.offsetAsked, 17, "the first read and a re-read every 100 ms up to 1.6 s")
+    XCTAssertEqual(Array(field.trace.suffix(5)), ["offset", "mark", "check", "AXSelectedTextRange 7", "mark"],
+                   "the offset, the reference box, the in-flight check just before the write, and the box again")
   }
 
-  func testBoxesThatNeverAppearAreNoCharacterBoxesAtTwoSeconds() throws {
+  /// The wait before focus is no longer than the wait after it was (#292's deadline, `webAreaRereadDeadline`).
+  func testBoxesThatNeverAppearAreNoCharacterBoxesAtTwoSecondsAndTheFieldIsFocused() throws {
     var field = Field(fresh: true)
     XCTAssertEqual(try focus(&field, offsetAt: boxesFrom(.infinity)), .notPlaced(.noCharacterBoxes))
-    XCTAssertEqual(field.writes, ["AXFocused"])
+    XCTAssertEqual(field.writes, ["AXFocused"], "no offset: focused as before, by AXFocused")
     XCTAssertEqual(field.elapsed, webAreaActionRereadMs)
     XCTAssertEqual(field.offsetAsked, 21)
+    XCTAssertEqual(field.record?.step, .focused)
   }
 
   func testAProcessThatIsNotFreshIsNotWaitedFor() throws {
@@ -147,10 +204,10 @@ final class WebAreaFocusTests: XCTestCase {
     XCTAssertEqual(field.elapsed, 0, "no wait at all")
   }
 
-  /// After a wait the field must still be focused, the same element, and hold a value of the same length.
+  /// After a wait the field must still be the same element and hold a value of the same length. It is not focused yet
+  /// (#341: nothing is written before the offset), so focus is no condition.
   func testAReReadOffsetThatNoLongerValidatesIsNoCharacterBoxesWithNoRangeWritten() throws {
-    for (why, change) in [("focus lost", { (f: inout Field) in f.losesFocus = true }),
-                          ("another element", { (f: inout Field) in f.sameTarget = false }),
+    for (why, change) in [("another element", { (f: inout Field) in f.sameTarget = false }),
                           ("the value's length changed", { (f: inout Field) in f.lengthAfterWait = 6 }),
                           ("the value unreadable", { (f: inout Field) in f.lengthAfterWait = nil })] {
       var field = Field(fresh: true)
@@ -158,7 +215,10 @@ final class WebAreaFocusTests: XCTestCase {
       XCTAssertEqual(try focus(&field, offsetAt: boxesFrom(300)), .notPlaced(.noCharacterBoxes), why)
       XCTAssertEqual(field.writes, ["AXFocused"], why)
     }
-    var unchanged = Field(fresh: true, losesFocus: false)
+    var unfocused = Field(fresh: true)
+    XCTAssertEqual(try focus(&unfocused, offsetAt: boxesFrom(300)), .placed(7), "an unfocused field validates")
+    XCTAssertEqual(unfocused.writes, ["AXSelectedTextRange 7"])
+    var unchanged = Field(fresh: true)
     XCTAssertEqual(try focus(&unchanged, offsetAt: { _ in .success(7) }), .placed(7), "no wait, no re-validation")
   }
 
@@ -169,7 +229,7 @@ final class WebAreaFocusTests: XCTestCase {
     XCTAssertEqual(field.readsWhileSecure, 0)
     XCTAssertEqual(field.offsetAsked, 5, "the first read and the re-reads at 100 to 400 ms")
     XCTAssertEqual(field.elapsed, 500, "the wait stops there")
-    XCTAssertEqual(field.writes, ["AXFocused"])
+    XCTAssertEqual(field.writes, ["AXFocused"], "focused only, as a password field is")
   }
 
   func testAnotherAnswerOnAReReadIsTheAnswer() throws {
@@ -181,21 +241,85 @@ final class WebAreaFocusTests: XCTestCase {
     }
   }
 
-  func testAFocusedFieldGetsItsCaretAtThePointAndReadsItBack() throws {
+  /// #341: the offset comes first, from the unfocused layout, and the caret's write focuses the field; AXFocused, which
+  /// scrolls Chromium's textarea to its existing caret, is not written.
+  func testTheCaretIsWrittenFirstAndFocusesTheField() throws {
     var field = Field()
     XCTAssertEqual(try focus(&field), .placed(7))
-    XCTAssertEqual(field.writes, ["AXFocused", "AXSelectedTextRange 7"])
+    XCTAssertEqual(field.writes, ["AXSelectedTextRange 7"])
+    XCTAssertEqual(field.trace, ["offset", "mark", "check", "AXSelectedTextRange 7", "mark"])
+    XCTAssertEqual(field.record, WebAreaFocusRecord(step: .selection, markShift: 0))
+  }
+
+  /// A caret's write that does not focus the field within the settle: AXFocused, the in-flight check before it, and the
+  /// selection read back again (not written again).
+  func testACaretWriteThatDoesNotFocusFallsBackToAXFocusedAndRereadsTheCaret() throws {
+    var field = Field(selectionFocuses: false)
+    XCTAssertEqual(try focus(&field), .placed(7))
+    XCTAssertEqual(field.writes, ["AXSelectedTextRange 7", "AXFocused"])
     XCTAssertEqual(field.checks, 2, "the in-flight check before each write")
+    XCTAssertEqual(field.elapsed, webAreaFocusSettleMs, "the caret's write waited the settle for focus")
+    XCTAssertEqual(field.record?.step, .focused)
+    var restored = Field(selectionFocuses: false, focusRestoresSelection: true)
+    XCTAssertEqual(try focus(&restored), .notPlaced(.selectionMismatch), "focus put the caret back elsewhere")
+    XCTAssertEqual(restored.writes, ["AXSelectedTextRange 7", "AXFocused"])
+  }
+
+  /// The design session's condition (ruling 1ea561bc:544): placed only where the scroll is shown unchanged, by the
+  /// reference character's box read before the writes and after the read-back. A field the focus scrolls, or the caret's
+  /// write scrolls, or whose box cannot be read again, is focused with its caret not claimed.
+  func testAFieldThatScrollsWhileTakingFocusIsNotPlaced() throws {
+    var scrolledByFocus = Field(selectionFocuses: false, focusScrolls: 640)
+    XCTAssertEqual(try focus(&scrolledByFocus), .notPlaced(.layoutMoved))
+    XCTAssertEqual(scrolledByFocus.writes, ["AXSelectedTextRange 7", "AXFocused"])
+    XCTAssertEqual(scrolledByFocus.record, WebAreaFocusRecord(step: .focused, markShift: 640))
+    var scrolledByCaret = Field(selectionScrolls: 5)
+    XCTAssertEqual(try focus(&scrolledByCaret), .notPlaced(.layoutMoved))
+    var withinAPoint = Field(selectionScrolls: 0.75)
+    XCTAssertEqual(try focus(&withinAPoint), .placed(7), "a shift within a point is no scroll")
+    var unreadable = Field(markReadable: false)
+    XCTAssertEqual(try focus(&unreadable), .notPlaced(.layoutMoved), "a box that cannot be read shows nothing")
+    XCTAssertNil(unreadable.record?.markShift)
+  }
+
+  /// An empty field has no character to scroll: its caret at 0 is placed without a reference box.
+  func testAnEmptyFieldIsPlacedWithoutAReferenceBox() throws {
+    var field = Field(markReadable: false, length: 0)
+    XCTAssertEqual(try focus(&field, offset: .success(0)), .placed(0))
+    XCTAssertEqual(field.writes, ["AXSelectedTextRange 0"])
+  }
+
+  /// The review of #341 (round 1, P2): the empty field's exemption holds only while it is still empty at read-back. A
+  /// focus handler that fills it (and may scroll it) while the caret reads {0, 0} leaves its place unproven, with no
+  /// reference box from before the writes.
+  func testAFieldFilledWhileTakingFocusIsNotPlacedWithoutAReferenceBox() throws {
+    var field = Field(lengthAfterSelection: 100, markReadable: false, length: 0)
+    XCTAssertEqual(try focus(&field, offset: .success(0)), .notPlaced(.layoutMoved))
+    XCTAssertEqual(field.writes, ["AXSelectedTextRange 0"])
+  }
+
+  /// The review of #341 (round 2): the inverse. A field with text whose focus handler clears it (and may reset its
+  /// scroll) is empty at read-back, but was not before the writes: the exemption needs both, so its unreadable box
+  /// after the writes leaves the caret's place unproven.
+  func testAFieldClearedWhileTakingFocusIsNotPlacedWithoutTheReferenceBoxAfter() throws {
+    var field = Field(lengthAfterSelection: 0, selectionHidesMark: true, length: 100)
+    XCTAssertEqual(try focus(&field, offset: .success(0)), .notPlaced(.layoutMoved))
+    XCTAssertEqual(field.writes, ["AXSelectedTextRange 0"])
+    XCTAssertNil(field.record?.markShift, "the box read before the writes only")
   }
 
   /// The probe's contenteditable data: a write answers success and does nothing. Only the read-back counts.
-  func testAFocusWriteThatNeverReadsBackTrueAnswersClickUnconfirmed() {
-    var field = Field(takesFocus: false)
+  func testAFieldThatNeverReadsFocusedAnswersClickUnconfirmed() {
+    var field = Field(takesFocus: false, selectionFocuses: false)
     XCTAssertThrowsError(try focus(&field)) { error in
       XCTAssertEqual((error as? EngineError)?.errorName, "clickUnconfirmed")
     }
-    XCTAssertEqual(field.writes, ["AXFocused"], "no caret written into a field that never took focus")
-    XCTAssertEqual(field.offsetAsked, 0)
+    XCTAssertEqual(field.writes, ["AXSelectedTextRange 7", "AXFocused"], "the caret, then AXFocused, neither taking")
+    var noOffset = Field(takesFocus: false)
+    XCTAssertThrowsError(try focus(&noOffset, offset: .failure(.pointOutsideText))) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "clickUnconfirmed")
+    }
+    XCTAssertEqual(noOffset.writes, ["AXFocused"])
   }
 
   func testAPasswordFieldIsFocusedOnlyWithNothingOfItRead() throws {
@@ -203,32 +327,49 @@ final class WebAreaFocusTests: XCTestCase {
     XCTAssertEqual(try focus(&field, secure: true), .notPlaced(.secure))
     XCTAssertEqual(field.writes, ["AXFocused"])
     XCTAssertEqual(field.offsetAsked, 0, "no scan of a secure field")
+    XCTAssertFalse(field.trace.contains("mark"), "nor its boxes")
   }
 
   func testACaretThatReadsBackElsewhereIsNotPlaced() throws {
     var field = Field(takesSelection: false)
     XCTAssertEqual(try focus(&field), .notPlaced(.selectionMismatch))
-    XCTAssertEqual(field.writes, ["AXFocused", "AXSelectedTextRange 7"])
+    XCTAssertEqual(field.writes, ["AXSelectedTextRange 7"])
   }
 
   func testAPointInNoCharacterAndAnUnmappedRegionAreFocusedNotPlaced() throws {
     var field = Field()
     XCTAssertEqual(try focus(&field, offset: .failure(.pointOutsideText)), .notPlaced(.pointOutsideText))
-    XCTAssertEqual(field.writes, ["AXFocused"], "never a guessed offset")
+    XCTAssertEqual(field.writes, ["AXFocused"], "never a guessed offset: focused by AXFocused")
+    XCTAssertEqual(field.trace, ["offset", "check", "AXFocused"])
     var region = Field()
     XCTAssertEqual(try focus(&region, offset: .failure(.unmapped)), .notPlaced(.unmapped))
+    XCTAssertEqual(region.writes, ["AXFocused"])
+  }
+
+  /// #296's guard after the boxes' wait now runs before any write (#341): its refusal is the click's answer, with
+  /// nothing written, whether the wait found an offset or not.
+  func testAScreenChangedAfterTheWaitIsRefusedWithNothingWritten() throws {
+    for offsetAt in [boxesFrom(300), boxesFrom(.infinity)] {
+      var field = Field(fresh: true)
+      XCTAssertThrowsError(try focus(&field, offsetAt: offsetAt, beforeCaret: { throw EngineError(name: "screenChangedSinceScreenshot", "changed") })) {
+        XCTAssertEqual(($0 as? EngineError)?.errorName, "screenChangedSinceScreenshot")
+      }
+      XCTAssertEqual(field.writes, [])
+    }
   }
 
   func testAUserEventStopsTheClickBeforeTheFirstWrite() {
-    var clock: Double = 0
-    var writes = 0
-    XCTAssertThrowsError(try focusPlacingCaret(app: "Chrome", secure: false, fresh: true,
-                                               beforeMutating: { throw EngineError(name: "userIntervened", "stop") },
-                                               writeFocused: { writes += 1 }, focused: { true }, offset: { .success(0) },
-                                               sameTarget: { true }, valueLength: { 0 },
-                                               writeSelection: { _ in writes += 1 }, selection: { (0, 0) },
-                                               now: { clock }, sleep: { clock += $0 }))
-    XCTAssertEqual(writes, 0)
+    for offset in [Result<Int, CaretNotPlaced>.success(7), .failure(.pointOutsideText)] {
+      var field = Field(intervenesOnCheck: 1)
+      XCTAssertThrowsError(try focus(&field, offset: offset))
+      XCTAssertEqual(field.writes, [], "\(offset)")
+    }
+    var secure = Field(intervenesOnCheck: 1)
+    XCTAssertThrowsError(try focus(&secure, secure: true))
+    XCTAssertEqual(secure.writes, [])
+    var between = Field(selectionFocuses: false, intervenesOnCheck: 2)
+    XCTAssertThrowsError(try focus(&between), "a user event during the caret's settle stops the fallback")
+    XCTAssertEqual(between.writes, ["AXSelectedTextRange 7"])
   }
 
   // MARK: the caret's offset
@@ -393,7 +534,7 @@ final class WebAreaFocusTests: XCTestCase {
     var field = Field(fresh: true)
     XCTAssertEqual(try focus(&field, offsetAt: { self.twoLines(onLineTwo, lineTwo: $0 >= 400) }), .placed(4))
     XCTAssertEqual(field.offsetAsked, 5, "re-read until the clicked line's boxes came")
-    XCTAssertEqual(field.writes, ["AXFocused", "AXSelectedTextRange 4"])
+    XCTAssertEqual(field.writes, ["AXSelectedTextRange 4"])
   }
 
   func testAnIncompleteMissStillIncompleteAtTwoSecondsIsPointOutsideText() throws {
@@ -497,6 +638,31 @@ final class WebAreaFocusTests: XCTestCase {
     let note = focusNote("Chrome", .notPlaced(.secure))
     XCTAssertTrue(note.contains("existing selection, or to its start"), note)
     XCTAssertTrue(note.contains("select_text or set_value"), note)
+  }
+
+  /// #341: which write focused the field, and how far the reference box moved, are recorded; a field that scrolled says
+  /// its caret was written, not that typing goes to its old selection.
+  func testTheRecordCarriesTheFocusingWriteAndTheShiftAndTheScrolledNoteSaysSo() {
+    var record = ElementClickRecord(plan: .action("AXSelectedTextRange"), reason: .focusField, pressedRole: "AXTextArea", pressedAncestor: false,
+                                    walk: ["AXTextArea"], caret: "placed")
+    record.focusStep = WebAreaFocusRecord.Step.selection.rawValue
+    record.caretMarkShift = 0.25
+    XCTAssertEqual(record.wire["action"] as? String, "AXSelectedTextRange")
+    XCTAssertEqual(record.wire["focusStep"] as? String, "selection")
+    XCTAssertEqual(record.wire["caretMarkShift"] as? Double, 0.3)
+    let note = focusNote("Chrome", .notPlaced(.layoutMoved))
+    XCTAssertTrue(note.contains("caret was written at the point"), note)
+    XCTAssertTrue(note.contains("new screenshot"), note)
+    XCTAssertFalse(note.contains("existing selection"), note)
+  }
+
+  /// The reference character: the one after the caret where its box is usable, else the one before; none in an empty text.
+  func testTheReferenceCharacterIsTheOneAtTheCaretElseBefore() {
+    XCTAssertEqual(caretMarkIndex(offset: 3, length: 5, usable: { _ in true }), 3)
+    XCTAssertEqual(caretMarkIndex(offset: 3, length: 5, usable: { $0 != 3 }), 2, "a line break with no box at the caret")
+    XCTAssertEqual(caretMarkIndex(offset: 5, length: 5, usable: { _ in true }), 4, "the text's end")
+    XCTAssertEqual(caretMarkIndex(offset: 0, length: 5, usable: { $0 != 0 }), nil)
+    XCTAssertEqual(caretMarkIndex(offset: 0, length: 0, usable: { _ in true }), nil)
   }
 }
 

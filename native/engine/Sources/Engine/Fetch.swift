@@ -132,6 +132,7 @@ class ElementSource: @unchecked Sendable {
   private var dataCache: [ElementKey: ElementData] = [:]
   private var visibleCache: [ElementKey: [AXUIElement]?] = [:]
   private var frameCache: [ElementKey: CGRect?] = [:]
+  private var roleWithFrame: [ElementKey: String] = [:]
 
   /// The element's attributes; nil when the element cannot be read.
   final func data(_ element: AXUIElement) -> ElementData? {
@@ -243,10 +244,15 @@ class ElementSource: @unchecked Sendable {
     let key = ElementKey(element: element)
     if let known = frameCache[key] { return known }
     costs.count("frameReads")
-    let read = readFrame(element)
-    frameCache[key] = .some(read)
-    return read
+    let read = readFramedRole(element)
+    frameCache[key] = .some(read.frame)
+    if let role = read.role { roleWithFrame[key] = role }
+    return read.frame
   }
+
+  /// The role read with the element's frame (`frame`, the same call), nil when its frame was not read or gave no role:
+  /// #310's AXColumn among a wide list's shown children is known with no read of its own.
+  final func roleReadWithFrame(_ element: AXUIElement) -> String? { roleWithFrame[ElementKey(element: element)] }
 
   /// The Markdown rendering of a text element's value (the parameterized attributed-string read), timed.
   func markdown(_ element: AXUIElement, length: Int) -> String? {
@@ -263,13 +269,18 @@ class ElementSource: @unchecked Sendable {
     }
   }
 
-  func readFrame(_ element: AXUIElement) -> CGRect? {
+  func readFrame(_ element: AXUIElement) -> CGRect? { readFramedRole(element).frame }
+
+  /// The element's frame (AXPosition and AXSize) and, in the same call, its AXRole (#310); each nil when it gives none.
+  func readFramedRole(_ element: AXUIElement) -> (frame: CGRect?, role: String?) {
     costs.time("width") {
       var values: CFArray?
-      guard AXUIElementCopyMultipleAttributeValues(prepare(element), [kAXPositionAttribute, kAXSizeAttribute] as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values) == .success,
-            let slots = values as? [Any], slots.count == 2,
-            let origin = point(present(slots[0])), let extent = size(present(slots[1])) else { return nil }
-      return CGRect(origin: origin, size: extent)
+      guard AXUIElementCopyMultipleAttributeValues(prepare(element), [kAXPositionAttribute, kAXSizeAttribute, kAXRoleAttribute] as CFArray,
+                                                   AXCopyMultipleAttributeOptions(rawValue: 0), &values) == .success,
+            let slots = values as? [Any], slots.count == 3 else { return (nil, nil) }
+      let role = present(slots[2]) as? String
+      guard let origin = point(present(slots[0])), let extent = size(present(slots[1])) else { return (nil, role) }
+      return (CGRect(origin: origin, size: extent), role)
     }
   }
 }

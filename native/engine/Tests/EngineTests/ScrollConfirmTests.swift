@@ -769,6 +769,16 @@ final class ScrollConfirmTests: XCTestCase {
     XCTAssertTrue(ax.writes.isEmpty, "the fallback never writes a bar near its end")
   }
 
+  /// Round 6's P2: a surface that ignores the wheel at offset 784 of 800, bar 0.98: its content frame shows 16 points
+  /// left beyond the viewport, so the end judged after the wheel does not apply; unconfirmed, and nothing written.
+  func testTheEndAfterTheWheelYieldsToADocumentRunningOn() throws {
+    let scene = ScrollScene(offset: 784, barSettable: true)
+    XCTAssertEqual((scene.ax.values[5]?[kAXValueAttribute] as? NSNumber)?.doubleValue ?? 0, 0.98, accuracy: 1e-9)
+    let record = try confirmScroll(hit: scene.row(at: 200), direction: .down, delta: 120, ax: scene.ax.ops, post: {})
+    XCTAssertEqual(record.outcome, .unconfirmed)
+    XCTAssertTrue(scene.ax.writes.isEmpty, "the bar near its end is still never written")
+  }
+
   /// P2: a page scroller's first child is a movement probe only: a first row taller than the viewport is neither the
   /// document's extent for the conversion nor its end.
   func testAPageScrollersFirstChildIsNoExtent() throws {

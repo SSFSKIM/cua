@@ -356,6 +356,15 @@ func scrollAtEnd(_ reading: ScrollReading, direction: ScrollDirection, geometry:
   return false
 }
 
+/// Whether readable document geometry shows content beyond the viewport's edge in the scroll's direction by more than
+/// `scrollEndEdgeTolerance`: a scroll area's content frame running past the viewport's edge (one clipped to the viewport,
+/// as Settings' sidebar outline is, never does; AXContentSize gives a length, not a position, so it shows nothing here). Round 6's P2: a surface that ignores the wheel at bar 0.98 with 16 points left.
+func scrollDocumentRunsOn(_ reading: ScrollReading, direction: ScrollDirection, geometry: ScrollGeometry) -> Bool {
+  guard geometry.kind == .scrollArea, let viewport = geometry.viewport, let content = reading.content else { return false }
+  let (viewLead, viewTrail) = geometry.horizontal ? (viewport.minX, viewport.maxX) : (viewport.minY, viewport.maxY)
+  return scrollSign(direction) > 0 ? content.trail > viewTrail + scrollEndEdgeTolerance : content.lead < viewLead - scrollEndEdgeTolerance
+}
+
 /// Whether a bar reads within `scrollBarNearEnd` of its end in the scroll's direction; false unread.
 func scrollBarNearItsEnd(_ bar: Double?, direction: ScrollDirection) -> Bool {
   guard let bar else { return false }
@@ -483,7 +492,9 @@ private func confirming(_ record: inout ScrollConfirmRecord, hit: AXUIElement?, 
   // The end judged after the wheel (the final hosted pass, run 42546633581: Settings' sidebar reads 0.976 at its real
   // bottom with its last row clipped, so the strict rule before the wheel does not call it the end): the wheel went and
   // nothing moved within the window, the bar near its end before and after. A list with content left would have moved.
-  if scrollBarNearItsEnd(before.bar, direction: direction) && scrollBarNearItsEnd(after.bar, direction: direction) {
+  // Never where readable document geometry shows content beyond the viewport that way (round 6's P2).
+  if scrollBarNearItsEnd(before.bar, direction: direction) && scrollBarNearItsEnd(after.bar, direction: direction),
+     !scrollDocumentRunsOn(after, direction: direction, geometry: geometry) {
     record.outcome = .atEnd
     return
   }

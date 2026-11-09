@@ -355,6 +355,42 @@ if args.count == 6, args[1] == "mce", let pid = pid_t(args[2]), let p = pointArg
   exit(0)
 }
 
+//   ax boxes <pid> <x> <y> <file> <expect>   #290: the field at the point (its AXEditableAncestor, else the hit), its AXValue
+//       and every character's AXBoundsForRange {i, 1} as read (null for a failed read), written to <file> for an offline
+//       replay through the engine's caret search; one JSON line with the counts and the time per read.
+if args.count == 7, args[1] == "boxes", let pid = pid_t(args[2]), let p = pointArgs(3), let expect = Int(args[6]) {
+  let file = args[5]
+  let app = AXUIElementCreateApplication(pid)
+  AXUIElementSetMessagingTimeout(app, 3)
+  var out: [String: Any] = ["trusted": AXIsProcessTrusted(), "point": ["x": p.x, "y": p.y], "expect": expect]
+  var hitRef: AXUIElement?
+  out["hitError"] = AXUIElementCopyElementAtPosition(app, Float(p.x), Float(p.y), &hitRef).rawValue
+  guard let hit = hitRef else { emit(out); exit(0) }
+  let field = element(attr(hit, "AXEditableAncestor")) ?? hit
+  let value = str(field, kAXValueAttribute) ?? ""
+  let n = (value as NSString).length
+  out["fieldRole"] = str(field, kAXRoleAttribute) ?? "?"
+  out["length"] = n
+  var boxes: [Any] = []
+  var failed = 0, empty = 0
+  let t0 = Date()
+  for i in 0..<n {
+    guard let r = rect(param(field, "AXBoundsForRange", rangeValue(i, 1)).0) else { failed += 1; boxes.append(NSNull()); continue }
+    if r.height <= 0 || r.width <= 0 { empty += 1 }
+    boxes.append([r.origin.x, r.origin.y, r.width, r.height])
+  }
+  let ms = Date().timeIntervalSince(t0) * 1000
+  out["reads"] = n
+  out["ms"] = ms
+  out["msPerRead"] = n > 0 ? ms / Double(n) : 0
+  out["failed"] = failed
+  out["empty"] = empty
+  let dump: [String: Any] = ["value": value, "point": ["x": p.x, "y": p.y], "expect": expect, "boxes": boxes]
+  if let data = try? JSONSerialization.data(withJSONObject: dump) { out["written"] = FileManager.default.createFile(atPath: file, contents: data) }
+  emit(out)
+  exit(0)
+}
+
 //   ax longta <pid> <x> <y> <expect>   #283 round 2: a long scrolled textarea. AXVisibleCharacterRange, the AXBoundsForRange
 //       scan for the point from 0 and bounded by the visible range (each timed), the boxes of the visible range's first and
 //       last characters, then AXSelectedTextRange {found, 0}.

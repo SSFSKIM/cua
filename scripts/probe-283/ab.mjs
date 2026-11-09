@@ -39,20 +39,28 @@ const LINES = ['first line of the notes', 'second line holds more words', 'third
 const CE = 'golf hotel india juliet kilo lima mike';
 const MCE_HTML = 'alpha bravo <b>charlie delta</b><br>echo foxtrot <span>golf hotel</span> india';
 const PW = 'pwdummy1';  // a dummy; the page sends only its length
+// #290: two long textareas of 40-character lines, scrolled mid-field: #283's round-2 size (75 lines, 3,074 characters)
+// and one past #283's 5,000-character cap (500 lines, 20,499 characters).
+const longLine = i => (`line ${String(i).padStart(3, '0')} ` + 'abcdefghijklmnopqrstuvwxyz0123456789'.repeat(2)).slice(0, 40);
+const LONG = Array.from({length: 75}, (_, i) => longLine(i)).join('\n');
+const HUGE = Array.from({length: 500}, (_, i) => longLine(i)).join('\n');
 const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe283 ab page</title>
 <style>body{margin:8px;font:14px sans-serif}.f{font:16px/20px Menlo,monospace;padding:4px 6px;border:1px solid #888;margin:6px 0;display:block;letter-spacing:0;width:460px}
-#field-input,#field-pw{height:20px}#field-textarea{height:80px;resize:none;overflow:hidden;white-space:pre}#field-ce{height:20px;white-space:pre;outline:none}#field-mce{outline:none;white-space:normal}</style></head>
+#field-input,#field-pw{height:20px}#field-textarea,#field-lta,#field-hta{height:80px;resize:none;overflow:hidden;white-space:pre}#field-ce{height:20px;white-space:pre;outline:none}#field-mce{outline:none;white-space:normal}</style></head>
 <body><p><b>probe283 ab page</b></p>
 <input id="field-input" class="f" type="text" aria-label="Probe input" spellcheck="false" autocomplete="off" value="${INPUT}">
 <textarea id="field-textarea" class="f" aria-label="Probe notes" spellcheck="false" wrap="off" rows="4">${LINES.join('\n')}</textarea>
 <div id="field-ce" class="f" contenteditable="true" aria-label="Probe editor" spellcheck="false">${CE}</div>
 <div id="field-mce" class="f" contenteditable="true" aria-label="Probe multi editor" spellcheck="false">${MCE_HTML}</div>
 <input id="field-pw" class="f" type="password" aria-label="Probe password" autocomplete="off" value="${PW}">
+<textarea id="field-lta" class="f" aria-label="Probe long notes" spellcheck="false" wrap="off" rows="4">${LONG}</textarea>
+<textarea id="field-hta" class="f" aria-label="Probe huge notes" spellcheck="false" wrap="off" rows="4">${HUGE}</textarea>
 <script>(() => {
 const prior = new URLSearchParams(location.search).get('prior');
 const load = Math.random().toString(36).slice(2, 10);
 const I = document.getElementById('field-input'), T = document.getElementById('field-textarea'), C = document.getElementById('field-ce'),
-  M = document.getElementById('field-mce'), W = document.getElementById('field-pw');
+  M = document.getElementById('field-mce'), W = document.getElementById('field-pw'), LT = document.getElementById('field-lta'),
+  HT = document.getElementById('field-hta');
 const c = {pointerdown: 0, pointerup: 0, mousedown: 0, mouseup: 0, click: 0, pointermove: 0, mousemove: 0, keydown: 0, input: 0, selectionchange: 0};
 let seq = 0;
 const texts = el => { const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); const a = []; while (w.nextNode()) a.push(w.currentNode); return a; };
@@ -63,10 +71,12 @@ const markIn = el => { const t = texts(el); for (let i = 0; i < t.length; i++) {
 const state = (ev, extra) => { const s = getSelection(); return {load, seq: ++seq, t: Date.now(), ev, ...extra, counts: {...c},
   active: document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : null, hasFocus: document.hasFocus(),
   sel: {input: [I.selectionStart, I.selectionEnd], textarea: [T.selectionStart, T.selectionEnd], pw: [W.selectionStart, W.selectionEnd],
+    lta: [LT.selectionStart, LT.selectionEnd], hta: [HT.selectionStart, HT.selectionEnd],
     ce: {anchor: where(C, s.anchorNode, s.anchorOffset), focus: where(C, s.focusNode, s.focusOffset)},
     mce: {anchor: where(M, s.anchorNode, s.anchorOffset), focus: where(M, s.focusNode, s.focusOffset)}},
   values: {input: I.value, textarea: T.value, ce: C.textContent, mce: texts(M).map(x => x.data)}, pwLength: W.value.length,
-  mark: {input: I.value.indexOf('QZ'), textarea: T.value.indexOf('QZ'), ce: markIn(C), mce: markIn(M)}}; };
+  scroll: {lta: LT.scrollTop, hta: HT.scrollTop}, lengths: {lta: LT.value.length, hta: HT.value.length},
+  mark: {input: I.value.indexOf('QZ'), textarea: T.value.indexOf('QZ'), ce: markIn(C), mce: markIn(M), lta: LT.value.indexOf('QZ'), hta: HT.value.indexOf('QZ')}}; };
 const send = (ev, extra) => navigator.sendBeacon('/b', JSON.stringify(state(ev, extra)));
 for (const k of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'pointermove', 'mousemove', 'keydown', 'input'])
   document.addEventListener(k, e => { c[k] += 1; if (!k.endsWith('move')) send(k, {trusted: e.isTrusted, target: e.target.id || e.target.tagName}); }, true);
@@ -78,8 +88,8 @@ const layout = () => {
   const cw = ctx.measureText('MMMMMMMMMM').width / 10;
   const box = el => { const s = getComputedStyle(el), r = el.getBoundingClientRect(); return {r, l: r.left + parseFloat(s.borderLeftWidth) + parseFloat(s.paddingLeft), t: r.top + parseFloat(s.borderTopWidth) + parseFloat(s.paddingTop), lh: parseFloat(s.lineHeight), bl: r.left + parseFloat(s.borderLeftWidth), pl: parseFloat(s.paddingLeft)}; };
   const pt = (node, k) => { const r = document.createRange(); r.setStart(node, k); r.setEnd(node, k + 1); const b = r.getBoundingClientRect(); return {x: b.left + 0.3 * b.width, y: b.top + b.height / 2}; };
-  const bi = box(I), bt = box(T), bw = box(W), mt = texts(M);
-  return {cw, targets: {
+  const bi = box(I), bt = box(T), bw = box(W), mt = texts(M), bl = box(LT), bh = box(HT);
+  return {cw, scroll: {lta: LT.scrollTop, hta: HT.scrollTop}, targets: {
     input: {field: 'input', p: {x: bi.l + 14.3 * cw, y: bi.r.top + bi.r.height / 2}, expect: 14, length: I.value.length},
     textarea: {field: 'textarea', p: {x: bt.l + 14.3 * cw, y: bt.t + 1.5 * bt.lh}, expect: taOffset(1, 14), length: T.value.length},
     ce: {field: 'ce', p: pt(C.firstChild, 19), expect: 19, length: C.textContent.length},
@@ -90,9 +100,15 @@ const layout = () => {
     // Past line 1's end (its 28 characters), in the textarea: the end of that line, before its break.
     'past-end': {field: 'textarea', p: {x: bt.l + 40.3 * cw, y: bt.t + 1.5 * bt.lh}, expect: taOffset(1, lines[1].length)},
     // In the input's left padding, left of its first character: in no box, past no line end.
-    padding: {field: 'input', p: {x: bi.bl + 0.4 * bi.pl, y: bi.r.top + bi.r.height / 2}, expect: null, notPlaced: 'pointOutsideText'}}};
+    padding: {field: 'input', p: {x: bi.bl + 0.4 * bi.pl, y: bi.r.top + bi.r.height / 2}, expect: null, notPlaced: 'pointOutsideText'},
+    // #290: line 37 of the 3,074-character textarea scrolled to line 32, line 255 of the 20,499-character one scrolled to
+    // line 250, each at column 14; and past line 255's end (its 40 characters).
+    lta: {field: 'lta', p: {x: bl.l + 14.3 * cw, y: bl.t + 5.5 * bl.lh}, expect: 37 * 41 + 14, length: LT.value.length},
+    hta: {field: 'hta', p: {x: bh.l + 14.3 * cw, y: bh.t + 5.5 * bh.lh}, expect: 255 * 41 + 14, length: HT.value.length},
+    'hta-past-end': {field: 'hta', p: {x: bh.l + 44.3 * cw, y: bh.t + 5.5 * bh.lh}, expect: 255 * 41 + 40, length: HT.value.length}}};
 };
 addEventListener('load', () => {
+  LT.scrollTop = 32 * 20; HT.scrollTop = 250 * 20;
   if (prior === 'input') I.setSelectionRange(6, 6);
   document.fonts.ready.then(() => { navigator.sendBeacon('/layout', JSON.stringify(layout())); send('load', {prior}); });
   setInterval(() => send('tick'), 250);
@@ -224,10 +240,17 @@ for (const engine of ['main', 'branch']) for (const timing of ['fresh', 'late'])
 for (const target of ['past-end', 'padding']) CELLS.push({label: `branch/late/${target}`, engine: 'branch', timing: 'late', target});
 // A fresh click past a line's end: placed once the boxes are there, without waiting out the 2 s.
 CELLS.push({label: 'branch/fresh/past-end', engine: 'branch', timing: 'fresh', target: 'past-end'});
+// #290: the long textareas, main against the branch, 3 s and 0.1 s after the observation; then each field's boxes
+// dumped once 3 s after a branch observation (`ax boxes`), for the offline replay through the search.
+for (const engine of ['main', 'branch']) {
+  for (const target of ['lta', 'hta', 'hta-past-end']) CELLS.push({label: `long/${engine}/late/${target}`, engine, timing: 'late', target});
+  for (const target of ['lta', 'hta']) CELLS.push({label: `long/${engine}/fresh/${target}`, engine, timing: 'fresh', target});
+}
+for (const target of ['lta', 'hta']) CELLS.push({label: `long/dump/late/${target}`, engine: 'branch', timing: 'late', target, dump: true});
 // --repeat N: each selected cell N times (labels suffixed #1…#N), to count a race.
 const REPEAT = Math.max(1, Number(arg('repeat') || 1));
 const RUN = CELLS.filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)))
-  .flatMap(c => REPEAT === 1 ? [c] : Array.from({length: REPEAT}, (_, i) => ({...c, label: `${c.label}#${i + 1}`})));
+  .flatMap(c => REPEAT === 1 || c.dump ? [c] : Array.from({length: REPEAT}, (_, i) => ({...c, label: `${c.label}#${i + 1}`})));
 
 async function cell(spec) {
   const row = {label: spec.label, engine: spec.engine, timing: spec.timing, target: spec.target};
@@ -261,6 +284,14 @@ async function cell(spec) {
     row.point = {screen, screenshotPixel: {x, y}, scale, window: wf, webArea: webArea.frame, clickScreen: {x: wf.x + x / scale, y: wf.y + y / scale}};
     const wait = observedAt + (spec.timing === 'fresh' ? 100 : 3000) - Date.now();
     if (wait > 0) await sleep(wait);
+    if (spec.dump) {
+      const file = join(OUT, `boxes-${spec.target}-rep${process.env.P283_REP ?? 0}.json`);
+      row.dump = {file, summary: await ax(['boxes', String(chrome.pid), String(row.point.clickScreen.x), String(row.point.clickScreen.y), file, String(t.expect)])};
+      row.scrollAtDump = latest()?.scroll ?? null;
+      try { await w.call('shutdown', {}, 5000); } catch {}
+      w.close();
+      return row;
+    }
     row.orderBefore = await ax(['order', String(chrome.pid)]);
     row.frontBefore = frontmost();
     const before = latest();
@@ -336,6 +367,7 @@ for (const spec of RUN) {
   rows.push(row);
   writeFileSync(join(OUT, 'results.json'), JSON.stringify({config, cells: rows}, null, 1));
   if (row.exception || row.problem) { log(`${row.label}: PROBLEM ${JSON.stringify(row.problem ?? '')} ${row.exception ?? ''}`); continue; }
+  if (row.dump) { log(`${row.label}: dump ${JSON.stringify(row.dump.summary)} scroll=${JSON.stringify(row.scrollAtDump)}`); continue; }
   const v = row.verdict;
   log(`${row.label}: +${row.clickAfterObservationMs}ms ${v.answer} ${row.clickMs}ms reason=${v.reason} caret=${v.caretClaim} walk=${JSON.stringify(v.walk)} stopped=${v.walkStopped} | page active=${row.afterClick.active} caret=${JSON.stringify(v.pageCaret)} expected=${row.expected.offset} typed=${v.typedAt} pointer=${row.pointerTotal} front=${row.frontAfterClick}/${row.frontAfterType} order=${row.orderBefore?.pidIndex}${row.orderAfterClick?.pidIndex} ${v.problems.length ? 'PROBLEMS ' + JSON.stringify(v.problems) : 'ok'}`);
 }

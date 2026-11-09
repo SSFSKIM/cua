@@ -225,6 +225,115 @@ test('ticking evidence reports the actual recorded text actions rather than assu
   assert.equal(gate.tickEvidence(row,[parent,text]).recorded.actionable,true);
 });
 
+function tickingRefusal() {
+  const row=tickingRow();
+  row.click={error:'stalePoint',stalePoint:{verdict:'refused',reason:'newElementOverPoint',recordedRole:'AXStaticText',hitRole:'AXStaticText'}};
+  row.signals={hit:{chain:chain('AXWebArea',null),chainRecorded:[true]}};
+  return row;
+}
+const tickingNodes=()=>[{role:'AXStaticText',value:'12:00:00',depth:7,frame:rect(416,160,80,20),actions:['AXShowMenu']}];
+const recoveredSignals=()=>({hit:{chain:[
+  ['AXStaticText',null,null,[416,160,80,20],null,null,'12:00:02'],
+  ['AXWebArea',null,null,[400,100,620,600],null,null,null]],
+  chainRecorded:[false,true],newElementIndex:0,newElementListed:true}});
+
+test('a new-element refusal needs a matching side hit and new element, not a generic chain', () => {
+  const row=tickingRefusal(), nodes=tickingNodes();
+  const click=structuredClone(row.click);
+  for(const hit of [row.signals.hit,null,{chain:[]}]) {
+    row.signals={hit};
+    const evidence=gate.tickEvidence(row,nodes);
+    assert.equal(evidence.valid,false);
+    assert.equal(evidence.refusalEvidenceComplete,false);
+    assert.ok(evidence.issues.some(s=>s.includes('refusal evidence incomplete')));
+  }
+  row.refusalSignals=recoveredSignals();
+  const recovered=gate.tickEvidence(row,nodes);
+  assert.equal(recovered.valid,true);
+  assert.equal(recovered.refusalEvidenceComplete,true);
+  assert.deepEqual(recovered.hitChain,row.refusalSignals.hit.chain);
+  assert.deepEqual(recovered.chainRecorded,[false,true]);
+  assert.equal(recovered.newElementIndex,0);
+  assert.deepEqual(recovered.recorded.actions,['AXShowMenu']);
+  assert.equal(recovered.recorded.actionable,false);
+  assert.deepEqual(row.click,click);
+  for(const patch of [
+    {newElementIndex:null},{newElementIndex:2},{newElementIndex:1},
+    {chainRecorded:[true,true]},
+    {chain:[['AXWebArea',null,null,[400,100,620,600],null,null,null],...row.refusalSignals.hit.chain.slice(1)]},
+    {chain:[['AXStaticText',null,null,[800,160,80,20],null,null,'12:00:02'],...row.refusalSignals.hit.chain.slice(1)]},
+  ]) {
+    row.refusalSignals={hit:{...recoveredSignals().hit,...patch}};
+    assert.equal(gate.tickEvidence(row,nodes).valid,false);
+  }
+});
+
+test('stillCell preserves a post-refusal read only when the pre-click chain cannot explain the refusal', async () => {
+  const source=readFileSync(new URL('./measure.mjs',import.meta.url),'utf8');
+  const fn=source.slice(source.indexOf('async function stillCell('),source.indexOf('/// A browser kept at a scene'));
+  for(const scenario of ['generic','complete','kept','unrecovered']) {
+    const queries=[], results=[], recovered=recoveredSignals();
+    const click=tickingRefusal().click;
+    if(scenario==='kept'){delete click.error;click.stalePoint.reason='recordedHit';}
+    const pre=scenario==='complete'?recovered:tickingRefusal().signals;
+    const post=scenario==='unrecovered'?pre:recovered;
+    const node=tickingNodes()[0], point={x:456,y:170};
+    const sky={nodes:[node],window:{frame:rect(400,100,620,600)}};
+    let closed=false;
+    const ctx={config:{head:'branch'},results,events:[],
+      connect:async()=>({execute:async()=>click,close:()=>{closed=true;}}),observe:async()=>sky,
+      toPixels:()=>({px:point,screen:point}),sleep:async()=>{},save:()=>{},brief:r=>r,
+      ask:async q=>{queries.push(q);return queries.length===1?{}:queries.length===2?pre:post;},
+      hasRefusalHit:gate.hasRefusalHit,emuW:()=>false,emuG:()=>false,emuGanc:()=>false,log:()=>{},shadowLine:()=>''};
+    const run=vm.runInNewContext(`(${fn})`,ctx);
+    const row=await run({app:'cft',scene:'shared:clock',cell:'ticking-text',at:'text',rep:1,tickCase:true},123,'shared',()=>({node,point}));
+    assert.equal(row.exception,undefined);
+    assert.equal(row.click,click);
+    assert.equal(row.signals,pre);
+    assert.equal(results.length,1);
+    assert.equal(closed,true);
+    const needsRecovery=['generic','unrecovered'].includes(scenario);
+    assert.equal(queries.length,needsRecovery?3:2);
+    assert.equal(row.refusalSignals,needsRecovery?post:undefined);
+    if(needsRecovery) {
+      assert.equal(queries[2].op,'signals');
+      assert.equal(queries[2].compare,true);
+      assert.equal(queries[2].remember,undefined);
+      assert.equal(queries[2].pid,123);
+      assert.equal(queries[2].x,456);
+      assert.equal(queries[2].y,170);
+    }
+  }
+});
+
+test('the ticking report retains incomplete refusals and prints the recovered post-refusal chain', () => {
+  const root=mkdtempSync(join(tmpdir(),'p330-ticking-reader-'));
+  try {
+    const incomplete={...tickingRefusal(),app:'cft',scene:'shared:clock',label:'incomplete'};
+    const recovered={...tickingRefusal(),app:'cft',scene:'shared:clock',label:'recovered',refusalSignals:recoveredSignals()};
+    for(const row of [incomplete,recovered])row.ticking=gate.tickEvidence(row,tickingNodes());
+    writeFileSync(join(root,'results.json'),JSON.stringify({config:{head:'branch',group:'ticking-clock'},results:[incomplete,recovered]}));
+    const p=spawnSync(process.execPath,[new URL('./offline/ticking-table.mjs',import.meta.url).pathname,root],{encoding:'utf8'});
+    assert.equal(p.status,0,p.stderr);
+    const summary=JSON.parse(readFileSync(join(root,'tick-summary.json'),'utf8'));
+    assert.equal(summary.refusals.length,2);
+    assert.equal(summary.complete,false);
+    assert.equal(summary.gate,false);
+    assert.deepEqual(summary.matrix.find(m=>m.head==='branch'&&m.app==='cft'&&m.cell==='clock'),
+      {head:'branch',app:'cft',cell:'clock',attempted:2,valid:1,kept:0,dl:2,reasons:{newElementOverPoint:2}});
+    const details=p.stdout.split('\n').filter(s=>s.startsWith('{')).map(s=>JSON.parse(s));
+    const first=details.find(d=>d.label==='incomplete'&&d.record);
+    assert.equal(first.coverage.refusalEvidenceComplete,false);
+    assert.equal(first.hitThroughNewElement,null);
+    const second=details.find(d=>d.label==='recovered'&&d.record);
+    assert.equal(second.evidenceSource,'post-refusal side read');
+    assert.equal(second.coverage.valid,true);
+    assert.deepEqual(second.fullSideChain,recovered.refusalSignals.hit.chain);
+    assert.deepEqual(second.hitThroughNewElement,recovered.refusalSignals.hit.chain.slice(0,1));
+    assert.deepEqual(second.recorded.actions,['AXShowMenu']);
+  } finally {rmSync(root,{recursive:true,force:true});}
+});
+
 test('owned child termination is awaited, including SIGKILL escalation', async () => {
   const {stopOwnedChild,childRunning}=await import('./browser-lifecycle.mjs');
   const child=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{}); console.log('ready'); setInterval(()=>{},1000)"],{stdio:['ignore','pipe','inherit']});

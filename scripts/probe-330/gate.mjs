@@ -84,6 +84,15 @@ export function tickingTarget(sky,fixture) {
     fixture:{before:fixture,domPoint,pointInText:holds(line,domPoint)}};
 }
 
+// A side read is diagnostic, not the engine's private record: require a matching hit at the point and
+// an actual unrecorded-to-recorded ancestor boundary below its web area before calling a refusal evidenced.
+export function hasRefusalHit(row,hit=row.refusalSignals?.hit??row.signals?.hit) {
+  const chain=hit?.chain,i=hit?.newElementIndex,area=chain?.findIndex(n=>n[0]==='AXWebArea')??-1;
+  const [x,y,width,height]=chain?.[0]?.[3]??[];
+  return !!(chain?.[0]?.[0]===row.click?.stalePoint?.hitRole&&holds({x,y,width,height},row.point?.screen)
+    &&Number.isInteger(i)&&i>=0&&i<area&&hit.chainRecorded?.[i]===false&&hit.chainRecorded?.[i+1]===true);
+}
+
 // The engine's recordedRole, not the chosen fixture node, identifies whose actions we report.
 // AXPress is reported explicitly; ShowMenu/ScrollToVisible alone do not make the recorded text actionable.
 export function tickEvidence(row,nodes) {
@@ -101,8 +110,11 @@ export function tickEvidence(row,nodes) {
   if(!recorded)issues.push('recorded node actions unavailable');
   const rowNode=nodes.find(n=>n.role==='AXLink'&&holds(n.frame,row.point?.screen)&&(n.actions??[]).includes('AXPress'));
   if(before?.kind==='relative'&&!rowNode)issues.push('timestamp is not inside an AXPress link row');
-  return {valid:!issues.length,issues,ticks:ticks.length,recorded,rowActionable:!!rowNode,
-    hitChain:row.signals?.hit?.chain??[],chainRecorded:row.signals?.hit?.chainRecorded??null,newElementIndex:row.signals?.hit?.newElementIndex??null};
+  const hit=row.refusalSignals?.hit??row.signals?.hit;
+  const refusalEvidenceComplete=sp?.reason==='newElementOverPoint'?hasRefusalHit(row,hit):null;
+  if(refusalEvidenceComplete===false)issues.push('new-element refusal evidence incomplete: matching hit chain and new element unavailable');
+  return {valid:!issues.length,issues,ticks:ticks.length,recorded,rowActionable:!!rowNode,refusalEvidenceComplete,
+    hitChain:hit?.chain??[],chainRecorded:hit?.chainRecorded??null,newElementIndex:hit?.newElementIndex??null};
 }
 
 export async function runTicking(scene,a) {

@@ -23,7 +23,7 @@ import {mkdirSync, writeFileSync, rmSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {launch, placePid, version, CFT, STABLE} from '../probe-316/browser.mjs';
-import {gatePage, runGate, runMailLike, runTicking} from './gate.mjs';
+import {gatePage, runGate, runMailLike, runTicking, hasRefusalHit} from './gate.mjs';
 import {childRunning, stopOwnedChild} from './browser-lifecycle.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-330: runs only on a GitHub-hosted runner'); process.exit(2); }
@@ -861,6 +861,9 @@ async function stillCell(meta, pid, mode, place, between) {
     const mark = events.length;
     const r = await w.execute('click', {pid, x: px.x, y: px.y});
     row.click = brief(r);
+    if (meta.tickCase && row.click?.stalePoint?.reason === 'newElementOverPoint' && !hasRefusalHit(row)) {
+      row.refusalSignals = await ask({op: 'signals', pid, compare: true, ...screen, window: win});
+    }
     await sleep(900);
     row.events = events.slice(mark).filter(e => !['ready', 'fready', 'state', 'keydown'].includes(e.type)).map(e => `${e.frame ?? 'top'}:${e.type}:${e.id}`).slice(0, 12);
     if (meta.expect) row.landed = row.events.some(e => meta.expect.some(id => e.endsWith(`:${id}`) && /:(click|focusin|change):/.test(e)));

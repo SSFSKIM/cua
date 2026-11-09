@@ -147,6 +147,38 @@ final class RecreatedTokenTests: XCTestCase {
     XCTAssertEqual(tokens(second, "AXGroup").first, groups.first, "the header group, not re-created, kept by CFEqual")
   }
 
+  /// A header cell spanning both columns is each one's first child (Chromium lists a spanning cell under every column
+  /// it covers): it tells no column apart, so none keeps a token, also when a column is inserted under the widened
+  /// header (the review's case, where the anchor would have handed the first column's token to the new one).
+  func testAFirstChildSharedByColumnsAnchorsNone() {
+    let tree = table(), lineage = Lineage()
+    tree.children[5] = [12, 8, 9]
+    tree.children[6] = [12, 10, 11]
+    let columns = tokens(walk(tree, lineage), "AXColumn")
+    recreate(tree, [5: 15, 6: 16])
+    XCTAssertTrue(Set(tokens(walk(tree, lineage), "AXColumn")).isDisjoint(with: columns), "re-created under a spanning header")
+    let again = tokens(walk(tree, lineage), "AXColumn")
+    recreate(tree, [15: 25, 16: 26])
+    tree.extra[24] = tree.extra[25]
+    tree.frames[24] = tree.frames[25]
+    tree.children[24] = [12, 40, 41]
+    tree.children[2] = [3, 4, 24, 25, 26, 7]
+    XCTAssertTrue(Set(tokens(walk(tree, lineage), "AXColumn")).isDisjoint(with: again), "a column inserted under it")
+  }
+
+  /// Emission's gone checks stop at the observation's deadline: an app that stopped answering after the selection is
+  /// asked once, and the columns not asked take new tokens.
+  func testNoGoneCheckIsMadePastTheDeadline() {
+    let tree = table(), lineage = Lineage()
+    let columns = tokens(walk(tree, lineage), "AXColumn")
+    recreate(tree, [5: 15, 6: 16])
+    tree.goneDelay = 300_000
+    let source = FakeSource(tree)
+    let now = tokens(walk(tree, lineage, limits: WalkLimits(deadline: monotonicMilliseconds() + 150), source: source), "AXColumn")
+    XCTAssertEqual(source.goneReads.values.reduce(0, +), 1, "asked once, then past the deadline")
+    XCTAssertNotEqual(now.last, columns.last, "the column not asked takes a new token")
+  }
+
   /// The gone check costs one read per candidate, made only for a re-created element that matched in everything else.
   func testTheOldHandleIsAskedOnlyForACandidate() {
     let tree = table(), lineage = Lineage()

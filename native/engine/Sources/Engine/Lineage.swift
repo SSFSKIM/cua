@@ -390,7 +390,9 @@ struct SiblingRead {
 /// own move is taken out (`parentShift`: a scroll moves table and columns together), the same first child (CFEqual:
 /// a column heads its cells, which Chromium does not re-create), and, asked last and only then, the old handle gone
 /// (`gone`). A frame or a first child missing on either side is no match: a frameless or childless element takes a new
-/// token, as under the vendor's rule. A real replacement fails one of these: an element of any other role, an old
+/// token, as under the vendor's rule. So is a first child that heads more than one sibling of the role on either side
+/// (a header cell spanning several columns is every one of their first children): it tells no column apart, and with
+/// Chromium framing every column as the whole table nothing else would. A real replacement fails one of these: an element of any other role, an old
 /// element still alive, a column inserted (the columns after it head other cells than the old ones at their places), a
 /// changed header. `entry` is the previous revision's entry by number; `read` a new sibling's by position, nil where the walk
 /// did not read it. Nothing is read, built or asked unless the vendor's rule left both a new sibling and an old
@@ -412,10 +414,21 @@ func keepRecreated(_ matched: [Int?], old: [(index: Int, element: AXUIElement)],
   }
   guard unkept else { return matched }
   let shift = parentShift()
+  let reads = (0..<count).map { position in read(position).flatMap { synthesized($0.identity.role) ? $0 : nil } }
+  // How many siblings of a role each first child heads, on each side: only a first child heading one is an anchor.
+  var oldHeads: [String: [ElementKey: Int]] = [:], newHeads: [String: [ElementKey: Int]] = [:]
+  for sibling in old {
+    guard let found = entry(sibling.index), synthesized(found.identity.role), let child = found.firstChild else { continue }
+    oldHeads[found.identity.role, default: [:]][ElementKey(element: child), default: 0] += 1
+  }
+  for found in reads.compactMap({ $0 }) {
+    guard let child = found.firstChild else { continue }
+    newHeads[found.identity.role, default: [:]][ElementKey(element: child), default: 0] += 1
+  }
   var result = matched
   var places: [String: Int] = [:]
   for position in 0..<count {
-    guard let read = read(position), synthesized(read.identity.role) else { continue }
+    guard let read = reads[position] else { continue }
     let role = read.identity.role
     let place = places[role, default: 0]
     places[role] = place + 1
@@ -426,7 +439,8 @@ func keepRecreated(_ matched: [Int?], old: [(index: Int, element: AXUIElement)],
     guard let now = read.frame, let before = entry.frame,
           abs(now.minX - shift.dx - before.minX) <= 1, abs(now.minY - shift.dy - before.minY) <= 1,
           abs(now.width - before.width) <= 1, abs(now.height - before.height) <= 1,
-          let child = read.firstChild, let oldChild = entry.firstChild, CFEqual(child, oldChild) else { continue }
+          let child = read.firstChild, let oldChild = entry.firstChild, CFEqual(child, oldChild),
+          oldHeads[role]?[ElementKey(element: oldChild)] == 1, newHeads[role]?[ElementKey(element: child)] == 1 else { continue }
     guard gone(entry.element) else { continue }
     result[position] = candidate.index
   }

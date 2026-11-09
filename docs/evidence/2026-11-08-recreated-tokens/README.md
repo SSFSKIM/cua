@@ -63,9 +63,12 @@ one AXRole read per candidate that matched in everything else. Here that was 5 o
   To the model that is the same element.
 - A column re-created during the walk itself could still fail its read. The branch never did here. Main did once,
   above.
-- A frameless or childless synthesized element takes a new token, as under the vendor's rule.
+- A frameless or childless synthesized element takes a new token, as under the vendor's rule. So does a column whose
+  first child heads another column too (a header cell spanning several columns), and any column whose old handle
+  would have to be checked past the observation's deadline.
 
 ## Tests
 
-`RecreatedTokenTests` (7) and the engine's `swift test` pass. The hosted A/B above ran on fd51d41b. The childless and
-frameless condition (fbbdccd6) came after it and only narrows the rule.
+`RecreatedTokenTests` (9) and the engine's `swift test` pass. The hosted A/B above ran on fd51d41b. The childless and
+frameless condition (fbbdccd6), and the review's spanning-anchor and deadline conditions, came after it and only narrow
+the rule: the A/B's tables have one header cell per column.

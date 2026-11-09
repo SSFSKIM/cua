@@ -16,6 +16,8 @@ final class FakeTree {
   var unreadable: Set<Int> = []
   /// The elements whose handle reads as destroyed (kAXErrorInvalidUIElement), by id: Chromium's re-created columns (#303).
   var gone: Set<Int> = []
+  /// How long each gone check takes, in microseconds (an app that stopped answering).
+  var goneDelay: UInt32 = 0
   /// Attributes beyond role, title and children, by id.
   var extra: [Int: [String: CFTypeRef]] = [:]
   /// What the per-element reads answer, by id: the settable attributes, the actions, the Markdown value.
@@ -73,6 +75,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   var goneReads: [Int: Int] = [:]
   override func isGone(_ element: AXUIElement) -> Bool {
     goneReads[tree.id(element), default: 0] += 1
+    if tree.goneDelay > 0 { usleep(tree.goneDelay) }
     return tree.gone.contains(tree.id(element))
   }
   var markdownCalls = 0

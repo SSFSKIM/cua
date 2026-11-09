@@ -893,7 +893,11 @@ final class TreeWalk {
                                   parentRole: item.read.data.role, parentShift: {
                                     guard let now = item.read.data.frame, let before = previous.entries[number]?.frame else { return .zero }
                                     return CGVector(dx: now.minX - before.minX, dy: now.minY - before.minY)
-                                  }, gone: source.isGone)
+                                  }, gone: { [self] in
+                                    // The one AX read emission makes: none past the observation's deadline, where the
+                                    // candidate keeps the vendor's rule and takes a new token.
+                                    !pastDeadline() && source.isGone($0)
+                                  })
       } else {
         inherited = Array(repeating: nil, count: children.count)
       }

@@ -4188,7 +4188,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        columns together still matches;
      - the first child is the same element (`CFEqual`). A column heads its cells, which Chromium does not re-create,
        and since Chromium frames every column as the whole table, this is what tells one column from another;
-     - the old handle is gone. This is asked last, one AXRole read, and only for a candidate that passed the rest.
+     - that first child heads no other sibling of the role, on either side: a header cell spanning several columns is
+       each one's first child, so it anchors none of them (the review of 364e017d..9062cda7 found an inserted column
+       under a widened spanning header taking the first column's token);
+     - the old handle is gone. This is asked last, one AXRole read, and only for a candidate that passed the rest, and
+       never past the observation's deadline (the same review: emission's reads were otherwise unbounded).
      A frame or a first child missing on either side is no match (the design session's condition): a frameless or
      childless element takes a new token, as under the vendor's rule. Nothing is read or built unless the vendor's rule
      left both a new sibling and an old synthesized one unmatched. `LineageEntry` keeps each element's first child.
@@ -4199,10 +4203,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   4. **Limits.** An AppKit table that re-creates an identical column (same identity, frame and first cell) keeps its
      token too, which is the same element to the model. The walk's read failures on a column re-created mid-walk are
      not addressed; the A/B saw none on the branch.
-  Proven offline (`RecreatedTokenTests`, 7): re-created columns and header group kept over three observations, a
+  Proven offline (`RecreatedTokenTests`, 9): re-created columns and header group kept over three observations, a
   column moved with its scrolled table kept, a live old handle, an inserted column, a changed title, frame or first
   child, a childless or frameless pair, other roles and a group outside a table each taking a new token, and the gone
-  check asked only of a candidate (one read). With the rule removed, or the gone check, the keeping tests fail.
+  check asked only of a candidate (one read) and not past the deadline; a first child shared by two columns anchoring
+  neither, also with a column inserted under it. With the rule removed, or the gone check, the keeping tests fail.
   Proven live (`docs/evidence/2026-11-08-recreated-tokens/`; run 42558781067 on two runners, main 364e017d and
   6baaa12a against fd51d41b): on the 20×5 table, 3,000 and 6,000 rows and the HN thread, the branch kept every column
   and header-group token through each re-creation the handle checks recorded (−25202), where main re-issued them; the

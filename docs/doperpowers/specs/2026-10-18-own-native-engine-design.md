@@ -4221,10 +4221,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   spanning header, or when the previous observation was cut after the first of two columns sharing one, or when the width rule's
   visible subset showed the inserted column alone. With the rule
   removed, or the gone check, the keeping tests fail.
-  Proven live (`docs/evidence/2026-11-08-recreated-tokens/`; run 42558781067 on two runners, main 364e017d and
-  6baaa12a against fd51d41b): on the 20×5 table, 3,000 and 6,000 rows and the HN thread, the branch kept every column
-  and header-group token through each re-creation the handle checks recorded (−25202), where main re-issued them; the
-  cloned button and the inserted column took new tokens on both; the branch had 0 read failures in every observation.
+  Proven live (`docs/evidence/2026-11-08-recreated-tokens/`; run 42562287610 on two runners, main 364e017d against
+  5b544a10): on the uncut 20×5 table and the replacement page the branch kept every column and header-group token
+  through each re-creation the handle checks recorded (−25202), where main re-issued them (and at observation 2 failed
+  6 reads and printed none); the cloned button and the inserted column took new tokens on both; on the cut tables (3,000
+  and 6,000 rows, the HN thread) both re-issued them alike, the stated limit; the branch had 0 read failures. The first
+  A/B (run 42558781067, fd51d41b, before the completeness condition) had kept the cut tables' tokens too.
   Date/Author: 2026-11-08, cursor235's lane-3 implementer for #303.
 
 ## Outcomes & Retrospective

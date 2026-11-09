@@ -7,8 +7,23 @@ import {readFileSync} from 'node:fs';
 
 const files = process.argv.slice(2);
 const nonEmpty = s => (typeof s === 'string' && s.length ? s : null);
-const label = n => nonEmpty(n?.AXTitle) ?? nonEmpty(n?.AXDescription) ?? '';
+// A text node's words are its value (it carries no title or description).
+const label = n => nonEmpty(n?.AXTitle) ?? nonEmpty(n?.AXDescription) ?? (n?.AXRole === 'AXStaticText' ? nonEmpty(n?.AXValue) : null) ?? '';
 const words = s => (s.toLowerCase().match(/\p{L}+/gu) ?? []);
+// The label's words with every number taken out, and with it the words that follow the number: one word (`one`), or up to
+// the next punctuation mark (`run`): a count's or a time's unit and its inflection ("1 item", "59 seconds", "3 new").
+const tokens = s => (s.toLowerCase().match(/\d+(?:[.,:]\d+)*|\p{L}+|[^\s\p{L}\d]/gu) ?? []);
+const besideNumbers = (s, mode) => {
+  const out = [];
+  let skip = 0;
+  for (const t of tokens(s)) {
+    if (/^\d/.test(t)) { skip = mode === 'one' ? 1 : Infinity; continue; }
+    if (/^\p{L}/u.test(t)) { if (skip > 0) { skip -= 1; continue; } out.push(t); continue; }
+    skip = 0;  // punctuation ends a number's words
+  }
+  return out.join(' ');
+};
+const DOCUMENT = new Set(['AXWindow', 'AXWebArea']);
 const digitMask = s => s.replace(/\d+(?:[.,:]\d+)*/g, '#');
 const covered = (w, list) => list.some(x => x.startsWith(w));
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -24,6 +39,9 @@ const RULES = {
   lettersSame: (o, c) => words(label(o)).join(' ') !== words(label(c)).join(' '),
   wordsKept: (o, c) => words(label(o)).some(w => !covered(w, words(label(c)))),
   wordsKeptInteractive: (o, c) => INTERACTIVE.has(o.AXRole) && words(label(o)).some(w => !covered(w, words(label(c)))),
+  besideNumbersOne: (o, c) => besideNumbers(label(o), 'one') !== besideNumbers(label(c), 'one'),
+  besideNumbersRun: (o, c) => besideNumbers(label(o), 'run') !== besideNumbers(label(c), 'run'),
+  proposed: (o, c) => !DOCUMENT.has(o.AXRole) && besideNumbers(label(o), 'run') !== besideNumbers(label(c), 'run'),
   domId: (o, c) => o.AXDOMIdentifier != null && !same(o.AXDOMIdentifier, c.AXDOMIdentifier),
   axIdentifier: (o, c) => o.AXIdentifier != null && !same(o.AXIdentifier, c.AXIdentifier),
   classList: (o, c) => o.AXDOMClassList != null && !same(sorted(o.AXDOMClassList), sorted(c.AXDOMClassList)),
@@ -52,6 +70,7 @@ for (const f of files) {
           .map(a => `${a}: ${JSON.stringify(O[a] ?? null)} -> ${JSON.stringify(C[a] ?? null)}`),
         driftPre: P ? ATTRS.filter(a => !same(O[a], P[a])) : null,
         readMs: C.readMs,
+        deepO: o.hitInsideHandle ? o.deep : null, deepC: o.hitInsideHandle ? c.deep : null, deepRecreated: c.deepRecreated ?? null,
         verdicts: Object.fromEntries(Object.entries(RULES).map(([k, rule]) => [k, C.alive ? (rule(O, C) ? 'refuse' : 'pass') : 'gone'])),
       });
       rows.push(row);
@@ -101,4 +120,56 @@ for (const [k, list] of groups) {
   out.push(`- ${k}: hit ${hits.join('; ')}; drift with nothing changed: ${drift.join(', ') || 'none'}; click-time read ${Math.max(...ok.map(r => r.readMs))} ms max`);
 }
 out.push('', '</details>');
+
+// The deepest node at the point, where it lies inside the control (the text of a link, of a clickable div): what #296's
+// record takes at the point. Alive: its handle and the proposed rule on its words. Gone: #296's re-created search, with
+// the proposed rule run on what it matched.
+const deepRows = [...groups].filter(([, list]) => list.some(r => r.deepO) && !list[0].truth.startsWith('container'));
+if (deepRows.length) {
+  out.push('', '| cell | truth | deepest node | its words at observation -> at click | its handle | #296 today | proposed |', '|---|---|---|---|---|---|---|');
+  for (const [k, list] of deepRows) {
+    const ok = list.filter(r => r.deepO);
+    const read = r => {
+      if (r.deepC?.alive) return {words: label(r.deepC), handle: 'kept', today: 'kept (handle)', proposed: RULES.proposed(r.deepO, r.deepC) ? 'refuse' : 'pass'};
+      const m = r.deepRecreated?.match;
+      if (m) return {words: label(m), handle: 'gone', today: 'kept (re-created)', proposed: RULES.proposed(r.deepO, m) ? 'refuse' : 'pass'};
+      return {words: label(r.deepRecreated?.nearest) || '?', handle: 'gone', today: `refused (nodeGone; nearest ${r.deepRecreated?.nearestDistance} pt)`, proposed: 'refuse (nodeGone)'};
+    };
+    const seen = [...new Set(ok.map(r => { const x = read(r); return `${JSON.stringify(label(r.deepO))} -> ${JSON.stringify(x.words)} | ${x.handle} | ${x.today} | ${x.proposed}`; }))];
+    out.push(`| ${k} | ${ok[0].truth} | ${ok[0].deepO.AXRole} | ${seen.map(s => s.split(' | ')[0]).filter((v, i, a) => a.indexOf(v) === i).slice(0, 2).join('; ')} | ${[...new Set(seen.map(s => s.split(' | ')[1]))].join(', ')} (${ok.length}) | ${[...new Set(seen.map(s => s.split(' | ')[2]))].join('; ')} | ${[...new Set(seen.map(s => s.split(' | ')[3]))].join('; ')} |`);
+  }
+}
+
+// The corpus: label pairs beyond the live cells, judged by the label rules alone (the live cells showed every browser and
+// AppKit delivering the label verbatim on the kept handle, so a rule's verdict on a pair is a property of the strings).
+const CORPUS = [
+  ['content', 'Elapsed 9.9 s', 'Elapsed 10.0 s'], ['content', '3:21', '3:20'], ['content', 'Like (12)', 'Like (13)'],
+  ['content', '1 item', '2 items'], ['content', '1 reply', '2 replies'], ['content', '1 child', '2 children'],
+  ['content', '1 new message', '2 new messages'], ['content', 'Show 3 more replies', 'Show 4 more replies'],
+  ['content', '1 minute ago', '2 minutes ago'], ['content', 'Starts in 1 minute', 'Starts in 59 seconds'], ['content', '1 hour left', '59 minutes left'],
+  ['content', 'just now', '1 minute ago'], ['content', 'Today', 'Yesterday'], ['content', 'No notifications', '3 notifications'],
+  ['content', 'Inbox', 'Inbox (3)'], ['content', 'Cart', 'Cart (1)'], ['content', 'Notifications', 'Notifications, 3 new'],
+  ['content', 'Uploading 45%', 'Uploading 46%'], ['content', 'Download (2.1 MB)', 'Download (12 MB)'],
+  ['content', '1 Kommentar', '2 Kommentare'], ['content', '2 комментария', '5 комментариев'], ['content', '3件', '4件'],
+  ['content', 'Inbox - Gmail', 'Inbox (3) - Gmail'], ['content', 'Slack', '* Slack'],
+  ['content (document title)', 'Gmail', 'Ann messaged you'], ['content (document title)', 'Video - Google Chrome', 'Video - Audio playing - Google Chrome'],
+  ['same-meaning', 'Save', 'Guardar'],
+  ['flip', 'Follow', 'Following'], ['flip', 'Following', 'Follow'], ['flip', 'Save', 'Saved'], ['flip', 'Add to cart', 'Added to cart'],
+  ['flip', 'Play', 'Pause'], ['flip', 'Mute', 'Unmute'], ['flip', 'Show more', 'Show less'], ['flip', 'Expand', 'Collapse'],
+  ['meaning', 'Save', 'Delete'], ['meaning', 'Archive', 'Delete'], ['meaning', 'OK', 'Cancel'], ['meaning', 'Next', 'Submit'],
+  ['meaning', 'Enable', 'Disable'], ['meaning', 'Delete', 'Delete all'], ['meaning', 'Reply', 'Reply all'],
+  ['meaning', 'Allow', "Don't Allow"], ['meaning', 'Continue', 'Continue and pay $9.99'], ['meaning', 'Save draft', 'Discard draft'],
+  ['meaning', 'Invoice from Acme', 'Invoice from Bolt'], ['meaning', 'Order #1234', 'Order #1235'], ['meaning', 'Nov 8 standup', 'Nov 9 standup'],
+  ['meaning', 'Delete 1 file', 'Delete 3 files'],
+];
+const LABEL_RULES = ['anyLabel', 'digitsOnly', 'lettersSame', 'wordsKept', 'besideNumbersOne', 'besideNumbersRun'];
+out.push('', `| truth | at observation -> at click | ${LABEL_RULES.join(' | ')} |`, `|${'---|'.repeat(LABEL_RULES.length + 2)}`);
+const corpusTally = Object.fromEntries(LABEL_RULES.map(k => [k, {fp: [], miss: []}]));
+for (const [truth, a, b] of CORPUS) {
+  const vs = LABEL_RULES.map(k => RULES[k]({AXTitle: a}, {AXTitle: b}));
+  LABEL_RULES.forEach((k, i) => { if (truth.startsWith('content') || truth === 'same-meaning') { if (vs[i]) corpusTally[k].fp.push(`${a} -> ${b}`); } else if (truth === 'meaning' && !vs[i]) corpusTally[k].miss.push(`${a} -> ${b}`); });
+  out.push(`| ${truth} | ${JSON.stringify(a)} -> ${JSON.stringify(b)} | ${vs.map(v => (v ? 'R' : '·')).join(' | ')} |`);
+}
+out.push('');
+for (const k of LABEL_RULES) out.push(`- corpus **${k}**: false positives ${corpusTally[k].fp.length} (${corpusTally[k].fp.join('; ') || '-'}); misses ${corpusTally[k].miss.length} (${corpusTally[k].miss.join('; ') || '-'})`);
 console.log(out.join('\n'));

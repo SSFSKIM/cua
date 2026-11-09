@@ -73,8 +73,25 @@ Run: https://github.com/SSFSKIM/cua/actions/runs/42585577476 (kit c0d0644b). All
 | Safari | 1.0 / 2.7 / 7.9 | 0.9 / 2.3 / 5.1 |
 
 **Caveats:**
-- **The live clock:** the clock fixture's paragraph filled on its first tick, which moved the target. Both heads refused those clicks through #296 (`nodeGone`, `frameMoved`), so this run doesn't price dL on a ticking text. The design session asked for that run before the merge (1ea561bc:554); its result follows below.
+- **The live clock:** the clock fixture's paragraph filled on its first tick, which moved the target. Both heads refused those clicks through #296 (`nodeGone`, `frameMoved`), so this run doesn't price dL on a ticking text. The design session asked for that run before the merge (1ea561bc:554); its result is under "Ticking text" below: 0 refusals.
 - **Chrome's screenshot-time side tool** reports AXWebArea for the four link cells and the budget cell, while the engine records the intended AXLink or AXStaticText. The kit's strict validator flags them on both heads. Safari and Firefox validate all five.
+
+## Ticking text (main 536066f3 against 494857c8)
+
+Run: https://github.com/SSFSKIM/cua/actions/runs/42611234157 (kit ab05f798), asked for by the design session before the merge (1ea561bc:554).
+
+- **The cells:**
+  - a clock whose line was shown in the screenshot, clicked on its ticking text;
+  - a ticking "N s ago" inside a clickable list row (the row exposes AXPress in all three browsers), clicked on the timestamp.
+
+  Each ran 6 shared-mode clicks per browser per head, and every attempt had a tick between the screenshot and the click, with the frame held.
+
+| Head | Safari clock / row | Chrome clock / row | Firefox clock / row | `newElementOverPoint` |
+|---|---|---|---|---|
+| main | 6/6, 6/6 kept | 6/6, 6/6 | 6/6, 5/6 (1 `nodeGone`) | 0 |
+| branch | 6/6, 6/6 kept | 6/6, 6/6 | 6/6, 6/6 | **0** |
+
+The run's tables are in `~/.local/share/probe-330/run-42611234157/tick-tables.txt`.
 
 ## Limits
 

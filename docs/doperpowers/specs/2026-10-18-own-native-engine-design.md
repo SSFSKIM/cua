@@ -4316,8 +4316,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     1.1/2.9/24.1 (main 0.9/2.6/20.5) and Safari 0.9/2.3/5.1 (main 1.0/2.7/7.9). Most clicks read nothing more.
   - **Not priced here:** dL on a steadily ticking clock. The fixture's paragraph filled on its first tick and moved the
     target, so both heads refused those clicks through #296 (`nodeGone`, `frameMoved`). The design session made a
-    clock run a merge condition (1ea561bc:554): the line reserved before the screenshot and clicked on its ticking text,
-    and a ticking "N s ago" inside a clickable list row, in three browsers, 0 `newElementOverPoint` required.
+    clock run a merge condition (1ea561bc:554); it ran as https://github.com/SSFSKIM/cua/actions/runs/42611234157 (kit
+    ab05f798, main 536066f3 against 494857c8). A clock whose line was shown in the screenshot, clicked on its ticking
+    text, and a ticking "N s ago" inside a clickable list row, clicked on the timestamp: 6 clicks each per browser in
+    shared mode, every one with a tick between the screenshot and the click. **0 `newElementOverPoint`; the branch kept
+    and landed 36 of 36.** Main kept 35 (one Firefox timestamp refused `nodeGone` by #296).
   Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 11bec0ed on #330; hosted results
   2026-11-09.
 

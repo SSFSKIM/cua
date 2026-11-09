@@ -1,0 +1,52 @@
+# #298's measure-only spike (scripts/probe-298/measure.mjs): every candidate attribute of a control relabelled in place,
+# read on one held handle at an observation and at click time, on Chrome for Testing, Safari and a native AppKit window;
+# no engine, no click. Two runners, three repetitions per app on each. Runs only on a push to probe/298-measure (or by
+# hand); not a ci-kit gate.
+name: probe-298
+on:
+  push:
+    branches: ['probe/298-measure']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2]
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Build the side tool and the native app
+        run: |
+          sw_vers
+          swiftc -O -o "$RUNNER_TEMP/p298-tool" scripts/probe-298/tool.swift
+          app="$RUNNER_TEMP/Probe298.app/Contents"
+          mkdir -p "$app/MacOS"
+          swiftc -O -o "$app/MacOS/Probe298" scripts/probe-298/app.swift
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict>' \
+            '<key>CFBundleIdentifier</key><string>com.ssfskim.probe298</string>' \
+            '<key>CFBundleName</key><string>Probe298</string>' \
+            '<key>CFBundleExecutable</key><string>Probe298</string>' \
+            '<key>CFBundlePackageType</key><string>APPL</string>' \
+            '<key>NSPrincipalClass</key><string>NSApplication</string>' \
+            '</dict></plist>' > "$app/Info.plist"
+      - name: Live
+        env:
+          P298_REP: ${{ matrix.rep }}
+        run: node scripts/probe-298/measure.mjs --groups chrome,safari,native --reps 3 --tool "$RUNNER_TEMP/p298-tool" --app "$RUNNER_TEMP/Probe298.app/Contents/MacOS/Probe298" --out "$RUNNER_TEMP/probe-298"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-298-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-298/*.json
+            ${{ runner.temp }}/probe-298/*.jsonl
+          if-no-files-found: warn

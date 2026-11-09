@@ -540,8 +540,11 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     (the window's frame read again just before the events; null when the click stopped before them or it was unread)}
   stalePoint: #296's stale-point guard at a coordinate click's point or a drag's start, on its result and its errors once the
     point is placed: {verdict ("kept" | "refused"), reason ("unrecorded" | "sameElement" | "noHit" | "nonInteractiveHit" |
-    "hitAboveNode" | "unrecordedDescendant" | "recordedHit" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther"), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
-    `recordedHit`), ms, rechecked? (true: #282's or #283's
+    "hitAboveNode" | "unrecordedDescendant" | "recordedHit" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther" |
+    "newWindow" | "otherWebArea" (#316) | "newElementOverPoint" (#330)), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
+    `recordedHit`), windowsMs? (#316's rule W's window-list read), webAreaReads? (#316's rule G's parent reads),
+    newWindow? (#316: the new window's number), newElementReads? (#330's rule dL's reads, when it read any), ms,
+    rechecked? (true: #282's or #283's
     route waited and the guard ran again before the press; the verdict is that check's, ms both checks'), afterActivation?
     (true: that check ran after the route's focus hold had activated the app)}; roles only, never a title
   note: on a paste or type_text result that pasted a line with no channel to see it, read after ⌘V (#187), and on a
@@ -3689,7 +3692,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      text), or to the application when it lies outside; the meta's `stalePoint.webAreaReads` counts them. Both sit
      inside `stalePoint.ms`. G's live cost is not measured here: the hosted check measures it.
   8. **The residue on run 2** (28 of 104 wrong clicks still kept): page-made suggestion lists in Safari, Chrome and
-     Firefox, 18 (#330: the list is the page's own element, in the same web area, over the control the click aims at);
+     Firefox, 18 (#330: the list is the page's own element, in the same web area, over the control the click aims at;
+     amended by the #330 entry, 2026-11-08, below: rule dL refuses most of them, and the paragraph names the rest);
      TextEdit's reflow after Return or ⌘V, 4 (#331: the text moved within the same text view, whose node still holds the
      point); Safari's clicks placed from the page's tree after a re-observation that showed the panel, 6 of 12 (the
      re-observation's list holds the overlay window, so W passes, and the point still reaches the page's element).
@@ -4167,6 +4171,93 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   for the name and the exact sentence, an end inside passing, and a start outside keeping #328's sentence. The suite's
   other tests pass unchanged. Not unit tested: `drag`'s glue, which passes the flag for the end (it reads live AX).
   Date/Author: 2026-11-08, cursor235's lane-2 implementer for #334.
+- Decision (#330, 2026-11-08, `fix/330-new-element-over-point`; the design session's ruling 11bec0ed on the spike's
+  findings, https://github.com/SSFSKIM/cua/issues/330#issuecomment-6732655713, kit `probe/330-measure` 7f8cf780, runs
+  42556940112 and 42560125050 on main 6baaa12a with `scripts/probe-330/shadow.patch`; the merge gate 11bec0ed and
+  31a62775; amends #316's entry): **in a web page, a coordinate click or drag start that #296's checks and rule G keep
+  is refused, with nothing posted, as `screenChangedSinceScreenshot` with reason `newElementOverPoint`, when the hit
+  lies in an element the page added over the point since the screenshot (rule dL).**
+  1. **What the spike found.** Six suggestion-list kinds (#316's listbox, a plain-div list, an ARIA combobox, a list
+     appended at the end of the body, a listbox present but empty until filled, a list shown by opacity), 6 covered
+     clicks each per browser, main keeping every one. In Safari and Firefox the list is a new node (AXList, AXGroup),
+     the hit its text or the list itself (`nonInteractiveHit`), and the covered control still reads its frame. In
+     Chrome the list is new under the same parent; when it comes before the covered control in the DOM, Chrome's
+     hit-test answers the covered control whatever the z-index (`sameElement`; the same 0, 60 and 180 ms later), and
+     when after (the end-of-body kind) the list. Chrome also answers a button's label, an AXStaticText no AXChildren
+     lists. No browser posts AXCreated or AXMenuOpened for page content. The native `<datalist>`: Safari opens a window
+     (W refuses), Firefox's is refused by G, and in Chrome clicks pass through it and land.
+  2. **The candidates** (run 2; catches of 30 covered clicks; false refusals over 60 landed clicks on the same pages,
+     72 near-point changes in nine scenes, about 149 still-sweep clicks per browser, Wikipedia, Hacker News and MDN
+     among them). dL caught Safari 30, Firefox 30, Chrome 24 with 0 false refusals in every set; without "listed" the
+     same catches, but Chrome falsely refused 24 of 60, 9 of 72 and 8 of 146 (its label text). A point-pruned descent
+     (a) caught 24 per browser and refused an image inserted behind the controls, 8 of 72 per browser (AX cannot tell
+     z-order, so that cost would be permanent); the full walk caught 30 everywhere with the same 8 of 72 false, at p95
+     118–183 ms, cut at its cap on 64–72 clicks per browser. A popup role at the point (b)
+     caught 12; the focused field's AXExpanded (c) 8, combobox only, with 6 of 60 false; AX creation notifications (e)
+     0. The opacity kind went wrong 8 of 8 per browser and nothing caught it. On Wikipedia's own suggestions dL fired on
+     all 24 covered clicks.
+  3. **Rule dL** (`newElementOverPoint`, StalePoint.swift). The observation keeps, beside the record's nodes, every
+     element its walk recorded, framed, frameless or record-only, with whether the walk recorded all of its direct
+     children (`screenshotChildrenRecorded`, `ObservedScreenshot.recorded`; as many recorded children as the element's
+     child count at the walk). Where the recorded node lies in an AXWebArea, after #296's checks and rule G keep the
+     point, G's walk of the hit's parents up to that web area (`liesIn`, which now returns the chain) is read from the
+     web area down: an element is recorded; new (absent from the record, its parent recorded with every child); inside a
+     new one; or unknown (absent under a parent whose children were not all recorded, or under an unknown one). The
+     topmost new element refuses when its parent's AXChildren lists it now. So the rule is silent where the byte budget
+     (or any cut) left the parent's children incomplete, on Chrome's unlisted label text, and on anything the record
+     holds. No pruned descent and no AXExpanded rule (the ruling's item 2).
+  4. **What the build settled** (gaps the ruling left; none changes a measured cell):
+     - **The recorded node as found now is never new over itself:** the topmost new element is passed over when it is
+       the node #296 found (its own handle or one re-created in place) or holds it. #296 keeps a re-created control, and
+       a re-render can re-create its wrapper too; read by the record alone both are new under a fully recorded parent,
+       and the shadow's rule would have refused them. The spike's table does not report that case.
+     - **A refusal keeps its reason:** dL turns only a kept verdict into a refusal; where #296 already refuses
+       (Wikipedia's suggestion links, `interactiveHit`) the reason and sentence stay #296's.
+     - **Every kept reason is judged** when G walked (`nonInteractiveHit`, `hitAboveNode`, `unrecordedDescendant`,
+       `recordedHit`, `sameElement` with a re-created hit), as the spike computed dL beside every kept verdict. No walk,
+       no rule: the hit the node's own handle, an empty hit, a node outside every web area.
+     - **The meta** gains `stalePoint.newElementReads` when the rule read anything; an element route's record carries it
+       as it carries `webAreaReads`.
+  5. **The refusal.** `screenChangedSinceScreenshot`, as #316's rules: the service and the docs carry the name, and the
+     reason tells them apart. Its sentence: `The screen changed since the screenshot: a new element, such as a suggestion
+     list or popup, has appeared over the <recorded element> it showed at this point; <hit> is there now. Nothing was
+     sent. Call getScreenshot for a new screenshot, or press Escape to dismiss what appeared, before clicking.` (after an
+     element route's activation, "The app was activated in the background, but nothing was pressed.").
+  6. **The cost.** The observation: one more pass over the record's reads, building a dictionary of every recorded
+     element (inside the `stalePointRecord` timing). A click: no AX read unless the record names a new element on the
+     chain; then one, the parent's children; and only on a refusal whose node is not on the chain, the node's parents up
+     to the new element or the web area. The spike priced the rule at about one read (its `hitsMs` covered two
+     hit-tests and their chains); the hosted check measures `stalePoint.ms` and `newElementReads` on the branch.
+  7. **The limits.** A list the page shows without adding elements (by opacity, or moved into place) is held by the
+     record and still takes a click aimed under it. In Chrome, a list that overflows its field's container (the
+     combobox's link cells, 6 of Chrome's 30) is missed, Chrome's hit-test answering the covered control; only the full
+     walk or (c) caught them. Chrome's own `<datalist>` popup lets a click pass through to the page. The rule runs only
+     in web areas. Not measured: a new child listed inside a control found by its own handle (a link whose text node is
+     replaced) is refused, though the click would reach the control; the still sweep and the near-point scenes met none.
+     `docs/cua-api/agent-cursor.md`'s stale-point paragraph says which lists the guard refuses, which it misses, and to
+     press Escape or take a new screenshot after typing into a field that offers suggestions (the ruling's limit text as
+     approved, and Chrome's `<datalist>`); the surface inventory's Table 3 addition of 2026-11-08 (#330), the docs test,
+     parity's docs oracle and PROVENANCE.md carry it. Plugin 0.27.16, since the document the server serves changed.
+  Proven offline: `NewElementGuardTests` (8) in `StalePointTests.swift`: a new listed element under a fully recorded
+  parent refusing (Safari's and Firefox's list, Chrome's end-of-body list with unlisted row text, a frameless parent, an
+  empty list filled; a link row keeping `interactiveHit`), silent with the parent's children cut, on an unlisted
+  element, on an element the record holds, outside a web area, and on a re-created node and wrapper; the reason, the
+  sentence and the meta; the observed screenshot keeping the record's elements. #296's, #305's and #316's suites
+  unchanged; 1,064 engine tests pass, 1 skipped as before. Each of 21 rule parts and bounds removed in turn
+  (`~/.local/share/187/mutate-330.py`) fails a test. Three survive by design, since only a live click reaches them: the
+  observation not keeping the elements, and the guard's or the recheck's call not passing them.
+  **The merge gate** (the design session's rulings 11bec0ed and 31a62775; main against the branch on the hosted runner):
+  - **0 `newElementOverPoint` refusals on unchanged real pages and apps,** the real engine clicking live: Hacker News, a
+    public GitHub pull request, Wikipedia, MDN, a page with a live clock and relative times, #305's still-page cells,
+    pages that add content by themselves near the point (a lazy-loading feed scrolled once, a single-page app that
+    re-renders its list after load, an ad or cookie banner inserted late), and one page the byte budget cut, where dL
+    must stay silent under a parent whose children were not all recorded.
+  - **The catches:** the six kinds and Wikipedia's suggestions in Safari, Chrome for Testing and Firefox, the branch
+    refusing what the shadow caught (Safari 30/30, Firefox 30/30, Chrome 24/30 covered clicks) and main keeping them.
+  - **A shared sweep for #298,** built once as a reusable group (pages whose labels change on their own, Finder, a
+    native AppKit table whose rows update), so #298's `relabelled` rule is gated on the same cells.
+  - **The cost:** `stalePoint.ms` per click on the branch against main (p50, p95, max), and `newElementReads`.
+  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 11bec0ed on #330.
 
 ## Outcomes & Retrospective
 

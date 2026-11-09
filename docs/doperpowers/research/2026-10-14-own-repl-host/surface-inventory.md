@@ -795,3 +795,17 @@ point moved, success with a note when it was already at its end, else `scrollUnc
 observe before scrolling again. A paragraph after the stale-point one:
 
 > A click, scroll or drag at coordinates outside the screenshot they came from fails with `pointOutsideScreenshot` and nothing is sent: give a point inside it, from 0 to its width less one across and from 0 to its height less one down, in its pixels. So a drag cannot end outside the app's window, on another app or the desktop. A scroll succeeds only once what is at its point was seen to move, or when that was already scrolled as far as it goes that way, in which case the result's text says so. Otherwise it fails with `scrollUnconfirmed`: the scroll was sent but nothing was seen to move, so observe the app (a new screenshot or `getAXState()`) before scrolling again.
+
+### Table 3 addition (2026-11-08, #330)
+
+The design session's ruling 11bec0ed on #330 (the native engine spec's Decision Log, the #330 entry) widens the
+stale-point guard again: in a web page, a click or drag start also refuses, as `screenChangedSinceScreenshot`, when the
+hit lies in an element the page added since the screenshot (rule dL: a suggestion list, a popup). The spike measured what
+it still misses: a list the page shows without adding elements (by opacity, or moved into place), whose elements the
+screenshot's tree already held; in Chrome, a list that overflows its field's container, where Chrome's hit-test answers
+the covered control; and Chrome's own `<datalist>` popup, through which clicks reach the page. So #316's second half no
+longer says the guard cannot see a page's suggestion list; it says which ones it can, which it cannot, and what to do
+after typing into a field that offers suggestions (Escape or a new screenshot). The limit text is the ruling's, as
+approved. The paragraph now reads:
+
+> A click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, or has given way to another control, it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it. The check reads the accessibility tree at the point, and also refuses a click or drag when the app has opened a new window over the one in the screenshot, when the point has left the page the screenshot showed, or when a web page has added an element over the point since the screenshot, such as a suggestion list or popup. A suggestion list the page shows without adding elements (one shown by opacity, or moved into place) still takes a click aimed at the control under it. In Chrome, so can a list that overflows its field's container, because Chrome's hit-test answers the covered control. Chrome's own popup of a field's `<datalist>` suggestions lets a click pass through to the page under it. The check still cannot see text that has moved within the same text view (after Return or a paste in TextEdit). After typing into a field that offers suggestions, press Escape or take a new screenshot before clicking near it. After editing text above the point, take a new screenshot before clicking at coordinates. When a screenshot shows a panel over the page, aim at what the screenshot shows, not at the page's elements under it.

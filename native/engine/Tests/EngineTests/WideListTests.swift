@@ -240,21 +240,23 @@ final class WideListTests: XCTestCase {
     XCTAssertEqual(ids(cut), preorder(tree).filter(kept.contains))
   }
 
-  /// Rule C: a table scrolled to its end puts its columns in the shown run (99 rows and 2 columns, so 101 children and
-  /// columns of 99 cells, too few for rule B); their cells, which the rows list, wait until nothing else is left, so
-  /// they never starve the toolbar, and with the budget cut no offscreen row's cell is read.
+  /// Rule C: a table scrolled to its end shows its columns (99 rows and 2 columns, so 101 children and columns of 99
+  /// cells, too few for rule B's bisection); since #310 the columns themselves wait until nothing else is left, with the
+  /// cells they relist, so they never starve the toolbar, and with the budget cut no column and no offscreen row's cell
+  /// is read.
   func testAColumnsRelistedCellsGoLastUnderACut() {
     let tree = chromiumTable(rows: 99, columns: 2, scroll: 64)
     let source = FakeSource(tree)
     let cut = walk(tree, Lineage(), limits: WalkLimits(nodes: 150, deadline: .infinity), visibleFrame: windowFrame, source: source, chromium: true)
     XCTAssertTrue(cut.nodeCapHit)
     let kept = Set(ids(cut))
-    XCTAssertTrue(Set([toolbar, column(0), column(1)] + buttons).isSubset(of: kept))
+    XCTAssertTrue(Set([toolbar] + buttons).isSubset(of: kept))
+    XCTAssertTrue(kept.isDisjoint(with: [column(0), column(1)]), "the columns wait last (#310)")
     let shown = shownRows(64, of: 99)
     let readCells = Set(source.reads.keys.filter { $0 >= 200_000 })
     XCTAssertEqual(readCells, Set(shown.flatMap { [cell($0, 0), cell($0, 1)] }), "only the shown rows' cells: the columns' wait")
-    // 3 + 35 rows + 70 cells + 2 columns + the toolbar's 6 = 116; the other 34 go to the rows above, in order.
-    XCTAssertEqual(Set((0..<99).map(row)).intersection(kept), Set((Array(0..<34) + shown).map(row)))
+    // 3 + 35 rows + 70 cells + the toolbar's 6 = 114; the other 36 go to the rows above, in order.
+    XCTAssertEqual(Set((0..<99).map(row)).intersection(kept), Set((Array(0..<36) + shown).map(row)))
     XCTAssertEqual(ids(cut), preorder(tree).filter(kept.contains))
   }
 

@@ -2841,6 +2841,36 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      through their rows by then. Found building it: with rule B in place, rule C binds where a column has at most 100
      children (or its run search fails), since a longer column's offscreen cells are deferred by B behind the rows'
      cells in the document's order, already read through the rows when they come up.
+     **Amended by #310** (2026-11-08, `fix/310-columns-last`; the design session's rulings d9f6902b and 58a9bdf7,
+     amending ruling f1a7589f's rule B for the bare AXColumn): **an AXColumn among a wide list's shown children waits
+     unread in `lastly`; the column header cells and the table's header group stay shown children.**
+     - **Why.** Chromium frames each column as the whole table, so rule B always found a column shown and read it.
+       Reading it took up the width rule over its 6,001 cells at about 28 ms per column, which was most of #304's walk
+       cost: +110 to +323 ms on local-table, -bar and -6k (run 42360213243).
+     - **The rule.** `expand` reads each shown child's role with its frame (`roleReadWithFrame`, one 3-attribute
+       multi-read in place of the frame read). An AXColumn goes to `lastly` in the document's order and is read only
+       once nothing else is left. In a walk the budget cuts, the columns are not printed; when the budget has room, they
+       print as before. So rule B's invariant reads: it never leaves unread a shown child that main would have read
+       before the cut, except a bare AXColumn.
+     - **Live** (runs 42559947292 and 42561992545, the second on 3 runners with 9 alternating pairs per cell; main
+       364e017d against 6ec647eb):
+       - on the cut tables, the paired median walk time moves by −385 and −300 ms (local-table, top and f50), −34 and
+         −93 (-bar) and −567 and −338 (-6k);
+       - the width rule's time falls from 92–214 ms to 16–31, at the same node count;
+       - in the second run main printed 0–6 columns with up to 24 read failures in 9 observations, the branch none
+         with 0 (in the first, one branch observation on the barred table failed 7 reads, its columns re-created
+         mid-walk);
+       - on the tables that fit (fit-120, fit-200, lean-600), the printed node set is identical in order in every pair
+         where neither side failed a read.
+     - **Offline.** `WideListInvariantTests` exempts the bare columns alone. Over #304's 282 spike trees, 154 are
+       verified, 128 are alias-incomplete and there are 0 violations.
+     - **Limit** (ruling 58a9bdf7). A table that fits can lose its columns in an observation where Chromium re-creates
+       them mid-walk. In 5 of 108 such observations the branch read all of them stale (−25202) and printed none, and in
+       4 of the 5 the synthesized header AXGroup too; main failed in 4 of 108, one node each, still printing its columns.
+       Reading them last leaves a longer window for the re-creation. In all 5, every header-row cell (the sort targets,
+       reached through the rows) printed: the nodes lost are only AXColumns and the AXGroup Chromium lists right after
+       them, framed 1×1 at the web area's origin. Re-listing the parent's children when a deferred column reads invalid
+       is residue, with #303's on columns re-created mid-walk.
   5. **What stays.** A walk nothing cuts reads every element once and emits exactly the plain preorder's tree, tokens,
      record and counts; only the read order and the walk time move. Where the cut falls, the tree is printed in the
      document's order with #301's marker, unread children counted and placed by the element they hang from as before.
@@ -4296,6 +4326,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   and 6,000 rows, the HN thread) both re-issued them alike, the stated limit; the branch had 0 read failures. The first
   A/B (run 42558781067, fd51d41b, before the completeness condition) had kept the cut tables' tokens too.
   Date/Author: 2026-11-08, cursor235's lane-3 implementer for #303.
+
+- Decision (#310, 2026-11-08, `fix/310-columns-last`; the design session's rulings d9f6902b and 58a9bdf7): **an
+  AXColumn among a wide list's shown children waits unread in rule C's `lastly`, read only once nothing else is left.**
+  Recorded where it changes the rule: #304's entry, item 4, "Amended by #310", with the hosted A/B (runs 42559947292
+  and 42561992545), the offline invariant over #304's trees, and the stated limit (a fitting table's columns lost in an
+  observation where Chromium re-creates them mid-walk, the header row's cells always printed).
+  Date/Author: 2026-11-08, cursor235's lane-3 implementer for #310.
 
 - Decision (#341, 2026-11-08, `fix/341-scrolled-caret`; the design session's ruling 1ea561bc:544 on the measured
   direction; amends #283's items 3, 4 and 6 and #296's second check on the focus route): **a click into a Chromium

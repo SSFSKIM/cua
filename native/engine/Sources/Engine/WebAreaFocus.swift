@@ -113,7 +113,10 @@ func webAreaFocusTarget<Element>(_ hit: Element, role: (Element) -> String?, sub
 /// The search assumes lines run downward and characters rightward in the text's order. An unusable box (empty, or a
 /// failed read) at a probe is stepped past to the nearest usable one, never inferred across, at most
 /// `caretSearchStepLimit` of them; two usable boxes read out of that order (a vertical or right-to-left layout), or a
-/// step limit reached, end the search with no offset taken from it. `searchable` false skips the search: a text holding
+/// step limit reached, end the search with no offset taken from it; out of order, a range past `caretScanLimit` is
+/// refused (`pointOutsideText`, #283's answer), since no window near the point is known. Every caller passes text of
+/// one style, a field's value or one static text, so a line's boxes share their top and height: a character raised or
+/// lowered within its line, which the bisections would read as a line's edge, comes only from mixed styles. `searchable` false skips the search: a text holding
 /// right-to-left characters (`holdsRightToLeft`), whose short lines may show the search too few boxes to see the order
 /// broken. Such a text is #283's exactly: the linear scan within `caretScanLimit` characters, and past it
 /// `pointOutsideText` with nothing read, since without the search no window near the point is known.
@@ -142,6 +145,7 @@ func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int
     switch searched {
     case .window(let window): near = window.lowerBound
     case .abandoned(let at): near = at
+    case .disordered: return .failure(.pointOutsideText)  // #283's refusal: no window near the point is known
     }
     let lower = min(max(scanned.lowerBound, near - caretScanLimit / 2), scanned.upperBound - caretScanLimit)
     fallback = lower..<(lower + caretScanLimit)
@@ -154,6 +158,10 @@ func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int
 enum CaretSearchEnd: Equatable {
   case window(Range<Int>)
   case abandoned(at: Int)
+  /// Two usable boxes read out of reading order: the layout is not the one the search assumes, so no window near the
+  /// point is known (#290's review of 93bc212e: a vertical layout, whose fallback window around this index answered an
+  /// offset far from the linear scan's).
+  case disordered(at: Int)
 }
 
 /// #290's search over `scanned`'s boxes in reading order (`caretOffset`). Boxes are usable as the linear scan's: with
@@ -218,8 +226,8 @@ func caretSearch(at point: CGPoint, _ scanned: Range<Int>, box: (Int) -> CGRect?
   samples.sort { $0.index < $1.index }
   let onLine = { (found: CGRect) in found.minY <= point.y && point.y < found.maxY }
   for (earlier, later) in zip(samples, samples.dropFirst()) where earlier.index != later.index {
-    if earlier.box.minY >= later.box.maxY { return .abandoned(at: place) }
-    if onLine(earlier.box), onLine(later.box), earlier.box.minX > later.box.minX { return .abandoned(at: place) }
+    if earlier.box.minY >= later.box.maxY { return .disordered(at: place) }
+    if onLine(earlier.box), onLine(later.box), earlier.box.minX > later.box.minX { return .disordered(at: place) }
   }
   return .window(start..<min(lineEnd, place + 1))
 }

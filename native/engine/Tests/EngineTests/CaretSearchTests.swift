@@ -229,6 +229,16 @@ final class CaretSearchTests: XCTestCase {
     }
   }
 
+  /// Past the linear scan's reach, boxes seen out of reading order leave no window to trust: a vertical layout of 10,000
+  /// characters (columns of 100 running leftward, the review of 93bc212e) is refused, as main refuses it, rather than
+  /// answered from the 5,000 characters around where the search stopped (which placed 5,001 where the point is at 1).
+  func testBoxesOutOfReadingOrderPastTheScansReachAreRefused() {
+    let bounds = { (index: Int) -> CGRect? in CGRect(x: 1000 - CGFloat(index / 100) * 10, y: CGFloat(index % 100) * 20, width: 10, height: 20) }
+    let value = String(repeating: "a", count: 10_000)
+    XCTAssertEqual(textCaretOffset(at: CGPoint(x: 1020, y: 5), value: value, bounds: bounds), .failure(.pointOutsideText))
+    XCTAssertEqual(caretSearch(at: CGPoint(x: 1020, y: 5), 0..<10_000, box: bounds, isLineBreak: { _ in false }), .disordered(at: 7501))
+  }
+
   /// A right-to-left line too short for the search to read two of its boxes shows it no order broken, so a text holding
   /// right-to-left characters is not searched at all: the linear scan reads it, box by box, to the character under the
   /// point. The same layout of left-to-right text is searched.

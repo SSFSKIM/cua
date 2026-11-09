@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       groups:
-        description: groups as a JSON list (tick-clock, tick-relative, or existing suggest-*, sweep-*, gate-*)
+        description: groups as a JSON list (relabel-*, gate-*, sweep-*, tick-* or suggest-*)
         required: false
         default: ''
       ref:
@@ -32,15 +32,15 @@ permissions:
   contents: read
 env:
   # Quote refs: YAML reads an all-digit-and-e SHA as a float.
-  P330_REF_DEFAULT: '536066f3bc4e5469b4e9ba8c1810810e0dc78223'
-  P330_BRANCH_DEFAULT: '494857c8dd02beef17c960939ec91cb7d4c446d5'
+  P330_REF_DEFAULT: '494857c8dd02beef17c960939ec91cb7d4c446d5'
+  P330_BRANCH_DEFAULT: 'b9236c78695c1455a469b319d0729a1150c62e81'
 jobs:
   probe:
     strategy:
       fail-fast: false
       max-parallel: 4
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["tick-clock", "tick-relative"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["relabel-chrome", "relabel-safari", "relabel-firefox", "relabel-native", "gate-chrome", "gate-safari", "gate-firefox", "gate-native", "sweep-chrome", "sweep-safari", "sweep-firefox"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -76,6 +76,7 @@ jobs:
           git log -1 --format='kit %H %s'
           swiftc -O -o "$RUNNER_TEMP/tool316" scripts/probe-316/tool.swift
           swiftc -O -o "$RUNNER_TEMP/mail330" scripts/probe-330/mail-like.swift
+          swiftc -O -o "$RUNNER_TEMP/relabel330" scripts/probe-330/relabelled-app.swift
           if [ "$ENGINE" = ab ]; then HEADS='main branch'; else HEADS="$ENGINE"; fi
           for HEAD in $HEADS; do
             ENGINE_REF="$REF"
@@ -97,7 +98,7 @@ jobs:
           for HEAD in $HEADS; do
             ENGINE_REF="$REF"
             if [ "$HEAD" = branch ]; then ENGINE_REF="$BRANCH_REF"; fi
-            P316_HEAD="$HEAD" P316_ENGINE_REF="$ENGINE_REF" P330_MAIL_APP="$RUNNER_TEMP/mail330" \
+            P316_HEAD="$HEAD" P316_ENGINE_REF="$ENGINE_REF" P330_MAIL_APP="$RUNNER_TEMP/mail330" P330_RELABEL_APP="$RUNNER_TEMP/relabel330" \
               node scripts/probe-330/measure.mjs --group "$GROUP" --engine "$RUNNER_TEMP/eng-$HEAD/release/cua-engine" --tool "$RUNNER_TEMP/tool316" \
               --out "$RUNNER_TEMP/probe-330/$GROUP/$HEAD" --reps "$REPS" --budget 65
           done

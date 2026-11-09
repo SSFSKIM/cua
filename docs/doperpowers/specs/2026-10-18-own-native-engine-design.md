@@ -4486,8 +4486,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   titles and descriptions keeping exact equality; the frame condition; the reason, the sentence, the meta, a recheck
   after a route's wait, and a truncated container; the record keeping the value and subrole, through both of the walk's
   emitters (`VisibleFirstTests` for the record-only one). #296's `testASurvivingHandleRelabelledInPlacePasses` now
-  refuses (`testASurvivingHandleRelabelledInPlaceRefuses`). 1,103 engine tests pass, 1 skipped as before. Each part of
-  the rule removed in turn (`~/.local/share/187/mutate-298.py`) fails a test, bar the ones named in the build's report.
+  refuses (`testASurvivingHandleRelabelledInPlaceRefuses`). 1,103 engine tests pass, 1 skipped as before. Of 39 parts
+  and bounds of the rule changed in turn (`~/.local/share/187/mutate-298.py`), 37 fail a test. Two survive by design:
+  the number's internal separators, whose removal changes no output (a separator followed by a digit starts another
+  number, which sets the following words aside just the same), and the live seam's value read, which only a live click
+  reaches.
   **The merge gate** (the ruling; #305's lesson: a replay of #296's spike isn't enough on its own): the branch's real
   engine clicks live, with 0 `relabelled` refusals, across unchanged real pages and apps, including pages whose labels
   change on their own: Hacker News, a GitHub pull request page, a page with a live clock or relative times, Finder and

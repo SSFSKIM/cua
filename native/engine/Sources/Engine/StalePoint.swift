@@ -7,8 +7,8 @@ import Foundation
 // Testing's toolbar moving Reload 36 pt right 18-20 s after launch, so a click at the screenshot's Reload point landed on
 // the disabled Forward button and answered success. So every observation that returns a screenshot records, with it, each
 // tree node's frame, role, subrole, title and description, and an AXStaticText's value (`ScreenshotNode`), and a
-// coordinate pointer action, before anything is
-// posted, takes the deepest recorded node whose shown frame holds the point and checks that it is still there: the same
+// coordinate pointer action, before anything is posted, takes the deepest recorded node whose shown frame holds the
+// point and checks that it is still there: the same
 // handle, or a handle re-created in place (the same role, a frame within 2 pt, and the same title, or description where
 // neither has a title, whenever both sides can be read). It refuses, with nothing posted, when that node is gone, when
 // its frame read now no longer holds the point, or when the hit-test at the point now answers another interactive
@@ -151,7 +151,8 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
     framed[read.number] = nodes.count
     let shown = cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 }
     nodes.append(ScreenshotNode(element: read.element, role: read.role, title: read.title, description: read.description,
-                                subrole: read.subrole, value: read.value, frame: frame, shown: shown, depth: read.depth, subtreeRecorded: !incomplete.contains(read.number),
+                                subrole: read.subrole, value: read.value, frame: frame, shown: shown, depth: read.depth,
+                                subtreeRecorded: !incomplete.contains(read.number),
                                 thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
                                 ancestor: ancestor, webArea: webArea))
   }

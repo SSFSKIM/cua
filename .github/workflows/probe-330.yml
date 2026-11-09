@@ -1,8 +1,5 @@
-# #330's hosted kit (measure first): a page-made suggestion list over the point a coordinate click aims at. The suggest-*
-# groups run the dropdown cells (scripts/probe-330/measure.mjs); the sweep-* groups are #316's still-page gate plus the
-# near-change scenes, the candidates' false-refusal price. Each job builds main with scripts/probe-330/shadow.patch (the
-# candidate rules reported in the click's meta as `shadow330`, never refusing; runner-only) and runs the kit once.
-# Runs only on a push to probe/330-measure (or by hand); not a ci-kit gate.
+# Hosted live measurement kit; no product changes. gate-* is the reusable #330 / #298 sweep.
+# A/B heads run sequentially in each job: one engine process alive at a time.
 name: probe-330
 on:
   push:
@@ -11,13 +8,22 @@ on:
   workflow_dispatch:
     inputs:
       groups:
-        description: the groups, a JSON list (suggest-safari, suggest-chrome, suggest-firefox, sweep-safari, sweep-chrome, sweep-firefox, sweep-native)
+        description: groups as a JSON list (suggest-*, sweep-*, gate-safari/chrome/firefox/native)
         required: false
         default: ''
       ref:
-        description: the engine ref the patch is applied to (empty for the push default)
+        description: engine ref for a single-head run, or the main/control head of an A/B
         required: false
         default: ''
+      branch_ref:
+        description: the branch head for an A/B or branch run
+        required: false
+        default: ''
+      engine:
+        description: engine selection (shadow applies the runner-only patch)
+        type: choice
+        options: ['ab', 'main', 'shadow', 'branch']
+        default: 'ab'
       reps:
         description: repetitions per cell
         required: false
@@ -25,16 +31,18 @@ on:
 permissions:
   contents: read
 env:
-  # Quoted: YAML reads an all-digit-and-e SHA as a float. main after #328 (#338).
-  P330_REF_DEFAULT: '6baaa12af587fb546717f04e939302fa6a643211'
+  # Quote refs: YAML reads an all-digit-and-e SHA as a float.
+  P330_REF_DEFAULT: 'e31bb1f500d7f19e9cb5a858a4f4e2a255fb132d'
+  P330_BRANCH_DEFAULT: '7f6eb3dcd2ed769ae80b2b7af12bafee62b764f5'
 jobs:
   probe:
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["suggest-chrome", "suggest-safari", "suggest-firefox", "sweep-chrome", "sweep-safari", "sweep-firefox"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["gate-chrome", "gate-safari", "gate-firefox", "gate-native", "suggest-chrome", "suggest-safari", "suggest-firefox", "sweep-chrome", "sweep-safari", "sweep-firefox"]') }}
     runs-on: macos-latest
-    timeout-minutes: 130
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -54,27 +62,41 @@ jobs:
           esac
           defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
           defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
-      - name: Build the patched engine and the tool
+      - name: Build the engines and tools
         env:
           REF: ${{ github.event.inputs.ref || env.P330_REF_DEFAULT }}
+          BRANCH_REF: ${{ github.event.inputs.branch_ref || env.P330_BRANCH_DEFAULT }}
+          ENGINE: ${{ github.event.inputs.engine || 'ab' }}
         run: |
           sw_vers
           git log -1 --format='kit %H %s'
           swiftc -O -o "$RUNNER_TEMP/tool316" scripts/probe-316/tool.swift
-          git worktree add --detach "$RUNNER_TEMP/src" "$REF"
-          git -C "$RUNNER_TEMP/src" apply "$GITHUB_WORKSPACE/scripts/probe-330/shadow.patch"
-          git -C "$RUNNER_TEMP/src" log -1 --format='engine %H %s'
-          git -C "$RUNNER_TEMP/src" diff --stat
-          swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+          swiftc -O -o "$RUNNER_TEMP/mail330" scripts/probe-330/mail-like.swift
+          if [ "$ENGINE" = ab ]; then HEADS='main branch'; else HEADS="$ENGINE"; fi
+          for HEAD in $HEADS; do
+            ENGINE_REF="$REF"
+            if [ "$HEAD" = branch ]; then ENGINE_REF="$BRANCH_REF"; fi
+            git worktree add --detach "$RUNNER_TEMP/src-$HEAD" "$ENGINE_REF"
+            if [ "$HEAD" = shadow ]; then git -C "$RUNNER_TEMP/src-$HEAD" apply "$GITHUB_WORKSPACE/scripts/probe-330/shadow.patch"; fi
+            git -C "$RUNNER_TEMP/src-$HEAD" log -1 --format="engine $HEAD %H %s"
+            swift build -c release --package-path "$RUNNER_TEMP/src-$HEAD/native/engine" --scratch-path "$RUNNER_TEMP/eng-$HEAD"
+          done
       - name: Measure
         env:
           GROUP: ${{ matrix.group }}
           REF: ${{ github.event.inputs.ref || env.P330_REF_DEFAULT }}
+          BRANCH_REF: ${{ github.event.inputs.branch_ref || env.P330_BRANCH_DEFAULT }}
+          ENGINE: ${{ github.event.inputs.engine || 'ab' }}
           REPS: ${{ github.event.inputs.reps || '1' }}
         run: |
-          P316_HEAD=shadow P316_ENGINE_REF="$REF" \
-            node scripts/probe-330/measure.mjs --group "$GROUP" --engine "$RUNNER_TEMP/eng/release/cua-engine" --tool "$RUNNER_TEMP/tool316" \
-            --out "$RUNNER_TEMP/probe-330/$GROUP" --reps "$REPS" --budget 105
+          if [ "$ENGINE" = ab ]; then HEADS='main branch'; else HEADS="$ENGINE"; fi
+          for HEAD in $HEADS; do
+            ENGINE_REF="$REF"
+            if [ "$HEAD" = branch ]; then ENGINE_REF="$BRANCH_REF"; fi
+            P316_HEAD="$HEAD" P316_ENGINE_REF="$ENGINE_REF" P330_MAIL_APP="$RUNNER_TEMP/mail330" \
+              node scripts/probe-330/measure.mjs --group "$GROUP" --engine "$RUNNER_TEMP/eng-$HEAD/release/cua-engine" --tool "$RUNNER_TEMP/tool316" \
+              --out "$RUNNER_TEMP/probe-330/$GROUP/$HEAD" --reps "$REPS" --budget 65
+          done
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -83,6 +105,7 @@ jobs:
           path: |
             ${{ runner.temp }}/probe-316/*.txt
             ${{ runner.temp }}/probe-330/**/results.json
+            ${{ runner.temp }}/probe-330/**/*.jsonl
             ${{ runner.temp }}/probe-330/**/screens/*.jpg
             ${{ runner.temp }}/probe-330/**/shots/**/*.jpg
             ${{ runner.temp }}/probe-330/**/shots/**/*.png

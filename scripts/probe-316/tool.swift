@@ -84,7 +84,7 @@ func chain(_ e: AXUIElement) -> [AXUIElement] {
   }
   return out
 }
-func chainWire(_ c: [AXUIElement]) -> [Any] { c.prefix(16).map { e -> Any in [role(e), short(str(e, kAXSubroleAttribute)), short(str(e, "AXIdentifier")), wire(frameOf(e))] } }
+func chainWire(_ c: [AXUIElement]) -> [Any] { c.prefix(16).map { e -> Any in [role(e), short(str(e, kAXSubroleAttribute)), short(str(e, "AXIdentifier")), wire(frameOf(e)), short(str(e, kAXTitleAttribute)), short(str(e, kAXDescriptionAttribute)), short(str(e, kAXValueAttribute))] } }
 let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField", "AXSecureTextField"]
 let overlayRoles: Set<String> = ["AXPopover", "AXSheet", "AXMenu", "AXList", "AXTable", "AXOutline", "AXDrawer", "AXDialog", "AXBrowser"]
 func pidOf(_ e: AXUIElement) -> pid_t { var p: pid_t = 0; AXUIElementGetPid(e, &p); return p }

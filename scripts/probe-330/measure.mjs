@@ -23,6 +23,7 @@ import {mkdirSync, writeFileSync, rmSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {launch, placePid, version, CFT, STABLE} from '../probe-316/browser.mjs';
+import {gatePage, runGate, runMailLike} from './gate.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-330: runs only on a GitHub-hosted runner'); process.exit(2); }
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -176,6 +177,11 @@ function nearPage(change) {
 const events = [];
 let pollers = [], queued = null;
 function serve(req, res) {
+  if (req.method === 'GET' && req.url.startsWith('/g?')) {
+    res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'});
+    res.end(gatePage(new URL(req.url, 'http://x').searchParams.get('kind'), SCRIPT));
+    return;
+  }
   if (req.method === 'GET' && /^\/(frames|frame|nest)(\?|$)/.test(req.url)) {
     const tag = new URL(req.url, 'http://x').searchParams.get('tag') ?? 'Frame';
     res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'});
@@ -834,11 +840,13 @@ async function stillCell(meta, pid, mode, place, between) {
     const found = place(sky);
     if (!found) { row.problem = 'not in the observation'; row.seen = sky.nodes.filter(n => /AX(Button|CheckBox|Link|TextField|WebArea)/.test(n.role)).map(n => `${n.role}:${(n.title || n.description || '').slice(0, 30)}`).slice(0, 60); return row; }
     row.node = {role: found.node.role, title: found.node.title ?? null, description: found.node.description ?? null, frame: found.node.frame};
+    row.observation = {timings: sky.timings, truncated: sky.truncated, nodes: sky.nodes.length,
+      chosen: found.node, nearby: sky.nodes.filter(n => n.frame && Math.abs(n.frame.x - found.point.x) < 180 && Math.abs(n.frame.y - found.point.y) < 80).slice(-20)};
     const {px, screen} = toPixels(sky, found.point);
     row.point = {px, screen};
     const f = sky.window.frame, win = [f.x, f.y, f.width, f.height];
     row.atShot = await ask({op: 'signals', pid, remember: true, ...screen, window: win});
-    if (between) { const m0 = events.length; await between(); row.changed = events.slice(m0).some(e => e.type === 'changed'); }
+    if (between) { const m0 = events.length; await between({w, pid, sky, row}); row.changed = events.slice(m0).some(e => e.type === 'changed'); row.mutations = events.slice(m0).filter(e => e.type === 'mutation'); }
     await sleep(500);
     row.signals = await ask({op: 'signals', pid, compare: true, ...screen, window: win});
     const mark = events.length;
@@ -1219,6 +1227,12 @@ try {
   else if (GROUP === 'sweep-chrome') await stillBrowser('cft');
   else if (GROUP === 'sweep-firefox') await stillBrowser('firefox');
   else if (GROUP === 'sweep-native') { await stillTextEdit(); await stillFinder(); }
+  else if (GROUP.startsWith('gate-')) {
+    const api = {config, version, stillHarness, URL_, REPS, overBudget, save, connect, observe, sweepPicks, stillCell, refind,
+      centre, edgePoint, EDGES, sleep, sendCmd, findNode, toPixels, brief, OUT, WIN, stillNative, escapeTwice, setFront};
+    if (GROUP === 'gate-native') { await stillTextEdit(); await stillFinder(); await runMailLike(api); }
+    else await runGate(GROUP === 'gate-chrome' ? 'cft' : GROUP.slice(5), api);
+  }
   else throw new Error(`unknown group ${GROUP}`);
 } catch (e) { config.exception = String(e?.stack || e).slice(0, 2000); log('EXCEPTION', config.exception); }
 config.engineStderr = engineErr.slice(-4000);

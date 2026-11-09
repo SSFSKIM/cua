@@ -4522,11 +4522,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   title unreadable now and one unreadable at the observation not refusing, while an absent title still falls to the
   description; a lower-priority unreadable attribute changing nothing, and an unreadable description or value ahead
   of a text's value keeping the point; what counts as a failed slot and a failed single read, and the record keeping
-  it through the walk (`VisibleFirstTests` for the record-only reads). 1,113 engine tests pass, 1 skipped as before. Of 39 parts
-  and bounds of the rule changed in turn (`~/.local/share/187/mutate-298.py`), 37 fail a test. Two survive by design:
-  the number's internal separators, whose removal changes no output (a separator followed by a digit starts another
-  number, which sets the following words aside just the same), and the live seam's value read, which only a live click
-  reaches.
+  it through the walk (`VisibleFirstTests` for the record-only reads). 1,113 engine tests pass, 1 skipped as before. Of
+  72 parts and bounds of the rule, the exemption and the failed-read handling changed in turn
+  (`~/.local/share/187/mutate-298.py`), 65 fail a test. Seven survive by design. Two are equivalent: the number's
+  internal separators, whose removal changes no output (a separator followed by a digit starts another number, which
+  sets the following words aside just the same), and taking the record's editable ancestor at an element itself, which
+  only an editable `AXStaticText` could tell. Five are reached only by a live click: the live seam's value, editable
+  ancestor, actions and label-error reads, and the batched read's keeping of failed slots.
   **The merge gate** (the ruling; #305's lesson: a replay of #296's spike isn't enough on its own): the branch's real
   engine clicks live, with 0 `relabelled` refusals, across unchanged real pages and apps, including pages whose labels
   change on their own: Hacker News, a GitHub pull request page, a page with a live clock or relative times, Finder and

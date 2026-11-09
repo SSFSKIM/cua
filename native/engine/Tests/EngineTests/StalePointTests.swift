@@ -2179,6 +2179,16 @@ final class RelabelledEditableTests: XCTestCase {
       XCTAssertEqual(verdict.identity, .recreated)
       XCTAssertEqual(verdict.reason, .sameElement)
     }
+    do {  // Re-created in the region with another description: the exemption spares its value only.
+      let editor = Editor()
+      editor.text.description = "Greeting"
+      let nodes = recorded(editor.window)
+      editor.text.destroy()
+      let again = Node("AXStaticText", CGRect(x: 40, y: 105, width: 200, height: 20), description: "Farewell", value: "Jello")
+      again.editableAncestor = editor.region
+      editor.paragraph.add(again)
+      XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: again, reads: reads).reason, .nodeGone)
+    }
   }
 
   /// A relabelled link, button or chip inside the edited region is still refused: its text is the node at the point, but

@@ -25,7 +25,7 @@
 //   press         raw (Safari, Firefox): AXPress, the poll, the boxes after, {pre, 0}; then the marker
 //
 //   node scripts/probe-341/run.mjs --browser chrome|safari|firefox --timing late|fresh --engine <bin> --ax <bin> --out <dir>
-//        [--kinds a,b] [--fields a,b] [--repeat N]
+//        [--kinds a,b] [--fields a,b] [--repeat N] [--label main|branch]   (#341 A/B: the engine's side, logged and in config)
 //
 // Runs only on a GitHub-hosted runner: it launches and kills its own browser and TextEdit and moves TextEdit's window.
 import {spawn, spawnSync} from 'node:child_process';
@@ -375,6 +375,7 @@ async function act(ctx, kind, field, fresh) {
       row.dump = await ax(['seq', String(pid), String(q.x), String(q.y), JSON.stringify({expect: L.expect, ops: READ_ONLY})]);
     }
     row.frontBefore = frontmost();
+    row.windowsBefore = await ax(['windows']);
     const actAt = Date.now();
     row.actAt = actAt;
     row.actAfterObservationMs = actAt - observedAt;
@@ -387,9 +388,11 @@ async function act(ctx, kind, field, fresh) {
       row.ax = await ax(['seq', String(pid), String(P.x), String(P.y), JSON.stringify({expect: L.expect, ops: RAW[kind]})]);
     }
     row.actMs = Date.now() - actAt;
+    row.windowsJustAfter = await ax(['windows']);
     row.answer = answer(row.click);
     await sleep(800);
     row.frontAfter = frontmost();
+    row.windowsAfter = await ax(['windows']);
     row.after = pageView(latest(), field);
     const typeAt = Date.now();
     row.typeAt = typeAt;
@@ -430,7 +433,7 @@ async function session(label, kind, fields, fresh) {
       rows.push(row);
       const v = row.verdict;
       if (row.exception || row.problem) log(`${label} ${field}: PROBLEM ${JSON.stringify(row.problem ?? '')} ${row.exception ?? ''}`);
-      else log(`${label} ${kind}/${row.timing}/${field}: expect=${v.expect} dump=${v.dump} pre=${v.pre} post=${v.post} delta=${v.delta} claim=${v.claim} caret=${JSON.stringify(v.caretAfter)} marker=${v.marker} scroll ${v.scrollBefore}->${v.scrollAfter}->${v.scrollAfterType} front=${row.frontBefore}/${row.frontAfter} +${row.actAfterObservationMs}ms ${row.actMs}ms`);
+      else log(`${arg('label') ?? ''} ${label} ${kind}/${row.timing}/${field}: expect=${v.expect} dump=${v.dump} pre=${v.pre} post=${v.post} delta=${v.delta} claim=${v.claim} caret=${JSON.stringify(v.caretAfter)} marker=${v.marker} scroll ${v.scrollBefore}->${v.scrollAfter}->${v.scrollAfterType} shift=${row.answer?.elementClick?.caretMarkShift ?? '-'} step=${row.answer?.elementClick?.focusStep ?? '-'} front=${row.frontBefore}/${row.frontAfter} order=${(row.windowsBefore?.windows ?? []).slice(0, 3).map(w => w.owner).join('>')}/${(row.windowsAfter?.windows ?? []).slice(0, 3).map(w => w.owner).join('>')} +${row.actAfterObservationMs}ms ${row.actMs}ms`);
     }
   } catch (e) {
     meta.exception = String(e?.stack || e).slice(0, 3000);
@@ -447,7 +450,8 @@ const config = {imageOS: process.env.ImageOS ?? null, imageVersion: process.env.
   macOS: sh('sw_vers', []).out.replace(/\s+/g, ' '), browser: BROWSER, timing: TIMING, kinds: KINDS, fields: FIELDS, repeat: REPEAT, rep: REP,
   browserVersion: BROWSER === 'chrome' ? sh(CFT, ['--version']).out : BROWSER === 'firefox' ? sh(FIREFOX, ['--version']).out
     : `Safari ${sh('defaults', ['read', '/Applications/Safari.app/Contents/Info', 'CFBundleShortVersionString']).out}`,
-  engine: ENGINE, mainCommit: process.env.P341_MAIN_COMMIT ?? null, kit: process.env.GITHUB_SHA ?? null};
+  engine: ENGINE, engineLabel: arg('label') ?? null, engineCommit: process.env.P341_ENGINE_COMMIT ?? null,
+  mainCommit: process.env.P341_MAIN_COMMIT ?? null, kit: process.env.GITHUB_SHA ?? null};
 log('config', JSON.stringify(config));
 const sessions = [];
 const rotate = (a, k) => a.map((_, i) => a[(i + k) % a.length]);

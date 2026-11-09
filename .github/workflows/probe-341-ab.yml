@@ -1,0 +1,66 @@
+# #341's hosted A/B (scripts/probe-341/run.mjs, kinds engine and Safari's token): a click into a textarea of a background
+# browser page behind a frontmost TextEdit, top, scrolled (hidden and auto overflow), at the end, scrolled by a wheel, and
+# the 20,499-character one, by main's engine against fix/341-scrolled-caret's, each at a pinned commit. Chrome for Testing
+# late and fresh, and Safari late; two runners, three repeats. Runs only on a push to probe/341-ab; not a ci-kit gate.
+name: probe-341-ab
+on:
+  push:
+    branches: ['probe/341-ab']
+    paths-ignore: ['scripts/probe-341/offline/**']
+permissions:
+  contents: read
+env:
+  P341_REPEAT: '3'
+  P341_MAIN: '4cb51b3b4b0101ecea1aad084e0d493f4fc693ad'
+  P341_BRANCH: 'de3973efca44f738b13398db44797099c4e8d4d3'
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2]
+        group: ['chrome-late', 'chrome-fresh', 'safari']
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build both engines and the AX tool
+        run: |
+          sw_vers
+          git log -1 --format='kit %H %s'
+          for side in main branch; do
+            if [ "$side" = main ]; then commit="$P341_MAIN"; else commit="$P341_BRANCH"; fi
+            git worktree add "$RUNNER_TEMP/$side" "$commit"
+            git -C "$RUNNER_TEMP/$side" log -1 --format="$side %H %s"
+            swift build -c release --package-path "$RUNNER_TEMP/$side/native/engine" --scratch-path "$RUNNER_TEMP/eng-$side"
+          done
+          swiftc -O -o "$RUNNER_TEMP/p341-ax" scripts/probe-341/ax.swift
+      - name: Measure
+        env:
+          P341_REP: ${{ matrix.rep }}
+          GROUP: ${{ matrix.group }}
+        run: |
+          case "$GROUP" in
+            chrome-late) b=chrome; t=late; k=engine ;;
+            chrome-fresh) b=chrome; t=fresh; k=engine ;;
+            safari) b=safari; t=late; k=engine,token ;;
+          esac
+          # main first on odd reps, the branch first on even ones; one engine process at a time.
+          if [ "$P341_REP" = 1 ]; then order="main branch"; else order="branch main"; fi
+          for side in $order; do
+            if [ "$side" = main ]; then export P341_ENGINE_COMMIT="$P341_MAIN"; else export P341_ENGINE_COMMIT="$P341_BRANCH"; fi
+            node scripts/probe-341/run.mjs --browser "$b" --timing "$t" --kinds "$k" --label "$side" \
+              --engine "$RUNNER_TEMP/eng-$side/release/cua-engine" --ax "$RUNNER_TEMP/p341-ax" --repeat "$P341_REPEAT" --out "$RUNNER_TEMP/p341/$side"
+          done
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-341-ab-${{ matrix.group }}-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/p341/*/*.json
+            ${{ runner.temp }}/p341/*/shots-*/**
+          if-no-files-found: warn

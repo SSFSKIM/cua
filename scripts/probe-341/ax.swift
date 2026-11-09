@@ -78,6 +78,16 @@ func pointArgs(_ i: Int) -> CGPoint? {
   return CGPoint(x: x, y: y)
 }
 
+// #341's A/B: the on-screen layer-0 windows front to back (owner pid and name, window number), and the frontmost app.
+if args.count == 2, args[1] == "windows" {
+  let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+  let windows = list.filter { ($0[kCGWindowLayer as String] as? Int) == 0 }.map { w -> [String: Any] in
+    ["pid": w[kCGWindowOwnerPID as String] ?? NSNull(), "owner": w[kCGWindowOwnerName as String] ?? NSNull(), "number": w[kCGWindowNumber as String] ?? NSNull()]
+  }
+  emit(["t": nowMs(), "front": orNull(NSWorkspace.shared.frontmostApplication?.bundleIdentifier), "windows": windows])
+  exit(0)
+}
+
 if args.count == 6, args[1] == "wheel", let p = pointArgs(2), let dy = Double(args[4]), let steps = Int(args[5]), steps > 0 {
   let t0 = nowMs()
   CGWarpMouseCursorPosition(p)

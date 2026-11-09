@@ -4476,6 +4476,23 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      `docs/cua-api/agent-cursor.md`'s stale-point paragraph names the relabel refusal and limits 1 and 5, the ones a
      model can act on; the surface inventory's Table 3 addition of 2026-11-09 (#298), the docs test, parity's docs oracle
      and PROVENANCE.md carry it. The plugin version is bumped at the merge turn.
+  7. **The edited-text exemption** (the design session's ruling 1ea561bc:553, on the build's concern that the model's
+     own typing would be refused; the review of 7f6eb3dc..b2f00ad5, P2 1, found the same). An `AXStaticText`, or a
+     text run inside one, whose nearest editable ancestor is the one recorded for it is not compared: a click there only
+     places a caret, and the text changing is the model's own typing. The editable ancestor is the text's
+     `AXEditableAncestor` where the app exposes it (Chromium, WebKit), else its nearest editable ancestor: an
+     `AXTextArea` (a text area, or a contenteditable region as the browsers expose it), or a contenteditable group that
+     answers an `AXEditableAncestor` of its own (`stalePointEditable`). **The record:** the walk reads
+     `AXEditableAncestor` in its batched attribute read (one more slot per element, the record-only reads included), and
+     each `AXStaticText` node keeps its editable ancestor (`ScreenshotNode.editableAncestor`), found through the
+     record's parents where the attribute is absent. **What stays judged:** anything actionable inside the region. Every
+     element strictly between the text and the region is read, and one of the interactive roles (a link, a button) or
+     one whose actions include AXPress (a mention, a chip) keeps the text judged (`editedInPlace`), as does a text whose
+     editable ancestor now is another one or none, or a text recorded with none. **Both paths:** on the same handle the
+     exemption is read only once the words differ; on the re-created path a text re-created in its recorded region (one
+     character typed over at the same width) is matched without its value, its title and description still compared.
+     **The cost:** a click reads nothing more unless the rule would refuse; then the text's editable ancestor and the
+     role and actions of each element up to the region.
   Proven offline: `RelabelledGuardTests` (11) in `StalePointTests.swift`: the words over the rule's parts; the spike's
   live pairs on a live handle by title and by description (Save -> Delete, Delete -> Delete all, Follow -> Following,
   Play -> Pause refuse; Like (12) -> Like (13), 1 item -> 2 items, Inbox -> Inbox (3), "Notifications" ->
@@ -4486,7 +4503,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   titles and descriptions keeping exact equality; the frame condition; the reason, the sentence, the meta, a recheck
   after a route's wait, and a truncated container; the record keeping the value and subrole, through both of the walk's
   emitters (`VisibleFirstTests` for the record-only one). #296's `testASurvivingHandleRelabelledInPlacePasses` now
-  refuses (`testASurvivingHandleRelabelledInPlaceRefuses`). 1,103 engine tests pass, 1 skipped as before. Of 39 parts
+  refuses (`testASurvivingHandleRelabelledInPlaceRefuses`). The exemption: `RelabelledEditableTests` (4): typed text
+  in a contenteditable passing by its `AXEditableAncestor`, by an `AXTextArea`, by a contenteditable group, as a text
+  run, and re-created at the same width; a relabelled link, button or AXPress chip inside the region refusing; a text
+  whose editable ancestor differs (another region, none now, none recorded) still judged; the record and the walk's
+  batch keeping it (`VisibleFirstTests` for the record-only reads). 1,108 engine tests pass, 1 skipped as before. Of 39 parts
   and bounds of the rule changed in turn (`~/.local/share/187/mutate-298.py`), 37 fail a test. Two survive by design:
   the number's internal separators, whose removal changes no output (a separator followed by a digit starts another
   number, which sets the following words aside just the same), and the live seam's value read, which only a live click
@@ -4499,7 +4520,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   linksavenv, divbtn, linkmono, savearia, deleteall, dialog (Chrome, Safari), relabel, alabel, noid (AppKit), follow
   and play (all three); must pass #296's ticking label at 1, 5 and 20 s, counter, like, items, notif, linknv, divtick,
   linklike, Chrome's tab gaining "(3)", region, labelledby, and the window and web-area titles gaining "(3)"; #296's
-  final A/B set unchanged; and `stalePoint.ms` against main.
+  final A/B set unchanged; and `stalePoint.ms` against main. For the exemption: a click into a contenteditable's text
+  after typing into it, with no new screenshot, passing in Chrome for Testing and Safari (Gmail-style compose; Chromium
+  may give a paragraph inside a clickable page AXPress, which would keep the text judged), a relabelled link inside it
+  refusing, and the observation's cost with `AXEditableAncestor` in the batch against main.
   Date/Author: 2026-11-09, cursor235's lane-1 implementer for the design session's ruling 31a62775 on #298.
 
 ## Outcomes & Retrospective

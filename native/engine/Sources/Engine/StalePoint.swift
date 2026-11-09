@@ -26,7 +26,8 @@ import Foundation
 // (`newElementOverPoint`: a page's own suggestion list over the control). #298 adds rule `relabelled` (the design
 // session's ruling 31a62775): a node found by its own handle, its frame still holding the point, refuses when its label's
 // words changed (`relabelledLabel`, `stalePointLabelWords`: Save to Delete on one element, while a count or a ticking
-// time passes), and the re-created match compares an AXStaticText's value by the same words. Everything here reads
+// time passes), and the re-created match compares an AXStaticText's value by the same words; the text of an editable
+// region the model types into is exempt (`editedInPlace`, ruling 1ea561bc:553). Everything here reads
 // through closures, so the rule is unit-tested over a fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
@@ -40,6 +41,10 @@ struct ScreenshotNode<Element> {
   /// An AXStaticText's value (`screenshotLabelValue`): its label when it has no title or description (#298); nil for
   /// every other role.
   let value: String?
+  /// For an AXStaticText, its nearest editable ancestor at the observation (`screenshotNodes`): its AXEditableAncestor,
+  /// else the nearest ancestor in the record that is an AXTextArea or answers an AXEditableAncestor of its own. #298's
+  /// edited-text exemption (the design session's ruling 1ea561bc:553) compares it with the one found now. Nil otherwise.
+  let editableAncestor: Element?
   /// Its AX frame at the observation, in global screen points (top-left origin), as coordinate clicks are posted.
   let frame: CGRect
   /// The part of the frame its clipping ancestors left showing (`visibleFrame`'s rule over the recorded tree): what the
@@ -86,6 +91,8 @@ struct ScreenshotNodeRead<Element> {
   /// Its AXSubrole, and an AXStaticText's value (`screenshotLabelValue`), for #298's rule `relabelled`.
   var subrole: String? = nil
   var value: String? = nil
+  /// Its AXEditableAncestor (`ElementData.editableAncestor`), for #298's edited-text exemption.
+  var editableAncestor: Element? = nil
 }
 
 /// The value the record keeps of an element (#298): an AXStaticText's, as the walk read it (a string, or an attributed
@@ -121,11 +128,17 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
   var framed: [Int: Int] = [:]
   /// Each read's nearest AXWebArea at or above it (#316).
   var webAreas: [Int: Element] = [:]
+  /// Each read's nearest editable element at or above it (#298: an AXTextArea, or one answering an AXEditableAncestor).
+  var editables: [Int: Element] = [:]
   var nodes: [ScreenshotNode<Element>] = []
   nodes.reserveCapacity(reads.count)
   for read in reads {
     let webArea = read.role == "AXWebArea" ? read.element : read.parent.flatMap { webAreas[$0] }
     if let webArea { webAreas[read.number] = webArea }
+    let editableAbove = read.parent.flatMap { editables[$0] }
+    if let editable = stalePointEditable(role: read.role, editableAncestor: read.editableAncestor) ? read.element : editableAbove {
+      editables[read.number] = editable
+    }
     let boundary = clipBoundaryRoles.contains(read.role)
     let inherited: CGRect? = boundary ? nil : read.parent.flatMap { bounds[$0] ?? nil }
     let own = read.frame
@@ -151,7 +164,9 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
     framed[read.number] = nodes.count
     let shown = cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 }
     nodes.append(ScreenshotNode(element: read.element, role: read.role, title: read.title, description: read.description,
-                                subrole: read.subrole, value: read.value, frame: frame, shown: shown, depth: read.depth,
+                                subrole: read.subrole, value: read.value,
+                                editableAncestor: read.role == "AXStaticText" ? read.editableAncestor ?? editableAbove : nil,
+                                frame: frame, shown: shown, depth: read.depth,
                                 subtreeRecorded: !incomplete.contains(read.number),
                                 thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
                                 ancestor: ancestor, webArea: webArea))
@@ -311,6 +326,10 @@ struct StalePointReads<Element> {
   /// The element's AXValue as text (#298), read only where the recorded node is an AXStaticText; a seam without one
   /// reads none, so a value never counts.
   var value: (Element) -> String? = { _ in nil }
+  /// The element's AXEditableAncestor and its action names (#298's edited-text exemption); a seam without them reads
+  /// none, so no text counts as edited.
+  var editableAncestor: (Element) -> Element? = { _ in nil }
+  var actions: (Element) -> [String]? = { _ in nil }
   var same: (Element, Element) -> Bool
 }
 
@@ -319,7 +338,8 @@ extension StalePointReads where Element == AXUIElement {
     StalePointReads(role: { attribute($0, kAXRoleAttribute) as? String }, frame: liveFrameRead,
                     parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead,
                     title: { liveLabel($0, kAXTitleAttribute) }, description: { liveLabel($0, kAXDescriptionAttribute) },
-                    value: { liveLabel($0, kAXValueAttribute) }, same: { CFEqual($0, $1) })
+                    value: { liveLabel($0, kAXValueAttribute) }, editableAncestor: { elementAttribute($0, "AXEditableAncestor") },
+                    actions: { actionNames(of: $0) }, same: { CFEqual($0, $1) })
   }
 }
 
@@ -434,7 +454,45 @@ func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePoi
   guard let now = nonEmpty(reads.title(element).map(bounded)) ?? nonEmpty(reads.description(element).map(bounded))
           ?? (node.role == "AXStaticText" ? nonEmpty(reads.value(element).map(bounded)) : nil),
         stalePointLabelWords(was) != stalePointLabelWords(now) else { return nil }
+  // The edited-text exemption (ruling 1ea561bc:553): the text of an editable region, changed by the model's own typing.
+  if let region = node.editableAncestor, editedInPlace(element, region: region, reads) { return nil }
   return now
+}
+
+/// Whether an element is editable for #298's edited-text exemption: an AXTextArea (a text area, or a contenteditable
+/// region as Chromium, WebKit and Gecko expose it), or one that answers an AXEditableAncestor (a contenteditable
+/// group, or anything inside one).
+func stalePointEditable(role: String?, editableAncestor: Any?) -> Bool {
+  role == "AXTextArea" || editableAncestor != nil
+}
+
+/// #298's edited-text exemption (the design session's ruling 1ea561bc:553): whether `text`, read now, lies in `region`,
+/// the editable ancestor recorded for it, with nothing actionable between them. Its editable ancestor now is its
+/// AXEditableAncestor, else its nearest editable parent (`stalePointEditable`), up to its web area, window, sheet or
+/// application; it must be `region`. Then every element strictly between the text and the region is read: one of
+/// `stalePointInteractiveRoles` (a link, a button), or one whose actions include AXPress (a mention or a chip), keeps
+/// the text judged. A click there only places a caret, and the text changing is the model's own typing; a control's text
+/// is not. Read only where the rule would otherwise refuse, or a re-created text's words disagree.
+func editedInPlace<Element>(_ text: Element, region: Element, _ reads: StalePointReads<Element>) -> Bool {
+  func nearestEditable() -> Element? {
+    var current = text
+    for _ in 0..<stalePointAncestorLevels {
+      guard let next = reads.parent(current), let role = reads.role(next) else { return nil }
+      if stalePointEditable(role: role, editableAncestor: reads.editableAncestor(next)) { return next }
+      if role == "AXWebArea" || stalePointWalkStops.contains(role) { return nil }
+      current = next
+    }
+    return nil
+  }
+  guard let now = reads.editableAncestor(text) ?? nearestEditable(), reads.same(now, region) else { return false }
+  var current = text
+  for _ in 0..<stalePointAncestorLevels {
+    guard let next = reads.parent(current) else { return false }
+    if reads.same(next, region) { return true }
+    if stalePointInteractiveRoles.contains(reads.role(next) ?? "") || reads.actions(next)?.contains("AXPress") == true { return false }
+    current = next
+  }
+  return false
 }
 
 /// The largest distance between two frames' corresponding edges.
@@ -568,9 +626,15 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
     guard reads.role(candidate) == node.role, let frame = reads.frame(candidate) else { continue }
     let distance = frameDistance(frame, expected)
     guard distance <= stalePointFrameTolerance, best.map({ distance < $0.distance }) ?? true else { continue }
-    guard stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value,
-                                title: reads.title(candidate), description: reads.description(candidate),
-                                value: node.value == nil ? nil : reads.value(candidate)) else { continue }
+    let (title, description) = (reads.title(candidate), reads.description(candidate))
+    func agrees(value: String?) -> Bool {
+      stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value, title: title,
+                            description: description, value: value)
+    }
+    // #298's edited-text exemption: a text re-created in its recorded editable region (typed over) is matched without
+    // its value, its title and description still compared.
+    guard agrees(value: node.value == nil ? nil : reads.value(candidate))
+            || (node.editableAncestor.map { editedInPlace(candidate, region: $0, reads) } == true && agrees(value: nil)) else { continue }
     best = (candidate, frame, distance)
   }
   return best.map { ($0.element, $0.frame) }

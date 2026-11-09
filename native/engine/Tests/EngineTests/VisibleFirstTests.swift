@@ -272,6 +272,17 @@ final class VisibleFirstTests: XCTestCase {
     XCTAssertEqual(recording.screenshotReads.first { tree.id($0.element) == 310 }?.subrole, "AXTabButton")
   }
 
+  /// #298's edited-text exemption: the guard's record-only reads keep an element's AXEditableAncestor, as the tree's do.
+  func testTheGuardsRecordOnlyReadsCarryTheEditableAncestor() {
+    let tree = omittedList()
+    let cell = 2001 + 2 * 210
+    tree.extra[cell] = ["AXRole": "AXStaticText" as CFString, "AXEditableAncestor": Engine.element(310)]
+    let recording = walk(tree, Lineage(), visibleFrame: windowFrame, recordsScreenshot: true)
+    let text = recording.screenshotReads.first { tree.id($0.element) == cell }
+    XCTAssertEqual(text.map { $0.number < 0 }, true, "a record-only cell")
+    XCTAssertEqual(text?.editableAncestor.map { tree.id($0) }, 310)
+  }
+
   func testAWidthRuleOmittedListKeepsItsShownRowsInTheGuardsRecordOnly() {
     let tree = omittedList()
     let shownRows = Set((200..<240).map { 100 + $0 })

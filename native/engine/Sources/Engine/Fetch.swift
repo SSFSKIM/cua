@@ -7,13 +7,14 @@ import Foundation
 
 /// The attributes read per element: the vendor's 20 in its order (F §1.2), then what the Interfaces' Node adds
 /// (AXDOMClassList), the settle's busy signs (AXElementBusy, AXLoaded; F §8.4), the text's context, position, size and
-/// children. One list for the settle's busy walk and the observation's walk, so the observation can read the tree the
+/// children, and the editable region an element lies in (AXEditableAncestor, #298's stale-point record). One list for the settle's busy walk and the observation's walk, so the observation can read the tree the
 /// settle fetched. The scroll bars are not on it: they are read only for an element with a page scroll (scrollBars).
 let observedAttributes: [String] = [
   "AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXValueDescription",
   "AXPlaceholderValue", "AXNumberOfCharacters", "AXHelp", "AXIdentifier", "AXSelected", "AXFocused", "AXEnabled",
   "AXDisclosing", "AXURL", "AXTraits", "AXServesAsTitleForUIElements", "AXRowIndexRange", "AXColumnIndexRange",
   "AXDOMClassList", "AXElementBusy", "AXLoaded", "AXTextualContext", "AXPosition", "AXSize", "AXChildren",
+  "AXEditableAncestor",
 ]
 
 /// What the walk knows of one element. Every optional is nil when the element does not carry the attribute.
@@ -50,6 +51,9 @@ struct ElementData {
   /// Whether AXChildren was read: false when its slot held an error or nothing, which decodes as no children (#330's
   /// rule dL then cannot tell a child the page added from one this read missed).
   var childrenRead: Bool
+  /// AXEditableAncestor (Chromium and WebKit): the editable region the element lies in, which #298's stale-point record
+  /// keeps for an AXStaticText so the model's own typing there is not taken for a relabel.
+  var editableAncestor: AXUIElement?
 
   /// Decodes one element's attribute values, keyed by attribute name.
   init(values: [String: CFTypeRef]) {
@@ -82,6 +86,7 @@ struct ElementData {
     frame = point(values["AXPosition"]).flatMap { origin in size(values["AXSize"]).map { CGRect(origin: origin, size: $0) } }
     children = elementList(values["AXChildren"])
     childrenRead = values["AXChildren"].map { CFGetTypeID($0) == CFArrayGetTypeID() } ?? false
+    editableAncestor = values["AXEditableAncestor"].flatMap { CFGetTypeID($0) == AXUIElementGetTypeID() ? ($0 as! AXUIElement) : nil }
   }
 }
 

@@ -3837,10 +3837,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      background Firefox's activation clicks no activation point (its AXActivationPoint lies on a toolbar control), so
      the click's own mouse down consumes the arm. A hit established outside every web area is `geckoChromeView`, which
      is `unknown` (#315's item 4), and `deliverPointer` answers `clickUnconfirmed` for every posted pointer whose own
-     down consumed the arm into a view not known to accept first mouse. So every shared-mode click on Firefox's chrome
-     (the toolbar, the tabs, the address bar, a sidebar's header) answers `clickUnconfirmed`, whatever it did. Gecko's
-     source says the chrome takes the click, and Reload did. Dedicated mode is untouched: the arm's inert click goes
-     early, and the click's own down consumes nothing.
+     down consumed the arm into a view not known to accept first mouse. So a shared-mode click on Firefox's chrome
+     (the toolbar, the tabs, the address bar, a sidebar's header) whose own down consumes the arm, as a background
+     Firefox's first click does, answers `clickUnconfirmed`, whatever it did. Gecko's source says the chrome takes the
+     click, and Reload did. Three paths answer otherwise: dedicated mode, where the arm's inert click goes early; a
+     click that joins a held activation whose arm is already spent (right after ⌘L, say), which shares it without
+     re-arming (`BackgroundPointerTests`' `testAPointerIntoAnUnknownViewSharesASpentHoldRatherThanReArming`); and a
+     click by element ID that the element's own action carries.
      The fix is #315 item 4's one line, which waits on what item 4 left open. #315's A/B answered half of it: Firefox's
      bookmarks sidebar (307 of 308 grid points) and devtools (239 of 240) answer inside an AXWebArea and the toolbar
      (0 of 124) in none, so only XUL chrome lies outside. The other half, a XUL `<tree>` outside every web area, which
@@ -3861,8 +3864,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      names Firefox and says a `clickUnconfirmed` click "was sent but may only have activated the window: observe the
      app before any retry". For Firefox's chrome that answer is not evidence that nothing happened, and a blind retry
      of Reload reloads twice. So the paragraph gains one sentence before that one: `Unless this Mac is a dedicated
-     desktop, a click on a background Firefox window outside its page, on the toolbar for instance, fails with
-     clickUnconfirmed even when it took effect, as Reload does.` Item 2 is not the model's: it acts on nothing the
+     desktop, a click on a background Firefox window outside its page, on the toolbar for instance, can fail with
+     clickUnconfirmed even when it took effect, as Reload does.` It says "can", since item 1's other paths answer
+     otherwise (the review of the first draft, which said "fails"). Item 2 is not the model's: it acts on nothing the
      release does. Item 3 makes no claim. The docs test (`test/cua-api/core-documentation.test.mjs`), repl-parity's docs
      oracle (`scripts/repl-parity/docs-oracle.mjs`), `docs/cua-api/PROVENANCE.md` and the surface inventory's "Table 3
      addition (2026-11-08, #318)" carry the sentence. Parity's expected diff is that paragraph alone. The plugin goes to

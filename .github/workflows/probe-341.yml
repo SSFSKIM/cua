@@ -10,13 +10,13 @@ on:
 permissions:
   contents: read
 env:
-  P341_REPEAT: '1'
+  P341_REPEAT: '3'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
-        rep: [1]
+        rep: [1, 2]
         group: ['chrome-late', 'chrome-fresh', 'safari', 'firefox']
     runs-on: macos-latest
     timeout-minutes: 120

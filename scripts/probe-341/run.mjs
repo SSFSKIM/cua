@@ -3,7 +3,7 @@
 // scrollTop through the focus and the caret's write, and where a typed marker lands; per candidate direction of the fix
 // (read the boxes before focus; compute from the scroll's Δ; restore the scroll), its offset and cost.
 //
-// The page: six textareas of 40-character lines (`line NNN abc…`, 41 characters a line with its break), each four lines
+// The page: six textareas of 40-character lines (`line NNN abc…`, 41 characters a line with its break), each three lines
 // high: top (75 lines, not scrolled), mid (75, scrolled by script to line 32, overflow hidden as #290's), mida (the same
 // with overflow auto), end (75, scrolled to the bottom), huge (500 lines, 20,499 characters, scrolled to line 230: the
 // point inside the 10,000 characters Chromium's AXValue gives) and wheel (75, overflow auto, scrolled by a scroll-wheel
@@ -59,7 +59,7 @@ const text = n => Array.from({length: n}, (_, i) => longLine(i)).join('\n');
 const SPEC = {top: {n: 75, s: 0, ov: 'hidden'}, mid: {n: 75, s: 640, ov: 'hidden'}, mida: {n: 75, s: 640, ov: 'auto'},
   end: {n: 75, s: 1e6, ov: 'hidden'}, huge: {n: 500, s: 4600, ov: 'hidden'}, wheel: {n: 75, s: 0, ov: 'auto'}};
 const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe341 page</title>
-<style>body{margin:4px;font:12px sans-serif}p{margin:2px 0}textarea{font:16px/20px Menlo,monospace;padding:4px 6px;border:1px solid #888;margin:4px 0;display:block;letter-spacing:0;width:460px;height:80px;resize:none;white-space:pre}</style></head>
+<style>body{margin:2px;font:10px sans-serif}p{margin:0}textarea{font:16px/20px Menlo,monospace;padding:4px 6px;border:1px solid #888;margin:3px 0;display:block;letter-spacing:0;width:460px;height:60px;resize:none;white-space:pre}</style></head>
 <body><p><b>probe341 page</b></p>
 ${ALL_FIELDS.map(f => `<textarea id="ta-${f}" aria-label="Probe ${f} notes" spellcheck="false" wrap="off" style="overflow:${SPEC[f].ov}">${text(SPEC[f].n)}</textarea>`).join('\n')}
 <script>(() => {
@@ -72,7 +72,7 @@ const fieldOf = el => el && el.id && el.id.startsWith('ta-') ? el.id.slice(3) : 
 const state = (ev, extra) => ({load, seq: ++seq, t: Date.now(), ev, ...extra, counts: {...c},
   active: fieldOf(document.activeElement) || (document.activeElement ? document.activeElement.tagName : null), hasFocus: document.hasFocus(),
   sel: Object.fromEntries(FIELDS.map(f => [f, [T[f].selectionStart, T[f].selectionEnd]])),
-  scroll: Object.fromEntries(FIELDS.map(f => [f, T[f].scrollTop])),
+  scroll: Object.fromEntries(FIELDS.map(f => [f, T[f].scrollTop])), scrollY,
   mark: Object.fromEntries(FIELDS.map(f => [f, T[f].value.indexOf('QZ')])),
   lengths: Object.fromEntries(FIELDS.map(f => [f, T[f].value.length]))});
 const send = (ev, extra) => navigator.sendBeacon('/b', JSON.stringify(state(ev, extra)));
@@ -92,11 +92,13 @@ const layout = () => {
     fields[f] = {rect: {x: r.left, y: r.top, w: r.width, h: r.height}, scrollTop: st, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
       line, p: {x, y}, expect: el.value.split('\\n').slice(0, line).reduce((a, l) => a + l.length + 1, 0) + 14, length: el.value.length};
   }
-  return {t: Date.now(), cw, screenX, screenY, outerWidth, outerHeight, innerWidth, innerHeight, dpr: devicePixelRatio, fields};
+  return {t: Date.now(), scrollY, cw, screenX, screenY, outerWidth, outerHeight, innerWidth, innerHeight, dpr: devicePixelRatio, fields};
 };
 const sendLayout = () => navigator.sendBeacon('/layout', JSON.stringify(layout()));
 let layoutTimer = null;
 for (const f of FIELDS) T[f].addEventListener('scroll', () => { c.scroll += 1; send('scroll', {field: f, top: T[f].scrollTop}); clearTimeout(layoutTimer); layoutTimer = setTimeout(sendLayout, 120); });
+// The page itself fits the viewport and should never scroll; if it does, the layout is sent again.
+addEventListener('scroll', () => { send('docscroll', {top: scrollY}); clearTimeout(layoutTimer); layoutTimer = setTimeout(sendLayout, 120); });
 for (const k of ['pointerdown', 'mousedown', 'click', 'keydown', 'input'])
   document.addEventListener(k, e => { c[k] += 1; send(k, {trusted: e.isTrusted, target: fieldOf(e.target) || e.target.tagName}); }, true);
 document.addEventListener('focusin', e => { c.focusin += 1; send('focusin', {target: fieldOf(e.target) || e.target.tagName}); }, true);
@@ -325,7 +327,7 @@ const RAW = {
 };
 const READ_ONLY = [{op: 'pre'}, {op: 'scan', tag: 'pre'}];
 
-const pageView = (b, field) => b ? {t: b.t, active: b.active, hasFocus: b.hasFocus, sel: b.sel?.[field], scroll: b.scroll?.[field], mark: b.mark?.[field],
+const pageView = (b, field) => b ? {t: b.t, scrollY: b.scrollY, active: b.active, hasFocus: b.hasFocus, sel: b.sel?.[field], scroll: b.scroll?.[field], mark: b.mark?.[field],
   length: b.lengths?.[field], otherMarks: Object.entries(b.mark ?? {}).filter(([k, v]) => k !== field && v >= 0).map(([k]) => k)} : null;
 const answer = r => {
   if (!r) return null;
@@ -357,7 +359,8 @@ async function act(ctx, kind, field, fresh) {
     const sky = state.result;
     row.observation = {enablementPrior: sky.timings?.enablementPrior ?? null, enablementWrite: sky.timings?.enablementWrite ?? null};
     const L = layoutData.fields[field];
-    row.layout = {scrollTop: L.scrollTop, line: L.line, expect: L.expect, client: L.p, rect: L.rect, scrollHeight: L.scrollHeight, clientHeight: L.clientHeight, length: L.length, layoutAt};
+    row.layout = {scrollTop: L.scrollTop, line: L.line, expect: L.expect, client: L.p, rect: L.rect, scrollHeight: L.scrollHeight, clientHeight: L.clientHeight, length: L.length, layoutAt,
+      docScrollY: layoutData.scrollY, innerHeight: layoutData.innerHeight, pageBottom: Math.max(...Object.values(layoutData.fields).map(x => x.rect.y + x.rect.h))};
     row.point = pointFor(sky, field, L.p);
     if (row.point.problem) { row.problem = row.point.problem; return row; }
     const P = row.point.clickScreen;

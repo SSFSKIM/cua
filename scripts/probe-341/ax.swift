@@ -104,10 +104,23 @@ let app = AXUIElementCreateApplication(pid)
 AXUIElementSetMessagingTimeout(app, 3)
 let expect = (spec["expect"] as? NSNumber)?.intValue
 var out: [String: Any] = ["trusted": AXIsProcessTrusted(), "startMs": nowMs(), "point": [p.x, p.y]]
-var hitRef: AXUIElement?
-out["hitError"] = AXUIElementCopyElementAtPosition(app, Float(p.x), Float(p.y), &hitRef).rawValue
-guard let hit = hitRef else { emit(out); exit(0) }
+let hitRoles: Set<String> = ["AXTextArea", "AXTextField", "AXStaticText"]
 let textRoles: Set<String> = ["AXTextArea", "AXTextField"]
+// Gecko answers a coarse group for a while after a new client's first contact: the hit-test is asked again every 50 ms
+// for up to 3 s until it answers a text role.
+var hitRef: AXUIElement?
+var hitTries = 0
+let hitStart = nowMs()
+repeat {
+  hitTries += 1
+  hitRef = nil
+  out["hitError"] = AXUIElementCopyElementAtPosition(app, Float(p.x), Float(p.y), &hitRef).rawValue
+  if let h = hitRef, let r = str(h, kAXRoleAttribute), hitRoles.contains(r) { break }
+  usleep(50_000)
+} while nowMs() - hitStart < 3000
+out["hitTries"] = hitTries
+out["hitMs"] = nowMs() - hitStart
+guard let hit = hitRef else { emit(out); exit(0) }
 func fieldOf(_ hit: AXUIElement) -> AXUIElement {
   if let e = element(attr(hit, "AXEditableAncestor")) { return e }
   var cur: AXUIElement? = hit

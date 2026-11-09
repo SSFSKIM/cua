@@ -157,7 +157,7 @@ for (const target of TARGETS) {
         if (!window) { window = [wf.x, wf.y, wf.width, wf.height]; row.snap = await ask({op: 'handles', pid: chrome.pid, window, mode: 'snap'}); }
         const button = sky.nodes.find(n => n.role === 'AXButton' && /Save/.test(`${n.title ?? ''} ${n.description ?? ''}`));
         row.observations.push({ms, command: cmd ?? null, nodes: sky.nodes.length, truncated: sky.truncated ?? null, failures: sky.timings?.fetchFailures ?? 0,
-          walkMs: sky.timings?.walk ?? null, budgetHit: sky.timings?.budgetHit ?? false, tables: tables(sky.nodes), button: button?.token ?? null,
+          walkMs: sky.timings?.walkMs ?? null, budgetHit: sky.timings?.budgetHit ?? false, nodeCapHit: sky.timings?.nodeCapHit ?? false, tables: tables(sky.nodes), button: button?.token ?? null,
           check: await ask({op: 'handles', pid: chrome.pid, window, mode: 'check'})});
         await sleep(1000);
       }

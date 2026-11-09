@@ -466,8 +466,9 @@ extension Engine {
     }
     guard case .success(let resolved) = resolution else {
       guard case .failure(let why) = resolution else { return nil }
-      // A text field is focused instead: on Chromium by AXFocused (#283), with no re-read, since it works before complete
-      // mode; on Gecko by its own action, its focus read back (#315), since a background Firefox ignores the write.
+      // A text field is focused instead: on Chromium through accessibility (#283; by its caret's write, #341), with no
+      // action re-read, since it works before complete mode; on Gecko by its own action, its focus read back (#315),
+      // since a background Firefox ignores the write.
       if why == .editable {
         switch webAreaFocusCarrier(engine) {
         case .focusWrite:
@@ -585,13 +586,18 @@ extension Engine {
     }
   }
 
-  /// The focus route a plain left click into a web area's text field takes (#283, WebAreaFocus.swift): the text-entry
-  /// element the hit resolves to (`webAreaFocusTarget`), refused as #282's walk is when there is none; else AXFocused
-  /// written by route 1 with no activation and accepted once it reads back true, then the caret placed at the point
-  /// (`caretOffset` over the field's own characters' boxes when the hit is the field; over a contenteditable region's
-  /// AXStaticText hit's boxes, mapped into the region's offsets by `regionTextStart`; boxes still empty in a process
-  /// whose accessibility is fresh are re-read for up to 2 s, or 3 s just after an enablement write, `caretAwaitingBoxes`) and read back on the focused element, the result's note saying what was done. Records the walk, the focused role, whether it
-  /// was the hit, and the caret (`elementClick` reason `focusField` or `focusedNotPlaced`).
+  /// The focus route a plain left click into a web area's text field takes (#283, WebAreaFocus.swift; #341's order): the
+  /// text-entry element the hit resolves to (`webAreaFocusTarget`), refused as #282's walk is when there is none; else,
+  /// with nothing written yet, the caret's offset at the point (`caretOffset` over the field's own characters' boxes when
+  /// the hit is the field; over a contenteditable region's AXStaticText hit's boxes, mapped into the region's offsets by
+  /// `regionTextStart`; boxes still empty in a process whose accessibility is fresh are re-read for up to 2 s, or 3 s
+  /// just after an enablement write, `caretAwaitingBoxes`), then AXSelectedTextRange {offset, 0} written by route 1 with
+  /// no activation, which focuses Chromium's field, AXFocused its fallback (and the whole of it where no offset is found
+  /// or the field is a password field), each accepted once the field reads focused; the caret read back on the field
+  /// and a reference character's box against its place before the writes (`focusPlacingCaret`), the result's note
+  /// saying what was done. Records the walk, the focused role, whether it was the hit, the write that focused it
+  /// (`focusStep`, also the plan's action), the box's shift and the caret (`elementClick` reason `focusField` or
+  /// `focusedNotPlaced`).
   func webAreaFocus(_ hit: AXUIElement, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
                     context: ExecutionContext, stalePoint: StalePointGate<AXUIElement>? = nil) -> (inout InputMeta) throws -> Void {
     let role: (AXUIElement) -> String? = { attribute($0, kAXRoleAttribute) as? String }

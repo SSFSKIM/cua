@@ -5,7 +5,8 @@ import Foundation
 // #283: shared mode's focus route. A plain left click into a background Chromium web area whose hit is a text field, a
 // text area or a contenteditable region (#282's walk stops there as `editable`) is carried by Accessibility, with no
 // mouse event and no window ordering: AXFocused set true on the field, accepted only once it reads back true, then the
-// caret placed at the point by AXSelectedTextRange {offset, 0} and read back. #283's hosted probe (probe/283-hosted,
+// caret placed at the point by AXSelectedTextRange {offset, 0} and read back (#341 reverses that order: the offset and
+// the caret's write first, AXFocused the fallback; see `focusPlacingCaret`). #283's hosted probe (probe/283-hosted,
 // runs 42146016617 to 42148369195, Chrome for Testing 156 on macOS 26.6.2 and 26.7.2):
 // - AXFocused on the field focuses the input, the textarea and the contenteditable region, before Chromium's complete
 //   accessibility mode as after it (so #282's re-read never delays this route), with no pointer event, TextEdit left
@@ -780,7 +781,7 @@ func secureTextField(role: String?, subrole: SubroleRead) -> Bool {
 // Firefox kept behind. So on Gecko a text field takes #313's press and read-back, never #283's write.
 
 /// How a shared-mode plain left click into a web area's text entry is carried, by the page's engine (`PageEngine`, only
-/// Chromium's or Gecko's: `pointerView`'s web areas): Chromium's by #283's AXFocused write (`focusPlacingCaret`), Gecko's
+/// Chromium's or Gecko's: `pointerView`'s web areas): Chromium's by #283's focus route (`focusPlacingCaret`: the caret's write, AXFocused its fallback, #341), Gecko's
 /// by the field's own action with its focus read back (`pressFocusingField`).
 enum WebAreaFocusCarrier: Equatable {
   case focusWrite

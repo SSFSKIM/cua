@@ -1,0 +1,293 @@
+diff --git a/native/engine/Sources/Engine/Input.swift b/native/engine/Sources/Engine/Input.swift
+index cbecb3c4..231d00e6 100644
+--- a/native/engine/Sources/Engine/Input.swift
++++ b/native/engine/Sources/Engine/Input.swift
+@@ -109,6 +109,8 @@ struct InputMeta {
+   var stalePoint: StalePointRecord?
+   /// #328's scroll confirmation (ScrollConfirm.swift): the container read, the move seen, the end, the fallback's write.
+   var scroll: ScrollConfirmRecord?
++  /// #330's spike (runner-only, Shadow330.swift): the candidate rules beside the guard.
++  var shadow330: [String: Any]?
+   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
+   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
+   var hidIdleMs: Int?
+@@ -172,6 +174,7 @@ struct InputMeta {
+     if let pointerEstablish { wire["pointerEstablish"] = pointerEstablish.wire }
+     if let stalePoint { wire["stalePoint"] = stalePoint.wire }
+     if let scroll { wire["scroll"] = scroll.wire }
++    if let shadow330 { wire["shadow330"] = shadow330 }
+     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
+     return wire
+   }
+@@ -510,6 +513,7 @@ extension Engine {
+                           rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app, appPid: appPid, context: context)
+         }
+         meta.stalePoint = stale.record
++        meta.shadow330 = shadow330(point: placed.point, window: placed.window, appPid: appPid, hit: pointerHit, verdict: stale.verdict, app: app, context: context)
+         pointer.staleRefusal = stale.refusal
+         // The guard may have recovered a hit the first hit-test missed (a node mid-replacement, `stalePointRehits`): the
+         // route and the view it is classified by are read from that one.
+diff --git a/native/engine/Sources/Engine/Screenshot.swift b/native/engine/Sources/Engine/Screenshot.swift
+index d343dee0..a84c30d0 100644
+--- a/native/engine/Sources/Engine/Screenshot.swift
++++ b/native/engine/Sources/Engine/Screenshot.swift
+@@ -219,6 +219,10 @@ struct ObservedScreenshot {
+   /// The image's size in pixels, the space the model's coordinates arrive in (#328: a point outside it is refused).
+   let width: Int
+   let height: Int
++  /// #330's spike (runner-only): each recorded element and whether its direct children were all recorded, and the app's
++  /// notifications since the screenshot (Shadow330.swift).
++  var members: [ElementKey: Bool] = [:]
++  var watch: ShadowWatch? = nil
+ 
+   init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = []) {
+     self.window = window
+diff --git a/native/engine/Sources/Engine/Shadow330.swift b/native/engine/Sources/Engine/Shadow330.swift
+new file mode 100644
+index 00000000..6ecc1cde
+--- /dev/null
++++ b/native/engine/Sources/Engine/Shadow330.swift
+@@ -0,0 +1,227 @@
++import ApplicationServices
++import CoreGraphics
++import Foundation
++
++// #330's measure-first spike, runner-only: probe/330-measure applies this to main and builds it on the hosted runner.
++// The candidate rules for a page-made suggestion list over a coordinate click's point, read beside the stale-point guard
++// and reported as the meta's `shadow330`. Nothing here refuses, posts or writes; the guard's verdict is untouched.
++
++/// Each element the screenshot's walk recorded, framed or not, and whether the walk recorded every one of its direct
++/// children (so a live child it lacks is new since the screenshot).
++func shadowMembers(_ reads: [ScreenshotNodeRead<AXUIElement>]) -> [ElementKey: Bool] {
++  var recorded: [Int: Int] = [:]
++  for read in reads { if let parent = read.parent { recorded[parent, default: 0] += 1 } }
++  var out: [ElementKey: Bool] = [:]
++  out.reserveCapacity(reads.count)
++  for read in reads { out[ElementKey(element: read.element)] = (recorded[read.number] ?? 0) >= read.childCount }
++  return out
++}
++
++let shadowWatchNames: [String] = [
++  kAXCreatedNotification, kAXUIElementDestroyedNotification, kAXLayoutChangedNotification, kAXMenuOpenedNotification,
++  "AXExpandedChanged", kAXRowCountChangedNotification, "AXLiveRegionCreated", "AXLiveRegionChanged",
++  kAXSelectedChildrenChangedNotification, kAXFocusedUIElementChangedNotification, kAXValueChangedNotification,
++  kAXWindowCreatedNotification, "AXLoadComplete",
++]
++private let shadowElementNames: Set<String> = [kAXCreatedNotification, kAXMenuOpenedNotification, "AXLiveRegionCreated", "AXExpandedChanged",
++                                               kAXRowCountChangedNotification, kAXSelectedChildrenChangedNotification]
++
++/// The app's notifications since the screenshot (candidate e), kept across the clicks placed in it.
++final class ShadowWatch: @unchecked Sendable {
++  private let observer: NotificationObserver?
++  private let lock = NSLock()
++  private var all: [ReceivedNotification] = []
++  let registered: [String]
++
++  init(pid: pid_t) {
++    observer = NotificationObserver(pid: pid, names: shadowWatchNames, keep: true)
++    registered = observer?.registered ?? []
++  }
++
++  deinit { observer?.invalidate() }
++
++  func notifications() -> [ReceivedNotification] {
++    lock.lock()
++    defer { lock.unlock() }
++    all += observer?.drain() ?? []
++    if all.count > 20_000 { all = Array(all.suffix(20_000)) }
++    return all
++  }
++}
++
++private enum ShadowStatus: String { case rec, new, inNew = "in-new", unk }
++
++private func sRole(_ e: AXUIElement) -> String { (attribute(e, kAXRoleAttribute) as? String) ?? "?" }
++private func sSub(_ e: AXUIElement) -> String? { attribute(e, kAXSubroleAttribute) as? String }
++private func sBool(_ e: AXUIElement, _ name: String) -> Any { bool(attribute(e, name)) ?? NSNull() }
++private func r1(_ v: CGFloat) -> Double { (Double(v) * 10).rounded() / 10 }
++private func fw(_ r: CGRect?) -> Any { r.map { [r1($0.minX), r1($0.minY), r1($0.width), r1($0.height)] } ?? NSNull() }
++
++extension Engine {
++  /// The candidates at `point` (global points, as posted), after the guard's verdict: (a) a node the record lacks holding
++  /// the point, by a point-pruned descent and by a bounded full walk of the recorded node's web area; (b) such a node of a
++  /// popup role; (c) the app's focused element expanded, in that web area; (d) the hit's ancestry holding a node the record
++  /// lacks, on the engine's own hit and on hit-tests repeated 0, 60 and 180 ms later (Chromium answers its async hit
++  /// test's result only on a later call); (e) an element the app announced created since the screenshot holding the point.
++  func shadow330(point: CGPoint, window: AXUIElement, appPid: pid_t, hit: AXUIElement?, verdict: StalePointVerdict<AXUIElement>,
++                 app: ResolvedApp, context: ExecutionContext) -> [String: Any] {
++    let started = monotonicMilliseconds()
++    guard let screenshot = context.connection.observedScreenshot(app: app) else { return ["none": "screenshot"] }
++    let members = screenshot.members
++    var out: [String: Any] = ["members": members.count, "reason": verdict.reason.rawValue]
++    let node = verdict.node
++    let area = node?.webArea
++    out["inWebArea"] = area != nil
++    let current = verdict.current ?? node?.element
++    if let node {
++      out["node"] = node.role
++      let now = current.flatMap { frame(of: $0) }
++      out["nodeFrameDist"] = now.map { r1(frameDistance($0, node.frame)) } ?? NSNull()
++    }
++    // The current node's ancestors, for "contains the node".
++    var nodeAncestors = Set<ElementKey>()
++    if let current {
++      var e = current
++      for _ in 0..<80 {
++        guard let p = elementAttribute(e, kAXParentAttribute) else { break }
++        nodeAncestors.insert(ElementKey(element: p))
++        e = p
++        if ["AXWindow", "AXApplication"].contains(sRole(p)) { break }
++      }
++    }
++    let currentKey = current.map { ElementKey(element: $0) }
++    func childStatus(_ key: ElementKey, parent: AXUIElement, parentStatus: ShadowStatus) -> ShadowStatus {
++      if members[key] != nil { return .rec }
++      if parentStatus == .new || parentStatus == .inNew { return .inNew }
++      if parentStatus == .rec, members[ElementKey(element: parent)] == true { return .new }
++      return .unk
++    }
++    let start = area ?? screenshot.window
++    let startStatus: ShadowStatus = members[ElementKey(element: start)] != nil ? .rec : .unk
++
++    // (a) and (b): the point-pruned descent (a frame holding the point, no frame or one under 2 pt either way, or a node
++    // the record lacks, is descended), then the bounded full walk.
++    func walk(pruned: Bool, cap: Int) -> (stab: [[Any]], reads: Int, cut: Bool, visited: Int, newAnywhere: Int, ms: Double) {
++      let t0 = monotonicMilliseconds()
++      var queue: [(AXUIElement, ShadowStatus, Int, Bool)] = [(start, startStatus, 0, false)]
++      var head = 0, reads = 0, cut = false, newAnywhere = 0
++      var stab: [[Any]] = []
++      outer: while head < queue.count {
++        let (e, status, level, under) = queue[head]
++        head += 1
++        guard level < 60, let kids = childrenRead(e) else { continue }
++        reads += 1
++        for k in kids {
++          if reads >= cap { cut = true; break outer }
++          let key = ElementKey(element: k)
++          let st = childStatus(key, parent: e, parentStatus: status)
++          if st == .new { newAnywhere += 1 }
++          let f = frame(of: k)
++          reads += 2
++          let holds = f.map { holdsPoint($0, point) } ?? false
++          let isNode = currentKey.map { $0 == key } ?? false
++          let kUnder = under || isNode
++          if holds {
++            let role = sRole(k)
++            reads += 2
++            stab.append([role, sSub(k) ?? NSNull(), st.rawValue, level + 1, nodeAncestors.contains(key), kUnder, isNode, fw(f)])
++          }
++          let thin = f.map { $0.width < 2 || $0.height < 2 } ?? true
++          if !pruned || holds || thin || st == .new || st == .inNew { queue.append((k, st, level + 1, kUnder)) }
++        }
++      }
++      return (stab, reads, cut, head, newAnywhere, monotonicMilliseconds() - t0)
++    }
++    let popup: Set<String> = ["AXList", "AXMenu", "AXComboBox", "AXTable", "AXOutline", "AXListBox", "AXPopover", "AXGrid", "AXTree"]
++    func summarize(_ w: (stab: [[Any]], reads: Int, cut: Bool, visited: Int, newAnywhere: Int, ms: Double), _ name: String) {
++      // A node the record lacks (new or inside a new one) holding the point, neither containing the node nor inside it.
++      let fresh = w.stab.filter { ["new", "in-new"].contains($0[2] as! String) && !($0[4] as! Bool) && !($0[5] as! Bool) }
++      out[name] = ["a": !fresh.isEmpty, "b": fresh.contains { popup.contains($0[0] as! String) },
++                   "freshRoles": Array(Set(fresh.map { "\($0[0])\(($0[1] as? String).map { "/" + $0 } ?? "")" })).sorted(),
++                   "stab": Array(w.stab.prefix(40)), "stabCount": w.stab.count, "reads": w.reads, "cut": w.cut, "visited": w.visited,
++                   "newAnywhere": w.newAnywhere, "ms": (w.ms * 100).rounded() / 100] as [String: Any]
++    }
++    summarize(walk(pruned: true, cap: 1500), "pruned")
++    summarize(walk(pruned: false, cap: 4000), "full")
++
++    // (c): the focused element.
++    let appElement = prepare(AXUIElementCreateApplication(appPid))
++    if let f = elementAttribute(appElement, kAXFocusedUIElementAttribute) {
++      var inArea: Any = NSNull()
++      if let area {
++        var e = f, found = CFEqual(e, area)
++        for _ in 0..<80 where !found {
++          guard let p = elementAttribute(e, kAXParentAttribute) else { break }
++          if CFEqual(p, area) { found = true }
++          e = p
++        }
++        inArea = found
++      }
++      let expanded = bool(attribute(f, kAXExpandedAttribute))
++      out["focus"] = ["role": sRole(f), "subrole": sSub(f) ?? NSNull(), "expanded": expanded ?? NSNull(), "hasPopup": sBool(f, "AXHasPopup"),
++                      "popupValue": (attribute(f, "AXPopupValue") as? String) ?? NSNull(), "inArea": inArea,
++                      "member": members[ElementKey(element: f)] != nil,
++                      "owns": elementList(attribute(f, "AXOwns")).count, "linked": elementList(attribute(f, kAXLinkedUIElementsAttribute)).count] as [String: Any]
++      out["c"] = expanded == true && (inArea as? Bool) == true
++    } else { out["focus"] = NSNull(); out["c"] = false }
++
++    // (d): the hit's ancestry, the engine's hit and three more hit-tests.
++    func chain(_ h: AXUIElement?) -> [String: Any] {
++      guard let h else { return ["hit": NSNull()] }
++      var list: [AXUIElement] = [h]
++      var e = h
++      for _ in 0..<60 {
++        if let area, CFEqual(e, area) { break }
++        guard let p = elementAttribute(e, kAXParentAttribute) else { break }
++        list.append(p)
++        e = p
++        if ["AXWindow", "AXApplication"].contains(sRole(p)) { break }
++      }
++      // Statuses from the top down.
++      var statuses: [ShadowStatus] = Array(repeating: .unk, count: list.count)
++      for i in stride(from: list.count - 1, through: 0, by: -1) {
++        let key = ElementKey(element: list[i])
++        if i == list.count - 1 { statuses[i] = members[key] != nil ? .rec : .unk; continue }
++        statuses[i] = childStatus(key, parent: list[i + 1], parentStatus: statuses[i + 1])
++      }
++      let reachedArea = area.map { a in list.contains { CFEqual($0, a) } } ?? false
++      let isNew = { (s: ShadowStatus) in s == .new || s == .inNew }
++      return ["d": statuses.contains(where: isNew), "dAnc": statuses.dropFirst().contains(where: isNew), "hitNew": isNew(statuses[0]),
++              "reachedArea": reachedArea, "hitIsNode": currentKey.map { $0 == ElementKey(element: h) } ?? false,
++              "chain": zip(list, statuses).prefix(12).map { pair -> [Any] in [sRole(pair.0), sSub(pair.0) ?? NSNull(), pair.1.rawValue] }]
++    }
++    let t1 = monotonicMilliseconds()
++    var hits: [[String: Any]] = [chain(verdict.hit ?? hit)]
++    for wait in [0.0, 60.0, 120.0] {
++      if wait > 0 { usleep(UInt32(wait * 1000)) }
++      hits.append(chain(hitTest(window: window, pid: appPid, at: point)))
++    }
++    out["hits"] = hits
++    out["hitsMs"] = ((monotonicMilliseconds() - t1) * 100).rounded() / 100
++
++    // (e): the notifications since the screenshot.
++    if let watch = screenshot.watch {
++      let all = watch.notifications()
++      var counts: [String: Int] = [:]
++      var seen = Set<ElementKey>()
++      var created: [[Any]] = []
++      var e = false
++      for n in all {
++        counts[n.name, default: 0] += 1
++        guard shadowElementNames.contains(n.name), created.count < 120 else { continue }
++        let key = ElementKey(element: n.element)
++        guard seen.insert(key).inserted else { continue }
++        let f = frame(of: n.element)
++        let holds = f.map { holdsPoint($0, point) } ?? false
++        let member = members[key] != nil
++        let isAnc = nodeAncestors.contains(key) || (currentKey.map { $0 == key } ?? false)
++        if holds, !member, !isAnc, [kAXCreatedNotification, kAXMenuOpenedNotification, "AXLiveRegionCreated"].contains(n.name) { e = true }
++        created.append([n.name, sRole(n.element), holds, member, isAnc, fw(f)])
++      }
++      out["e"] = e
++      out["notes"] = ["registered": watch.registered, "counts": counts, "elements": Array(created.prefix(40))] as [String: Any]
++    } else { out["e"] = NSNull() }
++    out["ms"] = ((monotonicMilliseconds() - started) * 100).rounded() / 100
++    return out
++  }
++}
+diff --git a/native/engine/Sources/Engine/Skyshot.swift b/native/engine/Sources/Engine/Skyshot.swift
+index 2ef60720..f504967a 100644
+--- a/native/engine/Sources/Engine/Skyshot.swift
++++ b/native/engine/Sources/Engine/Skyshot.swift
+@@ -378,7 +378,10 @@ extension Engine {
+       timings.merge(joined.timings)
+       let image = try joined.result.get()
+       // What this window's coordinate clicks divide by, and the tree they are checked against (#296).
+-      lineage.screenshot = ObservedScreenshot(window: window, image: image, nodes: timings.time("stalePointRecord") { screenshotNodes(walk.screenshotReads) })
++      var observed = ObservedScreenshot(window: window, image: image, nodes: timings.time("stalePointRecord") { screenshotNodes(walk.screenshotReads) })
++      observed.members = timings.time("shadow330Members") { shadowMembers(walk.screenshotReads) }
++      observed.watch = ShadowWatch(pid: appPid)
++      lineage.screenshot = observed
+       return image.wire
+     }
+     timings.add("total", monotonicMilliseconds() - started)

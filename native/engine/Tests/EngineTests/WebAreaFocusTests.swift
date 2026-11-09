@@ -93,6 +93,8 @@ final class WebAreaFocusTests: XCTestCase {
     var selectionScrolls: CGFloat = 0
     /// The value's length after the caret's write (a focus handler filling the field), where it changes.
     var lengthAfterSelection: Int? = nil
+    /// The caret's write leaves the reference character's box unreadable (a focus handler clearing the field).
+    var selectionHidesMark = false
     /// The reference character's box can be read.
     var markReadable = true
     var markY: CGFloat = 100
@@ -161,6 +163,7 @@ final class WebAreaFocusTests: XCTestCase {
         if field.selectionFocuses { field.focused = true }
         field.markY -= field.selectionScrolls
         if let filled = field.lengthAfterSelection { field.length = filled }
+        if field.selectionHidesMark { field.markReadable = false }
       },
       selection: { field.selection },
       noted: { field.record = $0 },
@@ -293,6 +296,16 @@ final class WebAreaFocusTests: XCTestCase {
     var field = Field(lengthAfterSelection: 100, markReadable: false, length: 0)
     XCTAssertEqual(try focus(&field, offset: .success(0)), .notPlaced(.layoutMoved))
     XCTAssertEqual(field.writes, ["AXSelectedTextRange 0"])
+  }
+
+  /// The review of #341 (round 2): the inverse. A field with text whose focus handler clears it (and may reset its
+  /// scroll) is empty at read-back, but was not before the writes: the exemption needs both, so its unreadable box
+  /// after the writes leaves the caret's place unproven.
+  func testAFieldClearedWhileTakingFocusIsNotPlacedWithoutTheReferenceBoxAfter() throws {
+    var field = Field(lengthAfterSelection: 0, selectionHidesMark: true, length: 100)
+    XCTAssertEqual(try focus(&field, offset: .success(0)), .notPlaced(.layoutMoved))
+    XCTAssertEqual(field.writes, ["AXSelectedTextRange 0"])
+    XCTAssertNil(field.record?.markShift, "the box read before the writes only")
   }
 
   /// The probe's contenteditable data: a write answers success and does nothing. Only the read-back counts.

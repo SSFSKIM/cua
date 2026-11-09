@@ -2398,6 +2398,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Chrome 6.0 ms for a single check (15–29 ms where the meta sums two checks around a focus hold), Safari 6.5 ms, native
   8.6 ms; the record per observation, p95: Chrome 0.9 ms, Safari 0.3 ms, native 0.2 ms bar one 9.5 ms observation.
   Date/Author: 2026-11-06, cursor235's implementer for the design session's rulings on #296.
+  Amended 2026-11-09 by #341 (ruling 1ea561bc:550; see #341's entry below): on the focus route the second check now
+  runs after the wait for boxes and before any write, so a changed page is refused `screenChangedSinceScreenshot` with
+  nothing written, and the caret reason `screenChanged` is gone.
 
 - Decision (#301, 2026-11-06, `feat/301-visible-first`; the design session's ruling aed3f041 on #299's findings, issue
   comment 6683886367; amends "Observation (skyshot)"): **when the node budget cuts, the walk keeps what the window
@@ -4316,7 +4319,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        resolves to the same element, not a secure one (`sameTarget`), with the value's length read when the wait began.
      - #296's guard after that wait (`beforeCaret`), which now runs before every write: a changed page is refused
        `screenChangedSinceScreenshot` with nothing written (it used to answer `focusedNotPlaced screenChanged`, since
-       the focus had already happened; that caret reason is gone).
+       the focus had already happened; that caret reason is gone). This amendment of #296 is approved by the design
+       session (ruling 1ea561bc:550).
      - No offset (`noCharacterBoxes`, `pointOutsideText`, `unmapped`, `unreadable`): AXFocused as before, and the
        reason answered.
      - An offset: the reference character's box read (below), the in-flight check, AXSelectedTextRange {offset, 0},
@@ -4338,8 +4342,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      `focusPlacingCaret`, nor does Gecko's press route (#315, `webAreaFocusCarrier`); neither is touched, and the A/B's
      Safari cells answer alike on both engines. Firefox's selection-first placement is registered separately.
   6. **Limits.**
-     - A click on a line the field shows only in part is answered `layoutMoved`: the caret's write scrolls that line
-       into view (5 pt in the A/B's wheel-scrolled field), so the box moves although the caret is at the point.
+     - **A false negative, shipped as it is** (ruling 1ea561bc:550). On a wheel-scrolled field whose clicked line is
+       cut by the field's edge, the caret's write scrolls that line into view by a few points (5 pt in the A/B), so
+       the reference box moves although the caret is at the point: 9 of the A/B's 12 wheel cells answered
+       `layoutMoved` with the caret right (the other 3, where the wheel did not scroll, were placed). The answer is
+       never wrong, only conservative. The finer proof, re-running the box search at the point after the writes
+       (about 30 reads) and placing where it still gives the written offset, is #348.
      - A fresh click still costs the wait for boxes, now before focus (1.5 to 2.0 s in the A/B, as on main).
      - Not measured live: the AXFocused fallback after a caret's write that does not focus (no Chromium cell needed it),
        a contenteditable region and an empty field; the unit tests cover them.

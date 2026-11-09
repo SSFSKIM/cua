@@ -94,9 +94,13 @@ one; that is Safari's existing path and is the same on main.
 
 ## Limits
 
-- **A clipped line.** A click on a line the field shows only in part is answered `layoutMoved`, not placed: the caret's
-  write scrolls the line into view, by 5 pt here. The caret is at the point, but the engine cannot show that from the
-  reference box alone.
+- **A false negative, shipped as it is** (the design session's ruling 1ea561bc:550). On a wheel-scrolled field whose
+  clicked line is cut by the field's edge, the caret's write scrolls that line into view by a few points (5 pt here),
+  so 9 of the 12 branch wheel cells answered `layoutMoved` with the caret right (the other 3, where the wheel did not
+  scroll, were placed). The answer is never wrong, only conservative. The finer proof, re-running the box search at
+  the point after the writes (about 30 reads) and placing where it still gives the written offset, is #348.
+- **#296 amended** (approved, ruling 1ea561bc:550): a page found changed after the wait for boxes, which now precedes
+  every write, is refused `screenChangedSinceScreenshot` with nothing written; no A/B cell changed its page.
 - **The wait before focus.** A fresh Chromium's boxes are empty until its complete accessibility mode; the wait for
   them now precedes every write and keeps #292's deadline (2 s, up to 3 s just after an enablement write). A field
   whose boxes do not come by then is focused by AXFocused, its caret not placed, as before.

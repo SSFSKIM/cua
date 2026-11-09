@@ -57,7 +57,8 @@ struct ElementClickRecord: Equatable {
   /// pointer's point hits instead of a posted click (a coordinate click's record too); #315, a Gecko web area's alike, its
   /// text field by its action with the focus read back (`focus`, `focusStep` "press").
   /// `focusField` and `focusedNotPlaced` (#283): a plain left click into a web area's text field, carried by
-  /// AXFocused, with the caret placed at the point or not (`caret` says why not).
+  /// AXFocused (#341: by the caret's AXSelectedTextRange write, AXFocused its fallback), with the caret placed at the
+  /// point or not (`caret` says why not).
   enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea, focusField, focusedNotPlaced }
   let plan: ElementClickPlan
   let reason: Reason
@@ -76,11 +77,15 @@ struct ElementClickRecord: Equatable {
   var caret: String? = nil
   /// #313, a text-entry element's action (`advertised`; #315, a Gecko web area's field, `webArea`): what its last focus
   /// read-back found (a `FocusReadback` case name), and after which step (`focusStep` "press" | "selection", the caret's
-  /// write on a WebKit page).
+  /// write on a WebKit page). #341, `focusField` and `focusedNotPlaced`: `focusStep` alone, the write the field took
+  /// focus from ("selection", the caret's, or "focused", AXFocused), which is also the plan's action.
   var focus: String? = nil
   var focusStep: String? = nil
   /// #313, the caret's AXSelectedTextRange write when it did not answer success: its AXError.
   var caretWriteError: Int32? = nil
+  /// #341, `focusField` and `focusedNotPlaced` with a caret written: how far, in points, the reference character's box
+  /// moved between the read before the writes and the read after the caret's read-back (`WebAreaFocusRecord.markShift`).
+  var caretMarkShift: Double? = nil
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["reason": reason.rawValue]
@@ -97,6 +102,7 @@ struct ElementClickRecord: Equatable {
     if let focus { wire["focus"] = focus }
     if let focusStep { wire["focusStep"] = focusStep }
     if let caretWriteError { wire["caretWriteError"] = Int(caretWriteError) }
+    if let caretMarkShift { wire["caretMarkShift"] = (caretMarkShift * 10).rounded() / 10 }
     return wire
   }
 }

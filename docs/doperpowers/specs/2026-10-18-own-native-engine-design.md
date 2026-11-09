@@ -2403,6 +2403,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Chrome 6.0 ms for a single check (15–29 ms where the meta sums two checks around a focus hold), Safari 6.5 ms, native
   8.6 ms; the record per observation, p95: Chrome 0.9 ms, Safari 0.3 ms, native 0.2 ms bar one 9.5 ms observation.
   Date/Author: 2026-11-06, cursor235's implementer for the design session's rulings on #296.
+  Amended 2026-11-09 by #341 (ruling 1ea561bc:550; see #341's entry below): on the focus route the second check now
+  runs after the wait for boxes and before any write, so a changed page is refused `screenChangedSinceScreenshot` with
+  nothing written, and the caret reason `screenChanged` is gone.
 
 - Decision (#301, 2026-11-06, `feat/301-visible-first`; the design session's ruling aed3f041 on #299's findings, issue
   comment 6683886367; amends "Observation (skyshot)"): **when the node budget cuts, the walk keeps what the window
@@ -2843,6 +2846,36 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      through their rows by then. Found building it: with rule B in place, rule C binds where a column has at most 100
      children (or its run search fails), since a longer column's offscreen cells are deferred by B behind the rows'
      cells in the document's order, already read through the rows when they come up.
+     **Amended by #310** (2026-11-08, `fix/310-columns-last`; the design session's rulings d9f6902b and 58a9bdf7,
+     amending ruling f1a7589f's rule B for the bare AXColumn): **an AXColumn among a wide list's shown children waits
+     unread in `lastly`; the column header cells and the table's header group stay shown children.**
+     - **Why.** Chromium frames each column as the whole table, so rule B always found a column shown and read it.
+       Reading it took up the width rule over its 6,001 cells at about 28 ms per column, which was most of #304's walk
+       cost: +110 to +323 ms on local-table, -bar and -6k (run 42360213243).
+     - **The rule.** `expand` reads each shown child's role with its frame (`roleReadWithFrame`, one 3-attribute
+       multi-read in place of the frame read). An AXColumn goes to `lastly` in the document's order and is read only
+       once nothing else is left. In a walk the budget cuts, the columns are not printed; when the budget has room, they
+       print as before. So rule B's invariant reads: it never leaves unread a shown child that main would have read
+       before the cut, except a bare AXColumn.
+     - **Live** (runs 42559947292 and 42561992545, the second on 3 runners with 9 alternating pairs per cell; main
+       364e017d against 6ec647eb):
+       - on the cut tables, the paired median walk time moves by −385 and −300 ms (local-table, top and f50), −34 and
+         −93 (-bar) and −567 and −338 (-6k);
+       - the width rule's time falls from 92–214 ms to 16–31, at the same node count;
+       - in the second run main printed 0–6 columns with up to 24 read failures in 9 observations, the branch none
+         with 0 (in the first, one branch observation on the barred table failed 7 reads, its columns re-created
+         mid-walk);
+       - on the tables that fit (fit-120, fit-200, lean-600), the printed node set is identical in order in every pair
+         where neither side failed a read.
+     - **Offline.** `WideListInvariantTests` exempts the bare columns alone. Over #304's 282 spike trees, 154 are
+       verified, 128 are alias-incomplete and there are 0 violations.
+     - **Limit** (ruling 58a9bdf7). A table that fits can lose its columns in an observation where Chromium re-creates
+       them mid-walk. In 5 of 108 such observations the branch read all of them stale (−25202) and printed none, and in
+       4 of the 5 the synthesized header AXGroup too; main failed in 4 of 108, one node each, still printing its columns.
+       Reading them last leaves a longer window for the re-creation. In all 5, every header-row cell (the sort targets,
+       reached through the rows) printed: the nodes lost are only AXColumns and the AXGroup Chromium lists right after
+       them, framed 1×1 at the web area's origin. Re-listing the parent's children when a deferred column reads invalid
+       is residue, with #303's on columns re-created mid-walk.
   5. **What stays.** A walk nothing cuts reads every element once and emits exactly the plain preorder's tree, tokens,
      record and counts; only the read order and the walk time move. Where the cut falls, the tree is printed in the
      document's order with #301's marker, unread children counted and placed by the element they hang from as before.
@@ -4244,12 +4277,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      record and still takes a click aimed under it. In Chrome, a list that overflows its field's container (the
      combobox's link cells, 6 of Chrome's 30) is missed, Chrome's hit-test answering the covered control; only the full
      walk or (c) caught them. Chrome's own `<datalist>` popup lets a click pass through to the page. The rule runs only
-     in web areas. Not measured: a new child listed inside a control found by its own handle (a link whose text node is
-     replaced) is refused, though the click would reach the control; the still sweep and the near-point scenes met none.
+     in web areas. A link whose text node is replaced at the same width was measured live and kept (6 of 6, recorded as
+     AXLink and as AXStaticText); replaced with a width change it is refused `nodeGone` by #296 on both heads, before dL
+     (#340).
      `docs/cua-api/agent-cursor.md`'s stale-point paragraph says which lists the guard refuses, which it misses, and to
      press Escape or take a new screenshot after typing into a field that offers suggestions (the ruling's limit text as
      approved, and Chrome's `<datalist>`); the surface inventory's Table 3 addition of 2026-11-08 (#330), the docs test,
-     parity's docs oracle and PROVENANCE.md carry it. The plugin version is bumped at the merge turn, since the document the server serves changed.
+     parity's docs oracle and PROVENANCE.md carry it. Plugin 0.27.23, since the document the server serves changed.
   Proven offline: `NewElementGuardTests` (11) in `StalePointTests.swift`: a new listed element under a fully recorded
   parent refusing (Safari's and Firefox's list, Chrome's end-of-body list with unlisted row text, a frameless parent, an
   empty list filled; a link row keeping `interactiveHit`), silent with the parent's children cut, on an unlisted
@@ -4272,7 +4306,22 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - **A shared sweep for #298,** built once as a reusable group (pages whose labels change on their own, Finder, a
     native AppKit table whose rows update), so #298's `relabelled` rule is gated on the same cells.
   - **The cost:** `stalePoint.ms` per click on the branch against main (p50, p95, max), and `newElementReads`.
-  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 11bec0ed on #330.
+  **Hosted results** (https://github.com/SSFSKIM/cua/actions/runs/42585577476, kit `probe/330-measure` c0d0644b, main
+  e31bb1f5 against 7f6eb3dc; `docs/evidence/2026-11-09-new-element-over-point/`):
+  - **0 `newElementOverPoint` refusals on 967 branch gate-click attempts.** The lazy feed, the SPA re-render, the late
+    banner and #296-style re-created controls were each kept and landed 6 of 6 across the three browsers. The budget-cut
+    page was kept 3 of 3 as `unrecordedDescendant`, so dL stayed silent there. Native: Finder 25, TextEdit 16 and an
+    AppKit mail-like table updating 119 times 14 were all kept.
+  - **The catches** match the shadow: Safari 30/30, Firefox 30/30, Chrome 24/30. The opacity kind is 0/6 per browser.
+    Wikipedia: every click main kept wrong was caught. All 98 dL refusals were these suggestion catches.
+  - **The cost:** the whole guard's `stalePoint.ms` p50/p95/max was Chrome 1.1/2.9/7.3 ms (main 1.3/3.5/12.1), Firefox
+    1.1/2.9/24.1 (main 0.9/2.6/20.5) and Safari 0.9/2.3/5.1 (main 1.0/2.7/7.9). Most clicks read nothing more.
+  - **Not priced here:** dL on a steadily ticking clock. The fixture's paragraph filled on its first tick and moved the
+    target, so both heads refused those clicks through #296 (`nodeGone`, `frameMoved`). The design session made a
+    clock run a merge condition (1ea561bc:554): the line reserved before the screenshot and clicked on its ticking text,
+    and a ticking "N s ago" inside a clickable list row, in three browsers, 0 `newElementOverPoint` required.
+  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 11bec0ed on #330; hosted results
+  2026-11-09.
 
 - Decision (#290, 2026-11-08, `fix/290-caret-search`; the issue's intent, spawned by #283's 5,000-character bound; the
   design session's ruling 31a62775 on the stated limits; amends #283's entry on the caret's offset): **the caret's
@@ -4399,6 +4448,92 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   and 6,000 rows, the HN thread) both re-issued them alike, the stated limit; the branch had 0 read failures. The first
   A/B (run 42558781067, fd51d41b, before the completeness condition) had kept the cut tables' tokens too.
   Date/Author: 2026-11-08, cursor235's lane-3 implementer for #303.
+
+- Decision (#310, 2026-11-08, `fix/310-columns-last`; the design session's rulings d9f6902b and 58a9bdf7): **an
+  AXColumn among a wide list's shown children waits unread in rule C's `lastly`, read only once nothing else is left.**
+  Recorded where it changes the rule: #304's entry, item 4, "Amended by #310", with the hosted A/B (runs 42559947292
+  and 42561992545), the offline invariant over #304's trees, and the stated limit (a fitting table's columns lost in an
+  observation where Chromium re-creates them mid-walk, the header row's cells always printed).
+  Date/Author: 2026-11-08, cursor235's lane-3 implementer for #310.
+
+- Decision (#341, 2026-11-08, `fix/341-scrolled-caret`; the design session's ruling 1ea561bc:544 on the measured
+  direction; amends #283's items 3, 4 and 6 and #296's second check on the focus route): **a click into a Chromium
+  web area's text field computes its caret's offset before anything is written, then writes AXSelectedTextRange
+  {offset, 0}, which focuses the field; AXFocused is only the fallback. "Placed" is answered only where the caret reads
+  back at the offset and the field's text has not moved.**
+  1. **The measurement** (run 42568677106, https://github.com/SSFSKIM/cua/actions/runs/42568677106, kit
+     `probe/341-measure` at 506ddda8; Chrome for Testing 156 on two runners, late and fresh). Writing AXFocused scrolls
+     Chromium's textarea to its existing caret (`scrollTop` to 0 within 0 to 8 ms), so the boxes #283 read after focus
+     described the top-scrolled layout, not the screenshot: main's engine claimed "placed" with the caret on the wrong
+     line in 46 of 60 placed claims. AXSelectedTextRange {k, 0} written on the unfocused textarea focused it by itself
+     (read focused 11 to 63 ms later) and left the scroll unchanged: 72 of 72 cells right, late and fresh. A following
+     AXFocused write changed nothing. A fresh Chromium fills the boxes without focus, 1.24 to 1.91 s after the
+     observation: the same wait #283 paid after focus.
+  2. **The order** (`focusPlacingCaret`, WebAreaFocus.swift). A password field is focused only, by AXFocused, as
+     before. Otherwise:
+     - The offset first, with nothing written: #283's box scan (#290's search), and in a fresh process
+       `caretAwaitingBoxes`' wait for boxes. **Its cap is #292's deadline, unchanged** (`webAreaRereadDeadline`: 2 s
+       from its start, up to 3 s just after an enablement write), so the wait before focus is never longer than the
+       wait after it was. Before focus the field is not focused, so a re-read's offset counts where the hit still
+       resolves to the same element, not a secure one (`sameTarget`), with the value's length read when the wait began.
+     - #296's guard after that wait (`beforeCaret`), which now runs before every write: a changed page is refused
+       `screenChangedSinceScreenshot` with nothing written (it used to answer `focusedNotPlaced screenChanged`, since
+       the focus had already happened; that caret reason is gone). This amendment of #296 is approved by the design
+       session (ruling 1ea561bc:550).
+     - No offset (`noCharacterBoxes`, `pointOutsideText`, `unmapped`, `unreadable`): AXFocused as before, and the
+       reason answered.
+     - An offset: the reference character's box read (below), the in-flight check, AXSelectedTextRange {offset, 0},
+       and focus polled for #283's settle (300 ms, every 20 ms). Still unfocused: the in-flight check, AXFocused and
+       its poll; still unfocused then, `clickUnconfirmed`.
+     - The selection polled back for the same settle, then the reference box read again.
+  3. **Placed only where proven** (the ruling's condition 1). The scroll signal is the box (`AXBoundsForRange`) of one
+     character next to the caret, the one after it, else the one before (`caretMarkIndex`), in the element whose boxes
+     gave the offset (a contenteditable region's hit text, in its own offsets). It is read before the writes and after
+     the caret's read-back, and may move at most 1 pt in x and y (`caretMarkTolerance`). A move past that, or a box
+     that cannot be read again, answers `focusedNotPlaced` with the new caret reason `layoutMoved`, and a note that
+     the caret was written at the point but its place against the screenshot is not confirmed, so take a new
+     screenshot. A field needs no box only where it is empty before the writes and at read-back (offset 0 in a text
+     of length 0 both times). A field a focus handler fills, or clears, meanwhile needs the box on both sides, and
+     with either read missing is `layoutMoved` (the review's rounds 1 and 2). A caret read back elsewhere is
+     `selectionMismatch`, as before.
+  4. **The record.** `elementClick` keeps `reason focusField | focusedNotPlaced`. Its `action` is now the write the field
+     took focus from (`AXSelectedTextRange`, or `AXFocused` on the fallback and the no-offset paths), `focusStep` says
+     the same (`selection` | `focused`), and `caretMarkShift` gives the box's move in points where it was read twice.
+  5. **Unchanged.** Safari's path (#313's element click and #324's caret-first focusField) never reaches
+     `focusPlacingCaret`, nor does Gecko's press route (#315, `webAreaFocusCarrier`); neither is touched, and the A/B's
+     Safari cells answer alike on both engines. Firefox's selection-first placement is registered separately.
+  6. **Limits.**
+     - **A false negative, shipped as it is** (ruling 1ea561bc:550). On a wheel-scrolled field whose clicked line is
+       cut by the field's edge, the caret's write scrolls that line into view by a few points (5 pt in the A/B), so
+       the reference box moves although the caret is at the point: 9 of the A/B's 12 wheel cells answered
+       `layoutMoved` with the caret right (the other 3, where the wheel did not scroll, were placed). The answer is
+       never wrong, only conservative. The finer proof, re-running the box search at the point after the writes
+       (about 30 reads) and placing where it still gives the written offset, is #348.
+     - A fresh click still costs the wait for boxes, now before focus (1.5 to 2.0 s in the A/B, as on main).
+     - Not measured live: the AXFocused fallback after a caret's write that does not focus (no Chromium cell needed it),
+       a contenteditable region and an empty field; the unit tests cover them.
+  Proven offline (`WebAreaFocusTests`, 48): the caret written first and nothing else; the fallback to AXFocused with the
+  caret re-read, and a focus that puts the caret back elsewhere; a field scrolled by focus or by the caret's write and a
+  reference box that cannot be read again not placed, a shift within a point placed; an empty field placed without a
+  box, and one filled or one cleared while taking focus not placed; no offset and a password field focused by AXFocused with nothing
+  read; the in-flight check stopping the click before any write, and between the caret's write and the fallback; the guard after the wait refusing with nothing
+  written; the wait's re-validation without focus; the reference character's choice; the record and the `layoutMoved`
+  note. The engine's `swift test` passes (1,091, with main at 95ed66e0 merged).
+  Proven live (`docs/evidence/2026-11-08-scrolled-caret/`; run 42578081142,
+  https://github.com/SSFSKIM/cua/actions/runs/42578081142, kit `probe/341-ab` at e91c1e6c, two runners, main 4cb51b3b
+  against de3973ef; coordinate clicks on six textareas, top, scrolled by script with overflow hidden and auto, at the
+  end, 20,499 characters, and scrolled by a scroll-wheel event; Chrome for Testing late and fresh, Safari late with
+  token clicks too; 3 repeats):
+  - Chrome, 72 cells per engine: main claimed placed in all 72 and was wrong in 59 (every scrolled field, the field
+    scrolled to its top). The branch claimed placed in 63, none wrong, and the caret and the typed marker were at the
+    point in all 72, every one focused by the caret's write. The 9 not placed are `layoutMoved` on the wheel-scrolled
+    field (the limit above), each with the caret right. The reference box moved 0 in every placed cell.
+  - Late clicks took 57 to 83 ms at the median per field, against main's 118 to 168 ms; fresh clicks 1.47 to 2.04 s,
+    against 1.16 to 2.05 s.
+  - Nothing raised: TextEdit stayed frontmost and the window order (the engine's cursor overlay aside) was unchanged
+    just after and 0.8 s after every Chrome click, on both engines.
+  - Safari: both engines answered alike in all 72 cells each, caret and marker at the point.
+  Date/Author: 2026-11-08, cursor235's implementer for #341.
 
 - Decision (#298, 2026-11-09, `fix/298-relabelled`, built on #330's branch; the design session's ruling 31a62775 on the
   spike's findings, https://github.com/SSFSKIM/cua/issues/298#issuecomment-6732058816, ruling

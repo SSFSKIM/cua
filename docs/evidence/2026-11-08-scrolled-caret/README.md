@@ -110,4 +110,4 @@ one; that is Safari's existing path and is the same on main.
 
 ## Tests
 
-`WebAreaFocusTests` (48: 9 new for #341, and the focusing click's existing tests rewritten to the new order) and the engine's `swift test` (1,088 with main at e31bb1f5 merged, 0 failures, 1 skipped) pass.
+`WebAreaFocusTests` (48: 9 new for #341, and the focusing click's existing tests rewritten to the new order) and the engine's `swift test` (1,091 with main at 95ed66e0 merged, 0 failures, 1 skipped) pass.

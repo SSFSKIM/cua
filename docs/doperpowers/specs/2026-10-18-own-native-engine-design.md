@@ -4396,7 +4396,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   box, and one filled or one cleared while taking focus not placed; no offset and a password field focused by AXFocused with nothing
   read; the in-flight check stopping the click before any write, and between the caret's write and the fallback; the guard after the wait refusing with nothing
   written; the wait's re-validation without focus; the reference character's choice; the record and the `layoutMoved`
-  note. The engine's `swift test` passes (1,088).
+  note. The engine's `swift test` passes (1,091, with main at 95ed66e0 merged).
   Proven live (`docs/evidence/2026-11-08-scrolled-caret/`; run 42578081142,
   https://github.com/SSFSKIM/cua/actions/runs/42578081142, kit `probe/341-ab` at e91c1e6c, two runners, main 4cb51b3b
   against de3973ef; coordinate clicks on six textareas, top, scrolled by script with overflow hidden and auto, at the

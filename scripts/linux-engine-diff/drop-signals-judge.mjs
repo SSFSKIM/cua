@@ -7,7 +7,7 @@
 export const FREEZE_ENDS = [230, 240, 250, 255, 260, 280, 330];
 
 /** The page's drag sources (`data-src`), in its status line's order. */
-export const SOURCES = ['plain', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext'];
+export const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext'];
 
 /** The drags a load needs before any count of it can stand for an adoption (the design session's 300, M4 pre-flight). */
 export const MIN_DRAGS = 300;
@@ -56,8 +56,8 @@ export function parseDropStatus(texts) {
  * The page cells (drop-signals.mjs `CELLS`): a cell either drags from a source (`src`, a drop counted when `zone`) or
  * is a kind with an effect of its own.
  */
-export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', plain: 'plain', nozone: 'plain', nested: 'nested', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain' };
-export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', 'plain', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'plain-long'];
+export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain' };
+export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'plain-long'];
 
 /** The range runs' end values: even runs drag up to about 10, odd runs back to 0 (drop-signals.mjs `CELLS.range`). */
 export const RANGE_END = (i) => (i % 2 === 0 ? 10 : 0);
@@ -277,17 +277,18 @@ export function coverTable(rows) {
   const judged = rows.filter((r) => r.kind === 'drop-signal' && r.cover);
   const counts = [];
   const md = [
-    "Covered paths on the background route (measurement only, `--drag-ignore-cover`), shared mode: an override-redirect window of the harness's over a part of the path. A kind survived when its effect showed (a drop source: when Chrome took `XdndSelection`; the engine then cancels the drop, since Chrome is not in front). The start role is the role probe's at the path's first point.",
+    "Covered paths on the background route (measurement only, `--drag-ignore-cover`), shared mode, Chrome raised but not active: a window over a part of the path, either an override-redirect window of the harness's (`cua:cover`) or the harness's managed front window, its frame and title bar included (`cua:cover-managed`). A kind survived when its effect showed (a drop source: when Chrome took `XdndSelection`; the engine then cancels the drop, since Chrome is not in front). The start role is the role probe's at the path's first point.",
     '',
-    '| cell | covered part | drags | survived | start role |',
-    '|---|---|---:|---:|---|',
+    '| cell | covered part | cover | drags | survived | start role |',
+    '|---|---|---|---:|---:|---|',
   ];
-  for (const [key, at] of groups(judged, (r) => [r.cell, r.cover].join('\u0000'))) {
-    const [cell, cover] = key.split('\u0000');
+  const coverBy = (r) => (r.lane === 'cua:cover-managed' ? 'managed' : 'override-redirect');
+  for (const [key, at] of groups(judged, (r) => [r.base ?? r.cell.split('@')[0], r.cover, coverBy(r)].join('\u0000'))) {
+    const [cell, cover, by] = key.split('\u0000');
     const survived = at.filter((r) => (CELL_SOURCE[cell] ? r.outcome?.started === true || r.signals?.take_after_press_ms != null : r.outcome?.effect === true)).length;
     const roles = [...groups(at, (r) => r.probe?.deepest?.role ?? 'none')].map(([role, rs]) => `${role} ${rs.length}`).join(', ');
-    counts.push({ cell, cover, n: at.length, survived, roles });
-    md.push(`| ${cell} | ${cover} | ${at.length} | ${survived} | ${roles} |`);
+    counts.push({ cell, cover, by, n: at.length, survived, roles });
+    md.push(`| ${cell} | ${cover} | ${by} | ${at.length} | ${survived} | ${roles} |`);
   }
   return { counts, md };
 }

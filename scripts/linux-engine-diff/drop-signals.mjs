@@ -30,6 +30,7 @@ import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
 import { probeAt } from './role-probe.mjs';
 import { openScene } from './run.mjs';
+import { configure } from './scenes.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { spawnXprobe, xdotool } from './xtools.mjs';
@@ -47,6 +48,8 @@ export const CELLS = {
   // the plain source dragged away from the zone: a take, then a leave
   nozone: () => [[530, 128], [490, 128]],
   nested: () => [[530, 174], [570, 174]],
+  // the nested span again, its dragstart handler busy 150 ms: a take under a text role that comes after the path
+  'nested-late': () => [[530, 542], [570, 542]],
   slider: () => [[530, 220], [570, 220]],
   'dragstart-150': () => [[530, 266], [570, 266]],
   'press-150': () => [[530, 312], [570, 312]],
@@ -118,6 +121,8 @@ export const LANES = {
   'cua:accept-gate': { args: ['--drag-dnd-release-at-accept'], gate: true },
   // background drags along a covered path (measurement only), Chrome not in front
   'cua:cover': { args: ['--drag-ignore-cover'], cover: true },
+  // the same under the harness's managed front window (frame and title bar included) in place of the override-redirect
+  'cua:cover-managed': { args: ['--drag-ignore-cover'], cover: true, managed: true },
 };
 
 /** The plans: `[lane, cell, drags]`. The never-take survey reads every drag's start point, whatever its lane. */
@@ -134,6 +139,17 @@ export const PLANS = {
     ['cua:accept-gate', 'plain', 30],
   ],
   cover: Object.keys(COVER_CELLS).flatMap((cell) => COVER_PARTS.map((part) => ['cua:cover', `${cell}@${part}`, 20])),
+  'cover-managed': Object.keys(COVER_CELLS).flatMap((cell) => COVER_PARTS.map((part) => ['cua:cover-managed', `${cell}@${part}`, 20])),
+  // the false-negative control that joins two: a draggable under a text role whose take comes after the path
+  extra: [['cua', 'nested-late', 30]],
+  // the after-release signals and the accept in Electron (`--family electron`), which has no freeze cell: whether
+  // Chrome's signals hold for the Chromium toolkit the floor and the hold also cover
+  electron: [
+    ['cua', 'plain', 30],
+    ['cua', 'nozone', 30],
+    ['cua:floor0', 'plain', 60],
+    ['cua:accept', 'plain', 30],
+  ],
   // the freeze sweep: where a lagging browser's thaw falls against the release
   freeze: FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]),
   pilot: [
@@ -215,9 +231,24 @@ async function frameOf(desktop, scene) {
   return tree?.id ?? preorder(tree)[0]?.id ?? null;
 }
 
-/** An override-redirect window of the harness's over a screen rectangle while `body` runs. */
-async function withCover(rect, body) {
+/**
+ * A window of the harness's over a screen rectangle while `body` runs: an override-redirect one, or with `managed` the
+ * run's front window (an xterm the window manager frames) moved there, its client at the rectangle, then put back in
+ * its corner; the frame's extents are answered beside it.
+ */
+async function withCover(rect, body, { desktop = null, managed = false } = {}) {
   if (!rect) return body();
+  if (managed) {
+    configure(desktop.front.id, rect.x, rect.y, rect.w, rect.h);
+    desktop.focusFront();
+    await sleep(300);
+    try {
+      return await body(desktop.front.id);
+    } finally {
+      desktop.arrangeFront('visible');
+      await sleep(150);
+    }
+  }
   const child = spawnXprobe(['overlay', rect.x, rect.y, rect.w, rect.h], { stdio: ['pipe', 'pipe', 'inherit'] });
   const exited = new Promise((resolve) => child.once('exit', resolve));
   const shown = await new Promise((resolve) => {
@@ -307,7 +338,7 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const screenRect = rect && { ...rect, x: rect.x + at.page.x + scene.window.x, y: rect.y + at.page.y + scene.window.y };
   const sent = Date.now();
   const frozen = freezeOf(base) ? freezeBrowser(ctx.browser, freezeOf(base)) : null;
-  const value = await withCover(screenRect, () => engine.request('drag', { window: { id: scene.id }, path }));
+  const value = await withCover(screenRect, () => engine.request('drag', { window: { id: scene.id }, path }), { desktop, managed: LANES[lane].managed === true });
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
   await sleep(1000);

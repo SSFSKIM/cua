@@ -178,12 +178,14 @@ test('the late-take table: takes after the release, whether the drag still answe
   assert.equal(t.counts.find((x) => x.cell === 'plain').late, 0);
 });
 
-test('the cover table: survival by kind and covered part, with the start role beside it', () => {
-  const c = (kind, part, survived, role = 'section') => ({ kind: 'drop-signal', load: 'idle', lane: 'cua:cover', cell: kind, cover: part, ok: true, probe: { deepest: { role } }, outcome: kind === 'plain' ? { started: survived, landed: false, effect: null } : { started: false, landed: false, effect: survived } });
-  const t = coverTable([c('select', 'start', false, 'paragraph'), c('select', 'start', true, 'paragraph'), c('select', 'none', true, 'paragraph'), c('plain', 'end', true)]);
+test('the cover table: survival by kind, covered part and cover, with the start role beside it', () => {
+  // rows as the runner writes them: the cell names its covered part, the lane its kind of cover
+  const c = (kind, part, survived, role = 'section', lane = 'cua:cover') => ({ kind: 'drop-signal', load: 'idle', lane, cell: `${kind}@${part}`, base: kind, cover: part, ok: true, probe: { deepest: { role } }, outcome: kind === 'plain' ? { started: survived, landed: false, effect: null } : { started: false, landed: false, effect: survived } });
+  const t = coverTable([c('select', 'start', false, 'paragraph'), c('select', 'start', true, 'paragraph'), c('select', 'none', true, 'paragraph'), c('plain', 'end', true), c('plain', 'end', false, 'panel', 'cua:cover-managed')]);
   const s = t.counts.find((x) => x.cell === 'select' && x.cover === 'start');
-  assert.deepEqual({ n: s.n, survived: s.survived, role: s.roles }, { n: 2, survived: 1, role: 'paragraph 2' });
-  assert.equal(t.counts.find((x) => x.cell === 'plain').survived, 1, "a drop's survival is its take");
+  assert.deepEqual({ n: s.n, survived: s.survived, role: s.roles, by: s.by }, { n: 2, survived: 1, role: 'paragraph 2', by: 'override-redirect' });
+  const plain = t.counts.filter((x) => x.cell === 'plain' && x.cover === 'end');
+  assert.deepEqual(plain.map((x) => [x.by, x.survived]), [['override-redirect', 1], ['managed', 0]], "a drop's survival is its take; each cover kind apart");
 });
 
 test("the block plan: blocks of ten, each cell's lanes interleaved and rotating, every drag counted once", () => {
@@ -210,7 +212,7 @@ test("a covered range's drag ends where its own path ends, and a plain range's a
 test("the plan's cells: every drop path 40 px into the zone, the covers placed on the part they name, every spec capped by --trials", async () => {
   const { CELLS, COVER_CELLS, LANES, PLANS, coverRect, planSpecs } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
   const { ZONE_CELLS } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
-  const zone = { x0: 560, x1: 960, y0: 100, y1: 520 };
+  const zone = { x0: 560, x1: 960, y0: 100, y1: 560 };
   const inZone = ([x, y]) => x >= zone.x0 && x < zone.x1 && y >= zone.y0 && y < zone.y1;
   for (const cell of ZONE_CELLS.filter((c) => c !== 'plain-long')) {
     const path = CELLS[cell](0);
@@ -237,6 +239,7 @@ test("the plan's cells: every drop path 40 px into the zone, the covers placed o
   assert.ok(!main.some((s) => LANES[s.lane].gate), 'the gate cells only at the gate load');
   assert.ok(planSpecs({ plan: 'main', ballast: 'gate' }).some((s) => LANES[s.lane].gate));
   assert.ok(planSpecs({ plan: 'cover' }).every((s) => LANES[s.lane].cover && s.cell.includes('@')));
+  assert.ok(planSpecs({ plan: 'cover-managed' }).every((s) => LANES[s.lane].managed && s.cell.includes('@')), 'the managed cover has its own lane');
   assert.ok(planSpecs({ plan: 'main', trials: 3 }).every((s) => s.n <= 3));
   assert.deepEqual([...new Set(planSpecs({ plan: 'main', lanes: ['cua:floor0'] }).map((s) => s.lane))], ['cua:floor0']);
   for (const [lane] of Object.values(PLANS).flat()) assert.ok(LANES[lane], `${lane} is a lane`);

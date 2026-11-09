@@ -14,10 +14,10 @@
   #canvas { left: 20px; top: 350px; width: 400px; height: 200px; background: #eeeeee; touch-action: none; }
   #seltext { left: 20px; top: 600px; white-space: nowrap; }
   #inert { left: 440px; top: 400px; width: 50px; height: 36px; background: #b0b0b0; }
-  #zone { left: 560px; top: 100px; width: 400px; height: 420px; background: #d8e8d0; }
+  #zone { left: 560px; top: 100px; width: 400px; height: 460px; background: #d8e8d0; }
   .src { left: 505px; width: 50px; height: 36px; background: #6a8fd0; color: #ffffff; overflow: hidden; }
-  #nested { background: #ffffff; color: #000000; font: 28px monospace; line-height: 36px; }
-  #nested span { background: #6a8fd0; }
+  #nested, #nested-late { background: #ffffff; color: #000000; font: 28px monospace; line-height: 36px; }
+  #nested span, #nested-late span { background: #6a8fd0; }
   #slider div { width: 100%; height: 100%; }
   #link { display: block; text-decoration: none; font-size: 14px; line-height: 36px; }
   #status { left: 20px; top: 640px; font-size: 10px; }
@@ -36,7 +36,7 @@
        under a text role).
      - the sources (`data-src`), each 5 px left of the zone, a short drop 10 px into it:
        plain: a draggable div; nested: a draggable span inline in a paragraph (the paragraph is what the tree shows
-       at the point); slider: a draggable div inside an ARIA slider, whose children are presentational; dragstart-<ms>:
+       at the point); nested-late: the same with its dragstart handler busy 150 ms; slider: a draggable div inside an ARIA slider, whose children are presentational; dragstart-<ms>:
        a draggable div whose dragstart handler keeps the renderer busy that long (a delayed dragstart); press-<ms>: one
        whose pointerdown handler does (a page that starts its drag late: the renderer reaches the drag threshold only
        after it); link and image: draggable by default.
@@ -58,6 +58,7 @@
 <div id="dragstart-400" class="abs src" style="top: 340px" draggable="true" data-src="dragstart-400" data-dragstart-ms="400" aria-label="Slow dragstart 400"></div>
 <div id="press-400" class="abs src" style="top: 386px" draggable="true" data-src="press-400" data-press-ms="400" aria-label="Busy press 400"></div>
 <a id="link" class="abs src" style="top: 432px" href="#drop-signals-link" data-src="link">link</a>
+<p id="nested-late" class="abs src" style="top: 524px"><span draggable="true" data-src="nested-late" data-dragstart-ms="150">MM</span></p>
 <img id="image" class="abs src" style="top: 478px" data-src="image" alt="Image source" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='50' height='36'%3E%3Crect width='50' height='36' fill='%236a8fd0'/%3E%3C/svg%3E">
 <div id="status" class="abs">
   <p id="s-dnd">dnd</p>
@@ -92,7 +93,7 @@
 
   // a drag and drop, by the source it started from: starts, drops on the zone, and the last dragend's dropEffect and
   // times (ms from the press to dragstart, and from dragstart to dragend)
-  const SOURCES = ['plain', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext'];
+  const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext'];
   const dnd = Object.fromEntries(SOURCES.map((s) => [s, { starts: 0, drops: 0 }]));
   const last = { src: 'none', effect: -1, lat: -1, dur: -1 };
   let pressedAt = null;

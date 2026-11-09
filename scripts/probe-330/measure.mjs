@@ -24,6 +24,7 @@ import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {launch, placePid, version, CFT, STABLE} from '../probe-316/browser.mjs';
 import {gatePage, runGate, runMailLike} from './gate.mjs';
+import {childRunning, stopOwnedChild} from './browser-lifecycle.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-330: runs only on a GitHub-hosted runner'); process.exit(2); }
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -449,16 +450,22 @@ function pageLanding(mark, ids, loadBefore) {
   return {landing, others, loads, n: ev.length, sameLoad: lastLoad() === loadBefore};
 }
 
+async function launchBrowser(kind,url,profile) {
+  const child=await launch(kind,url,profile,WIN);
+  // #316's Safari adapter uses pkill and ignores the signal. This kit terminates only its owned PID, with escalation.
+  if(kind==='safari')child.kill=signal=>{try {process.kill(child.pid,signal);} catch(e) {if(e.code!=='ESRCH')throw e;}};
+  return child;
+}
 async function runBrowser(kind) {
-  const profileRoot = join(process.env.RUNNER_TEMP ?? OUT, `p316-${kind}`);
+  const profileRoot = join(OUT, 'profiles', kind);
   let b = null, launches = 0;
   const textEditDoc = join(OUT, 'cover.txt');
   writeFileSync(textEditDoc, 'The cover: frontmost in the behind variant.\n');
   const relaunch = async () => {
-    if (b && b.exitCode === null) { b.kill('SIGTERM'); for (let i = 0; i < 20 && b.exitCode === null; i++) await sleep(250); if (b.exitCode === null) b.kill('SIGKILL'); await sleep(1000); }
+    await stopOwnedChild(b);
     launches++;
     const prev = lastLoad();
-    b = await launch(kind, URL_, join(profileRoot, String(launches)), WIN);
+    b = await launchBrowser(kind, URL_, join(profileRoot, String(launches)));
     if (!(await newLoad(prev, 30_000))) throw new Error(`${kind} did not load the page`);
     if (kind === 'cft' || kind === 'stable') { const left = b.launchedAt + 22_000 - Date.now(); if (left > 0) await sleep(left); }  // past the toolbar's re-layout
     placePid(b.pid, WIN);
@@ -470,7 +477,7 @@ async function runBrowser(kind) {
   };
   const reset = async variant => {
     const notes = [];
-    if (!b || b.exitCode !== null) { await relaunch(); notes.push('launched'); }
+    if (!childRunning(b)) { await relaunch(); notes.push('launched'); }
     // Whatever the last cell left (a menu, a popup, an address field): Escape twice by the engine (not the user's), the
     // page re-loaded by its own long-poll, the web area's focus written.
     try {
@@ -510,6 +517,7 @@ async function runBrowser(kind) {
   });
   const variants = BVARIANTS[kind].filter(v => !VARIANTS || VARIANTS.includes(v.name));
   config[`${kind}Version`] = version(kind);
+  try {
   for (let rep = 1; rep <= REPS; rep++) for (const variant of variants) for (const seq of variant.seqs.filter(s => !ONLY || ONLY.includes(s))) for (const target of BTARGETS) {
     if (overBudget()) { config.budgetStop = true; save(); return; }
     const lab = `${kind}-${variant.name}-${seq}-${target}-${rep}`;
@@ -569,7 +577,7 @@ async function runBrowser(kind) {
       log(`${lab}: ${row.problem ?? row.exception?.split('\n')[0] ?? `${row.result?.landing} ${sp ? `${sp.verdict}/${sp.reason} rec=${sp.recordedRole} hit=${sp.hitRole}` : 'no stalePoint'} route=${row.click?.route} others=${JSON.stringify(row.result?.others ?? [])} cand=${row.candidate} setup=${JSON.stringify(row.steps.filter(s => s.setup).map(s => s.setup))} focus=${row.signals?.focused?.role}/${row.signals?.focused?.inWebArea} above=${(row.signals?.sameAppAbove ?? []).length}`}`);
     }
   }
-  if (b && b.exitCode === null) { b.kill('SIGTERM'); await sleep(1500); }
+  } finally {await stopOwnedChild(b);}
 }
 
 // ---- TextEdit ------------------------------------------------------------------------------------------------------
@@ -839,6 +847,7 @@ async function stillCell(meta, pid, mode, place, between) {
     const sky = await observe(w, pid, row.label);
     const found = place(sky);
     if (!found) { row.problem = 'not in the observation'; row.seen = sky.nodes.filter(n => /AX(Button|CheckBox|Link|TextField|WebArea)/.test(n.role)).map(n => `${n.role}:${(n.title || n.description || '').slice(0, 30)}`).slice(0, 60); return row; }
+    row.fixture = found.fixture ?? null;
     row.node = {role: found.node.role, title: found.node.title ?? null, description: found.node.description ?? null, frame: found.node.frame};
     row.observation = {timings: sky.timings, truncated: sky.truncated, nodes: sky.nodes.length,
       chosen: found.node, nearby: sky.nodes.filter(n => n.frame && Math.abs(n.frame.x - found.point.x) < 180 && Math.abs(n.frame.y - found.point.y) < 80).slice(-20)};
@@ -868,16 +877,16 @@ async function stillCell(meta, pid, mode, place, between) {
 /// A browser kept at a scene's URL: re-set by Escape (the engine's), the local page's own long-poll (to the scene's
 /// path) or, on an outside page whose title or window count changed, a fresh launch; the web area's focus written.
 async function stillHarness(kind) {
-  const profileRoot = join(process.env.RUNNER_TEMP ?? OUT, `p316s-${kind}`);
+  const profileRoot = join(OUT, 'profiles', kind);
   let b = null, launches = 0, current = null, expected = null, forced = false;
   const winState = () => ({title: osa(`tell application "System Events" to get name of window 1 of (first process whose unix id is ${b.pid})`).out,
     windows: osa(`tell application "System Events" to count windows of (first process whose unix id is ${b.pid})`).out});
   const local = url => url.startsWith(URL_);
   const relaunch = async url => {
-    if (b && b.exitCode === null) { b.kill('SIGTERM'); for (let i = 0; i < 20 && b.exitCode === null; i++) await sleep(250); if (b.exitCode === null) b.kill('SIGKILL'); await sleep(1000); }
+    await stopOwnedChild(b);
     launches++;
     const prev = lastLoad();
-    b = await launch(kind, url, join(profileRoot, String(launches)), WIN);
+    b = await launchBrowser(kind, url, join(profileRoot, String(launches)));
     if (local(url)) { if (!(await newLoad(prev, 30_000))) throw new Error(`${kind} did not load ${url}`); } else await sleep(9000);
     if (kind === 'cft' || kind === 'stable') { const left = b.launchedAt + 22_000 - Date.now(); if (left > 0) await sleep(left); }
     placePid(b.pid, WIN);
@@ -890,7 +899,7 @@ async function stillHarness(kind) {
   const reset = async url => {
     const notes = [];
     // #330: between two local pages the page's own long-poll navigates; only an outside page needs a fresh launch.
-    if (!b || b.exitCode !== null || forced || (current !== url && !(local(url) && local(current)))) { forced = false; await relaunch(url); notes.push('launched'); }
+    if (!childRunning(b) || forced || (current !== url && !(local(url) && local(current)))) { forced = false; await relaunch(url); notes.push('launched'); }
     else {
       try { const w = await connect('shared'); for (let i = 0; i < 2; i++) { await w.execute('press_key', {pid: b.pid, key: 'Escape'}); await sleep(250); } w.close(); } catch (e) { notes.push('escape failed'); }
       if (local(url)) {
@@ -915,7 +924,7 @@ async function stillHarness(kind) {
     }
     return notes;
   };
-  return {pid: () => b.pid, reset, dirty: () => { forced = true; }, close: async () => { if (b && b.exitCode === null) { b.kill('SIGTERM'); await sleep(1500); } }};
+  return {pid: () => b.pid, reset, dirty: () => { forced = true; }, close: () => stopOwnedChild(b)};
 }
 
 const FRAME_CELLS = [['Top', ['field', 'button', 'check', 'link']], ['Same', ['field', 'button', 'check', 'link']], ['Cross', ['field', 'button', 'check', 'link']],
@@ -936,6 +945,7 @@ async function stillBrowser(kind) {
   const h = await stillHarness(kind);
   const scenes = [...Object.keys(NEAR_CHANGES).map(c => [`near:${c}`, `${URL_}n?change=${c}`]), ['frames', `${URL_}frames`], ['toolbar', URL_], ['page', URL_], ['wiki', 'https://en.wikipedia.org/wiki/Hacker_News'], ['hn', 'https://news.ycombinator.com/'],
     ['mdn', 'https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/select']];
+  try {
   for (let rep = 1; rep <= REPS; rep++) for (const [scene, url] of scenes) {
     if (scene.startsWith('near:')) {
       let k = 0;
@@ -998,7 +1008,7 @@ async function stillBrowser(kind) {
       }
     }
   }
-  await h.close();
+  } finally {await h.close();}
 }
 
 /// A native app's still sweep: the picks from one observation, each click after `reset` and a fresh observation.
@@ -1154,6 +1164,7 @@ async function runWikiSuggest(h, kind) {
 async function runSuggest(kind) {
   config[`${kind}Version`] = version(kind);
   const h = await stillHarness(kind);
+  try {
   for (let rep = 1; rep <= REPS; rep++) for (const skind of SKINDS) for (const {mode, seq, target} of SPLAN) {
     if (overBudget()) { config.budgetStop = true; save(); break; }
     const lab = `${kind}-${skind}-${mode}-${seq}-${target}-${rep}`;
@@ -1210,7 +1221,7 @@ async function runSuggest(kind) {
     }
   }
   await runWikiSuggest(h, kind);
-  await h.close();
+  } finally {await h.close();}
 }
 
 mkdirSync(join(OUT, 'screens'), {recursive: true});
@@ -1229,7 +1240,7 @@ try {
   else if (GROUP === 'sweep-native') { await stillTextEdit(); await stillFinder(); }
   else if (GROUP.startsWith('gate-')) {
     const api = {config, version, stillHarness, URL_, REPS, overBudget, save, connect, observe, sweepPicks, stillCell, refind,
-      centre, edgePoint, EDGES, sleep, sendCmd, findNode, toPixels, brief, OUT, WIN, stillNative, escapeTwice, setFront};
+      centre, edgePoint, EDGES, sleep, sendCmd, findNode, toPixels, brief, OUT, WIN, stillNative, escapeTwice, setFront, events};
     if (GROUP === 'gate-native') { await stillTextEdit(); await stillFinder(); await runMailLike(api); }
     else await runGate(GROUP === 'gate-chrome' ? 'cft' : GROUP.slice(5), api);
   }
@@ -1238,6 +1249,7 @@ try {
 config.engineStderr = engineErr.slice(-4000);
 config.minutes = Math.round((Date.now() - STARTED) / 600) / 100;
 save();
-engine?.kill('SIGKILL');
-tool.stdin.end(); server.close(); serverB.close();
-process.exit(0);
+await stopOwnedChild(engine);
+tool.stdin.end(); await stopOwnedChild(tool);
+server.close(); serverB.close();
+process.exit(config.exception ? 1 : 0);

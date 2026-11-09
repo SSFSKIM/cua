@@ -85,6 +85,10 @@ case "$GROUP" in
         sweep $h $b
       done
     done ;;
+  ab-sweep)
+    # Gate (a) again, each cell's points planned from its own screenshot (run 42536017630's were planned from the first
+    # observation, and windows that had shrunk put some edge pixels outside their cells' screenshots).
+    for h in a b; do for app in textedit finder probe safari chrome firefox; do sweep $h $app; done; done ;;
   ab-pass)
     # A confirming pass on a fix head: the nested web cells (clipped hit, div, iframe, horizontal, scripted) and divEnd.
     for h in a b; do

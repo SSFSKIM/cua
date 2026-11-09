@@ -135,6 +135,7 @@ for (let rep = 1; rep <= REPS; rep++) for (const cell of CELLS) {
   try {
     const want = cell.page ?? '/';
     if (want !== onPage) { ready = false; await send(`go:${LOCAL}${want}`, 300); for (let i = 0; i < 40 && !ready; i++) await sleep(250); await sleep(1200); onPage = want; }
+    placePid(child.pid, frame);
     await send(cell.setup ?? 'reset', 500);
     if (front() !== 'com.ssfskim.cover328') await refront();
     const f = t328('find', child.pid, cell.text);
@@ -147,6 +148,8 @@ for (let rep = 1; rep <= REPS; rep++) for (const cell of CELLS) {
     if (o.error) { row.problem = `get_app_state ${o.error.errorName ?? o.error.code}`; results.push(row); continue; }
     const wf = o.result.window?.frame, s = o.result.screenshot?.width && wf ? o.result.screenshot.width / wf.width : 1;
     const args = {direction: cell.direction, pages: PAGES, x: Math.round((pt[0] - wf.x) * s), y: Math.round((pt[1] - wf.y) * s)};
+    row.screenshot = o.result.screenshot ? [o.result.screenshot.width, o.result.screenshot.height] : null;
+    if (row.screenshot && (args.x < 0 || args.y < 0 || args.x >= row.screenshot[0] || args.y >= row.screenshot[1])) { row.problem = `the kit's point (${args.x}, ${args.y}) lies outside the ${row.screenshot.join(' x ')} screenshot`; results.push(row); continue; }
     const reportNow = async () => { const n = events.length; await send('report', 150); for (let i = 0; i < 30 && !events.slice(n).some(e => e.id === 'report'); i++) await sleep(50); return events.slice(n).filter(e => e.id === 'report').pop()?.pos ?? null; };
     const before = await reportNow();
     const startPos = before?.[cell.id] ?? 0;

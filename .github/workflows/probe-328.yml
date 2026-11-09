@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["ab-pass"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["ab-pass", "ab-sweep"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:

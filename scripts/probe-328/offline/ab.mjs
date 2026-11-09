@@ -79,15 +79,18 @@ if (sw.length) {
   for (const [k, rb] of b) {
     const ra = a.get(k);
     const gk = `${rb.app}\t${rb.action}\t${rb.kind}`;
-    if (!g.has(gk)) g.set(gk, {n: 0, aRef: [], bRef: [], newRef: [], posted: []});
+    if (!g.has(gk)) g.set(gk, {n: 0, aRef: [], bRef: [], newRef: [], posted: [], stale: []});
     const x = g.get(gk); x.n += 1;
     if (ra && ra.answer !== 'success') x.aRef.push(ra.answer ?? (ra.exception ? 'exception' : '?'));
     if (rb.answer !== 'success') x.bRef.push(rb.answer ?? (rb.exception ? 'exception' : '?'));
-    if (rb.kind !== 'outside' && rb.answer !== 'success' && (!ra || ra.answer === 'success')) x.newRef.push(`${rb.name}:${rb.answer}`);
+    // Inside the screenshot means inside the cell's own one: a point planned from an earlier, larger window is the kit's.
+    const inShot = r => r.screenshot ? r.x >= 0 && r.y >= 0 && r.x < r.screenshot[0] && r.y < r.screenshot[1] : true;
+    if (rb.kind !== 'outside' && !inShot(rb)) x.stale.push(rb.name);
+    else if (rb.kind !== 'outside' && rb.answer !== 'success' && (!ra || ra.answer === 'success')) x.newRef.push(`${rb.name}:${rb.answer}`);
     if (rb.kind === 'outside' && (rb.page ?? []).length) x.posted.push(`${rb.name}:${rb.page.join('+')}`);
   }
-  table(['app', 'action', 'points', 'n', 'a refusals', 'b refusals', 'NEW refusals in b (inside the screenshot)', 'b refused yet posted'],
-    [...g].sort().map(([k, x]) => { const [ap, ac, kind] = k.split('\t'); return [ap, ac, kind, x.n, tally(x.aRef) || '0', tally(x.bRef) || '0', x.newRef.join(', ') || '0', x.posted.join(', ') || '-']; }));
+  table(['app', 'action', 'points', 'n', 'a refusals', 'b refusals', 'NEW refusals in b (inside the screenshot)', 'b refused yet posted', 'kit: point outside the cell\'s screenshot'],
+    [...g].sort().map(([k, x]) => { const [ap, ac, kind] = k.split('\t'); return [ap, ac, kind, x.n, tally(x.aRef) || '0', tally(x.bRef) || '0', x.newRef.join(', ') || '0', x.posted.join(', ') || '-', x.stale.join(', ') || '-']; }));
 }
 
 // ---- #324's own cells ------------------------------------------------------------------------------------------------------

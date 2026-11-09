@@ -143,11 +143,15 @@ for (const c of cells) {
     const sky = await observe(w);
     if (!sky?.screenshot) throw new Error('no observation');
     row.screenshot = [sky.screenshot.width, sky.screenshot.height];
+    const pl = points(sky);
+    const p = pl.list.find(q => q.name === c.p.name) ?? pl.list.find(q => q.name.split(':')[0] === c.p.name.split(':')[0]);
+    if (!p) throw new Error(`no point ${c.p.name} in this screenshot`);
+    row.x = p.x; row.y = p.y;
     const mark = events.length;
     const t0 = Date.now();
-    const args = c.action === 'click' ? {x: c.p.x, y: c.p.y}
-      : c.action === 'dragTo' ? {from_x: plan.centre.x, from_y: plan.centre.y, to_x: c.p.x, to_y: c.p.y}
-      : {from_x: c.p.x, from_y: c.p.y, to_x: plan.centre.x, to_y: plan.centre.y};
+    const args = c.action === 'click' ? {x: p.x, y: p.y}
+      : c.action === 'dragTo' ? {from_x: pl.centre.x, from_y: pl.centre.y, to_x: p.x, to_y: p.y}
+      : {from_x: p.x, from_y: p.y, to_x: pl.centre.x, to_y: pl.centre.y};
     const a = await w.execute(c.action === 'click' ? 'click' : 'drag', {pid, ...args}, sky.lineage);
     row.ms = Date.now() - t0;
     row.answer = a.error ? (a.error.errorName ?? a.error.code) : 'success';
@@ -157,7 +161,7 @@ for (const c of cells) {
     await sleep(700);
     if (BROWSERS.includes(APP)) row.page = events.slice(mark).filter(e => e.t >= t0 - 5).map(e => e.k);
   } catch (e) { row.exception = String(e?.stack || e).slice(0, 400); } finally { w.close(); }
-  if (c.action !== 'click') { place(); await sleep(300); }
+  place(); await sleep(300);
   results.push(row); save();
   log(`${APP} ${HEAD} ${c.action} ${c.p.name} (${c.p.x},${c.p.y}): ${row.answer ?? row.problem ?? row.exception} page=${JSON.stringify(row.page ?? null)}`);
 }

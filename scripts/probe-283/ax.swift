@@ -371,6 +371,10 @@ if args.count == 7, args[1] == "boxes", let pid = pid_t(args[2]), let p = pointA
   let n = (value as NSString).length
   out["fieldRole"] = str(field, kAXRoleAttribute) ?? "?"
   out["length"] = n
+  out["numberOfCharacters"] = orNull(number(attr(field, "AXNumberOfCharacters")))
+  // Past the value's end: whether AXBoundsForRange still answers boxes (Chromium's AXValue stops at 10,000 characters).
+  out["boxPastValue"] = [n, n + 400, n + 10_000].map { i in rect(param(field, "AXBoundsForRange", rangeValue(i, 1)).0).map { [$0.origin.x, $0.origin.y, $0.width, $0.height] as Any } ?? NSNull() }
+  out["selectedRange"] = describe(attr(field, "AXSelectedTextRange"))
   var boxes: [Any] = []
   var failed = 0, empty = 0
   let t0 = Date()

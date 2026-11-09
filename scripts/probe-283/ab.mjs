@@ -101,14 +101,17 @@ const layout = () => {
     'past-end': {field: 'textarea', p: {x: bt.l + 40.3 * cw, y: bt.t + 1.5 * bt.lh}, expect: taOffset(1, lines[1].length)},
     // In the input's left padding, left of its first character: in no box, past no line end.
     padding: {field: 'input', p: {x: bi.bl + 0.4 * bi.pl, y: bi.r.top + bi.r.height / 2}, expect: null, notPlaced: 'pointOutsideText'},
-    // #290: line 37 of the 3,074-character textarea scrolled to line 32, line 255 of the 20,499-character one scrolled to
-    // line 250, each at column 14; and past line 255's end (its 40 characters).
-    lta: {field: 'lta', p: {x: bl.l + 14.3 * cw, y: bl.t + 5.5 * bl.lh}, expect: 37 * 41 + 14, length: LT.value.length},
-    hta: {field: 'hta', p: {x: bh.l + 14.3 * cw, y: bh.t + 5.5 * bh.lh}, expect: 255 * 41 + 14, length: HT.value.length},
-    'hta-past-end': {field: 'hta', p: {x: bh.l + 44.3 * cw, y: bh.t + 5.5 * bh.lh}, expect: 255 * 41 + 40, length: HT.value.length}}};
+    // #290: each textarea shows 4 lines. Line 34 of the 3,074-character textarea scrolled to line 32; line 232 of the
+    // 20,499-character one scrolled to line 230 (offset 9,526, inside the 10,000 characters Chromium's AXValue gives),
+    // and past that line's end; line 252 with it scrolled to line 250 (?hs=250: offset 10,346, past them). Column 14.
+    lta: {field: 'lta', p: {x: bl.l + 14.3 * cw, y: bl.t + 2.5 * bl.lh}, expect: 34 * 41 + 14, length: LT.value.length},
+    hta: {field: 'hta', p: {x: bh.l + 14.3 * cw, y: bh.t + 2.5 * bh.lh}, expect: (hs + 2) * 41 + 14, length: HT.value.length},
+    'hta-past-end': {field: 'hta', p: {x: bh.l + 44.3 * cw, y: bh.t + 2.5 * bh.lh}, expect: (hs + 2) * 41 + 40, length: HT.value.length},
+    'hta-far': {field: 'hta', p: {x: bh.l + 14.3 * cw, y: bh.t + 2.5 * bh.lh}, expect: (hs + 2) * 41 + 14, length: HT.value.length}}};
 };
+const hs = Number(new URLSearchParams(location.search).get('hs') || 230);
 addEventListener('load', () => {
-  LT.scrollTop = 32 * 20; HT.scrollTop = 250 * 20;
+  LT.scrollTop = 32 * 20; HT.scrollTop = hs * 20;
   if (prior === 'input') I.setSelectionRange(6, 6);
   document.fonts.ready.then(() => { navigator.sendBeacon('/layout', JSON.stringify(layout())); send('load', {prior}); });
   setInterval(() => send('tick'), 250);
@@ -243,10 +246,10 @@ CELLS.push({label: 'branch/fresh/past-end', engine: 'branch', timing: 'fresh', t
 // #290: the long textareas, main against the branch, 3 s and 0.1 s after the observation; then each field's boxes
 // dumped once 3 s after a branch observation (`ax boxes`), for the offline replay through the search.
 for (const engine of ['main', 'branch']) {
-  for (const target of ['lta', 'hta', 'hta-past-end']) CELLS.push({label: `long/${engine}/late/${target}`, engine, timing: 'late', target});
+  for (const target of ['lta', 'hta', 'hta-past-end', 'hta-far']) CELLS.push({label: `long/${engine}/late/${target}`, engine, timing: 'late', target});
   for (const target of ['lta', 'hta']) CELLS.push({label: `long/${engine}/fresh/${target}`, engine, timing: 'fresh', target});
 }
-for (const target of ['lta', 'hta']) CELLS.push({label: `long/dump/late/${target}`, engine: 'branch', timing: 'late', target, dump: true});
+for (const target of ['lta', 'hta', 'hta-far']) CELLS.push({label: `long/dump/late/${target}`, engine: 'branch', timing: 'late', target, dump: true});
 // --repeat N: each selected cell N times (labels suffixed #1…#N), to count a race.
 const REPEAT = Math.max(1, Number(arg('repeat') || 1));
 const RUN = CELLS.filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)))
@@ -256,7 +259,7 @@ async function cell(spec) {
   const row = {label: spec.label, engine: spec.engine, timing: spec.timing, target: spec.target};
   let chrome, engine;
   try {
-    chrome = await launchChrome(spec.label, spec.target === 'prior' ? '?prior=input' : '');
+    chrome = await launchChrome(spec.label, spec.target === 'prior' ? '?prior=input' : spec.target === 'hta-far' ? '?hs=250' : '');
     row.chromePid = chrome.pid;
     const t = layoutData.targets[spec.target];
     row.expected = {field: t.field, offset: t.expect, node: t.node ?? null, prior: t.prior ?? null, secure: !!t.secure, notPlaced: t.notPlaced ?? null};
@@ -305,7 +308,7 @@ async function cell(spec) {
     row.orderAfterClick = await ax(['order', String(chrome.pid)]);
     const afterClick = latest();
     const activeEv = beacons.find(b => b.ev === 'active' && b.t >= clickAt - 5);
-    row.afterClick = {active: afterClick?.active, caret: caretOf(afterClick, t.field), focusAfterClickMs: activeEv ? activeEv.t - clickAt : null,
+    row.afterClick = {active: afterClick?.active, caret: caretOf(afterClick, t.field), long: {lta: caretOf(afterClick, 'lta'), hta: caretOf(afterClick, 'hta')}, focusAfterClickMs: activeEv ? activeEv.t - clickAt : null,
       focusTo: activeEv?.to ?? null, pointer: delta(before, afterClick)};
     const typeAt = Date.now();
     row.type = lean(await w.execute('type_text', {pid: chrome.pid, text: MARK}));

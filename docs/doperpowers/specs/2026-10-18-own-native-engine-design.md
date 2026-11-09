@@ -4210,12 +4210,21 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - **The recorded node as found now is never new over itself:** the topmost new element is passed over when it is
        the node #296 found (its own handle or one re-created in place) or holds it. #296 keeps a re-created control, and
        a re-render can re-create its wrapper too; read by the record alone both are new under a fully recorded parent,
-       and the shadow's rule would have refused them. The spike's table does not report that case.
+       and the shadow's rule would have refused them. The spike's table does not report that case. The design session
+       accepted this narrowing (cd365f0e). The review of 364e017d..51ce4138 (P2) extended it to a hit #305 keeps as a
+       recorded control (`recordedHit`), its own handle or one re-created in place: that control and anything holding
+       it are found nodes too (`newElementOverPoint`'s `found`), so GitHub's code view in a page, its overlay textarea
+       re-created at the same role, frame and label, is no longer refused.
+     - **A failed AXChildren read is not a complete one** (the same review, P2): `publicData` drops a per-attribute
+       error, and `elementList(nil)` is empty, so an element whose children read failed at the observation would count
+       as recorded with every child, and a child it lists at the click as new. `ElementData.childrenRead` and
+       `ScreenshotNodeRead.childrenRead` carry whether AXChildren was read, and such an element is never complete.
      - **A refusal keeps its reason:** dL turns only a kept verdict into a refusal; where #296 already refuses
        (Wikipedia's suggestion links, `interactiveHit`) the reason and sentence stay #296's.
      - **Every kept reason is judged** when G walked (`nonInteractiveHit`, `hitAboveNode`, `unrecordedDescendant`,
-       `recordedHit`, `sameElement` with a re-created hit), as the spike computed dL beside every kept verdict. No walk,
-       no rule: the hit the node's own handle, an empty hit, a node outside every web area.
+       `sameElement` with a re-created hit; `recordedHit` too, where it is silent by the review's fix), as the spike
+       computed dL beside every kept verdict. No walk, no rule: the hit the node's own handle, an empty hit, a node
+       outside every web area.
      - **The meta** gains `stalePoint.newElementReads` when the rule read anything; an element route's record carries it
        as it carries `webAreaReads`.
   5. **The refusal.** `screenChangedSinceScreenshot`, as #316's rules: the service and the docs carry the name, and the
@@ -4226,7 +4235,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   6. **The cost.** The observation: one more pass over the record's reads, building a dictionary of every recorded
      element (inside the `stalePointRecord` timing). A click: no AX read unless the record names a new element on the
      chain; then one, the parent's children; and only on a refusal whose node is not on the chain, the node's parents up
-     to the new element or the web area. The spike priced the rule at about one read (its `hitsMs` covered two
+     to the new element or the web area. On a `recordedHit` the rule reads nothing and is silent: the found hit is the
+     chain's first element, so every element of the chain is it or holds it. The spike priced the rule at about one read (its `hitsMs` covered two
      hit-tests and their chains); the hosted check measures `stalePoint.ms` and `newElementReads` on the branch.
   7. **The limits.** A list the page shows without adding elements (by opacity, or moved into place) is held by the
      record and still takes a click aimed under it. In Chrome, a list that overflows its field's container (the
@@ -4238,14 +4248,17 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      press Escape or take a new screenshot after typing into a field that offers suggestions (the ruling's limit text as
      approved, and Chrome's `<datalist>`); the surface inventory's Table 3 addition of 2026-11-08 (#330), the docs test,
      parity's docs oracle and PROVENANCE.md carry it. Plugin 0.27.16, since the document the server serves changed.
-  Proven offline: `NewElementGuardTests` (8) in `StalePointTests.swift`: a new listed element under a fully recorded
+  Proven offline: `NewElementGuardTests` (11) in `StalePointTests.swift`: a new listed element under a fully recorded
   parent refusing (Safari's and Firefox's list, Chrome's end-of-body list with unlisted row text, a frameless parent, an
   empty list filled; a link row keeping `interactiveHit`), silent with the parent's children cut, on an unlisted
   element, on an element the record holds, outside a web area, and on a re-created node and wrapper; the reason, the
-  sentence and the meta; the observed screenshot keeping the record's elements. #296's, #305's and #316's suites
-  unchanged; 1,064 engine tests pass, 1 skipped as before. Each of 21 rule parts and bounds removed in turn
-  (`~/.local/share/187/mutate-330.py`) fails a test. Three survive by design, since only a live click reaches them: the
-  observation not keeping the elements, and the guard's or the recheck's call not passing them.
+  sentence and the meta; the observed screenshot keeping the record's elements; for the review, a recorded hit
+  re-created in place (and its re-created wrapper) kept, a parent whose AXChildren read failed silent, and the walk
+  recording a failed read (`testTheWalkRecordsAFailedChildrenRead`, and in `VisibleFirstTests`
+  `testTheGuardsRecordOnlyReadsCarryAFailedChildrenRead` for the record-only reads). #296's, #305's
+  and #316's suites unchanged; 1,068 engine tests pass, 1 skipped as before. Each of 26 rule parts and bounds removed in
+  turn (`~/.local/share/187/mutate-330.py`) fails a test. Three survive by design, since only a live click reaches them:
+  the observation not keeping the elements, and the guard's or the recheck's call not passing them.
   **The merge gate** (the design session's rulings 11bec0ed and 31a62775; main against the branch on the hosted runner):
   - **0 `newElementOverPoint` refusals on unchanged real pages and apps,** the real engine clicking live: Hacker News, a
     public GitHub pull request, Wikipedia, MDN, a page with a live clock and relative times, #305's still-page cells,

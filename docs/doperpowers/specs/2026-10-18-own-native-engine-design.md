@@ -3998,7 +3998,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      content frame or edge child that tells it: item 10) answers a scroll at its end `scrollUnconfirmed` after 800 ms
      rather than the at-end success. Chrome's scripted scrollers that animate can outlast the window: Chrome holds its
      accessibility frames until the animation settles, and on the hosted A/B one late cell missed the 800 ms window and
-     one mid cell's first move read at 813 ms; the window stays 800 ms, as the design session ruled.
+     one mid cell's first move read at 813 ms; the window stays 800 ms, as the design session ruled. A surface whose
+     bar misreports its own end can take a no-op bar write and answer `scrollUnconfirmed` after about 1.7 s: System
+     Settings' sidebar, whose AXContentSize flickers between 1118 and 1178 pt, reads its bar 0.952–1.0 at its real
+     bottom, and in 2 of 8 at-end scrolls (bar 0.9663 and 0.952, outside the 0.03 guard) the fallback wrote 1.0 and
+     nothing moved (offset 0; run 42551661607). The design session accepted it (8d00d2ba): nothing moves that the model
+     did not aim at, and no move is claimed; writing only on positive evidence that content continues is logged in
+     tech-debt-tracker.md.
      Web content gets no fallback. A page whose
      descendants all leave the viewport in one step and read no frame once off it would show no move on the descendant;
      the content, the bar and the hit still count. An element scroll's confirmation reads the hit-test at the element's
@@ -4132,7 +4138,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - **The costs:** `readMs`, `ms` and `firstMoveMs` per target, to re-price `scrollConfirmWindowMs` (800) and
     `scrollConfirmIntervalMs`, and no false `scrollUnconfirmed` left on the delayed and rAF-animated cells at 800 ms;
     and repl-parity green.
-  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling b1921fc3 on #328.
+  **Hosted results** (`docs/evidence/2026-11-08-scroll-confirm/`): gate (a) passed (0 `pointOutsideScreenshot` at
+  in-bounds points over 360 cells on e0c24b81 and 208 edge and corner cells on b1d51686; 96 of 96 outside points
+  refused); gate (b) passed (0 false `scrollUnconfirmed` on b1d51686 across every web scroller kind and the native
+  apps; first move p95 at most 472 ms; Catalyst 4 of 4); gate (c) held (no write in web content or on a container not
+  under the point; Settings' pane moves by the bar write; divEnd never writes the page's bar), with the sidebar limit
+  item 9 states. Chrome's walk before the wheel, at the 200-node cap: 8–133 nodes, 5–41 ms.
+  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling b1921fc3 on #328; the hosted results
+  by cursor235.
 
 ## Outcomes & Retrospective
 

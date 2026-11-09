@@ -1086,6 +1086,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   3. **Route 4** passed with the override driven through a prepared home; the owner's `~/.config/cua/engine.json` mtime is unchanged.
   4. **minimized-select:** the write landed and the read missed it (the probe read 107/7 with the focus not on the text area; the engine's focus read returned AXError −25212). Per the rule set before the hold, select_text is kept and the miss is a read gap; nothing is refused.
   5. **Enablement release (Electron, Chromium's own mode):** in two cycles, enabled by observation and released after close, 4 ms and 2 ms, prior false. Chrome for Testing is not judged, by design.
+     Amended by the #318 entry (2026-11-08): on VS Code 1.144.0 (#287) the release answers `released: 1` and the accessibility tree stays complete. This item judged Chromium's own mode on the fixture, not the tree, so it does not show the release has a visible effect on an Electron app.
   6. **Held menu activation:** parity. cua (route 1) and the vendor both act on Select All and Bold in a background TextEdit behind Finder.
   7. **Horizontal scroll: no horizontal reading from either lane means anything.** Both lanes measured a page that could not scroll horizontally (item 8): the horizontal bar was disabled, and its written 0.5 read back without the content moving. The vendor's one-wheel scroll moved the page vertically (0.5 → 0, two samples); that stands as the declared single-axis vendor defect (Decision Log M2a item 6).
   8. **The hscroll adjudication (2026-10-21, 20:37–20:43Z, a scratch TextEdit on the MacBook, wheel events posted to its pid only).** On the scene's page, the horizontal bar read AXEnabled false, and writes of 0, 0.5 and 1 left the text area where it was: the cause is the scene and a hole in the harness, not either engine. TextEdit lays the page out on its own paper size, whatever `\paperw` says. With `\viewscale200` the page scrolls. On that page cua's exact event for `right` (pixel units, wheelCount 2, wheel2 +n, the window stamped) moved the bar 0.5 → 0, which is left. **A model-facing cua bug:** a positive second wheel scrolls left, as a positive first wheel scrolls up, so `scroll` left and right were inverted. Fixed in a5714898 (left +n, right −n on the second wheel). The scene got `\viewscale200` (71393af8). Both hscroll lanes now refuse, sending nothing and giving no verdict, a start whose bar is disabled or whose content did not move when the start was written (e43d32fd). The cell is re-verified in hold 2's margin. The vendor's signs, as recovered from its binary, put right at +n; should its scroll ever move the page horizontally, it moves left, and item 5 of the M2b.1b entry counts that as a vendor failure.
@@ -3120,6 +3121,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        opened in only 1 rep (#318);
      - on stable Chrome, ⌘L's suggestion popup gives a refusal whose message blames the page (#317).
      `docs/cua-api/agent-cursor.md` claims no measured set and states none of these, so it is unchanged.
+     Amended by the #318 entry (2026-11-08, below): since #315 that paragraph names Firefox, and it now states the
+     toolbar's `clickUnconfirmed`; where each of #318's three limits stands is that entry's.
   Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #287.
 
 - Decision (#321, 2026-11-07, `fix/321-hold`; the design session's rulings e48e53de (measure the candidates first) and
@@ -3825,6 +3828,50 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - **A3 (`c8/`):** EUI written true by another client before any engine is not recorded, and stays true through A's
     SIGKILL and B's start and shutdown.
   Date/Author: 2026-11-08, cursor235's implementer for #293.
+- Decision (#318, 2026-11-08, `docs/318-287-stated-limits`; the issue's intent, spawned by #287 under the design
+  session's ruling cb252e88; #287's runs 42379297174 and 42388802262, kit `probe/287-hosted`, and #315's A/B,
+  `docs/evidence/2026-11-08-gecko-routes/`): **#287's three limits that no fix ticket carries, where each stands on main
+  f859ce68, and the one the first-call document now states.** Nothing in the engine changes.
+  1. **Firefox's toolbar Reload reloads, but answers `clickUnconfirmed`, 3 of 3** (#287, run 42379297174; #315's A/B,
+     identical on its branch). The mechanism is deterministic, so the limit covers more than Reload. In shared mode a
+     background Firefox's activation clicks no activation point (its AXActivationPoint lies on a toolbar control), so
+     the click's own mouse down consumes the arm. A hit established outside every web area is `geckoChromeView`, which
+     is `unknown` (#315's item 4), and `deliverPointer` answers `clickUnconfirmed` for every posted pointer whose own
+     down consumed the arm into a view not known to accept first mouse. So a shared-mode click on Firefox's chrome
+     (the toolbar, the tabs, the address bar, a sidebar's header) whose own down consumes the arm, as a background
+     Firefox's first click does, answers `clickUnconfirmed`, whatever it did. Gecko's source says the chrome takes the
+     click, and Reload did. Three paths answer otherwise: dedicated mode, where the arm's inert click goes early; a
+     click that joins a held activation whose arm is already spent (right after ⌘L, say), which shares it without
+     re-arming (`BackgroundPointerTests`' `testAPointerIntoAnUnknownViewSharesASpentHoldRatherThanReArming`); and a
+     click by element ID that the element's own action carries.
+     The fix is #315 item 4's one line, which waits on what item 4 left open. #315's A/B answered half of it: Firefox's
+     bookmarks sidebar (307 of 308 grid points) and devtools (239 of 240) answer inside an AXWebArea and the toolbar
+     (0 of 124) in none, so only XUL chrome lies outside. The other half, a XUL `<tree>` outside every web area, which
+     Gecko refuses click-through, is not measured. The limit stands, stated; the change is a later ticket's.
+  2. **cua's release has no visible effect on VS Code 1.144.0** (Electron; #287, runs 42376953140 and 42379297174).
+     end_task, SIGTERM and the 30 s grace each answer `released: 1`, and the accessibility tree stays complete: 352 of
+     365 elements 3 s after each, and through 36 s idle. M2b hold 1's item 5 judged the release on the Electron fixture
+     by Chromium's own mode (`app.isAccessibilitySupportEnabled()` read false), never by the tree, so the two
+     measurements do not contradict each other. Whether VS Code's mode stays on, or its mode goes off while the tree
+     stays, is not measured, and no cause is claimed. The cost falls on the person: their VS Code keeps Chromium's
+     complete accessibility tree after cua is done with it. Nothing the model sees changes.
+  3. **VS Code's Toggle Panel is unresolved** (#287, run 42388802262). Its shared-mode click, on an AXCheckBox, was
+     carried by #282's element route. The AXPress answered success 2 of 2, which on a checkbox means #282's value check
+     read its state change. Yet the panel opened in only 1 rep; the other read no panel after. Dedicated clicks toggled
+     it. Two reps cannot tell a press VS Code ignored from a kit that read too early, so neither this spec nor the
+     first-call document makes a claim about it until a re-measure.
+  4. **The first-call document states item 1 only.** Since #315, `docs/cua-api/agent-cursor.md`'s second paragraph
+     names Firefox and says a `clickUnconfirmed` click "was sent but may only have activated the window: observe the
+     app before any retry". For Firefox's chrome that answer is not evidence that nothing happened, and a blind retry
+     of Reload reloads twice. So the paragraph gains one sentence before that one: `Unless this Mac is a dedicated
+     desktop, a click on a background Firefox window outside its page, on the toolbar for instance, can fail with
+     clickUnconfirmed even when it took effect, as Reload does.` It says "can", since item 1's other paths answer
+     otherwise (the review of the first draft, which said "fails"). Item 2 is not the model's: it acts on nothing the
+     release does. Item 3 makes no claim. The docs test (`test/cua-api/core-documentation.test.mjs`), repl-parity's docs
+     oracle (`scripts/repl-parity/docs-oracle.mjs`), `docs/cua-api/PROVENANCE.md` and the surface inventory's "Table 3
+     addition (2026-11-08, #318)" carry the sentence. Parity's expected diff is that paragraph alone. The plugin goes to
+     0.27.12, since the document the server serves changed. (#328 takes 0.27.11.)
+  Date/Author: 2026-11-08, cursor235's lane-2 implementer for #318.
 
 ## Outcomes & Retrospective
 

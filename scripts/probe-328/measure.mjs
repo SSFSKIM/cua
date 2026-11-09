@@ -467,16 +467,21 @@ try {
       save();
       await b.stop();
     };
+    // --engine-apps probe,textedit,swiftui,catalyst,finder,settings,dedicated: a short pass runs only these.
+    const PICK = arg('engine-apps')?.split(',') ?? null;
+    const want = n => !PICK || PICK.includes(n);
     const keyOnly = mk => async () => { const b = await mk(); b.targets = b.targets.filter(t => /B\.text|B\.legacy|textedit|swiftui|catalyst|finder|settings/.test(t.name)); return b; };
-    await run(keyOnly(probeTargets), 'shared', REPS);
-    await run(texteditTarget, 'shared', REPS);
-    await run(keyOnly(swiftuiTargets), 'shared', REPS);
-    if (CATALYST_APP) await run(keyOnly(catalystTargets), 'shared', REPS);
-    await run(keyOnly(async () => { const dir = join(T, 'probe328files'); mkdirSync(dir, {recursive: true}); for (let i = 0; i < 160; i++) writeFileSync(join(dir, `file ${String(i).padStart(3, '0')}.txt`), 'x');
+    if (want('probe')) await run(keyOnly(probeTargets), 'shared', REPS);
+    if (want('textedit')) await run(texteditTarget, 'shared', REPS);
+    if (want('swiftui')) await run(keyOnly(swiftuiTargets), 'shared', REPS);
+    if (CATALYST_APP && want('catalyst')) await run(keyOnly(catalystTargets), 'shared', REPS);
+    if (want('finder')) await run(keyOnly(async () => { const dir = join(T, 'probe328files'); mkdirSync(dir, {recursive: true}); for (let i = 0; i < 160; i++) writeFileSync(join(dir, `file ${String(i).padStart(3, '0')}.txt`), 'x');
       return systemAppTargets('Finder', [dir], async () => { place('process "Finder"', 1, 420, 40, 560, 420); }, 'finder'); }), 'shared', REPS);
-    await run(keyOnly(() => systemAppTargets('System Settings', ['-b', 'com.apple.systempreferences'], async () => { place('process "System Settings"', 1, 400, 40, 620, 420); await sleep(800); }, 'settings')), 'shared', REPS);
-    await run(keyOnly(probeTargets), 'dedicated', Math.max(1, REPS - 1));
-    await run(texteditTarget, 'dedicated', Math.max(1, REPS - 1));
+    if (want('settings')) await run(keyOnly(() => systemAppTargets('System Settings', ['-b', 'com.apple.systempreferences'], async () => { place('process "System Settings"', 1, 400, 40, 620, 420); await sleep(800); }, 'settings')), 'shared', REPS);
+    if (want('dedicated')) {
+      await run(keyOnly(probeTargets), 'dedicated', Math.max(1, REPS - 1));
+      await run(texteditTarget, 'dedicated', Math.max(1, REPS - 1));
+    }
   }
 } catch (e) {
   results.push({block: BLOCK, exception: String(e?.stack || e).slice(0, 1500)});

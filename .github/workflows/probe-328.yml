@@ -18,13 +18,13 @@ env:
   # Quoted: YAML reads an all-digit-and-e SHA as a float. origin/main f859ce68 (0.27.11; its scroll path is 81a43091's).
   P328_MAIN_REF: 'f859ce6881f91fcbe559634673899c2b72e59971'
   # The A/B's B (the ab-* groups): fix/328-scroll-confirm, the build of ruling b1921fc3.
-  P328_B_REF: 'b1d51686e8585ef090c55d4575c0be6d3ec02f08'
+  P328_B_REF: '8c93f347f1b29bfd4ce32926885801ae4ec61bf2'
 jobs:
   probe:
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["ab-final-web", "ab-final-native"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["ab-short"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:

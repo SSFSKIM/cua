@@ -113,6 +113,20 @@ case "$GROUP" in
       node scripts/probe-328/sweep.mjs --app "$app" --engine "$T/$(engdir $h)/release/cua-engine" --head "$h" --t328 "$T/t328" --kinds edge,corner \
         --cover "$T/Cover328.app/Contents/MacOS/Probe328" --probe-app "$T/Probe328.app/Contents/MacOS/Probe328" --out "$T/probe-328/ab-sweep-$app-$h"
     done; done ;;
+  ab-short)
+    # A short confirming pass on a fix head: Settings' sidebar and pane, the Probe328, TextEdit and Finder cells (their ends
+    # among them), every browser's pageEnd, and div and late as a sanity row, per head.
+    for h in a b; do
+      echo "== $(date -u +%H:%M:%S) engine $h"
+      node scripts/probe-328/measure.mjs --block engine --engine "$T/$(engdir $h)/release/cua-engine" --t328 "$T/t328" --app "$T/Probe328.app/Contents/MacOS/Probe328" \
+        --cover "$T/Cover328.app/Contents/MacOS/Probe328" --swiftui "$T/SwiftUI328.app/Contents/MacOS/SwiftUI328" \
+        --catalyst-app "$T/Catalyst328.app" --engine-apps settings,probe,textedit,finder --reps 4 --out "$T/probe-328/ab-engine-$h"
+      for b in safari chrome firefox; do
+        echo "== $(date -u +%H:%M:%S) confirm $b $h"
+        node scripts/probe-328/confirm.mjs --browser "$b" --t328 "$T/t328" --cover "$T/Cover328.app/Contents/MacOS/Probe328" \
+          --engine "$T/$(engdir $h)/release/cua-engine" --pages 1 --reps 4 --cells pageEnd,div,late --out "$T/probe-328/ab-confirm-$b-$h"
+      done
+    done ;;
   ab-pass)
     # A confirming pass on a fix head: the nested web cells (clipped hit, div, iframe, horizontal, scripted) and divEnd.
     for h in a b; do

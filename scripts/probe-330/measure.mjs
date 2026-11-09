@@ -23,7 +23,7 @@ import {mkdirSync, writeFileSync, rmSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {launch, placePid, version, CFT, STABLE} from '../probe-316/browser.mjs';
-import {gatePage, runGate, runMailLike} from './gate.mjs';
+import {gatePage, runGate, runMailLike, runTicking} from './gate.mjs';
 import {childRunning, stopOwnedChild} from './browser-lifecycle.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-330: runs only on a GitHub-hosted runner'); process.exit(2); }
@@ -854,7 +854,7 @@ async function stillCell(meta, pid, mode, place, between) {
     const {px, screen} = toPixels(sky, found.point);
     row.point = {px, screen};
     const f = sky.window.frame, win = [f.x, f.y, f.width, f.height];
-    row.atShot = await ask({op: 'signals', pid, remember: true, ...screen, window: win});
+    row.atShot = await ask({op: 'signals', pid, remember: true, rememberTree: meta.tickCase === true, ...screen, window: win});
     if (between) { const m0 = events.length; await between({w, pid, sky, row}); row.changed = events.slice(m0).some(e => e.type === 'changed'); row.mutations = events.slice(m0).filter(e => e.type === 'mutation'); }
     await sleep(500);
     row.signals = await ask({op: 'signals', pid, compare: true, ...screen, window: win});
@@ -1238,10 +1238,11 @@ try {
   else if (GROUP === 'sweep-chrome') await stillBrowser('cft');
   else if (GROUP === 'sweep-firefox') await stillBrowser('firefox');
   else if (GROUP === 'sweep-native') { await stillTextEdit(); await stillFinder(); }
-  else if (GROUP.startsWith('gate-')) {
+  else if (GROUP.startsWith('gate-') || GROUP.startsWith('tick-')) {
     const api = {config, version, stillHarness, URL_, REPS, overBudget, save, connect, observe, sweepPicks, stillCell, refind,
       centre, edgePoint, EDGES, sleep, sendCmd, findNode, toPixels, brief, OUT, WIN, stillNative, escapeTwice, setFront, events};
-    if (GROUP === 'gate-native') { await stillTextEdit(); await stillFinder(); await runMailLike(api); }
+    if (GROUP.startsWith('tick-')) await runTicking(GROUP.slice(5),api);
+    else if (GROUP === 'gate-native') { await stillTextEdit(); await stillFinder(); await runMailLike(api); }
     else await runGate(GROUP === 'gate-chrome' ? 'cft' : GROUP.slice(5), api);
   }
   else throw new Error(`unknown group ${GROUP}`);

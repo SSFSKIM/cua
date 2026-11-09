@@ -123,7 +123,7 @@ test('generated fixture scripts parse and beacon DOM Range bounds on load and re
   const source=readFileSync(new URL('./measure.mjs',import.meta.url),'utf8');
   const scriptSource=source.slice(source.indexOf('const SCRIPT = '),source.indexOf('\nconst items = '));
   const script=vm.runInNewContext(`${scriptSource}\nSCRIPT`);
-  for (const kind of ['clock','lazy','spa','banner','link-same','link-grow','recreate','budget']) {
+  for (const kind of ['clock','relative','lazy','spa','banner','link-same','link-grow','recreate','budget']) {
     const scripts = [...gate.gatePage(kind,script).matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
     for (const source of scripts) new vm.Script(source,{filename:`${kind}-page.js`});
     if (!kind.startsWith('link-') && kind!=='budget') continue;
@@ -194,6 +194,35 @@ test('offline reader reports incomplete coverage but still counts a refusal on a
     assert.equal(summary.coverage.length,2);
     assert.ok(summary.coverage.every(c=>!c.validation.complete));
   } finally {rmSync(root,{recursive:true,force:true});}
+});
+
+function tickingRow(kind='clock') {
+  const before={kind,text:kind==='clock'?'12:00:00':'0 s ago',textRects:[rect(16,60,80,20)]};
+  const after={...before,text:kind==='clock'?'12:00:01':'1 s ago'};
+  return {fixture:{before,pointInText:true},point:{screen:{x:456,y:170}},
+    click:{stalePoint:{recordedRole:'AXStaticText',hitRole:'AXStaticText'}},
+    mutations:[{mutation:kind,tick:1,before,after}],signals:{hit:{chain:chain('AXStaticText',after.text)}}};
+}
+
+test('ticking coverage needs a real tick with no first-tick line reflow', () => {
+  const row=tickingRow();
+  const nodes=[{role:'AXStaticText',value:'12:00:00',depth:7,frame:rect(416,160,80,20),actions:['AXShowMenu']}];
+  assert.equal(gate.tickEvidence(row,nodes).valid,true);
+  row.mutations[0].after.textRects=[rect(16,80,80,20)];
+  assert.equal(gate.tickEvidence(row,nodes).valid,false);
+  row.mutations=[];
+  assert.equal(gate.tickEvidence(row,nodes).valid,false);
+});
+
+test('ticking evidence reports the actual recorded text actions rather than assuming a clickable parent', () => {
+  const row=tickingRow('relative');
+  const text={role:'AXStaticText',value:'0 s ago',depth:8,frame:rect(416,160,80,20),actions:['AXShowMenu']};
+  const parent={role:'AXLink',title:'Inbox message',depth:6,frame:rect(400,140,400,60),actions:['AXPress']};
+  const first=gate.tickEvidence(row,[parent,text]);
+  assert.equal(first.recorded.actionable,false);
+  assert.deepEqual(first.recorded.actions,['AXShowMenu']);
+  text.actions.push('AXPress');
+  assert.equal(gate.tickEvidence(row,[parent,text]).recorded.actionable,true);
 });
 
 test('owned child termination is awaited, including SIGKILL escalation', async () => {

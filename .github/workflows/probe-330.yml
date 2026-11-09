@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       groups:
-        description: groups as a JSON list (suggest-*, sweep-*, gate-safari/chrome/firefox/native)
+        description: groups as a JSON list (tick-clock, tick-relative, or existing suggest-*, sweep-*, gate-*)
         required: false
         default: ''
       ref:
@@ -32,15 +32,15 @@ permissions:
   contents: read
 env:
   # Quote refs: YAML reads an all-digit-and-e SHA as a float.
-  P330_REF_DEFAULT: 'e31bb1f500d7f19e9cb5a858a4f4e2a255fb132d'
-  P330_BRANCH_DEFAULT: '7f6eb3dcd2ed769ae80b2b7af12bafee62b764f5'
+  P330_REF_DEFAULT: '536066f3bc4e5469b4e9ba8c1810810e0dc78223'
+  P330_BRANCH_DEFAULT: '494857c8dd02beef17c960939ec91cb7d4c446d5'
 jobs:
   probe:
     strategy:
       fail-fast: false
       max-parallel: 4
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["gate-chrome", "gate-safari", "gate-firefox", "gate-native", "suggest-chrome", "suggest-safari", "suggest-firefox", "sweep-chrome", "sweep-safari", "sweep-firefox"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["tick-clock", "tick-relative"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -53,6 +53,10 @@ jobs:
           GROUP: ${{ matrix.group }}
         run: |
           case "$GROUP" in
+            tick-*)
+              bash scripts/probe-316/install.sh chrome firefox
+              mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+              printf '%s\n' '{"policies": {"DisableAppUpdate": true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json ;;
             *chrome) bash scripts/probe-316/install.sh chrome ;;
             *firefox)
               bash scripts/probe-316/install.sh firefox

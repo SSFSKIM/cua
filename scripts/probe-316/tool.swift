@@ -112,6 +112,17 @@ func outsideWebArea(_ window: AXUIElement, cap: Int = 700) -> (text: [[String: A
 }
 
 var rememberedArea: [pid_t: AXUIElement?] = [:]
+// Tiny ticking fixtures only: preserve actual AX identities, so a refusal's new hit can be named without guessing
+// from a changed label. This side record is diagnostic and does not stand for the engine's private screenshot record.
+var rememberedNodes: [pid_t: [AXUIElement]] = [:]
+func rememberTree(_ root: AXUIElement) -> ([AXUIElement], Bool) {
+  var queue = [root], head = 0
+  while head < queue.count && head < 800 {
+    let e = queue[head]; head += 1
+    for child in elements(attr(e, kAXChildrenAttribute)) where !queue.contains(where: { CFEqual($0, child) }) { queue.append(child) }
+  }
+  return (Array(queue.prefix(head)), head < queue.count)
+}
 func signals(_ q: [String: Any]) -> [String: Any] {
   let t0 = nowMs()
   guard let pid = (q["pid"] as? NSNumber)?.int32Value, let x = (q["x"] as? NSNumber)?.doubleValue, let y = (q["y"] as? NSNumber)?.doubleValue else { return ["error": "args"] }
@@ -162,6 +173,11 @@ func signals(_ q: [String: Any]) -> [String: Any] {
     return d
   }
   out["appChildren"] = elements(attr(app, kAXChildrenAttribute)).map { [role($0), short(str($0, kAXSubroleAttribute)), short(str($0, kAXTitleAttribute))] }
+  if (q["rememberTree"] as? Bool) == true, let root = windows.first(where: { frameOf($0) == wanted }) ?? windows.first {
+    let (nodes, cut) = rememberTree(root)
+    rememberedNodes[pid] = nodes
+    out["shotTreeCount"] = nodes.count; out["shotTreeCut"] = cut
+  }
   var hit: AXUIElement?
   if AXUIElementCopyElementAtPosition(app, Float(x), Float(y), &hit) == .success, let h = hit {
     let c = chain(prepare(h))
@@ -171,6 +187,17 @@ func signals(_ q: [String: Any]) -> [String: Any] {
     let area = c.first { role($0) == "AXWebArea" }
     if (q["remember"] as? Bool) == true { rememberedArea[pid] = area }
     if (q["compare"] as? Bool) == true {
+      if let nodes = rememberedNodes[pid] {
+        let recorded = c.map { e in nodes.contains { CFEqual($0, e) } }
+        d["chainRecorded"] = recorded
+        if let a = c.firstIndex(where: { role($0) == "AXWebArea" }), a > 0,
+           let fresh = (0..<a).reversed().first(where: { !recorded[$0] && recorded[$0 + 1] }) {
+          d["newElementIndex"] = fresh
+          if let children = attr(c[fresh + 1], kAXChildrenAttribute) {
+            d["newElementListed"] = elements(children).contains { CFEqual($0, c[fresh]) }
+          }
+        }
+      }
       if let old = rememberedArea[pid] ?? nil, let area { d["sameWebAreaAsShot"] = CFEqual(old, area); d["shotAreaFrame"] = wire(frameOf(old)) }
       else { d["sameWebAreaAsShot"] = NSNull() }
       // The ancestor reading (the build's G with a recorded outer web area): the screenshot's web area anywhere among

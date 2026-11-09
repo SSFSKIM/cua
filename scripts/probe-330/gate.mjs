@@ -19,9 +19,12 @@ export function gatePage(kind, script) {
   } else if (kind === 'recreate') {
     body = '<div id="list"><button id="target" style="width:160px;height:44px">Again</button></div>';
     change = `let generation=0; setInterval(()=>{const b=document.querySelector('#target'); b.replaceWith(b.cloneNode(true)); report('recreated', {generation:++generation});},500);`;
-  } else if (kind === 'clock') {
-    body = '<p id="clock"></p><a id="target" href="#kept" style="display:inline-block;width:220px;padding:12px">Updated 0 seconds ago</a><button id="other">Refresh</button>';
-    change = `let tick=0; setInterval(()=>{document.querySelector('#clock').textContent=new Date().toISOString(); document.querySelector('#target').textContent='Updated '+(++tick)+' seconds ago'; report('clock', {tick});},400);`;
+  } else if (kind === 'clock' || kind === 'relative') {
+    const textStyle='display:inline-block;font:20px/28px monospace;font-variant-numeric:tabular-nums;white-space:pre';
+    body = kind==='clock'
+      ? `<div style="height:40px"><span id="target" style="${textStyle};width:8ch">12:00:00</span></div>`
+      : `<ul style="padding:0;list-style:none"><li><a id="row" aria-label="Inbox message" href="#kept" style="display:block;position:relative;box-sizing:border-box;width:500px;height:70px;padding:16px"><span>Message subject</span><span id="target" style="${textStyle};position:absolute;right:16px;top:20px;width:7ch">0 s ago</span></a></li></ul>`;
+    change = `let tick=0; setInterval(()=>{const before=geometry(); ++tick; document.querySelector('#target').textContent=kind==='clock'?'12:00:'+String(tick).padStart(2,'0'):tick+' s ago'; report(kind,{tick,before,after:geometry()});},400);`;
   } else if (kind === 'lazy') {
     body = `<button id="target" style="width:180px;height:42px">Open feed item</button><div id="feed" tabindex="0" role="feed" aria-label="Lazy feed" style="height:260px;overflow:auto;margin-top:8px;border:1px solid">${Array.from({length:12},(_,i)=>`<div style="height:62px">Feed row ${i}</div>`).join('')}</div>`;
     change = `const feed=document.querySelector('#feed'); feed.addEventListener('scroll',()=>setTimeout(()=>{feed.insertAdjacentHTML('beforeend','<div>Arrived row <img alt="Arrived image" width="40" height="24" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2240%22 height=%2224%22%3E%3Cpath fill=%22blue%22 d=%22M0 0h40v24H0z%22/%3E%3C/svg%3E"></div>'); report('lazy-arrived',{scrollTop:feed.scrollTop,rows:feed.children.length});},300),{once:true}); report('lazy-armed');`;
@@ -42,12 +45,12 @@ export function gatePage(kind, script) {
 const send=extra=>navigator.sendBeacon('/ev',JSON.stringify({kind,case:location.search,...extra}));
 const report=(mutation,extra={})=>send({type:'mutation',mutation,...extra});
 const rect=r=>({x:r.x,y:r.y,width:r.width,height:r.height});
-const geometry=()=>{const target=document.querySelector('#target'),range=document.createRange();range.selectNodeContents(target);return {kind,case:location.search,text:target.textContent,anchor:rect(document.querySelector(kind==='budget'?'#budget-parent':'#target').getBoundingClientRect()),textRects:Array.from(range.getClientRects(),rect)};};
+const geometry=()=>{const target=document.querySelector('#target'),range=document.createRange();range.selectNodeContents(target);return {kind,case:location.search,text:target.textContent,anchor:rect(document.querySelector(kind==='budget'?'#budget-parent':kind==='relative'?'#row':'#target').getBoundingClientRect()),textRects:Array.from(range.getClientRects(),rect)};};
 addEventListener('load',()=>send({type:'fixture',...geometry()}));
 window.__change=()=>{${change}};document.addEventListener('click',e=>{if(e.target.closest('a'))e.preventDefault();},true);})();</script>${script}</body></html>`;
 }
 
-const holds = (f,p) => f && p.x>f.x && p.x<f.x+f.width && p.y>f.y && p.y<f.y+f.height;
+const holds = (f,p) => f && p && p.x>f.x && p.x<f.x+f.width && p.y>f.y && p.y<f.y+f.height;
 const reads = (n,text) => [n.title,n.description,n.value].some(s=>typeof s==='string' && s.trim()===text);
 const hitText = (hit,text) => hit?.chain?.[0]?.slice(4,7).some(s=>typeof s==='string' && s.trim()===text) ?? false;
 
@@ -65,6 +68,78 @@ export function gateTarget(sky, fixture, at) {
   return {node,point:{x:node.frame.x+domPoint.x-anchor.x,y:node.frame.y+domPoint.y-anchor.y},
     fixture:{before:fixture,domPoint,pointInText:fixture.textRects.some(r=>holds(r,domPoint)),
       tailOmitted:budget && !sky.nodes.some(n=>reads(n,'Budget tail text'))}};
+}
+
+export function tickingTarget(sky,fixture) {
+  if(!fixture)return null;
+  const line=fixture.textRects?.find(r=>r.width>0&&r.height>0);
+  if(!line)return null;
+  const sized=(a,b)=>a&&b&&Math.abs(a.width-b.width)<=2&&Math.abs(a.height-b.height)<=2;
+  const text=sky.nodes.find(n=>n.role==='AXStaticText'&&reads(n,fixture.text)&&sized(n.frame,line));
+  const node=text||sky.nodes.find(n=>['AXLink','AXGroup'].includes(n.role)&&sized(n.frame,fixture.anchor));
+  const anchor=text?line:fixture.anchor;
+  if(!node||!anchor)return null;
+  const domPoint={x:line.x+line.width/2,y:line.y+line.height/2};
+  return {node,point:{x:node.frame.x+domPoint.x-anchor.x,y:node.frame.y+domPoint.y-anchor.y},
+    fixture:{before:fixture,domPoint,pointInText:holds(line,domPoint)}};
+}
+
+// The engine's recordedRole, not the chosen fixture node, identifies whose actions we report.
+// AXPress is reported explicitly; ShowMenu/ScrollToVisible alone do not make the recorded text actionable.
+export function tickEvidence(row,nodes) {
+  const issues=[], before=row.fixture?.before,sp=row.click?.stalePoint;
+  const ticks=(row.mutations??[]).filter(m=>m.mutation===before?.kind&&m.tick>=1&&m.before?.text!==m.after?.text);
+  const initial=before?.textRects?.[0];
+  const stable=r=>initial&&r&&['x','y','width','height'].every(k=>Math.abs(r[k]-initial[k])<=.75);
+  if(!before?.text||!row.fixture?.pointInText)issues.push('text did not exist at the screenshot point');
+  if(!ticks.length)issues.push('no changed tick after screenshot');
+  if(ticks.some(t=>!stable(t.before?.textRects?.[0])||!stable(t.after?.textRects?.[0])))issues.push('ticking text changed its line frame');
+  if(!row.click||row.problem||row.exception)issues.push('cell did not complete');
+  if(sp?.hitRole!=='AXStaticText')issues.push('engine hit is not the ticking text');
+  const candidates=nodes.filter(n=>holds(n.frame,row.point?.screen)&&n.role===sp?.recordedRole).sort((a,b)=>(b.depth??0)-(a.depth??0));
+  const n=candidates[0], recorded=n?{role:n.role,token:n.token,title:n.title,description:n.description,value:n.value,actions:n.actions??[],actionable:(n.actions??[]).includes('AXPress'),frame:n.frame}:null;
+  if(!recorded)issues.push('recorded node actions unavailable');
+  const rowNode=nodes.find(n=>n.role==='AXLink'&&holds(n.frame,row.point?.screen)&&(n.actions??[]).includes('AXPress'));
+  if(before?.kind==='relative'&&!rowNode)issues.push('timestamp is not inside an AXPress link row');
+  return {valid:!issues.length,issues,ticks:ticks.length,recorded,rowActionable:!!rowNode,
+    hitChain:row.signals?.hit?.chain??[],chainRecorded:row.signals?.hit?.chainRecorded??null,newElementIndex:row.signals?.hit?.newElementIndex??null};
+}
+
+export async function runTicking(scene,a) {
+  const {config,stillHarness,stillCell,URL_,REPS,events,sendCmd,sleep,save,overBudget,version}=a;
+  config.tickingRequired=6;
+  const measured=[];
+  for(const kind of ['safari','cft','firefox']) {
+    config[`${kind}Version`]=version(kind);
+    const h=await stillHarness(kind);
+    try {
+      for(let rep=1;rep<=Math.max(6,REPS);rep++) {
+        if(overBudget()){config.budgetStop=true;return;}
+        const url=new URL(`g?kind=${scene}&case=tick-${kind}-${rep}`,URL_),mark=events.length;
+        const reset=await h.reset(url.href);
+        let fixture;
+        for(let i=0;i<30;i++) {
+          fixture=events.slice(mark).find(e=>e.type==='fixture'&&e.kind===scene&&e.case===url.search);
+          if(fixture)break;
+          await sleep(100);
+        }
+        let nodes=[];
+        const row=await stillCell({app:kind,scene:`shared:${scene}`,cell:'ticking-text',at:'text',rep,reset,tickCase:true,expect:['target','row']},h.pid(),'shared',sky=>{
+          nodes=sky.nodes;return tickingTarget(sky,fixture);
+        },async()=>{
+          const start=events.length;sendCmd('change');
+          for(let i=0;i<40;i++) {
+            if(events.slice(start).some(e=>e.type==='mutation'&&e.kind===scene&&e.case===url.search&&e.tick>=1))return;
+            await sleep(100);
+          }
+          throw new Error('fixture did not tick after the screenshot');
+        });
+        row.ticking=tickEvidence(row,nodes);measured.push(row);
+        config.tickingCoverage=Object.fromEntries(['safari','cft','firefox'].map(app=>[app,{measured:measured.filter(r=>r.app===app).length,valid:measured.filter(r=>r.app===app&&r.ticking.valid).length}]));
+        save();
+      }
+    } finally {await h.close();save();}
+  }
 }
 
 // Only the shared gate uses these page-only, bucket-interleaved picks. The historical sweep-* stays unchanged.
@@ -168,8 +243,9 @@ export async function runGate(kind, a) {
             await sleep(100);
           }
           const row=await stillCell({app:kind,scene:`shared:${scene}`,cell:scene,at,rep,reset,expect:['target'],fixture:{before:fixture ?? null}},h.pid(),'shared',sky=>{
+            if(scene==='clock')return tickingTarget(sky,fixture);
             if(scene==='budget' || scene.startsWith('link-'))return gateTarget(sky,fixture,at);
-            const want=scene==='clock'?/^Updated/:scene==='lazy'?'Open feed item':scene==='spa'?'Open message':scene==='banner'?'Continue reading':'Again';
+            const want=scene==='lazy'?'Open feed item':scene==='spa'?'Open message':scene==='banner'?'Continue reading':'Again';
             const n=findNode(sky,['AXLink','AXButton'],want);
             if(!n)return null;
             return {node:n,point:at==='left'?edgePoint(n.frame,'left'):centre(n)};
@@ -184,7 +260,7 @@ export async function runGate(kind, a) {
             }
             await sleep(scene==='recreate'?1600:1400);
           });
-          row.coverage=validateGateRow(row);
+          row.coverage=scene==='clock'?tickEvidence(row,[row.observation?.chosen,...(row.observation?.nearby??[])].filter(Boolean)):validateGateRow(row);
           measured.push(row);
           config.sharedGateCoverage=summarizeGateCoverage(measured);
           save();

@@ -718,3 +718,80 @@ computer surface, served only by cua's engine), so it is a second paragraph of `
 blank line, rather than a document of its own; `core.md`'s port is untouched. The paragraph:
 
 > A web page in a Chromium-based app (Chrome, Electron apps) that is in the background does not take a pointer: unless this Mac is a dedicated desktop, a left click, double click or drag there is refused with "<App>'s web page does not accept a background click; bring <App> forward or use a dedicated desktop", and nothing is sent. A plain click there on a button, checkbox, radio button, link, pop-up button or menu item goes through the accessibility action of that element instead, and one on a checkbox or radio button whose state does not change fails with `clickUnconfirmed`; a click into a text field there is refused. A click or drag that fails with `clickUnconfirmed` was sent but may only have activated the window: observe the app before any retry.
+
+### Table 3 addition (2026-11-05, #283)
+
+The design session's rulings on #283 (the native engine spec's Decision Log, the #283 entry) change the same paragraph:
+a plain click into a background Chromium web page's text field is no longer refused but focuses the field through
+accessibility, and the model has to know that the page saw no click and where typing will go. The paragraph now reads:
+
+> A web page in a Chromium-based app (Chrome, Electron apps) that is in the background does not take a pointer: unless this Mac is a dedicated desktop, a left click, double click or drag there is refused with "<App>'s web page does not accept a background click; bring <App> forward or use a dedicated desktop", and nothing is sent. A plain click there on a button, checkbox, radio button, link, pop-up button or menu item goes through the accessibility action of that element instead, and one on a checkbox or radio button whose state does not change fails with `clickUnconfirmed`. A plain click there into a text field, text area or editable region gives it keyboard focus through accessibility instead, with no mouse event, so the page sees no click; the result's text says whether the caret was put at the point, and when it was not, typing goes to the field's existing selection or its start, so use select_text or set_value first if the position matters. A field that does not report focus fails with `clickUnconfirmed`. A click or drag that fails with `clickUnconfirmed` was sent but may only have activated the window: observe the app before any retry.
+
+### Table 3 addition (2026-11-07, #315)
+
+The design session's ruling cb252e88 on #315 (the native engine spec's Decision Log, the #315 entry) gives a
+background Firefox page the same rule as a Chromium one: a pointer there is carried by the element's accessibility
+action or refused with nothing sent, rather than posted and lost as `clickUnconfirmed`. A Firefox text field is
+focused by its own action, which places no caret at the point, so the model has to know where typing goes. The
+design session's ruling 80a11b9a rewords the refusal's remedy for Chromium and Firefox alike, so that it never reads as
+the model's to bring the app forward, which in shared mode raises a window over the person's. The paragraph now reads:
+
+> A web page in a Chromium-based app (Chrome, Electron apps) or in Firefox that is in the background does not take a pointer: unless this Mac is a dedicated desktop, a left click, double click or drag there is refused with "<App>'s web page does not accept a background click; use a dedicated desktop, or ask the person to bring <App> forward", and nothing is sent. A plain click there on a button, checkbox, radio button, link, pop-up button or menu item goes through the accessibility action of that element instead, and one on a checkbox or radio button whose state does not change fails with `clickUnconfirmed`. A plain click there into a text field, text area or editable region gives it keyboard focus through accessibility instead, with no mouse event, so the page sees no click; the result's text says whether the caret was put at the point, and when it was not, typing goes to the field's existing selection or its start, so use select_text or set_value first if the position matters. In Firefox the field is focused by its own accessibility action instead, which does not put the caret at the point. A field that does not report focus fails with `clickUnconfirmed`. A click or drag that fails with `clickUnconfirmed` was sent but may only have activated the window: observe the app before any retry.
+
+### Table 3 addition (2026-11-06, #296)
+
+The design session's rulings on #296 (the native engine spec's Decision Log, the #296 entry) add an engine refusal the
+model has to know how to answer: a coordinate click or drag whose point no longer holds what the screenshot showed
+there fails with `screenChangedSinceScreenshot`, nothing sent, and the remedy is a new screenshot. It is true wherever
+the agent cursor's paragraph is (cua's macOS engine, in either device mode), so it is a third paragraph of
+`docs/cua-api/agent-cursor.md`, after a blank line; `core.md`'s port is untouched. The paragraph:
+
+> A click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, or has given way to another control, it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it.
+
+### Table 3 addition (2026-11-06, #301)
+
+The design session's ruling on #301 (aed3f041; the native engine spec's Decision Log, the #301 entries) changes what an
+observation prints when its node budget cuts: the walk keeps what the window shows first, and the tree ends with how
+many elements it omitted and which way they lie (above the visible area, below it, or both; ruling 66f90453), so the
+model knows to scroll and observe again. The ruling asks for any change to an observation's wording in the first-call
+document. It is true wherever the agent cursor's paragraph is (cua's macOS engine), so it is a fourth paragraph of
+`docs/cua-api/agent-cursor.md`, after a blank line; `core.md`'s port is untouched. It states two limits: a visible
+control inside a container that reports a collapsed (1-pt) frame can still be cut (#304), and Chromium's synthesized
+table columns and header groups take new tokens at every observation (#303). The paragraph:
+
+> When a window holds more than its accessibility tree can list, the tree lists what the window shows first, in its usual order, and ends with a line such as `[truncated: at least 1234 elements omitted, above and below the visible area]`, the count a lower bound and the words saying which way the omitted elements lie. To reach an element the tree does not list, scroll toward it and call `getAXState()` again. A visible control inside a container that reports a collapsed frame can still be left out. In a Chromium-based app, a table's column and header elements take new element IDs at every observation.
+
+### Table 3 addition (2026-11-08, #316)
+
+The design session's ruling 4701abd8 on #316 (the native engine spec's Decision Log, the #316 entry) widens the
+stale-point guard: it also refuses when the app has opened a new window over the screenshot's (Safari's address-field
+overlay) or when the point has left the page the screenshot showed (Chrome answering a page the tab has left, Firefox's
+urlbar list). The spike measured what it still misses: a page's own suggestion list over the control the click aims at,
+and text that moved within one text view. So the model has to know when to observe again before a coordinate click. The
+#296 paragraph keeps its first half and gains a second (a draft, final after the hosted A/B):
+
+> A click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, or has given way to another control, it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it. The check reads the accessibility tree at the point, and also refuses a click or drag when the app has opened a new window over the one in the screenshot, or when the point has left the page the screenshot showed. It still cannot see a page's own suggestion list, which can take a click aimed at a control under it, or text that has moved within the same text view (after Return or a paste in TextEdit). After typing into a field that offers suggestions, or editing text above the point, take a new screenshot before clicking at coordinates. When a screenshot shows a panel over the page, aim at what the screenshot shows, not at the page's elements under it.
+
+### Table 3 addition (2026-11-08, #318)
+
+The design session's ruling cb252e88 on #287's findings states three limits that no fix ticket carries (#318; the
+native engine spec's Decision Log, the #318 entry). One of them is the first-call document's to state: since #315 the
+background-click paragraph names Firefox, and a click on a background Firefox window outside its page (the toolbar,
+tabs and address bar Gecko draws beside the page) is still posted, and on a shared desktop it can answer
+`clickUnconfirmed` even when it took effect (#287: the toolbar's Reload reloaded, 3 of 3; #315's A/B, identical). The model has
+to know that this failure is not evidence that nothing happened. The other two are not the first-call document's: cua's
+release of an app's accessibility mode is nothing the model acts on, and VS Code's Toggle Panel result is unresolved, so
+no claim is made. The paragraph now reads:
+
+> A web page in a Chromium-based app (Chrome, Electron apps) or in Firefox that is in the background does not take a pointer: unless this Mac is a dedicated desktop, a left click, double click or drag there is refused with "<App>'s web page does not accept a background click; use a dedicated desktop, or ask the person to bring <App> forward", and nothing is sent. A plain click there on a button, checkbox, radio button, link, pop-up button or menu item goes through the accessibility action of that element instead, and one on a checkbox or radio button whose state does not change fails with `clickUnconfirmed`. A plain click there into a text field, text area or editable region gives it keyboard focus through accessibility instead, with no mouse event, so the page sees no click; the result's text says whether the caret was put at the point, and when it was not, typing goes to the field's existing selection or its start, so use select_text or set_value first if the position matters. In Firefox the field is focused by its own accessibility action instead, which does not put the caret at the point. A field that does not report focus fails with `clickUnconfirmed`. Unless this Mac is a dedicated desktop, a click on a background Firefox window outside its page, on the toolbar for instance, can fail with `clickUnconfirmed` even when it took effect, as Reload does. A click or drag that fails with `clickUnconfirmed` was sent but may only have activated the window: observe the app before any retry.
+
+### Table 3 addition (2026-11-08, #328)
+
+The design session's ruling b1921fc3 on #328 (the native engine spec's Decision Log, the #328 entry) adds two answers
+the model has to read. A click, scroll or drag at a point outside the screenshot is refused with
+`pointOutsideScreenshot`, nothing posted; #324's kit had aimed scrolls below their windows and got success, and so a drag
+can no longer end outside the window (#334 is the cross-window drop). A scroll is confirmed: success when what is at the
+point moved, success with a note when it was already at its end, else `scrollUnconfirmed`, which tells the model to
+observe before scrolling again. A paragraph after the stale-point one:
+
+> A click, scroll or drag at coordinates outside the screenshot they came from fails with `pointOutsideScreenshot` and nothing is sent: give a point inside it, from 0 to its width less one across and from 0 to its height less one down, in its pixels. So a drag cannot end outside the app's window, on another app or the desktop. A scroll succeeds only once what is at its point was seen to move, or when that was already scrolled as far as it goes that way, in which case the result's text says so. Otherwise it fails with `scrollUnconfirmed`: the scroll was sent but nothing was seen to move, so observe the app (a new screenshot or `getAXState()`) before scrolling again.

@@ -54,8 +54,11 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
 /// carried it. Value-free: action names and enumeration words only.
 struct ElementClickRecord: Equatable {
   /// `webArea` (#282): a left pointer into a Chromium web area in shared mode, carried by the action of the element the
-  /// pointer's point hits instead of a posted click (a coordinate click's record too).
-  enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea }
+  /// pointer's point hits instead of a posted click (a coordinate click's record too); #315, a Gecko web area's alike, its
+  /// text field by its action with the focus read back (`focus`, `focusStep` "press").
+  /// `focusField` and `focusedNotPlaced` (#283): a plain left click into a web area's text field, carried by
+  /// AXFocused, with the caret placed at the point or not (`caret` says why not).
+  enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea, focusField, focusedNotPlaced }
   let plan: ElementClickPlan
   let reason: Reason
   var hit: HitRelation?
@@ -67,6 +70,17 @@ struct ElementClickRecord: Equatable {
   /// why it stopped (`walkStopped`, a `WebAreaRefusal` case name).
   var walk: [String]? = nil
   var walkStopped: String? = nil
+  /// `focusField` and `focusedNotPlaced` only: the caret's offset placed (`placed`), or why it was not (a
+  /// `CaretNotPlaced` case name). #313, a WebKit page's field whose caret was written: `placed` (read back at the point),
+  /// why the point gave no offset (read back at 0), or `selectionMismatch` / `secure` (not confirmed).
+  var caret: String? = nil
+  /// #313, a text-entry element's action (`advertised`; #315, a Gecko web area's field, `webArea`): what its last focus
+  /// read-back found (a `FocusReadback` case name), and after which step (`focusStep` "press" | "selection", the caret's
+  /// write on a WebKit page).
+  var focus: String? = nil
+  var focusStep: String? = nil
+  /// #313, the caret's AXSelectedTextRange write when it did not answer success: its AXError.
+  var caretWriteError: Int32? = nil
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["reason": reason.rawValue]
@@ -79,6 +93,10 @@ struct ElementClickRecord: Equatable {
     if let pressedAncestor { wire["pressed"] = pressedAncestor ? "ancestor" : "hit" }
     if let walk { wire["walk"] = walk }
     if let walkStopped { wire["walkStopped"] = walkStopped }
+    if let caret { wire["caret"] = caret }
+    if let focus { wire["focus"] = focus }
+    if let focusStep { wire["focusStep"] = focusStep }
+    if let caretWriteError { wire["caretWriteError"] = Int(caretWriteError) }
     return wire
   }
 }
@@ -259,9 +277,10 @@ func hitRelation<Element>(_ hit: Element?, to target: Element, parent: (Element)
 // mouse below the popup levels, so the first loses the click silently and the second raises the window. The owner's
 // ruling for that class (the Linux engine's device mode): on a shared desktop cua refuses input an app ignores, and a
 // dedicated desktop may bring the window forward. So, per connection (its ping's `desktop`):
-// - shared (the default): a left pointer into a Chromium web area, where the activation it meets clicked no activation
-//   point, is never posted: a plain click takes the hit element's own action when it advertises one (the element route),
-//   anything else is refused (`backgroundClickRefused`), with nothing posted;
+// - shared (the default): a left pointer into a Chromium or (#315) a Gecko web area, where the activation it meets clicked
+//   no activation point (Firefox's lies on a toolbar control, so it clicks none), is never posted: a plain click takes
+//   the hit element's own action when it advertises one (the element route), anything else is refused
+//   (`backgroundClickRefused`), with nothing posted;
 // - dedicated: the inert click goes right after subtype 1 for left pointers too, so their own down meets a key window and
 //   is delivered, and nothing puts the person's window order back for that action (nobody is at the desktop);
 // - everywhere: a pointer whose own down consumed the arm, into a view not known to accept first mouse, answers
@@ -278,10 +297,11 @@ enum PointerView: Equatable {
   /// Known to accept first mouse: a Chromium process's native views (its toolbar; `BridgedContentView acceptsFirstMouse:`
   /// answers YES), the one rule cua knows. A down that consumes the arm there is delivered.
   case acceptsFirstMouse
-  /// A Chromium web area or inside one, whose view refuses first mouse.
+  /// A Chromium or Gecko web area or inside one, whose view refuses first mouse (Gecko's refuses a click-through
+  /// mouse down into its page, #315).
   case webArea
-  /// A Chromium hit not established outside every web area (no hit, an incomplete walk, a page tree not yet seen):
-  /// treated as a web area in shared mode, since the owner's rule refuses input the app may ignore (#282's review).
+  /// A Chromium or Gecko hit not established outside every web area (no hit, an incomplete walk, a Chromium page tree
+  /// not yet seen): treated as a web area in shared mode, since the owner's rule refuses input the app may ignore (#282's review).
   case possibleWebArea
   /// Anything else: an app with no known rule.
   case unknown
@@ -302,37 +322,138 @@ enum WebAreaWalk: Equatable {
   /// Neither: a role or a parent could not be read before a stop, or the bound ran out; an AXWebArea may lie beyond. And
   /// a hit that is itself the window, sheet or application: a coarse answer, which says nothing of the view at the point.
   case incomplete
+  /// The hit, or an element on its walk below the stop, has an AXWebArea among its children (#288): Chrome's
+  /// web-contents AXScrollArea, which a page point answers for a moment after Basic mode before it resolves inside the
+  /// page. Never outside.
+  case aboveWebArea
 }
 
 /// Whether `hit` is an AXWebArea or lies inside one, its parents walked up to 300 levels (the gate's bound) and no
-/// further than its window. Only a walk from an element below a stop that reached one with every role read says
-/// `outside` (#282's review).
-func webAreaWalk<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?) -> WebAreaWalk {
+/// further than its window. Only a walk from an element below a stop that reached one with every role read, none of
+/// the elements below the stop having an AXWebArea child, or children that could not be read (`webAreaChild` nil),
+/// says `outside` (#282's review; #288).
+func webAreaWalk<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?,
+                          webAreaChild: (Element) -> Bool? = { _ in false }) -> WebAreaWalk {
   var current = hit
   for level in 0...300 {
     guard let name = role(current) else { return .incomplete }
     if name == "AXWebArea" { return .inside }
     if webAreaWalkStops.contains(name) { return level == 0 ? .incomplete : .outside }
+    switch webAreaChild(current) {
+    case true?: return .aboveWebArea
+    case nil: return .incomplete  // unknown: an AXWebArea may be among them
+    case false?: break
+    }
     guard let next = parent(current) else { return .incomplete }
     current = next
   }
   return .incomplete
 }
 
-/// The view a left pointer's point hits in a process: in a Chromium-family process (`chromiumFamily`, Enablement.swift),
-/// a web area when the hit is or lies inside an AXWebArea; a native view known to accept first mouse only when the walk
-/// established the hit outside every web area and an observation has seen a web area in the process (`webAreaSeen`: its
-/// page's tree is exposed, so a page point would have answered inside one); otherwise, in a Chromium process, a possible
-/// web area (no hit, an incomplete walk, or a page tree not yet seen), and `unknown` outside one.
-func pointerView<Element>(chromium: Bool, webAreaSeen: Bool, hit: Element?, role: (Element) -> String?,
-                          parent: (Element) -> Element?) -> PointerView {
-  guard chromium else { return .unknown }
-  guard let hit else { return .possibleWebArea }
-  switch webAreaWalk(hit, role: role, parent: parent) {
-  case .inside: return .webArea
-  case .outside: return webAreaSeen ? .acceptsFirstMouse : .possibleWebArea
-  case .incomplete: return .possibleWebArea
+/// Whether `element` has an AXWebArea among its children: nil (unknown) when its children, or a child's role, could
+/// not be read, which the walk takes for a possible web area, never for outside (the review of d2568c76..96c6f093).
+func hasWebAreaChild<Element>(_ element: Element, children: (Element) -> [Element]?, role: (Element) -> String?) -> Bool? {
+  guard let list = children(element) else { return nil }
+  var unknown = false
+  for child in list {
+    guard let name = role(child) else {
+      unknown = true
+      continue
+    }
+    if name == "AXWebArea" { return true }
   }
+  return unknown ? nil : false
+}
+
+/// The view a left pointer's point hits in a process, by its page engine (`pageEngineOf`, Enablement.swift): in a
+/// Chromium-family or a Gecko process, a web area when the hit is or lies inside an AXWebArea, and a possible web area
+/// when the hit is not established outside every one (no hit, an incomplete walk, or a hit or element on its walk with an
+/// AXWebArea child, #288). Established outside: in a Chromium process a native view known to accept first mouse once an
+/// observation has seen a web area in the process (`webAreaSeen`: its page's tree is exposed, so a page point would have
+/// answered inside one), a possible web area before; in a Gecko process `geckoChromeView`. A WebKit or native process
+/// (`other`) is `unknown`: Safari's activation clicks its in-window point, so its pointer is delivered (#287).
+func pointerView<Element>(engine: PageEngine, webAreaSeen: Bool, hit: Element?, role: (Element) -> String?,
+                          parent: (Element) -> Element?, children: (Element) -> [Element]? = { _ in [] }) -> PointerView {
+  guard engine != .other else { return .unknown }
+  guard let hit else { return .possibleWebArea }
+  switch webAreaWalk(hit, role: role, parent: parent, webAreaChild: { hasWebAreaChild($0, children: children, role: role) }) {
+  case .inside: return .webArea
+  case .outside:
+    guard engine == .chromium else { return geckoChromeView }
+    return webAreaSeen ? .acceptsFirstMouse : .possibleWebArea
+  case .incomplete, .aboveWebArea: return .possibleWebArea
+  }
+}
+
+/// #315: what a Gecko hit established outside every web area is (its toolbar, tabs and address bar, which Gecko draws in
+/// the same ChildView as the page). Gecko's view accepts first mouse at AppKit's level and then asks its own content
+/// whether a click-through mouse down may pass (nsCocoaWindow.mm `inactiveWindowAcceptsMouseEvent:`, its eMouseActivate,
+/// answered by EventStateManager.cpp `NodeAllowsClickThrough`): refused inside a XUL `<browser>` (the page) or `<tree>`,
+/// allowed elsewhere. So the browser chrome takes the click (#287: the toolbar's Reload reloaded, 3 of 3) and the rule
+/// covers only the web area. The chrome stays `unknown`, answering `clickUnconfirmed` as before (#318), since a XUL tree
+/// outside a web area also refuses; making it known to accept is `webAreaSeen ? .acceptsFirstMouse : .unknown` above.
+let geckoChromeView: PointerView = .unknown
+
+/// #288's establishment, at click time, of a Chromium process's page tree no observation has seen: the application's
+/// role read (Basic mode), a bounded search of the target window for an AXWebArea (`noteWebArea` when found), then the
+/// point hit-tested again; a hit that is itself a container of the web area, or whose children cannot be read
+/// (`hasWebAreaChild` true or nil), is hit-tested again
+/// every `pointerEstablishSampleMs` for up to `pointerEstablishRehitMs` until it is something else, the waits ending
+/// by `pointerEstablishBoundMs` after the step began. Measured (#288's hosted spike, runs 42161269408 and 42162367095):
+/// before any role read a page point answers a coarse AXScrollArea that walks to the window; after it the window's
+/// search finds the AXWebArea in 11 to 29 ms, and for 40 to 350 ms more the point may answer the web-contents
+/// AXScrollArea, the web area's parent, before it resolves inside the page; the toolbar's Reload is an AXButton whose
+/// walk reaches the window with no web area. Nothing is activated or posted.
+let pointerEstablishRehitMs: Double = 500
+let pointerEstablishSampleMs: Double = 25
+let pointerEstablishBoundMs: Double = 600
+
+/// What the establishment did, value-free: the meta's `pointerEstablish` {ms, webAreaFound, rehits}, `rehits` counting
+/// every hit-test after the search.
+struct PointerEstablishRecord: Equatable {
+  var ms: Double
+  var webAreaFound: Bool
+  var rehits: Int
+
+  var wire: [String: Any] { ["ms": (ms * 1000).rounded() / 1000, "webAreaFound": webAreaFound, "rehits": rehits] }
+}
+
+/// The calls the establishment makes (the unit tests' seams).
+struct PointerEstablishing<Element> {
+  var readAppRole: () -> Void
+  var windowHasWebArea: () -> Bool
+  var noteWebArea: () -> Void
+  var rehit: () -> Element?
+  var now: () -> Double
+  var sleep: (Double) -> Void
+}
+
+/// The view a left pointer by route 3 aims at (`pointerView`), with #288's establishment first in a Chromium process
+/// where no web area has been seen, when `establish` is given: answers the view, the hit it was read from (the
+/// establishment's last hit-test, else `hit`), and the establishment's record (nil when none ran). A Gecko process runs
+/// none: its tree is exposed at the first contact of any AX client (#287), with no Basic mode to wait through.
+func establishedPointerView<Element>(engine: PageEngine, webAreaSeen: Bool, hit: Element?, role: (Element) -> String?,
+                                     parent: (Element) -> Element?, children: (Element) -> [Element]?,
+                                     establish: PointerEstablishing<Element>?) -> (view: PointerView, hit: Element?, record: PointerEstablishRecord?) {
+  guard engine == .chromium, !webAreaSeen, let establish else {
+    return (pointerView(engine: engine, webAreaSeen: webAreaSeen, hit: hit, role: role, parent: parent, children: children), hit, nil)
+  }
+  let started = establish.now()
+  establish.readAppRole()
+  let found = establish.windowHasWebArea()
+  if found { establish.noteWebArea() }
+  var current = establish.rehit()
+  var rehits = 1
+  let end = min(establish.now() + pointerEstablishRehitMs, started + pointerEstablishBoundMs)
+  while let container = current, hasWebAreaChild(container, children: children, role: role) != false {  // a container, or unknown
+    let remaining = end - establish.now()
+    guard remaining > 0 else { break }
+    establish.sleep(min(pointerEstablishSampleMs, remaining))
+    current = establish.rehit()
+    rehits += 1
+  }
+  let view = pointerView(engine: .chromium, webAreaSeen: found, hit: current, role: role, parent: parent, children: children)
+  return (view, current, PointerEstablishRecord(ms: establish.now() - started, webAreaFound: found, rehits: rehits))
 }
 
 /// The roles whose action in a Chromium web area has a known effect, the only ones shared mode's element route presses
@@ -356,8 +477,9 @@ let webAreaValueSampleMs: Double = 20
 /// control's plain, non-interactive children, its label's text, an icon, a wrapping group (Chromium's generic
 /// containers arrive as AXGroup). Any other role on the way up refuses.
 let webAreaPassableRoles: Set<String> = ["AXStaticText", "AXImage", "AXGroup"]
-/// The roles that make an element editable whatever its attributes say (text entry; text and editing are #283's).
-let webAreaEditableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
+/// The roles that make an element editable whatever its attributes say: text entry, which a plain click focuses
+/// instead (#283, WebAreaFocus.swift).
+let webAreaEditableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField", "AXSecureTextField"]
 
 /// Why shared mode refuses a plain left click in a web area rather than pressing a control (#282).
 enum WebAreaRefusal: String, Error, Equatable {
@@ -372,6 +494,8 @@ enum WebAreaRefusal: String, Error, Equatable {
   case incompleteAncestry
   /// The control advertises neither AXPick nor AXPress, after the re-read where the process's accessibility is fresh.
   case noAction
+  /// The focus route (#283): the text-entry element the walk reached does not let its AXFocused be set.
+  case notFocusable
 }
 
 /// The control a plain left click in a web area presses (#282, the design session's bounds): the hit when it is an
@@ -414,25 +538,40 @@ func webAreaAction(role: String, actions: [String]?) -> String? {
 
 /// How long a control with no action yet is re-read in a process whose accessibility is fresh (#282's hosted probe, run
 /// 42131623237: a checkbox began advertising AXPress 1.6 to 1.7 s after the engine's enablement write, with no
-/// activation at all): every 100 ms for up to 2 s, posting nothing. Fresh: under `webAreaFreshEnablementMs` since the
-/// process's first observation or the engine's last enablement write attempt, failed or not (`WebAccessibility.freshSince`;
-/// on Chrome for Testing the write fails), or no observation has seen a web area in it yet.
+/// activation at all): every 100 ms until `webAreaRereadDeadline`, posting nothing. Fresh: under
+/// `webAreaFreshEnablementMs` since the process's first observation or the engine's last enablement write attempt,
+/// failed or not (`WebAccessibility.freshSince`; on Chrome for Testing the write answers -25208, #292), or no
+/// observation has seen a web area in it yet.
 let webAreaActionRereadMs: Double = 2_000
 let webAreaActionRereadSampleMs: Double = 100
 let webAreaFreshEnablementMs: Double = 10_000
+/// #292 (the design session's ruling 199d194c): Chrome's complete mode lands about 2.2 s after the EUI write (its 2 s
+/// debounce), past a 2 s re-read that starts with the write, as an input's own enablement after a grace release does.
+/// So a re-read runs until the later of 2 s from its start and `freshSince` + 2.6 s (the 2.2 s and a margin), and never
+/// past 3 s from its start.
+let webAreaRereadAfterWriteMs: Double = 2_600
+let webAreaRereadCapMs: Double = 3_000
 
 func webAreaAccessibilityFresh(freshSince: Double?, now: Double, webAreaSeen: Bool) -> Bool {
   !webAreaSeen || freshSince.map { now - $0 < webAreaFreshEnablementMs } == true
 }
 
-/// The control's action, re-read every `webAreaActionRereadSampleMs` for up to `webAreaActionRereadMs` when `fresh` and
-/// the first read found none; nil when none came (or the process was not fresh: no wait at all).
-func webAreaActionRereading(role: String, first: [String]?, fresh: Bool, read: () -> [String]?, now: () -> Double,
-                            sleep: (Double) -> Void) -> String? {
+/// When a re-read that began at `started` ends (#292): the later of `webAreaActionRereadMs` after it and
+/// `webAreaRereadAfterWriteMs` after `freshSince`, capped at `webAreaRereadCapMs` after it.
+func webAreaRereadDeadline(started: Double, freshSince: Double?) -> Double {
+  let floor = started + webAreaActionRereadMs
+  guard let freshSince else { return floor }
+  return min(started + webAreaRereadCapMs, max(floor, freshSince + webAreaRereadAfterWriteMs))
+}
+
+/// The control's action, re-read every `webAreaActionRereadSampleMs` until `webAreaRereadDeadline` when `fresh` and the
+/// first read found none; nil when none came (or the process was not fresh: no wait at all).
+func webAreaActionRereading(role: String, first: [String]?, fresh: Bool, freshSince: Double? = nil, read: () -> [String]?,
+                            now: () -> Double, sleep: (Double) -> Void) -> String? {
   if let action = webAreaAction(role: role, actions: first) { return action }
   guard fresh else { return nil }
-  let started = now()
-  while now() - started < webAreaActionRereadMs {
+  let deadline = webAreaRereadDeadline(started: now(), freshSince: freshSince)
+  while now() < deadline {
     sleep(webAreaActionRereadSampleMs)
     if let action = webAreaAction(role: role, actions: read()) { return action }
   }
@@ -447,10 +586,16 @@ func webAreaControlRequalified<Element>(_ control: Element, role: (Element) -> S
   guard let name = role(control) else { return .failure(.incompleteAncestry) }
   if webAreaEditableRoles.contains(name) || editable(control) { return .failure(.editable) }
   guard webAreaPressableRoles.contains(name) else { return .failure(.roleNotAllowed) }
-  var current = control
+  return webAreaAncestry(above: control, role: role, parent: parent).map { name }
+}
+
+/// Whether `element`'s parents read up to an AXWebArea: no window, sheet or application first (`roleNotAllowed`: outside
+/// every web area), no unread role or parent and within 300 levels (`incompleteAncestry`).
+func webAreaAncestry<Element>(above element: Element, role: (Element) -> String?, parent: (Element) -> Element?) -> Result<Void, WebAreaRefusal> {
+  var current = element
   for _ in 0...300 {
     guard let next = parent(current), let above = role(next) else { return .failure(.incompleteAncestry) }
-    if above == "AXWebArea" { return .success(name) }
+    if above == "AXWebArea" { return .success(()) }
     if webAreaWalkStops.contains(above) { return .failure(.roleNotAllowed) }  // reached its window: outside every web area
     current = next
   }
@@ -461,10 +606,10 @@ func webAreaControlRequalified<Element>(_ control: Element, role: (Element) -> S
 /// re-read where the process's accessibility is fresh (`webAreaActionRereading`), then the control requalified as it is
 /// now (`webAreaControlRequalified`) and its action taken again under its current role. Answers the action and the
 /// current role, or why it is refused.
-func webAreaPressDecision<Element>(_ control: Element, walkedRole: String, fresh: Bool, actions: (Element) -> [String]?,
+func webAreaPressDecision<Element>(_ control: Element, walkedRole: String, fresh: Bool, freshSince: Double? = nil, actions: (Element) -> [String]?,
                                    role: (Element) -> String?, parent: (Element) -> Element?, editable: (Element) -> Bool,
                                    now: () -> Double, sleep: (Double) -> Void) -> Result<(action: String, role: String), WebAreaRefusal> {
-  guard webAreaActionRereading(role: walkedRole, first: actions(control), fresh: fresh, read: { actions(control) }, now: now,
+  guard webAreaActionRereading(role: walkedRole, first: actions(control), fresh: fresh, freshSince: freshSince, read: { actions(control) }, now: now,
                                sleep: sleep) != nil else { return .failure(.noAction) }
   switch webAreaControlRequalified(control, role: role, parent: parent, editable: editable) {
   case .failure(let why): return .failure(why)
@@ -495,17 +640,32 @@ func pressConfirmingValue(app: String, checksValue: Bool, readValue: () -> Strin
   throw pressUnconfirmed(app)
 }
 
-/// Shared mode's refusal of a left pointer into a Chromium web area (#282), in the Linux engine's form (the cause, then
-/// the remedy): nothing was posted.
-func backgroundClickRefused(_ app: String) -> EngineError {
-  EngineError(name: "backgroundClickRefused", "\(app)'s web page does not accept a background click; bring \(app) forward or use a dedicated desktop")
+/// Shared mode's refusal of a left pointer into a Chromium or (#315) Gecko web area (#282), in the Linux engine's form (the
+/// cause, then the remedy): nothing was posted. The remedy never reads as the model's to raise the app (the design
+/// session's ruling 80a11b9a: in shared mode that puts a window over the person's): a dedicated desktop, or the person
+/// bringing the app forward when asked. `engine`, the page's, adds what still works there in the background
+/// (`backgroundFieldAlternative`); Chromium's wording is unchanged.
+func backgroundClickRefused(_ app: String, engine: PageEngine = .other) -> EngineError {
+  EngineError(name: "backgroundClickRefused",
+    "\(app)'s web page does not accept a background click; use a dedicated desktop, or ask the person to bring \(app) forward" + backgroundFieldAlternative(engine))
 }
 
 /// The refusal of a control whose action the page has not exposed yet (`WebAreaRefusal.noAction`): its accessibility may
 /// still be coming up, so observing the app first may let the next click through.
-func backgroundClickRefusedObserveFirst(_ app: String) -> EngineError {
+func backgroundClickRefusedObserveFirst(_ app: String, engine: PageEngine = .other) -> EngineError {
   EngineError(name: "backgroundClickRefused",
-    "\(app)'s web page does not accept a background click, and the control there exposes no action yet; observe \(app) with get_app_state first and click again, or bring \(app) forward or use a dedicated desktop")
+    "\(app)'s web page does not accept a background click, and the control there exposes no action yet; observe \(app) with get_app_state first and click again, or use a dedicated desktop, or ask the person to bring \(app) forward"
+      + backgroundFieldAlternative(engine))
+}
+
+/// #315 (the design session's ruling 99e45959): a refusal into a Gecko page names what still works on its text fields in
+/// the background, an element click on the field, which Gecko's AXPress focuses (read back, `pressFocusingField` and
+/// #313's `carryActionClick`), besides the dedicated desktop the sentence already names. It reaches set_value's and
+/// select_text's fallback click, a drag, and a click on something with no action. Empty for any other engine.
+func backgroundFieldAlternative(_ engine: PageEngine) -> String {
+  engine == .gecko
+    ? ". A text field on the page still works in the background: click the field by its element ID, which focuses it through accessibility, then type or set its value"
+    : ""
 }
 
 /// The answer of a pointer whose own mouse down consumed route 3's activation arm in a view not known to accept first
@@ -529,15 +689,31 @@ func pressUnconfirmed(_ app: String) -> EngineError {
 private let clippingRoles: Set<String> = ["AXScrollArea", "AXWebArea", "AXWindow", "AXSheet", "AXMenu", "AXPopover"]
 /// Where the walk ends after clipping (FUN_10078eb38), and where it ends without (the application).
 private let boundaryRoles: Set<String> = ["AXWindow", "AXSheet", "AXMenu", "AXPopover"]
+/// `boundaryRoles` for the stale-point record (StalePoint.swift), which cuts the recorded tree's frames by the same rule.
+var clipBoundaryRoles: Set<String> { boundaryRoles }
 /// A group clips when it can scroll by the page (the vendor's `hasScrollAction`, not decompiled; read as the
-/// UIElementAction cases that scroll, E §5).
-private let pageScrollActions: Set<String> = ["AXScrollUpByPage", "AXScrollDownByPage", "AXScrollLeftByPage", "AXScrollRightByPage"]
+/// UIElementAction cases that scroll, E §5); #328's scroll confirmation takes such an element as a scroll container.
+let pageScrollActions: Set<String> = ["AXScrollUpByPage", "AXScrollDownByPage", "AXScrollLeftByPage", "AXScrollRightByPage"]
+
+/// Whether an element of `role` with `actions` cuts what of its descendants shows (`visibleFrame`'s clipping ancestors).
+func clipsDescendants(role: String, actions: @autoclosure () -> [String]) -> Bool {
+  clippingRoles.contains(role) || (role == "AXGroup" && !pageScrollActions.isDisjoint(with: actions()))
+}
+
+/// Whether a clipping element's frame is unknown rather than a place (#312): {0, 0, 0, 0}, the answer an app gives for
+/// bounds it has not computed yet. Firefox's AXWebArea answers it on the observation that turns Gecko's accessibility
+/// on, its descendants' frames already real, and its own read real by the first sample, 0.55 s after that observation
+/// answered (#287). Such a frame cuts
+/// nothing, so what its descendants show is what the clipping ancestors above it leave (Firefox's: its scroll area). A
+/// frame of no size anywhere else (a scroll area collapsed at its place) is a place, and still hides what it holds.
+func unplacedFrame(_ frame: CGRect) -> Bool { frame == .zero }
 
 /// The part of an element that shows: its frame cut by the frame of every clipping ancestor up to its window, sheet,
 /// menu or popover (the vendor's visible-frame walk, FUN_10078e49c). Nil when the element has no frame or nothing of it
 /// shows, so a row scrolled out of its list or web content scrolled out of its page is not clicked through whatever
 /// covers its content position. A clipping ancestor whose frame cannot be read leaves nothing known to show (nil, as the
-/// vendor's walk answers there); an ancestor of another role without a frame does not clip. A menu-bar item, whose
+/// vendor's walk answers there), and one whose frame is unplaced (`unplacedFrame`, #312) cuts nothing; an ancestor of
+/// another role without a frame does not clip. A menu-bar item, whose
 /// ancestors are the menu bar and the application, keeps its whole frame. Three departures from the vendor: the point
 /// is the shown part's midpoint (the vendor takes the frame's midpoint only when the region contains it, FUN_10078cbb0);
 /// with no clipping ancestor at all the frame is kept (the vendor answers nil); and nothing is scrolled into view (the
@@ -551,11 +727,12 @@ func visibleFrame<Element>(of element: Element, frame: (Element) -> CGRect?, rol
     let nodeRole = role(node) ?? ""
     if nodeRole == "AXApplication" { break }
     if level > 0 {
-      let clips = clippingRoles.contains(nodeRole) || (nodeRole == "AXGroup" && !pageScrollActions.isDisjoint(with: actions(node)))
-      if clips {
+      if clipsDescendants(role: nodeRole, actions: actions(node)) {
         guard let bounds = frame(node) else { return nil }
-        visible = visible.intersection(bounds)
-        guard !visible.isNull, visible.width >= 1, visible.height >= 1 else { return nil }
+        if !unplacedFrame(bounds) {
+          visible = visible.intersection(bounds)
+          guard !visible.isNull, visible.width >= 1, visible.height >= 1 else { return nil }
+        }
       }
     }
     if boundaryRoles.contains(nodeRole) { break }

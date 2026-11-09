@@ -8,8 +8,10 @@ import Foundation
 // element keeps its token when its handle is CFEqual to the previous revision's at a matched position (sibling list
 // against sibling list under matched parents); a new element takes a new token; a token absent from one revision is
 // retired there and never reissued in the lineage, so an element that returns gets a new one (N = 1, the vendor's
-// identity rule). A walk cut short by the node or byte budget or the deadline retires nothing past the cut: the
-// previous revision's entries it did not reach are carried over. An action names its lineage and a token; the engine
+// identity rule). A walk cut short by the node or byte budget or the deadline retires nothing it left unread: the
+// walk spends its budget on what the window shows first (#301), so what it leaves unread lies scattered through the
+// tree, and each unread child of a read element has the previous revision's entry for it, with its subtree, carried over
+// in its place among its siblings. An action names its lineage and a token; the engine
 // refuses a token of another lineage or a retired one with the vendor's "no longer valid" sentence.
 
 /// The wire's spelling of a lineage's `number`th token.
@@ -292,7 +294,8 @@ final class Lineage {
     var found: [AXUIElement] = []
     if before == 1 {
       let tree = resolver.tree(observed.menuRoot)
-      found = matching(entry.identity, ignoringValue: ignoringValue, window: tree.window, menuItems: tree.menuItems, source: source)
+      found = matching(entry.identity, ignoringValue: ignoringValue, window: tree.window, menuItems: tree.menuItems, source: source,
+                       deadlineMs: resolver.refetchDeadlineMs)
     }
     switch RefetchVerdict.of(before: before, after: found.count) {
     case .ambiguousBefore: throw ElementErrors.ambiguousBeforeRefetch
@@ -321,6 +324,8 @@ struct ElementResolver {
   /// the app's primary window now and the menu-bar elements an observation reads (the bar, then its items but the Apple
   /// menu; `menuBarElements`).
   var tree: (_ menuRoot: AXUIElement?) -> (window: AXUIElement?, menuItems: [AXUIElement])
+  /// How long the re-fetch's walk may take, from its start (an observation's deadline; a test's shorter one).
+  var refetchDeadlineMs = Double(observationDeadlineMs)
 
   /// The engine's: `lineage`'s watches, the live handle, and `pid`'s application element.
   static func live(_ lineage: Lineage, pid: pid_t) -> ElementResolver {
@@ -433,29 +438,56 @@ extension ConnectionState {
   }
 }
 
-/// The elements an observation would emit now (the window's tree, preorder, within its depth, width and node caps and
-/// its deadline, then the menu-bar elements, read through the attributes they list and without a Debug item, as the
-/// walk reads them) whose eleven attributes equal the identity's, whichever process serves them.
+/// The elements an observation would emit now (the window's tree within its depth, width and node caps and its deadline,
+/// what the window shows first as the walk spends its budget (#301, `TreeWalk.select`: a subtree that shows
+/// beyond a strip in what its clipping ancestors leave of the window is walked first, the rest in the document's order),
+/// then the menu-bar elements, read through the
+/// attributes they list and without a Debug item, as the walk reads them) whose eleven attributes equal the identity's,
+/// whichever process serves them.
 private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: AXUIElement?, menuItems: [AXUIElement],
-                      source: ElementSource) -> [AXUIElement] {
+                      source: ElementSource, deadlineMs: Double) -> [AXUIElement] {
+  struct Pending { let element: AXUIElement; let depth: Int; let descend: Bool; let path: [Int]; var clip: CGRect? = nil }
   var found: [AXUIElement] = []
-  // (element, depth, descend): menu-bar elements are matched but never walked into, as the observation does.
-  var stack: [(AXUIElement, Int, Bool)] = menuItems.reversed().map { (prepare($0), 0, false) }
-  if let window { stack.append((prepare(window), 0, true)) }
+  // Menu-bar elements are matched but never walked into, as the observation does.
+  var stack: [Pending] = menuItems.reversed().map { Pending(element: prepare($0), depth: 0, descend: false, path: []) }
   let windowFrame = window.flatMap { source.frame($0) }
+  if let window { stack.append(Pending(element: prepare(window), depth: 0, descend: true, path: [], clip: windowFrame)) }
+  // Read elements whose children wait because nothing of them shows, latest in the document's order first.
+  var deferred: [(path: [Int], depth: Int, clip: CGRect?, children: [AXUIElement])] = []
+  func push(_ children: [AXUIElement], depth: Int, path: [Int], clip: CGRect?) {
+    for (position, child) in children.enumerated().reversed() {
+      stack.append(Pending(element: prepare(child), depth: depth, descend: true, path: path + [position], clip: clip))
+    }
+  }
   var visited = 0
   var seen = Set<ElementKey>()
-  let deadline = monotonicMilliseconds() + Double(observationDeadlineMs)
-  while let (element, depth, descend) = stack.popLast(), visited < maxObservedNodes, monotonicMilliseconds() < deadline {
-    guard seen.insert(ElementKey(element: element)).inserted,
-          let data = descend ? source.data(element) : source.listedData(element) else { continue }
-    if !descend, data.role != kAXMenuBarRole, isDebugMenuItem(data) { continue }
+  let deadline = monotonicMilliseconds() + deadlineMs
+  while visited < maxObservedNodes, monotonicMilliseconds() < deadline {
+    guard let next = stack.popLast() else {
+      guard let resumed = deferred.popLast() else { break }
+      push(resumed.children, depth: resumed.depth, path: resumed.path, clip: resumed.clip)
+      continue
+    }
+    guard seen.insert(ElementKey(element: next.element)).inserted,
+          let data = next.descend ? source.data(next.element) : source.listedData(next.element) else { continue }
+    if !next.descend, data.role != kAXMenuBarRole, isDebugMenuItem(data) { continue }
     visited += 1
-    if ElementIdentity(data, pid: identity.pid).matches(identity, ignoringValue: ignoringValue) { found.append(element) }
-    if descend && depth < maxDepth {
-      for child in chooseChildren(of: element, data: data, source: source, visibleFrame: windowFrame).children.reversed() {
-        stack.append((prepare(child), depth + 1, true))
+    if ElementIdentity(data, pid: identity.pid).matches(identity, ignoringValue: ignoringValue) { found.append(next.element) }
+    guard next.descend && next.depth < maxDepth else { continue }
+    // What it leaves showing to its children: the walk's clipping rule (`childrenClip`), which the width rule judges in.
+    let clip = childrenClip(next.clip, frame: data.frame, role: data.role, actions: source.actions(next.element))
+    let children = chooseChildren(of: next.element, data: data, source: source, visibleFrame: windowFrame, shownIn: clip,
+                                  expired: { monotonicMilliseconds() >= deadline }).children
+    let unplaced = data.frame.map { unplacedFrame($0) && clipsDescendants(role: data.role, actions: source.actions(next.element)) } ?? false
+    if next.depth == 0 || next.clip == nil || unplaced || data.frame.map({ showsBeyondStrip($0, in: next.clip!) }) ?? true {
+      push(children, depth: next.depth + 1, path: next.path, clip: clip)
+    } else {
+      var low = 0, high = deferred.count
+      while low < high {
+        let middle = (low + high) / 2
+        if documentPrecedes(next.path, deferred[middle].path) { low = middle + 1 } else { high = middle }
       }
+      deferred.insert((next.path, next.depth + 1, clip, children), at: low)
     }
   }
   return found

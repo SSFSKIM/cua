@@ -134,9 +134,9 @@ What changes behind it: the engine process, the socket it listens on, who may co
 
 **Protocol: the facade's vocabulary, one layer down.** JSON-RPC 2.0, each frame a 4-byte little-endian length then UTF-8 JSON, 8 MiB maximum each way, one request in flight per connection, as the vendor's transport (`R/A-contract.md` §2.2). Methods: `ping {clientApiVersion}` → `{serverApiVersion, engineVersion, build}` with `serverApiVersion = "cua-engine-1"`; `execute {method, args, deadlineUnixMilliseconds, lineage?}` → the method's result or a JSON-RPC error `{code, message}` using the vendor's code numbers for the conditions cua maps (`R/A-contract.md` §1.5) and `-10005` with a bounded sentence otherwise (the engine checks `deadlineUnixMilliseconds` on receipt, −32001 when already past, as the vendor does, `R/F-helper-logic.md` §8.9, and, cua's addition, cancels a settle or a launch wait still running when the deadline passes, failing `timeoutReached`); `status` → the engine's permissions and identity; `approve` → the grant prompts and the one discarded capture of the approve step; `shutdown`. `execute.method` is one of the facade's 11 snake_case methods with the facade's argument shapes (`R/A-contract.md` §1.4, input column) plus two engine-only methods, `resolve_app {app | pid}` and `get_app_state` returning a `Skyshot` tree instead of text. So the service translates one thing, the facade's `element_index` into the lineage's element token ("Indexes, tokens and handles"), and otherwise adds policy, approval, rendering and diffing around a request it forwards. The vendor's own IPC vocabulary (`ComputerUseIPC*Request`, the `{_0: …}` enum encodings) is not adopted: the earlier reason for it, one JS client for both engines, was false, since cua's client can never reach the vendor helper (its peer check), and the vendor client would have to be impersonated to reach cua's (Decision Log entry 2).
 
-**Observation (skyshot).** `get_app_state {app, disableDiff?, includeScreenshot?, outputDirectory}` observes the app's primary window (`AXFocusedWindow`, else `AXMainWindow`, else the last of `AXWindows`, the vendor's three-step fallback, `R/F-helper-logic.md` §1.7; none → error `noWindowsAvailable`). Before reading, the engine opens the app as the vendor's preparation does (`0x10014c494`, its open helper `0x1001648c4`): a launch when it is not running, and a **non-activating open (a reopen) when it runs with no primary window**, since some apps (TextEdit, Finder) answer a reopen by opening a window; either is followed by a wait for the primary window, 5 s polled every 50 ms (`0x1006fbdf0`), `timeoutReached` when it runs out. The reopen is visible on the owner's screen (TextEdit shows its Open panel), so it is named here; it never activates the app. *(Added 2026-10-21 by M1b.5's comparison A, Decision Log "M1b.5 sitting".)* The engine walks that window's accessibility tree depth-first in preorder (the order the text prints), plus the menu bar's top-level items as the vendor adds them, fetching the vendor's 20-attribute set (`R/F-helper-logic.md` §1.2: role, subrole, role description, title, description, value, value description, placeholder, number of characters, help, identifier, selected, focused, enabled, disclosing, URL, traits, serves-as-title, row and column index ranges) plus position and size, through the public `AXUIElementCopyMultipleAttributeValues` per element, then `AXUIElementCopyActionNames` per element. The private batched `_AXUIElementCopyHierarchy` the vendor prefetches with (recovered by name with its four option keys in `R/F-helper-logic.md` §11 and §1.1) was priced against the public route in M0 and lost on every scene, so the engine does not resolve it: in-cell medians, public against hierarchy, TextEdit 119.7 / 135.1 ms, Finder-200 267.7 / 340.7, Chrome 114.9 / 157.7, Electron 75.3 / 81.4 (the mini's first series, 90 samples each, alternated per sample; `spike/summary.md`), and the same direction on the MacBook. The engine reads the full attribute set for every element: M0's per-role reduction rendered the same text as the full set on TextEdit, Finder and Electron and one line differently on Chrome, and saved nothing (−5 to −10 ms in-cell, 15 samples per scene), so it is withdrawn and the full set is the rule. The owning process (`AXUIElementGetPid`, the vendor's `_AXUIElementGetActualPid` at input time, §5.7) is read for the elements an action targets, because sheets, open and save panels and some menus are served by another process (TextEdit's Open panel is; the baseline's `setup.newDocument` clicks its button) and input must be posted to the element's owner, not the app. The messaging timeout is set to 1 s on every element it touches (timeouts set on the application element do not reach its descendants), and a whole observation has its own 10 s traversal deadline apart from the request's 120 s: a hung app yields a truncated tree with the marker, not a stall (both cua's additions; the vendor has neither, §1.6). Enablement follows the vendor (§1.9), confined to web-shaped apps (the Settle paragraph's detection) and the bundles the vendor names (`com.apple.iWork*`, `com.spotify.client`), so an AppKit app such as Finder is never left with `AXEnhancedUserInterface` set, which changes its window behaviour for as long as it stays set (cua's departure; the matrix carries one iWork app and Spotify as the parity check): an application element that lists `AXManualAccessibility` gets it set (Electron, Chromium), else one that lists `AXEnhancedUserInterface` gets that, never both. Before the enablement, every observation of an eligible app reads the application element's role (AXRole, AXSubrole and AXRoleDescription in one request, never cached, timed as `appRoleRead`), which gives Chromium and Electron their Basic accessibility mode, and the page's tree, at once, as the vendor's eager construction of the application element does (§1.3); Basic mode lasts the app's lifetime, a declared difference nothing can release (Decision Log, #244). The attribute is read and set when it does not read true (the vendor's rule, §1.9); once the engine has set and owns it, later observations of that process neither read nor write it until the release writes it back, as the vendor's per-(app, kind) assertion writes once, since Electron's getter keeps reading false and every write restarts its 2 s countdown to complete mode (Decision Log, #244, 2026-11-01, reversing the critique's withdrawal of the once-per-process memory; a process that resets the attribute itself keeps a missing tree until the next release); a value that read true or could not be read is not owned and is read again at every observation. The engine remembers that it set the attribute, which it does only when it read false, and **releases it**: when the engine's last connection that observed that pid closes, it sets the attribute back to false; an attribute that read true before cua touched it (VoiceOver or another assistive client) is never written. After a write-back, the next observation of that process sets the attribute again, owned, whatever it reads, since Chromium's reads true after the write-back while its accessibility mode is gone (Decision Log 2026-10-22). The release is cua's declared difference, since the vendor never unsets (§1.9), and it exists because a driven web app left in full-accessibility mode after cua is done is interference the purpose section forbids. The first observation after enabling, or of any Chromium window, waits 100 ms and then up to 1 s for an `AXWebArea` to appear (without it a browser page is a single group); once a web area has been seen in a process, later observations of that process skip the wait (cua's departure: the vendor waits on every Chromium observation, which the MacBook shakedown priced at about 145 ms per observation, and a process whose web content is already exposed gains nothing from it; a window whose web area has gone, a new tab or a navigation, is caught by the settle's busy veto on an unloaded `AXWebArea`). The vendor's global VoiceOver preference is flipped only for Excel, Music, Atlas, Arc and Dia; cua never touches it, since it is visible to every app on the machine, so those five may expose less under cua until the owner decides otherwise at M5's sitting. Caps: the vendor's width rule is kept (100 children per element, then the visible subset, children omitted above 499, rendered as `(showing … of N items)`, §1.5), depth is the vendor's 200 levels (it drops the subtree silently; cua marks it), and cua adds what the vendor lacks, each with a marker in the text: a node budget of 4,000 after which remaining subtrees are omitted and counted in `truncated`, 10,000 characters per value, cut with a `[truncated]` suffix, and a total budget of 6 MiB for the serialized `Skyshot`, enforced during the walk so that a text-heavy window (a long article, a log view) yields a truncated tree rather than the relay's frame-too-large error (the vendor's hierarchy call truncates strings at a length the SPI chooses; its 4,000 is the URL-character budget per tree, which the renderer keeps, §2.5). The method matrix includes one scene state large enough to hit the budget. `valueMarkdown`, the Markdown rendering of an attributed value (headings, emphasis; the vendor renders them so `selectText` can quote them), is fetched only for text elements whose plain value is at most 2,000 characters; M0 priced the fetch at 0.4–3.1 ms of engine time per observation on the four scenes (the in-cell difference with it off was within noise), so the cap is a bound, not a saving. The result is a JSON tree (`Skyshot` in Interfaces), not text: **rendering to the model's text happens in the service.** The split is the point of the design: element handles (`AXUIElementRef`) cannot leave the process, so handle identity and re-resolution must live in the engine, while numbering, the grammar, pruning and diffing are pure functions that the service can run against recorded trees and the vendor's recorded text, which is how the grammar is pinned (goldens, under "Verification system"). Linux already renders client-side (`src/cua-api/linux-accessibility-tree.mjs`), so both platforms end up with the renderer where it can be tested. **The split, as the critique settled it (2026-10-19, Decision Log):** the engine emits a stable per-lineage handle token for every node (equal exactly when two observations' handles are `CFEqual` at a matched position), and the service does the transformations, the numbering, the grammar and the diff as pure, golden-tested code, so the model sees the vendor's contiguous post-transform numbering (`R/sky-behaviour.md` §23.1) over nodes the engine numbered only by token; the handles never leave the engine, whose token-to-handle table is the lineage ("Indexes, tokens and handles").
+**Observation (skyshot).** `get_app_state {app, disableDiff?, includeScreenshot?, outputDirectory}` observes the app's primary window (`AXFocusedWindow`, else `AXMainWindow`, else the last of `AXWindows`, the vendor's three-step fallback, `R/F-helper-logic.md` §1.7; none → error `noWindowsAvailable`). Before reading, the engine opens the app as the vendor's preparation does (`0x10014c494`, its open helper `0x1001648c4`): a launch when it is not running, and a **non-activating open (a reopen) when it runs with no primary window**, since some apps (TextEdit, Finder) answer a reopen by opening a window; either is followed by a wait for the primary window, 5 s polled every 50 ms (`0x1006fbdf0`), `timeoutReached` when it runs out. The reopen is visible on the owner's screen (TextEdit shows its Open panel), so it is named here; it never activates the app. *(Added 2026-10-21 by M1b.5's comparison A, Decision Log "M1b.5 sitting".)* The engine walks that window's accessibility tree and emits it depth-first in preorder (the order the text prints; which elements a walk the budgets cut keeps, and in what order it reads them, is #301's, below and in the Decision Log), plus the menu bar's top-level items as the vendor adds them, fetching the vendor's 20-attribute set (`R/F-helper-logic.md` §1.2: role, subrole, role description, title, description, value, value description, placeholder, number of characters, help, identifier, selected, focused, enabled, disclosing, URL, traits, serves-as-title, row and column index ranges) plus position and size, through the public `AXUIElementCopyMultipleAttributeValues` per element, then `AXUIElementCopyActionNames` per element. The private batched `_AXUIElementCopyHierarchy` the vendor prefetches with (recovered by name with its four option keys in `R/F-helper-logic.md` §11 and §1.1) was priced against the public route in M0 and lost on every scene, so the engine does not resolve it: in-cell medians, public against hierarchy, TextEdit 119.7 / 135.1 ms, Finder-200 267.7 / 340.7, Chrome 114.9 / 157.7, Electron 75.3 / 81.4 (the mini's first series, 90 samples each, alternated per sample; `spike/summary.md`), and the same direction on the MacBook. The engine reads the full attribute set for every element: M0's per-role reduction rendered the same text as the full set on TextEdit, Finder and Electron and one line differently on Chrome, and saved nothing (−5 to −10 ms in-cell, 15 samples per scene), so it is withdrawn and the full set is the rule. The owning process (`AXUIElementGetPid`, the vendor's `_AXUIElementGetActualPid` at input time, §5.7) is read for the elements an action targets, because sheets, open and save panels and some menus are served by another process (TextEdit's Open panel is; the baseline's `setup.newDocument` clicks its button) and input must be posted to the element's owner, not the app. The messaging timeout is set to 1 s on every element it touches (timeouts set on the application element do not reach its descendants), and a whole observation has its own 10 s traversal deadline apart from the request's 120 s: a hung app yields a truncated tree with the marker, not a stall (both cua's additions; the vendor has neither, §1.6). Enablement follows the vendor (§1.9), confined to web-shaped apps (the Settle paragraph's detection) and the bundles the vendor names (`com.apple.iWork*`, `com.spotify.client`), so an AppKit app such as Finder is never left with `AXEnhancedUserInterface` set, which changes its window behaviour for as long as it stays set (cua's departure; the matrix carries one iWork app and Spotify as the parity check): an application element that lists `AXManualAccessibility` gets it set (Electron, Chromium), else one that lists `AXEnhancedUserInterface` gets that, never both. Before the enablement, every observation of an eligible app reads the application element's role (AXRole, AXSubrole and AXRoleDescription in one request, never cached, timed as `appRoleRead`), which gives Chromium and Electron their Basic accessibility mode, and the page's tree, at once, as the vendor's eager construction of the application element does (§1.3); Basic mode lasts the app's lifetime, a declared difference nothing can release (Decision Log, #244). The attribute is read and set when it does not read true (the vendor's rule, §1.9); once the engine has set and owns it, later observations of that process neither read nor write it until the release writes it back, as the vendor's per-(app, kind) assertion writes once, since Electron's getter keeps reading false and every write restarts its 2 s countdown to complete mode (Decision Log, #244, 2026-11-01, reversing the critique's withdrawal of the once-per-process memory; a process that resets the attribute itself keeps a missing tree until the next release); a value that read true or could not be read is not owned and is read again at every observation. The engine remembers that it set the attribute, which it does only when it read false, and **releases it**: when the engine's last connection that observed that pid closes, it sets the attribute back to false; an attribute that read true before cua touched it (VoiceOver or another assistive client) is never written. After a write-back, the next observation of that process sets the attribute again, owned, whatever it reads, since Chromium's reads true after the write-back while its accessibility mode is gone (Decision Log 2026-10-22). The release is cua's declared difference, since the vendor never unsets (§1.9), and it exists because a driven web app left in full-accessibility mode after cua is done is interference the purpose section forbids. The first observation after enabling, or of any Chromium window, waits 100 ms and then up to 1 s for an `AXWebArea` to appear (without it a browser page is a single group); once a web area has been seen in a process, later observations of that process skip the wait (cua's departure: the vendor waits on every Chromium observation, which the MacBook shakedown priced at about 145 ms per observation, and a process whose web content is already exposed gains nothing from it; a window whose web area has gone, a new tab or a navigation, is caught by the settle's busy veto on an unloaded `AXWebArea`). The vendor's global VoiceOver preference is flipped only for Excel, Music, Atlas, Arc and Dia; cua never touches it, since it is visible to every app on the machine, so those five may expose less under cua until the owner decides otherwise at M5's sitting. Caps: the vendor's width rule is kept (100 children per element, then the visible subset, children omitted above 499, rendered as `(showing … of N items)`, §1.5), but above 499 without a visible subset cua prints the children that show (#314's Decision Log entry), depth is the vendor's 200 levels (it drops the subtree silently; cua marks it), and cua adds what the vendor lacks, each with a marker in the text: a node budget of 4,000, spent on what the window shows first (#301, the design session's rulings aed3f041 and 66f90453: frames order the walk on every app, Chromium included), after which the remaining subtrees are omitted and counted in `truncated` with which way they lie from the visible area, 10,000 characters per value, cut with a `[truncated]` suffix, and a total budget of 6 MiB for the serialized `Skyshot`, enforced during the walk so that a text-heavy window (a long article, a log view) yields a truncated tree rather than the relay's frame-too-large error (the vendor's hierarchy call truncates strings at a length the SPI chooses; its 4,000 is the URL-character budget per tree, which the renderer keeps, §2.5). The method matrix includes one scene state large enough to hit the budget. `valueMarkdown`, the Markdown rendering of an attributed value (headings, emphasis; the vendor renders them so `selectText` can quote them), is fetched only for text elements whose plain value is at most 2,000 characters; M0 priced the fetch at 0.4–3.1 ms of engine time per observation on the four scenes (the in-cell difference with it off was within noise), so the cap is a bound, not a saving. The result is a JSON tree (`Skyshot` in Interfaces), not text: **rendering to the model's text happens in the service.** The split is the point of the design: element handles (`AXUIElementRef`) cannot leave the process, so handle identity and re-resolution must live in the engine, while numbering, the grammar, pruning and diffing are pure functions that the service can run against recorded trees and the vendor's recorded text, which is how the grammar is pinned (goldens, under "Verification system"). Linux already renders client-side (`src/cua-api/linux-accessibility-tree.mjs`), so both platforms end up with the renderer where it can be tested. **The split, as the critique settled it (2026-10-19, Decision Log):** the engine emits a stable per-lineage handle token for every node (equal exactly when two observations' handles are `CFEqual` at a matched position), and the service does the transformations, the numbering, the grammar and the diff as pure, golden-tested code, so the model sees the vendor's contiguous post-transform numbering (`R/sky-behaviour.md` §23.1) over nodes the engine numbered only by token; the handles never leave the engine, whose token-to-handle table is the lineage ("Indexes, tokens and handles").
 
-**Indexes, tokens and handles.** Per (connection, app) the engine keeps a lineage: an id, the previous revision's tree with its handles, and a table from token to element handle plus the eleven attributes the vendor matches on (role, subrole, role description, title, value, value description, description, placeholder, help, identifier, URL; `R/F-helper-logic.md` §3.6) and the owning pid. A token is stable across observations exactly when the element's handle is `CFEqual` to the previous revision's at a matched position (sibling list against sibling list under matched parents, the vendor's rule, §3.2); a new element gets a new token; a token absent from one revision is retired at that revision and never reissued in the lineage (N = 1: under the vendor's rule an element absent for one observation gets a new identity when it returns, so a longer grace would only keep handles nothing can name). The service numbers the tokens that survive its transformations, 0-based in preorder as the vendor numbers its rendered nodes (§3.1), keeps the index-to-token map per lineage, gives a new element the next unused index, and retires a vanished element's index **never to reuse it in that lineage**, where the vendor reuses indexes above the surviving maximum (§3.3), a defect cua does not copy because a stale index would then resolve silently to another element. An action names its lineage and a token: the engine refuses a token from another lineage, or a retired one, with `The element ID is no longer valid. Try to get the on-screen content again…` (the scoping by the `lineage` every `execute` carries is the engine's guard, chosen over a service-only check because the protocol already carries the field and a stale token across a reconnect is the engine's to refuse; the service's own check that the index belongs to the app's current lineage runs first and answers the same sentence; so a reconnect or a relaunched engine can never resolve a stale index to a different element, cua's addition, the vendor having no lineage check on actions). Resolving a token, the engine re-fetches only after a `layoutChanged` or `uiElementDestroyed` notification since the observation (the vendor's invalidation monitor, §3.5), else validates the handle with one `AXRole` read; a re-fetch walks the current tree for the one element matching the stored attributes, answering the "no longer valid" sentence when none matches and the vendor's before/after ambiguity sentences when several do. Every `Skyshot` carries its `lineage` id and its nodes' tokens; `disableDiff` starts a new lineage, which the service renumbers from 0 with the full tree, as the vendor does (§3.4). The sentences and their trigger order are the vendor's (`R/A-contract.md` §3.3), which the first-call document and the model's habits rely on.
+**Indexes, tokens and handles.** Per (connection, app) the engine keeps a lineage: an id, the previous revision's tree with its handles, and a table from token to element handle plus the eleven attributes the vendor matches on (role, subrole, role description, title, value, value description, description, placeholder, help, identifier, URL; `R/F-helper-logic.md` §3.6) and the owning pid. A token is stable across observations exactly when the element's handle is `CFEqual` to the previous revision's at a matched position (sibling list against sibling list under matched parents, the vendor's rule, §3.2); a new element gets a new token; a walk a budget cut retires nothing it left unread (each unread child of a read element has its previous entry carried over with its subtree, in its place among its siblings, #301); a token absent from one revision is retired at that revision and never reissued in the lineage (N = 1: under the vendor's rule an element absent for one observation gets a new identity when it returns, so a longer grace would only keep handles nothing can name). The service numbers the tokens that survive its transformations, 0-based in preorder as the vendor numbers its rendered nodes (§3.1), keeps the index-to-token map per lineage, gives a new element the next unused index, and retires a vanished element's index **never to reuse it in that lineage**, where the vendor reuses indexes above the surviving maximum (§3.3), a defect cua does not copy because a stale index would then resolve silently to another element. An action names its lineage and a token: the engine refuses a token from another lineage, or a retired one, with `The element ID is no longer valid. Try to get the on-screen content again…` (the scoping by the `lineage` every `execute` carries is the engine's guard, chosen over a service-only check because the protocol already carries the field and a stale token across a reconnect is the engine's to refuse; the service's own check that the index belongs to the app's current lineage runs first and answers the same sentence; so a reconnect or a relaunched engine can never resolve a stale index to a different element, cua's addition, the vendor having no lineage check on actions). Resolving a token, the engine re-fetches only after a `layoutChanged` or `uiElementDestroyed` notification since the observation (the vendor's invalidation monitor, §3.5), else validates the handle with one `AXRole` read; a re-fetch walks the current tree for the one element matching the stored attributes, answering the "no longer valid" sentence when none matches and the vendor's before/after ambiguity sentences when several do. Every `Skyshot` carries its `lineage` id and its nodes' tokens; `disableDiff` starts a new lineage, which the service renumbers from 0 with the full tree, as the vendor does (§3.4). The sentences and their trigger order are the vendor's (`R/A-contract.md` §3.3), which the first-call document and the model's habits rely on.
 
 **Screenshot.** When asked, a JPEG of the key window through ScreenCaptureKit (`SCContentFilter(desktopIndependentWindow:)`, `SCScreenshotManager.captureImage`; the shareable content cached per engine after a first call the MacBook priced at 156 ms cold), captured on its own thread as soon as the window's frame is known and joined after the walk, so an observation with a screenshot costs the longer of the walk and the capture rather than their sum (iteration 1 of the mini sitting: the engine's TextEdit total fell from 113.3 ms, walk 55.9 then capture 49.7 in sequence, to 48.7, walk 43.0 beside capture 41.0 with a 2.6 ms join; Decision Log). The image is at the display's pixel size: the window's frame times the pixels per point of the display under the frame's centre (`CGGetDisplaysWithPoint`, then the display mode's `pixelWidth` over its `width`), which on the mini's 2× display gave 1220 × 1720 for the TextEdit scene window, the vendor's size for the same window (at quality 0.8 the median file was 142,085 bytes against the vendor's 141,865; the vendor's Finder and Electron windows came out 1840 × 872 and 1440 × 1120 in the first series, twice the point-size images cua returned then, and the equal-size comparison was re-measured on TextEdit only), written with mode 0600 into `outputDirectory` (the session's run directory, which the kernel's sandbox lets the cell read) and returned as a `file:` URL, as the vendor returns it (`R/A-contract.md` §3.7); the `Skyshot` carries the image's width, height and scale. The pixel-size capture costs the engine 42.7 ms of capture and 7.2 of encode on the mini (41.0 and 2.1 at points), and iteration 2's in-cell `getScreenshot` median was 45.8 ms against the vendor's 53.4 with equal images. The vendor does not capture through ScreenCaptureKit: its `SkyshotOperation.capture` calls a private window-server function, `WindowServerSPI.captureWindowImagesInRect`, with an `imageSize` parameter (read from the decompiled capture path; Decision Log, iteration 2). cua keeps the public API, which met the vendor's size and beat its time; the private call is a later speed lever, not taken. The vendor's sizing rule, read from its capture path (U1, resolved 2026-10-19; Decision Log): the window's WindowServer bounds in points times the backing scale factor of the screen the window sits on (the best-matching `NSScreen`, 2.0 when none matches), each side rounded up, with no cap on size or pixel count. A downsizing fit (long side at most 2048, then short side at most 768) exists only behind `should_use_legacy_screenshot_sizing` in the server-side Statsig config `406601636`, which both Macs' cached copies leave unset (false) on 2026-10-19. The image covers the window's bounds, which the vendor also stores as the observation's `visibleRect`, not a clipped visible part. All four measured vendor sizes fit this rule, including the 2026-10-14 baseline's 1172 × 976, which was taken on the mini (a 586 × 488-point window), not on the MacBook. cua's capture differs in two ways that never show at 2× with integral frames: it takes the display mode's pixels per point rather than the screen's backing scale factor, and it rounds each side to nearest rather than up. M1a aligns both before its renderer goldens are recorded and re-reads the config then, since a golden recorded at the wrong size would be regenerated in another owner sitting. Coordinates the model sends (`click {x, y}`, a drag's points, a scroll at a point) are **in the pixel space of the screenshot that the connection's last screenshot-bearing observation of that app returned**: the engine keeps that observation's per-axis scale and the window it captured on the connection's lineage state (an observation without a screenshot keeps the stored one; `disableDiff` clears it), and at the one place a coordinate becomes a window point divides it by that scale and offsets it by the window's **current** origin. It refuses before anything is posted, as `noScreenshotForCoordinates` (Interfaces), when the connection holds no such observation, when the request names a lineage that is not current, or when the app's primary window is no longer the one in the screenshot (`CFEqual`), since the coordinates would then be placed in an image the model did not see; the refusal's sentence names `getScreenshot` as the way to get an image to click in (c13759a4's sentence names the tree and is revised in M1a), the wrapper's value-free classification admits the name, and the first-call document (M4) tells the model to observe after an action before clicking by coordinates, since a sheet or a new window replaces the primary window and the click is refused. This is a declared difference from the vendor, which applies the observation's scaling factor and the *observed* `visibleRect` origin (`screen = p × scalingFactor + visibleRect.origin`, `R/F-helper-logic.md` §5.2): a window that moved since the observation receives the vendor's click relative to a stale rect, where cua follows the moved window, and a replaced window receives it too, where cua refuses (the dispatching session's ruling, 2026-10-19, after the sitting review; Decision Log). The sitting's build divided by the display's scale at click time, which the code review found and the fix wave corrected (c13759a4, merged in 1be26dd1). Measured live in the second sitting (U2, `spike/sit2/u2`, the mini's 2× display, scale 2 on both axes): two coordinate clicks aimed at lines 0 and 8 of the TextEdit scene's document landed on exactly those lines (line error 0, the caret read back), a click after the window had been moved by (60, 40) points landed in the moved window on the aimed line, a click with no screenshot on the connection was refused as `noScreenshotForCoordinates` with nothing posted, and a click after the document window had been replaced by a new one was refused the same way. The second sitting's four-scene speed triple (U9, build b99ea967 against a same-sitting vendor triple, 90 samples per row; `spike/sit2/u9/summary.md`) gives the per-scene starting point for M2b's speed cells: an observation with a screenshot, vendor against cua, TextEdit 53.2 / 64.4 ms, Finder-200 441.7 / 162.3, Chrome 103.2 / 67.5, Electron 54.8 / 69.5; `getScreenshot` 54.7 / 44.2, 446.8 / 141.7, 104.3 / 46.0 and 55.2 / 56.9; the promote rows on TextEdit 52.4 / 49.9 (`getAXState`) and 54.7 / 44.2. The engine's capture, 55–58 ms on every scene, is the floor of an observation with a screenshot, so the two small trees (TextEdit's walk 48.6 ms, Electron's 22.3) finish behind the vendor's whole observation while Finder and Chrome finish far ahead; the private window-server capture is the later lever for those two scenes, not taken in this work unless M2b's beat requires it. `CGWindowListCreateImage` is deprecated since macOS 15 and is not a fallback. Screen Recording's periodic re-confirmation on macOS 15 and later applies to any app without Apple's capture entitlement; the vendor's helper has none either, so this is parity, not a regression. What is not parity-neutral is the first capture of each new on-disk copy, which raises a confirmation only the owner can answer (the sibling spec's evidence; "Install, signing and permissions" below handles it with the approved engine).
 
@@ -159,7 +159,7 @@ Which route each family lands on was decided by measurement, not assumed. The se
 
 **Paste** (`paste {text, format: text|md|html}`): declare the pasteboard contents through a lazy data provider (an `NSPasteboardItem` whose data is supplied when an app asks for it; the vendor's representations, `R/F-helper-logic.md` §7.2: `text` → plain only; `html` and `md` (Markdown converted to HTML first) → `public.html` as the source, `public.rtf`, and plain as the rendered text), with `NSPasteboardContentsCurrentHostOnly` so the paste stays off Universal Clipboard, and in addition, cua's own, the `org.nspasteboard.ConcealedType` and `org.nspasteboard.TransientType` marker types that clipboard managers honour by not recording the item (the vendor writes no markers); snapshot the previous contents; give the app route 3's fake activation when it does not believe it has focus, as the vendor does before ⌘V (§7.1, 7.3); post ⌘V to the owning process, the paste's first event (its first ⌘V, or a Return opening the text) through route 3's delivery guard inside the activation's hold and every event under the after-action watch until a second after the last, as a pointer action's (Decision Log, #200 on the paste route, 2026-11-01); treat the provider's callback as the evidence that the app read the pasteboard (bounded at 2 s), then wait up to 2 s, polling every 25 ms, for an effect (a `valueChanged` or `selectedTextChanged` notification, or a change of the focused element's selected range or character count against the snapshot taken before the paste), the read wait failing with `clipboardReadTimedOut` (the vendor's sentence, extended) and the effect wait with `pasteUnconfirmed`, both bounded by the request's deadline too, with no effect wait at all when nothing could show an effect (then a read after ⌘V answers success with an unconfirmed note in the result's text, a read only before ⌘V `pasteUnconfirmed`), where the vendor answers both with its one read sentence (§7.4–7.5; cua's departure, Decision Log #187, 2026-11-01); then restore the previous pasteboard contents on every path, success or error, only if the change count is still the engine's own (a human's newer clipboard is never overwritten; the vendor's "The user may have conflicted with your paste operation" sentence covers that case, §7.6). Secret substitution is unaffected: the wrapper places the value into the request before the service runs, whichever route delivers it. The vendor serializes pastes process-wide while cua's one-in-flight rule is per connection, so two connections pasting at once could clobber the pasteboard and each other's restore (`R/sky-behaviour.md` §23.5): the engine holds one engine-wide FIFO paste lock from the snapshot through the restore, across connections, and `type_text`'s paste route takes the same lock (the critique of 2026-10-19).
 
-**Scroll**: one scroll-wheel event in pixels, `round(pages × max(the element's or window's length on that axis, 100))`, at the element's centre or the point, the element first scrolled into view (the vendor's amount, revised 2026-10-21, Decision Log "M2a vendor reading"; a horizontal scroll carries its delta on the horizontal axis); a scroll never arms the settle (the vendor's rule, `R/F-helper-logic.md` §8.1). **Drag**: down, interpolated moves, up, posted to the owning process.
+**Scroll**: one scroll-wheel event in pixels, `round(pages × max(the element's or window's length on that axis, 100))`, at the element's centre or the point, the element first scrolled into view (the vendor's amount, revised 2026-10-21, Decision Log "M2a vendor reading"; a horizontal scroll carries its delta on the horizontal axis); a scroll never arms the settle (the vendor's rule, `R/F-helper-logic.md` §8.1); the scroll container under the point is read before the wheel and polled after it, and a scroll that moved nothing answers `scrollUnconfirmed`, or success with a note at the content's end, with the bar's AXValue written as the fallback (Decision Log, #328). A coordinate outside the screenshot is refused for every pointer action (#328). **Drag**: down, interpolated moves, up, posted to the owning process.
 
 **Settle.** The vendor's rule, read in full (`R/F-helper-logic.md` §8): after an action, before the next observation on that app, the engine waits for quiet. An `AXObserver` on the application, created for the wait, listens for ten notifications: `titleChanged` (ignored when the title is unchanged), `layoutChanged`, `focusedWindowChanged`, `focusedUIElementChanged`, `elementBusyChanged`, `menuOpened`, `sheetCreated`, `windowCreated`, `created` and `uiElementDestroyed` (not `valueChanged`). Sampling every 100 ms (250 ms for a web-shaped app: the bundle's URL types include `http`, or its principal class is Electron's `AtomApplication` or Chromium's `BrowserCrApplication`), the engine returns once 250 ms have passed since the last notification, or since the wait began when none arrives, so a native app with nothing posted returns at about 300 ms (there is no 1 s floor; the earlier reading of one was wrong); it keeps waiting while the primary window's tree shows a busy sign (`AXBusyIndicator`, an `AXWebArea` with `AXLoaded` false, `AXElementBusy`, or the DOM class `macos-mac-parity-spinner`; a progress indicator is not one), and gives up at 5 s whatever keeps arriving (a browser page's animations and live regions post layout changes continuously), which the vendor does silently and cua reports as `cua/settle: "capped"` so the settle cell can tell it from slowness. Because the vendor's IPC path defers the settle to the next `get_app_state` rather than running it inside the action (§8.6), cua does the same: an action returns when its events are posted, and the next observation on that app settles first, reusing the tree the busy walk fetched. An observation no action preceded settles only when its preparation had to open the app (a launch, or the reopen of a running windowless app): after the window wait it settles with a 50 ms sampling delay and the 250 ms quiet period, the vendor's `0x100164c08`, and then observes; no observation waits for web content to fill beyond the web area's presence (the vendor's rule, Decision Log "M2a vendor reading"). M0 measured the settle at rest on the four scenes (the cua lane's first series, five samples per scene per run, three runs; `spike/summary.md`, the engine's per-phase timings in `results.jsonl`): no notification arrived in any sample; the quiet point came at 307–315 ms on the native scenes (the third 100 ms tick) and 251–255 ms on the web-shaped ones, the observer cost about 1 ms, and one busy walk followed (TextEdit 43 ms, Finder-200 137, Chrome 41, Electron 10) whose tree the observation reused, for engine totals of 431, 550, 358 and 328 ms and in-cell 440, 582, 369 and 337. That is the rule's own cost, and it is the vendor's: the vendor returns at the same quiet point plus its own walk (§8.3), and on the mini the three-cell TextEdit task, whose `act` and `close` cells each settle before their observation, took cua 2,755 ms against the vendor's 4,028 like for like (iteration 2; `act` 722 against 980, `close` 1,617 against 2,603), so the settle is not where cua loses time. The design therefore keeps the vendor's order (the busy walk after the quiet point) and timing (the check on the sampling tick). The two cheaper orders, the busy walk started at the wait's start with its reads kept when nothing arrives, and the check at exactly 250 ms, remain recorded alternatives, not taken: they would save the walk's time on a quiet app, but the first can miss a value change, since `valueChanged` is not among the ten notifications, and the measured cost gives no reason to take that risk. What the reuse does not cover, the observation's own per-element actions, settable, focusable and selectable reads after the settle (Finder-200: 72 ms of walk after the 137 ms busy walk), is M2a's tuning, not a rule change. The cell's time budget is suspended around launch wait, action and settle through `nodeRepl.withSuspendedTimeout`, which the own host honours by pausing the budget on the worker's `suspend_timeout` (`src/repl-host/supervisor.mjs`).
 
@@ -408,7 +408,7 @@ methods: list_apps, get_app_state, click, drag, paste, perform_secondary_action,
 resolve_app → {appPath: string, bundleIdentifier: string, displayName: string, isRunning: boolean, pid: number | null}
 get_app_state {app, disableDiff?: boolean, includeScreenshot?: boolean, outputDirectory: string} → Skyshot
 Skyshot  {app: {bundleIdentifier, displayName, appPath, pid, catalyst: boolean}, window: {title: string | null, frame: Rect, pid: number},
-          lineage: string, revision: number, nodes: Node[], truncated: {depth?: number, count?: number} | null,
+          lineage: string, revision: number, nodes: Node[], truncated: {depth?: number, count?: number, above?: number, below?: number} | null,
           screenshot: {url: string, width: number, height: number, scale: number} | null, focused: string | null,
           selectedText: string | null, selectedElements: string[], menuBar: Node[], settle?: "capped"}
           (app.catalyst: the vendor's ApplicationUIElement.isCatalystApp 0x100704c88, the application's
@@ -426,7 +426,9 @@ Skyshot  {app: {bundleIdentifier, displayName, appPath, pid, catalyst: boolean},
           observation result, since the settle runs at the next get_app_state, not inside the action, R/sky-behaviour.md §23.
           timings, the engine's diagnostics, carries focusRead when the focus read named no node: the AXError, "notAnElement"
           or "outsideTheWalk"; M1a.2b), which the service passes on in `cua/observation` beside the focused element's
-          index and role (#188)
+          index and role (#188), and #301's recordOnlyNodes. truncated.count: the omitted parts (each unread child of a
+          read element, once, whatever it holds); above and below: how many of them lie past the visible area's top and
+          bottom, present on a walk of the window, which the renderer turns into a direction (#301, ruling 66f90453)
 Node     {token: string, depth: number, pid: number, role: string, subrole: string | null, roleDescription: string | null,
           title: string | null, description: string | null, value: string | number | boolean | null,
           valueType: "float" | "integer" | "boolean" | "string" | "date" | "unknown" | null, valueMarkdown: string | null,
@@ -437,8 +439,8 @@ Node     {token: string, depth: number, pid: number, role: string, subrole: stri
           flags: {enabled: boolean, focused: boolean, focusable: boolean, selected: boolean, selectable: boolean,
                   settable: boolean, expanded?: boolean, disclosable?: boolean},
           actions: string[], frame: Rect | null, children: number,
-          shown?: {count: number, of: number, subset: "visible" | "omitted", ranges?: [number, number][]}}   (the width rule: present when an
-          element's children were cut to the visible subset or omitted above 499; the renderer's grammar needs every
+          shown?: {count: number, of: number, subset: "visible" | "shown" | "omitted", ranges?: [number, number][]}}   (the width rule: present when an
+          element's children were cut to the visible subset, to those that show above 499 ("shown", #314), or omitted above 499; the renderer's grammar needs every
           named field, R/sky-behaviour.md §2.4 and §23 — token is the engine's per-lineage handle token, stable while the handle is
           CFEqual at a matched position and retired after one absent revision; the service numbers the tokens that survive its
           transformations, so the model's indexes are the service's ("Indexes, tokens and handles"; M0's raw Skyshot goldens carry
@@ -482,7 +484,13 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
   engine-only errorNames the wrapper admits: concealedInputUnavailable, inputSourceChanged, noScreenshotForCoordinates, activationFailed (all value-free)
   engine-only errorNames the wrapper does not admit (no secret is substituted into a click): menuBarItemUnsupported (a click on a menu-bar
     item or on the menu bar's own node, refused before anything is posted until M2a's activate-and-record path; M1a.2; its sentence names the app's keyboard
-    shortcut through pressKey as the alternative, M1a.2b)
+    shortcut through pressKey as the alternative, M1a.2b); screenChangedSinceScreenshot (#296: a coordinate click or a drag's
+    start whose point no longer holds what the screenshot showed there, refused with nothing posted in either device mode;
+    its sentence names the element the screenshot showed and what is there now, and asks for a new screenshot);
+    pointOutsideScreenshot (#328: a click, scroll or drag point outside the screenshot its coordinates came from, refused
+    with nothing posted; its sentence gives the image's size and asks for a point inside it); scrollUnconfirmed (#328: a
+    scroll whose container under the point was not seen to move, the bar's fallback included, or that has no readable
+    container; its sentence asks the model to observe before scrolling again)
   activationGuardMs: route 3's guard time, present only when a guard ran; activationClick: what the inert-point rule
     decided at the window's AXActivationPoint when an activation ran, "posted" there or the reason it was not ("noPoint",
     "outsideFrame", "spared", "control", "actionsUnknown", "hitTestFailed"); activationClickKind: the click that
@@ -493,7 +501,10 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     point answered nothing or only a container (M1a.2); delivery: route 3's delivery guard after a pointer action's events
     or a paste's first event (#200; the paste route's since 2026-11-01), present when one ran: {restores, frontmostRestored, otherAppFront, restoreLatencyMs?, guardMs, screenHoldMs,
     capped, raiseLeft, holdStartedAt, releasedAt, postedAt, repairedAfterRelease, repairAfterReleaseLatencyMs?,
-    personInput}; frontmostRestored and raiseLeft are what the guard's samples saw, not what its requests answered;
+    personInput, transientRaise: {seen, ms?, outlivedHold}}; frontmostRestored and raiseLeft are what the guard's samples
+    saw, not what its requests answered; transientRaise (#321) is whether a sample saw the target's window above the
+    user's, from that sample to the one that read the order back after the last (to the guard's end when none did), and
+    whether the order had not read back by the hold's release;
     past the hold's cap the guard repairs on until 1 s after the events unless the person gave input since them
     (repairedAfterRelease, personInput); holdStartedAt, releasedAt and postedAt are Unix ms on one clock, the hold's start
     (the activation's when the action ran it, else the guard's own) read as releasedAt less the hold's monotonic span, so
@@ -527,8 +538,19 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     null (the window location `stampWindow` stamps, the point less the frame's origin; null with no window number),
     windowFrame {x, y, width, height} (the AX frame the conversion used), frameBeforePost {x, y, width, height} | null
     (the window's frame read again just before the events; null when the click stopped before them or it was unread)}
-  note: on a paste or type_text result that pasted a line with no channel to see it, read after ⌘V (#187): the sentence
-    the service adds to the tool result's content
+  stalePoint: #296's stale-point guard at a coordinate click's point or a drag's start, on its result and its errors once the
+    point is placed: {verdict ("kept" | "refused"), reason ("unrecorded" | "sameElement" | "noHit" | "nonInteractiveHit" |
+    "hitAboveNode" | "unrecordedDescendant" | "recordedHit" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther"), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
+    `recordedHit`), ms, rechecked? (true: #282's or #283's
+    route waited and the guard ran again before the press; the verdict is that check's, ms both checks'), afterActivation?
+    (true: that check ran after the route's focus hold had activated the app)}; roles only, never a title
+  note: on a paste or type_text result that pasted a line with no channel to see it, read after ⌘V (#187), and on a
+    scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
+    result's content
+  scroll (#328, on a scroll's result and its scrollUnconfirmed): {container: "scrollArea" | "pageScroller" | "webArea" |
+    null, outcome: "moved" | "atEnd" | "unconfirmed", atEnd?: true, endBefore?: true, moved?: points the asked way,
+    by?: "content" | "tracked" | "hit" | "bar", barBefore?, barAfter?, firstMoveMs?, polls, barWrite?, barWriteError?,
+    fallbackSkipped?: "web" | "clipped", containerBy?: "window", walked?, readMs, ms}
   pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): ⌘V was sent and the text
     read from the clipboard, but no effect was seen, or none could be (Decision Log, #187); or, at stage "returnEffect", a
     Return between two of type_text's lines showed no effect, and the next line was not pasted (its own sentence)
@@ -1073,6 +1095,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   3. **Route 4** passed with the override driven through a prepared home; the owner's `~/.config/cua/engine.json` mtime is unchanged.
   4. **minimized-select:** the write landed and the read missed it (the probe read 107/7 with the focus not on the text area; the engine's focus read returned AXError −25212). Per the rule set before the hold, select_text is kept and the miss is a read gap; nothing is refused.
   5. **Enablement release (Electron, Chromium's own mode):** in two cycles, enabled by observation and released after close, 4 ms and 2 ms, prior false. Chrome for Testing is not judged, by design.
+     Amended by the #318 entry (2026-11-08): on VS Code 1.144.0 (#287) the release answers `released: 1` and the accessibility tree stays complete. This item judged Chromium's own mode on the fixture, not the tree, so it does not show the release has a visible effect on an Electron app.
   6. **Held menu activation:** parity. cua (route 1) and the vendor both act on Select All and Bold in a background TextEdit behind Finder.
   7. **Horizontal scroll: no horizontal reading from either lane means anything.** Both lanes measured a page that could not scroll horizontally (item 8): the horizontal bar was disabled, and its written 0.5 read back without the content moving. The vendor's one-wheel scroll moved the page vertically (0.5 → 0, two samples); that stands as the declared single-axis vendor defect (Decision Log M2a item 6).
   8. **The hscroll adjudication (2026-10-21, 20:37–20:43Z, a scratch TextEdit on the MacBook, wheel events posted to its pid only).** On the scene's page, the horizontal bar read AXEnabled false, and writes of 0, 0.5 and 1 left the text area where it was: the cause is the scene and a hole in the harness, not either engine. TextEdit lays the page out on its own paper size, whatever `\paperw` says. With `\viewscale200` the page scrolls. On that page cua's exact event for `right` (pixel units, wheelCount 2, wheel2 +n, the window stamped) moved the bar 0.5 → 0, which is left. **A model-facing cua bug:** a positive second wheel scrolls left, as a positive first wheel scrolls up, so `scroll` left and right were inverted. Fixed in a5714898 (left +n, right −n on the second wheel). The scene got `\viewscale200` (71393af8). Both hscroll lanes now refuse, sending nothing and giving no verdict, a start whose bar is disabled or whose content did not move when the start was written (e43d32fd). The cell is re-verified in hold 2's margin. The vendor's signs, as recovered from its binary, put right at +n; should its scroll ever move the page horizontally, it moves left, and item 5 of the M2b.1b entry counts that as a vendor failure.
@@ -1219,7 +1242,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   in front with the user's app made frontmost again, until three stable samples, before the hold is released; a click
   inside a held or shared activation takes a hold of its own, and the guard checks the action's own window (a shared
   activation may have been made for another window of the process); never a second hold for one action; the hold is
-  released at the 100 ms cap whatever the guard's state, and past it the guard repairs on until 1 s after the events
+  released at the 100 ms cap whatever the guard's state (200 ms, held until the order reads back, for a shared-mode
+  pointer whose activation clicked its in-window activation point: #321's entry, 2026-11-07), and past it the guard repairs on until 1 s after the events
   unless the person gave input since them (`delivery.repairedAfterRelease`, `personInput`), then leaves the order as it
   is, reported (`delivery.capped`, `raiseLeft`, both read from its samples rather than from what its requests
   answered); a third app in front is the user's, never undone: the guard restores only to the app that was frontmost
@@ -1895,6 +1919,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      diagnostic repeats (src/services/sky.mjs), since focusField's fallback can stop under them.
   11. **Not done.** Route 2′ on a Chrome carrying Chromium 212c026a (the ruling's D) and WebKit's first-mouse rules
      (Safari's page refuses first mouse unless a selection may be dragged; it gets `clickUnconfirmed`, not a refusal).
+     Amended by the #287 entry (2026-11-07, below): the parenthesis is wrong. Safari never answers `clickUnconfirmed`
+     for a background click: Safari's AXActivationPoint lies inside its window, so the engine clicks it, the window
+     becomes key, and the action's own mouse-down is delivered (pointer 1/1/1/1 on Safari 27.2). Firefox does answer
+     `clickUnconfirmed` (pointer 0), and truthfully, because Gecko's view refuses first mouse.
   12. **The coordinate hit-test asks the application** (found live on the hosted runner, probe/282-hosted, runs
      42123497534 and 42124119631; the design session's conditions, 1ea561bc bbaa0eba). The coordinate click, the drag
      and the coordinate scroll asked AXUIElementCopyElementAtPosition of the window element, which answers
@@ -1947,8 +1975,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      it is then (`webAreaControlRequalified`, the re-review of c768d2bb..1c8f2229: a node may change during the wait): an
      allowlisted role, not editable, its parents read up to the AXWebArea; otherwise it is refused, nothing posted, and
      its action and value check follow its current role. The refusal of a control still without an action asks for an observation first
-     (`backgroundClickRefusedObserveFirst`). **The cost:** up to 2 s of latency on the first click into a fresh Chrome
-     whose control has not yet exposed its action, and the whole 2 s when it never does.
+     (`backgroundClickRefusedObserveFirst`). **The cost:** up to about 3 s of latency on the first click into a fresh Chrome
+     whose control has not yet exposed its action, and the whole wait when it never does (3 s since #292's re-read
+     deadline).
   Proven offline (`BackgroundPointerTests`, 26, failing before the change where they bite: shared mode's refusal of
   a click, a double click and a drag into a web area with nothing posted, no hold taken and nothing left held; a plain
   click carried by the element route with nothing posted by cua; a web-area pointer joining its own or another connection's
@@ -1959,7 +1988,2164 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   element route's allowlist (the textarea and an editable-ancestor hit refused, a button passing) and its value check (an unchanged checkbox answering clickUnconfirmed); the walk (a label child pressing its button, an editable element or another interactive role in between refusing) and the re-read (a late action found at 1.6 s and pressed, a timeout refused, no wait where not fresh); the ping's per-connection mode. The service's ping and pass-through, the launch's mode,
   doctor's row and the client's ping in their JS suites). Nothing live ran: the hosted Chrome for Testing A/B of the
   ruling's acceptance is the next step.
+  Corrected by #292's entry below: the write "failing" on Chrome for Testing is Chrome's -25208 answer to the
+  AXEnhancedUserInterface write, which takes effect.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's ruling on #282.
+- Decision (#283, 2026-11-05, `fix/283-web-text-focus`; the design session's rulings, 1ea561bc a9607cd9, on the
+  proposal b93055dd:293; amends #282's entry above): **in shared mode a plain left click into a background Chromium
+  web area's text field is carried by AXFocused, accepted only once it reads back true, with the caret placed at the
+  point where the field's own character boxes locate it; the result's note says the field was focused, not clicked.**
+  1. **The measurement** (#283's hosted probe, `probe/283-hosted`, runs 42146016617, 42147887133 and 42148369195;
+     Chrome for Testing 156 on macOS 26.6.2 and 26.7.2, every rep alike). AXFocused on the field focuses an input, a
+     textarea and a contenteditable region before Chromium's complete accessibility mode as after it, with no pointer
+     event, TextEdit frontmost and Chrome's window order unchanged (102 cells); AX reads it true 65 to 142 ms after the
+     write. A contenteditable region's hit is its AXStaticText, whose AXFocused is not settable and whose write answers
+     success while doing nothing. AXPress does nothing before complete mode and, after it, makes Chrome play trusted
+     pointer events into an input and a region: not this route. Focus alone puts the caret at the field's existing
+     selection, else at its start. AXRangeForPosition answers {0,0} for every point and AXTextMarkerForPosition
+     answers no value; AXSelectedTextRange {k, 0} after focus puts the caret at k on all three kinds, and type_text
+     then lands there by route 2′. Round 2 (run 42150236590,
+     https://github.com/SSFSKIM/cua/actions/runs/42150236590): before complete mode every character box is empty;
+     AXVisibleCharacterRange answers the whole text even when the field is scrolled; a linear box scan of 3,074
+     characters takes 165 to 185 ms. The region `alpha bravo <b>charlie delta</b><br>echo foxtrot <span>golf
+     hotel</span> india` exposes five AXStaticText children of its AXTextArea and no element for the <br>, whose
+     AXValue `alpha bravo charlie delta\necho foxtrot golf hotel india` counts the <br> as one character; a static
+     text's AXNumberOfCharacters reads 0, its AXValue is its text. Its texts found in that value in order start at
+     12 and 26 (a sum of lengths is one short after the <br>), and AXSelectedTextRange {start + local, 0} on the
+     region placed the caret at both measured points, typing landing there. The live A/B at 2c016f7b (run 42152333871,
+     https://github.com/SSFSKIM/cua/actions/runs/42152333871) found two faults: a static text reads
+     AXVisibleCharacterRange {0, 0}, so a scan honoring it covered nothing and the region's caret was never placed
+     (12 of 12 cells, `noCharacterBoxes` after the full 2 s); and a fresh textarea's boxes arrive line by line, so one
+     click of 10 settled on `pointOutsideText` with the clicked line's boxes still empty.
+  2. **The target** (`webAreaFocusTarget`). #282's walk stops at an editable element (`walkStopped editable`); the
+     route then walks again from the hit to the nearest text-entry role (`webAreaEditableRoles`, which now holds
+     AXSecureTextField) whose AXFocused is settable, through editable elements and #282's passable roles only, its own
+     ancestry read up to the AXWebArea (`webAreaAncestry`, shared with the control's requalification). A text-entry
+     role whose AXFocused is not settable refuses (`notFocusable`), as do another role, the web area and an unread
+     ancestry; each refusal records the walk, as #282's does.
+  3. **The focus** (`focusPlacingCaret`). Route 1 (`inputRoute action`), no activation: the in-flight check, the
+     cursor at the point, AXFocused written and polled every 20 ms for up to 300 ms. A field that never reads focused
+     answers `clickUnconfirmed`; the write's own answer never counts. #282's re-read gate does not apply.
+  4. **The caret** (`caretOffset`, `fieldCaretOffset`, `regionTextStart`). The field's characters' boxes
+     (AXBoundsForRange {i, 1}), scanned linearly over the whole value up to `caretScanLimit` characters
+     (AXVisibleCharacterRange is not read: the whole text on a scrolled text field, {0, 0} on a static text): in the box that holds
+     the point the caret goes before the character on its left half and after it on its right; to the right of a line's
+     last box, the end of that line, before its break, taken only where that end is established (a line break's box,
+     or the next offset being the text's end, a line break, or a character whose non-empty box starts on a lower line, read even
+     outside the scanned range), since the rightmost box read need not be the line's last; an empty field is 0. A
+     contenteditable region's AXStaticText hit is scanned the same way over its own AXValue, and its local offset
+     mapped into the region's: the region's descendants walked depth-first in children order (at most
+     `regionWalkLimit`, 2,000, nodes), each non-empty static text's value found in the region's AXValue onward from
+     where the previous one ended, the hit's found location its start. Then AXSelectedTextRange {offset, 0} is
+     written on the focused element and polled back there. Not placed (`elementClick.caret`): `secure` (a password
+     field is focused only, its value and ranges never read; a field whose AXSubrole read fails, as against having none,
+     counts as one), `unreadable` (AXValue did not read as a string: never taken for an empty field),
+     `noCharacterBoxes` (the scan read no usable box at all, as before complete mode), `pointOutsideText` (boxes were
+     read, but none holds the point and it is past no established line end; never a guessed offset; a miss while a
+     character that should have a box had none is `boxesIncomplete` inside the scan, never recorded: item 6),
+     `selectionMismatch`, `unmapped` (a region's hit that is not an AXStaticText, or whose start is not found: a value
+     or a node's role or children list unreadable, a static text not found, the hit not reached, the walk's bound run out).
+  5. **The answer.** `elementClick {plan action, action AXFocused, reason focusField | focusedNotPlaced, pressedRole,
+     pressed hit | ancestor, walk, caret}`, and the result's `note`, which the service now passes for `click` as for
+     paste and type_text: placed, "focused through accessibility, with the caret at the point; no mouse event was
+     sent, so the page saw no click"; not placed, typing goes to the field's existing selection or its start, use
+     select_text or set_value first. A double click, a drag and focusField's fallback stay refused (#289).
+  6. **Boxes not there yet** (`caretAwaitingBoxes`; the design session's ruling 37d4c12c, widened by 9ba80c48 after
+     run 42152333871). Focus is written and confirmed at once; then, where the caret answers `noCharacterBoxes` or
+     `boxesIncomplete` (a miss while some character that should have a box had none: line breaks, whitespace, controls
+     and format characters such as U+200B, U+200C, U+200D, U+FEFF and U+00AD, combining marks and a surrogate
+     pair's trailing half may legitimately have none and never count (a pair is one character, its box on its leading
+     half), so a multi-line field's newlines never make a click wait) and the
+     process is fresh by #282's rule (`webAreaAccessibilityFresh`), the offset is computed again every 100 ms for up
+     to 2 s (`webAreaActionRereadSampleMs`, `webAreaActionRereadMs`), posting nothing, until it answers anything else;
+     a complete-miss `pointOutsideText` or `unmapped` found then, or at once, is the answer. An incomplete miss not
+     waited for (not fresh) or still incomplete at 2 s is `pointOutsideText`. Before each re-read the hit must still resolve through
+     `webAreaFocusTarget` to an element CFEqual to the one focused and not secure, or the wait stops with nothing more
+     read; an offset found by a re-read is written only if the field also still reads AXFocused true, is still that
+     element, and its AXValue's length is the one read when the wait began. Otherwise, still empty at 2 s, or not
+     fresh (no wait at all), `noCharacterBoxes`, with no range written. The secure field never
+     gets here. Limits: the first click into a fresh Chrome's text field can take up to about 3 s (#292's re-read deadline), as #288's does;
+     with AXVisibleCharacterRange dropped, the scan is bounded only by the 5,000-character cap on the value's length
+     (`caretScanLimit`; a longer value is `pointOutsideText`, #290).
+  Proven offline (`WebAreaFocusTests`, 39: the field hit, the region's text hit focusing its region, each refusal, the
+  secure field by role, by subrole and by a failed subrole read, focused with nothing read, a write that never reads
+  back true, a caret read back elsewhere, a point in no box against no usable box at all, an unreadable value, the
+  line-end rule only where the end is established (a failed box read, a cut scan, a soft wrap, an empty next box at
+  negative screen y, the text's end) and the empty-line rule, the region mapping (round 2's five-node page at both
+  points, a nested group, a repeated word, each unmapped case, an unread role among them), the wait for boxes
+  (appearing at 1.6 s, never by 2 s, a process not fresh, each failed re-validation, a field turned secure mid-wait
+  read no more, another answer on a re-read; boxes arriving partly then wholly placed, an incomplete miss at 2 s and
+  when not fresh, a complete miss at once with a multi-line value's newlines, a trailing space and U+200B boxless,
+  the characters that may lack a box, a surrogate pair as one character, an emoji line still arriving against a
+  whole one), a static text scanned over its whole value, the in-flight stop before any
+  write, the record and the note; the service's note test for click).
+  Proven live (`docs/evidence/2026-11-05-web-text-focus/`; hosted runs 42155227806 and its repeat 42155231373 at af4bd331,
+  macOS 26.6.2 and 26.7.2 with Chrome for Testing 156; the earlier run 42152333871 found the visible-range and
+  half-arrived-boxes bugs fixed in af4bd331). Main refuses every text-field click. On the branch, the input, the textarea,
+  a one-node and a multi-node contenteditable (in its 2nd and 3rd text node, after a `<br>`), a prior selection and a point
+  past a line's end are focused, with the caret at the expected offset and type_text landing there: in 55 to 199 ms 3 s
+  after the observation, and in 1.5 to 1.9 s 0.1 s after it, by the re-read (32 of 32 fresh clicks in the repeat run).
+  The password field is focused only, and a padding click is focused but not placed. Every cell had zero pointer events,
+  TextEdit stayed frontmost, and Chrome was not raised.
+  Corrected by #292's entry below: the enablement write these runs report as failed (-25208) is Chrome's answer to the
+  AXEnhancedUserInterface write, which takes effect.
+  Date/Author: 2026-11-05, cursor235 for the design session's rulings on #283.
+- Decision (#292, 2026-11-05, `fix/288-fresh-chrome`; the design session's rulings, 1ea561bc ecc2143d, 5c2f27a3 and
+  199d194c, and the owner's: on a shared desktop AXEnhancedUserInterface is acceptable while cua drives that Chrome,
+  provided cua releases it when done; corrects #282's and #283's entries above): **the engine owns and releases the EUI
+  write Chrome answers with -25208, at end_task, at the engine's stop, or 30 s after cua's last observation of or input
+  to that Chrome; an input after a release enables it again; the re-reads wait for Chrome's debounce.**
+  1. **The correction** (#288's hosted spike, `probe/288-hosted`, runs 42161269408 and 42162367095; Chrome for Testing
+     156). Chrome lists AXEnhancedUserInterface and not AXManualAccessibility (Electron's; Chromium's source has none),
+     so the engine writes EUI to Chrome. Chrome answers that write with -25208 (kAXErrorNotImplemented) and acts on it:
+     complete mode arrives about 2.2 s later (chrome_browser_application_mac.mm's 2 s debounce) and the attribute then
+     reads true. #282's and #283's texts, and the evidence READMEs of 2026-11-05, call that answer a failed
+     AXManualAccessibility write: it is the EUI write, and it takes effect. Since the engine took it for a failure it
+     never owned the attribute, and Chrome kept complete mode, the screen-reader flag and animated window moves (3 to 5
+     frames, 80 to 156 ms, against 2 frames and 10 to 90 ms) past the connection's close, the engine's SIGTERM and after.
+  2. **Ownership** (`enableReporting`). A write answering -25208 counts as set when the attribute reads true right after
+     it, and is owned by the A3 rule as any set: only when it read false before the write, or the engine wrote it back
+     since. Still false after it is not set and not owned. `enablementWrite` reports "success" for such a set, with
+     `enablementWriteError` -25208 beside it. The write back (`releaseIfUnobserved`) counts -25208 as done, unread (the
+     attribute may read true after a write-back: AppKit's readback), and is not retried; Chrome drops complete mode in 4
+     to 150 ms.
+  3. **The release, whichever comes first.** (a) end_task: the service's end_task hook sends `endTask` before it closes
+     the connection (client.mjs `release`), and the engine releases at once every process whose only remaining observer
+     or last actor was that connection (an older engine answers methodNotFound, unread). (b) The engine's stop: the
+     shutdown request, as before, and now a termination signal (`Lifecycle.beforeSignalExit`); SIGKILL leaves it on (until the next engine's start: #293's entry).
+     (c) `enablementReleaseGraceMs`, 30 s, after the process's last activity, whether or not a connection is still open
+     (a model that never calls end_task keeps its connection until the 15-minute idle stop, and EUI must not stay on all
+     that time). Activity is an observation (its enablement step), an input to the process (every input method of a
+     resolved app), and the end of either request, so the grace runs from the request's end; any connection's counts,
+     and an input's connection joins the process's observers. Each activity arms a timer on the global queue with a new
+     per-process token, so only the newest releases. A close without end_task releases nothing by itself, except a
+     process with no timer armed (a release that failed: retried then). The grace's release takes the entry's lock as
+     every release does: an observation in flight took the token under the class lock before its read and write, so
+     either it came first (the timer is stale) or it waits on the entry's lock and reads after the reset, setting the
+     attribute again, owned, since the write-back is remembered (`writtenBack`). A process released with a connection
+     still observing it is kept, not retired. A grace of 0 is the previous immediate release at the close.
+  4. **An input after a release** (the ruling 5c2f27a3). The model may act on a stale element 40 s later with no
+     observation. In a Chromium-family process every input first takes the observation's enablement step
+     (`inputEnablement`: the role read, then `enableReporting`), so the attribute is set again, owned, and the write
+     moves `freshSince`: #282's press re-read and #283's box re-read apply, and neither answers noAction or
+     noCharacterBoxes because of cua's own release. Elsewhere an input is activity only.
+  5. **The re-read deadline** (the ruling 199d194c; `webAreaRereadDeadline`). Chrome's complete mode lands about 2.2 s
+     after the EUI write, past a 2 s re-read that starts with the write, as an input's own enablement makes it start. So
+     both re-reads run until the later of 2 s from their start and `freshSince` + 2.6 s (the 2.2 s and a margin),
+     capped at 3 s from their start; with no write since, 2 s as before.
+  6. **Limits.** EUI stays on while cua drives that Chrome: until release (end_task, engine stop, or 30 s after cua's
+     last action on that Chrome); SIGKILL leaves it on until the next engine's start (#293). Each task after an end_task, and the first action after a grace
+     release, pays Chrome's 2.2 s debounce again (#288's latency); the first click into a fresh Chrome can take up to
+     about 3 s. No early write at first resolution is made (the design session dropped it). A request running longer
+     than the grace (a 30 s settle) could be released under it; its end re-arms the grace.
+  7. **The review of d2568c76..96c6f093** (four findings, all fixed). (i) The relay closes fully
+     (src/repl-host/native-pipe.mjs: end, then destroy), and `Server.serve` stopped reading once an earlier answer's
+     write failed, so an `endTask` buffered behind the hide could be lost: the client now unpublishes the connection,
+     fails its waiting requests, sends the hide unawaited and `endTask`, and closes only on endTask's answer, an error
+     or 1 s (`endTaskWaitMs`; end_task's hook is bounded at 2 s); and the server, after a failed write, still reads
+     the frames already buffered and handles an `endTask` among them (`endTasksAfterFailedWrite`, each read bounded
+     at 1 s), so a client that gave up waiting still ends its task. (ii) The stop raced live connections: `releaseAll`
+     now enters a stopping state under the class lock before it takes the processes; from then on `enableReporting`
+     writes nothing (checked again under the entry's lock, so an observation registered before the stop and waiting
+     on that lock does not re-enable after the reset) and `noteActivity` records nothing, and every owned entry is
+     reset whatever its observers; the shutdown request and a termination signal share it. (iii) A grace timer
+     checked its token before the entry's lock: activity landing between that check and the reset found the attribute
+     still owned and returned, then was reset underneath; the token is now checked again under the entry's lock, and a
+     stale one resets nothing. (iv) #288's container rule failed open on unreadable children (item 2 of #288's entry).
+  Proven offline (`EnablementOwnershipAndGraceTests`, 20: -25208 with a true readback owned and released, with a false
+  one not owned, a value read true before never written, the write back's -25208 done and not retried; the release 30
+  s after the last observation, not after the close; an open but idle connection released at 30 s and its next
+  observation re-enabling, owned; a re-observation at 20 s cancelling the 30 s release; an input restarting the grace
+  from itself; a click after a grace release re-enabling owned and fresh; end_task at once for the last actor only; the
+  stop at once during a grace; a failed grace release retried at the close; 0 as the immediate release; an observation
+  during the grace's reset re-enabling; the `endTask` request; and for the review, activity between the grace's first
+  check and its reset making it stale, an observation during the stop's reset writing nothing, one registered before
+  the stop not re-enabling after it, an endTask buffered behind a failed write still handled. `RereadDeadlineTests`, 3: the rule, the action re-read
+  and the box re-read finding complete mode at 2.3 and 2.4 s after a write. The existing release tests at grace 0;
+  the client's and the service's endTask order, and over a fully closing relay the close after endTask's answer and
+  at its bound, in their JS suites.) Nothing live ran: the hosted check (EUI reads
+  false after end_task and after 30 s idle, a checkbox loses AXPress, the window moves without animation) is the next
+  step.
+  Proven live (`docs/evidence/2026-11-06-eui-release/`; hosted run 42168334138 at 63926945 and 42167787338 at
+  96c6f093, Chrome for Testing 156, 2 reps each, all alike). At end_task, `endTask` answered `{released: 1}` in 2 ms and EUI
+  read false 12–15 ms later, with the checkbox's AXPress and the text boxes gone; a window move then settled in 2 frames
+  (8–55 ms) where main's stayed animated (4–6 frames, 94–159 ms). SIGTERM released in 27 ms. An idle connection was
+  released 31.7 s after its last observation, and a re-observation at 20 s moved the release to 32 s after it. The grace
+  fires 1.5–2.1 s past the nominal 30 s, every rep: the utility-QoS timer's coalescing, likely. A click 1.6 s after a
+  release, with no re-observation, re-enabled EUI and was element-routed (AXPress, the checkbox changed once) in
+  2.4 s, inside the 3 s cap. Main never released.
+  Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #292.
+- Decision (#288, 2026-11-05, `fix/288-fresh-chrome`; the design session's rulings; amends #282's items 3 and 4):
+  **a left click by route 3 into a Chromium process where no web area has been seen establishes the page tree before
+  its walk decides, and an element with an AXWebArea child is never outside.**
+  1. **The measurement** (#288's hosted spike, `probe/288-hosted`, runs 42161269408 and 42162367095; Chrome for Testing
+     156). Before any role read a page point hit-tests to a coarse AXScrollArea that walks to the AXWindow, which
+     #282's walk took for outside (then, with no web area seen, a possible web area). After the application's role read
+     (Basic mode) a search of the window finds the AXWebArea in 11 to 29 ms, but for 40 to 350 ms more the page point
+     can answer Chrome's web-contents AXScrollArea, whose child is the AXWebArea, before it resolves inside the page.
+     The toolbar's Reload resolves to an AXButton whose walk reaches the AXWindow with no web area.
+  2. **The container rule** (`pointerView`, every pointer, seen or not): a hit, or any element on its walk below the
+     stop, with an AXWebArea among its children is `aboveWebArea`, a possible web area, never outside. Children, or a
+     child's role, that cannot be read are unknown, which the walk takes for incomplete, a possible web area too (the
+     review of d2568c76..96c6f093: a failed read had counted as no web-area child, so with a web area seen a page point
+     whose web-contents scroll area could not be read was taken to accept first mouse); the establishment keeps
+     re-hitting an unknown hit as it does a container.
+  3. **The establishment** (`establishedPointerView`, the coordinate click and the element click's synthesized path,
+     route 3, left button, a Chromium process with `hasSeenWebArea` false): the application's AXRole read, the target
+     window searched for an AXWebArea (as `containsWebArea`, bounded by 1,000 nodes; `noteWebArea` when found), and
+     the point hit-tested again by the click's own hit-test; a hit that is such a container is hit-tested again every
+     25 ms for up to 500 ms until it is something else, the waits ending by 600 ms after the step began. The walk then
+     decides on the last hit, with the search's answer as `webAreaSeen`; the element route walks that hit. Nothing is
+     activated or posted during it, and the intervention check before the activation is unchanged. Recorded as
+     `pointerEstablish {ms, webAreaFound, rehits}` in the input meta (`cua/pointerEstablish`). A drag keeps the walk
+     without the establishment.
+  Proven offline (`PointerEstablishTests`, 8: the container rule, unreadable children as a possible web area, the toolbar button resolved outside, a container
+  re-hit until the page control, the bound with a fast and a slow search, no web area found, no establishment where
+  seen or outside Chromium, the record's wire; the service's pass-through). Nothing live ran: the first-click latency
+  and the pre-observation toolbar limits stand until the hosted kit measures them.
+  Proven live (the same evidence). A first contact with no observation cannot reach this step: a coordinate click
+  needs the connection's screenshot (`noScreenshotForCoordinates`), and element tokens come only from get_app_state. So
+  the state with no web area seen arises after a grace release, which clears it. There the step ran in 10–24 ms
+  (`pointerEstablish {webAreaFound true, rehits 1}`): Chrome's Reload walked outside every web area and was posted by
+  route 3, and page text was refused with nothing posted. The posted Reload did not reload the page, on main as on
+  the branch: the click went to the observation's point, which Chrome for Testing's toolbar re-layout (about 18 s
+  after launch) had moved Reload off (#294's entry below), not this step. The first quick
+  click's latency, re-stated: 1.7–2.0 s for a checkbox press and 1.7–1.9 s for a textarea focus, 0.1 s after the first
+  observation, on both engines.
+  Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #288.
+
+- Decision (#294, 2026-11-06, `fix/294-toolbar-idle`; the design session's ruling, 1ea561bc ee29283e): **#294 is not
+  lost input, and nothing in the engine changes for it.** #294 was registered from #288's live check: a route-3 click
+  on Chrome's Reload answered success and did not reload once the window had sat 20 s or more. #294's hosted spike
+  (`docs/evidence/2026-11-06-toolbar-relayout/`; runs 42173188779, 42175037968 and 42176012181; Chrome for Testing 156,
+  two images) found the cause. About 18–20 s after launch, Chrome for Testing re-lays out its toolbar in the kit's
+  620-pt window: the Sign In pill collapses and the disabled Forward button returns, so Reload moves from x 442 to
+  478. A click at the first observation's Reload point then lands on Forward.
+  - **The clicks were delivered, and the clock was Chrome's launch, not idle.** Delivered and missed clicks were
+    identical in the engine's meta (fresh activation, `consumedByAction`), in the events a pid tap saw, and in Chrome's
+    AppKit state. The boundary fell between 18.1 s and 18.7 s after launch in both reps.
+  - **The isolating cells.** Route 3 at Reload's current centre at 25 s reloaded, and so did the element click, which
+    re-reads the frame. A real HID click at the old point missed with no engine running. An observation made after
+    the re-layout gave a click that reloaded.
+  - **What is excluded:** a held activation (synthesized clicks take a fresh one), AppKit's first click into an
+    inactive window (Chromium's `acceptsFirstMouse:` answers YES), and Chromium throttling (the page stays visible
+    and unthrottled).
+  - **The ruling.** Close #294 as not-a-bug; correct #288's evidence and this log; have the #288 kit's `noobs` cell
+    locate Reload at click time. The general hazard, a coordinate click into a screenshot the app has since
+    re-laid out, is #296: a stale-point guard that refuses in both modes, measured for false positives before it is
+    built.
+  Date/Author: 2026-11-06, cursor235 for the design session's ruling on #294.
+
+- Amended by the #305 entry (2026-11-06, below): an interactive hit, or an element route's target, that is itself a
+  recorded node the screenshot showed at the point, still there, is kept as `recordedHit` (items 5 and 2b).
+  Decision (#296, 2026-11-06, `fix/296-stale-point`; the design session's rulings, 1ea561bc ee29283e and 0c0b70f0, on
+  #294's spike and #296's false-positive table): **a coordinate click or drag is refused, with nothing posted, in both
+  device modes, when what the screenshot its coordinates came from showed at the point is gone, has moved off it, or
+  has given way to another interactive element.** A declared divergence: the vendor posts at the point blindly.
+  1. **The record** (`ObservedScreenshot.nodes`; StalePoint.swift `screenshotNodes`). Every observation that returns a
+     screenshot keeps, with it, each node of the window's walk: its handle, role, title, description and AX frame (global
+     points, as clicks are posted), the part of that frame its clipping ancestors leave showing (`visibleFrame`'s rule
+     over the recorded tree), and whether the walk recorded all its children (a frameless descendant's unrecorded children
+     count against its nearest framed ancestor, since a frameless node is never chosen at a point), with the window's
+     origin at the capture. Titles and descriptions are kept as the walk keeps them, cut at 10,000 UTF-16 units. An
+     observation without a screenshot leaves the record, as it leaves the screenshot. The menu bar is not recorded: it is
+     not in the window's image.
+  2. **Where it applies.** Every coordinate pointer that presses at a screenshot point: `click {x, y}` with every button
+     and count, on every route (3, 4, and the spike's 2 and 2′), and a drag's start point. Not a drag's end, where it
+     drops. Not a scroll at a point: a scroll presses nothing, and a model's next scroll at the same point follows content
+     the last one moved, which the guard would refuse every time. Element clicks read their element's frame at click time
+     already. A refusal is thrown at the top of `deliverPointer`, before the after-action watch is cancelled or anything
+     is acquired, posted or pressed. **Where #282 element-routes the pointer** (the design session's ruling 1ea561bc
+     ca82a6f4, reversing the first build's skip; the hosted A/B, run 42184616121, found the skipped guard reading stale
+     while #282's route pressed what lay at the point now, item-11 for the observed item-9 in the feed and the link
+     "Remove" reached from the hit's text in the link swap, both answering success): (a) the guard runs before the
+     route, and a refused verdict answers `screenChangedSinceScreenshot`, nothing pressed or posted; (b) a kept point's
+     route acts only on the node the screenshot showed there as found now, or an ancestor of it (the allowlisted control
+     the walk reached from the hit through plain children; #283's focus target likewise), or, by the
+     `unrecordedDescendant` reading, anything inside a node the record holds incompletely, or anything at a point no
+     recorded node holds; anything else is refused as `pressedOther` (`stalePointPressVerdict`); (c) when the route waited
+     (#282's action re-read, up to `webAreaRereadDeadline`'s 3 s), the guard runs once more just before the press with a
+     fresh hit-test, on the element about to be pressed (`StalePointGate`, meta `rechecked`); (d) the route is built from
+     the hit the guard judged, so when its re-hit recovered a node the first hit-test missed (item 4), that hit is
+     walked and the view is classified again from it (`stalePointRouteHit`; the re-review of c8f37a93..7f79ca34: an
+     empty first hit had made a possible web area with no route, and a dead one was walked); (e) the final check runs at
+     the real boundary, just before the action is performed (`pressAfterFinalCheck`): a background app that does not
+     believe it has focus takes the route's focus hold first, whose activation guard polls, so after the hold the guard
+     runs again with a fresh hit-test; without a hold nothing can have waited since the early check, whose verdict
+     stands. A refusal there presses nothing, but the activation ran: the meta says `afterActivation`, the sentence says
+     "The app was activated in the background, but nothing was pressed." in place of "Nothing was sent.", and the hold
+     is left as every refusal after it leaves it (FocusHold.swift's lifecycle withdraws it). #283's focus route checks
+     its field by (b) before the focus write, which no wait precedes; its waits (the focus settle, the boxes' re-read)
+     come after that write, so the second check runs before the caret's write, and a changed page there places no caret
+     (`CaretNotPlaced.screenChanged`, the result's note asking for a new screenshot before typing) rather than refusing
+     a click whose focus already happened. No path skips the guard any more: the meta's `skipped` verdict is gone.
+  3. **Which node.** The deepest recorded node whose shown frame holds the point (edges included), the later in the
+     walk's order at one depth. The clipping matters: page content scrolled up under Chrome's toolbar keeps frames there,
+     and would otherwise be the deepest node at a toolbar point. **The window's move:** a coordinate is posted in the
+     window as it lies now (offset by its current origin), while the record's frames are where it lay at the screenshot.
+     So the node is chosen at the posted point moved back by the window's shift (its origin now less its origin at the
+     capture), the point the model meant in the image; its frame read now is checked against the posted point; and a
+     re-created handle is matched against the recorded frame moved by the shift. A window that only moved keeps every
+     node, and a node that moved inside it is still refused (the review of d482bcc2..a7a43b02: without this, a click on
+     one control in a window moved 100 pt chose the control the old coordinates held and refused it as moved, and a move
+     past the old bounds left the point unrecorded).
+  4. **Is it the same node.** Its own handle while its frame reads, or while the hit or one of the hit's ancestors is
+     that handle. Else a re-created handle: the node's role, a frame within 2 pt of the recorded one on every edge (the
+     nearest such), and, by the amendment (0c0b70f0), the same title when both have one, else the same description when
+     neither has a title and both have one, the label read now cut as the record's was; a label either side cannot read
+     never counts against it. **The bound:** it
+     is looked for among the hit, the hit's parents up to its window (at most 300 levels, the bound of every parent walk
+     here) and the hit's first 300 descendants breadth-first, the spike's bound, within which it matched every
+     re-created control it met at distance 0. **A transient empty hit** (the A/B's one false positive,
+     chrome/dedicated/recreate/20s rep 1, a button replaced every 500 ms, refused `nodeGone` with no hit: the old node
+     destroyed, the new one not yet hit-testable): with the node's handle gone and the hit-test answering nothing, or an
+     element whose role cannot be read, the point is hit-tested again up to 3 times, 50 ms apart (150 ms at most;
+     `stalePointRehits`, `stalePointRehitMs`), and the search runs on the first real hit; the node is gone only if none
+     comes within that bound.
+  5. **The verdict,** in this order. Refused: no handle and no re-created one (`nodeGone`); the frame read now not
+     holding the point (`frameMoved`; #294's case, where Chrome's hit-test still answered the moved Reload's handle at
+     its old point, so only the re-read frame tells); the hit-test now answering another interactive element
+     (`interactiveHit`; the spike's 19 roles: buttons, checkboxes, radio buttons, links, pop-up and menu buttons, menu
+     items, text entry, sliders, incrementors, disclosure triangles, tabs, switches, colour wells, segmented controls).
+     Kept: the hit is the node (`sameElement`), answers nothing (`noHit`), or is not interactive (`nonInteractiveHit`; a
+     button's label text inside a button the tree lists, proven offline only: the spike's out-of-process hit-test
+     answered Chrome's AXStaticText there, but the A/B found the engine's own hit-test answering the AXButton itself,
+     `sameElement`). Two readings of the implementer's where the ruling is silent, both kept: an interactive hit that is
+     an ancestor of the node (`hitAboveNode`; proven offline only: on a link-text point the A/B found both Chrome's and
+     Safari's trees listing the link's text and the hit-test answering that same text), and an interactive hit inside a
+     node whose children the record
+     does not all hold (`unrecordedDescendant`: a subtree cut by the width rule, the depth cap, the node or byte budget
+     or the deadline, where the screenshot may have shown it and the tree could not). A point no recorded node holds is
+     kept (`unrecorded`). **Both are stated limits** (the design session's rulings 0a14b51f and 2db3ba75), the first on
+     a condition: inside a node the record holds incompletely, a post or a press goes through only while that container
+     passes the guard exactly as every node does (its live handle with its frame read now holding the point, no label
+     compared; or a handle re-created by role, a frame within 2 pt and the title, or description, where both read), on
+     the coordinate path and the element route alike, and whatever the point reaches inside it: a hit under it, the
+     container itself (a coarse AXWebArea answer), or nothing. The condition is applied before every other exit, so no
+     path into an incomplete container skips it (the re-review of 7f79ca34..4630b687 found the container-level and the
+     empty hit leaving as `sameElement` and `noHit`). A truncated region inside a container that moved or was swapped is
+     refused; a live container relabelled in place passes, as #298's blind spot keeps any live node. The meta's reason
+     then names `unrecordedDescendant` (or `unrecorded`), so every post or press that went through unguarded inside says
+     so.
+  6. **The error** `screenChangedSinceScreenshot` (-10005), an input error with the meta, startedAt/endedAt null: `The
+     screen changed since the screenshot: the <role "title"> it showed at this point <is gone | has moved away from it |
+     is no longer what it reaches>[; <role "title"> is there now]. Nothing was sent. Call getScreenshot for a new
+     screenshot, then give the coordinates in its pixels.` The label is the title, else the description, at most 60
+     characters. What is "there now" is the hit (for `pressedOther`, the element the route would act on), named only
+     when its role reads and it is not the node itself; with nothing known there the clause is left out (the A/B's
+     sentence had read "element is there now" for a hit whose role could not be read). The re-observation is named
+     as `noScreenshotForCoordinates` names it, the facade's call that returns an image. The service passes it as it passes
+     every input error, and the wrapper does not admit it (no secret is substituted into a click). The model is told in
+     the third paragraph of `docs/cua-api/agent-cursor.md` (the surface inventory's "Table 3 addition (2026-11-06,
+     #296)").
+  7. **The meta:** `stalePoint {verdict, reason, identity?, recordedRole?, hitRole?, ms, rechecked?}` on the click's and the drag's
+     results and errors (Interfaces), passed by the service as `cua/stalePoint`, as #288's `pointerEstablish` is.
+  8. **The measurement** (the false-positive spike, `probe/296-hosted`, runs 42179036967 and 42180641939; the guard
+     emulated outside the engine over the engine's own observation, the click then posted anyway, its effect read): 240
+     guarded cells on Chrome for Testing (dedicated mode, and shared mode off the page), Safari and a native app, with CSS
+     animations, ticking counters and labels, a feed that prepends, scrolled lists, controls re-created in place, a
+     control swapped for another, and Chrome's toolbar re-layout, at 1, 5 and 20 s, two reps each. As first ruled: 0
+     false positives (none of the 153 cells whose target stayed under the point was refused) and 24 false negatives,
+     every one a control re-created in place as another of its role (Save swapped for Delete). With the amendment: 0 and
+     0. **The cost** beside the hit-test the click already takes: the hit's role and the node's frame, p95 about 1 ms
+     each (Chrome 0.99 and 1.15 ms); the re-created search when the handle is gone, p95 10.6 ms on Chrome, 9.0 on Safari
+     and 5.3 on the native app.
+  9. **Limits.** (i) A control re-created with a changed label (a React re-render of 'Like (12)' as 'Like (13)') is
+     refused: the safe direction, and the sentence asks for a new screenshot. (ii) A surviving handle relabelled in place
+     (Save to Delete on one element) passes: its identity and its frame are unchanged, and refusing a label change on a
+     live handle would refuse every control whose label ticks (#298). (iii) A hit in another window over the point (a
+     menu, a popover) reads as no hit, and passes while the node is in place. (iv) cua refuses where the vendor posts.
+     (v) The guarantee does not cover a point the observation could not record: inside a budget-, width-, depth- or
+     deadline-cut subtree only the container is checked (`unrecordedDescendant`), and a point in no recorded node is
+     not checked at all (`unrecorded`); a live container relabelled in place keeps its interior, as (ii) keeps any live
+     node. How often either arises is #299's to measure.
+  Proven offline (`StalePointTests`, 18, and `StalePointDeliveryTests`, 4; #294's test fails with the frame check removed,
+  the delivery's with the early refusal removed, and the A/B round's with the re-hit or the pressed-element rule removed): the frame re-read with the same handle
+  refusing (#294); the non-interactive child hit passing; the bounded re-created search (the 299th descendant found, the
+  301st not, the hit's ancestor found, more than 2 pt off not); the changed label refused and an absent or unreadable
+  label not counting either way; the relabelled live handle passing (#298); another interactive element refusing with
+  both named; the ancestor and unrecorded-descendant readings; the record's clipping and its choice of node; and, after
+  the review, a window moved 100 pt (the node kept, a node moved inside it refused, a re-created one matched at the
+  shifted frame), a frameless container's unrecorded button counted against the window, and a re-created control with a
+  13,200-unit label matched; and, after the A/B (run 42184616121), an empty hit mid-replacement re-hit and kept as
+  re-created on the second attempt, one that stays empty refused after 3 × 50 ms with no "there now", the pressed element
+  the node or its control kept and another link refused `pressedOther`, and a change during the route's wait refused at
+  the second check (`rechecked`, both checks' time); after the re-review of c8f37a93..7f79ca34, the route built from
+  the guard's recovered hit (an empty first hit, a re-created button recovered and pressed) and a change during the focus
+  hold's wait refused at the final check (`afterActivation`, nothing performed); and by ruling 0a14b51f a truncated
+  container that moved refusing a click inside it on both paths, an in-place one keeping it with the reason
+  `unrecordedDescendant` (a plain hit inside, the container itself and an empty hit too); and by ruling 2db3ba75 a moved
+  truncated container refusing with a container-level hit and with an empty hit, an in-place live container whose title
+  changed kept as `unrecordedDescendant`, and a re-created container with another title refused (`nodeGone`). Through the delivery: a refusal with nothing posted, activated or
+  held for a native view, an unknown app, a right click, a dedicated web area, a forced route and a drag; a stale
+  web-area click refused before the element route, nothing pressed, and a kept one element-routed as before; a web-area
+  click that would have been posted refused before subtype 1 (an activation point's click, the app believing it has
+  focus, a join of a held activation, the hold untouched). The service's pass-through and the documents in their JS
+  suites. The hosted A/B (run 42184616121, on a7a43b02, 134 branch cells) found the element-route gap, the transient
+  empty hit and the sentence's "element", all answered above.
+  Proven live (`docs/evidence/2026-11-06-stale-point/`; the final A/B, run 42189536608 on 2fdb9c98 against main d482bcc2,
+  2 reps, 72 branch cells across Chrome for Testing, Safari and a native window; the re-run 42187363305 on 7f79ca34).
+  Refused, with nothing posted or pressed: #294's toolbar Reload after the re-layout in shared and dedicated mode; on a
+  background Chrome page in shared mode, the stale feed, the link swap and Save swapped for Delete (main AXPressed the
+  wrong element each time); Safari's feed and swap; and natively, the swap, the moved and the removed button, and Like
+  (12) re-created as Like (13). Kept and delivered: a fresh background page point (element-routed, `rechecked`, one
+  click), Reload before the re-layout, the ticking label at 20 s, and the rebuilt button (8 of 8 at 1 s and 20 s, the
+  first build's one false positive gone with the re-hit); limit (ii) kept and landed on "Delete", as stated. The swap
+  cells inside #282's re-read window (the swap at 0.3, 0.6 and 1 s) ended in #282's own no-action refusal before the
+  final check, with nothing posted (19 of 20; the 20th observed late enough that the press came before the swap). Not
+  reached live, proven offline only: the final check's refusal after a focus hold, `pressedOther`, and the sentence with
+  no hit (a covering window still leaves the app answering its own element). The cost per click, `stalePoint.ms` p95:
+  Chrome 6.0 ms for a single check (15–29 ms where the meta sums two checks around a focus hold), Safari 6.5 ms, native
+  8.6 ms; the record per observation, p95: Chrome 0.9 ms, Safari 0.3 ms, native 0.2 ms bar one 9.5 ms observation.
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's rulings on #296.
+
+- Decision (#301, 2026-11-06, `feat/301-visible-first`; the design session's ruling aed3f041 on #299's findings, issue
+  comment 6683886367; amends "Observation (skyshot)"): **when the node budget cuts, the walk keeps what the window
+  shows, and the printed tree stays in document order.** #299 measured the 4,000-node budget as the only limit that
+  cut the record on real pages, spent depth-first from the top, so on a long page scrolled 25% or more the viewport
+  lay past the cut and the guard checked 15–50% of clickable points (container-only `unrecordedDescendant` at the
+  rest). The walk is now two passes over one tree (`TreeWalk.select`, `TreeWalk.emitWindow`):
+  1. **The selection** reads depth first from the window. A read element's children are taken up when its frame shows
+     beyond a 1-pt strip in what its clipping ancestors leave of the window (the guard's record's clipping rule: scroll
+     areas, web areas, page-scrolling groups, the window) or when it has no frame (a seed, on Chromium, until ruling
+     66f90453 dropped the seeding, below). Any other read element is kept as a node, but its children wait; once nothing that shows is left, the
+     waiting children are taken up in document order, each again showing first. Reading an element is what gives its
+     frame, so an offscreen child of a shown element costs one node: it is printed, and its subtree is omitted. This is
+     #299's simulated `visible` order, except that the simulator did not keep the offscreen children it learned
+     about.
+  2. **The emission** walks in preorder from the root over what was read. So the printed tree, the allocation of new
+     tokens, the revision's sibling lists and the guard's record (`screenshotReads`, which its clipping and its
+     "later sibling draws above" rule need in document order) all keep the document's order.
+  3. **No cut, no change.** When no budget cuts, the selection reads exactly the elements the plain preorder reads, each
+     once, and the emission emits them in the same order with the same tokens
+     (`testAWalkNothingCutsEmitsExactlyThePlainPreorder`, WebKit-like and Chromium-like frames, the whole payload
+     compared): the vendor's tree, and repl-parity's, are unchanged. The one per-walk cache whose answer depended on
+     the read order, the system's action descriptions asked once per process and action name, keeps the preorder's: the
+     answer for the earliest element in the preorder that asks stands (the system is asked again only for an element
+     earlier than the cached one's), and nodes take it at emission (the review of c4057c3a..effffcee;
+     `testAnUncutWalksActionDescriptionsAreThePreordersWhateverItReadFirst`). A replacement changes every node already
+     selected with the name, so its difference is charged to the byte budget for each of them, and one that would take
+     the selection past the budget is refused, the nodes keeping the cached answer, since bytes already selected cannot
+     be given back (the re-review of effffcee..ab0e019a found a 10,000-character answer growing 1,003 selected nodes to
+     10.3 MB, past the protocol's 8 MiB; `testALaterLongerDescriptionNeverTakesTheTreePastTheByteBudget`). **The exact
+     limit** (the re-review of ab0e019a..9bbbacc0; the coordinator's ruling stops the code there and logs the fix in
+     `tech-debt-tracker.md`): an uncut walk matches the preorder unless the same action names in one process answer
+     differently per element and, near the byte budget, one name's growth must wait for another's shrink. Each
+     replacement is judged when it comes, so a growth refused before a later shrink frees the room is never reconsidered,
+     and the cached, later-in-preorder answer shows (the probe, at 1.2 MB: `[5, 5]` where the preorder shows
+     `[10000, 5]`). A walk
+     with no visible frame (rooted at a recorded menu-bar item) is the plain preorder. A stated difference with no
+     case on the matrix: an element reached under two parents is read under whichever occurrence the selection meets
+     first, so its depth-dependent reads (the depth cap, Chromium's parent-role settability) follow that occurrence,
+     while it is printed at its first occurrence in document order.
+  4. **The re-fetch** (`matching`, Lineage.swift) walks in the same order: what shows beyond a strip in what
+     its clipping ancestors leave of the window first (the same clipping rule; the review of 1abb734d found a window-only
+     test spending the budget on a scroll area's hidden content), the rest in document order, within the same caps. Without this, an element the observation kept past
+     where the preorder's budget runs out could never be re-fetched after an invalidation
+     (`testTheRefetchReachesWhatTheWindowShowsPastThePreordersBudget`, which fails under the preorder).
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling on #301.
+
+- **Superseded** by the #301 entry for ruling 66f90453 (2026-11-06, below): the seeding was dropped, code and timings,
+  since the hosted A/B found it never brought anything forward. Kept as the record of what was built and measured.
+  Decision (#301, 2026-11-06, the same branch; the ruling's item 1, question 1 of the build: when to seed): **a
+  Chromium walk seeds once it knows the node budget will cut: when the distinct elements it has read or seen named as a
+  child exceed the budget.** Every read names its children, so that count is a floor on the tree's size; it counts
+  handles (CFEqual), since a child listed by several parents (a table's cells under both its rows and its columns) is
+  one element (the review of c4057c3a..effffcee found the count of child references seeding a 141-node tree under the
+  budget, `testSharedChildrenUnderTheBudgetNeverSeed`). It reaches the
+  budget at the earliest moment the walk can know, which on a long page is a few hundred reads in (a body's paragraphs,
+  a table's rows): during the visible pass, long before the budget is spent.
+  1. **What the seeds reuse.** The seeds steer the walk in place, and nothing is read twice. A seed already read and set
+     aside (a collapsed container's strip) has its children taken up at once. A seed read later is taken up when it is
+     read.
+  2. **The hit-tests.** The window's application is hit-tested at cell centres 80 pt apart over the window frame (about
+     100–160 points for a 1000–1300 × 800 window, `seedPoints`), coarse to fine: every eighth row and column first, so a
+     seeding cut by its cap has still spread over the window. Each hit's ancestors are read up through AXParent only
+     until one the walk has taken up or already seeded, so chains share their prefix, and most points cost one hit-test
+     and a read or two. A chain that never meets the walk (a hit in another window) seeds nothing.
+  3. **The price.** When the budget does not cut, nothing: no hit-test, and an uncut Chromium walk is unchanged. When it
+     cuts: the seeding's own time, at most the cap, plus any reads in document order made before the trigger (none in
+     the usual case). The spike's 1.5–4 ms per point counted whole chains. With shared prefixes, the A/B's `seedMs`
+     should come in under its 150–400 ms per observation.
+  4. **Rejected.** Re-walking after the cut with the attributes already read: the second walk's reads past the first's,
+     up to a budget's worth again (about 1.6 s at #299's 0.40 ms per node), with the first walk's late reads wasted.
+     Seeding from the previous observation of the window: no help on the first observation, and stale exactly when the
+     kept set moves, after a scroll. Seeding every Chromium walk: 150–400 ms on every observation, which the ruling
+     forbids.
+  5. **The limit** (the ruling's, stated in `docs/cua-api/agent-cursor.md`): Chromium's coverage depends on the grid. A
+     control smaller than 80 pt inside a container Chromium reports as a strip can fall between the points and be
+     missed. A control that itself shows beyond a strip is taken up by its own frame, whatever the grid.
+  Proven offline (`VisibleFirstTests`): a collapsed container mid-viewport after a 300-leaf section scrolled off above,
+  under a 150-node budget, keeps none of the visible leaves by frames alone and all of them seeded, in document order,
+  with fewer than two parent reads per point.
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling on #301.
+
+- Decision (#301, 2026-11-06, the same branch; the ruling's condition, question 2: id stability): **a node present in
+  consecutive observations keeps its token, whatever the budget left unread, because the emission matches every child
+  list whole and carries over each unread child in its place.**
+  1. **Matching.** At each read element, the emission matches all of its children, read or not (their handles come
+     from the parent's AXChildren), against the previous revision's list (`matchSiblings`). A read child keeps its
+     matched token. An unread child that matches has the previous revision's entry carried over with its subtree
+     (`Revision.carry`), attached at its position, so the revision's lists stay in document order with carried entries
+     in their places. An unread child that never had a token gets none. Before #301 a cut carried only what lay past a
+     single cut; now unread parts lie scattered, and each is carried where it lies.
+  2. **Partial lists.** A previous list may lack the unread children that never had a token. The matching's common
+     prefix stops at the first gap, and its longest increasing run keeps the rest, since a partial list keeps the
+     relative order of what it holds.
+  3. **What follows.** An element in both observations keeps its token. One that left the kept set (scrolled off) is
+     carried, stays resolvable, and takes its old token again when it returns. The service, which retired its index when
+     it vanished from the printed tree, gives it a new index then, as it does for any element absent from one
+     observation. One new to the kept set takes a new token. The model's indexes follow, since the service numbers by
+     token.
+  Proven offline: `testTokensSurviveAScrollThatMovesTheKeptSet` (scrolled 30, then 32, then 30 blocks down a 50-block
+  page under a 150-node budget: every node in two consecutive observations keeps its token, and the leaves scrolled off
+  stay resolvable and are theirs again on return).
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling on #301.
+
+- Amended by the #301 entry for ruling 66f90453 (2026-11-06, below): the text now gives the total and a direction,
+  and "elsewhere" is folded into the total.
+  Decision (#301, 2026-11-06, the same branch; the ruling's item 3, question 3: the truncation marker): **`truncated`
+  counts each omitted part once (`count`) and places it (`above`, `below`), and the text reads `[truncated: at least N
+  elements omitted: A above the visible area, B below it, C elsewhere]`.**
+  1. **What is counted.** The unread children of read elements, the omitted parts' roots, each named by its parent's
+     AXChildren. What lies beneath them is unknown, so every count is a floor, and the line says "at least" once.
+  2. **Where a part lies.** By the frame of the read element it hangs from, against what that element's ancestors leave
+     showing of the window (the clip, so a browser's visible area is its web area below the toolbar). Wholly above (its
+     bottom at most 1 pt below the visible top) is above. Wholly below (its top at most 1 pt above the visible bottom) is
+     below. Anything else is elsewhere: beside the visible area, overlapping it, without a frame, or a menu-bar item
+     left unread at the deadline. "Elsewhere" is printed only when it is not zero.
+  3. **Chromium's clamped strips.** An offscreen box is a strip at the viewport's nearer edge, so a strip at the top
+     edge counts above and one at the bottom edge below. A collapsed container's strip mid-viewport counts elsewhere.
+  4. **The wording.** A walk with no visible frame (a recorded menu-bar root) keeps the old `[truncated: N elements
+     omitted]`. The new line goes in the first-call document as the fourth paragraph of `docs/cua-api/agent-cursor.md`
+     (the surface inventory's "Table 3 addition (2026-11-06, #301)"), which also says to scroll toward an unlisted
+     element and observe again, and states the limits.
+  Proven offline: the placement rule (`testOmittedPartsArePlacedByTheEdgeTheirElementLiesPast`), the counts of a cut
+  page (402 omitted, 272 above and 130 below), and Chromium's strips placed by their edge; the renderer's line in
+  `test/services-engine-render.test.mjs`.
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling on #301.
+
+- **Superseded** by the #301 entry for ruling 66f90453 (2026-11-06, below), with the seeding it caps; `recordOnlyNodes`
+  is the one timing kept.
+  Decision (#301, 2026-11-06, the same branch; the ruling's item 1, question 4: the cap and the timings): **the
+  seeding stops 500 ms after it starts or at the observation's deadline, whichever comes first** (`seedCapMs`, carried
+  as `WalkLimits.seedMs`).
+  1. **The checks.** The cap is checked before each point and between a chain's parent reads. Each hit-test's messaging
+     timeout is the time left, at least 50 ms (the engine's floor for any bounded read), so one hung answer overruns the
+     cap by at most that. A parent read keeps the usual 1 s timeout, so a hung app can overrun the cap by one read: a
+     stated bound.
+  2. **Past the cap.** The seeds found stay, and the rest of the budget goes in document order
+     (`testPastTheSeedingsCapWhatIsSeededStaysAndTheRestIsReadInTheDocumentsOrder`).
+  3. **The timings.** The observation's `timings` carry `seedMs` (inside `walkMs`), `seedPoints`, `seedHits`,
+     `seedChains`, `seeds`, `seedPromoted` and `seedCapped`, present only when the seeding ran, and `recordOnlyNodes`.
+     Beside `nodeCapHit`, `walkMs` and `nodes`, they give the A/B's p50 and p95.
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling on #301.
+
+- Amended by the #304 and #309 entry (2026-11-06, below): the axis is chosen past an end child that overlaps the
+  first (step 2), and the bisection is shared with the tree's wide-list rule.
+  Decision (#301, 2026-11-06, the same branch; the ruling's item 4, question 5: the width rule's omitted branch): **an
+  element the width rule shows none of (more than 499 children, no visible subset) keeps, in the guard's record only,
+  the children whose frames meet the window, with their subtrees; the printed tree keeps the vendor's omission.** #299
+  found this branch cutting Safari's HN thread to the table container (45–71% checked).
+  1. **When.** Only an observation that returns a screenshot reads them, since the record exists only then. "The
+     window" is what the element's ancestors leave showing of it (the walk's clip), and an element they leave nothing
+     of (a list in a scroll area scrolled off) is not searched (the re-review of e474396e found hidden rows, whose own
+     frames overlapped the window, spending the record's budget before a shown list's).
+  2. **Finding them.** Reading every child's frame would cost what #299's click-time re-read measured on Safari's wide
+     tables (up to 1.1 s). So the children are taken to lie in order along the axis on which the first and last framed
+     children differ (a list's rows, a page's blocks). The first child not wholly before the window is found by
+     bisection, a frameless child judged by the next framed one within 8. Children are then taken forward until one
+     lies wholly past the window: about log2(N) frame reads, plus the shown rows', at most 1,000 read after the
+     bisection, and none once the deadline has passed. Children with no such order (first and last framed alike, or none
+     framed) give none, which is the container-only record of before.
+  3. **Their subtrees** are read for the record alone (role, labels, frame, actions, children; `readForRecord`), under
+     their own budget of 1,000 elements (`recordOnlyBudget`), outside the node budget. The search and the reads run only
+     once the tree's selection is done (`selectForRecord`), so the printed tree is the same with or without a
+     screenshot: a deadline they meet cuts the record, not the tree, and does not mark it truncated (the review of
+     1abb734d found the search and the reads interleaved with the tree's, a slow row costing the button after its
+     list). Their record entries carry negative numbers, outside the lineage, and no tokens.
+  Proven offline: `testAWidthRuleOmittedListKeepsItsShownRowsInTheGuardsRecordOnly` (a 600-row list scrolled 200 rows
+  down: the tree prints the list alone, and the record holds its 40 shown rows and their 80 cells, the point's cell
+  fully recorded), `testRecordedChildPositionsBisectAnOrderedListAndGiveNoneWithoutAnOrder` (with the deadline and the
+  read bound), and `testTheRecordsReadsNeverTakeTheTreesTime`.
+  **What the hosted A/B must still measure, before and after on #299's pages** (the ruling's condition, unit tests
+  cannot): the guard's checked share at 0, 25, 50 and 90% down; `walkMs`; the seeding's real cost (`seedMs` p50 and
+  p95, `seedCapped`'s rate); whether Chrome clamps offscreen boxes to the web area's edges, as the strip placement
+  assumes; the record-only reads' cost on Safari's wide tables and whether their rows lie in order; and repl-parity's
+  and the docs-oracle's lanes unchanged.
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling on #301.
+
+- Amended by the #304 and #309 entry (2026-11-06, below): #304 measured item 2's limit at none in 234 observations, and
+  a wide list's shown run is now read first.
+  Decision (#301, 2026-11-06, the same branch; the design session's ruling 66f90453 on the hosted A/B, run 42231389508
+  on ab0e019a; supersedes the when-to-seed and cap entries above, amends the marker entry): **the seeding is dropped,
+  and the frame-ordered visible-first walk stays on every app, Chromium included.**
+  1. **What decided it.** The A/B measured the guard's checked share at 100% on every cut page and position of #299's
+     set, in Chrome for Testing and Safari. The seeding brought nothing forward: `seedPromoted` was 0 in 56 of 56 rows,
+     at a p95 of 250 ms, because the frame-ordered walk had already read what the window showed. So the code goes, not
+     only its call: the trigger and its distinct-element count, the hit-test grid and its cap (`seedCapMs`,
+     `WalkLimits.seedMs`, `seedPoints`), the source's hit-test and parent seams, the seeding's timings (`seedMs`,
+     `seedPoints`, `seedHits`, `seedChains`, `seeds`, `seedPromoted`, `seedCapped`) and its tests.
+  2. **The limit, in place of the grid's.** A visible control under a container that reports a collapsed (1-pt) frame
+     waits with that container, so the budget can still cut it, and the guard then checks it container-only. #304 is the
+     spike that measures how often, and where the seeding would be revisited. Building this limit's test found the
+     guard's record treating a strip-framed container as framed: its unrecorded children did not count against its
+     parent, so at a point under it the deepest recorded node was a complete-looking web area and an interactive hit
+     there refused as `interactiveHit`, a false refusal (main has it too). The record cannot tell a collapsed container
+     (children shown outside its frame) from a strip that clips them (Chromium clips by layout overflow whatever the
+     role: an `overflow:hidden` list stays `AXList`), so the role decides nothing (the re-reviews of
+     4e73574a..b2685041 and b2685041..c36c3c81 found a role-based rule passing a new button elsewhere as
+     `unrecordedDescendant`, for a scroll area and then for a list). The live hit decides: `screenshotNodes` marks a
+     strip (1 pt or less either way) whose children the record lacks (`thinGap`), and keeps main's completeness rule
+     otherwise; where the verdict would refuse an interactive hit (`interactiveHit`) or an element route's target
+     (`pressedOther`), it reads that element's parents up to its window (`ancestors`, the climb the re-created search
+     makes) and, when they pass through such a strip (CFEqual) inside the chosen node's recorded subtree (the node or
+     its recorded descendants, `gapsBelow`), reads `unrecordedDescendant` instead: the node, which passed as every node
+     does, is all that is checked. A strip outside that subtree counts for nothing (the re-review of
+     c36c3c81..9f5a0452 found every strip in the record counting, so a new button under a collapsed group, covering a
+     fully recorded button there, passed; `testAStripOutsideTheChosenNodeNeverStandsBehindANewButtonCoveringIt`, which
+     refuses on both paths and fails without the scoping). So a hit under the collapsed container passes container-only,
+     a new button elsewhere in its parent is refused whether the strip clips or not, and a strip whose subtree the
+     record holds changes nothing. A strip re-created since the screenshot matches no hit's parents, and refuses: the
+     safe direction. **The cost:** none at a kept point, and none when the record has no such strip; otherwise one
+     AXParent read per level of the hit's depth (typically 10–30), only on a verdict that would otherwise refuse;
+     unmeasured live, of the order of #296's own re-created search (p95 about 10 ms on Chrome). Proven offline:
+     `testAVisibleControlUnderACollapsedContainerCanStillBeCut` (the hit under the strip, `unrecordedDescendant`;
+     `interactiveHit` with the check removed) and `testAStripsOmittedChildNeverStandsBehindANewButtonElsewhere` (an
+     `AXScrollArea` strip and an `AXList` strip, each with a new button elsewhere: `interactiveHit`, and `pressedOther`
+     for an element route; both `unrecordedDescendant` with the parents' test removed).
+  3. **The marker** reads `[truncated: at least N elements omitted, above the visible area]`, `…, below the visible
+     area]` or `…, above and below the visible area]`, the direction from where the omitted parts lie (`above` and
+     `below` stay on the wire, and in the tests). A part placed neither way (beside the visible area, overlapping it,
+     without a frame, a collapsed container's strip mid-viewport; the A/B never saw one) counts in the total with no
+     direction word, and with none placed either way the line has no direction. The first-call paragraph and its
+     mirrors change with it.
+  4. **Two more limits** (stated here and in the first-call paragraph). Chromium re-creates the AXColumn elements it
+     synthesizes for a table, and its table-header AXGroup elements, at every observation, so under the vendor's
+     CFEqual rule they take new tokens, and the model new IDs, every time: on main as well (run 42243553112), the
+     visible-first walk only making them reachable on long tables (#303). The 2–7 read failures per observation that
+     only this branch shows (`fetchFailures`) are those same stale handles, read through a parent's AXChildren after
+     Chromium replaced them.
+  Proven offline: `swift test` (`VisibleFirstTests` without the seeding's tests, the limit's test above) and the
+  renderer's marker test; the first-call documents in their suites.
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling 66f90453 on #301.
+
+- Decision (#305, 2026-11-06, `fix/305-recorded-hit`; the design session's ruling 45f5e5be on #305's live check, amended
+  by ruling a27fc57c on the hosted A/B (item 2); the live check's runs
+  42251639474, 42256453844 and 42262640885 on c4057c3a and 4525925e, kit `probe/305-hosted` a6562d00; amends #296's
+  items 2b and 5): **an interactive hit that is itself a recorded node the screenshot showed at the point, still there,
+  is kept as `recordedHit`.** The live check clicked real coordinates on still pages and found #296 refusing every
+  flagged point as `interactiveHit` with `identity: handle` (Safari's toolbar 12 of 12, Finder's list view 12 of 12,
+  GitHub's code view 6 of 6, Wikipedia's hatnotes 4 of 8; every control point kept): the recorded node was in place and
+  held the point, while the hit was another interactive element the guard could not relate to it. Three layouts make
+  the deepest recorded node at a point something other than what the hit-test answers:
+  - **Stacking order.** GitHub's overlay AXTextArea (`#read-only-cursor-text-area`) is a sibling of the code-lines
+    AXGroup at the same depth and frame; the tie goes to the later group, while Chromium answers the textarea on top.
+    In Safari on macOS 26 the page view AXGroup (depth 4) spans the whole window under the toolbar, whose controls sit
+    at depth 2 and 3.
+  - **Wrapped text.** A two-line link's AXStaticText box (614 × 44) takes in the link before it, which the hit-test
+    answers.
+  - **The edge.** Finder's name AXTextField starts at x 231 and answers the hit-test at x 230, where the chosen node is
+    its complete parent AXCell.
+  1. **The rule** (ruling 45f5e5be, rules 2 and 3 as amended by ruling a27fc57c). Where the verdict would be
+     `interactiveHit`, and on #282's element route where it would be `pressedOther`, the click is kept as `recordedHit`
+     when all three hold (`recordedHitAtPoint`): (a) the hit is itself a recorded node, its handle `CFEqual` to a
+     recorded one, or by #296's full re-created identity (its role, a frame within 2 pt of the recorded one moved by
+     the window's shift, and a title, else description, that agrees where both read), no looser match; (b) the hit has
+     not moved: its frame read now lies within 2 pt of its recorded frame moved by the window's shift; (c) the point, in
+     the screenshot's space (the posted point less the window's shift, as the guard already places it), lies in a shown
+     frame widened by 2 pt: the hit's own, or else that of the hit's nearest recorded ancestor (the nearest framed node
+     above it in the record, frameless ones passed through), when that ancestor has not moved either (its frame read now
+     within 2 pt of its recorded one), is not an AXWindow, AXWebArea, AXScrollArea, AXSplitGroup or AXApplication, and
+     covers at most a quarter of the window's area (the record's root); an ancestor that fails any of these leaves the
+     hit's own frame alone, and none further up is tried. A shown frame is the part the clipping ancestors left in the
+     image (`ScreenshotNode.shown`), so a node scrolled under a clipping boundary (page content under a browser's
+     toolbar) never passes there, however its AX frame lies (the coordinator's ruling on the build: "the screenshot
+     showed this element at this point" means the part it showed). The chosen node's own checks (`nodeGone`,
+     `frameMoved`, the incomplete container's condition and #301's thin-gap rule) run first, unchanged, so every class
+     #296 refused still refuses: the chosen node gone, swapped or moved is judged before the hit is looked at. The reason
+     is its own in `cua/stalePoint` (a kept verdict), and a new field, `recordedHitBy` (`"hit"` | `"ancestor"`), says
+     which frame carried the point, so the evidence can count which rule carried each click.
+  2. **The amendment** (ruling a27fc57c, on the hosted A/B on 62e9f026, runs 42269993080, 42294564231 and
+     42299375682). The A/B kept every still-page point bar one and refused every cell of #296's stale suite, at a
+     `recordedHit` cost of p95 2.9 ms, every pass matched by `CFEqual`. The one refusal was Safari's address field at
+     (460, 50), 8 pt above its frame (y 58–89): Safari answers the field anywhere in its toolbar item's padding, and the
+     field's recorded parent AXGroup spans y 40–92. The first build's (c), "its frame read now, widened by 2 pt, holds
+     the posted point", became (b), the hit has not moved, and the ancestor's frame was added to (c). Where (c) reaches
+     the ancestor, Finder's list view keeps a point 3 pt left of the name field inside its unmoved AXCell, which the
+     first build refused.
+  3. **Three readings of the implementer's** where the ruling is silent. (i) The re-created identity applies only while
+     the recorded node's own handle reads no frame, as #296 takes a re-created handle only when the node's handle is
+     gone; a hit that is a live lookalike of a recorded node (another element of its role, frame and label over it) is
+     not that node, so a new button covering a recorded twin still refuses (`VisibleFirstTests`' strip test, which
+     would flip to kept otherwise). (ii) A hit that is a recorded handle is that node and no other: its own recorded
+     frames decide (b) and (c), and no gone lookalike at the point stands in for it. (iii) The meta says which frame
+     carried the point (`recordedHitBy`), but not whether the hit matched by handle or by the re-created identity.
+  4. **The limits.** (i) The ruling's: two recorded elements that overlapped at the point in the screenshot can trade
+     places on top while both stay in place, and the click then lands on the one now on top. (ii) A recorded popover
+     hidden with `opacity:0` keeps receiving the click, and one hidden with `opacity:0` and `pointer-events:none` lets
+     the click through to the button under it, since the AX hit-test still answers the popover's text; both pass as
+     `nonInteractiveHit`, not `recordedHit`, as they do on main. One hidden with `visibility:hidden` refuses as
+     `nodeGone`. (iii) Inside an ancestor that carries (c), the point may lie in the ancestor's padding beside the hit
+     rather than on it, so a recorded control answering anywhere in its small, unmoved container passes.
+     `docs/cua-api/agent-cursor.md`'s guard paragraph states none of the guard's limits, so it is unchanged.
+  5. **The cost:** nothing at a point #296 kept; where it would refuse, the hit's frame, role and labels, a `CFEqual`
+     pass over the record, a frame read per recorded node of the hit's role and frame whose handle it does not match,
+     and the ancestor's frame.
+  Proven offline (`RecordedHitTests`, 11; the removal of each rule, each bound and each excluded role fails at least
+  one test, by mutation, `~/.local/share/187/mutate-305.py`): GitHub's overlay sibling, also with the window moved
+  700 pt; Safari's address field and Reload over the full-window page view; Safari's toolbar padding carried by the
+  field's parent AXGroup (`recordedHitBy` `ancestor`, on the element route too), refused when the parent moved and when
+  the field moved inside its unchanged parent; the wrapped link text over its neighbour; Finder's edge kept by the
+  field at 1 and 2 pt and by its cell at 3 pt and 2 pt past the cell, refused 3 pt past the cell, and under an area
+  role 3 pt past the field; a recorded hit unrelated to the point inside a container refused for each excluded role, for
+  a group over a quarter of the window, and for a small group above the nearest ancestor, kept for a group of a quarter
+  or less; rule (a)'s re-created match kept in place and within 2 pt, refused 3 pt off, with another label, another
+  role, as a live lookalike, as a new element, and as a recorded node from elsewhere in a gone lookalike's place; the
+  clipping, page links scrolled under Chrome's toolbar answered at a toolbar point refused wholly and partly clipped
+  out (kept 1 pt from where one showed; the test fails under the full AX frame); rule (b)'s moved and unread frame
+  refused; every #296 class still refused (#294's frame re-read with the same handle and with a recorded Forward in
+  Reload's place, a moved button with a recorded neighbour slid in, a feed prepend, a swapped-in element new or
+  recorded, a link that replaced a button, a same-role swap with a changed label, a hit recorded elsewhere); and the
+  element route kept as `recordedHit` (and after its wait's recheck), refused `pressedOther` for a target recorded
+  elsewhere, moved over the point, new, or with its frame off the point.
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's rulings 45f5e5be and a27fc57c on #305.
+
+- Decision (#304 and #309, 2026-11-06, `fix/304-wide-list`; the design session's ruling 7b2a5a70 on #304's spike,
+  hosted macOS on f20a25ee, kit `probe/304-hosted` 07ed050c, runs 42313992098, 42315529833, 42317669249 and
+  42319757707; rule B as amended by ruling f1a7589f on the hosted A/B of f20a25ee against 566e3612; amends #301's
+  ruling-66f90453 entry, item 2, and its item-4 entry, step 2): **a wide list's shown children are found by frames and
+  read first, an AXColumn's children wait until nothing else is left, and the record's bisection chooses its axis past
+  an end child that overlaps the first.**
+  1. **What the spike found** (234 observations, 57,836 clickable points on a 20-pt grid at 0, 25, 50 and 90% down;
+     Chrome for Testing on 20 pages, Safari on 7). *Hole 2, a sibling starved by a wide list*, in 37 observations,
+     1,684 points left container-only (2.9%): Chromium answers `AXVisibleChildren` on an `AXTable` with every row, so
+     the width rule kept all 3,001 and the selection read and charged each one to learn its frame, and each `AXColumn`
+     listed every cell again (818 offscreen cells charged on the 3,000-row table, 2,042 on IANA's media-types page).
+     The 4,000-node budget ran out before the walk reached Chrome's toolbar and tab strip, and on IANA the page's next
+     visible tables: the guard checked 48.6% at 90% on IANA, 89.8–94.1% on the 3,000-row table, 32.8% at 90% on the
+     6,000-row one. *#309, the record's bisection*, in 8 observations, 804 points (1.4%): Safari's docs.python.org body
+     (667 children, which the width rule omits) ends with a 10-pt group framed at the body's top, so the first and last
+     framed children tied on both edges and `recordedChildPositions` returned none (36.8–91.1% checked, nothing cut).
+     The spike's replay over the wide engine's full trees priced the fixes: reading a wide list's frames before
+     charging, bisected to the shown run, checked 100% on all 119 cut observations for +3 ms p50 and +24 ms p95 of walk
+     (a frame read 0.06 ms against 0.55 ms for a full read); with the columns' children not taken up, +2 / +5 ms; the
+     columns alone, 98.4% mean and 32.8% min; a budget of 8,000, +2,011 / +3,836 ms.
+  2. **Rule A, the axis** (`ChildFrames.axis`, shared by both bisections). From the first framed child and a framed
+     child near the end: vertical when the end child's top lies below the first's (main's rule), horizontal only when it
+     lies wholly to the right of the first (main took any later left edge). An end child that says neither is passed and
+     the next one back tried, over 32 children from the last (main gave up at the first framed one, within 8). So #309's
+     group at the body's origin is passed, and so are Chromium's columns, each starting at the table's top and
+     overlapping its first row, which main's horizontal rule would take for a horizontal list. The vertical rule stays
+     main's on purpose: a first child that spans the list (a sidebar beside blocks that follow it down) is overlapped by
+     every end child, and "wholly below" would find no vertical axis there, then a false horizontal one. With no child
+     framed, or none of the probes saying an axis, there is still none: the record keeps none of the children, as before.
+  3. **Rule B, frame before charge** (`shownChildPositions`), as ruling f1a7589f amended it: **it never leaves unread a
+     shown child that main would have read before the cut.** Of an element taken up in the tree's selection with more
+     than 100 children, whose clip shows, the children that show are found by frames alone, none of those reads charged:
+     - up to 512 children (about 31 ms of frame reads at most), each child by its own frame: one that shows beyond a
+       strip in the clip, or has no frame, is read first, wherever it lies;
+     - above 512, the run that shows is bisected (`shownChildRun`: its start the first child not wholly before the clip,
+       its end the first wholly past it, along the axis, a frameless child judged by the next framed one within 8, one
+       with none counting as before at the start and past at the end, a frame reaching at most 1 pt into the clip
+       counting as outside, for Chromium's strips; the record's bisection keeps its edge at 0), then checked against
+       samples: the first and last 32 children, and 32 spread evenly between them. An end sample outside the run that
+       shows, or has no frame, is read with it (a fixed or sticky head or tail). A middle sample that does not lie where
+       its place says (before the clip ahead of the run, across it in the run, past it after the run; a frameless one
+       says nothing) means the children are not one run in order, and the list is taken up as on main. This is the
+       ruling's monotonic order, stated against the run, so it also catches a run whose bisected start a shown outlier
+       pulled ahead, holding unshown children it would charge. About 2 log2(N) + 96 frame reads, plus the axis's
+       probes from the end.
+     **The cost, as traced** (ruling 0092b8c7's follow-up, on the A/B of bc4d395f, whose `widthMs` B − A was +178 ms on
+     the 6,000-row table, +86 on the 3,000-row one, +79 on the barred one, +78 on Safari's wiki-article and +30 on
+     Chrome's py-docs, against about 0 on 566e3612). The read counts are the rule's: over the full dumps each judged list
+     reads, per observation, 118 frames on the 6,000-row table, 114–117 on the 3,000-row one, 100–116 on IANA's tables,
+     99 on Safari's 695-item list, and every child of a list of 512 or fewer (215 for wiki-article's references, 249 and
+     251 for wiki-table's table and list, 600 over py-docs' three lists); a gap the queue takes up later is pushed, not
+     judged again, and frames are cached per walk, so nothing is read twice. So the excess is the live price per frame
+     read, not the count: py-docs' 600 reads at +30 ms is the runner's 0.05–0.06 ms, while Chromium's large tables cost
+     about 0.7–1.5 ms per read (about 117 reads for +86 to +178 ms), most likely the tables' last children (Chromium
+     re-creates their columns and header group at every observation, #301's limit, so the axis probe and the end
+     samples read stale handles there; the 6,000-row table's dump could not read 7 of them) or random access across
+     rows Chromium has not laid out near the viewport. The corrected model: a judged list costs its read count (as
+     above) times the page's live price per frame read, which is about 0.06 ms in ordinary lists and up to about 1.5
+     ms in Chromium's large tables, so about 100–180 ms per such table per observation. What changed for it: a column
+     taken up from `lastly` whose children have all been read (Chromium's cells, through their rows) is no longer
+     judged, since nothing of it is left to read first (on an uncut 3,000-row table that was about 120 reads per
+     column); one with children no other parent lists is judged as any list is (the review of dc4b5f34..aab236fb found
+     the first version skipping every column, so a column of 250 own children behind a visible group of 100 lost its 35
+     shown children at 250 nodes, which main read), and the walk's timings count the rule's
+     own reads apart (`wideLists`, `wideListFrames`, `wideListMs`, inside `widthMs`; `frameReads` all of them), so the
+     next run can tell the rule's reads from the width rule's and price each.
+     The children read first go on the stack; each run of the others waits, unread, as an entry of `deferred`, placed in
+     the document's order by its first child and taken up, when it comes, as `expand` takes up children. No axis, a
+     failed check or the deadline takes the list up as on main. A list of exactly 100 is read whole, as before. The
+     record's own reads (`selectForRecord`) take every child up, unchanged.
+     **What amended it.** The hosted A/B of main f20a25ee against 566e3612 (2 reps, its noise floor measured) closed
+     hole 2 and #309: the 3,000-row, barred and 6,000-row tables, iana-media and Safari's py-docs at 100% at every
+     position; uncut trees identical, descriptions included; #305's sweep refusing none, every one of #296's 74 stale
+     cells still refused; no deadline or byte flag differing; cut walks +13 ms p50, inside the noise. It found two
+     regressions against main, both of the first build's single contiguous run: a list in two CSS columns (Wikipedia's
+     references, one AXList of 215 or 251 children running down the left column and starting again at the top of the
+     right, its offscreen children clamped to strips at both edges, so not monotonic along the vertical), where the
+     bisection landed on the right column's run and the cut took the left column's shown children (Chrome's
+     wiki-article at 90% fell from 100% to 70.9% checked, wiki-table at 90% from 100% to about 63%, both reps); and a
+     position:fixed toolbar as the last child of a 2,500-paragraph body (the kit's `/fixedtail`), never read at 25, 50
+     and 90%, so 11–13 points on its buttons refused as `interactiveHit` on a still page where main kept them (the
+     first build's limit (iii), worse live than container-only).
+     **The invariant as a check** (`WideListInvariantTests`): each tree is walked by the real `TreeWalk` with the rules
+     off (`wideListRules`, a test-only switch: main's selection) and on; for every element main took up, each child
+     that shows in its clip (its frame against the clip; a frameless child is not judged) and that main read, the rules'
+     walk must have read: any such child it left unread is a loss, with no excuse (the review of 566e3612..bc4d395f
+     found the first check's excuse, an element read but not taken up, passing a loss the rules caused: the two
+     parents' case below).
+     Over the regression shapes and the earlier tables at three budgets each, and, given `CUA_304_TREES`, over the
+     spike's trees: the wide engine's full trees, each AXColumn's children rebuilt from its table's rows as the spike's
+     replay did, the budget less the menu bar's nodes. A dump holds each element once, under the parent it was emitted
+     at, not the other parents that list it, so a tree in which any rebuilt list falls short of the count it listed
+     (`chosen`) is *alias-incomplete*, reported apart and never counted as verified (the same review found a loss
+     vanishing in such a round trip). Over the 282 trees (the 242 of the spike's three runs, 42313992098, 42315529833
+     and 42317669249, and the 40 of its live column-skip check, 42319757707): **154 verified, 128 alias-incomplete
+     (863 lists), 0 losses in either.** Every short list lies in a table: 526 header AXGroups (which list the header
+     cells their rows hold), 312 AXColumns whose rebuilt cells fall short, 21 AXTables and 4 AXRows; so Chrome's
+     tables (the local tables, IANA, Wikipedia's article and table, py-docs, the float pages) are checked only as
+     rebuilt, not verified. The full child-list dumps (`chosenIds`, run 42352124120: 52 uncut trees, one rep, Chrome's
+     local tables, 6,000-row table, IANA, wiki-article, wiki-table, py-docs and the float and overlay pages, Safari's
+     mdn-float and wiki-article) list each row's children by the rows they were emitted as, shared children in every
+     parent's list, so nothing is rebuilt; a child a dump never emitted (7 on each 6,000-row tree, the stale columns
+     and header group) is loaded as an unreadable element in its place, as the live walk met it: **52 verified, 0
+     alias-incomplete, 0 losses**, the table pages among them. The check finds
+     what the A/B found: with rule B as first built (one bisected run, no per-child judging, no samples) the replay
+     counted 1,141 losses even with the earlier excuse in place, 123 and 118 on Chrome's wiki-article at 90% and 205 per
+     rep on wiki-table at 90%, and 1 to 4 on HN's thread, IANA and the local tables.
+     **Two parents, the earlier place** (`placeEarlier`, ruling 0092b8c7 on that review's case). An element two parents
+     list can be read through the later one, since the rules leave a wide list's children that do not show waiting
+     while a visible parent later in the document reads it at once; its own children then waited at the later place,
+     behind whatever waited between the two, where main had read it through the list and queued them first, so a cut
+     main passed could take its shown child (a 600-child list whose offscreen first child holds a shown child, a section
+     of 300 waiting leaves, then a visible group listing that child again: main read the shown child at 620 nodes, the
+     rules did not). Now, when the selection meets an element it has read at an earlier place in the document while its
+     children still wait, the element takes that place (its path, depth and what the place leaves showing) and its
+     waiting entry moves there, in the document's order; one that shows at the earlier place is taken up at once, and an
+     AXColumn's entry moves within `lastly`. Nothing is read or charged: the walk with the move and without it stop at
+     the same node count, apart by the shown child against the section's next leaf, their bytes less the tokens apart
+     by those two nodes alone. The element is emitted once, at its preorder place, as before; its action descriptions
+     are still judged against the place it was read at (`readPath`), so the preorder pass re-asks where that differs.
+     The move is one of the wide-list rules, off with them, so the check's baseline stays main's selection.
+  4. **Rule C, the columns.** An `AXColumn` read in the tree's selection has its children set aside in their own queue
+     (`lastly`), in the document's order, taken up only once `deferred` is empty; so the cells Chromium lists again under
+     a table's columns are charged only once nothing else is left, and in a walk nothing cuts they have all been read
+     through their rows by then. Found building it: with rule B in place, rule C binds where a column has at most 100
+     children (or its run search fails), since a longer column's offscreen cells are deferred by B behind the rows'
+     cells in the document's order, already read through the rows when they come up.
+  5. **What stays.** A walk nothing cuts reads every element once and emits exactly the plain preorder's tree, tokens,
+     record and counts; only the read order and the walk time move. Where the cut falls, the tree is printed in the
+     document's order with #301's marker, unread children counted and placed by the element they hang from as before.
+     The guard's record (#301 item 4), the thin-gap rule and #305's `recordedHit` are unchanged in meaning; the record
+     holds more where rule A now finds an axis, which is #309's fix. An element two parents list (Chromium's cell, under
+     its row and its column; a wide list's child that another parent lists later) is read once, through whichever
+     place the queues reach first, and so is its subtree, so their action descriptions were judged at those places.
+     Once the selection is done, a pass over the read tree in emission's preorder (`describeAtPreorderPlaces`) judges
+     them again wherever an element's preorder place differs from the place it was read at: through `describe`, asking
+     the system only for an action whose cached answer comes from a later place. So an uncut walk's descriptions are
+     the plain preorder's whatever the queues read first (the review of f20a25ee..13805b82 found a column listed before
+     its row giving the row's description to both, and the re-review of 13805b82..0198ebe7 the same one level down,
+     under the shared cell). The pass makes no query past the deadline, and the deadline marks the walk cut, as a read
+     past it would; the selection's own loop asks nothing at a repeated place. Its growth is charged to the byte budget
+     by `describe`'s rule, a growth that does not fit refused, so the emitted tree stays within the budget; under a cut,
+     the places are those under read parents. `tech-debt-tracker.md`'s #301 entry (a growth refused near the byte
+     budget before another name's shrink) is unchanged by this: each re-judgement is still judged as it comes.
+  6. **The limits.** (i) *Hole 1, a visible control under a container that reports a collapsed (1-pt) frame*, stays a
+     stated limit (#301's): the spike measured it at 0 points in 234 observations, because Chromium gives empty or
+     collapsed wrappers their descendants' union bounds; a strip with showing children arose only as the
+     offscreen-clamped ancestor of fixed or sticky content, which the walk had read early. (ii) *A wide list whose shown
+     run, with what precedes it, takes the whole budget* still starves what follows it: a table showing 35 rows of 2
+     cells under a 100-node budget leaves the toolbar after it unread. The 6,000-row table at 90% is not that case: its
+     shown rows and the toolbar are read within 4,000 nodes, the rows before them waiting, as the replay predicted.
+     (iii) In a list of more than 512 children, a shown child in the middle, outside the bisected run, that the samples
+     miss (it lies between two of them, which are where their places say) waits with its run of unshown neighbours, so
+     a cut can still leave it unread. (iv) The move to an earlier place happens only when the selection meets the
+     element there before the cut; an earlier place it never reaches leaves the children waiting at the later one.
+  Proven offline (`WideListTests`, 10, and `WideListInvariantTests`, 13; `swift test`; removing each rule, each bound,
+  each sample check, the frameless rules, the preorder pass, its deadline and its places' propagation to a subtree
+  fails at least one test, by mutation,
+  `~/.local/share/187/mutate-304.py`): the uncut walk equal to the plain preorder over a 300-row table of 3 columns, a
+  150-row table at its end, lists of 101 and of 600, a column listed before its row with one cell and with a child
+  under that cell, and a wide list's row before its run listed again by a later sibling in view, each element read
+  once, the aliases' descriptions their preorder place's; the pass stopping at the deadline, the walk marked cut by
+  it, with slow repeated queries; a 300-row table
+  scrolled to its middle keeping the toolbar after it, its shown rows with their cells, the rest of the budget on the
+  rows above in order, and the marker's counts; lists of 100 (read whole, toolbar cut) and 101 (run first, toolbar
+  kept); the 6,000-row table at 90%; a table at its end whose two columns of 99 cells wait, no offscreen row's cell read
+  under the cut; the stated limit (ii); the run with frameless children at its start, with Chromium's strips, and with
+  no axis; the axis past an end child at the origin, past 20 column-like end children and beside a sidebar, and none
+  for stacked or overlapping children; #309's shape in a walk, the record holding the shown children; the two-column
+  list of 215 (both columns' shown items and the toolbar after the list read, no violation), the fixed tail of a
+  601-child body (the toolbar read with the run), the two-column list of 600 falling back to main, each middle-sample
+  place checked alone, every frame read up to 512 children and fewer than 200 for 513, a frameless child read first,
+  the two parents' case (the earlier place winning, no loss at 620 nodes, the element emitted once at its preorder
+  place, the move charging nothing; an element that shows at the earlier place taken up at once there, main not
+  moving it), a list of 6,000 within its stated frame reads uncut and cut, its columns taken up last unjudged, a
+  column of its own children taken up last still judged, the
+  uncut walk over a waiting alias with a shown child, and the loader flagging a dump that
+  lost an alias as alias-incomplete.
+  The invariant check over the spike's trees: `CUA_304_TREES=$HOME/.local/share/probe-304 swift test --filter
+  WideListInvariantTests` in `native/engine` (about 5 minutes; the spike's part skipped without the variable), and the
+  full dumps with `CUA_304_TREES=$HOME/.local/share/probe-304/full-42352124120` (about a minute); `CUA_304_FRAMES=1`
+  prints each tree's frame reads per judged list.
+  **What the hosted A/B must still measure**, on the amended rule against main: Chrome's wiki-article and wiki-table
+  at 90% and `/fixedtail` at 25, 50 and 90% back to main's share, with the pages the first A/B closed staying at 100%;
+  `walkMs` p50 and p95, now with up to 512 frame reads per list of 101–512 children and about 2 log2(N) + 96 above;
+  `wideListMs` and `wideListFrames` against `widthMs`, to price the rule's reads on Chromium's large tables and see
+  whether the stale columns and header group carry them; and repl-parity's and the docs-oracle's lanes unchanged.
+  Date/Author: 2026-11-06, cursor235's implementer for the design session's ruling 7b2a5a70 on #304 and #309.
+- Decision (#312, 2026-11-07, `fix/312-firefox-webarea`; the design session's ruling cb252e88 on #287's findings, issue
+  comment 6709964394; item 3 as amended by ruling 9d97e82a on the hosted check): **a clipping frame that reads {0, 0,
+  0, 0} is unknown, not a place: it cuts nothing, and on the observation that enabled the process's accessibility it is
+  polled first until it is a place, for up to 1 s after the enablement.**
+  1. **The mechanism** (#287's hosted runs: 42379297174 and 42376953140, the cells; 42386958490 and 42388802262, the
+     timeline; Firefox 159.0 and 158.0.1). Gecko's accessibility comes on at the engine's first contact, with nothing
+     written (its AXEnhancedUserInterface then reads true, `enablementPrior` "true"). On that observation the AXWebArea
+     reads {0, 0, 0, 0} while its scroll area and every page node read real frames; the first sample after the
+     observation answered (0.55 s later, 0.83 s and 1.26 s after it began) read the web area real, {400, 104, 620,
+     607} under a {400, 104, 620, 606} scroll area, and so did every observation with `accessibility.force_disabled`
+     −1. AXWebArea is a clipping role (`clippingRoles`), so the record left no page node a shown part, its deepest node
+     at a page point was the scroll area, and the live hit there, a control, was `interactiveHit`: every page click
+     from that screenshot refused, 4 of 4 first observations. The walk's selection deferred the page too, since a zero
+     frame shows nothing.
+  2. **The rule** (`unplacedFrame`, Routes.swift). A clipping element whose frame is exactly {0, 0, 0, 0} cuts nothing:
+     in the record (`screenshotNodes`), the element route's live `visibleFrame`, the walk's selection (`enters`,
+     `childClip`) and the token re-fetch's order (Lineage.swift `matching`). What its descendants show is what the
+     clipping ancestors above it leave; on Firefox the scroll area clips the page to within a point of the real web
+     area. The element itself is never chosen at a point (no size). This holds on every observation, at no cost.
+  3. **The poll** (`TreeWalk.settleUnplacedClip`, `ClipRereadPoll`; ruling 9d97e82a). On an observation whose
+     enablement step set the process's `freshSince` (its first observation by the engine, or a write), the first
+     clipping frame the walk reads unplaced is read again, uncached, every `clipRereadPollMs` (100 ms), stopping at the
+     first read that is a place, or once `clipRereadAfterMs` (1 s) after that step has passed, and read at least once;
+     a real frame replaces the first read in the tree, the record and the selection alike. A clipping frame met after
+     the poll was read after it, so it gets none: one poll per observation. The poll ends no later than halfway from its
+     start to the walk's deadline (`clipRereadDue`), so a short request deadline is never spent on it, and the walk's
+     own time counts toward the second. An observation that enabled nothing, or met no unplaced clipping frame, waits
+     for nothing and reads nothing more. The first build re-read once at the 1 s point; the hosted check (run
+     42394416982, Firefox 159, 2 reps, `docs/evidence/2026-11-07-firefox-webarea/`) found it "real" in 22 of 22 and
+     every page click from the first screenshot kept (main refused 14 of 14), but at about +860 ms on the first
+     observation's `totalMs`, nearly all of it the wait, the frame being real about 0.55 s after that observation
+     ended. The poll supersedes that measured cost.
+  4. **The meta** (the observation's timings, and `cua/observation` through the service's whitelist): `unplacedClips`,
+     how many clipping frames stayed unplaced and cut nothing; `clipReread`, "real" or "unplaced", with
+     `clipRereadReads`, the poll's reads, and `clipRereadMs`, its waits and reads together, when the poll ran.
+  5. **The scope, and why.** The ruling's generalization is any clipping ancestor (a scroll area, a web area, a
+     page-scrolling group, a sheet, menu or popover) whose frame reads zero-size while its descendants have real
+     frames. The rule takes the exact {0, 0, 0, 0} only: an element laid out has a place, so a frame of no size
+     anywhere else (a scroll area collapsed at its place, {x, y, w, 0}) is a place, and still hides what it holds. The
+     descendants' frames are not consulted, since they cannot change the outcome: with none real, nothing under the
+     element is choosable anyway. Non-clipping elements are untouched (they cut nothing already; a collapsed one still
+     makes its children wait, #301's stated limit). Not re-read: an element click's live `visibleFrame` and the
+     re-fetch, which are not observations.
+  6. **Limits.** The 1 s bound is set from the timeline's bounds, not its arrival: the samples came every 500 ms, so
+     the frame arrived somewhere between the web area's read and the first sample. In the slower run it could have
+     come as late as 1.26 s; a poll still unplaced at its bound falls back to item 2, which on Firefox loses only the
+     web area's own frame. Firefox's first observation pays the time until its frame arrives, rounded up to the next
+     100 ms read, at most 1 s after its enablement step. A
+     clipping element truly laid out as a 0 × 0 box at the screen's origin is taken for unknown: possible only in a
+     window whose own frame starts there (a full-screen window), and with nothing it hides then shown.
+  Proven offline (`UnplacedClipTests`, 7, `ClipRereadPollTests`, 4, and `ClipRereadDueTests`, 1, over #287's Firefox
+  window as a fake tree and a fake clock): the poll taking the real frame at its first read after it arrives (550 ms
+  in, read at 600 ms, three reads), so Apply's point holds Apply and a click on it is kept (`sameElement`), failing
+  without the fix; the frame still unplaced at the bound (seven reads, every 100 ms to 1 s) cutting nothing, the
+  scroll area still hiding a link past its edge, the element route's visible frame alike, and the meta; no wait or
+  re-read when the frame is real, for a non-clipping group's {0, 0, 0, 0}, or when no poll is given; one read without
+  waiting past the bound, the last wait cut to the bound, an unreadable frame read again, a short deadline ending the
+  poll halfway to it, a zero-sized frame at a place taken; at most one poll, a second unplaced clip counted; a collapsed clip
+  at its place ({x, y, w, 0}, {x, y, 0, 0}, {0, 0, w, 0}) hiding Apply in the record, the element route and the
+  selection; an unplaced web area's children taken up at once, before a busy sibling the budget then cuts, and the
+  re-fetch finding a re-rendered text area below a page group there; and the due time's bounds. Each of 33 rules and
+  bounds removed in turn (`~/.local/share/187/mutate-312.py`) fails a test.
+  **What the hosted check must verify on real Firefox** (159 and 158.0.1, fresh launch, #287's `firefox-a` cells and
+  timeline; done for the single re-read, item 3, and to be repeated for the poll's `clipRereadReads`, `clipRereadMs`
+  and `totalMs`): the first observation answers `clipReread` "real" with `clipRereadMs` and the web area's printed frame
+  real, or "unplaced" with `unplacedClips` 1; either way #282's page cells from that screenshot are no longer refused
+  as `interactiveHit` (Apply, the checkbox and the textarea kept, then lost honestly as `clickUnconfirmed` in shared
+  mode, delivered in dedicated); the observation's `totalMs` against main's; a second observation pays nothing new
+  (no `clipReread`); and Chrome for Testing's, stable Chrome's and Safari's first observations carry neither key.
+  Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #312.
+- Decision (#313, 2026-11-07, `fix/313-safari-textarea`; the design session's ruling cb252e88 on #287's findings, issue
+  comment 6709964394, as amended by ruling c4108490 on the hosted A/B, run 42402098567, kit `probe/313-ab`; amends #282's
+  item 13 for an element click): **an element click whose ladder chose an action on a text-entry element answers
+  success only once the field reads focused. Outside Chromium it never writes AXFocused: the action goes and its focus
+  is read back, and on a WebKit page a field still unfocused gets its caret written and its focus read back again.
+  Otherwise the answer is `clickUnconfirmed`.**
+  1. **The defect** (#287's hosted cells, run 42379297174 `keys-x`, `e-shared/textarea-element`, Safari 27.2, 2 of 2).
+     The page's AXTextArea records AXPress, AXShowMenu and AXScrollToVisible, so the ladder took AXPress
+     (`elementClick {plan action, action AXPress, reason advertised, hit element}`) behind route 3's held activation.
+     WebKit answered success, the page saw no event (pointerdown 0, textFocus 0), and the app's focused element stayed
+     the AXWebArea. Chromium's record of the textarea advertises no AXPress, so on both Chromes the same cell went by
+     the synthesized path into #283's route; on Firefox 159 the AXPress focused it.
+  2. **The first build, and the A/B that overturned it** (2c37097d and 06c90356 against main, run 42402098567). The
+     first build gave a page's field outside Chromium #283's AXFocused route. It found two regressions:
+     - **Safari:** WebKit takes the AXFocused write by activating Safari: Safari goes frontmost and its window rises
+       over TextEdit within 0 to 240 ms. A bare write with no engine action does the same, which is likely why the
+       vendor's focusFieldIfNeeded never writes AXFocused on a Safari element exposing AXDOMClassList and posts a click
+       instead. It also regressed Safari's text field, which main's AXPress focused cleanly;
+     - **Firefox:** the AXFocused write does nothing in a background Firefox, so 10 text cells that main focused with
+       AXPress answered `clickUnconfirmed`.
+     Chromium and native were identical to main, 68 of 68 Chromium cells. No native field advertised AXPress, so every
+     one took the synthesized click. Measured behind a frontmost TextEdit:
+     - **Safari:** an AXSelectedTextRange write on the textarea focuses it without raising Safari, and type_text lands.
+       AXPress focuses Safari's text field but not its textarea;
+     - **Firefox:** AXPress through the engine focuses, with TextEdit kept in front. In shared mode its focus sometimes
+       reads late.
+  3. **The rule** (ruling c4108490; WebAreaFocus.swift `textEntryClickRoute`, `carryActionClick`, `readingFocus`;
+     Input.swift `click`). It applies only where the ladder chose the action (a plain left click, the element
+     advertising AXPick or AXPress, no forced route), to #283's text-entry roles (`webAreaEditableRoles`: AXTextField,
+     AXTextArea, AXSearchField, AXComboBox, AXSecureTextField), in both device modes:
+     - **The action, then the read-back.** The action goes as before. Then the element's AXFocused is read. Only a
+       read of true is success (`elementClick.focus` `readBack`, `focusStep` `press`). Anything else, false or no
+       boolean, is polled every 20 ms for up to `textEntryFocusSettleMs`, 300 ms for now. Firefox's latency is being
+       measured, and the settle will become its p99, capped at 1 s.
+     - **WebKit's caret step.** A field in a WebKit page that has not read focused by then gets its caret written:
+       AXSelectedTextRange {offset, 0}, at the element's clickable point where #283's box scan (`fieldCaretOffset`)
+       finds an offset, else {0, 0}. A password field's value is never read, so its caret goes at 0. Its focus is then
+       read back again within the same settle. A WebKit page is a web area (`webAreaAncestry`) in a process that is
+       neither Chromium's nor Gecko's (`pageEngine`, by the principal class; Firefox's is `GeckoNSApplication`, #287's
+       recon). The meta records `focusStep` `selection`.
+     - **The caret is claimed only as far as it reads back** (the review of 06c90356..8d1025c1, one P2: the write's
+       AXError was discarded and only focus was checked, so a failed write, or an app that takes the focus but keeps its
+       own range, still claimed a place). Once the field reads focused, AXSelectedTextRange is read and polled within
+       the settle (`readingCaret`) for {offset, 0}. The record's `caret` is `placed` (the point's offset, read back), or
+       why the point gave no offset (read back at 0), or, as #283 words it, `selectionMismatch` when the range never
+       read back so. A password field's range is never read, so its caret is `secure`, unconfirmed. Security is
+       classified before anything else about the caret (`textEntryCaretOffset`: then the point, then the box scan), so
+       a password field with no clickable point is `secure` too, not read and not claimed at the start (the re-review of
+       8d1025c1..d3fa1779, one P2). The result's note
+       says the field was focused by placing its caret at the point, or at its start, only when that read back; an
+       unconfirmed caret's note claims no place and says typing may go elsewhere or replace a selection. The focus
+       success stands either way. A write that does not answer success is recorded as `caretWriteError`, its AXError.
+     - **The answer.** A field that has not read true by its last step's settle answers `clickUnconfirmed`, with
+       `focus` `notReadBack` when a read answered false and `unread` when none answered a boolean. The live read
+       discards every AX error, so no boolean may be a messaging failure or an invalidated element, not only a field
+       without the attribute (the review of b27ceb36..2c37097d, one P1).
+     - **Nothing writes AXFocused here.** #283's AXFocused route stays for Chromium only, unchanged, through the
+       synthesized path. That is measured, not assumed: Chromium was never raised in #283's cells (its own evidence,
+       `docs/evidence/2026-11-05-web-text-focus/`), and its 68 cells in this A/B were identical to main's.
+     - **Every other element** is unchanged, and nothing is read for it.
+  4. **The decisions.**
+     - **The settle is one named constant** (`textEntryFocusSettleMs`), used after the action and after the caret's
+       write. A WebKit field that neither step focuses costs two settles, about 600 ms, before `clickUnconfirmed`.
+     - **AXComboBox is included.** Clicking one means focusing it. A combo box whose AXPress only opens its list would
+       answer `clickUnconfirmed`. No native one advertised AXPress in the A/B.
+     - **The cost of the strict read-back:** a text field that never exposes AXFocused answers `clickUnconfirmed` after
+       the settle (`focus` `unread`), where its action alone answered success.
+     - **Native fields and Chromium's AXPress path** get the read-back but no caret step, since neither is a WebKit
+       page. A native field whose AXPress focuses it costs one AXFocused read and no wait.
+     - **The contenteditable case of the first build is dropped.** Only text-entry roles are routed; a plain node inside
+       editable content keeps its action, with no read-back.
+  5. **Recorded, no action.** On Firefox, after a `clickUnconfirmed` (its focus reading late), a following type_text
+     still landed in the intended field.
+  6. **Not done** (each named, none built):
+     - a synthesized element click or a coordinate click on a text field is not read back. #283 covers Chromium's,
+       Safari delivers its posted click (34 of 34), and the ruling scoped coordinate clicks out;
+     - outside a Chromium web area, an element click's AXPress on a checkbox or radio button is not value-checked, as
+       #282's element route checks it (`pressConfirmingValue`). Safari's and Firefox's by-token checkbox changed;
+     - editable content that is not a text-entry role (a contenteditable region's text, clicked by its token).
+  7. **Model-facing text.** `docs/cua-api/agent-cursor.md` is unchanged. Its paragraph describes Chromium's pages, and
+     the new answers carry their own sentence (`clickUnconfirmed`, naming the caret step when it ran) and note.
+  Proven offline (`TextEntryClickTests`, 22, over Safari's page as a fake tree, with a mock that fails the test on any
+  AXFocused write):
+  - no text-entry role outside Chromium (WebKit and Gecko, a page's field and a native one) is written AXFocused;
+  - Safari's textarea, whose AXPress does nothing, is focused by the caret step at the point, after the press's settle;
+  - a caret the point cannot place is written at 0, and the note says so;
+  - a caret write that fails while the focus reads true (the press focusing late) claims no place and records its
+    AXError; a range the app does not keep claims no place, after the range's settle; a range arriving within the
+    settle is read back, and a selection is no caret; a password field's range is never read, with a point or
+    without one, by the live callback's order;
+  - Safari's text field is focused by its press alone, on one read with no wait and no write;
+  - a WebKit field that neither step focuses answers `clickUnconfirmed`, naming the caret step, after two settles;
+  - a native field in a WebKit app (no web area above it) gets no caret step;
+  - Firefox's fields are focused by their press, read 200 ms late, with no caret step and nothing walked;
+  - a Firefox field its press leaves unfocused answers `clickUnconfirmed`;
+  - Chromium is pressed and read back with nothing walked;
+  - a native field focused by its action costs one read and no wait;
+  - a field whose focus never reads answers `clickUnconfirmed`, recorded `unread`, and unread samples are polled like
+    unfocused ones;
+  - the settle's value, other roles pressed with nothing read, the page engine by principal class, the password
+    classification, and the record's `focus`, `focusStep` and `caretWriteError`.
+  #283's `WebAreaFocusTests` and #282's `BackgroundPointerTests` pass unchanged. Each of 43 rules and bounds
+  removed in turn (`~/.local/share/187/mutate-313.py`) fails a test.
+  **What the hosted check must verify** (`probe/313-ab`'s cells, 2 reps, against main):
+  - **Safari 27.2:** the textarea by token answers `focus` `readBack` with `focusStep` `selection` and `caret`
+    `placed` (with no `caretWriteError`), and the text field with `focusStep` `press`. Safari stays behind TextEdit, pointerdown is 0, and type_text lands at the caret;
+  - **Firefox 159:** the text cells main focused answer `readBack` (`press`), and Firefox stays behind;
+  - **native and Chromium:** identical to main.
+  Date/Author: 2026-11-07, cursor235's implementer for the design session's rulings cb252e88 and c4108490 on #313.
+
+- Decision (#287, 2026-11-07, `docs/287-measured`; the design session's ruling cb252e88 on #287's findings, issue
+  comment 6709964394; the spike on hosted macOS, main's engine at 51b473fc, 2 reps, kit `probe/287-hosted` f50fe37b,
+  runs 42374569976 and 42376355521 (recon), 42375146858, 42379297174, 42379365501 and 42382030666 (the cells),
+  42376953140 (VS Code's enablement and sweep), 42386958490 and 42388802262 (Firefox's timeline and VS Code's clicks);
+  amends #282's item 11): **the #282–#311 chain is measured beyond Chrome for Testing. Stable Chrome holds on every
+  cell; Safari, Firefox and VS Code hold in part, and each divergence is a ticket or a stated limit.** Nothing in the
+  engine changes in this entry. Evidence: `docs/evidence/2026-11-07-other-browsers/`.
+  1. **The measured set.** Each config ran the kits of the entries named, unchanged apart from a browser switch:
+     - **stable Google Chrome 156.0.8078.80** (.48 and .81 on the older image), for the whole #282–#311 chain, beside
+       Chrome for Testing in the same job: #282's cells, #283's 17, #288's and #292's enablement and release, #294's
+       re-layout, #296's 53 cells, #305's sweep and popover, and #301's and #304's coverage on 21 pages. Every cell
+       holds as on Chrome for Testing, #296's and #304's cell by cell, but one: ⌘L then a click on a page button is
+       refused 3 of 4 where Chrome for Testing pressed 4 of 4 (#317, item 2);
+     - **Safari 27.2** for #282 and #283 (#296, #305 and #304 had measured it already): #282's first mouse holds
+       (#282's item 11, as amended), and #283's posted click is delivered, 34 of 34, with WebKit placing the caret;
+     - **Firefox 159.0 / 158.0.1** for #296 (20 cells, the stale ones refused for the right reasons), #305's sweep
+       (0 refused) and #304's coverage at the top of each page (100% checked). Positions 25–90% are not measured:
+       Firefox exposes no scroll bar to position by;
+     - **VS Code 1.144.0** (Electron) for enablement (the AXManualAccessibility write succeeds and the full tree
+       arrives about 2.4 s later) and #305's sweep (0 refused). Its shared clicks on Monaco and the explorer are
+       refused by #282's allowlist, 6 of 6, and its dedicated clicks land.
+     The enablement, per browser: on both Chromes the AXManualAccessibility write answers −25205 and does nothing, and
+     the EUI write is the route, as #292 found. Firefox turns its accessibility on at the engine's first contact, with
+     no pref; its AXEnhancedUserInterface then reads true, so the engine writes and owns nothing there.
+  2. **The divergences and their tickets** (each spawned by #287):
+     - #312: the observation that turns Firefox's accessibility on reports its AXWebArea frame as {0, 0, 0, 0} (the
+       real one arrives 0.55 s later), so every page click on that screenshot is refused as `interactiveHit`, 4 of 4;
+     - #313: on Safari, an element click by token on a textarea answers success, 2 of 2, while the focus stays on the
+       web area: the advertised AXPress does not focus it;
+     - #314: a Firefox web area with more than 499 children prints none of them, since Firefox answers
+       AXVisibleChildren with −25212 and the width rule then shows nothing;
+     - #315: Firefox's shared-mode page clicks are lost, 34 of 34 `clickUnconfirmed` with pointer 0 (its
+       AXActivationPoint lies on a toolbar control, and Gecko refuses first mouse); the ticket is #282's element route
+       and #283's focus route for Gecko, whose element clicks by token work, 6 of 6;
+     - #316: on Safari, ⌘L then a coordinate click on the page answers success and lands on the address-field
+       overlay, 12 of 12; the overlay is not in the AX tree, so the guard's hit still answers the button
+       (`sameElement`). The ruling: measure a candidate guard's false refusals before building it, and state the limit
+       meanwhile (item 3);
+     - #317: on stable Chrome, ⌘L opens the omnibox suggestion popup over the page, and a click under it is refused,
+       3 of 4, rightly (`noHit`), but with a message that blames the page;
+     - #318: the three stated limits of item 3 that no fix ticket carries.
+  3. **The stated limits, now:**
+     - on Safari, ⌘L then a click on the page lands on the address-field overlay (#316); the controls (F19, then a
+       click; ⌘L, Escape, then a click) delivered 8 of 8;
+     - cua's release has no visible effect on VS Code: end_task, SIGTERM and the 30 s grace answer `released: 1`, but
+       its accessibility tree stays complete (#318);
+     - Firefox's toolbar Reload reloads, but answers `clickUnconfirmed`, 3 of 3 (#318);
+     - VS Code's Toggle Panel result is unresolved: its element-routed AXPress answered success 2 of 2, and the panel
+       opened in only 1 rep (#318);
+     - on stable Chrome, ⌘L's suggestion popup gives a refusal whose message blames the page (#317).
+     `docs/cua-api/agent-cursor.md` claims no measured set and states none of these, so it is unchanged.
+     Amended by the #318 entry (2026-11-08, below): since #315 that paragraph names Firefox, and it now states the
+     toolbar's `clickUnconfirmed`; where each of #318's three limits stands is that entry's.
+  Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #287.
+
+- Decision (#321, 2026-11-07, `fix/321-hold`; the design session's rulings e48e53de (measure the candidates first) and
+  90ec27dd (build the hold); kit `probe/313-ab`, `scripts/probe-321/`; residue #324): **a shared-mode posted click whose
+  activation clicked its in-window activation point holds screen updates until the window order reads back as it was
+  before the click, capped at 200 ms, and always released at the cap. The reorder is invisible, not absent.**
+  1. **The defect** (repro runs 42413691234, 42415334525 and 42416500144, main b27ceb36). In shared mode, a posted click
+     into a background Safari behind a frontmost TextEdit made Safari's window order itself above TextEdit's on about 81
+     of 100 clicks (47 of 60 in one batch, 4 to 160 ms after the activation's first event, back below 8 to 129 ms
+     later). TextEdit stayed the frontmost app and the delivery guard repaired every one, but on about a quarter of
+     clicks the raise stayed on the display for 2 to 129 ms after the hold's 100 ms cap. The raw orders found the step:
+     subtype 1 and the activation-point click alone never raised Safari (0 of 36), while the engine's clicks did (34 of
+     40); the click's own mouse down, after the activation-point click had spent the activation, is what orders the
+     window front. TextEdit as the target, behind another app, raised too (1 of 10 after the hold), so it is AppKit's,
+     not WebKit's alone. Chrome for Testing never raised: its activation point lies outside its window, so its
+     activation clicks no point there.
+  2. **The candidates** (ruling e48e53de; runs 42417785329, 42419751182 and 42427423176; runner-only patches,
+     `scripts/probe-321/patch.py`):
+     - (a) skipping the activation-point click before the click's own mouse down delivers nothing: 0 of 220,
+       `clickUnconfirmed` throughout;
+     - (b) the inert click just outside the frame in its place still raises, 110 of 220, as often as main;
+     - the hold (the fallback): screen updates held until the order is verified, capped at 200 ms. Visible raises fell
+       from 102 to 2 of 240, delivery was unchanged, and the cap was hit 8 times in 230.
+  3. **The rule** (ruling 90ec27dd; Activation.swift `activationPointHoldCapMs`, `activationPointGuardMinimumMs`,
+     `FakeActivation.holdsUntilOrderReadsBack`, `deliver(pointer:)`; Input.swift `deliverPointer`):
+     - **Scope:** every shared-mode pointer action (a click of any button, a drag) whose activation, its own or the
+       held one it joins, clicked its in-window activation point (`activationClickKind` `activationPoint`), whatever
+       the app. A click without that activation click pays nothing, Chromium's included, and so does the paste route's
+       delivery: they keep the 100 ms cap and the 60 ms least wait.
+     - **The hold:** the delivery guard reads the order every `deliveryGuardSampleMs` for at least 150 ms after the
+       click's events (the window in which the reorder was measured to come), repairs what it reads as before, and
+       ends on its three stable samples; the hold is released then, at once. The cap is 200 ms (from 100), by the
+       hold's timer (amended 2026-11-08 by #324's entry below: counted from the click's events, under a 300 ms ceiling
+       from the hold's start), so **the hold always releases at the cap, even when the order never reads back** and even while a
+       repair blocks: nothing can freeze the screen for longer. Past the cap the guard repairs on, as #200 has it. Any
+       later raise of the cap goes back to the design session.
+     - **`transientRaise`** in the delivery record, on every delivery guard: `seen`, whether a sample saw the target's
+       window above the user's; `ms`, from that sample to the one that read the order back after the last that saw
+       it (to the guard's end when none did); `outlivedHold`, whether the order had not read back by the hold's
+       release. `raiseLeft` stays as it is: what the guard's last sample saw.
+     - **The hold is its own action's** (the review of 602b7093..6c96be25, one P2). An activation's guard leaves its
+       hold open for the delivery of the action that ran it, and another connection's action may share the activation
+       before that delivery: a pointer joining a paste's activation would have taken the paste's pending hold with its
+       100 ms cap, and a paste joining a pointer's the 200 ms one. Only the action that ran the activation takes its
+       pending hold (`deliver(ranBy:)`); any other takes a hold of its own, classified as above.
+  4. **The cost:** about 200 ms of frozen screen per such click, against 100 before, and it is person-visible. The
+     click's answer waits for the guard as before, so it comes about 100 ms later too.
+  5. **The limits: invisible, not absent.** The target still orders its window above the person's; the guard repairs
+     that real reorder, and only the hold hides it. A click whose guard runs past the cap can still flash briefly (2 of
+     240 measured, both on cap hits). Finding a click sequence that delivers without the reorder, the guard that ran
+     1,816 ms, and dedicated mode's raise are #324.
+  6. **Dedicated mode is unchanged:** no delivery guard and no hold through the click, so the target's window rises
+     above the person's and stays there (60 of 60), as #282 ruled for a desktop nobody is at.
+  7. **Model-facing text.** `docs/cua-api/agent-cursor.md` describes neither the hold nor the guard, so it is unchanged.
+  Proven offline (`ClickDeliveryTests`, 8 new, `FocusHoldTests` and `PasteActivationTests`, 1 new each, on the fake
+  clock):
+  - the hold waits while the order reads wrong, past main's cap and the least wait, and is released at the guard's
+    stable samples once it reads back;
+  - a reorder after main's 60 ms least wait is still repaired inside the hold;
+  - an order that never reads back has its hold released at exactly 200 ms, also while each repair blocks for 300 ms,
+    with `capped`, `raiseLeft` and `transientRaise.outlivedHold`;
+  - Chrome's point outside the frame, no point, and a paste's delivery keep the 100 ms cap and the 60 ms least wait;
+  - a click inside a held activation that clicked its point holds its own hold until the order reads back, and a
+    paste's delivery there, and a click inside Chrome's held activation (which clicked no point), keep main's cap;
+  - dedicated mode takes no hold through the click and repairs nothing;
+  - `transientRaise` for a reorder repaired inside the hold, one read back only after the cap, one seen twice, and
+    none, on the wire; `raiseLeft` false for each reorder that read back;
+  - a pointer of another connection sharing a paste's activation before the paste's events takes its own hold under
+    its own 200 ms cap, leaving the paste its pending one; a paste sharing a pointer's takes its own under 100 ms.
+  Each of 33 rules and bounds removed in turn (`~/.local/share/187/mutate-321.py`) fails a test.
+  **What the hosted check must verify** (`probe/313-ab`'s `scripts/probe-321/` cells, against main):
+  - **Safari:** shared clicks deliver as on main; raises visible after the hold's release near the 2 of 240 the patch
+    measured; `transientRaise.seen` on about as many clicks as main raised, `outlivedHold` only on the visible ones;
+    `screenHoldMs` near 200 and `capped` rare;
+  - **TextEdit as the target:** the same, behind another app;
+  - **Chromium** (Chrome for Testing): `activationClickKind` not `activationPoint`, `screenHoldMs` and `guardMs` as on
+    main (the 100 ms cap, the 60 ms least wait), no raise;
+  - **dedicated mode:** unchanged, no delivery record.
+  Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling 90ec27dd on #321.
+- Decision (#314, 2026-11-08, `fix/314-ff-wide`; the design session's ruling cb252e88 on #287's findings, issue comment
+  6709964394, run 42382030666, kit `probe/287-hosted`; amends the width rule in "Observation (skyshot)" and `shown` in
+  Interfaces): **above 499 children with no visible subset, the width rule prints the children that show, as #304's
+  rule finds them for the walk to read first, where the vendor prints none. This parts from the vendor's printed tree on
+  such pages, on purpose.**
+  1. **The defect.** Firefox answers AXVisibleChildren with −25212, so its web area has no visible subset, and the
+     vendor's rule printed none of a page's children above 499: on hosted macOS the `/fixedtail` page (2,501 children)
+     printed 36–50 nodes, against Chrome's 3,989. The guard's record already found those children by bisection (#301
+     item 4, `recordedChildPositions`); the printed tree did not.
+  2. **The rule** (`chooseChildren`). Above 499 children, with no visible subset, the children kept are
+     `shownChildPositions`'s in what the element leaves showing of the window to its children (`childrenClip`, the
+     walk's clipping rule): up to 512 children each by its own frame (one that shows beyond a strip, or has no frame), above
+     that the bisected run with the end samples that show (a fixed or sticky head or tail), checked by the middle samples,
+     and then each candidate kept only when its own frame shows beyond a strip, or it has none: the bisection and the
+     samples place a child along the list's axis alone, which orders the walk's reads but would print a row moved off the
+     viewport sideways, and count it in the marker (the review of 3de863bb..937f49c9). The node carries `shown` with subset `"shown"`, and the service prints the vendor's `(showing lo-hi, … of N
+     items)` from its ranges, unchanged. It keeps none, `"omitted"` as before, when there is nothing to judge in (no
+     visible frame, or the element's ancestors leave nothing of it showing), when the frames do not settle it (no axis to
+     bisect, a middle sample out of place, the deadline), and when no child is seen showing by its own frame (none shows,
+     or every child kept is frameless: 505 frameless children would otherwise print whole on the per-child path while
+     600 print none on the bisected one). The guard's record then looks for them itself, as before. When every child
+     shows, all are printed unmarked, as the other tiers do. An element with a visible subset, and any element of 499
+     children or fewer, is printed as before: the vendor's frame filter up to 499 still meets the window and keeps
+     Chromium's offscreen strips, which this tier, judging in the clip beyond a strip, does not.
+  3. **The same children everywhere, within each caller's deadline.** Every caller passes its own deadline into the
+     search, which stops there and keeps none: the walk's, the re-fetch's (`ElementResolver.refetchDeadlineMs`, an
+     observation's 10 s) and the settle's busy walk's, which then gives no verdict rather than a quiet one, so a search the
+     deadline stopped can never read as a settled window (the same review: 500 offscreen children past a short deadline
+     had read quiet). The token re-fetch (Lineage.swift `matching`) passes the clip it already keeps,
+     so a printed row is found again; the settle's busy walk, which keeps no clips, judges in the window frame, so a
+     spinner among a wide page's shown children is seen.
+  4. **The cost.** About 2 log2(N) + 96 frame reads per such element above 512 (#304's price, 0.06 ms a read on
+     ordinary pages), at most 512 at or below it, each cached for the walk, and none for an element its ancestors hide.
+     The walk's `expand` judges the kept children again only when more than 100 were kept, from the same cache.
+  5. **Parity.** Neither the goldens nor the repl-parity scenes hold an element of more than 499 children (the widest is
+     Finder's list, 205, with a visible subset), so both are unchanged and no expected diff is recorded. Against the
+     vendor, the printed tree differs on any page whose element has more than 499 children and no visible subset:
+     Firefox's big pages, Safari's (docs.python.org's body, 667 children, #309), and a Chromium list without one. The
+     budget and the width handling are cua's already (#301, #304); printing what shows is better than printing none.
+     `docs/cua-api/` does not describe the width rule, so nothing there changes: the marker reads as the vendor's.
+  6. **Tests** (`WideWebAreaTests`; `VisibleFirstTests`' record tests now give their lists a middle sample out of place,
+     so the record still has an omitted list to search; #309's walk test now asserts the printed children). Each part
+     fails a test when removed (`~/.local/share/187/mutate-314.py`).
+  7. **For the hosted check:** Firefox's `/fixedtail` page with `probe/287-hosted` (the shown run and the bar printed,
+     the node count near Chrome's for the same viewport); Chrome for Testing unchanged on #304's 21 pages; Safari's wide
+     pages (docs.python.org) print their shown run.
+  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling cb252e88 on #314.
+
+- Decision (#315, 2026-11-07, `fix/315-gecko-routes`; the design session's ruling cb252e88 on #287's findings, issue
+  comment 6709964394, and ruling 026204f4 filing #314's A/B evidence on the issue; amends #282's items 3, 4 and 6 and
+  #283's item 2): **a shared-mode left pointer into a background Firefox page follows #282's rule, as on Chromium: a plain
+  click is carried by the action of the element under the point, a text field is focused by its own action and its focus
+  read back (never an AXFocused write), and anything else is refused with nothing posted. Firefox's toolbar is not a web
+  area, and dedicated mode is unchanged.**
+  1. **The defect** (#287's hosted cells, run 42379297174; #314's A/B, run 42444787545). In shared mode, 34 of 34
+     coordinate clicks on a background Firefox page answered `clickUnconfirmed` with pointer 0. Firefox's
+     AXActivationPoint lies on a toolbar control (`activationClick` `control`), so the activation clicks no point there,
+     the click's own mouse down consumes the arm, and Gecko does not deliver it to the page. A click by token whose
+     point lands on a descendant (`elementClick.reason` `descendant`) took the same posted path: 9 of 12 row clicks
+     below the top of `/fixedtail` (an AXLink over its AXStaticText) were lost. Element clicks that ended in an action
+     worked, 6 of 6, with TextEdit kept frontmost.
+  2. **How the engine recognises Gecko:** by its Info.plist's principal class, `GeckoNSApplication` (`pageEngineOf`,
+     #313's), read on the hosted runner by #287's recon (`probe-287` run 42376355521, Firefox 159.0,
+     `org.mozilla.firefox`) beside `BrowserCrApplication` for both Chromes and `BrowserApplication` for Safari 27.2.
+     A bundle id names one build, while the class is the Gecko widget code's own (only Firefox 159.0's was
+     read; other channels and Gecko-based apps are presumed to carry it). `pointerView` now takes the page
+     engine (`PageEngine`) in place of #282's Chromium flag; its Chromium answers are unchanged, and a WebKit or native
+     process stays `unknown`.
+  3. **Where in the window the rule applies: the web area only.** Settled offline from Gecko's source
+     (mozilla-central `widget/cocoa/nsCocoaWindow.mm`, `dom/events/EventStateManager.cpp`, read 2026-11-07). Gecko's
+     ChildView answers YES to `acceptsFirstMouse:` for the whole window and keeps the event; its `mouseDown:` then
+     passes a click-through mouse down into an inactive top-level window to Gecko (`ChildViewMouseTracker::
+     WindowAcceptsEvent`, `inactiveWindowAcceptsMouseEvent:`'s eMouseActivate), and `NodeAllowsClickThrough` refuses it
+     only when its target is inside a XUL `<browser>` (the page) or `<tree>`. So the toolbar, the tabs and the address
+     bar take the click, which matches #287's toolbar Reload cell: posted by route 3, its own down consuming the arm,
+     and the page reloaded (`loads` 1), 3 of 3. In `pointerView`, a Gecko hit inside an AXWebArea is `webArea`, one not
+     established outside every web area (no hit, an incomplete walk, the scroll area that holds the web area) is
+     `possibleWebArea`, and one established outside is `geckoChromeView`. #288's establishment stays Chromium's: Gecko
+     exposes its tree at an AX client's first contact (#287) and has no Basic mode to wait through.
+  4. **The toolbar keeps `clickUnconfirmed`** (`geckoChromeView` is `unknown`): the click is posted as before and still
+     answers `clickUnconfirmed`, #318's stated limit. Gecko's source says the chrome takes the click, but a XUL tree
+     outside any web area refuses it too, and whether every `<browser>` (a sidebar, a devtools pane) is exposed as an
+     AXWebArea is not known, so making the chrome known to accept is a separate measured step. It is one line
+     (`webAreaSeen ? .acceptsFirstMouse : .unknown` in `pointerView`'s Gecko branch), gated on a seen web area as
+     Chromium's is, since before Gecko's tree is exposed a page point answers a plain group outside every web area.
+  5. **The element route** is #282's unchanged (`webAreaPress`): the allowlist, the walk through passable children
+     (the `/fixedtail` row's AXStaticText resolves to its AXLink), the action re-read where the process is fresh, the
+     requalification, #282's value check on a checkbox or radio button, and #296's stale-point gate on a coordinate
+     click's press. The press goes as an element click's does (`elementActionClick`: route 3's held activation, then the
+     action), the route #287 and #313 measured as leaving Firefox behind TextEdit. A click by token reaches it through
+     its synthesized path, as on Chromium.
+  6. **The focus route on Gecko is #313's press, not #283's write** (`webAreaFocusCarrier`, `pressFocusingField`;
+     ElementInput.swift `webAreaFocusPress`). A walk that stops at an editable element resolves the text-entry
+     element as #283 does (`webAreaFocusTarget`); on Gecko it is pressed by its own action (AXPick, else AXPress) as an
+     element click is, and its AXFocused read back (#313's `readingFocus`, `textEntryFocusSettleMs` 300 ms, which holds
+     the 234 ms p99 #313 measured for Firefox's press). Only a read of true is success; otherwise `clickUnconfirmed`. A
+     field advertising neither action is refused (`noAction`), nothing done. Nothing writes AXFocused or a selection,
+     so no caret is placed at the point, and the result's note says the caret is where Firefox put it. Recorded as
+     `elementClick {plan action, action AXPress, reason webArea, pressedRole, pressed, walk, focus, focusStep press}`.
+     A password field is pressed and read back with nothing of it read. Chromium keeps #283's AXFocused route
+     unchanged, and #313's "no AXFocused write outside Chromium" stays true.
+  7. **Drags into Gecko in shared mode** follow #282's Chromium handling: one starting in the page, where the
+     activation clicked no activation point, is refused with nothing posted (`backgroundClickRefused`); a double click
+     likewise. A drag from the toolbar is posted and answers `clickUnconfirmed` as before. **focusField's fallback
+     click** into a Firefox page (set_value's and select_text's, after focusFieldIfNeeded's AXFocused write, which a
+     background Firefox ignores) is carried by the field's own press (the design session's ruling 1cd6ed32 on item 11's
+     A/B; WebAreaFocus.swift `refusedPointerCarrier`, `focusFallbackByPress`; ElementInput.swift `synthesizedClick`).
+     The first build refused it as `backgroundClickRefused`, on the premise that main's posted fallback was lost; item
+     11 found it was not. Where #282 refuses the fallback's pointer (shared mode, the field in a Gecko web area, the
+     activation clicking no point), the field's AXPick, else AXPress, goes as an element click's does (route 3's held
+     activation), its AXFocused is read back within `textEntryFocusSettleMs`, and the method proceeds once it reads
+     focused. Nothing writes AXFocused or a selection on that path. A field with no action is refused, nothing done
+     (`focusFallbackUnfocusable`); a field whose focus never reads back answers `focusFallbackUnconfirmed`
+     (`clickUnconfirmed`, the press having gone); neither sets the value or the selection. On Chromium the fallback stays
+     refused (#282's item 6: an action is no focusing there), and on every other engine and in dedicated mode it is
+     posted as before.
+  8. **What changes for the model:** a background Firefox page's buttons, checkboxes, links and fields now act; plain
+     text, a heading or a control with no action is refused with nothing sent, where it was posted and lost; set_value
+     and select_text on a page field focus it by its press instead of a posted click, with no raise; the toolbar is as
+     before. `docs/cua-api/agent-cursor.md`'s second paragraph names Firefox beside the Chromium-based apps and
+     says its field is focused by its own action without the caret at the point (the surface inventory's "Table 3
+     addition (2026-11-07, #315)"; repl-parity's docs oracle, `scripts/repl-parity/docs-oracle.mjs`, carries the new
+     text, so parity's expected diff is that paragraph alone).
+  9. **Not done:** the toolbar's `clickUnconfirmed` (item 4, #318); a Firefox field's caret at the point (no
+     AXSelectedTextRange step was measured on Gecko).
+  10. **The refusal names what still works** (the design session's ruling 99e45959, which accepted the web-area scope
+     and the first build's refusal of the fallback click, since replaced by item 7's press). On a Gecko page,
+     `backgroundClickRefused` and its observe-first form add a sentence (Routes.swift `backgroundFieldAlternative`,
+     keyed on the page engine the pointer carries, `PointerTarget.engine`, never on an app name):
+     `Firefox's web page does not accept a background click; use a dedicated desktop, or ask the person to bring
+     Firefox forward. A text field on the page still works in the background: click the field by its element ID, which
+     focuses it through accessibility, then type or set its value`, and the observe-first form `Firefox's web page does
+     not accept a background click, and the control there exposes no action yet; observe Firefox with get_app_state
+     first and click again, or use a dedicated desktop, or ask the person to bring Firefox forward. A text field on the
+     page still works in the background: …` (the same sentence). It reaches a drag, a double click, and a click on
+     something with no action (the element route's walk refusal and its no-action refusal). An element click on a
+     Firefox field is carried by #313's press and read-back, or by item 6's route when its point lands inside it, and a
+     focused field takes set_value with no fallback click. Where the press on that very field is what failed, the
+     sentence would not be true, so it is not given: the focus route's own refusals (a field with no action, a walk that
+     reaches no text-entry element) name no alternative, and the fallback's two failures (ruling 1cd6ed32) name only a
+     dedicated desktop and the person bringing Firefox forward:
+     `Firefox's text field cannot be focused in the background: Firefox's web page does not accept a background click,
+     and the field exposes no accessibility action to focus it instead, so nothing was changed. Use a dedicated
+     desktop, or ask the person to bring Firefox forward` (`backgroundClickRefused`; nothing was performed, so "nothing
+     was changed" holds), and `Firefox's text field could not be focused in the background: its accessibility action
+     was performed, but the field does not report focus, so the requested value or selection was not written. Observe
+     Firefox with get_app_state before any retry, and never retry blindly; to change the field, use a dedicated desktop,
+     or ask the person to bring Firefox forward` (`clickUnconfirmed`). That one claims only the method's own write
+     skipped (the review of acb88f72..146b76a7, one P2): the press went, and the page may have acted on it, a focus
+     handler changing the value and blurring the field before the next read, or the reads failing after it took effect.
+  12. **The remedy is never the model's raise** (the design session's ruling 80a11b9a). In shared mode, bringing the app
+     forward puts a window over the person's, which the host's rules forbid unless the person asks, so no refusal may
+     read as telling the model to do it. Every refusal sentence above names a dedicated desktop, or the person bringing
+     the app forward, which the model may ask them to do. **This changes Chromium's text too**, since the phrase is
+     #282's shared template (`backgroundClickRefused`, `backgroundClickRefusedObserveFirst`): `<App>'s web page does
+     not accept a background click; use a dedicated desktop, or ask the person to bring <App> forward`, where #282's
+     entry above has `bring <App> forward or use a dedicated desktop`. Chromium's form is otherwise word for word as
+     before, and Gecko's adds item 10's sentence. The JS service tests (`test/services-engine-service.test.mjs`), the
+     first-call paragraph (`docs/cua-api/agent-cursor.md`, its docs test, repl-parity's docs oracle, and the surface
+     inventory's #315 Table 3 addition) carry the new clause.
+  11. **The hosted A/B of acb88f72 against main** (run https://github.com/SSFSKIM/cua/actions/runs/42457001051,
+     confirmations 42459610340 and 42460845888; Firefox 159 behind a frontmost TextEdit). On main, set_value on an
+     unfocused background Firefox text field was not lost: its posted fallback click succeeded, 3 of 3, and the value
+     was set. Firefox's window reordered above TextEdit's in 4 of 5 tries, **inside the screen hold, none of it
+     visible** (corrected 2026-11-08 (#324): this item first said the raise showed for 26 to 30 ms after the hold. Main's
+     `focusingClick` dropped the fallback click's `delivery` record, so the kit judged the reorder against no hold; the
+     fallback click joins set_value's held activation and takes #321's hold, and #324's spike, timing SLSDisableUpdate
+     and SLSReenableUpdate directly, found 0 visible on that path, 75 of 112 Safari fallback clicks reordering inside
+     the hold and none after it; https://github.com/SSFSKIM/cua/issues/324#issuecomment-6721180433). On acb88f72 it was
+     refused and the value not set: a working capability lost, hence item 7's press. An element click on the field,
+     then set_value, set it 4 of 4 with no raise.
+  Proven offline (`GeckoPointerTests`, 14, over Firefox 159's tree and its activation, the AXActivationPoint inside the
+  frame on a toolbar button):
+  - Firefox's page is a web area whether or not an observation saw it; no hit, the scroll area over the web area and an
+    unreadable role are possible web areas; the toolbar is `unknown`, seen or not, never known to accept;
+  - a Gecko process runs no #288 establishment;
+  - a shared page click is carried by the button's action with nothing posted, and without an element route a click, a
+    double click and a drag are refused with nothing posted and no hold;
+  - a click by token whose point lands on a link's text is synthesized by the ladder, then element-routed to the link;
+  - plain text under no control and a control with no action are refused, nothing posted or pressed;
+  - every text-entry role stops the walk as editable, resolves as #283's target and is focused by its AXPress, read back
+    200 ms late, by a route that has no write at all; Chromium's carrier stays the AXFocused write; the note claims no
+    caret at the point;
+  - a field its press leaves unfocused answers `clickUnconfirmed` after the settle; one with no action, or unread
+    actions, is refused with nothing pressed or read;
+  - the toolbar's click is posted and answers `clickUnconfirmed`;
+  - a refused click with no element route and a refused drag into a Gecko page carry item 10's sentence, as do both
+    refusal forms on Gecko, while Chromium's and another engine's stay word for word;
+  - set_value's fallback on a Gecko page, after focusFieldIfNeeded's ignored write, is carried by the field's AXPress,
+    reads back focused and proceeds, nothing posted and no write of its own;
+  - a fallback whose field has no action is refused with nothing pressed, and one whose focus never reads back answers
+    `clickUnconfirmed` after the settle, nothing posted, each with item 10's exact sentence and no element click named;
+  - the fallback on Chromium stays refused with its own sentence, a Safari field's is posted, dedicated mode's is
+    posted on Gecko with no press, and every engine's element and coordinate clicks keep #282's element route;
+  - dedicated mode posts a page click and a drag with the inert click first, no element route and no delivery guard;
+  - Safari's page and a native button stay `unknown`, Safari's click is posted after its activation-point click, and
+    Chromium's toolbar and page answers are unchanged.
+  `BackgroundPointerTests`, `StalePointTests`, `WebAreaFocusTests` and `TextEntryClickTests` pass unchanged, apart from
+  `pointerView`'s new parameter. Each of 23 rules and bounds removed in turn (`~/.local/share/187/mutate-315.py`)
+  fails a test. The engine's glue (`webAreaPress`'s carrier switch and engine, `webAreaFocusPress`, `synthesizedClick`'s
+  carrier switch and its press of the field) reads live AX and is not unit tested: the hosted check covers it.
+  **What the hosted check must verify** (#287's and #314's kits, Firefox 159, 2 reps, against main, each cell behind a
+  frontmost TextEdit, reading the frontmost app and Firefox's window order before and after):
+  - **Firefox, shared:** coordinate clicks on a page button, checkbox, link and radio button answer success with
+    `elementClick.reason` `webArea`, pointerdown from Gecko's own action only, and the effect seen; a checkbox's value
+    check passes; text fields and textareas (and a password field) answer `focus` `readBack`, `focusStep` `press`, and
+    type_text lands in them; a `/fixedtail` row below the top by token is pressed (`pressed` `ancestor`, its AXLink),
+    12 of 12; a coordinate click on plain text is `backgroundClickRefused` with nothing posted and item 10's
+    sentence; set_value and select_text on a field Firefox has not focused succeed with no posted click (the press, read
+    back) and no raise, where main reordered Firefox inside its hold (item 11, corrected 2026-11-08 (#324)); toolbar Reload reloads and answers `clickUnconfirmed`
+    as on main; a drag in the page is refused, nothing posted; Firefox never frontmost and its window never left above
+    TextEdit;
+  - **Firefox, dedicated:** every cell as on main (delivered, the window coming forward);
+  - **Firefox sidebar or devtools** (one cell each, if the kit can open them): whether their hits answer inside an
+    AXWebArea, which item 4's step needs;
+  - **Chrome for Testing and Safari 27.2:** identical to main, cell by cell.
+  Date/Author: 2026-11-07, cursor235's implementer for the design session's ruling cb252e88 on #315.
+- Decision (#324, 2026-11-08, `fix/324-caret-first`; the design session's ruling 8c206e91 on the spike's findings,
+  issue comment https://github.com/SSFSKIM/cua/issues/324#issuecomment-6721180433, kit `probe/324-measure` 1b1b69a6,
+  and ruling eecaccfe on the hosted A/B, item 1's second half; amends #321's item 3 and corrects #315's item 11): **set_value
+  and select_text focus a WebKit page's text field, a password field included, caret first: its caret written, then its
+  AXPress, each read back, and never an AXFocused write or a posted click. AppKit fields keep the AXFocused write.
+  #321's hold is capped 200 ms after the click's events, under a 300 ms ceiling from the hold's start, and its timers
+  are made strict. The delivery record now reaches set_value's meta and records the hold's real release.**
+  1. **The spike's findings** (runs 42468407027, 42472740707 and 42476788546; runner-only patches,
+     `scripts/probe-324/patch.py`, which timed SLSDisableUpdate and SLSReenableUpdate directly and judged visibility
+     against the real frozen spans):
+     - **#315's set_value raises were hidden, not visible.** Main's `focusingClick` copied part of the fallback
+       click's meta and dropped its `delivery` record, so #315's kit judged every reorder on the fallback against no
+       hold. The fallback click joins set_value's held activation, which clicked its activation point, so it takes
+       #321's hold until the order reads back: 75 of 112 Safari fallback clicks reordered inside the hold, 0 after it.
+       On main nothing was visible after the hold across 458 steps in Safari, an AppKit probe app and TextEdit
+       (set_value, select_text, coordinate click, type_text, press_key, scroll, drag), nor on 0 of 150 natural residue
+       clicks.
+     - **#321's residue is real but rare.** A slow activation made on purpose (the events 183 to 323 ms into the hold)
+       gave 51 of 60 visible, but only about 2% of natural clicks have a gap over 100 ms (the largest 193 ms).
+     - **Caret first on Safari's page fields:** 32 of 32 delivered, 0 raises, no pointer event on the page; the freeze
+       fell from about 300 ms (the held activation's hold, then the fallback click's) to about 120 ms (the held
+       activation's alone).
+     - **AppKit fields:** the AXFocused write took 16 of 16 with no raise; the press and the caret both fail there.
+     - **The release runs late:** the cap's timer and the release's enqueue fire late, so the display stays frozen a
+       median 12 to 26 ms past `screenHoldMs`, up to about 100 ms.
+     - **The reorder is hidden, not prevented:** pointer clicks and drags still reorder inside the hold in 55 to 90% of
+       cases.
+     **The hosted A/B** (main 74fe29f8 against 2821788e, confirmed on e2e452c9; runs
+     https://github.com/SSFSKIM/cua/actions/runs/42480471918 and https://github.com/SSFSKIM/cua/actions/runs/42480982911,
+     kit `probe/324-measure` 302a9e47):
+     - **Caret first held** on Safari's page fields in both modes, and on its password fields with the switch on:
+       set_value 20 of 20, 0 raises, no page events, a 124 ms freeze. Hence item 2's password fields are on.
+     - **Dedicated mode:** main answered set_value and select_text on Safari with success while writing nothing (its
+       posted click focused the field, then the value read "", 24 of 24). The caret route delivered 24 of 24.
+     - **The slow-activation residue** (`P324_DELAY_MS`): main 47 of 60 visible, this branch 4 of 60, all 4 with their
+       events at or past 300 ms into the hold, where the ceiling ends the hold before the cap can.
+     - **The natural freeze** (corrected 2026-11-08, hosted A/B): natural clicks' events go about 40 to 50 ms into the
+       hold, not the 60 item 5 first assumed, so the hold runs a median of about 197 ms (p95 205 to 215, the largest
+       218).
+     - **Only a timer's release runs late** (corrected 2026-11-08, hosted A/B; the spike's 12 to 26 ms above was the
+       mix): a release the guard makes at its own end comes on time (`frozenMs` less `screenHoldMs`, a median 0.1 ms),
+       while one the hold's timer makes comes late: at the 300 ms ceiling `frozenMs` was 349 to 377 ms, a median 68 ms
+       late (the logged return reached 398 ms), and main's 200 ms cap a median 26 ms late, up to 79. Item 6b is the
+       remedy.
+  2. **Caret first on a WebKit page's field** (ElementInput.swift `fieldFocusRoute`, `focusByCaretFirst`,
+     `caretFirstFocus`; `focusField`):
+     - **Which fields:** in `focusField`, a field focusFieldIfNeeded would focus (AXTextField, AXTextArea or
+       AXDateTimeArea, AXFocused settable, not focused) that #313 classifies as a WebKit page's text entry
+       (`textEntryClickRoute`'s `selecting`: a `webAreaEditableRoles` role under an AXWebArea, in a process that is
+       neither Chromium's nor Gecko's). In practice a Safari page's text field or textarea.
+     - **The route:** the in-flight check, AXSelectedTextRange {0, 0}, its focus read back (#313's `readingFocus`,
+       300 ms). Still unfocused: the in-flight check again and the field's AXPress where it advertises one, read back
+       again. Still unfocused: refused as `clickUnconfirmed` with the method's value or selection not written: "<App>'s
+       text field could not be focused: its caret was written through accessibility[, then its accessibility action
+       was performed], but the field does not report focus, so the requested value or selection was not written.
+       Observe <App> with get_app_state before any retry, and never retry blindly."
+     - **What it never does:** write AXFocused or post a click. It replaces the posted fallback click, and Safari's
+       DOM elements (which focusFieldIfNeeded sent straight to the click) take it too.
+     - **The record:** `meta.fieldFocus {focus, focusStep "selection" | "press", caretWriteError?}`, the last step and
+       its read-back. The engine's meta only: the service does not forward it, so the hosted kit reads it from the
+       engine.
+     - **Password fields take it too** (`caretFirstCoversSecureFields`, on since the hosted A/B measured them at 20 of
+       20 delivered with 0 raises, ruling eecaccfe): a field whose role or subrole is AXSecureTextField, or whose
+       subrole cannot be read (#283's rule). Its value and range are never read. The first build kept them on main's
+       AXFocused write and fallback click until that measurement; turning them back is the one constant.
+     - **Both device modes (the implementer's decision).** The route posts nothing, so the reason dedicated mode
+       differs elsewhere (no person's window to protect, so a raise costs nothing) gives it nothing to gain from the
+       posted click, while the click still reaches the page's own handlers. One route keeps set_value on a Safari page
+       the same on both desktops. Measured (item 1, the hosted A/B): main's posted click answered success there while
+       the value read "", 24 of 24; the caret route delivered 24 of 24. So dedicated mode keeps it.
+  3. **AppKit fields keep main's AXFocused write** (16 of 16, no raise), and so does every field the classification
+     does not take: a native field in Safari's window, and a Chromium or Gecko page's field (whose fallbacks are #282's
+     refusal and #315's press, unchanged).
+  4. **The fallback click's `delivery` record** rides in the method's meta (`focusingClick`), as its guard time does.
+     Its absence is what caused #315's misread.
+  5. **The cap starts at the events, with a ceiling** (Activation.swift `activationPointHoldCapMs` 200,
+     `activationPointHoldCeilingMs` 300, `OpenHold.capMs(eventsAt:)`). A hold kept until the order reads back (#321's
+     scope, unchanged) is released when its guard ends, or by its timers at 200 ms after the click's events or at
+     300 ms from the hold's start, whichever comes first. The activation's timer is set at the ceiling as the hold
+     opens; the events' timer once they go. **There is no uncapped variant.** The worst-case freeze is 300 ms, on
+     about 2% of clicks (those whose activation is slow). A natural click's events go about 40 to 50 ms into the hold
+     and its guard's 150 ms least wait ends it: a median of about 197 ms, p95 205 to 215, the largest 218 (corrected
+     2026-11-08 from the hosted A/B: this item first assumed 60 ms and about 210). Any later raise of the ceiling goes
+     back to the design session. Every other hold keeps main's 100 ms cap from its start. The 300 ms worst case holds in
+     `screenHoldMs`; the real freeze past it was the timer's lateness, item 6b.
+  6. **The real release time:** `delivery.frozenMs`, the hold's span from its start to the moment its
+     SLSReenableUpdate is called, stamped on the release queue just before the call (`ReenableStamp`). `screenHoldMs`
+     is unchanged, the guard's reading bounded by the cap. The delivery guard waits up to 100 ms of real time
+     (`screenReenableStampWaitMs`) for the stamp after releasing; it is normally already there or a queue hop away. The
+     wait is for the call to start, not for the frame SLSReenableUpdate waits on, which #235 moved off the request path.
+     No stamp by then, or no hold taken (SLSDisableUpdate absent or gated): no field, and never a longer wait (ruling
+     a47484f9). The record's Unix times (`holdStartedAt`, `releasedAt`, `postedAt`) are anchored on the Unix clock read
+     at the guard's end, before the release and the wait, so the wait never shifts them (the review of
+     74fe29f8..2821788e, one P2: read after the wait, they moved by its length, 59 ms in the reviewer's repro). It is
+     this hold's own span: SkyLight re-enables the display only once every hold on the connection is released. The
+     overrun of `frozenMs` past `screenHoldMs` comes only from a timer's release (item 1's hosted A/B): a release the
+     guard makes at its own end is on time.
+  6b. **The hold's timers are strict** (rulings eecaccfe and 5e4f745d; Activation.swift `holdTimerStrict`,
+     `scheduleHoldTimer`, `holdTimerFlags`, `holdTimerLeewayNs`). The lateness item 1 found is the timer's, most likely
+     dispatch timer coalescing in a background process with no UI. Every hold timer (#321's cap and ceiling, main's
+     100 ms cap, the guard's own hold's) is a one-shot dispatch source timer with the `.strict` flag and no leeway, on
+     a serial userInteractive queue of its own (`cua.engine.hold-timer`), cancelled as it fires; off, the global
+     queue's `asyncAfter` as before. **Kept: strict alone.** The hold's releases have a scheduler of their own
+     (`ActivationSystem.scheduleHoldRelease`), used only by those timers, each of which only enqueues the re-enable;
+     the after-action watch's samples, which read the window order and repair (an AXRaise may block for the 1 s AX
+     timeout), stay on `schedule`, the global queue's `asyncAfter` (the review of e2e452c9..5dc2e65b, one P1: with one
+     scheduler for both, a 300 ms release fired at 514 ms behind a blocking sample, and `.strict` cannot preempt work
+     already running on its queue).
+     - **Measured** (run https://github.com/SSFSKIM/cua/actions/runs/42487558851, kit `probe/324-measure` b279af95; the
+       real freeze at the 300 ms ceiling, p50 / p95 / max, in ms):
+
+       | Variant | To the SLSReenableUpdate call | To its return |
+       |---|---|---|
+       | none (the timers as before) | 368.5 / 375.6 / 378.2 | 379.7 / 392.0 / 395.4 |
+       | strict timer | 300.7 / 302.8 / 303.6 | 308.5 / 321.6 / 326.3 |
+       | latency-critical activity | 360.5 / 375.8 / 377.9 | 372.3 / 392.5 / 394.4 |
+       | both | 300.5 / 305.6 / 311.4 | 309.1 / 320.1 / 324.5 |
+
+     - **Main's 100 ms activation hold, when its timer releases it:** with no change a freeze of 124.3 / 149.9 / 158.1
+       (24 to 58 ms late); strict, 100.8 / 103.2 / 103.2. So strict also makes caret-first set_value's freeze a flat
+       about 100 ms, against 118 to 158.
+     - **Guard-ended releases stay on time:** a median 0.1 ms after the guard. No natural click's hold was released by
+       the cap's timer.
+     - **The display re-enables 8 to 26 ms after the call.** That wait is the window server's frame inside
+       SLSReenableUpdate; the engine does not control it.
+     - **The App Nap lead, ruled out:** holding a latency-critical ProcessInfo activity (`beginActivity([.userInitiated,
+       .latencyCritical])`) for the hold's lifetime was built and measured; it made no measurable difference, alone or
+       with the strict timer, and was removed.
+     - **The stated trade:** with the timers on time, a click whose events land past about 250 ms into the hold gets
+       less than 50 ms of hold after them. Under an injected slow activation 3 of 60 clicks raised visibly with strict,
+       every one with its events 252 to 313 ms into the hold. The late timers had been hiding a few of these by
+       freezing about 70 ms longer.
+     - **The worst-case freeze, as the ruling states it:** 300 ms to the SLSReenableUpdate call (measured max 303.6),
+       with the display back within about 26 ms after it.
+  7. **select_text on an unfocused NSTextField** answered `selectionNotSettable` before trying to focus, since AppKit
+     makes the range settable only once the field editor is attached. Folded in (TextSelection.swift
+     `selectionSettableBeforeFocus`, `selectionSettableAfterFocus`): a field whose range is not settable but which
+     needs focusing goes on to its focus (main's AXFocused write, item 3) and is checked again after it; any other
+     element is refused as before, nothing written.
+  8. **Corrections in place**, each marked "corrected 2026-11-08 (#324)": #315's item 11 and its hosted-check line, and
+     `docs/evidence/2026-11-08-gecko-routes/README.md` (Firefox's set_value and select_text rows, Safari's line).
+  9. **The limits: invisible, not absent.** Pointer clicks and drags still reorder the target's window inside the hold
+     (55 to 90%, item 1); the hold hides it. The ceiling bounds what it can hide: a click whose events land 250 ms or
+     more into the hold, about 2% of natural clicks, gets under 50 ms of hold after them, and under an injected slow
+     activation 3 of 60 such clicks showed a visible raise (item 6b). Any raise of the ceiling goes back to the design
+     session.
+     **Not done:** dedicated mode's raise on pointer clicks (#282's ruling: nobody is at that desktop); the reorder
+     itself on pointer clicks and drags; #321's long first-click guards; a caret at the point for set_value (it needs
+     none: the value replaces the text, and select_text writes its own range).
+  10. **Model-facing text.** `docs/cua-api/agent-cursor.md` does not describe set_value's focus, so it is unchanged;
+     the refusal carries its own sentence.
+  Proven offline (`CaretFirstFocusTests`, 12; `ClickDeliveryTests`, 6 new and the cap test widened; `ValueSettingTests`,
+  1 new; with FakeAX for the field and the fake clock for the hold):
+  - set_value and select_text on a Safari page's unfocused field focus it by the caret write at {0, 0}, read at once,
+    with no AXFocused write, nothing pressed and no fallback click, Safari's DOM element included;
+  - a field the caret leaves unfocused is focused by its AXPress after the caret's settle; one neither step focuses is
+    refused after both settles with nothing of the method's written, and one with no AXPress after the caret's settle,
+    nothing pressed; a failed caret write is recorded and the press still follows; the in-flight check stops the
+    route before each step;
+  - a password field, by its subrole or an unreadable one, takes the caret route with its switch on, its caret
+    written and no AXFocused write or click, and main's write with the switch off;
+  - an AppKit field, Safari's native field, and a Chromium or Gecko page's field keep main's write, then the click
+    only when it did not take; a focused field, a combo box and a field whose focus is not settable are left alone;
+  - the fallback click's delivery record rides in the method's meta;
+  - an order that never reads back is released 200 ms after the events of a quick activation and at the 300 ms
+    ceiling after a slow one's (events 150 ms in), also while each repair blocks for 300 ms; a slower activation's
+    click is held past 200 ms from the hold's start until its guard ends;
+  - `frozenMs` is the hold's span to the stamped re-enable, at the cap's timer and at the guard's end, beside
+    `screenHoldMs`, on the wire; an unarmed stamp is never waited for, and the first stamp wins; through the seam's
+    wait and Unix clock (`ActivationSystem.awaitReenable`, `unixNow`), both on the fake clock so nothing depends on the
+    scheduler, a stamp 60 ms into the wait is recorded with the Unix times left where the hold, the events and the
+    release happened, and one that never comes is waited for the 100 ms bound and no longer, with no field (the first
+    version used a real-time 60 ms stamp against the real 100 ms bound, which a loaded hosted runner missed, run
+    42480881696);
+  - the hold's timer is strict with no leeway, and it fires once and not before its time; every hold's release (the
+    activation's, the guard's own hold's opening, the cap after the events) goes through `scheduleHoldRelease` and
+    the watch's samples through `schedule`, and a live block blocking on `schedule` leaves a release on
+    `scheduleHoldRelease` to fire before it ends;
+  - select_text focuses an unfocused AppKit field whose range is not settable and checks it again; a range that stays
+    unsettable is refused after the focus, and an element needing no focus before anything is written;
+  - `fieldFocus` on the wire.
+  Every other suite passes unchanged (#313's `TextEntryClickTests`, #315's `GeckoPointerTests`, #282's
+  `BackgroundPointerTests`, the paste and focus-hold suites). Each of 59 rules and bounds removed in turn
+  (`~/.local/share/187/mutate-324.py`) fails a test. focusField's glue (the page engine, the live subrole read, the
+  method's interval and the settle mark) reads live AX and is not unit tested, nor is whether the strict timer fires
+  on time under coalescing: the hosted check covered them (item 6b).
+  **What the hosted check must verify** (`probe/324-measure`'s cells, against main, each behind a frontmost TextEdit,
+  with SLSDisableUpdate and SLSReenableUpdate timed):
+  - **Safari, shared:** set_value and select_text on an unfocused page text field and textarea answer success with
+    `fieldFocus` `readBack` (`focusStep` `selection`; `press` where the caret did not focus), the value or selection
+    right, no pointer event on the page, no delivery record, no raise, and a freeze near the held activation's 120 ms
+    (about 100 ms with the strict timer, item 6b);
+  - **Safari, dedicated:** the same, every cell delivered;
+  - **Safari password fields, shared, 20 reps:** measured 20 of 20, 0 raises, a 124 ms freeze (item 1), so now on;
+  - **AppKit fields** (the probe app, TextEdit): set_value as on main, the AXFocused write, no raise; select_text on
+    an unfocused NSTextField succeeds where main answered `selectionNotSettable`;
+  - **the cap:** Safari shared clicks with `P324_DELAY_MS`'s slow activation give no visible raise where main's cap
+    showed 51 of 60, with `screenHoldMs` at most 300 (measured: main 47 of 60, this branch 4 of 60, item 1); natural
+    clicks' `screenHoldMs` a median of about 197; `frozenMs` present on every delivery record and within the measured
+    SLSReenableUpdate times;
+  - **the strict timer (item 6b):** measured, the ceiling's real freeze to the call at most 303.6 ms and main's 100 ms
+    cap at most 103.2, guard-ended releases unchanged;
+  - **Chromium and Gecko:** identical to main, set_value's fallbacks included.
+  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 8c206e91 on #324.
+
+- Decision (#316, 2026-11-08, `fix/316-overlay-guard`; the design session's ruling 4701abd8 on the spike's findings,
+  issue #316's last comment, kit `probe/316-measure` 2180de63, runs 42496485583 and 42500093229 on main 74fe29f8;
+  amends #296's entry and #305's): **the stale-point guard also refuses a coordinate click or drag start when the app
+  has a new window at layer 0 over the screenshot's window (rule W), and when the recorded node at the point lies in
+  an AXWebArea the hit does not lie in (rule G).** Both refuse with nothing posted, as `screenChangedSinceScreenshot`.
+  1. **The candidate withdrawn.** Ruling cb252e88's candidate, which refused by the action sequence alone (a click
+     after a key that may open something), refused 546 of the 898 clicks that landed over 1,160 clicks (61%), and
+     caught 96 of the 176 that went wrong while answering success. On run 2's rows it refused 273 of 449 landed and
+     caught 56 of 104 wrong.
+  2. **What the spike found.** (i) Safari's address-field overlay after ⌘L is a separate Safari window at layer 0 above
+     the browser window: present in all 48 ⌘L and ⌘L+typing cells, absent in every other, ⌘L+Escape included, where
+     the clicks land. Neither the focused address field, AXExpanded, the window's own tree nor the point lying inside
+     the overlay's bounds tells it (Safari swallows the next page click anywhere). (ii) Chrome's omnibox popup is also a
+     window of its own, but clicks pass through it: 0 of 64 wrong. (iii) Firefox's urlbar list lies in the window's
+     tree and takes clicks aimed at the page under it: 8 of 32, one of which navigated. (iv) Chrome keeps answering the
+     page a tab has left: after a navigation, 48 of 48 clicks placed from the old screenshot passed #296 (the old
+     node still reads its frame, the new page's hit is a non-interactive element) and landed on the new page.
+  3. **Rule W** (`newWindowAbove`, `guardedPointVerdict`). The screenshot keeps the on-screen window numbers its capture
+     already reads (`ShareableWindowCache`'s list, the engine's own windows left out; `ObservedScreenshot.windowList`),
+     so the observation reads nothing more. At a coordinate click and at a drag's start, in every app and both desktop
+     modes, the on-screen window list is read once (`onScreenWindowList`), front to back down to the click's window: a
+     window of the app's process at layer 0 above it that the screenshot's list did not hold refuses before the tree
+     is read, wherever it lies (reason `newWindow`; the meta's `stalePoint.newWindow` is its number). A window the
+     screenshot's list held, one below the click's window, one at another layer (a menu, a floating panel), another
+     app's, and a list that does not hold the click's window all leave the point to the tree; so does a screenshot
+     with no list or a click with no window number. No app is excepted (fork A): Chrome's omnibox popup refuses too.
+     Measured by emulation on run 2: Safari's ⌘L caught 24 of 24; 37 false refusals of 449 landed clicks, 32 of them
+     Chrome's omnibox popup after ⌘L and ⌘L+typing (Chrome for Testing and stable), 4 Finder's rename field after
+     Return, 1 Firefox (dedicated, ⌘L+typing). The design session accepts them as the cost: one re-observation, whose
+     list then holds the window.
+  4. **Rule G** (`ScreenshotNode.webArea`, `liesIn`). The record keeps, for each node, its nearest AXWebArea at or above
+     it, frameless nodes passed through (a web area itself is its own). After #296's identity and frame checks, a hit
+     that is not the node's own handle must be that web area or lie inside it: its parents are walked, reading only
+     the parent, until one is the web area (`CFEqual`), bounded by `stalePointAncestorLevels` (300); otherwise the verdict
+     is `otherWebArea`, refused before any kept reason (`nonInteractiveHit`, `hitAboveNode`, `unrecordedDescendant`,
+     `recordedHit`). Nested documents pass while the page is unchanged: a hit in an iframe's web area reaches the
+     page's further up, and a node inside the iframe needs the iframe's own document, so a point that now reaches the
+     outer page refuses. A node outside every web area and an empty hit are judged as before. Measured by emulation on
+     run 2 (the hit's web area against the screenshot's hit's, or no web area at all): 57 of 104 wrong clicks caught
+     (Chrome for Testing 24, stable 16, Firefox's urlbar list 6, Safari 11), 2 false refusals, both also W's. The build
+     differs from the emulation in two ways: it compares with the recorded node's web area, not the screenshot's hit's,
+     and it walks past nested web areas instead of comparing the nearest; and it applies in every app with a web area,
+     not only to the browsers' page cells.
+  5. **Together** on run 2: 76 of 104 wrong clicks caught, 37 false refusals of 449 (8%).
+  6. **The refusal.** Both reuse `screenChangedSinceScreenshot`: the model's remedy is the guard's own (a new screenshot,
+     then coordinates in it), the service and the docs already carry the name, and the meta's reason tells the rules
+     apart. G's sentence names the recorded element and "is in a page the point no longer reaches", then what is there
+     now, as #296's do. W's has its own, since no recorded element is at fault: "<App> has opened a window over the one
+     the screenshot showed, which can take the click".
+  7. **The cost.** W: one `CGWindowListCopyWindowInfo` of the on-screen list per guarded pointer, measured on the
+     MacBook with 30 windows on screen at 0.32 ms median and 0.97 ms p95 (200 reads); the meta's
+     `stalePoint.windowsMs` records it per click. G: no read when the hit is the node's own handle or empty; otherwise
+     one parent read per level from the hit up to the web area (the hit's depth below it, a few levels for a page's
+     text), or to the application when it lies outside; the meta's `stalePoint.webAreaReads` counts them. Both sit
+     inside `stalePoint.ms`. G's live cost is not measured here: the hosted check measures it.
+  8. **The residue on run 2** (28 of 104 wrong clicks still kept): page-made suggestion lists in Safari, Chrome and
+     Firefox, 18 (#330: the list is the page's own element, in the same web area, over the control the click aims at);
+     TextEdit's reflow after Return or ⌘V, 4 (#331: the text moved within the same text view, whose node still holds the
+     point); Safari's clicks placed from the page's tree after a re-observation that showed the panel, 6 of 12 (the
+     re-observation's list holds the overlay window, so W passes, and the point still reaches the page's element).
+     `docs/cua-api/agent-cursor.md`'s guard paragraph gains a second half that states them and what to do (the surface inventory's Table 3 addition of 2026-11-08, the docs test and parity's docs
+     oracle carry it).
+  An element route's record (`StalePointGate.check`), which replaces the first check's in the meta, keeps the first
+  check's `windowsMs` and the `webAreaReads` its verdict was judged after (the review of 73b44561..e62a7454, one P2).
+  Proven offline: `NewWindowGuardTests` (4) and `WebAreaGuardTests` (7) in `StalePointTests.swift`; #296's, #305's and
+  #301's suites unchanged; 998 engine tests pass. Each of 28 rule parts and bounds removed in turn
+  (`~/.local/share/187/mutate-316.py`) fails a test. Three mutations survive by design, since only a live click reaches
+  them: the capture's list not kept with its image, and the click's or the drag's call site passing no window number.
+  **The hosted A/B** (main 73b44561 against ca4652a7, run 42506462753, kit af721d0f; the engine's own refusals scored;
+  `docs/evidence/2026-11-08-overlay-guard/`):
+  - **Safari ⌘L and ⌘L+typing:** 32 of 32 clicks and drag starts refused `newWindow` (main: 32 wrong, success
+    answered); ⌘L+Escape 16 of 16 land on both.
+  - **Chrome's navigated tab** (link, ⌘L+URL, suggestion+Return): 40 of 40 refused `otherWebArea` (main: 40 on the new
+    page). Firefox's urlbar list: 8 of 8 refused (main: 6 wrong).
+  - **Costs, as emulated:** Chrome's omnibox after ⌘L, 48 refused `newWindow` that landed on main; Finder's rename field
+    after Return, 4.
+  - **The still-page gate** (live clicks on unchanged pages and apps, no key, no navigation; the design session's
+    condition, after #296's emulated table missed #305): main refused 0 of 473, the branch 3 of 492. Frames (same-origin,
+    cross-site, nested, and the page around them; 168 per head) and #305's toolbar cells (Safari's address field and 8 pt
+    above it, Reload, Chrome's toolbar; 44 per head) are all kept on both. The 3 are Wikipedia links in Chrome for
+    Testing whose recorded frame was a 1 pt sliver at the web area's bottom edge, where Chrome's hit-test answers its
+    own view group outside the web area: G refuses `otherWebArea`; main kept them (`nonInteractiveHit`), the page got
+    no event, and success was answered. The design session accepted them as is (17dd203e): a truthful refusal in place
+    of a false success, and no sliver rule.
+  - **G's reading confirmed:** on main's still sweep (run 42504762481), G read as "the nearest web area equal to the
+    screenshot's hit's" would have refused 36 Chrome frame clicks that landed (Chromium resolves into a frame only on a
+    later read); the ancestor reading built here refused none.
+  - **The cost:** `stalePoint.ms` p50 / p95 / max 0.19 / 1.74 / 10.75 ms on main, 0.80 / 4.15 / 8.24 on the branch;
+    `windowsMs` p50 0.52, p95 1.20; `webAreaReads` at most 14.
+  - **The residue** as item 8 counts it, unchanged on both heads: suggestion lists 6 of 8 per browser (#330), TextEdit
+    reflow 4 (#331), Safari's tree-placed clicks after a re-observation 6 of 12. The docs paragraph's text is final.
+  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling 4701abd8 on #316; the hosted A/B
+  by cursor235.
+- Decision (#293, 2026-11-08, `fix/293-eui-restore`; the issue's intent, which picks the persisted record over a
+  launchd watchdog; amends #292's item 6): **the engine records every enablement it owns in a file beside its socket,
+  and its next start writes back what an engine killed with SIGKILL, or one that crashed, left on, before it serves.**
+  1. **The defect.** #292 releases at end_task, at the engine's stop and 30 s after cua's last action, but an engine
+     killed with SIGKILL, or one that crashes, runs none of them, and Chrome keeps AXEnhancedUserInterface for its whole
+     life: complete mode, the screen-reader flag, and window moves animated over 3 to 5 frames (#288's spike).
+  2. **A record, not a watchdog.** Nothing found makes the record unworkable. The engine is the one place that knows
+     what it owns (A3), so it records that, and the next engine, which the service starts on the next use, writes it
+     back. No new process, launchd job or owner step is needed. The cost is the gap: EUI stays on from the kill to the
+     next engine's start (item 7).
+  3. **The record** (`EnablementRecord.swift`). It lives in the engine's own state directory, the 0700 directory of
+     engine.lock and usage.json beside the socket: `enablement/<pid>-<start>.json`, so
+     `~/Library/Application Support/cua/engine/enablement/` for the approved engine, and beside `CUA_ENGINE_SOCKET` for a
+     direct run. One JSON file per process, `{pid, start, attribute, ownerPid, ownerStart}`: the target's pid and kernel
+     start time in microseconds (`processStartMicros`, exact, compared as integers), the attribute written
+     (AXEnhancedUserInterface or AXManualAccessibility, `enablementAttribute`), and the owning engine's pid and start
+     time.
+     - **Written** in `enableReporting` when the write will be owned (A3 settles that at the first write: read false,
+       or written back by the engine since), and before the attribute is written. An engine killed between the two
+       leaves an entry for a process that read false; writing it back is harmless. A value read true or unreadable gets
+       no entry.
+     - **Filed under the observed process's identity.** The start time is read when the engine first observes the
+       process (`EnabledProcess.start`), and the entry is filed only while the pid still runs a process with that start
+       time (`EnablementRecord.add`). If another process has taken the pid since, nothing is filed and the attribute is
+       not written.
+     - **Removed** in `releaseIfUnobserved` once the write back is done or the process has ended. A failed write back
+       keeps the entry, with the ownership.
+     - **A write that did not take.** If it reads back false, nothing took, and the entry goes at once. That holds
+       only where the getter can confirm it (`enablementReadBackConfirms`). Electron's AXManualAccessibility getter is
+       computed and keeps reading false after the enablement (#244), so a failed write of it (a timeout that may have
+       taken) is always uncertain. If the outcome is uncertain (that case, -25208 and a read back that fails, or a
+       failing answer and a read back of true), the write is rolled back with a write of false. If the rollback succeeds, the entry goes and the process is remembered as
+       written back. If it fails too, the entry and the ownership are kept (logged), so a release or the next start
+       writes it back.
+  4. **Concurrency.** Each file is written whole under a temporary name and renamed into place (Foundation's atomic
+     write). A writer that dies mid-write leaves at most a temporary file, which no reader takes (only `.json` names are
+     read), and no other entry is touched. Connection threads write different files. One engine runs per directory
+     (engine.lock), and the restore runs after the lock. There is no fsync: the record matters only while its target
+     runs, and a machine crash ends the target too.
+  5. **The restore** (`WebAccessibility.restoreRecorded`, from `Server.start` after `takeLock` and before `bindSocket`,
+     so before any connection). For each entry:
+     - its owner still runs (a process at `ownerPid` with `ownerStart`): left alone, its enablement being that engine's
+       to release;
+     - its target is gone, or its pid now belongs to a process with another start time: dropped, nothing written;
+     - otherwise the attribute is written false and the entry dropped, and Chrome's -25208 counts as done (#292).
+     Nothing the record does not name, by pid and start time together, is written. The write has a 0.5 s messaging
+     timeout (`enablementRestoreTimeout`), and the whole restore a 2 s budget (`enablementRestoreBudgetMs`). An entry past
+     the budget, or whose write failed, is kept for the next start. An unreadable or malformed entry is skipped with a
+     log line, and kept. That covers a cut-short file, an attribute other than the two, and content filed under another
+     entry's name. Nothing in the record is fatal. Restores and skips are logged to the unified log (category
+     `enablement`) and to stderr.
+  6. **After a restore.** A restored process is remembered as written back (`writtenBack`). So the new engine's first
+     observation of it sets the attribute again, owned, whatever it reads, as after its own write back. This follows the
+     readback rule (Decision Log 2026-10-22): without it, a true readback would leave Chrome out of complete mode while
+     the engine counted it on. The memory is keyed by that process's own generation. The generation is read, then the
+     pid is checked to still run a process with the entry's start time (`EnablementRecord.currentGeneration`); if it
+     does not, nothing is remembered, so a pid reused during the restore keeps A3.
+  7. **Limits.**
+     - **The gap.** EUI stays on from the kill until the next engine starts. Nothing starts an engine only to restore.
+     - **One directory.** The record is per engine directory: an engine at another socket (a harness's
+       `CUA_ENGINE_SOCKET`) restores only its own directory's entries.
+     - **The live-owner rule** cannot fire within one directory while engine.lock holds. It guards the record under any
+       other arrangement.
+     - **Another client.** An attribute that another client also wants on after cua's write (VoiceOver) is written back,
+       as #292's release already does.
+  Proven offline:
+  - `EnablementRecordTests`, 17:
+    - the entry filed before the write, in the stated format, once while owned;
+    - for the review of 81a43091..bc44b120 (three P2s, all fixed):
+      - a pid another process took between the false read and the filing is neither filed nor written;
+      - a pid reused during the restore inherits no write-back memory, so a true value there is never written;
+      - an uncertain write is rolled back, and only then its entry removed;
+      - when the rollback fails too, the entry and the ownership are kept until the release writes it back;
+      - from the re-review, a failed AXManualAccessibility write that reads back false is rolled back, and kept owned
+        when the rollback fails;
+    - none for a value read true, an unreadable one, or a write that did not take;
+    - the entry removed at the close's and the stop's write back and when the process ended, and kept by a failed
+      write back;
+    - a dead owner's entry written false and dropped, with an owner whose pid was reused counted dead, then re-enabled
+      owned at the next observation though it reads true;
+    - nothing written for a gone target or a reused pid;
+    - a live owner's entry left;
+    - three malformed files and a leftover temporary file skipped with log lines while the readable entry is restored;
+    - no record at all;
+    - 200 entries from two concurrent writers all whole;
+    - a failed restore kept and retried;
+    - the budget leaving the third entry;
+    - the kernel start time exact and gone with its process.
+  - `native-engine.test.mjs`'s start test: the real engine drops 4,001 dead entries and skips a malformed one before
+    its socket first answers.
+  - Every other suite passes (1,015 engine tests, the node file's 21). One expectation changed:
+    `BackgroundPointerTests`' failed AXManualAccessibility write now counts two writes, the attempt and its rollback.
+  - Each of 41 rule parts and bounds removed in turn (`~/.local/share/187/mutate-293.py`) fails a test. That includes
+    the restore moved after the socket's bind, the server keeping no record, and the reviews' fixes: 3 mutations for
+    the identity, 1 for the restore's memory, 7 for the uncertain write (2 of them for AXManualAccessibility).
+  - Not unit tested: the live AX write and its timeout, and NSRunningApplication's generation.
+  **What the hosted check must verify** (`c7/` and `c8/` on Chrome for Testing, behind a frontmost TextEdit, against
+  main):
+  - **After the SIGKILL** (both heads): an observation by engine A writes EUI (prior false, write `success` with -25208),
+    and 2.6 s later the checkbox lists AXPress. On the branch, A's entry is on disk with Chrome's pid and A's pid. After
+    the SIGKILL, AXEnhancedUserInterface on Chrome's application element still reads true, AXPress stays, and a scripted
+    move or resize animates (3 to 5 frames).
+  - **The branch's next start** (B in the same directory): EUI reads false, and the checkbox's AXPress and the field's
+    character box are gone, within B's start, before its socket answers. The entry is gone, and B's stderr names the
+    restore. A move or resize then settles in about 2 frames, as #292's release did.
+  - **After the restore:** B's first observation sets EUI again, owned (an entry with B as owner), AXPress returns, and
+    B's shutdown writes it back with the entry gone.
+  - **Main, the control:** EUI and AXPress stay on through B's start, and window moves stay animated.
+  - **A3 (`c8/`):** EUI written true by another client before any engine is not recorded, and stays true through A's
+    SIGKILL and B's start and shutdown.
+  Date/Author: 2026-11-08, cursor235's implementer for #293.
+- Decision (#318, 2026-11-08, `docs/318-287-stated-limits`; the issue's intent, spawned by #287 under the design
+  session's ruling cb252e88; #287's runs 42379297174 and 42388802262, kit `probe/287-hosted`, and #315's A/B,
+  `docs/evidence/2026-11-08-gecko-routes/`): **#287's three limits that no fix ticket carries, where each stands on main
+  f859ce68, and the one the first-call document now states.** Nothing in the engine changes.
+  1. **Firefox's toolbar Reload reloads, but answers `clickUnconfirmed`, 3 of 3** (#287, run 42379297174; #315's A/B,
+     identical on its branch). The mechanism is deterministic, so the limit covers more than Reload. In shared mode a
+     background Firefox's activation clicks no activation point (its AXActivationPoint lies on a toolbar control), so
+     the click's own mouse down consumes the arm. A hit established outside every web area is `geckoChromeView`, which
+     is `unknown` (#315's item 4), and `deliverPointer` answers `clickUnconfirmed` for every posted pointer whose own
+     down consumed the arm into a view not known to accept first mouse. So a shared-mode click on Firefox's chrome
+     (the toolbar, the tabs, the address bar, a sidebar's header) whose own down consumes the arm, as a background
+     Firefox's first click does, answers `clickUnconfirmed`, whatever it did. Gecko's source says the chrome takes the
+     click, and Reload did. Three paths answer otherwise: dedicated mode, where the arm's inert click goes early; a
+     click that joins a held activation whose arm is already spent (right after ⌘L, say), which shares it without
+     re-arming (`BackgroundPointerTests`' `testAPointerIntoAnUnknownViewSharesASpentHoldRatherThanReArming`); and a
+     click by element ID that the element's own action carries.
+     The fix is #315 item 4's one line, which waits on what item 4 left open. #315's A/B answered half of it: Firefox's
+     bookmarks sidebar (307 of 308 grid points) and devtools (239 of 240) answer inside an AXWebArea and the toolbar
+     (0 of 124) in none, so only XUL chrome lies outside. The other half, a XUL `<tree>` outside every web area, which
+     Gecko refuses click-through, is not measured. The limit stands, stated; the change is a later ticket's.
+  2. **cua's release has no visible effect on VS Code 1.144.0** (Electron; #287, runs 42376953140 and 42379297174).
+     end_task, SIGTERM and the 30 s grace each answer `released: 1`, and the accessibility tree stays complete: 352 of
+     365 elements 3 s after each, and through 36 s idle. M2b hold 1's item 5 judged the release on the Electron fixture
+     by Chromium's own mode (`app.isAccessibilitySupportEnabled()` read false), never by the tree, so the two
+     measurements do not contradict each other. Whether VS Code's mode stays on, or its mode goes off while the tree
+     stays, is not measured, and no cause is claimed. The cost falls on the person: their VS Code keeps Chromium's
+     complete accessibility tree after cua is done with it. Nothing the model sees changes.
+  3. **VS Code's Toggle Panel is unresolved** (#287, run 42388802262). Its shared-mode click, on an AXCheckBox, was
+     carried by #282's element route. The AXPress answered success 2 of 2, which on a checkbox means #282's value check
+     read its state change. Yet the panel opened in only 1 rep; the other read no panel after. Dedicated clicks toggled
+     it. Two reps cannot tell a press VS Code ignored from a kit that read too early, so neither this spec nor the
+     first-call document makes a claim about it until a re-measure.
+  4. **The first-call document states item 1 only.** Since #315, `docs/cua-api/agent-cursor.md`'s second paragraph
+     names Firefox and says a `clickUnconfirmed` click "was sent but may only have activated the window: observe the
+     app before any retry". For Firefox's chrome that answer is not evidence that nothing happened, and a blind retry
+     of Reload reloads twice. So the paragraph gains one sentence before that one: `Unless this Mac is a dedicated
+     desktop, a click on a background Firefox window outside its page, on the toolbar for instance, can fail with
+     clickUnconfirmed even when it took effect, as Reload does.` It says "can", since item 1's other paths answer
+     otherwise (the review of the first draft, which said "fails"). Item 2 is not the model's: it acts on nothing the
+     release does. Item 3 makes no claim. The docs test (`test/cua-api/core-documentation.test.mjs`), repl-parity's docs
+     oracle (`scripts/repl-parity/docs-oracle.mjs`), `docs/cua-api/PROVENANCE.md` and the surface inventory's "Table 3
+     addition (2026-11-08, #318)" carry the sentence. Parity's expected diff is that paragraph alone. The plugin goes to
+     0.27.12, since the document the server serves changed. (#328 then took 0.27.13.)
+  Date/Author: 2026-11-08, cursor235's lane-2 implementer for #318.
+- Decision (#328, 2026-11-08, `fix/328-scroll-confirm`; the design session's ruling b1921fc3 on the spike's findings,
+  issue #328's comment, kit `probe/328-measure` e1804569, runs 42526444701, 42529832136 and 42532340875 on main
+  81a43091; amends #296's entry for the drag's end and the Design's **Scroll**): **a pointer action at a point outside the
+  screenshot is refused with nothing posted, and every scroll is confirmed by reading the scroll container under its
+  point before and after the wheel, with the bar's AXValue as the fallback; a scroll that moved nothing answers
+  `scrollUnconfirmed`, never success.**
+  1. **The corrected defect.** #324's 0 of 24 background scrolls were not AppKit dropping the wheel: the kit aimed at the
+     centre of a long text area's frame, which lies below the window, and `screenshotPoint` took any coordinate, so the
+     wheel went outside the window and the engine answered success (10 of 10 reproduced on main 81a43091). A click's or a
+     drag's press or release outside the screenshot can land on the person's window the same way. Separately, main
+     answered success on all 102 of the spike's scroll cells, every one that moved nothing included.
+  2. **What the spike found.** The posted wheel, the vendor's route (pid post, pixel units, the window in fields 51, 91
+     and 92), aimed inside the window, scrolled exactly 120 of 120 points in background AppKit, SwiftUI, Catalyst,
+     Safari, Chrome and Firefox; 1,977 background trials raised nothing and changed no key window. One surface truly
+     ignores it: System Settings' content pane, 0 of 16 by every way of posting to its process, which a write of its
+     bar's AXValue moves to within 1 point. Reading the scroll area's bar, its content's frame and one descendant
+     before and after caught 808 of 808 moves with no phantom; the first move read at 50 ms p50, 101 ms p95; at the
+     content's end the bar reads 1.0 before and after, which tells "at the end" from "did not arrive".
+  3. **The refusal** (`ObservedScreenshot.contains`, `ConnectionState.screenshotPoint`, Screenshot.swift). The
+     observed screenshot keeps its image's size in pixels; a point that is not 0 ≤ x < width and 0 ≤ y < height in it
+     is refused as `pointOutsideScreenshot`: "The point (x, y) lies outside the screenshot, which is W × H pixels. Give a
+     point inside it: x from 0 to W−1 and y from 0 to H−1." The check sits in `screenshotPoint`, which every coordinate
+     passes before anything is read or posted: a click's (`coordinatePlacement`), a scroll's and a drag's start and end
+     (`coordinatePoint`); after the minimized-window refusal and `noScreenshotForCoordinates`, whose causes come first.
+     A drag's middle event is the midpoint of its two ends, so inside the screenshot whenever they are; it has no check
+     of its own. An element's own point (an element click or scroll) is not a coordinate and is not checked. **The
+     stated limit:** a drag can no longer end outside the window, on another app or the desktop; dropping across windows
+     is #334.
+  4. **The confirmation** (ScrollConfirm.swift `confirmScroll`, from `scroll` in ScrollDrag.swift). The element under
+     the point (the coordinate's or the centre's hit-test, as before; for an element scroll the hit-test at its
+     clickable point, else the element) is walked up to its window (`scrollContainerLevels`, 300) for its container,
+     in one walk, nearest first: the first scrolling boundary at or above it of any kind, an AXScrollArea, an element
+     that advertises a page scroll (AXScroll{Up,Down,Left,Right}ByPage, `pageScrollActions`, the set the visible-frame
+     walk already clips by), or an AXWebArea that is not its scroll area's own page (an iframe's document, or a page with
+     no scroll area around it). A web area whose parent is an AXScrollArea defers to that scroll area, which holds the
+     bar. (Corrected by the review of f859ce68..b2281926, P1: the first build took the first AXScrollArea on the way up
+     and looked at page scrollers and web areas only when there was none, so a nested scroller under the point lost to
+     the page's scroll area, and the fallback could write the outer page's bar.) Before the wheel the engine reads the container's frame (the viewport), its content (AXContents'
+     first, else its first child that is not a scroll bar, for every kind of container, where a page scroller's or a
+     web area's is a movement probe only: item 10), its bar on the
+     scroll's axis, and one descendant about 40% into the viewport (`scrollTrackedAim`; the spike's walk, shorter than
+     30% of the viewport, wholly inside it, 10 deep; subtrees wholly outside the viewport are skipped; at most
+     `scrollTrackedBudget` nodes, 200, stopping at the first candidate whose leading edge lies 25 to 60% into the
+     viewport, `scrollTrackedBand`: item 10).
+     **Added to the spike's measures:** the element under the point itself, when it lies inside the container and is
+     shorter than the viewport on the axis, since a nested scroller the tree exposes as no boundary at all (an overflow
+     div with no scroll area and no page action) moves it while the container's own measures stay put. Each element
+     measure keeps both its edges on the axis (the same review, P2): an element clipped at its scroller's leading edge
+     keeps that edge while the scroll shrinks it from there, so only its trailing edge moves. The trailing edge counts
+     only for such a clipped element (corrected by the re-review, P2, since an element that merely grows, content
+     appended below the visible rows, moves its trailing edge too): the descendant's or the hit's leading edge sits
+     pinned, within 0.5 point, at a clipping edge both before and after (`ScrollClips`: the viewport's leading edge,
+     and for the hit also each ancestor's between it and the container, read once before the wheel), and its visible
+     size changes the way the asked scroll clips it (down or right shrinks it from that edge, up or left uncovers it
+     there), which is its trailing edge moving the asked way. The content's trailing edge never counts: a scroll area's
+     document is not clipped, and a web area's frame does not move. The descendant is chosen inside the container, the
+     nearest boundary. After the post the
+     container is read every `scrollConfirmIntervalMs` (15) for at most `scrollConfirmWindowMs` (800), stopping at the
+     first reading that moved: the content's, the descendant's or the hit's leading edge, else a pinned element's
+     trailing edge, at least
+     `scrollMovedMinimumPoints` (0.5) against the scroll, or the bar that much times the scrollable length (or by
+     `scrollBarMovedMinimum`, 0.0005, when that length does not read). Only a move the asked way counts. The constants
+     are named so the hosted gate can re-price them. **The window, 800 ms** (first built at 300; the hosted early read
+     of gate (b), run 42535468711, and the design session's acceptance 08d673c3): Chrome's tree trails its page by 150
+     to 200 ms (the first move read at p50 182 ms, max 241), a script-delayed page scroll read at 258 to 285 ms and a
+     rAF-animated one at 712 to 762 ms; at 300 ms false `scrollUnconfirmed` answers remained on those cells, at 800 none
+     anywhere. The same read showed the hit's measure removing almost every false answer on nested divs.
+  5. **The fallback.** When nothing moved, and the container's own bar reads, is settable and is not at its end (within `scrollBarEndTolerance`, 0.001, of 1 for down or right, of 0 for up or left), the
+     bar's AXValue is written by the requested delta, nothing posted (the in-flight intervention check first), then
+     polled again for the same window. After the write only the content, the descendant or the hit count: the bar reads
+     back the value written whether or not the view moved. **The conversion:** value + delta / (content − viewport),
+     clamped to 0…1, on the axis, where the content is the content's frame or, when that frame is no longer than the
+     viewport (a web area whose frame stays put), the container's AXContentSize; the viewport is the container's frame.
+     Its precision is the lengths': a move lands within the app's own rounding plus delta × (the lengths' error / the
+     scrollable length), and a scroll area whose frame includes a bar across the axis overstates the viewport by that
+     bar's thickness (a 15 pt bar on 800 scrollable points: 2 points on a 120-point delta). The spike's System Settings
+     writes, by the same formula, moved to within 1 point. **Gate (c): only the bar of the hit's nearest scroller.**
+     Only on a real AXScrollArea container with its own settable AXScrollBar, never on a page scroller or a web area
+     (corrected by round 4's review, P1: page scrollers, Catalyst's among them, take the wheel, and Settings' pane, the
+     fallback's reason, is an AXScrollArea). Never on any container but the hit's nearest boundary, nor on a bar that is
+     not that boundary's own (one without a settable bar has no fallback), nor at the end. And the boundary must be the hit's nearest scrollable ancestor as far
+     as the tree can tell (`scrollFallbackSkip`, the meta's `fallbackSkipped`): in all three browsers a nested overflow
+     div is a plain AXGroup with no bar and no page action, and Chrome exposes an iframe no better (Safari and Firefox
+     expose it as its own AXScrollArea), so the page's scroll area can be the nearest boundary the tree shows while an
+     unseen scroller took the wheel. So no write when the hit lies in web content (`web`: an AXWebArea on the path from
+     the hit to the container, as the container, or as its content); none when an element on that path, shorter than
+     the container on the axis, does not hold the hit's frame there (`clipped`: an unexposed scroller clipping the hit,
+     the design session's rule); otherwise the write is allowed. In practice the fallback is for AppKit's surfaces
+     (System Settings' pane); the spike's browsers took every in-bounds wheel. A write that answers an AXError is
+     recorded and not polled.
+  6. **The answers** (`scrollAnswer`). Moved: success, `meta.scroll.moved` the points the asked way and `by` the measure.
+     The container's bar at its end in that direction when read before the wheel: success at once, nothing polled and
+     no fallback (the design session's condition, 08d673c3), `meta.scroll.atEnd` and `endBefore` true, and the note
+     "What is at that point in <App> is already scrolled as far <direction> as it goes.", which does not claim that
+     nothing else moved: the wheel is still posted (as before #328), so a scroller around this one can take it by
+     chaining; skipping it would save nothing the answer waits for (the service now carries a scroll's note to the tool
+     result's text, as a click's). Otherwise, including no readable
+     container (nothing to poll, answered at once) and a container without a bar at its end: `scrollUnconfirmed`, "The
+     scroll was sent to <App>, but nothing at that point was seen to move. Observe the app (take a screenshot or call
+     getAXState()) before scrolling again.", with the meta. `meta.scroll` (and `cua/scroll`): container (`scrollArea`,
+     `pageScroller`, `webArea` or null), outcome, atEnd, endBefore, moved, by, barBefore, barAfter, firstMoveMs, polls,
+     barWrite, barWriteError, fallbackSkipped (`web` or `clipped`), containerBy (`window`), walked, readMs (the container, the walk and the first reading, before the wheel) and ms.
+  7. **Unchanged:** the posted wheel itself, its units, source, wheel count, fields and target process; no session or
+     HID tap, gesture phase, line unit or pointer move is added. A scroll still never arms the settle.
+  8. **The costs.** The refusal reads nothing. A scroll pays, before its wheel, the container walk (one role read per
+     level below the container, an actions read per level that is neither a scroll area nor a web area, and a parent's
+     role for a web area), the geometry and the descendant's walk (its
+     node count in `walked`), and after it 15 ms polls of at most four frame or value reads each. A scroll that moves
+     answers at its first move: about 50 ms (the spike's p50), about 200 ms in Chrome, whose tree trails its page. One
+     whose container's bar is at its end answers at once, before any poll. Only one whose container has no readable end
+     (a plain-group nested div at its end) or that moved nothing pays the whole 800 ms, plus the fallback's second
+     window when it writes. None of these is measured live here: the hosted check measures `readMs`,
+     `ms` and `firstMoveMs`.
+  9. **The limits.** A drag out of the window is refused (#334). A container with no readable end (no bar, and no
+     content frame or edge child that tells it: item 10) answers a scroll at its end `scrollUnconfirmed` after 800 ms
+     rather than the at-end success. Chrome's scripted scrollers that animate can outlast the window: Chrome holds its
+     accessibility frames until the animation settles, and on the hosted A/B one late cell missed the 800 ms window and
+     one mid cell's first move read at 813 ms; the window stays 800 ms, as the design session ruled. A surface whose
+     bar misreports its own end can take a no-op bar write and answer `scrollUnconfirmed` after about 1.7 s: System
+     Settings' sidebar, whose AXContentSize flickers between 1118 and 1178 pt, reads its bar 0.952–1.0 at its real
+     bottom, and in 2 of 8 at-end scrolls (bar 0.9663 and 0.952, outside the 0.03 guard) the fallback wrote 1.0 and
+     nothing moved (offset 0; run 42551661607). The design session accepted it (8d00d2ba): nothing moves that the model
+     did not aim at, and no move is claimed; writing only on positive evidence that content continues is logged in
+     tech-debt-tracker.md.
+     Web content gets no fallback. A page whose
+     descendants all leave the viewport in one step and read no frame once off it would show no move on the descendant;
+     the content, the bar and the hit still count. An element scroll's confirmation reads the hit-test at the element's
+     point, one more read than before.
+  10. **The hosted A/B** (run 42537713415 on e0c24b81, and a web pass on 8b5d314f, run 42540817002; kit
+     `probe/328-measure` c134b03c, reader `scripts/probe-328/offline/ab.mjs`). Gate (a): no new in-bounds refusal over
+     360 cells per head, and 96 of 96 points outside refused. Gate (b) on the web: no false answer across divTop, div,
+     iframe, hdiv, raf and mid in all three browsers on 8b5d314f; divEnd wrote no outer bar. Four failures, each fixed:
+     - **Catalyst's table (gate b), 3 of 3 false `scrollUnconfirmed`, main moving it.** UIKit gives every row and label
+       of a scroll view the page actions, so the nearest boundary was the label under the point itself (its walk read 1
+       node). A page scroller is now the top of the run of ancestors that all advertise page scrolling; the run stops
+       at an element with a scroll bar of its own, which is a boundary (round 4's P1: two genuinely nested
+       page-scrolling groups were merged, and the outer bar written). And every kind of container reads its first
+       child as its content, as the spike's `contentOf` did: the table's first row moved 50 points where its reused
+       cells jumped the other way. For a page scroller or a web area that child is a movement probe only (round 4's
+       P2: a first row taller than the viewport read as the whole document): the document's extent, for the end and
+       the conversion, comes only from a scroll area's content frame or AXContentSize, and without one there is no
+       geometric end and no conversion.
+     - **System Settings' content pane (gate c), the fallback never ran.** The hit's chain there holds no container
+       (`container: null`). When it holds none, the deepest AXScrollArea in the window whose frame holds the point is
+       taken (`scrollAreaUnder`, at most 3,000 nodes 30 deep, subtrees whose non-empty frame does not hold the point
+       skipped; `containerBy: "window"` in the meta): still the scroller under the point, never a sibling nor an outer
+       one when a deeper one holds it. The walk passes through frameless and empty-framed elements, but selects a
+       scroll area only when its own non-empty frame holds the point (round 4's P1: a deeper zero-frame scroll area was
+       selected and its bar written). Then the confirmation and the fallback run as usual.
+     - **Settings' sidebar at its real end (gate c), the bar written.** Its bar reads 0.976 to 0.986 at the bottom, and
+       its outline's frame is the viewport's (clipped, never moving), so neither the bar nor the content frame told the
+       end; the fallback wrote 1.0 and answered `scrollUnconfirmed` after about 1.7 s. The end (`scrollAtEnd`, for
+       `endBefore` and the fallback's guard alike) is now also reached when a content frame longer than the viewport
+       has its edge that way within `scrollEndEdgeTolerance` (1 point) of the viewport's (a scroll area's only, and when
+       it reads it decides: an edge child never overrides a document frame running on past the viewport), or when the
+       bar is within `scrollBarNearEnd` (0.03) of its end and the content's last child (first, scrolling up) lies
+       wholly inside the viewport within that point. A content frame no longer than the viewport is clipped to it and
+       tells nothing; a bar half way with the last child showing is a lazily filled list, not the end. (Narrowed by
+       round 4's review, P2: a virtualized list exposes a subset, and with its bar at 0.96 and its last exposed row
+       clipped at the bottom the first build answered the end with 32 points to go; 0.03 holds the sidebar's 0.976 to
+       0.986 and no more.) The 11 points the
+       spike's read-back counted after one write were the bar's own value read back: its offset and tracked measures
+       read 0, and after a write the confirmation already reads every measure but the bar.
+     - **Chrome's descendant walk, 800 nodes on every page, 96 to 202 ms before the wheel.** The budget is 200 and the
+       walk stops at the first candidate in the middle band. Expected: `walked` at most 200, usually far fewer where the
+       page's first band candidate comes early in its tree, and `readMs` about a quarter of the measured cost at the
+       cap (25 to 50 ms), less below it. Unmeasured: the hosted check measures it.
+     - **The final hosted pass** (run 42546633581 on b1d51686; Chrome's walk read 8 to 133 nodes, `readMs` 5 to 41;
+       every other gate clean): round 4's strict edge-child rule no longer called Settings' sidebar's real bottom (bar
+       0.976, last row clipped) the end, so the fallback wrote 1.0 and answered `scrollUnconfirmed` after about 1.7 s,
+       8 of 8. The strict rule before the wheel stays; after the wheel, when nothing moved within the window and the bar
+       read within `scrollBarNearEnd` (0.03) of its end both before and after, the answer is success with `atEnd` and
+       `endBefore` false (a list with content left would have moved under the wheel; the cost is the 800 ms window,
+       there only), and the fallback never writes a bar already within 0.03 of its end. That end yields to readable
+       document geometry (round 6's P2: a surface ignoring the wheel at offset 784 of 800, bar 0.98, answered atEnd with
+       16 points left): when a scroll area's content frame runs past the viewport's edge that way by more than 1 point
+       (`scrollDocumentRunsOn`; AXContentSize gives no position), the answer is `scrollUnconfirmed`, nothing written.
+       The sidebar's outline, clipped to the viewport, contradicts nothing and still answers atEnd.
+  Proven offline:
+  - `OutsideScreenshotTests` (4): each side of the image refused as each method's coordinates would arrive (a click's,
+    a scroll's, a drag's start and end), the sentence; the edge points (0, 0), (W−1, H−1) and a fraction short of the
+    width pass; the drag's middle between its ends. `TuningTests`' two coordinate tests now aim inside the image (one
+    aimed at its far corner, which the rule refuses).
+  - `ScrollConfirmTests` (35): moved up and down, the move in the meta; a move the wrong way is none; the bar at its
+    end before the wheel (down and up) answered `atEnd` and `endBefore` at once, the wheel posted, nothing polled or
+    written; the fallback written
+    with the converted value and confirmed, a fallback that moves nothing unconfirmed though its bar reads the value
+    written, an unsettable bar unconfirmed, the fallback behind the intervention check; no container unconfirmed; a
+    move first at 760 ms seen and one at 840 ms not; never written at the end (both directions, and at the end after
+    the wheel only); never on another container (a sibling scroll area, an outer one around the hit's); the
+    conversion and AXContentSize; the nearest boundary of any kind (a page scroller below a web area below a scroll
+    area, any page action, a page's web area deferring to its scroll area, an iframe's web area) and the walk's stop at
+    the window; for the review's P1, a page-scrolling group under the point at its own end answering atEnd, without a
+    bar of its own answering unconfirmed, and an iframe's web area, each with the outer page's settable bar never
+    written; for gate (c), the nearest page scroller's own settable bar written (by delta over its AXContentSize less
+    its frame) and never the outer one, a plain group clipping the hit skipped `clipped` with the outer bar unwritten,
+    the same group holding the hit wholly letting the outer bar be written, and a page's web area on the path skipped
+    `web`; for P2, an overflow div's text clipped at the div's top (pinned at the div's edge) seen by its trailing
+    edge, and for the re-review's P2 content appended below and a row under the point growing during an unanswered
+    upward wheel, with no bar, answering unconfirmed; a web page seen on the
+    descendant 40% down while its top rows clip, its container the page's scroll area; a nested scroller seen on the
+    hit; a horizontal scroll on the horizontal bar; for the hosted A/B, a Catalyst table's run of page scrollers one
+    container with its first row's move seen while reused cells jump the other way, a hit with no container taking the
+    deepest scroll area under the point (not a sibling, not the outer one) whose own bar the fallback writes and whose
+    move confirms, the sidebar's end told by the bar near its end with the last row showing (and not with rows below,
+    nor with the bar half way, nor by an outline frame clipped to the viewport), a scrolling content frame at the
+    viewport's edge telling the end with no bar, the bar alone telling the top, and the walk stopping in the band and
+    within 200 nodes; for round 4, a deeper empty-framed scroll area never selected by the window scan (its bar never
+    written), the scan skipping a 3,000-row subtree off the point, two nested page-scrolling groups with bars of their
+    own not merged (the inner at its end answering atEnd, the outer bar unwritten), no fallback on a page scroller
+    though its own bar is settable, the bar near its end needing the edge child wholly inside (not at 0.96 with the
+    last row clipped at the bottom, not with a first row running past the bottom scrolling up, never past a document
+    frame running on), and a page scroller's tall first row neither the extent nor the end; for the final pass, the
+    sidebar's bottom (bar 0.976, last row clipped, wheel ignored) answering atEnd after the window with no write, a bar
+    at 0.98 never written, a virtualized list at 0.96 the wheel moves answering moved, and a bar crossing into the band
+    by under half a point neither the end nor written; for round 6, a surface ignoring the wheel at offset 784 of 800
+    with bar 0.98 answering unconfirmed, nothing written.
+  - `ScrollWheelUnchangedTests` (1): the posted wheel's units, source, phases, deltas and field 51.
+  - `services-engine-service.test.mjs`' #328 test: `cua/scroll`, the at-end note in the tool result's text, and both
+    errors with their sentence, name and meta.
+  - Each of 87 rule parts and bounds removed in turn (`~/.local/share/187/mutate-328.py`) fails a test: 9 for the
+    refusal, 16 for the read and the poll (the window pinned at 800 from both sides; the hit's trailing edge unread,
+    and for the re-review the content's trailing edge counted, the trailing edge counted unpinned, the hit's clipping
+    ancestors unread), 11 for the container (3 for the review's P1: the first scroll area winning, a page's web area
+    not deferring, only AXScrollDownByPage; 1 for the A/B: the page-scroller run not climbed), 8 for the answers (3 for
+    the end before the wheel: polled first, the wheel skipped, endBefore off the wire), 15 for the fallback (4 for
+    gate (c)), 4 for the wheel, and 11 for the hosted A/B: the end's edge child never read or read without the bar
+    near its end, the content frame never read or read though clipped to the viewport, a 20-point tolerance; a page
+    scroller with no content; the window scan off, taking the first area rather than the deepest, or walking subtrees
+    off the point; the walk's budget back to 800 or with no stop in the band; and 8 for round 4: an empty-framed scroll
+    area selected, the run merging past an element with its own bar, the fallback on a page scroller, the edge child
+    needing only to reach the edge, the edge child overriding a document running on, the near end back to 0.05, a
+    page scroller's first child as the extent and as the end; and 4 for the final pass: no end judged after the wheel,
+    that end judged from the after reading alone or claimed before the wheel, the fallback writing a bar near its end;
+    and 1 for round 6: that end ignoring a document running on.
+    Three survive by design, since only a live
+    scroll reaches them: the method not confirming, the coordinate's hit not passed to the confirmation, and the meta
+    dropping `scroll`.
+  - Every other suite passes (1,055 engine tests, 1 skipped as before), and the docs test, repl-parity's docs oracle
+    suites and the service file's focused tests.
+  **What the hosted check must verify** (main against the branch, background targets behind a frontmost cover, as the
+  spike ran):
+  - **The refusal:** #324's below-the-window scrolls, and clicks and drags at points past each edge, refused
+    `pointOutsideScreenshot` with `actionInterval` null; the still-page click and drag sweep shows 0 new refusals at
+    in-bounds points (the edge pixels included).
+  - **No false `scrollUnconfirmed`** on scrollers that really moved: the spike's AppKit, SwiftUI, Catalyst, Safari,
+    Chrome and Firefox areas, a nested overflow div, an iframe, a horizontal scroller, a smooth-scrolling page, each
+    with the engine's own page-sized delta (larger than the spike's 120 points), and the measure that saw it.
+  - **The end:** a scroll down at the content's end answers success with `atEnd` and `endBefore` at once where the
+    container has a bar, and `scrollUnconfirmed` after 800 ms where it has none (how often, per browser), and the
+    wheel still chains to an outer scroller where the page does so.
+  - **The fallback:** System Settings' content pane moves by the bar write and answers success; the bar is never
+    written at its end, nor on any container but the hit's nearest scroller, and never in web content (`fallbackSkipped`
+    `web`) nor past a clipping group (`clipped`); the written move against the delta.
+  - **The costs:** `readMs`, `ms` and `firstMoveMs` per target, to re-price `scrollConfirmWindowMs` (800) and
+    `scrollConfirmIntervalMs`, and no false `scrollUnconfirmed` left on the delayed and rAF-animated cells at 800 ms;
+    and repl-parity green.
+  **Hosted results** (`docs/evidence/2026-11-08-scroll-confirm/`): gate (a) passed (0 `pointOutsideScreenshot` at
+  in-bounds points over 360 cells on e0c24b81 and 208 edge and corner cells on b1d51686; 96 of 96 outside points
+  refused); gate (b) passed (0 false `scrollUnconfirmed` on b1d51686 across every web scroller kind and the native
+  apps; first move p95 at most 472 ms; Catalyst 4 of 4); gate (c) held (no write in web content or on a container not
+  under the point; Settings' pane moves by the bar write; divEnd never writes the page's bar), with the sidebar limit
+  item 9 states. Chrome's walk before the wheel, at the 200-node cap: 8–133 nodes, 5–41 ms.
+  Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling b1921fc3 on #328; the hosted results
+  by cursor235.
 
 ## Outcomes & Retrospective
 

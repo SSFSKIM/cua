@@ -8,7 +8,9 @@ import Foundation
 // AXActivationPoint with route 2's recipe, the click posted there only where a hit-test shows the point inert (the window or
 // chrome that is no control) and inside the window's frame (cua's declared differences, U13 and the focus hold's review),
 // else at an inert point outside the frame. Around it, when another app is frontmost: screen updates held with the
-// private SLSDisableUpdate/SLSReenableUpdate, released when the guard ends or, by a timer, at `activationHoldCapMs`,
+// private SLSDisableUpdate/SLSReenableUpdate, released when the guard ends or, by a timer, at `activationHoldCapMs`
+// (for a shared-mode pointer whose activation clicked its in-window activation point, #321 and #324:
+// `activationPointHoldCapMs` after the pointer's events, never past `activationPointHoldCeilingMs` from the hold's start),
 // whichever is first, so a slow guard (a raise waiting out its AX timeout included) never freezes the display for long;
 // the release itself runs on a serial queue of its own, off the request path (ScreenUpdateReleases), since it blocks
 // while one of the engine's own windows animates (the agent cursor's panel, #235); and a 10 ms poll for up to 1 s that
@@ -40,6 +42,61 @@ import Foundation
 /// How long the screen-update hold may last: well under the guard's 1 s poll, and above the guards the sittings
 /// measured (37–58 ms, a coordinate click into TextEdit 82), so a guard of the usual length holds as the vendor's does.
 let activationHoldCapMs: Double = 100
+/// #321 (the design session's ruling 90ec27dd): a shared-mode pointer action (a click of any button, a drag) whose
+/// activation clicked its in-window activation point. Its own mouse down then makes the target's window order itself
+/// above the person's (Safari 81 of 100 clicks, TextEdit as a target too; 4 to 160 ms after the activation's first
+/// event, measured on the hosted runner), so its delivery guard reads the order on, every `deliveryGuardSampleMs`, for at
+/// least `activationPointGuardMinimumMs` after the events and until the order reads back as it was, and its hold is
+/// released then, or by the timer at this cap even when the order never reads back. A click without that activation
+/// click (Chromium's point lies outside its window) keeps `activationHoldCapMs` and `deliveryGuardMinimumMs`. Any
+/// raise of this cap goes back to the design session.
+///
+/// #324 (the design session's ruling 8c206e91): the cap counts from the pointer's events, not the hold's start, so a
+/// slow activation (#321's residue: events 133 to 201 ms into the hold, 65 ms or less of hold after them) still holds
+/// 200 ms past its events; and the hold never outlasts `activationPointHoldCeilingMs` from its start, whichever comes
+/// first. The worst freeze is the ceiling, on the about 2% of clicks whose activation is slow. Any raise of the ceiling
+/// goes back to the design session.
+let activationPointHoldCapMs: Double = 200
+let activationPointHoldCeilingMs: Double = 300
+let activationPointGuardMinimumMs: Double = 150
+/// #324's hosted A/B (runs 42480471918, 42480982911): a release by the hold's timer came late, the real freeze a
+/// median 68 ms past the 300 ms ceiling (349 to 377 ms frozen) and 26 ms past main's 200 ms cap (up to 79), while a
+/// release at the guard's own end came on time (a median 0.1 ms), so the lateness is the timer's, most likely the
+/// dispatch timer's coalescing in a background process with no UI. `holdTimerStrict`: the hold's timers are a strict
+/// dispatch source with no leeway on a queue of their own (`scheduleHoldTimer`); off, the global queue's `asyncAfter`
+/// as before. Re-measured (run 42487558851, ruling 5e4f745d): the ceiling's real freeze to the SLSReenableUpdate call
+/// 300.7 / 302.8 / 303.6 ms (p50 / p95 / max) against 368.5 / 375.6 / 378.2 without it, main's 100 ms cap 100.8 /
+/// 103.2 / 103.2 against 124.3 / 149.9 / 158.1. A latency-critical ProcessInfo activity for the hold's lifetime made no
+/// difference, alone or with it, and was removed.
+let holdTimerStrict = true
+/// The strict timer's dispatch flags and leeway (`scheduleHoldTimer`).
+var holdTimerFlags: DispatchSource.TimerFlags { .strict }
+let holdTimerLeewayNs = 0
+
+/// The queue the hold's strict timers fire on: its own, so no other work starves them; the release they run only
+/// enqueues the re-enable (ScreenUpdateReleases).
+private let holdTimerQueue = DispatchQueue(label: "cua.engine.hold-timer", qos: .userInteractive)
+
+/// Runs `work` once, `ms` milliseconds from now: under `holdTimerStrict` by a one-shot dispatch source timer
+/// (`holdTimerFlags`, `holdTimerLeewayNs`) on `holdTimerQueue`, cancelled as it fires; else as before.
+func scheduleHoldTimer(_ ms: Double, _ work: @escaping @Sendable () -> Void) {
+  let deadline = DispatchTime.now() + .microseconds(Int(max(0, ms) * 1000))
+  guard holdTimerStrict else {
+    DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: deadline, execute: work)
+    return
+  }
+  let timer = DispatchSource.makeTimerSource(flags: holdTimerFlags, queue: holdTimerQueue)
+  timer.schedule(deadline: deadline, repeating: .never, leeway: .nanoseconds(holdTimerLeewayNs))
+  timer.setEventHandler {
+    timer.cancel()  // a one-shot: the cancel also lets the source and this handler go
+    work()
+  }
+  timer.resume()
+}
+
+/// How long a delivery guard waits, in real time, for its hold's SLSReenableUpdate to be called on
+/// ScreenUpdateReleases' queue (`frozenMs`, #324) before it answers without it.
+let screenReenableStampWaitMs: Double = 100
 /// The guard's poll: every 10 ms for up to 1 s (F §5.5).
 let activationGuardTimeoutMs: Double = 1_000
 let activationGuardSampleMs: Double = 10
@@ -68,10 +125,15 @@ private enum SkyLight {
   static let reenableUpdate: Update? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSReenableUpdate").map { unsafeBitCast($0, to: Update.self) }
 
   /// Holds screen updates on the main connection and answers the release (nothing to release when the calls are absent).
-  static func hold() -> () -> Void {
-    guard let connection = mainConnectionID?() else { return {} }
-    _ = disableUpdate?(connection)
-    return { _ = reenableUpdate?(connection) }
+  /// `stamp` (#324) is armed once the update is disabled, and stamped just before SLSReenableUpdate is called.
+  static func hold(stamping stamp: ReenableStamp) -> () -> Void {
+    guard let connection = mainConnectionID?(), let disableUpdate, let reenableUpdate else { return {} }
+    _ = disableUpdate(connection)
+    stamp.arm()
+    return {
+      stamp.stamp(monotonicMilliseconds())
+      _ = reenableUpdate(connection)
+    }
   }
 }
 
@@ -105,8 +167,11 @@ struct ActivationSystem {
   var post: (CGEvent, pid_t) -> Void = gatedPost
   var frontmost: () -> pid_t? = frontmostPid
   var keyFocus: () -> pid_t? = { KeyFocus.pid() }
-  /// Answers the release, which returns at once: the re-enable runs on ScreenUpdateReleases' queue.
-  var holdScreenUpdates: () -> () -> Void = { DesktopGate.allows("SLSDisableUpdate") ? ScreenUpdateReleases.shared.hold(SkyLight.hold) : {} }
+  /// Answers the release, which returns at once: the re-enable runs on ScreenUpdateReleases' queue, and stamps its
+  /// `ReenableStamp` as it is called (#324).
+  var holdScreenUpdates: (ReenableStamp) -> () -> Void = { stamp in
+    DesktopGate.allows("SLSDisableUpdate") ? ScreenUpdateReleases.shared.hold { SkyLight.hold(stamping: stamp) } : {}
+  }
   var reactivate: (pid_t) -> Bool = { DesktopGate.allows("NSRunningApplication.activate") && (NSRunningApplication(processIdentifier: $0)?.activate(options: []) ?? false) }
   /// The user's focused window and its window number, the one the target's window must stay behind.
   var userWindow: (pid_t) -> (element: AXUIElement, id: CGWindowID)? = { user in
@@ -134,10 +199,20 @@ struct ActivationSystem {
   /// Seconds since the last input of any type on the HID system state: a person's input since an action's events stops
   /// the delivery guard's repairs after the hold's release.
   var secondsSinceInput: () -> Double = { CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: CGEventType(rawValue: ~0)!) }
-  /// Runs `work` after the given milliseconds on another thread (the hold's cap, kept while the guard is blocked).
+  /// Runs `work` after the given milliseconds on another thread: the after-action watch's samples, whose window-order
+  /// reads and repairs (an AXRaise) may block up to the AX timeout, so never on the hold's release queue.
   var schedule: (Double, @escaping @Sendable () -> Void) -> Void = { ms, work in
-    DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
+    DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + .microseconds(Int(max(0, ms) * 1000)), execute: work)
   }
+  /// Runs a hold's release after the given milliseconds (the cap's and the ceiling's timers, kept while the guard is
+  /// blocked; #324): `scheduleHoldTimer`, strict under `holdTimerStrict`, on a queue that runs nothing but releases,
+  /// each of which only enqueues the re-enable. Nothing else may use it: a blocking block there would hold every
+  /// release behind it (the review of e2e452c9..5dc2e65b, one P1).
+  var scheduleHoldRelease: (Double, @escaping @Sendable () -> Void) -> Void = scheduleHoldTimer
+  /// The wall clock the delivery record's Unix times are read on (Unix ms).
+  var unixNow: () -> Int64 = unixMilliseconds
+  /// Waits up to the given milliseconds of real time for a hold's re-enable stamp (#324, `ReenableStamp.wait`).
+  var awaitReenable: (ReenableStamp, Double) -> Double? = { stamp, ms in stamp.wait(upToMs: ms) }
 
   func believesItHasFocus(_ pid: pid_t) -> Bool { frontmost() == pid || keyFocus() == pid }
 }
@@ -209,6 +284,35 @@ final class ScreenUpdateReleases: @unchecked Sendable {
   func drain() { queue.sync {} }
 }
 
+/// When a screen-update hold's SLSReenableUpdate was really called (#324), on the monotonic clock: the cap's timer and
+/// the release's queue both run late (the spike measured the display frozen a median 12 to 26 ms past `screenHoldMs`,
+/// up to about 100 ms), so the release stamps it itself, just before the call. Armed only once a hold was really taken
+/// (SLSDisableUpdate called): an unarmed stamp is never waited for.
+final class ReenableStamp: @unchecked Sendable {
+  private let condition = NSCondition()
+  private var armed = false
+  private var at: Double?
+
+  func arm() { condition.withLock { armed = true } }
+
+  func stamp(_ time: Double) {
+    condition.withLock {
+      if at == nil { at = time }
+      condition.broadcast()
+    }
+  }
+
+  /// The stamp, waited for up to `ms` of real time when the hold was taken; nil when it was not, or not stamped by then.
+  func wait(upToMs ms: Double) -> Double? {
+    condition.lock()
+    defer { condition.unlock() }
+    guard armed else { return nil }
+    let deadline = Date(timeIntervalSinceNow: ms / 1000)
+    while at == nil, condition.wait(until: deadline) {}
+    return at
+  }
+}
+
 /// A release that runs once, however many times and from whichever thread it is asked for (the guard's own end, or the
 /// cap's timer).
 private final class OnceRelease: @unchecked Sendable {
@@ -240,6 +344,11 @@ struct DeliveryGuardOutcome: Equatable {
   /// The screen-update hold, from its start (the activation's, or the guard's own inside a held activation) to its
   /// release, at most the cap.
   var screenHoldMs: Double = 0
+  /// #324: the hold's real span, from its start to the moment its SLSReenableUpdate was called (`ReenableStamp`, on the
+  /// release's queue), which the cap's timer and the queue make later than `screenHoldMs`'s release; nil when no hold
+  /// was taken or the call had not come within `screenReenableStampWaitMs`. It is this hold's own span: SkyLight
+  /// re-enables the display only once every hold on the connection is released.
+  var frozenMs: Double?
   /// The guard reached the hold's cap before its stable samples: the display was released, the guard ended there.
   var capped = false
   /// The guard's last sample saw the target's window above the user's, or the target's process (or the bound app's) in
@@ -260,6 +369,8 @@ struct DeliveryGuardOutcome: Equatable {
   var repairAfterReleaseLatencyMs: Double?
   /// The guard stopped repairing after the release because the person gave input since the action's events.
   var personInput = false
+  /// What the guard's samples saw of the target's window ordered above the user's (#321), whatever the hold.
+  var transientRaise = TransientRaise()
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["restores": restores, "frontmostRestored": frontmostRestored, "otherAppFront": otherAppFront,
@@ -267,7 +378,25 @@ struct DeliveryGuardOutcome: Equatable {
                                "holdStartedAt": Int(holdStartedAt), "releasedAt": Int(releasedAt), "postedAt": Int(postedAt),
                                "repairedAfterRelease": repairedAfterRelease, "personInput": personInput]
     if let restoreLatencyMs { wire["restoreLatencyMs"] = restoreLatencyMs }
+    if let frozenMs { wire["frozenMs"] = frozenMs }
     if let repairAfterReleaseLatencyMs { wire["repairAfterReleaseLatencyMs"] = repairAfterReleaseLatencyMs }
+    wire["transientRaise"] = transientRaise.wire
+    return wire
+  }
+}
+
+/// The delivery guard's reading of a reorder (#321): whether a sample saw the target's window above the user's; how long
+/// from that first sample to the sample that read the order back as it was after the last one that saw it (to the
+/// guard's end when none did); and whether the order had not read back by the hold's release (the person may have seen
+/// it). `raiseLeft` is apart: what the guard's last sample saw.
+struct TransientRaise: Equatable {
+  var seen = false
+  var ms: Double?
+  var outlivedHold = false
+
+  var wire: [String: Any] {
+    var wire: [String: Any] = ["seen": seen, "outlivedHold": outlivedHold]
+    if let ms { wire["ms"] = ms }
     return wire
   }
 }
@@ -280,11 +409,22 @@ fileprivate struct GuardedUser {
 }
 
 /// A screen-update hold kept open for a delivery guard: its release (once, by the guard or the cap's timer), when it
-/// began, and the user it keeps in front.
+/// began, the user it keeps in front, and when its SLSReenableUpdate was called (`stamp`, #324).
 private struct OpenHold {
   let release: OnceRelease
   let startedAt: Double
   let user: GuardedUser
+  let stamp: ReenableStamp
+  /// Held until the order reads back (#321), to `activationPointHoldCapMs` after the events and never past
+  /// `activationPointHoldCeilingMs` from its start (#324); else to `activationHoldCapMs`.
+  var untilOrderReadsBack = false
+  /// The timer set as the hold opens, before any events: the ceiling, or main's cap.
+  var openingCapMs: Double { untilOrderReadsBack ? activationPointHoldCeilingMs : activationHoldCapMs }
+  /// The cap from the hold's start once the events went at `posted` (#324): whichever comes first of the cap after the
+  /// events and the ceiling; main's cap for any other hold.
+  func capMs(eventsAt posted: Double) -> Double {
+    untilOrderReadsBack ? min(posted - startedAt + activationPointHoldCapMs, activationPointHoldCeilingMs) : activationHoldCapMs
+  }
 }
 
 /// One action's fake activation of the app `pid` for its window.
@@ -308,6 +448,10 @@ final class FakeActivation {
   /// Set by a pointer action before its activation runs (#200): the guard ends on one stable sample and leaves its
   /// screen-update hold open for the delivery guard that follows the action's events (`deliver`).
   var holdsThroughDelivery = false
+  /// Set by a shared-mode pointer action before its activation runs (#321): when the activation clicks its in-window
+  /// activation point, the hold it leaves open for the delivery guard is held until the order reads back
+  /// (`activationPointHoldCapMs` after the events, `activationPointHoldCeilingMs` from its start).
+  var holdsUntilOrderReadsBack = false
   private let openHoldLock = NSLock()
   private var openHold: OpenHold?
 
@@ -388,10 +532,14 @@ final class FakeActivation {
     let guarded = guardedUser(user)
     let userWindow = guarded.window
     let holdStarted = system.now()
-    let release = OnceRelease(system.holdScreenUpdates())
+    let stamp = ReenableStamp()
+    let release = OnceRelease(system.holdScreenUpdates(stamp))
     var keepsHold = false
     defer { if !keepsHold { release() } }
-    system.schedule(activationHoldCapMs) { release() }
+    let untilOrderReadsBack = holdsThroughDelivery && holdsUntilOrderReadsBack && planned.kind == .activationPoint
+    // #324: a hold kept until the order reads back is timed at its ceiling here; its cap after the events is set once
+    // they go (`deliver`).
+    system.scheduleHoldRelease(untilOrderReadsBack ? activationPointHoldCeilingMs : activationHoldCapMs) { release() }
     postActivation(planned)
     let started = system.now()
     defer { guardMs = ((system.now() - started) * 1000).rounded() / 1000 }
@@ -421,7 +569,9 @@ final class FakeActivation {
     }
     if holdsThroughDelivery {
       keepsHold = true
-      openHoldLock.withLock { openHold = OpenHold(release: release, startedAt: holdStarted, user: guarded) }
+      openHoldLock.withLock {
+        openHold = OpenHold(release: release, startedAt: holdStarted, user: guarded, stamp: stamp, untilOrderReadsBack: untilOrderReadsBack)
+      }
     }
   }
 
@@ -464,11 +614,23 @@ final class FakeActivation {
   /// activation stands or the user's app is not another app in front: nothing to guard. An action whose events go on
   /// after `post` (the paste route's later lines and Returns) passes its `repairWindow`: the watch then runs while the
   /// action does and until the repair window after its last event, not after `post`'s.
-  func deliver(window: CGWindowID? = nil, watches: AfterActionWatches? = nil, repairWindow: RepairWindow? = nil,
-               _ post: () -> Void) -> DeliveryGuardOutcome? {
+  ///
+  /// #321: a shared-mode pointer action (`pointer`) whose activation, its own or the one it shares, clicked its
+  /// in-window activation point (`clickKind`) holds until the order reads back: the guard samples for at least
+  /// `activationPointGuardMinimumMs` after the events and ends on its stable samples as ever, and the hold is released
+  /// then, or by the timer whatever the order at `activationPointHoldCapMs` after the events or
+  /// `activationPointHoldCeilingMs` after the hold's start, whichever is first (#324). Every other delivery is as
+  /// before. Each records what its samples saw of a reorder (`transientRaise`) and the hold's real span (`frozenMs`).
+  ///
+  /// `ranBy` is the activation the calling action made (nil when it made none): the hold this activation's guard left
+  /// open is its own action's alone, cap and least wait included, so an action of another connection sharing the
+  /// activation before that action's events (a paste joining a pointer's, or the other way round) takes a hold of its
+  /// own under its own classification, never the pending one (#321's review).
+  func deliver(window: CGWindowID? = nil, watches: AfterActionWatches? = nil, repairWindow: RepairWindow? = nil, pointer: Bool = false,
+               ranBy action: FakeActivation?, _ post: () -> Void) -> DeliveryGuardOutcome? {
     let system = system
     let hold: OpenHold
-    if let open = takeOpenHold() {
+    if action === self, let open = takeOpenHold() {
       hold = open
     } else {
       guard activated, let user = system.frontmost(), user != pid, user != appPid else {
@@ -477,20 +639,30 @@ final class FakeActivation {
       }
       let guarded = guardedUser(user)
       let started = system.now()
-      let release = OnceRelease(system.holdScreenUpdates())
-      system.schedule(activationHoldCapMs) { release() }
-      hold = OpenHold(release: release, startedAt: started, user: guarded)
+      let stamp = ReenableStamp()
+      let release = OnceRelease(system.holdScreenUpdates(stamp))
+      let opened = OpenHold(release: release, startedAt: started, user: guarded, stamp: stamp,
+                            untilOrderReadsBack: pointer && clickKind == .activationPoint)
+      system.scheduleHoldRelease(opened.openingCapMs) { release() }
+      hold = opened
     }
+    let minimumMs = hold.untilOrderReadsBack ? activationPointGuardMinimumMs : deliveryGuardMinimumMs
     let targetWindow = window ?? windowID
     var outcome = DeliveryGuardOutcome()
     post()
     let posted = system.now()
+    // #324: a hold kept until the order reads back is capped from its events, by a timer of its own beside the ceiling's.
+    let capMs = hold.capMs(eventsAt: posted)
+    if hold.untilOrderReadsBack {
+      let release = hold.release
+      system.scheduleHoldRelease(max(0, hold.startedAt + capMs - posted)) { release() }
+    }
     let round = { (ms: Double) in (ms * 1000).rounded() / 1000 }
     // The cap's timer releases the hold on its own, so the deadline is read again after whatever may block (the poll's
     // sleep, the reads, a restore). Past it a repair shows on the display, so it is made only inside the repair window
     // after the events, only while the person has given no input since them (their own click into the app is never
     // undone), and reported apart (`repairedAfterRelease`).
-    let capPassed = { system.now() - hold.startedAt >= activationHoldCapMs }
+    let capPassed = { system.now() - hold.startedAt >= capMs }
     let personActed = { system.secondsSinceInput() * 1000 < system.now() - posted }
     var stable = 0
     // What the last sample saw, after every repair made before it: the report rests on it, not on a call's own answer
@@ -499,7 +671,10 @@ final class FakeActivation {
     var targetAbove = false
     var reactivationPending = false
     var refused = false
-    while stable < deliveryGuardStableSamples || system.now() - posted < deliveryGuardMinimumMs {
+    // A reorder's first sample, and the sample that read the order back after the last that saw it (`transientRaise`).
+    var raiseSeen: Double?
+    var orderReadBack: Double?
+    while stable < deliveryGuardStableSamples || system.now() - posted < minimumMs {
       system.sleep(capPassed() ? activationGuardSampleMs : deliveryGuardSampleMs)
       let front = signposted("route3.delivery.frontmost") { system.frontmost() }
       if front != hold.user.pid {
@@ -517,6 +692,13 @@ final class FakeActivation {
         reactivationPending = false
         if let targetWindow, let window = hold.user.window {
           targetAbove = signposted("route3.delivery.windowOrder") { system.isInFront(targetWindow, window.id) }
+          let at = system.now()
+          if targetAbove {
+            if raiseSeen == nil { raiseSeen = at }
+            orderReadBack = nil
+          } else if raiseSeen != nil, orderReadBack == nil {
+            orderReadBack = at
+          }
         } else {
           targetAbove = false
         }
@@ -554,14 +736,21 @@ final class FakeActivation {
       }
     }
     outcome.guardMs = round(system.now() - posted)
-    outcome.screenHoldMs = round(min(system.now() - hold.startedAt, activationHoldCapMs))
+    outcome.screenHoldMs = round(min(system.now() - hold.startedAt, capMs))
     outcome.raiseLeft = targetFront || targetAbove
     let ended = system.now()
+    if let raiseSeen {
+      let readBackInsideHold = orderReadBack.map { $0 - hold.startedAt < capMs } ?? false
+      outcome.transientRaise = TransientRaise(seen: true, ms: round((orderReadBack ?? ended) - raiseSeen), outlivedHold: !readBackInsideHold)
+    }
     let held = ended - hold.startedAt
+    // The Unix anchor is read with `ended`, before the release and the wait for its stamp (up to
+    // `screenReenableStampWaitMs`), so the wait never shifts the hold's, the release's or the events' Unix times.
+    let now = system.unixNow()
     hold.release()
-    let now = unixMilliseconds()
+    outcome.frozenMs = system.awaitReenable(hold.stamp, screenReenableStampWaitMs).map { round($0 - hold.startedAt) }
     outcome.holdStartedAt = now - Int64(held.rounded())
-    outcome.releasedAt = outcome.holdStartedAt + Int64(min(held, activationHoldCapMs).rounded())
+    outcome.releasedAt = outcome.holdStartedAt + Int64(min(held, capMs).rounded())
     outcome.postedAt = now - Int64((ended - posted).rounded())
     // The watch takes over where the guard could still repair: not past the window, not after the person's input, a
     // third app's front or a refused re-activation.

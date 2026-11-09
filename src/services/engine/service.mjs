@@ -30,8 +30,9 @@
 //   trip of the method's own request, null when it never reached the engine (a decline, an index the service refused);
 //   cua/settle on an observation whose settle hit its cap; cua/observation on every observation: the focus it read (the
 //   focused element's index and role, or focusedIndex null, #188) and whichever of the engine's own diagnostics the
-//   harness reads its timings carry (OBSERVATION_DIAGNOSTICS: web enablement, the web area's wait, the settle's status,
-//   duration and counts, the focus read's failure; the whitelist's scalars only), which, like every key here, rides in
+//   harness reads its timings carry (OBSERVATION_DIAGNOSTICS: web enablement, the web area's wait, the clipping frames
+//   read unplaced and their poll (#312), the settle's status, duration and counts, the focus read's failure; the
+//   whitelist's scalars only), which, like every key here, rides in
 //   the tool result's _meta and never in its content, the model's text; cua/screenshotOmitted on an observation whose screenshot the
 //   engine did not take, with the reason ("windowMinimized": a minimized window is observed in place with no screenshot,
 //   and the facade's getScreenshot then fails "Screenshot unavailable"); on input results and input errors the engine's meta as
@@ -45,10 +46,15 @@
 //   stopped it), cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
 //   row for the app) and cua/delivery (route 3's delivery guard after a pointer action's events, #200: the restores it
 //   made, whether it brought the user's app back to the front, the latency of the first, its own time, the screen hold's,
-//   whether it reached the hold's cap and left a raise, when the events were posted; a paste's too), cua/elementClick (an
-//   element click's plan, the ladder's reason and the hit-test's answer, #188) and cua/coordinateClick (a coordinate
+//   whether it reached the hold's cap and left a raise, when the events were posted, the hold's real span to its
+//   SLSReenableUpdate call, `frozenMs`, #324; a paste's too, and set_value's and select_text's fallback click's),
+//   cua/elementClick (an
+//   element click's plan, the ladder's reason and the hit-test's answer, #188), cua/coordinateClick (a coordinate
 //   click's placement, #259: the screenshot point, the window-local point, the posted global and window locations, the
-//   window frame used and the one read just before the events, numbers only). cua/afterActionRepairs rides on
+//   window frame used and the one read just before the events, numbers only), cua/pointerEstablish (#288: a left
+//   click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}), and cua/stalePoint (#296: the
+//   stale-point guard at a coordinate click's or drag's point, {verdict "kept" | "refused", reason, identity?,
+//   recordedRole?, hitRole?, ms, rechecked?, afterActivation?}, roles only). cua/afterActionRepairs rides on
 //   input results and on observations alike once the connection's after-action watch has repaired (#200: the repairs
 //   route 3's watch made after an action had answered, the connection's total and the last actions', each keyed by its
 //   delivery's postedAt). cua/serviceMs is the wrapper's (src/services/sky.mjs).
@@ -72,6 +78,15 @@
 //   double click or drag into a Chromium web page that would not take it (`backgroundClickRefused`, nothing posted) or
 //   carries a plain click by the hit element's own action; in `dedicated` mode it lets the window come forward. A
 //   pointer that may only have activated its window answers `clickUnconfirmed`. Both are input errors with the meta.
+// - The stale point (#296): in either mode the engine refuses a coordinate click or drag, nothing posted, when what the
+//   screenshot its coordinates came from showed at the point is gone, has moved off it, or has given way to another
+//   interactive element (`screenChangedSinceScreenshot`, an input error with the meta, its sentence asking for a new
+//   screenshot); a background page click #282 carries by an element's action is refused the same way, nothing pressed,
+//   and presses only what the screenshot showed there.
+// - The screenshot's bounds and the scroll's confirmation (#328): a click, scroll or drag at a point outside the
+//   screenshot its coordinates came from is refused, nothing posted (`pointOutsideScreenshot`); a scroll answers success
+//   only when the content under the point was seen to move, or with a note when it was already at its end, else
+//   `scrollUnconfirmed`. Both are input errors with the meta; the scroll's record rides as cua/scroll.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
@@ -101,27 +116,36 @@ const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
+  'cua/pointerEstablish': null, 'cua/stalePoint': null, 'cua/scroll': null,
 };
-// The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187), and its bound.
-const NOTED_METHODS = new Set(['paste', 'type_text']);
+// The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
+// background web page's text field that focused it instead, #283; a scroll whose content was already at its end, #328),
+// and its bound.
+const NOTED_METHODS = new Set(['paste', 'type_text', 'click', 'scroll']);
 const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
 // value-free diagnostics, #187; `elementClick`: an element click's plan, the ladder's reason and the hit-test's answer,
-// #188; `coordinateClick`: a coordinate click's placement from the screenshot point to the posted events, #259).
+// #188; `coordinateClick`: a coordinate click's placement from the screenshot point to the posted events, #259;
+// `pointerEstablish`: a left click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}, #288;
+// `stalePoint`: the stale-point guard's verdict at a coordinate pointer's point, #296; `scroll`: a scroll's confirmation,
+// the container under the point read before and after the wheel, the move seen, the end, the fallback's bar write, #328).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
-  'elementClick', 'coordinateClick'];
+  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application
 // element's role read before enablement (its cost, #244), what web enablement read before it touched the attribute and
 // which attribute it set, whether it attempted the write and the AXError's code when it failed (#282: it fails on Chrome
-// for Testing), whether the web area was seen or waited for (and how long), and each settle's status,
+// for Testing), whether the web area was seen or waited for (and how long), how many clipping frames read {0, 0, 0, 0}
+// and were taken as cutting nothing and what the enabling observation's poll of one found, in how many reads and how
+// long (#312: Firefox's web area on first contact), and each settle's status,
 // duration and counts, and why the focus read named no element (`focusRead`: an AXError, notAnElement or outsideTheWalk).
 // A bounded whitelist of scalars (a string of at most 64 characters), and the notification counts as at most 16 names
 // to integers; never the text, the tree or the timings of every phase. Beside them the service adds the focus every
 // observation read (./observations.mjs focus: the focused element's index and role, #188), which the trailer's selected
 // text masks for the model and the harness.
 const OBSERVATION_DIAGNOSTICS = ['launched', 'reopened', 'webShaped', 'appRoleReadMs', 'enablementPrior', 'enabled', 'enablementWrite', 'enablementWriteError', 'chromium', 'webAreaSeen', 'webAreaFound', 'webAreaWaitMs',
+  'unplacedClips', 'clipReread', 'clipRereadReads', 'clipRereadMs',
   ...['openSettle', 'settle'].flatMap(prefix => ['', 'Ms', 'Notifications', 'NotificationCounts', 'BusyWalks', 'BusyVetoes', 'Observed', 'QuietAtMs'].map(part => prefix + part)),
   'settleTreeReused', 'focusRead'];
 const DIAGNOSTIC_STRING_CHARS = 64, DIAGNOSTIC_COUNTS = 16;
@@ -152,7 +176,7 @@ export function desktopMode(env) {
   if (!DESKTOP_MODES.includes(desktop)) throw new Error(`cua: CUA_DESKTOP_MODE must be ${DESKTOP_MODES.join(' or ')} [invalid_setting]`);
   return desktop;
 }
-// How long end_task's hook may take (it writes two frames and waits on nothing).
+// How long end_task's hook may take (it writes two frames and waits at most 1 s for endTask's answer, #292).
 const TURN_ENDED_MS = 2_000;
 
 // An observation of another bundle than the approved one (internal: the call is redone once).
@@ -185,8 +209,9 @@ export function createService({nodeRepl, client = null}) {
     }
     return (client = createEngineClient({nodeRepl, appPath, cursor: cursorParams(nodeRepl?.env), desktop: desktopMode(nodeRepl?.env)}));
   };
-  // end_task: the cursor fades and the engine connection closes, if this session's client ever reached the engine; the
-  // next engine-bound request reconnects (client.mjs `release`, #237). Nothing here waits on the engine.
+  // end_task: the cursor fades, the engine is told the task ended (its web enablement goes at once, #292), and the engine
+  // connection closes, if this session's client ever reached the engine; the next engine-bound request reconnects
+  // (client.mjs `release`, #237). The hook waits at most 1 s, for endTask's answer before the close.
   nodeRepl?.addTurnEndedHandler?.({timeoutMs: TURN_ENDED_MS, run: () => client?.release?.()});
   // A non-shipping build names its variant (#187's control build), so a sitting attests the half that answered.
   const nativeEngine = identity => ({engine: 'cua', version: identity.engineVersion, build: identity.build,

@@ -170,19 +170,19 @@ final class ObservedScreenshotTests: XCTestCase {
     let observed: CGFloat = now == 2 ? 1 : 2
     let size = screenshotPixelSize(frame, scale: observed)
     let (connection, _) = connection(CapturedScreenshot(url: "file:///x.jpg", width: size.width, height: size.height, frame: frame, scale: observed))
-    XCTAssertEqual(try connection.screenshotPoint(Double(305 * observed), Double(430 * observed), app: app, window: window, lineage: nil),
-                   CGPoint(x: 305, y: 430))
+    XCTAssertEqual(try connection.screenshotPoint(Double(305 * observed), Double(215 * observed), app: app, window: window, lineage: nil),
+                   CGPoint(x: 305, y: 215))
   }
 
   func testEachAxisDividesByItsOwnScale() throws {
     // A frame whose pixel size rounded up on one axis: each axis maps back by the image's own size over the frame's, so
-    // the image's far corner is the window's.
+    // the image's last pixel (the far corner itself lies outside the image, #328) is the window's.
     let frame = CGRect(x: 0, y: 0, width: 300.3, height: 200)
     let size = screenshotPixelSize(frame, scale: 2)  // 601 × 400: x's scale is 601 / 300.3, y's exactly 2
     let (connection, _) = connection(CapturedScreenshot(url: "file:///x.jpg", width: size.width, height: size.height, frame: frame, scale: 2))
-    let corner = try connection.screenshotPoint(Double(size.width), Double(size.height), app: app, window: window, lineage: nil)
-    XCTAssertEqual(corner.x, 300.3, accuracy: 1e-9)
-    XCTAssertEqual(corner.y, 200, accuracy: 1e-9)
+    let corner = try connection.screenshotPoint(Double(size.width - 1), Double(size.height - 1), app: app, window: window, lineage: nil)
+    XCTAssertEqual(corner.x, 300.3 * 600 / 601, accuracy: 1e-9)
+    XCTAssertEqual(corner.y, 199.5, accuracy: 1e-9)
   }
 
   func testWithoutAScreenshotOfTheWindowTheClickIsRefused() throws {

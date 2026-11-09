@@ -1,0 +1,3173 @@
+{
+ "config": {
+  "imageOS": "macos26",
+  "imageVersion": "20261026.0455.2",
+  "runnerName": "GitHub Actions 1000036099",
+  "macOS": "ProductName: macOS ProductVersion: 26.6.2 BuildVersion: 25G83",
+  "chrome": "Google Chrome for Testing 156.0.8078.47",
+  "mainCommit": "d2568c764dd170b293e14198a6dbcdabe7555610",
+  "branchCommit": "96c6f093d008e567d5fdc57bd5a4a8325754ebbb",
+  "probeCommit": "0778237b5ddad3d09f18a2f75a6527428ac9af9b",
+  "rep": "1"
+ },
+ "cells": [
+  {
+   "label": "c1/branch/end_task",
+   "engine": "branch",
+   "chromePid": 6251,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "geomBefore": {
+    "phases": [
+     {
+      "app": {
+       "eui": false,
+       "euiSettable": true,
+       "listsEUI": true,
+       "listsManual": false,
+       "manual": "error -25205",
+       "manualSettable": "error -25205"
+      },
+      "label": "beforeObservation",
+      "move": {
+       "attr": "AXPosition",
+       "axFrameAfter": {
+        "h": 674,
+        "w": 620,
+        "x": 440,
+        "y": 61
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 674,
+        "w": 620,
+        "x": 440,
+        "y": 61
+       },
+       "frames": [
+        {
+         "h": 674,
+         "w": 620,
+         "x": 400,
+         "y": 31
+        },
+        {
+         "h": 674,
+         "w": 620,
+         "x": 440,
+         "y": 61
+        }
+       ],
+       "settledMs": 40.4,
+       "writeMs": 2.3
+      },
+      "moveBack": {
+       "attr": "AXPosition",
+       "axFrameAfter": {
+        "h": 624,
+        "w": 560,
+        "x": 400,
+        "y": 31
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 624,
+        "w": 560,
+        "x": 400,
+        "y": 31
+       },
+       "frames": [
+        {
+         "h": 624,
+         "w": 560,
+         "x": 440,
+         "y": 61
+        },
+        {
+         "h": 624,
+         "w": 560,
+         "x": 400,
+         "y": 31
+        }
+       ],
+       "settledMs": 18.3,
+       "writeMs": 0.8
+      },
+      "resize": {
+       "attr": "AXSize",
+       "axFrameAfter": {
+        "h": 624,
+        "w": 560,
+        "x": 440,
+        "y": 61
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 624,
+        "w": 560,
+        "x": 440,
+        "y": 61
+       },
+       "frames": [
+        {
+         "h": 674,
+         "w": 620,
+         "x": 440,
+         "y": 61
+        },
+        {
+         "h": 624,
+         "w": 560,
+         "x": 440,
+         "y": 61
+        }
+       ],
+       "settledMs": 51.6,
+       "writeMs": 27.8
+      },
+      "resizeBack": {
+       "attr": "AXSize",
+       "axFrameAfter": {
+        "h": 674,
+        "w": 620,
+        "x": 400,
+        "y": 31
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 674,
+        "w": 620,
+        "x": 400,
+        "y": 31
+       },
+       "frames": [
+        {
+         "h": 624,
+         "w": 560,
+         "x": 400,
+         "y": 31
+        },
+        {
+         "h": 674,
+         "w": 620,
+         "x": 400,
+         "y": 31
+        }
+       ],
+       "settledMs": 63.2,
+       "writeMs": 13.7
+      },
+      "start": {
+       "h": 674,
+       "w": 620,
+       "x": 400,
+       "y": 31
+      },
+      "steps": []
+     }
+    ]
+   },
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 553,
+    "enablementPrior": "false",
+    "enablementWrite": "success",
+    "enablementWriteError": -25208,
+    "enabled": "AXEnhancedUserInterface",
+    "webAreaFound": true
+   },
+   "watchBefore": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 9.1
+     }
+    ],
+    "samples": 2,
+    "t0": 1793942504824.852
+   },
+   "endedAt": 1793942505093,
+   "watchAfter": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": false,
+      "press": false,
+      "t": 9
+     }
+    ],
+    "samples": 10,
+    "t0": 1793942505106.365
+   },
+   "releasedPressLostMs": 22,
+   "releasedEuiFalseMs": 22,
+   "boxesLostMs": 22,
+   "final": {
+    "box": "empty",
+    "eui": false,
+    "press": false,
+    "t": 9
+   },
+   "geomAfter": {
+    "phases": [
+     {
+      "app": {
+       "eui": false,
+       "euiSettable": true,
+       "listsEUI": true,
+       "listsManual": false,
+       "manual": "error -25205",
+       "manualSettable": "error -25205"
+      },
+      "label": "afterEnd",
+      "move": {
+       "attr": "AXPosition",
+       "axFrameAfter": {
+        "h": 674,
+        "w": 620,
+        "x": 440,
+        "y": 61
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 674,
+        "w": 620,
+        "x": 440,
+        "y": 61
+       },
+       "frames": [
+        {
+         "h": 674,
+         "w": 620,
+         "x": 400,
+         "y": 31
+        },
+        {
+         "h": 674,
+         "w": 620,
+         "x": 440,
+         "y": 61
+        }
+       ],
+       "settledMs": 39.2,
+       "writeMs": 2.5
+      },
+      "moveBack": {
+       "attr": "AXPosition",
+       "axFrameAfter": {
+        "h": 624,
+        "w": 560,
+        "x": 400,
+        "y": 31
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 624,
+        "w": 560,
+        "x": 400,
+        "y": 31
+       },
+       "frames": [
+        {
+         "h": 624,
+         "w": 560,
+         "x": 440,
+         "y": 61
+        },
+        {
+         "h": 624,
+         "w": 560,
+         "x": 400,
+         "y": 31
+        }
+       ],
+       "settledMs": 33.1,
+       "writeMs": 1.6
+      },
+      "resize": {
+       "attr": "AXSize",
+       "axFrameAfter": {
+        "h": 624,
+        "w": 560,
+        "x": 440,
+        "y": 61
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 624,
+        "w": 560,
+        "x": 440,
+        "y": 61
+       },
+       "frames": [
+        {
+         "h": 674,
+         "w": 620,
+         "x": 440,
+         "y": 61
+        },
+        {
+         "h": 624,
+         "w": 560,
+         "x": 440,
+         "y": 61
+        }
+       ],
+       "settledMs": 40.3,
+       "writeMs": 9.9
+      },
+      "resizeBack": {
+       "attr": "AXSize",
+       "axFrameAfter": {
+        "h": 674,
+        "w": 620,
+        "x": 400,
+        "y": 31
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 674,
+        "w": 620,
+        "x": 400,
+        "y": 31
+       },
+       "frames": [
+        {
+         "h": 624,
+         "w": 560,
+         "x": 400,
+         "y": 31
+        },
+        {
+         "h": 674,
+         "w": 620,
+         "x": 400,
+         "y": 31
+        }
+       ],
+       "settledMs": 33.6,
+       "writeMs": 7.9
+      },
+      "start": {
+       "h": 674,
+       "w": 620,
+       "x": 400,
+       "y": 31
+      },
+      "steps": []
+     }
+    ]
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c1/main/end_task",
+   "engine": "main",
+   "chromePid": 7109,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "geomBefore": {
+    "phases": [
+     {
+      "app": {
+       "eui": false,
+       "euiSettable": true,
+       "listsEUI": true,
+       "listsManual": false,
+       "manual": "error -25205",
+       "manualSettable": "error -25205"
+      },
+      "label": "beforeObservation",
+      "move": {
+       "attr": "AXPosition",
+       "axFrameAfter": {
+        "h": 679,
+        "w": 620,
+        "x": 440,
+        "y": 61
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 679,
+        "w": 620,
+        "x": 440,
+        "y": 61
+       },
+       "frames": [
+        {
+         "h": 679,
+         "w": 620,
+         "x": 400,
+         "y": 31
+        },
+        {
+         "h": 679,
+         "w": 620,
+         "x": 440,
+         "y": 61
+        }
+       ],
+       "settledMs": 11.3,
+       "writeMs": 2
+      },
+      "moveBack": {
+       "attr": "AXPosition",
+       "axFrameAfter": {
+        "h": 629,
+        "w": 560,
+        "x": 400,
+        "y": 31
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 629,
+        "w": 560,
+        "x": 400,
+        "y": 31
+       },
+       "frames": [
+        {
+         "h": 629,
+         "w": 560,
+         "x": 440,
+         "y": 61
+        },
+        {
+         "h": 629,
+         "w": 560,
+         "x": 400,
+         "y": 31
+        }
+       ],
+       "settledMs": 31.3,
+       "writeMs": 0.6
+      },
+      "resize": {
+       "attr": "AXSize",
+       "axFrameAfter": {
+        "h": 629,
+        "w": 560,
+        "x": 440,
+        "y": 61
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 629,
+        "w": 560,
+        "x": 440,
+        "y": 61
+       },
+       "frames": [
+        {
+         "h": 679,
+         "w": 620,
+         "x": 440,
+         "y": 61
+        },
+        {
+         "h": 629,
+         "w": 560,
+         "x": 440,
+         "y": 61
+        }
+       ],
+       "settledMs": 58.5,
+       "writeMs": 22
+      },
+      "resizeBack": {
+       "attr": "AXSize",
+       "axFrameAfter": {
+        "h": 678,
+        "w": 620,
+        "x": 400,
+        "y": 31
+       },
+       "distinctFrames": 2,
+       "error": 0,
+       "final": {
+        "h": 678,
+        "w": 620,
+        "x": 400,
+        "y": 31
+       },
+       "frames": [
+        {
+         "h": 629,
+         "w": 560,
+         "x": 400,
+         "y": 31
+        },
+        {
+         "h": 678,
+         "w": 620,
+         "x": 400,
+         "y": 31
+        }
+       ],
+       "settledMs": null,
+       "writeMs": 14.1
+      },
+      "start": {
+       "h": 679,
+       "w": 620,
+       "x": 400,
+       "y": 31
+      },
+      "steps": []
+     }
+    ]
+   },
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 401,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208,
+    "enabled": null,
+    "webAreaFound": true
+   },
+   "watchBefore": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 9.9
+     }
+    ],
+    "samples": 2,
+    "t0": 1793942528401.628
+   },
+   "endedAt": 1793942528649,
+   "watchAfter": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 11.2
+     }
+    ],
+    "samples": 10,
+    "t0": 1793942528658.4292
+   },
+   "releasedPressLostMs": null,
+   "releasedEuiFalseMs": null,
+   "boxesLostMs": null,
+   "final": {
+    "box": "box",
+    "eui": true,
+    "press": true,
+    "t": 11.2
+   },
+   "geomAfter": {
+    "phases": [
+     {
+      "app": {
+       "eui": true,
+       "euiSettable": true,
+       "listsEUI": true,
+       "listsManual": false,
+       "manual": "error -25205",
+       "manualSettable": "error -25205"
+      },
+      "label": "afterEnd",
+      "move": {
+       "attr": "AXPosition",
+       "axFrameAfter": {
+        "h": 678,
+        "w": 620,
+        "x": 440,
+        "y": 61
+       },
+       "distinctFrames": 4,
+       "error": 0,
+       "final": {
+        "h": 678,
+        "w": 620,
+        "x": 440,
+        "y": 61
+       },
+       "frames": [
+        {
+         "h": 678,
+         "w": 620,
+         "x": 400,
+         "y": 31
+        },
+        {
+         "h": 678,
+         "w": 620,
+         "x": 420,
+         "y": 47
+        },
+        {
+         "h": 678,
+         "w": 620,
+         "x": 436,
+         "y": 59
+        },
+        {
+         "h": 678,
+         "w": 620,
+         "x": 440,
+         "y": 61
+        }
+       ],
+       "settledMs": 99.7,
+       "writeMs": 0.7
+      },
+      "moveBack": {
+       "attr": "AXPosition",
+       "axFrameAfter": {
+        "h": 628,
+        "w": 560,
+        "x": 400,
+        "y": 31
+       },
+       "distinctFrames": 4,
+       "error": 0,
+       "final": {
+        "h": 628,
+        "w": 560,
+        "x": 400,
+        "y": 31
+       },
+       "frames": [
+        {
+         "h": 628,
+         "w": 560,
+         "x": 440,
+         "y": 61
+        },
+        {
+         "h": 628,
+         "w": 560,
+         "x": 419,
+         "y": 46
+        },
+        {
+         "h": 628,
+         "w": 560,
+         "x": 403,
+         "y": 34
+        },
+        {
+         "h": 628,
+         "w": 560,
+         "x": 400,
+         "y": 31
+        }
+       ],
+       "settledMs": 113.3,
+       "writeMs": 0.3
+      },
+      "resize": {
+       "attr": "AXSize",
+       "axFrameAfter": {
+        "h": 628,
+        "w": 560,
+        "x": 440,
+        "y": 61
+       },
+       "distinctFrames": 3,
+       "error": 0,
+       "final": {
+        "h": 628,
+        "w": 560,
+        "x": 440,
+        "y": 61
+       },
+       "frames": [
+        {
+         "h": 678,
+         "w": 620,
+         "x": 440,
+         "y": 61
+        },
+        {
+         "h": 631,
+         "w": 564,
+         "x": 440,
+         "y": 61
+        },
+        {
+         "h": 628,
+         "w": 560,
+         "x": 440,
+         "y": 61
+        }
+       ],
+       "settledMs": 119.8,
+       "writeMs": 2.5
+      },
+      "resizeBack": {
+       "attr": "AXSize",
+       "axFrameAfter": {
+        "h": 678,
+        "w": 620,
+        "x": 400,
+        "y": 31
+       },
+       "distinctFrames": 4,
+       "error": 0,
+       "final": {
+        "h": 678,
+        "w": 620,
+        "x": 400,
+        "y": 31
+       },
+       "frames": [
+        {
+         "h": 628,
+         "w": 560,
+         "x": 400,
+         "y": 31
+        },
+        {
+         "h": 654,
+         "w": 591,
+         "x": 400,
+         "y": 31
+        },
+        {
+         "h": 674,
+         "w": 615,
+         "x": 400,
+         "y": 31
+        },
+        {
+         "h": 678,
+         "w": 620,
+         "x": 400,
+         "y": 31
+        }
+       ],
+       "settledMs": 101.5,
+       "writeMs": 1.5
+      },
+      "start": {
+       "h": 678,
+       "w": 620,
+       "x": 400,
+       "y": 31
+      },
+      "steps": []
+     }
+    ]
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c2/branch/grace",
+   "engine": "branch",
+   "chromePid": 7980,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 348,
+    "enablementPrior": "false",
+    "enablementWrite": "success",
+    "enablementWriteError": -25208,
+    "enabled": "AXEnhancedUserInterface",
+    "webAreaFound": true
+   },
+   "watch": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": true,
+      "press": false,
+      "t": 6.3
+     },
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 2000.5
+     },
+     {
+      "box": "empty",
+      "eui": false,
+      "press": false,
+      "t": 31752.2
+     }
+    ],
+    "samples": 137,
+    "t0": 1793942543887.148
+   },
+   "observedAt": 1793942543880,
+   "pressFirstMs": 2008,
+   "releasedMs": 31759,
+   "releasedAfterReobsMs": null,
+   "euiAtRelease": false,
+   "final": {
+    "box": "empty",
+    "eui": false,
+    "press": false,
+    "t": 31752.2
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c2/main/grace",
+   "engine": "main",
+   "chromePid": 9650,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 267,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208,
+    "enabled": null,
+    "webAreaFound": true
+   },
+   "watch": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": true,
+      "press": false,
+      "t": 6.6
+     },
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 2011
+     }
+    ],
+    "samples": 136,
+    "t0": 1793942587195.263
+   },
+   "observedAt": 1793942587189,
+   "pressFirstMs": 2017,
+   "releasedMs": null,
+   "releasedAfterReobsMs": null,
+   "euiAtRelease": null,
+   "final": {
+    "box": "box",
+    "eui": true,
+    "press": true,
+    "t": 2011
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c2/branch/grace-reobs",
+   "engine": "branch",
+   "chromePid": 11492,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 434,
+    "enablementPrior": "false",
+    "enablementWrite": "success",
+    "enablementWriteError": -25208,
+    "enabled": "AXEnhancedUserInterface",
+    "webAreaFound": true
+   },
+   "reobservation": {
+    "at": 20102,
+    "ms": 100,
+    "enablementPrior": "owned",
+    "enablementWrite": null,
+    "enablementWriteError": null,
+    "enabled": null,
+    "webAreaFound": null
+   },
+   "reobsAt": 1793942651138,
+   "watch": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": true,
+      "press": false,
+      "t": 10.2
+     },
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 2003.8
+     },
+     {
+      "box": "empty",
+      "eui": false,
+      "press": false,
+      "t": 52219
+     }
+    ],
+    "samples": 225,
+    "t0": 1793942631047.955
+   },
+   "observedAt": 1793942631036,
+   "pressFirstMs": 2016,
+   "releasedMs": 52231,
+   "releasedAfterReobsMs": 32129,
+   "euiAtRelease": false,
+   "final": {
+    "box": "empty",
+    "eui": false,
+    "press": false,
+    "t": 52219
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c3/branch/sigterm",
+   "engine": "branch",
+   "chromePid": 13954,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 410,
+    "enablementPrior": "false",
+    "enablementWrite": "success",
+    "enablementWriteError": -25208,
+    "enabled": "AXEnhancedUserInterface",
+    "webAreaFound": true
+   },
+   "watchBefore": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 6.6
+     }
+    ],
+    "samples": 3,
+    "t0": 1793942699577.7932
+   },
+   "endedAt": 1793942699920,
+   "watchAfter": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": false,
+      "press": false,
+      "t": 5.9
+     }
+    ],
+    "samples": 11,
+    "t0": 1793942699935.879
+   },
+   "releasedPressLostMs": 22,
+   "releasedEuiFalseMs": 22,
+   "boxesLostMs": 22,
+   "final": {
+    "box": "empty",
+    "eui": false,
+    "press": false,
+    "t": 5.9
+   },
+   "engineExit": 143,
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c3/main/sigterm",
+   "engine": "main",
+   "chromePid": 14497,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 475,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208,
+    "enabled": null,
+    "webAreaFound": true
+   },
+   "watchBefore": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 27.7
+     }
+    ],
+    "samples": 3,
+    "t0": 1793942713459.6912
+   },
+   "endedAt": 1793942713792,
+   "watchAfter": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 8.1
+     }
+    ],
+    "samples": 11,
+    "t0": 1793942713810.152
+   },
+   "releasedPressLostMs": null,
+   "releasedEuiFalseMs": null,
+   "boxesLostMs": null,
+   "final": {
+    "box": "box",
+    "eui": true,
+    "press": true,
+    "t": 8.1
+   },
+   "engineExit": 143,
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c4/branch/after-grace-click",
+   "engine": "branch",
+   "chromePid": 15096,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 672,
+    "enablementPrior": "false",
+    "enablementWrite": "success",
+    "enablementWriteError": -25208,
+    "enabled": "AXEnhancedUserInterface",
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXCheckBox",
+     "title": "Probe option",
+     "description": "",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 420,
+     "y": 230
+    }
+   },
+   "pixel": {
+    "x": 20,
+    "y": 199,
+    "scale": 1
+   },
+   "watchIdle": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": true,
+      "press": false,
+      "t": 10.8
+     },
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 1597.8
+     },
+     {
+      "box": "empty",
+      "eui": false,
+      "press": false,
+      "t": 31598
+     }
+    ],
+    "samples": 83,
+    "t0": 1793942726507.2498
+   },
+   "releasedMs": 31614,
+   "stateBeforeClick": {
+    "box": "empty",
+    "eui": false,
+    "press": false,
+    "t": 31598
+   },
+   "clickAfterObservationMs": 33221,
+   "clickMs": 2418,
+   "clickStartedAt": 1793942759712,
+   "click": {
+    "meta": {
+     "elementClick": {
+      "action": "AXPress",
+      "plan": "action",
+      "pressed": "hit",
+      "reason": "webArea",
+      "pressedRole": "AXCheckBox",
+      "walk": [
+       "AXCheckBox"
+      ]
+     },
+     "coordinateClick": {
+      "windowPoint": {
+       "x": 20,
+       "y": 199
+      },
+      "windowFrame": {
+       "height": 679,
+       "x": 400,
+       "width": 620,
+       "y": 31
+      },
+      "screenshotPoint": {
+       "x": 20,
+       "y": 199
+      },
+      "postedWindowLocation": {
+       "x": 20,
+       "y": 199
+      },
+      "frameBeforePost": null,
+      "postedLocation": {
+       "y": 230,
+       "x": 420
+      }
+     },
+     "pointerEstablish": {
+      "ms": 23.854,
+      "webAreaFound": true,
+      "rehits": 1
+     },
+     "receivedAt": 1793942759713,
+     "endedAt": 1793942762128,
+     "activationGuardMs": 149.601,
+     "activationJoin": "fresh",
+     "hidIdleMs": null,
+     "inputRoute": 3,
+     "activationClickKind": {
+      "when": "early",
+      "kind": "inertOutside",
+      "point": "activationPoint"
+     },
+     "activationClick": "outsideFrame",
+     "startedAt": 1793942762127
+    }
+   },
+   "clickDelta": {
+    "pointerdown": 1,
+    "pointerup": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "optionChange": 1
+   },
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": true,
+    "active": "option",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": true
+   },
+   "pointerEvents": [
+    {
+     "ev": "pointerdown",
+     "dt": 2432,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "mousedown",
+     "dt": 2433,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "mouseup",
+     "dt": 2436,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "click",
+     "dt": 2437,
+     "trusted": true,
+     "target": "option"
+    }
+   ],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 12.5
+     }
+    ],
+    "samples": 5,
+    "t0": 1793942763645.942
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {
+    "pointerdown": 1,
+    "pointerup": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "optionChange": 1
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "c4/main/after-grace-click",
+   "engine": "main",
+   "chromePid": 17175,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 387,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208,
+    "enabled": null,
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXCheckBox",
+     "title": "Probe option",
+     "description": "",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 420,
+     "y": 230
+    }
+   },
+   "pixel": {
+    "x": 20,
+    "y": 199,
+    "scale": 1
+   },
+   "watchIdle": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": true,
+      "press": false,
+      "t": 5.2
+     },
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 1952.5
+     }
+    ],
+    "samples": 102,
+    "t0": 1793942772856.627
+   },
+   "releasedMs": null,
+   "stateBeforeClick": {
+    "box": "box",
+    "eui": true,
+    "press": true,
+    "t": 1952.5
+   },
+   "clickAfterObservationMs": 33163,
+   "clickMs": 112,
+   "clickStartedAt": 1793942806013,
+   "click": {
+    "meta": {
+     "endedAt": 1793942806123,
+     "receivedAt": 1793942806015,
+     "activationClick": "outsideFrame",
+     "hidIdleMs": null,
+     "activationJoin": "fresh",
+     "elementClick": {
+      "action": "AXPress",
+      "reason": "webArea",
+      "pressedRole": "AXCheckBox",
+      "pressed": "hit",
+      "plan": "action",
+      "walk": [
+       "AXCheckBox"
+      ]
+     },
+     "activationClickKind": {
+      "when": "early",
+      "point": "activationPoint",
+      "kind": "inertOutside"
+     },
+     "coordinateClick": {
+      "windowPoint": {
+       "x": 20,
+       "y": 199
+      },
+      "screenshotPoint": {
+       "x": 20,
+       "y": 199
+      },
+      "postedLocation": {
+       "y": 230,
+       "x": 420
+      },
+      "postedWindowLocation": {
+       "x": 20,
+       "y": 199
+      },
+      "frameBeforePost": null,
+      "windowFrame": {
+       "x": 400,
+       "width": 620,
+       "height": 679,
+       "y": 31
+      }
+     },
+     "inputRoute": 3,
+     "activationGuardMs": 82.336,
+     "startedAt": 1793942806123
+    }
+   },
+   "clickDelta": {
+    "pointerdown": 1,
+    "pointerup": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "optionChange": 1
+   },
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": true,
+    "active": "option",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": true
+   },
+   "pointerEvents": [
+    {
+     "ev": "pointerdown",
+     "dt": 111,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "mousedown",
+     "dt": 112,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "mouseup",
+     "dt": 113,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "click",
+     "dt": 113,
+     "trusted": true,
+     "target": "option"
+    }
+   ],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 14.7
+     }
+    ],
+    "samples": 4,
+    "t0": 1793942807646.6628
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {
+    "pointerdown": 1,
+    "pointerup": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "optionChange": 1
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "c5/branch/first-checkbox",
+   "engine": "branch",
+   "chromePid": 18474,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 350,
+    "enablementPrior": "false",
+    "enablementWrite": "success",
+    "enablementWriteError": -25208,
+    "enabled": "AXEnhancedUserInterface",
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXCheckBox",
+     "title": "Probe option",
+     "description": "",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 420,
+     "y": 230
+    }
+   },
+   "pixel": {
+    "x": 20,
+    "y": 199,
+    "scale": 1
+   },
+   "clickAfterObservationMs": 1,
+   "clickMs": 1995,
+   "clickStartedAt": 1793942817317,
+   "click": {
+    "meta": {
+     "endedAt": 1793942819308,
+     "startedAt": 1793942819307,
+     "hidIdleMs": null,
+     "inputRoute": 3,
+     "activationClick": "outsideFrame",
+     "activationClickKind": {
+      "kind": "inertOutside",
+      "point": "activationPoint",
+      "when": "early"
+     },
+     "elementClick": {
+      "plan": "action",
+      "action": "AXPress",
+      "reason": "webArea",
+      "walk": [
+       "AXCheckBox"
+      ],
+      "pressed": "hit",
+      "pressedRole": "AXCheckBox"
+     },
+     "receivedAt": 1793942817317,
+     "activationGuardMs": 96.951,
+     "coordinateClick": {
+      "windowPoint": {
+       "x": 20,
+       "y": 199
+      },
+      "windowFrame": {
+       "width": 620,
+       "height": 679,
+       "x": 400,
+       "y": 31
+      },
+      "postedWindowLocation": {
+       "x": 20,
+       "y": 199
+      },
+      "frameBeforePost": null,
+      "screenshotPoint": {
+       "y": 199,
+       "x": 20
+      },
+      "postedLocation": {
+       "y": 230,
+       "x": 420
+      }
+     },
+     "activationJoin": "fresh"
+    }
+   },
+   "clickDelta": {
+    "pointerdown": 1,
+    "pointerup": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "optionChange": 1
+   },
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": true,
+    "active": "option",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": true
+   },
+   "pointerEvents": [
+    {
+     "ev": "pointerdown",
+     "dt": 1994,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "mousedown",
+     "dt": 1997,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "mouseup",
+     "dt": 1999,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "click",
+     "dt": 1999,
+     "trusted": true,
+     "target": "option"
+    }
+   ],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 13.9
+     }
+    ],
+    "samples": 5,
+    "t0": 1793942820826.0232
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {
+    "pointerdown": 1,
+    "pointerup": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "optionChange": 1
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "c5/branch/first-textarea",
+   "engine": "branch",
+   "chromePid": 19140,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 442,
+    "enablementPrior": "false",
+    "enablementWrite": "success",
+    "enablementWriteError": -25208,
+    "enabled": "AXEnhancedUserInterface",
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXTextArea",
+     "title": "Probe notes",
+     "description": "Probe notes",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    }
+   },
+   "pixel": {
+    "x": 76,
+    "y": 302,
+    "scale": 1
+   },
+   "clickAfterObservationMs": 0,
+   "clickMs": 1863,
+   "clickStartedAt": 1793942830091,
+   "click": {
+    "meta": {
+     "startedAt": 1793942830102,
+     "elementClick": {
+      "plan": "action",
+      "caret": "placed",
+      "pressedRole": "AXTextArea",
+      "reason": "focusField",
+      "pressed": "hit",
+      "action": "AXFocused",
+      "walk": [
+       "AXTextArea"
+      ]
+     },
+     "endedAt": 1793942831916,
+     "receivedAt": 1793942830092,
+     "inputRoute": 1,
+     "coordinateClick": {
+      "frameBeforePost": null,
+      "windowFrame": {
+       "x": 400,
+       "y": 31,
+       "width": 620,
+       "height": 679
+      },
+      "windowPoint": {
+       "x": 76,
+       "y": 302
+      },
+      "screenshotPoint": {
+       "x": 76,
+       "y": 302
+      },
+      "postedWindowLocation": {
+       "x": 76,
+       "y": 302
+      },
+      "postedLocation": {
+       "x": 476,
+       "y": 333
+      }
+     },
+     "hidIdleMs": null,
+     "activationJoin": "fresh"
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": false,
+    "active": "notes",
+    "notesSel": [
+     30,
+     30
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 15
+     }
+    ],
+    "samples": 5,
+    "t0": 1793942833469.146
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c5/main/first-checkbox",
+   "engine": "main",
+   "chromePid": 20053,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 701,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208,
+    "enabled": null,
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXCheckBox",
+     "title": "Probe option",
+     "description": "",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 420,
+     "y": 230
+    }
+   },
+   "pixel": {
+    "x": 20,
+    "y": 199,
+    "scale": 1
+   },
+   "clickAfterObservationMs": 0,
+   "clickMs": 1693,
+   "clickStartedAt": 1793942843667,
+   "click": {
+    "meta": {
+     "activationClick": "outsideFrame",
+     "activationJoin": "fresh",
+     "elementClick": {
+      "reason": "webArea",
+      "pressed": "hit",
+      "walk": [
+       "AXCheckBox"
+      ],
+      "action": "AXPress",
+      "plan": "action",
+      "pressedRole": "AXCheckBox"
+     },
+     "activationClickKind": {
+      "kind": "inertOutside",
+      "point": "activationPoint",
+      "when": "early"
+     },
+     "inputRoute": 3,
+     "receivedAt": 1793942843668,
+     "hidIdleMs": null,
+     "endedAt": 1793942845358,
+     "coordinateClick": {
+      "screenshotPoint": {
+       "x": 20,
+       "y": 199
+      },
+      "windowPoint": {
+       "y": 199,
+       "x": 20
+      },
+      "frameBeforePost": null,
+      "postedLocation": {
+       "y": 230,
+       "x": 420
+      },
+      "postedWindowLocation": {
+       "y": 199,
+       "x": 20
+      },
+      "windowFrame": {
+       "x": 400,
+       "y": 31,
+       "width": 620,
+       "height": 679
+      }
+     },
+     "activationGuardMs": 140.952,
+     "startedAt": 1793942845356
+    }
+   },
+   "clickDelta": {
+    "pointerdown": 1,
+    "pointerup": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "optionChange": 1
+   },
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": true,
+    "active": "option",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": true
+   },
+   "pointerEvents": [
+    {
+     "ev": "pointerdown",
+     "dt": 1693,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "mousedown",
+     "dt": 1694,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "mouseup",
+     "dt": 1694,
+     "trusted": true,
+     "target": "option"
+    },
+    {
+     "ev": "click",
+     "dt": 1695,
+     "trusted": true,
+     "target": "option"
+    }
+   ],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 7.9
+     }
+    ],
+    "samples": 4,
+    "t0": 1793942846882.121
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {
+    "pointerdown": 1,
+    "pointerup": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "optionChange": 1
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "c5/main/first-textarea",
+   "engine": "main",
+   "chromePid": 20580,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 827,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208,
+    "enabled": null,
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXTextArea",
+     "title": "Probe notes",
+     "description": "Probe notes",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    }
+   },
+   "pixel": {
+    "x": 76,
+    "y": 302,
+    "scale": 1
+   },
+   "clickAfterObservationMs": 0,
+   "clickMs": 1408,
+   "clickStartedAt": 1793942858132,
+   "click": {
+    "meta": {
+     "inputRoute": 1,
+     "receivedAt": 1793942858133,
+     "coordinateClick": {
+      "postedLocation": {
+       "y": 333,
+       "x": 476
+      },
+      "frameBeforePost": null,
+      "screenshotPoint": {
+       "x": 76,
+       "y": 302
+      },
+      "postedWindowLocation": {
+       "y": 302,
+       "x": 76
+      },
+      "windowFrame": {
+       "y": 31,
+       "width": 620,
+       "height": 679,
+       "x": 400
+      },
+      "windowPoint": {
+       "y": 302,
+       "x": 76
+      }
+     },
+     "hidIdleMs": null,
+     "endedAt": 1793942859513,
+     "activationJoin": "fresh",
+     "elementClick": {
+      "reason": "focusField",
+      "action": "AXFocused",
+      "caret": "placed",
+      "plan": "action",
+      "pressed": "hit",
+      "walk": [
+       "AXTextArea"
+      ],
+      "pressedRole": "AXTextArea"
+     },
+     "startedAt": 1793942858144
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": false,
+    "active": "notes",
+    "notesSel": [
+     30,
+     30
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 22.6
+     }
+    ],
+    "samples": 5,
+    "t0": 1793942861064.5762
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c6/branch/noobs-reload",
+   "engine": "branch",
+   "chromePid": 21110,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "clickMs": 45,
+   "clickStartedAt": 1793942873801,
+   "click": {
+    "error": {
+     "code": -10005,
+     "errorName": "noScreenshotForCoordinates",
+     "message": "There is no screenshot of the app's current window to place the coordinates in. Call getScreenshot to get one, then give coordinates in its pixels.",
+     "meta": {
+      "inputRoute": null,
+      "startedAt": null,
+      "hidIdleMs": null,
+      "endedAt": null,
+      "receivedAt": 1793942873802
+     }
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": false,
+    "active": "BODY",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watch": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 21.3
+     }
+    ],
+    "samples": 5,
+    "t0": 1793942876374.0571
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c6/main/noobs-reload",
+   "engine": "main",
+   "chromePid": 21636,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "clickMs": 16,
+   "clickStartedAt": 1793942886275,
+   "click": {
+    "error": {
+     "errorName": "noScreenshotForCoordinates",
+     "code": -10005,
+     "message": "There is no screenshot of the app's current window to place the coordinates in. Call getScreenshot to get one, then give coordinates in its pixels.",
+     "meta": {
+      "hidIdleMs": null,
+      "inputRoute": null,
+      "startedAt": null,
+      "endedAt": null,
+      "receivedAt": 1793942886275
+     }
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": false,
+    "active": "BODY",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watch": {
+    "changes": [
+     {
+      "box": "err-25213",
+      "eui": false,
+      "press": false,
+      "t": 12.9
+     }
+    ],
+    "samples": 4,
+    "t0": 1793942888814.4731
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c6/branch/released-reload",
+   "engine": "branch",
+   "chromePid": 22163,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 541,
+    "enablementPrior": "false",
+    "enablementWrite": "success",
+    "enablementWriteError": -25208,
+    "enabled": "AXEnhancedUserInterface",
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXButton",
+     "title": "Reload",
+     "description": "Reload",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 459,
+     "y": 94
+    }
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "watchIdle": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": true,
+      "press": false,
+      "t": 10.8
+     },
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 1621.5
+     },
+     {
+      "box": "empty",
+      "eui": false,
+      "press": false,
+      "t": 31523.5
+     }
+    ],
+    "samples": 102,
+    "t0": 1793942898408.791
+   },
+   "releasedMs": 31538,
+   "stateBeforeClick": {
+    "box": "empty",
+    "eui": false,
+    "press": false,
+    "t": 31523.5
+   },
+   "clickAfterObservationMs": 33173,
+   "clickMs": 134,
+   "clickStartedAt": 1793942931567,
+   "click": {
+    "meta": {
+     "activationClickKind": {
+      "kind": "action",
+      "when": "consumedByAction"
+     },
+     "activationJoin": "fresh",
+     "startedAt": 1793942931623,
+     "delivery": {
+      "repairedAfterRelease": false,
+      "personInput": false,
+      "postedAt": 1793942931623,
+      "raiseLeft": false,
+      "screenHoldMs": 92.609,
+      "guardMs": 71.785,
+      "otherAppFront": false,
+      "holdStartedAt": 1793942931602,
+      "restores": 0,
+      "frontmostRestored": false,
+      "capped": false,
+      "releasedAt": 1793942931695
+     },
+     "pointerEstablish": {
+      "ms": 11.946,
+      "webAreaFound": true,
+      "rehits": 1
+     },
+     "receivedAt": 1793942931569,
+     "coordinateClick": {
+      "windowFrame": {
+       "y": 31,
+       "width": 620,
+       "height": 679,
+       "x": 400
+      },
+      "frameBeforePost": {
+       "height": 679,
+       "x": 400,
+       "width": 620,
+       "y": 31
+      },
+      "postedWindowLocation": {
+       "y": 63,
+       "x": 59
+      },
+      "windowPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "screenshotPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "postedLocation": {
+       "x": 459,
+       "y": 94
+      }
+     },
+     "inputRoute": 3,
+     "hidIdleMs": null,
+     "activationClick": "outsideFrame",
+     "activationGuardMs": 16.858,
+     "endedAt": 1793942931623
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": false,
+    "active": "BODY",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 10.8
+     }
+    ],
+    "samples": 4,
+    "t0": 1793942934725.39
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c6/branch/released-text",
+   "engine": "branch",
+   "chromePid": 24106,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 524,
+    "enablementPrior": "false",
+    "enablementWrite": "success",
+    "enablementWriteError": -25208,
+    "enabled": "AXEnhancedUserInterface",
+    "webAreaFound": true
+   },
+   "target": {
+    "node": null,
+    "screen": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "pixel": {
+    "x": 48,
+    "y": 353,
+    "scale": 1
+   },
+   "watchIdle": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": true,
+      "press": false,
+      "t": 10.9
+     },
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 1627.2
+     },
+     {
+      "box": "empty",
+      "eui": false,
+      "press": false,
+      "t": 31521.9
+     }
+    ],
+    "samples": 102,
+    "t0": 1793942944661.1199
+   },
+   "releasedMs": 31531,
+   "stateBeforeClick": {
+    "box": "empty",
+    "eui": false,
+    "press": false,
+    "t": 31521.9
+   },
+   "clickAfterObservationMs": 33161,
+   "clickMs": 29,
+   "clickStartedAt": 1793942977813,
+   "click": {
+    "error": {
+     "code": -10005,
+     "meta": {
+      "startedAt": null,
+      "elementClick": {
+       "plan": "synthesized",
+       "reason": "webArea",
+       "walk": [
+        "AXStaticText",
+        "AXGroup",
+        "AXWebArea"
+       ],
+       "walkStopped": "roleNotAllowed"
+      },
+      "coordinateClick": {
+       "postedLocation": {
+        "x": 448,
+        "y": 384
+       },
+       "postedWindowLocation": {
+        "x": 48,
+        "y": 353
+       },
+       "screenshotPoint": {
+        "x": 48,
+        "y": 353
+       },
+       "frameBeforePost": null,
+       "windowPoint": {
+        "y": 353,
+        "x": 48
+       },
+       "windowFrame": {
+        "height": 679,
+        "x": 400,
+        "y": 31,
+        "width": 620
+       }
+      },
+      "endedAt": null,
+      "receivedAt": 1793942977814,
+      "activationJoin": "fresh",
+      "inputRoute": 3,
+      "hidIdleMs": null,
+      "pointerEstablish": {
+       "ms": 10.775,
+       "webAreaFound": true,
+       "rehits": 1
+      }
+     },
+     "errorName": "backgroundClickRefused",
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop"
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": false,
+    "active": "BODY",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": true,
+      "press": false,
+      "t": 14.7
+     }
+    ],
+    "samples": 5,
+    "t0": 1793942979367.871
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c6/main/released-reload",
+   "engine": "main",
+   "chromePid": 26049,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 519,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208,
+    "enabled": null,
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXButton",
+     "title": "Reload",
+     "description": "Reload",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 459,
+     "y": 94
+    }
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "watchIdle": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": true,
+      "press": false,
+      "t": 10
+     },
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 1628.8
+     }
+    ],
+    "samples": 102,
+    "t0": 1793942989511.658
+   },
+   "releasedMs": null,
+   "stateBeforeClick": {
+    "box": "box",
+    "eui": true,
+    "press": true,
+    "t": 1628.8
+   },
+   "clickAfterObservationMs": 33163,
+   "clickMs": 110,
+   "clickStartedAt": 1793943022665,
+   "click": {
+    "meta": {
+     "hidIdleMs": null,
+     "activationClick": "outsideFrame",
+     "activationJoin": "fresh",
+     "delivery": {
+      "otherAppFront": false,
+      "frontmostRestored": false,
+      "postedAt": 1793943022705,
+      "capped": false,
+      "holdStartedAt": 1793943022678,
+      "personInput": false,
+      "guardMs": 66.835,
+      "repairedAfterRelease": false,
+      "releasedAt": 1793943022772,
+      "screenHoldMs": 93.592,
+      "restores": 0,
+      "raiseLeft": false
+     },
+     "inputRoute": 3,
+     "receivedAt": 1793943022665,
+     "activationGuardMs": 21.927,
+     "endedAt": 1793943022705,
+     "activationClickKind": {
+      "when": "consumedByAction",
+      "kind": "action"
+     },
+     "startedAt": 1793943022705,
+     "coordinateClick": {
+      "postedWindowLocation": {
+       "y": 63,
+       "x": 59
+      },
+      "frameBeforePost": {
+       "y": 31,
+       "width": 620,
+       "height": 679,
+       "x": 400
+      },
+      "windowPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "windowFrame": {
+       "height": 679,
+       "x": 400,
+       "width": 620,
+       "y": 31
+      },
+      "screenshotPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "postedLocation": {
+       "x": 459,
+       "y": 94
+      }
+     }
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": false,
+    "active": "BODY",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 16
+     }
+    ],
+    "samples": 5,
+    "t0": 1793943025806.287
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "c6/main/released-text",
+   "engine": "main",
+   "chromePid": 27577,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 488,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208,
+    "enabled": null,
+    "webAreaFound": true
+   },
+   "target": {
+    "node": null,
+    "screen": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "pixel": {
+    "x": 48,
+    "y": 353,
+    "scale": 1
+   },
+   "watchIdle": {
+    "changes": [
+     {
+      "box": "empty",
+      "eui": true,
+      "press": false,
+      "t": 8.6
+     },
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 1614.8
+     }
+    ],
+    "samples": 102,
+    "t0": 1793943035406.9119
+   },
+   "releasedMs": null,
+   "stateBeforeClick": {
+    "box": "box",
+    "eui": true,
+    "press": true,
+    "t": 1614.8
+   },
+   "clickAfterObservationMs": 33157,
+   "clickMs": 28,
+   "clickStartedAt": 1793943068557,
+   "click": {
+    "error": {
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "code": -10005,
+     "meta": {
+      "activationJoin": "fresh",
+      "elementClick": {
+       "reason": "webArea",
+       "walkStopped": "roleNotAllowed",
+       "plan": "synthesized",
+       "walk": [
+        "AXStaticText",
+        "AXGroup",
+        "AXWebArea"
+       ]
+      },
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "x": 48,
+        "y": 353
+       },
+       "windowFrame": {
+        "height": 679,
+        "y": 31,
+        "x": 400,
+        "width": 620
+       },
+       "frameBeforePost": null,
+       "windowPoint": {
+        "y": 353,
+        "x": 48
+       },
+       "postedLocation": {
+        "x": 448,
+        "y": 384
+       },
+       "screenshotPoint": {
+        "y": 353,
+        "x": 48
+       }
+      },
+      "inputRoute": 3,
+      "hidIdleMs": null,
+      "startedAt": null,
+      "receivedAt": 1793943068559,
+      "endedAt": null
+     },
+     "errorName": "backgroundClickRefused"
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": false,
+    "active": "BODY",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 13.8
+     }
+    ],
+    "samples": 4,
+    "t0": 1793943070108.99
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  }
+ ]
+}

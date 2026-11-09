@@ -240,6 +240,10 @@ extension Engine {
       }
     }
     let enablementsAfter = webAccessibility.enablements(pid: appPid, launched: generation)
+    // Whether this observation enabled the process's accessibility (#312): its enablement step set the process's
+    // `freshSince`, as the process's first observation or a write does. Firefox's accessibility comes on at that first
+    // contact with nothing written (its attribute then reads true).
+    let enabledAt = webAccessibility.freshSince(pid: appPid, launched: generation).flatMap { $0 >= started ? $0 : nil }
 
     // The window is there by now when the engine opened the app (waited above); otherwise it is read once.
     guard let window = try timings.time("window", { try awaitPrimaryWindow(of: application, until: unixMilliseconds(), opened: false) }) else {
@@ -310,8 +314,12 @@ extension Engine {
       if settled != nil { timings.set("settleTreeReused", false) }
     }
     let deadline = monotonicMilliseconds() + Double(min(observationDeadlineMs, max(0, context.deadline - unixMilliseconds())))
+    // On the observation that enabled accessibility, a clipping frame read unplaced is polled until it is a place or its
+    // bound passes (`TreeWalk.settleUnplacedClip`, #312); any other observation waits for nothing.
+    let clipRereadPoll = enabledAt.map { ClipRereadPoll(enabledAt: $0, deadline: deadline) }
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
-                        interactionFlags: interactionFlags, chromium: chromium, visibleFrame: menuRoot == nil ? windowFrame : nil)
+                        interactionFlags: interactionFlags, chromium: chromium, visibleFrame: menuRoot == nil ? windowFrame : nil,
+                        recordsScreenshot: pendingCapture != nil, clipRereadPoll: clipRereadPoll)
     timings.time("walk") { walk.run(window: menuRoot ?? window, menuBar: menuBarElement, menuItems: menuItems) }
     walk.revision.menuRoot = menuRoot
     timings.merge(source.costs)
@@ -326,6 +334,9 @@ extension Engine {
     if walk.deadlineHit { timings.set("deadlineHit", true) }
     if walk.budgetHit { timings.set("budgetHit", true) }
     if walk.nodeCapHit { timings.set("nodeCapHit", true) }
+    // The guard's record-only reads (#301 item 4).
+    if walk.recordOnlyReads > 0 { timings.set("recordOnlyNodes", walk.recordOnlyReads) }
+    walk.reportUnplacedClips(&timings)
 
     var focused: Any = NSNull()
     var selectedText: Any = NSNull()
@@ -366,14 +377,22 @@ extension Engine {
       let joined = timings.time("screenshotJoin") { pendingCapture.wait() }
       timings.merge(joined.timings)
       let image = try joined.result.get()
-      lineage.screenshot = ObservedScreenshot(window: window, image: image)  // what this window's coordinate clicks divide by
+      // What this window's coordinate clicks divide by, and the tree they are checked against (#296).
+      lineage.screenshot = ObservedScreenshot(window: window, image: image, nodes: timings.time("stalePointRecord") { screenshotNodes(walk.screenshotReads) })
       return image.wire
     }
     timings.add("total", monotonicMilliseconds() - started)
 
     var truncated: [String: Any] = [:]
     if walk.depthHit { truncated["depth"] = maxDepth }
-    if walk.omitted > 0 { truncated["count"] = walk.omitted }
+    if walk.omitted > 0 {
+      truncated["count"] = walk.omitted
+      // Where the omitted lie (#301), for a walk of the window, which has what it shows to place them by.
+      if menuRoot == nil, windowFrame != nil {
+        truncated["above"] = walk.omittedAbove
+        truncated["below"] = walk.omittedBelow
+      }
+    }
     // Whether the app is a Catalyst app, which filterActions consults (FUN_100782c24; the renderer's): the vendor's
     // ApplicationUIElement.isCatalystApp 0x100704c88 reads the application's `exhibitsMacCatalystBehavior`
     // (`_AXExhibitsMacCatalystBehavior`, false when it answers none), and the transformation context's init 0x100747490

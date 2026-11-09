@@ -5,7 +5,8 @@ import ScreenCaptureKit
 
 // The protocol's methods (Interfaces, EngineProtocol): ping, status, approve, shutdown, execute with the facade's
 // method vocabulary plus resolve_app, and cursor (the agent cursor's per-session identity, switch and hide, #235; additive
-// to cua-engine-1: an older engine answers it methodNotFound, which the service takes as no cursor). Nothing here asks for a permission before a request needs it: status reads the
+// to cua-engine-1: an older engine answers it methodNotFound, which the service takes as no cursor), and endTask (end_task's
+// release of the connection's web enablement, #292; additive likewise). Nothing here asks for a permission before a request needs it: status reads the
 // grants with the non-prompting preflight calls only. Every execute is refused while the Mac is locked (the spec's
 // Design, "Lock screen"), whatever its method; the protocol's own methods answer, so doctor can still read status.
 
@@ -32,7 +33,8 @@ private let inputMethods: Set<String> = ["click", "press_key", "type_text", "pas
 final class Engine: @unchecked Sendable {
   let paths: ServerPaths
   let apps: AppDirectory
-  let webAccessibility = WebAccessibility()
+  /// Per process, the web enablement (Enablement.swift); the server's engine keeps its record (#293).
+  let webAccessibility: WebAccessibility
   /// The intervention tap and its ledger (Intervention.swift).
   let intervention: InterventionMonitor
   /// The owner's per-app route-4 override, `routes` in engine.json as read at launch (Config.swift).
@@ -64,8 +66,9 @@ final class Engine: @unchecked Sendable {
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
        screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
        pasteActivation: ActivationSystem = ActivationSystem(), cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true,
-       cursorDebug: CursorDebug? = nil) {
+       cursorDebug: CursorDebug? = nil, enablementRecord: EnablementRecord? = nil) {
     self.paths = paths
+    self.webAccessibility = WebAccessibility(record: enablementRecord)
     self.apps = AppDirectory(usagePath: paths.usage)
     self.routes = routes
     self.cursorEnabled = cursorEnabled
@@ -92,6 +95,10 @@ final class Engine: @unchecked Sendable {
         return Outcome(result: .success([String: Any]()), exitAfter: true)
       case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt)))
       case "cursor": return Outcome(result: .success(try cursorRequest(request.params, connection)))
+      // end_task (#292): the session's task ended, so the enablement no other connection observes goes now, not after
+      // the close's grace. The service sends it just before it closes the connection; an older engine answers
+      // methodNotFound and the close's grace applies.
+      case "endTask": return Outcome(result: .success(["released": webAccessibility.release(connection: connection.id, immediately: true)]))
       default: throw EngineError(rpc: .methodNotFound, "Method not found: \(request.method.prefix(64))")
       }
     } catch let error as EngineError {
@@ -222,6 +229,17 @@ final class Engine: @unchecked Sendable {
     }
     // The cursor's activity (the spec's Design, "Hooks"): every request counts, a keyboard-only one may bring a faded
     // cursor back at its last point in the app; the 5 s idle runs from the end of the last request.
+    // An input to a process is activity for the release of its web enablement, and in a Chromium-family process takes
+    // the observation's enablement step, so an action after a grace release re-enables it, fresh (#292, Enablement.swift).
+    // The end of an input or an observation is activity too, so the grace runs from the request's end.
+    let active = (inputMethods.contains(method) || method == "get_app_state") ? target.flatMap { app in
+      app.pid.map { (pid: $0, generation: processGeneration(launchDate: app.running?.launchDate, pid: $0), app: app) }
+    } : nil
+    if let active, inputMethods.contains(method) {
+      webAccessibility.inputEnablement(chromium: webAccessibility.isChromiumFamily(active.app.appPath), pid: active.pid, launched: active.generation,
+                                       connection: connection.id, access: .live(pid: active.pid, launched: active.generation))
+    }
+    defer { if let active { webAccessibility.noteActivity(pid: active.pid, launched: active.generation, connection: connection.id) } }
     timingSignposts.emitEvent("cursor.begin")
     cursor.begin(connection: connection.id, app: target?.key, keyboardOnly: keyboardOnlyMethods.contains(method))
     defer {

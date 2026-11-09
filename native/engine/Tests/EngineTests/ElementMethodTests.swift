@@ -402,6 +402,22 @@ final class ValueSettingTests: XCTestCase {
     XCTAssertEqual(marks, 1, "and changes nothing")
   }
 
+  /// #324: the fallback click's delivery guard record rides in the method's meta, as its guard time does, so its raise
+  /// is read against the hold it fell in (#315's misread came from its absence).
+  func testAFocusClicksDeliveryRecordRidesInTheMethodsMeta() throws {
+    var meta = meta(), marks = 0
+    var outcome = DeliveryGuardOutcome()
+    outcome.restores = 2
+    outcome.screenHoldMs = 210
+    outcome.transientRaise = TransientRaise(seen: true, ms: 40, outlivedHold: false)
+    try focusingClick(&meta, acted: { marks += 1 }) { click in
+      click.posting { true }
+      click.delivery = outcome
+    }
+    XCTAssertEqual(meta.delivery, outcome)
+    XCTAssertEqual(meta.inputRoute, .action, "the method's own route")
+  }
+
   func testAUserEventBeforeTheFocusWriteMovesNoFocus() {
     var clicks = 0
     let ax = field(focused: false)

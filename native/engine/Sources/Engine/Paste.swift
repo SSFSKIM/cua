@@ -792,7 +792,7 @@ extension Engine {
             return nil
           }
           guarded = true  // one delivery guard, and one hold, an action
-          return standing.deliver(window: placed.id, watches: watches, repairWindow: repairWindow, posting)
+          return standing.deliver(window: placed.id, watches: watches, repairWindow: repairWindow, ranBy: made, posting)
         }
       }
 

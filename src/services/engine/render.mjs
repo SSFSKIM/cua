@@ -108,11 +108,21 @@ export function elementLine({index, depth, text, detailText}) {
   return `${'\t'.repeat(depth)}${index} ${text}${detailText ? ` ${detailText}` : ''}`;
 }
 
-// cua's own markers for the engine's caps (the vendor has none) [B §4; Design, Observation].
+// cua's own markers for the engine's caps (the vendor has none) [B §4; Design, Observation]. A walk of the window spends
+// its budgets on what the window shows first and places what it left unread (#301; the design session's ruling
+// 66f90453): the total, each omitted part counting once whatever it holds (so a floor), and the direction the parts lie
+// in, from the engine's `above` and `below` counts; parts placed neither way count in the total with no direction.
+const DIRECTIONS = {above: ', above the visible area', below: ', below the visible area', both: ', above and below the visible area', none: ''};
 function truncationMarkers(skyshot) {
   const out = [];
-  if (skyshot.truncated?.depth != null) out.push(`[truncated: elements deeper than ${skyshot.truncated.depth} levels omitted]`);
-  if (skyshot.truncated?.count) out.push(`[truncated: ${skyshot.truncated.count} elements omitted]`);
+  const truncated = skyshot.truncated;
+  if (truncated?.depth != null) out.push(`[truncated: elements deeper than ${truncated.depth} levels omitted]`);
+  if (truncated?.count && Number.isInteger(truncated.above) && Number.isInteger(truncated.below)) {
+    const direction = DIRECTIONS[truncated.above > 0 ? (truncated.below > 0 ? 'both' : 'above') : truncated.below > 0 ? 'below' : 'none'];
+    out.push(`[truncated: at least ${truncated.count} elements omitted${direction}]`);
+  } else if (truncated?.count) {
+    out.push(`[truncated: ${truncated.count} elements omitted]`);
+  }
   return out;
 }
 

@@ -1576,7 +1576,7 @@ extension PasteActivationTests {
     let launched = processGeneration(launchDate: nil, pid: target)
     XCTAssertEqual(engine.webAccessibility.enable(pid: target, launched: launched, connection: 1, access: access), "AXManualAccessibility")
     XCTAssertEqual(engine.pasteNotificationSource(registered: true, app: chrome, pid: target), .trusted)
-    engine.webAccessibility.release(connection: 1)
+    engine.webAccessibility.release(connection: 1, immediately: true)  // end_task (#292)
     XCTAssertEqual(engine.pasteNotificationSource(registered: true, app: chrome, pid: target), .untrusted, "written back")
   }
 }
@@ -1815,6 +1815,42 @@ extension PasteActivationTests {
     _ = pointerRelease?()
     XCTAssertEqual(seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.count, 1, "no second click at the release")
     XCTAssertEqual(seam.posts.last?.kind, .appKit(2))
+  }
+
+  /// #321's review: a paste that shares a pointer action's activation before the pointer's events (another connection's
+  /// click into Safari, its activation point clicked, its hold left open for its own delivery guard) never takes that
+  /// pending hold, with its 200 ms cap and 150 ms least wait: it takes one of its own under main's 100 ms cap.
+  func testAPasteSharingAPointersPendingHoldTakesItsOwnUnderMainsCap() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    seam.activationPoint = CGPoint(x: 110, y: 76)
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var pointer: FakeActivation?
+    var pointerRelease: (() -> Bool)?
+    var raised = false
+    seam.onFrontmostRead = { if raised { seam.targetAbove = true } }  // the order never reads back
+    let meta = try pasteToItsEnd("x", typed: false, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
+                                 onKeyDown: { code in if code == 0x09 { raised = true } }, before: { engine, system in
+      var pointerMeta = InputMeta(ExecutionContext(connection: ConnectionState(id: 2, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+      pointerRelease = try engine.heldActivations.acquire(pid: self.target, holder: ActivationHolder(connection: 2), pointer: PointerHold(defersArmClick: true),
+                                                          beforeActivating: {}, make: {
+        let made = FakeActivation(pid: self.target, window: AXUIElementCreateApplication(self.target), windowFrame: Self.chromeFrame, windowID: 41, system: system)
+        made.holdsThroughDelivery = true
+        made.holdsUntilOrderReadsBack = true
+        pointer = made
+        return made
+      }, meta: &pointerMeta)
+      XCTAssertEqual(pointer?.clickKind, .activationPoint)
+      XCTAssertEqual(seam.holds - seam.releases, 1, "the pointer's hold pending")
+    })
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(seam.holds, 2, "the paste's own hold beside the pointer's")
+    XCTAssertEqual(delivery.screenHoldMs, activationHoldCapMs, "main's cap")
+    XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), activationHoldCapMs)
+    XCTAssertTrue(delivery.capped)
+    pointer?.releaseOpenHold()
+    _ = pointerRelease?()
   }
 
   /// The retired switch is not in the engine's status: an engine.json still carrying it changes nothing.

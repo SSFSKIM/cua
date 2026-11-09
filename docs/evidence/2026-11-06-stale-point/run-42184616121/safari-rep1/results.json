@@ -1,0 +1,3825 @@
+{
+ "config": {
+  "group": "safari",
+  "imageOS": "macos26",
+  "imageVersion": "20261026.0455.2",
+  "runnerName": "GitHub Actions 1000036337",
+  "macOS": "ProductName: macOS ProductVersion: 26.6.2 BuildVersion: 25G83",
+  "chrome": "Google Chrome for Testing 156.0.8078.47",
+  "branchCommit": "a7a43b02a69aba31a74fcdb8825af2c44e4606a7",
+  "mainCommit": "d482bcc2e8b6ca21bb8cddf79f137356a9a48d97",
+  "probeCommit": "75437d0331fdb71ac3ac2713e175388c52c523cc",
+  "rep": "1"
+ },
+ "cells": [
+  {
+   "label": "safari/shared/label/1s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "label",
+    "id": "label",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 1,
+    "expect": "kept",
+    "label": "safari/shared/label/1s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k1",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 1755,
+    "sinceLaunchMs": 7085,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Elapsed 5.8 s",
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 127,
+     "width": 109
+    }
+   },
+   "intended": "label",
+   "px": {
+    "x": 63,
+    "y": 112
+   },
+   "point": {
+    "x": 463,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Elapsed 5.8 s",
+    "depth": 8,
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 127,
+     "width": 109
+    }
+   },
+   "clickAfterObservationMs": 1000,
+   "clickSinceLaunchMs": 8085,
+   "response": {
+    "result": {
+     "meta": {
+      "stalePoint": {
+       "ms": 0.404,
+       "verdict": "kept",
+       "reason": "sameElement",
+       "identity": "handle",
+       "recordedRole": "AXButton",
+       "hitRole": "AXButton"
+      },
+      "activationClickKind": {
+       "kind": "activationPoint",
+       "when": "early"
+      },
+      "delivery": {
+       "releasedAt": 1793952212339,
+       "otherAppFront": false,
+       "screenHoldMs": 100,
+       "restores": 1,
+       "guardMs": 78.912,
+       "postedAt": 1793952212296,
+       "personInput": false,
+       "repairedAfterRelease": false,
+       "raiseLeft": false,
+       "holdStartedAt": 1793952212239,
+       "capped": true,
+       "restoreLatencyMs": 14.318,
+       "frontmostRestored": false
+      },
+      "coordinateClick": {
+       "screenshotPoint": {
+        "y": 112,
+        "x": 63
+       },
+       "windowFrame": {
+        "x": 400,
+        "y": 31,
+        "width": 620,
+        "height": 674
+       },
+       "frameBeforePost": {
+        "height": 674,
+        "x": 400,
+        "y": 31,
+        "width": 620
+       },
+       "postedWindowLocation": {
+        "y": 112,
+        "x": 63
+       },
+       "postedLocation": {
+        "y": 143,
+        "x": 463
+       },
+       "windowPoint": {
+        "y": 112,
+        "x": 63
+       }
+      },
+      "activationClick": "posted",
+      "activationGuardMs": 34.6,
+      "inputRoute": 3,
+      "startedAt": 1793952212296,
+      "endedAt": 1793952212296,
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "receivedAt": 1793952212230
+     }
+    }
+   },
+   "stalePoint": {
+    "ms": 0.404,
+    "verdict": "kept",
+    "reason": "sameElement",
+    "identity": "handle",
+    "recordedRole": "AXButton",
+    "hitRole": "AXButton"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952212296,
+   "endedAt": 1793952212296,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 161,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "label",
+      "text": "Elapsed 8.0 s",
+      "sx": 463,
+      "sy": 143,
+      "dt": 88
+     },
+     {
+      "ev": "click",
+      "id": "label",
+      "text": "Elapsed 8.0 s",
+      "sx": 463,
+      "sy": 143,
+      "dt": 96
+     }
+    ],
+    "hit": [
+     "label"
+    ],
+    "text": [
+     "Elapsed 8.0 s"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/label/20s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "label",
+    "id": "label",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 20,
+    "expect": "kept",
+    "label": "safari/shared/label/20s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k2",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 101,
+    "sinceLaunchMs": 12367,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Elapsed 1.9 s",
+    "frame": {
+     "x": 408,
+     "height": 32,
+     "y": 127,
+     "width": 108
+    }
+   },
+   "intended": "label",
+   "px": {
+    "x": 62,
+    "y": 112
+   },
+   "point": {
+    "x": 462,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Elapsed 1.9 s",
+    "depth": 8,
+    "frame": {
+     "x": 408,
+     "height": 32,
+     "y": 127,
+     "width": 108
+    }
+   },
+   "clickAfterObservationMs": 20003,
+   "clickSinceLaunchMs": 32370,
+   "response": {
+    "result": {
+     "meta": {
+      "receivedAt": 1793952236516,
+      "activationClickKind": {
+       "when": "early",
+       "kind": "activationPoint"
+      },
+      "activationClick": "posted",
+      "activationJoin": "fresh",
+      "inputRoute": 3,
+      "startedAt": 1793952236600,
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "y": 112,
+        "x": 62
+       },
+       "frameBeforePost": {
+        "height": 674,
+        "width": 620,
+        "x": 400,
+        "y": 31
+       },
+       "screenshotPoint": {
+        "x": 62,
+        "y": 112
+       },
+       "postedLocation": {
+        "x": 462,
+        "y": 143
+       },
+       "windowPoint": {
+        "y": 112,
+        "x": 62
+       },
+       "windowFrame": {
+        "height": 674,
+        "width": 620,
+        "x": 400,
+        "y": 31
+       }
+      },
+      "stalePoint": {
+       "identity": "handle",
+       "verdict": "kept",
+       "recordedRole": "AXButton",
+       "hitRole": "AXButton",
+       "reason": "sameElement",
+       "ms": 1.043
+      },
+      "hidIdleMs": null,
+      "endedAt": 1793952236600,
+      "activationGuardMs": 41.886,
+      "delivery": {
+       "frontmostRestored": false,
+       "holdStartedAt": 1793952236536,
+       "restoreLatencyMs": 18.937,
+       "screenHoldMs": 100,
+       "raiseLeft": false,
+       "repairedAfterRelease": false,
+       "guardMs": 74.059,
+       "restores": 1,
+       "releasedAt": 1793952236636,
+       "capped": true,
+       "postedAt": 1793952236600,
+       "personInput": false,
+       "otherAppFront": false
+      }
+     }
+    }
+   },
+   "stalePoint": {
+    "identity": "handle",
+    "verdict": "kept",
+    "recordedRole": "AXButton",
+    "hitRole": "AXButton",
+    "reason": "sameElement",
+    "ms": 1.043
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952236600,
+   "endedAt": 1793952236600,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 165,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "label",
+      "text": "Elapsed 22.1 s",
+      "sx": 462,
+      "sy": 143,
+      "dt": 89
+     },
+     {
+      "ev": "click",
+      "id": "label",
+      "text": "Elapsed 22.1 s",
+      "sx": 462,
+      "sy": 143,
+      "dt": 96
+     }
+    ],
+    "hit": [
+     "label"
+    ],
+    "text": [
+     "Elapsed 22.1 s"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/counter/1s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "counter",
+    "id": "nextto",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 1,
+    "expect": "kept",
+    "label": "safari/shared/counter/1s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k3",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 122,
+    "sinceLaunchMs": 36582,
+    "nodes": 33,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Next to",
+    "frame": {
+     "x": 430,
+     "y": 127,
+     "height": 32,
+     "width": 73
+    }
+   },
+   "intended": "nextto",
+   "px": {
+    "x": 67,
+    "y": 112
+   },
+   "point": {
+    "x": 467,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Next to",
+    "depth": 8,
+    "frame": {
+     "x": 430,
+     "y": 127,
+     "height": 32,
+     "width": 73
+    }
+   },
+   "clickAfterObservationMs": 1002,
+   "clickSinceLaunchMs": 37584,
+   "response": {
+    "result": {
+     "meta": {
+      "startedAt": 1793952241796,
+      "activationGuardMs": 26.067,
+      "hidIdleMs": null,
+      "inputRoute": 3,
+      "activationClick": "posted",
+      "endedAt": 1793952241796,
+      "activationJoin": "fresh",
+      "delivery": {
+       "raiseLeft": false,
+       "capped": false,
+       "guardMs": 75.383,
+       "postedAt": 1793952241796,
+       "restores": 1,
+       "holdStartedAt": 1793952241747,
+       "frontmostRestored": false,
+       "otherAppFront": false,
+       "screenHoldMs": 100,
+       "releasedAt": 1793952241847,
+       "restoreLatencyMs": 9.82,
+       "repairedAfterRelease": false,
+       "personInput": false
+      },
+      "stalePoint": {
+       "verdict": "kept",
+       "identity": "handle",
+       "ms": 0.473,
+       "recordedRole": "AXButton",
+       "reason": "sameElement",
+       "hitRole": "AXButton"
+      },
+      "activationClickKind": {
+       "kind": "activationPoint",
+       "when": "early"
+      },
+      "receivedAt": 1793952241730,
+      "coordinateClick": {
+       "screenshotPoint": {
+        "x": 67,
+        "y": 112
+       },
+       "postedWindowLocation": {
+        "x": 67,
+        "y": 112
+       },
+       "frameBeforePost": {
+        "x": 400,
+        "y": 31,
+        "height": 674,
+        "width": 620
+       },
+       "windowFrame": {
+        "width": 620,
+        "y": 31,
+        "x": 400,
+        "height": 674
+       },
+       "postedLocation": {
+        "x": 467,
+        "y": 143
+       },
+       "windowPoint": {
+        "x": 67,
+        "y": 112
+       }
+      }
+     }
+    }
+   },
+   "stalePoint": {
+    "verdict": "kept",
+    "identity": "handle",
+    "ms": 0.473,
+    "recordedRole": "AXButton",
+    "reason": "sameElement",
+    "hitRole": "AXButton"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952241796,
+   "endedAt": 1793952241796,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 156,
+   "effect": {
+    "events": [
+     {
+      "ev": "click",
+      "id": "nextto",
+      "text": "Next to",
+      "sx": 467,
+      "sy": 143,
+      "dt": 70
+     },
+     {
+      "ev": "pointerdown",
+      "id": "nextto",
+      "text": "Next to",
+      "sx": 467,
+      "sy": 143,
+      "dt": 68
+     }
+    ],
+    "hit": [
+     "nextto"
+    ],
+    "text": [
+     "Next to"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/counter/20s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "counter",
+    "id": "nextto",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 20,
+    "expect": "kept",
+    "label": "safari/shared/counter/20s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k4",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 103,
+    "sinceLaunchMs": 41742,
+    "nodes": 33,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Next to",
+    "frame": {
+     "height": 32,
+     "y": 127,
+     "width": 73,
+     "x": 430
+    }
+   },
+   "intended": "nextto",
+   "px": {
+    "x": 67,
+    "y": 112
+   },
+   "point": {
+    "x": 467,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Next to",
+    "depth": 8,
+    "frame": {
+     "height": 32,
+     "y": 127,
+     "width": 73,
+     "x": 430
+    }
+   },
+   "clickAfterObservationMs": 20001,
+   "clickSinceLaunchMs": 61743,
+   "response": {
+    "result": {
+     "meta": {
+      "activationClick": "posted",
+      "inputRoute": 3,
+      "activationClickKind": {
+       "when": "early",
+       "kind": "activationPoint"
+      },
+      "stalePoint": {
+       "reason": "sameElement",
+       "ms": 0.47,
+       "verdict": "kept",
+       "recordedRole": "AXButton",
+       "hitRole": "AXButton",
+       "identity": "handle"
+      },
+      "delivery": {
+       "postedAt": 1793952265960,
+       "otherAppFront": false,
+       "holdStartedAt": 1793952265902,
+       "screenHoldMs": 100,
+       "repairedAfterRelease": false,
+       "raiseLeft": false,
+       "capped": false,
+       "guardMs": 83.953,
+       "personInput": false,
+       "restoreLatencyMs": 7.8,
+       "frontmostRestored": false,
+       "restores": 1,
+       "releasedAt": 1793952266002
+      },
+      "startedAt": 1793952265960,
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "coordinateClick": {
+       "screenshotPoint": {
+        "x": 67,
+        "y": 112
+       },
+       "frameBeforePost": {
+        "x": 400,
+        "width": 620,
+        "height": 674,
+        "y": 31
+       },
+       "windowPoint": {
+        "y": 112,
+        "x": 67
+       },
+       "postedWindowLocation": {
+        "y": 112,
+        "x": 67
+       },
+       "postedLocation": {
+        "x": 467,
+        "y": 143
+       },
+       "windowFrame": {
+        "y": 31,
+        "height": 674,
+        "x": 400,
+        "width": 620
+       }
+      },
+      "receivedAt": 1793952265889,
+      "activationGuardMs": 40.699,
+      "endedAt": 1793952265960
+     }
+    }
+   },
+   "stalePoint": {
+    "reason": "sameElement",
+    "ms": 0.47,
+    "verdict": "kept",
+    "recordedRole": "AXButton",
+    "hitRole": "AXButton",
+    "identity": "handle"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952265960,
+   "endedAt": 1793952265960,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 157,
+   "effect": {
+    "events": [
+     {
+      "ev": "click",
+      "id": "nextto",
+      "text": "Next to",
+      "sx": 467,
+      "sy": 143,
+      "dt": 77
+     },
+     {
+      "ev": "pointerdown",
+      "id": "nextto",
+      "text": "Next to",
+      "sx": 467,
+      "sy": 143,
+      "dt": 75
+     }
+    ],
+    "hit": [
+     "nextto"
+    ],
+    "text": [
+     "Next to"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/recreate/1s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "recreate",
+    "id": "again",
+    "anyGen": true,
+    "app": "safari",
+    "mode": "shared",
+    "delay": 1,
+    "expect": "kept",
+    "label": "safari/shared/recreate/1s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k5",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 128,
+    "sinceLaunchMs": 65940,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Again",
+    "frame": {
+     "height": 32,
+     "y": 127,
+     "width": 64,
+     "x": 408
+    }
+   },
+   "intended": "again",
+   "px": {
+    "x": 40,
+    "y": 112
+   },
+   "point": {
+    "x": 440,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Again",
+    "depth": 8,
+    "frame": {
+     "height": 32,
+     "y": 127,
+     "width": 64,
+     "x": 408
+    }
+   },
+   "clickAfterObservationMs": 1003,
+   "clickSinceLaunchMs": 66943,
+   "response": {
+    "result": {
+     "meta": {
+      "receivedAt": 1793952271089,
+      "hidIdleMs": null,
+      "inputRoute": 3,
+      "activationClickKind": {
+       "when": "early",
+       "kind": "activationPoint"
+      },
+      "coordinateClick": {
+       "screenshotPoint": {
+        "y": 112,
+        "x": 40
+       },
+       "postedLocation": {
+        "y": 143,
+        "x": 440
+       },
+       "postedWindowLocation": {
+        "x": 40,
+        "y": 112
+       },
+       "windowPoint": {
+        "x": 40,
+        "y": 112
+       },
+       "frameBeforePost": {
+        "height": 674,
+        "width": 620,
+        "x": 400,
+        "y": 31
+       },
+       "windowFrame": {
+        "y": 31,
+        "x": 400,
+        "height": 674,
+        "width": 620
+       }
+      },
+      "stalePoint": {
+       "ms": 8.027,
+       "reason": "sameElement",
+       "identity": "recreated",
+       "recordedRole": "AXButton",
+       "verdict": "kept",
+       "hitRole": "AXButton"
+      },
+      "delivery": {
+       "guardMs": 96.535,
+       "capped": false,
+       "screenHoldMs": 100,
+       "repairedAfterRelease": false,
+       "personInput": false,
+       "postedAt": 1793952271161,
+       "releasedAt": 1793952271215,
+       "restoreLatencyMs": 13.408,
+       "frontmostRestored": false,
+       "raiseLeft": false,
+       "otherAppFront": false,
+       "holdStartedAt": 1793952271115,
+       "restores": 1
+      },
+      "activationJoin": "fresh",
+      "activationClick": "posted",
+      "startedAt": 1793952271161,
+      "endedAt": 1793952271161,
+      "activationGuardMs": 44.158
+     }
+    }
+   },
+   "stalePoint": {
+    "ms": 8.027,
+    "reason": "sameElement",
+    "identity": "recreated",
+    "recordedRole": "AXButton",
+    "verdict": "kept",
+    "hitRole": "AXButton"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952271161,
+   "endedAt": 1793952271161,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 175,
+   "effect": {
+    "events": [
+     {
+      "ev": "click",
+      "id": "again",
+      "text": "Again",
+      "gen": "6",
+      "sx": 440,
+      "sy": 143,
+      "dt": 76
+     },
+     {
+      "ev": "pointerdown",
+      "id": "again",
+      "text": "Again",
+      "gen": "6",
+      "sx": 440,
+      "sy": 143,
+      "dt": 74
+     }
+    ],
+    "hit": [
+     "again"
+    ],
+    "text": [
+     "Again"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/recreate/20s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "recreate",
+    "id": "again",
+    "anyGen": true,
+    "app": "safari",
+    "mode": "shared",
+    "delay": 20,
+    "expect": "kept",
+    "label": "safari/shared/recreate/20s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k6",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 138,
+    "sinceLaunchMs": 71163,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Again",
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 127,
+     "width": 64
+    }
+   },
+   "intended": "again",
+   "px": {
+    "x": 40,
+    "y": 112
+   },
+   "point": {
+    "x": 440,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Again",
+    "depth": 8,
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 127,
+     "width": 64
+    }
+   },
+   "clickAfterObservationMs": 20003,
+   "clickSinceLaunchMs": 91166,
+   "response": {
+    "result": {
+     "meta": {
+      "activationClickKind": {
+       "kind": "activationPoint",
+       "when": "early"
+      },
+      "inputRoute": 3,
+      "activationGuardMs": 30.183,
+      "startedAt": 1793952295367,
+      "activationClick": "posted",
+      "activationJoin": "fresh",
+      "receivedAt": 1793952295312,
+      "hidIdleMs": null,
+      "delivery": {
+       "restoreLatencyMs": 19.049,
+       "raiseLeft": false,
+       "capped": false,
+       "releasedAt": 1793952295434,
+       "repairedAfterRelease": false,
+       "postedAt": 1793952295367,
+       "otherAppFront": false,
+       "screenHoldMs": 100,
+       "restores": 1,
+       "guardMs": 70.789,
+       "frontmostRestored": false,
+       "personInput": false,
+       "holdStartedAt": 1793952295334
+      },
+      "coordinateClick": {
+       "screenshotPoint": {
+        "x": 40,
+        "y": 112
+       },
+       "postedLocation": {
+        "x": 440,
+        "y": 143
+       },
+       "windowFrame": {
+        "height": 674,
+        "y": 31,
+        "width": 620,
+        "x": 400
+       },
+       "postedWindowLocation": {
+        "x": 40,
+        "y": 112
+       },
+       "frameBeforePost": {
+        "height": 674,
+        "width": 620,
+        "x": 400,
+        "y": 31
+       },
+       "windowPoint": {
+        "x": 40,
+        "y": 112
+       }
+      },
+      "stalePoint": {
+       "identity": "recreated",
+       "ms": 3.738,
+       "recordedRole": "AXButton",
+       "reason": "sameElement",
+       "hitRole": "AXButton",
+       "verdict": "kept"
+      },
+      "endedAt": 1793952295368
+     }
+    }
+   },
+   "stalePoint": {
+    "identity": "recreated",
+    "ms": 3.738,
+    "recordedRole": "AXButton",
+    "reason": "sameElement",
+    "hitRole": "AXButton",
+    "verdict": "kept"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952295367,
+   "endedAt": 1793952295368,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 135,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "again",
+      "text": "Again",
+      "gen": "44",
+      "sx": 440,
+      "sy": 143,
+      "dt": 60
+     },
+     {
+      "ev": "click",
+      "id": "again",
+      "text": "Again",
+      "gen": "44",
+      "sx": 440,
+      "sy": 143,
+      "dt": 118
+     }
+    ],
+    "hit": [
+     "again"
+    ],
+    "text": [
+     "Again"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/pulse/1s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "pulse",
+    "id": "pulse",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 1,
+    "expect": "kept",
+    "label": "safari/shared/pulse/1s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k7",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 119,
+    "sinceLaunchMs": 95321,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Pulse",
+    "frame": {
+     "x": 450,
+     "width": 59,
+     "y": 154,
+     "height": 30
+    }
+   },
+   "intended": "pulse",
+   "px": {
+    "x": 80,
+    "y": 138
+   },
+   "point": {
+    "x": 480,
+    "y": 169
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Pulse",
+    "depth": 8,
+    "frame": {
+     "x": 450,
+     "width": 59,
+     "y": 154,
+     "height": 30
+    }
+   },
+   "clickAfterObservationMs": 1002,
+   "clickSinceLaunchMs": 96323,
+   "response": {
+    "result": {
+     "meta": {
+      "stalePoint": {
+       "ms": 0.826,
+       "verdict": "kept",
+       "recordedRole": "AXButton",
+       "hitRole": "AXButton",
+       "reason": "sameElement",
+       "identity": "handle"
+      },
+      "receivedAt": 1793952300469,
+      "inputRoute": 3,
+      "startedAt": 1793952300529,
+      "activationJoin": "fresh",
+      "activationGuardMs": 39.401,
+      "activationClick": "posted",
+      "hidIdleMs": null,
+      "delivery": {
+       "repairedAfterRelease": false,
+       "otherAppFront": false,
+       "releasedAt": 1793952300587,
+       "raiseLeft": false,
+       "guardMs": 63.649,
+       "frontmostRestored": false,
+       "capped": false,
+       "personInput": false,
+       "screenHoldMs": 100,
+       "holdStartedAt": 1793952300487,
+       "postedAt": 1793952300529,
+       "restoreLatencyMs": 15.079,
+       "restores": 1
+      },
+      "activationClickKind": {
+       "kind": "activationPoint",
+       "when": "early"
+      },
+      "endedAt": 1793952300529,
+      "coordinateClick": {
+       "windowFrame": {
+        "y": 31,
+        "x": 400,
+        "width": 620,
+        "height": 674
+       },
+       "postedLocation": {
+        "x": 480,
+        "y": 169
+       },
+       "frameBeforePost": {
+        "x": 400,
+        "height": 674,
+        "width": 620,
+        "y": 31
+       },
+       "windowPoint": {
+        "y": 138,
+        "x": 80
+       },
+       "postedWindowLocation": {
+        "y": 138,
+        "x": 80
+       },
+       "screenshotPoint": {
+        "x": 80,
+        "y": 138
+       }
+      }
+     }
+    }
+   },
+   "stalePoint": {
+    "ms": 0.826,
+    "verdict": "kept",
+    "recordedRole": "AXButton",
+    "hitRole": "AXButton",
+    "reason": "sameElement",
+    "identity": "handle"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952300529,
+   "endedAt": 1793952300529,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 127,
+   "effect": {
+    "events": [
+     {
+      "ev": "click",
+      "id": "pulse",
+      "text": "Pulse",
+      "sx": 480,
+      "sy": 169,
+      "dt": 65
+     },
+     {
+      "ev": "pointerdown",
+      "id": "pulse",
+      "text": "Pulse",
+      "sx": 480,
+      "sy": 169,
+      "dt": 62
+     }
+    ],
+    "hit": [
+     "pulse"
+    ],
+    "text": [
+     "Pulse"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/pulse/20s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "pulse",
+    "id": "pulse",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 20,
+    "expect": "kept",
+    "label": "safari/shared/pulse/20s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k8",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 124,
+    "sinceLaunchMs": 100633,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Pulse",
+    "frame": {
+     "width": 59,
+     "height": 30,
+     "x": 450,
+     "y": 154
+    }
+   },
+   "intended": "pulse",
+   "px": {
+    "x": 80,
+    "y": 138
+   },
+   "point": {
+    "x": 480,
+    "y": 169
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Pulse",
+    "depth": 8,
+    "frame": {
+     "width": 59,
+     "height": 30,
+     "x": 450,
+     "y": 154
+    }
+   },
+   "clickAfterObservationMs": 20002,
+   "clickSinceLaunchMs": 120635,
+   "response": {
+    "result": {
+     "meta": {
+      "activationJoin": "fresh",
+      "activationGuardMs": 20.716,
+      "receivedAt": 1793952324782,
+      "endedAt": 1793952324880,
+      "activationClick": "posted",
+      "coordinateClick": {
+       "windowFrame": {
+        "y": 31,
+        "height": 674,
+        "width": 620,
+        "x": 400
+       },
+       "windowPoint": {
+        "y": 138,
+        "x": 80
+       },
+       "screenshotPoint": {
+        "y": 138,
+        "x": 80
+       },
+       "postedLocation": {
+        "y": 169,
+        "x": 480
+       },
+       "postedWindowLocation": {
+        "y": 138,
+        "x": 80
+       },
+       "frameBeforePost": {
+        "x": 400,
+        "y": 31,
+        "width": 620,
+        "height": 674
+       }
+      },
+      "startedAt": 1793952324879,
+      "stalePoint": {
+       "recordedRole": "AXButton",
+       "reason": "sameElement",
+       "ms": 0.649,
+       "verdict": "kept",
+       "hitRole": "AXButton",
+       "identity": "handle"
+      },
+      "delivery": {
+       "otherAppFront": false,
+       "raiseLeft": false,
+       "repairedAfterRelease": false,
+       "releasedAt": 1793952324901,
+       "frontmostRestored": false,
+       "capped": true,
+       "screenHoldMs": 100,
+       "restores": 1,
+       "guardMs": 106.732,
+       "restoreLatencyMs": 25.676,
+       "personInput": false,
+       "holdStartedAt": 1793952324801,
+       "postedAt": 1793952324879
+      },
+      "activationClickKind": {
+       "when": "early",
+       "kind": "activationPoint"
+      },
+      "inputRoute": 3,
+      "hidIdleMs": null
+     }
+    }
+   },
+   "stalePoint": {
+    "recordedRole": "AXButton",
+    "reason": "sameElement",
+    "ms": 0.649,
+    "verdict": "kept",
+    "hitRole": "AXButton",
+    "identity": "handle"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952324879,
+   "endedAt": 1793952324880,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 217,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "pulse",
+      "text": "Pulse",
+      "sx": 480,
+      "sy": 169,
+      "dt": 105
+     },
+     {
+      "ev": "click",
+      "id": "pulse",
+      "text": "Pulse",
+      "sx": 480,
+      "sy": 169,
+      "dt": 113
+     }
+    ],
+    "hit": [
+     "pulse"
+    ],
+    "text": [
+     "Pulse"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/scroll-still/1s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "scroll",
+    "name": "scroll-still",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 1,
+    "expect": "kept",
+    "label": "safari/shared/scroll-still/1s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k9",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 175,
+    "sinceLaunchMs": 125079,
+    "nodes": 71,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Row 14",
+    "frame": {
+     "width": 270,
+     "x": 411,
+     "y": 220,
+     "height": 28
+    }
+   },
+   "intended": "row-14",
+   "px": {
+    "x": 146,
+    "y": 203
+   },
+   "point": {
+    "x": 546,
+    "y": 234
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Row 14",
+    "depth": 8,
+    "frame": {
+     "width": 270,
+     "x": 411,
+     "y": 220,
+     "height": 28
+    }
+   },
+   "clickAfterObservationMs": 1000,
+   "clickSinceLaunchMs": 126079,
+   "response": {
+    "result": {
+     "meta": {
+      "receivedAt": 1793952330225,
+      "activationClick": "posted",
+      "activationJoin": "fresh",
+      "startedAt": 1793952330275,
+      "stalePoint": {
+       "identity": "handle",
+       "ms": 0.336,
+       "verdict": "kept",
+       "reason": "sameElement",
+       "recordedRole": "AXButton",
+       "hitRole": "AXButton"
+      },
+      "endedAt": 1793952330275,
+      "inputRoute": 3,
+      "coordinateClick": {
+       "screenshotPoint": {
+        "y": 203,
+        "x": 146
+       },
+       "windowFrame": {
+        "y": 31,
+        "x": 400,
+        "width": 620,
+        "height": 674
+       },
+       "frameBeforePost": {
+        "y": 31,
+        "width": 620,
+        "x": 400,
+        "height": 674
+       },
+       "windowPoint": {
+        "x": 146,
+        "y": 203
+       },
+       "postedLocation": {
+        "y": 234,
+        "x": 546
+       },
+       "postedWindowLocation": {
+        "y": 203,
+        "x": 146
+       }
+      },
+      "activationGuardMs": 28.108,
+      "delivery": {
+       "postedAt": 1793952330274,
+       "restoreLatencyMs": 11.709,
+       "repairedAfterRelease": false,
+       "holdStartedAt": 1793952330232,
+       "frontmostRestored": false,
+       "guardMs": 99.513,
+       "personInput": false,
+       "restores": 1,
+       "capped": false,
+       "otherAppFront": false,
+       "releasedAt": 1793952330332,
+       "screenHoldMs": 100,
+       "raiseLeft": false
+      },
+      "hidIdleMs": null,
+      "activationClickKind": {
+       "kind": "activationPoint",
+       "when": "early"
+      }
+     }
+    }
+   },
+   "stalePoint": {
+    "identity": "handle",
+    "ms": 0.336,
+    "verdict": "kept",
+    "reason": "sameElement",
+    "recordedRole": "AXButton",
+    "hitRole": "AXButton"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952330275,
+   "endedAt": 1793952330275,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 152,
+   "effect": {
+    "events": [
+     {
+      "ev": "click",
+      "id": "row-14",
+      "text": "Row 14",
+      "sx": 546,
+      "sy": 234,
+      "dt": 54
+     },
+     {
+      "ev": "pointerdown",
+      "id": "row-14",
+      "text": "Row 14",
+      "sx": 546,
+      "sy": 234,
+      "dt": 52
+     }
+    ],
+    "hit": [
+     "row-14"
+    ],
+    "text": [
+     "Row 14"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/scroll-still/20s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "scroll",
+    "name": "scroll-still",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 20,
+    "expect": "kept",
+    "label": "safari/shared/scroll-still/20s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k10",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 126,
+    "sinceLaunchMs": 130345,
+    "nodes": 71,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Row 14",
+    "frame": {
+     "x": 411,
+     "height": 28,
+     "width": 270,
+     "y": 220
+    }
+   },
+   "intended": "row-14",
+   "px": {
+    "x": 146,
+    "y": 203
+   },
+   "point": {
+    "x": 546,
+    "y": 234
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Row 14",
+    "depth": 8,
+    "frame": {
+     "x": 411,
+     "height": 28,
+     "width": 270,
+     "y": 220
+    }
+   },
+   "clickAfterObservationMs": 20002,
+   "clickSinceLaunchMs": 150347,
+   "response": {
+    "result": {
+     "meta": {
+      "activationGuardMs": 27.353,
+      "receivedAt": 1793952354493,
+      "endedAt": 1793952354593,
+      "activationClick": "posted",
+      "inputRoute": 3,
+      "stalePoint": {
+       "verdict": "kept",
+       "recordedRole": "AXButton",
+       "reason": "sameElement",
+       "hitRole": "AXButton",
+       "identity": "handle",
+       "ms": 0.927
+      },
+      "startedAt": 1793952354593,
+      "coordinateClick": {
+       "windowFrame": {
+        "y": 31,
+        "width": 620,
+        "height": 674,
+        "x": 400
+       },
+       "frameBeforePost": {
+        "x": 400,
+        "width": 620,
+        "height": 674,
+        "y": 31
+       },
+       "postedLocation": {
+        "x": 546,
+        "y": 234
+       },
+       "screenshotPoint": {
+        "y": 203,
+        "x": 146
+       },
+       "postedWindowLocation": {
+        "x": 146,
+        "y": 203
+       },
+       "windowPoint": {
+        "y": 203,
+        "x": 146
+       }
+      },
+      "activationClickKind": {
+       "when": "early",
+       "kind": "activationPoint"
+      },
+      "activationJoin": "fresh",
+      "delivery": {
+       "releasedAt": 1793952354613,
+       "holdStartedAt": 1793952354513,
+       "frontmostRestored": false,
+       "guardMs": 122.541,
+       "capped": true,
+       "raiseLeft": false,
+       "restores": 1,
+       "screenHoldMs": 100,
+       "restoreLatencyMs": 16.806,
+       "personInput": false,
+       "otherAppFront": false,
+       "postedAt": 1793952354593,
+       "repairedAfterRelease": false
+      },
+      "hidIdleMs": null
+     }
+    }
+   },
+   "stalePoint": {
+    "verdict": "kept",
+    "recordedRole": "AXButton",
+    "reason": "sameElement",
+    "hitRole": "AXButton",
+    "identity": "handle",
+    "ms": 0.927
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952354593,
+   "endedAt": 1793952354593,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 226,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "row-14",
+      "text": "Row 14",
+      "sx": 546,
+      "sy": 234,
+      "dt": 105
+     },
+     {
+      "ev": "click",
+      "id": "row-14",
+      "text": "Row 14",
+      "sx": 546,
+      "sy": 234,
+      "dt": 107
+     }
+    ],
+    "hit": [
+     "row-14"
+    ],
+    "text": [
+     "Row 14"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/link/1s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "link",
+    "id": "lnk",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 1,
+    "expect": "kept",
+    "label": "safari/shared/link/1s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k11",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 118,
+    "sinceLaunchMs": 154638,
+    "nodes": 33,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXLink",
+    "title": "Read the full article",
+    "frame": {
+     "width": 120,
+     "x": 408,
+     "y": 127,
+     "height": 16
+    }
+   },
+   "intended": "lnk",
+   "px": {
+    "x": 68,
+    "y": 104
+   },
+   "point": {
+    "x": 468,
+    "y": 135
+   },
+   "recorded": {
+    "role": "AXStaticText",
+    "title": "",
+    "depth": 9,
+    "frame": {
+     "x": 408,
+     "width": 120,
+     "y": 127,
+     "height": 16
+    }
+   },
+   "clickAfterObservationMs": 1002,
+   "clickSinceLaunchMs": 155640,
+   "response": {
+    "result": {
+     "meta": {
+      "coordinateClick": {
+       "postedLocation": {
+        "y": 135,
+        "x": 468
+       },
+       "screenshotPoint": {
+        "y": 104,
+        "x": 68
+       },
+       "frameBeforePost": {
+        "y": 31,
+        "width": 620,
+        "x": 400,
+        "height": 674
+       },
+       "windowPoint": {
+        "x": 68,
+        "y": 104
+       },
+       "postedWindowLocation": {
+        "x": 68,
+        "y": 104
+       },
+       "windowFrame": {
+        "height": 674,
+        "width": 620,
+        "y": 31,
+        "x": 400
+       }
+      },
+      "stalePoint": {
+       "hitRole": "AXStaticText",
+       "reason": "sameElement",
+       "identity": "handle",
+       "recordedRole": "AXStaticText",
+       "verdict": "kept",
+       "ms": 0.446
+      },
+      "activationJoin": "fresh",
+      "activationClickKind": {
+       "kind": "activationPoint",
+       "when": "early"
+      },
+      "startedAt": 1793952359825,
+      "receivedAt": 1793952359786,
+      "inputRoute": 3,
+      "activationGuardMs": 16.051,
+      "activationClick": "posted",
+      "hidIdleMs": null,
+      "endedAt": 1793952359825,
+      "delivery": {
+       "raiseLeft": false,
+       "repairedAfterRelease": false,
+       "restores": 1,
+       "releasedAt": 1793952359894,
+       "frontmostRestored": false,
+       "holdStartedAt": 1793952359794,
+       "restoreLatencyMs": 10.708,
+       "screenHoldMs": 100,
+       "otherAppFront": false,
+       "postedAt": 1793952359826,
+       "guardMs": 70.447,
+       "personInput": false,
+       "capped": false
+      }
+     }
+    }
+   },
+   "stalePoint": {
+    "hitRole": "AXStaticText",
+    "reason": "sameElement",
+    "identity": "handle",
+    "recordedRole": "AXStaticText",
+    "verdict": "kept",
+    "ms": 0.446
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952359825,
+   "endedAt": 1793952359825,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 114,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "lnk",
+      "text": "Read the full article",
+      "sx": 468,
+      "sy": 135,
+      "dt": 42
+     },
+     {
+      "ev": "click",
+      "id": "lnk",
+      "text": "Read the full article",
+      "sx": 468,
+      "sy": 135,
+      "dt": 45
+     }
+    ],
+    "hit": [
+     "lnk"
+    ],
+    "text": [
+     "Read the full article"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/feed/5s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "feed",
+    "expect": "refused/frameMoved",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/feed/5s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k12",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 94,
+    "sinceLaunchMs": 159729,
+    "nodes": 41,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Item 8",
+    "frame": {
+     "height": 28,
+     "y": 190,
+     "x": 411,
+     "width": 270
+    }
+   },
+   "intended": "item-8",
+   "px": {
+    "x": 146,
+    "y": 173
+   },
+   "point": {
+    "x": 546,
+    "y": 204
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Item 8",
+    "depth": 8,
+    "frame": {
+     "height": 28,
+     "y": 190,
+     "x": 411,
+     "width": 270
+    }
+   },
+   "clickAfterObservationMs": 5003,
+   "clickSinceLaunchMs": 164732,
+   "response": {
+    "error": {
+     "code": -10005,
+     "meta": {
+      "inputRoute": 3,
+      "hidIdleMs": null,
+      "coordinateClick": {
+       "postedLocation": {
+        "y": 204,
+        "x": 546
+       },
+       "screenshotPoint": {
+        "y": 173,
+        "x": 146
+       },
+       "windowPoint": {
+        "y": 173,
+        "x": 146
+       },
+       "windowFrame": {
+        "x": 400,
+        "y": 31,
+        "width": 620,
+        "height": 674
+       },
+       "postedWindowLocation": {
+        "y": 173,
+        "x": 146
+       },
+       "frameBeforePost": null
+      },
+      "endedAt": null,
+      "startedAt": null,
+      "receivedAt": 1793952368878,
+      "stalePoint": {
+       "ms": 0.69,
+       "verdict": "refused",
+       "identity": "handle",
+       "recordedRole": "AXButton",
+       "hitRole": "AXButton",
+       "reason": "frameMoved"
+      }
+     },
+     "message": "The screen changed since the screenshot: the AXButton \"Item 8\" it showed at this point has moved away from it; AXButton \"Item 11\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
+     "errorName": "screenChangedSinceScreenshot"
+    }
+   },
+   "stalePoint": {
+    "ms": 0.69,
+    "verdict": "refused",
+    "identity": "handle",
+    "recordedRole": "AXButton",
+    "hitRole": "AXButton",
+    "reason": "frameMoved"
+   },
+   "errorName": "screenChangedSinceScreenshot",
+   "errorMessage": "The screen changed since the screenshot: the AXButton \"Item 8\" it showed at this point has moved away from it; AXButton \"Item 11\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
+   "startedAt": null,
+   "endedAt": null,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 11,
+   "effect": {
+    "events": [],
+    "hit": [],
+    "text": []
+   },
+   "pageEvents": [
+    {
+     "ev": "prepend",
+     "dt": 61
+    },
+    {
+     "ev": "prepend",
+     "dt": 2065
+    },
+    {
+     "ev": "prepend",
+     "dt": 4066
+    }
+   ],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/feed/5s/main",
+   "spec": {
+    "kind": "web",
+    "case": "feed",
+    "expect": "refused/frameMoved",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/feed/5s/main",
+    "engine": "main"
+   },
+   "pid": 5706,
+   "navK": "k13",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 123,
+    "sinceLaunchMs": 168823,
+    "nodes": 41,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Item 8",
+    "frame": {
+     "width": 270,
+     "x": 411,
+     "height": 28,
+     "y": 190
+    }
+   },
+   "intended": "item-8",
+   "px": {
+    "x": 146,
+    "y": 173
+   },
+   "point": {
+    "x": 546,
+    "y": 204
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Item 8",
+    "depth": 8,
+    "frame": {
+     "width": 270,
+     "x": 411,
+     "height": 28,
+     "y": 190
+    }
+   },
+   "clickAfterObservationMs": 5000,
+   "clickSinceLaunchMs": 173823,
+   "response": {
+    "result": {
+     "meta": {
+      "receivedAt": 1793952377969,
+      "endedAt": 1793952378021,
+      "activationGuardMs": 32.989,
+      "activationClick": "posted",
+      "hidIdleMs": null,
+      "startedAt": 1793952378020,
+      "activationClickKind": {
+       "when": "early",
+       "kind": "activationPoint"
+      },
+      "coordinateClick": {
+       "screenshotPoint": {
+        "y": 173,
+        "x": 146
+       },
+       "postedLocation": {
+        "y": 204,
+        "x": 546
+       },
+       "windowFrame": {
+        "height": 674,
+        "width": 620,
+        "y": 31,
+        "x": 400
+       },
+       "postedWindowLocation": {
+        "x": 146,
+        "y": 173
+       },
+       "frameBeforePost": {
+        "y": 31,
+        "x": 400,
+        "width": 620,
+        "height": 674
+       },
+       "windowPoint": {
+        "x": 146,
+        "y": 173
+       }
+      },
+      "inputRoute": 3,
+      "activationJoin": "fresh",
+      "delivery": {
+       "frontmostRestored": false,
+       "personInput": false,
+       "guardMs": 70.069,
+       "repairedAfterRelease": false,
+       "otherAppFront": false,
+       "restores": 1,
+       "raiseLeft": false,
+       "postedAt": 1793952378021,
+       "releasedAt": 1793952378084,
+       "holdStartedAt": 1793952377984,
+       "restoreLatencyMs": 6.183,
+       "screenHoldMs": 100,
+       "capped": false
+      }
+     }
+    }
+   },
+   "stalePoint": null,
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952378020,
+   "endedAt": 1793952378021,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 124,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "item-11",
+      "text": "Item 11",
+      "sx": 546,
+      "sy": 204,
+      "dt": 55
+     },
+     {
+      "ev": "click",
+      "id": "item-11",
+      "text": "Item 11",
+      "sx": 546,
+      "sy": 204,
+      "dt": 56
+     }
+    ],
+    "hit": [
+     "item-11"
+    ],
+    "text": [
+     "Item 11"
+    ]
+   },
+   "pageEvents": [
+    {
+     "ev": "prepend",
+     "dt": 29
+    },
+    {
+     "ev": "prepend",
+     "dt": 2031
+    },
+    {
+     "ev": "prepend",
+     "dt": 4033
+    }
+   ],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/scroll-moved/5s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "scroll",
+    "name": "scroll-moved",
+    "mid": {
+     "op": "scroll",
+     "by": 90
+    },
+    "expect": "refused/frameMoved",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/scroll-moved/5s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k14",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 115,
+    "sinceLaunchMs": 177949,
+    "nodes": 71,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Row 14",
+    "frame": {
+     "height": 28,
+     "width": 270,
+     "y": 220,
+     "x": 411
+    }
+   },
+   "intended": "row-14",
+   "px": {
+    "x": 146,
+    "y": 203
+   },
+   "point": {
+    "x": 546,
+    "y": 234
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Row 14",
+    "depth": 8,
+    "frame": {
+     "height": 28,
+     "width": 270,
+     "y": 220,
+     "x": 411
+    }
+   },
+   "midAtMs": 2501,
+   "clickAfterObservationMs": 5002,
+   "clickSinceLaunchMs": 182951,
+   "response": {
+    "error": {
+     "errorName": "screenChangedSinceScreenshot",
+     "meta": {
+      "receivedAt": 1793952387097,
+      "inputRoute": 3,
+      "hidIdleMs": null,
+      "coordinateClick": {
+       "frameBeforePost": null,
+       "postedWindowLocation": {
+        "y": 203,
+        "x": 146
+       },
+       "screenshotPoint": {
+        "x": 146,
+        "y": 203
+       },
+       "postedLocation": {
+        "y": 234,
+        "x": 546
+       },
+       "windowFrame": {
+        "y": 31,
+        "width": 620,
+        "height": 674,
+        "x": 400
+       },
+       "windowPoint": {
+        "y": 203,
+        "x": 146
+       }
+      },
+      "stalePoint": {
+       "verdict": "refused",
+       "reason": "frameMoved",
+       "identity": "handle",
+       "ms": 1.025,
+       "recordedRole": "AXButton",
+       "hitRole": "AXButton"
+      },
+      "startedAt": null,
+      "endedAt": null
+     },
+     "message": "The screen changed since the screenshot: the AXButton \"Row 14\" it showed at this point has moved away from it; AXButton \"Row 17\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
+     "code": -10005
+    }
+   },
+   "stalePoint": {
+    "verdict": "refused",
+    "reason": "frameMoved",
+    "identity": "handle",
+    "ms": 1.025,
+    "recordedRole": "AXButton",
+    "hitRole": "AXButton"
+   },
+   "errorName": "screenChangedSinceScreenshot",
+   "errorMessage": "The screen changed since the screenshot: the AXButton \"Row 14\" it showed at this point has moved away from it; AXButton \"Row 17\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
+   "startedAt": null,
+   "endedAt": null,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 14,
+   "effect": {
+    "events": [],
+    "hit": [],
+    "text": []
+   },
+   "pageEvents": [
+    {
+     "ev": "changed",
+     "dt": 2553
+    }
+   ],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/scroll-moved/5s/main",
+   "spec": {
+    "kind": "web",
+    "case": "scroll",
+    "name": "scroll-moved",
+    "mid": {
+     "op": "scroll",
+     "by": 90
+    },
+    "expect": "refused/frameMoved",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/scroll-moved/5s/main",
+    "engine": "main"
+   },
+   "pid": 5706,
+   "navK": "k15",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 99,
+    "sinceLaunchMs": 186954,
+    "nodes": 71,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Row 14",
+    "frame": {
+     "x": 411,
+     "y": 220,
+     "width": 270,
+     "height": 28
+    }
+   },
+   "intended": "row-14",
+   "px": {
+    "x": 146,
+    "y": 203
+   },
+   "point": {
+    "x": 546,
+    "y": 234
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Row 14",
+    "depth": 8,
+    "frame": {
+     "x": 411,
+     "y": 220,
+     "width": 270,
+     "height": 28
+    }
+   },
+   "midAtMs": 2501,
+   "clickAfterObservationMs": 5002,
+   "clickSinceLaunchMs": 191956,
+   "response": {
+    "result": {
+     "meta": {
+      "delivery": {
+       "postedAt": 1793952396177,
+       "frontmostRestored": false,
+       "personInput": false,
+       "capped": false,
+       "raiseLeft": false,
+       "screenHoldMs": 100,
+       "guardMs": 87.419,
+       "releasedAt": 1793952396220,
+       "holdStartedAt": 1793952396120,
+       "restores": 1,
+       "repairedAfterRelease": false,
+       "otherAppFront": false,
+       "restoreLatencyMs": 8.708
+      },
+      "activationClickKind": {
+       "kind": "activationPoint",
+       "when": "early"
+      },
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "x": 146,
+        "y": 203
+       },
+       "screenshotPoint": {
+        "x": 146,
+        "y": 203
+       },
+       "windowPoint": {
+        "x": 146,
+        "y": 203
+       },
+       "postedLocation": {
+        "x": 546,
+        "y": 234
+       },
+       "windowFrame": {
+        "x": 400,
+        "width": 620,
+        "height": 674,
+        "y": 31
+       },
+       "frameBeforePost": {
+        "height": 674,
+        "width": 620,
+        "x": 400,
+        "y": 31
+       }
+      },
+      "startedAt": 1793952396176,
+      "endedAt": 1793952396176,
+      "activationGuardMs": 50.879,
+      "receivedAt": 1793952396102,
+      "activationClick": "posted",
+      "inputRoute": 3,
+      "hidIdleMs": null,
+      "activationJoin": "fresh"
+     }
+    }
+   },
+   "stalePoint": null,
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952396176,
+   "endedAt": 1793952396176,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 163,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "row-17",
+      "text": "Row 17",
+      "sx": 546,
+      "sy": 234,
+      "dt": 76
+     },
+     {
+      "ev": "click",
+      "id": "row-17",
+      "text": "Row 17",
+      "sx": 546,
+      "sy": 234,
+      "dt": 80
+     }
+    ],
+    "hit": [
+     "row-17"
+    ],
+    "text": [
+     "Row 17"
+    ]
+   },
+   "pageEvents": [
+    {
+     "ev": "changed",
+     "dt": 2503
+    }
+   ],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/swap/5s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "swap",
+    "id": "save",
+    "mid": {
+     "op": "swap"
+    },
+    "expect": "refused/nodeGone",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/swap/5s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k16",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 90,
+    "sinceLaunchMs": 196091,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Save",
+    "frame": {
+     "x": 408,
+     "height": 32,
+     "y": 127,
+     "width": 120
+    }
+   },
+   "intended": "save",
+   "px": {
+    "x": 68,
+    "y": 112
+   },
+   "point": {
+    "x": 468,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Save",
+    "depth": 8,
+    "frame": {
+     "x": 408,
+     "height": 32,
+     "y": 127,
+     "width": 120
+    }
+   },
+   "midAtMs": 2504,
+   "clickAfterObservationMs": 5003,
+   "clickSinceLaunchMs": 201094,
+   "response": {
+    "error": {
+     "errorName": "screenChangedSinceScreenshot",
+     "message": "The screen changed since the screenshot: the AXButton \"Save\" it showed at this point is gone; AXButton \"Delete\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
+     "code": -10005,
+     "meta": {
+      "receivedAt": 1793952405239,
+      "coordinateClick": {
+       "windowFrame": {
+        "x": 400,
+        "width": 620,
+        "height": 674,
+        "y": 31
+       },
+       "frameBeforePost": null,
+       "windowPoint": {
+        "x": 68,
+        "y": 112
+       },
+       "postedLocation": {
+        "x": 468,
+        "y": 143
+       },
+       "postedWindowLocation": {
+        "y": 112,
+        "x": 68
+       },
+       "screenshotPoint": {
+        "x": 68,
+        "y": 112
+       }
+      },
+      "inputRoute": 3,
+      "endedAt": null,
+      "hidIdleMs": null,
+      "stalePoint": {
+       "ms": 4.66,
+       "recordedRole": "AXButton",
+       "reason": "nodeGone",
+       "hitRole": "AXButton",
+       "verdict": "refused"
+      },
+      "startedAt": null
+     }
+    }
+   },
+   "stalePoint": {
+    "ms": 4.66,
+    "recordedRole": "AXButton",
+    "reason": "nodeGone",
+    "hitRole": "AXButton",
+    "verdict": "refused"
+   },
+   "errorName": "screenChangedSinceScreenshot",
+   "errorMessage": "The screen changed since the screenshot: the AXButton \"Save\" it showed at this point is gone; AXButton \"Delete\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
+   "startedAt": null,
+   "endedAt": null,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 15,
+   "effect": {
+    "events": [],
+    "hit": [],
+    "text": []
+   },
+   "pageEvents": [
+    {
+     "ev": "changed",
+     "dt": 2542
+    }
+   ],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/swap/5s/main",
+   "spec": {
+    "kind": "web",
+    "case": "swap",
+    "id": "save",
+    "mid": {
+     "op": "swap"
+    },
+    "expect": "refused/nodeGone",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/swap/5s/main",
+    "engine": "main"
+   },
+   "pid": 5706,
+   "navK": "k17",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 94,
+    "sinceLaunchMs": 205097,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Save",
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 127,
+     "width": 120
+    }
+   },
+   "intended": "save",
+   "px": {
+    "x": 68,
+    "y": 112
+   },
+   "point": {
+    "x": 468,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Save",
+    "depth": 8,
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 127,
+     "width": 120
+    }
+   },
+   "midAtMs": 2502,
+   "clickAfterObservationMs": 5002,
+   "clickSinceLaunchMs": 210099,
+   "response": {
+    "result": {
+     "meta": {
+      "receivedAt": 1793952414245,
+      "activationJoin": "fresh",
+      "coordinateClick": {
+       "screenshotPoint": {
+        "y": 112,
+        "x": 68
+       },
+       "postedWindowLocation": {
+        "x": 68,
+        "y": 112
+       },
+       "windowFrame": {
+        "height": 674,
+        "x": 400,
+        "width": 620,
+        "y": 31
+       },
+       "postedLocation": {
+        "x": 468,
+        "y": 143
+       },
+       "frameBeforePost": {
+        "y": 31,
+        "width": 620,
+        "height": 674,
+        "x": 400
+       },
+       "windowPoint": {
+        "x": 68,
+        "y": 112
+       }
+      },
+      "delivery": {
+       "holdStartedAt": 1793952414259,
+       "restoreLatencyMs": 13.378,
+       "restores": 1,
+       "guardMs": 60.213,
+       "screenHoldMs": 82.409,
+       "repairedAfterRelease": false,
+       "raiseLeft": false,
+       "personInput": false,
+       "capped": false,
+       "frontmostRestored": false,
+       "releasedAt": 1793952414341,
+       "otherAppFront": false,
+       "postedAt": 1793952414281
+      },
+      "startedAt": 1793952414280,
+      "inputRoute": 3,
+      "hidIdleMs": null,
+      "activationClick": "posted",
+      "endedAt": 1793952414280,
+      "activationClickKind": {
+       "when": "early",
+       "kind": "activationPoint"
+      },
+      "activationGuardMs": 18.139
+     }
+    }
+   },
+   "stalePoint": null,
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952414280,
+   "endedAt": 1793952414280,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 99,
+   "effect": {
+    "events": [
+     {
+      "ev": "click",
+      "id": "delete",
+      "text": "Delete",
+      "sx": 468,
+      "sy": 143,
+      "dt": 39
+     },
+     {
+      "ev": "pointerdown",
+      "id": "delete",
+      "text": "Delete",
+      "sx": 468,
+      "sy": 143,
+      "dt": 37
+     }
+    ],
+    "hit": [
+     "delete"
+    ],
+    "text": [
+     "Delete"
+    ]
+   },
+   "pageEvents": [
+    {
+     "ev": "changed",
+     "dt": 2541
+    }
+   ],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/swaprole/5s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "swaprole",
+    "id": "keep",
+    "mid": {
+     "op": "swaprole"
+    },
+    "expect": "refused",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/swaprole/5s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k18",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 90,
+    "sinceLaunchMs": 214162,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Keep",
+    "frame": {
+     "x": 408,
+     "y": 127,
+     "height": 32,
+     "width": 120
+    }
+   },
+   "intended": "keep",
+   "px": {
+    "x": 68,
+    "y": 112
+   },
+   "point": {
+    "x": 468,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Keep",
+    "depth": 8,
+    "frame": {
+     "x": 408,
+     "y": 127,
+     "height": 32,
+     "width": 120
+    }
+   },
+   "midAtMs": 2502,
+   "clickAfterObservationMs": 5001,
+   "clickSinceLaunchMs": 219163,
+   "response": {
+    "error": {
+     "errorName": "screenChangedSinceScreenshot",
+     "meta": {
+      "hidIdleMs": null,
+      "startedAt": null,
+      "receivedAt": 1793952423308,
+      "coordinateClick": {
+       "windowPoint": {
+        "y": 112,
+        "x": 68
+       },
+       "postedLocation": {
+        "y": 143,
+        "x": 468
+       },
+       "frameBeforePost": null,
+       "windowFrame": {
+        "x": 400,
+        "width": 620,
+        "height": 674,
+        "y": 31
+       },
+       "screenshotPoint": {
+        "x": 68,
+        "y": 112
+       },
+       "postedWindowLocation": {
+        "x": 68,
+        "y": 112
+       }
+      },
+      "endedAt": null,
+      "inputRoute": 3,
+      "stalePoint": {
+       "ms": 5.629,
+       "recordedRole": "AXButton",
+       "hitRole": "AXStaticText",
+       "reason": "nodeGone",
+       "verdict": "refused"
+      }
+     },
+     "message": "The screen changed since the screenshot: the AXButton \"Keep\" it showed at this point is gone; AXStaticText is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
+     "code": -10005
+    }
+   },
+   "stalePoint": {
+    "ms": 5.629,
+    "recordedRole": "AXButton",
+    "hitRole": "AXStaticText",
+    "reason": "nodeGone",
+    "verdict": "refused"
+   },
+   "errorName": "screenChangedSinceScreenshot",
+   "errorMessage": "The screen changed since the screenshot: the AXButton \"Keep\" it showed at this point is gone; AXStaticText is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
+   "startedAt": null,
+   "endedAt": null,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 16,
+   "effect": {
+    "events": [],
+    "hit": [],
+    "text": []
+   },
+   "pageEvents": [
+    {
+     "ev": "changed",
+     "dt": 2517
+    }
+   ],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/swaprole/5s/main",
+   "spec": {
+    "kind": "web",
+    "case": "swaprole",
+    "id": "keep",
+    "mid": {
+     "op": "swaprole"
+    },
+    "expect": "refused",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/swaprole/5s/main",
+    "engine": "main"
+   },
+   "pid": 5706,
+   "navK": "k19",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 96,
+    "sinceLaunchMs": 223148,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Keep",
+    "frame": {
+     "x": 408,
+     "y": 127,
+     "width": 120,
+     "height": 32
+    }
+   },
+   "intended": "keep",
+   "px": {
+    "x": 68,
+    "y": 112
+   },
+   "point": {
+    "x": 468,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Keep",
+    "depth": 8,
+    "frame": {
+     "x": 408,
+     "y": 127,
+     "width": 120,
+     "height": 32
+    }
+   },
+   "midAtMs": 2501,
+   "clickAfterObservationMs": 5001,
+   "clickSinceLaunchMs": 228149,
+   "response": {
+    "result": {
+     "meta": {
+      "activationGuardMs": 15.632,
+      "activationClickKind": {
+       "kind": "activationPoint",
+       "when": "early"
+      },
+      "hidIdleMs": null,
+      "coordinateClick": {
+       "screenshotPoint": {
+        "y": 112,
+        "x": 68
+       },
+       "windowFrame": {
+        "height": 674,
+        "width": 620,
+        "x": 400,
+        "y": 31
+       },
+       "frameBeforePost": {
+        "height": 674,
+        "y": 31,
+        "x": 400,
+        "width": 620
+       },
+       "windowPoint": {
+        "x": 68,
+        "y": 112
+       },
+       "postedLocation": {
+        "y": 143,
+        "x": 468
+       },
+       "postedWindowLocation": {
+        "y": 112,
+        "x": 68
+       }
+      },
+      "activationClick": "posted",
+      "inputRoute": 3,
+      "delivery": {
+       "repairedAfterRelease": false,
+       "postedAt": 1793952432334,
+       "personInput": false,
+       "raiseLeft": false,
+       "screenHoldMs": 92.475,
+       "guardMs": 64.353,
+       "releasedAt": 1793952432398,
+       "restores": 1,
+       "restoreLatencyMs": 7.007,
+       "otherAppFront": false,
+       "holdStartedAt": 1793952432306,
+       "frontmostRestored": false,
+       "capped": false
+      },
+      "startedAt": 1793952432334,
+      "receivedAt": 1793952432295,
+      "activationJoin": "fresh",
+      "endedAt": 1793952432334
+     }
+    }
+   },
+   "stalePoint": null,
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952432334,
+   "endedAt": 1793952432334,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 108,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "remove",
+      "text": "Remove",
+      "sx": 468,
+      "sy": 143,
+      "dt": 40
+     },
+     {
+      "ev": "click",
+      "id": "remove",
+      "text": "Remove",
+      "sx": 468,
+      "sy": 143,
+      "dt": 42
+     }
+    ],
+    "hit": [
+     "remove"
+    ],
+    "text": [
+     "Remove"
+    ]
+   },
+   "pageEvents": [
+    {
+     "ev": "changed",
+     "dt": 2504
+    }
+   ],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/like/5s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "like",
+    "id": "like",
+    "mid": {
+     "op": "like"
+    },
+    "expect": "refused/nodeGone",
+    "limit": "i",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/like/5s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k20",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 94,
+    "sinceLaunchMs": 232228,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Like (12)",
+    "frame": {
+     "y": 127,
+     "height": 32,
+     "width": 120,
+     "x": 408
+    }
+   },
+   "intended": "like",
+   "px": {
+    "x": 68,
+    "y": 112
+   },
+   "point": {
+    "x": 468,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Like (12)",
+    "depth": 8,
+    "frame": {
+     "y": 127,
+     "height": 32,
+     "width": 120,
+     "x": 408
+    }
+   },
+   "midAtMs": 2502,
+   "clickAfterObservationMs": 5000,
+   "clickSinceLaunchMs": 237228,
+   "response": {
+    "error": {
+     "meta": {
+      "inputRoute": 3,
+      "hidIdleMs": null,
+      "endedAt": null,
+      "receivedAt": 1793952441374,
+      "stalePoint": {
+       "verdict": "refused",
+       "ms": 4.997,
+       "hitRole": "AXButton",
+       "recordedRole": "AXButton",
+       "reason": "nodeGone"
+      },
+      "coordinateClick": {
+       "windowFrame": {
+        "y": 31,
+        "x": 400,
+        "height": 674,
+        "width": 620
+       },
+       "screenshotPoint": {
+        "y": 112,
+        "x": 68
+       },
+       "postedLocation": {
+        "y": 143,
+        "x": 468
+       },
+       "frameBeforePost": null,
+       "postedWindowLocation": {
+        "x": 68,
+        "y": 112
+       },
+       "windowPoint": {
+        "y": 112,
+        "x": 68
+       }
+      },
+      "startedAt": null
+     },
+     "code": -10005,
+     "message": "The screen changed since the screenshot: the AXButton \"Like (12)\" it showed at this point is gone; AXButton \"Like (13)\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
+     "errorName": "screenChangedSinceScreenshot"
+    }
+   },
+   "stalePoint": {
+    "verdict": "refused",
+    "ms": 4.997,
+    "hitRole": "AXButton",
+    "recordedRole": "AXButton",
+    "reason": "nodeGone"
+   },
+   "errorName": "screenChangedSinceScreenshot",
+   "errorMessage": "The screen changed since the screenshot: the AXButton \"Like (12)\" it showed at this point is gone; AXButton \"Like (13)\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
+   "startedAt": null,
+   "endedAt": null,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 15,
+   "effect": {
+    "events": [],
+    "hit": [],
+    "text": []
+   },
+   "pageEvents": [
+    {
+     "ev": "changed",
+     "dt": 2589
+    }
+   ],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/like/5s/main",
+   "spec": {
+    "kind": "web",
+    "case": "like",
+    "id": "like",
+    "mid": {
+     "op": "like"
+    },
+    "expect": "refused/nodeGone",
+    "limit": "i",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/like/5s/main",
+    "engine": "main"
+   },
+   "pid": 5706,
+   "navK": "k21",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 88,
+    "sinceLaunchMs": 241209,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Like (12)",
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 127,
+     "width": 120
+    }
+   },
+   "intended": "like",
+   "px": {
+    "x": 68,
+    "y": 112
+   },
+   "point": {
+    "x": 468,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Like (12)",
+    "depth": 8,
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 127,
+     "width": 120
+    }
+   },
+   "midAtMs": 2502,
+   "clickAfterObservationMs": 5002,
+   "clickSinceLaunchMs": 246211,
+   "response": {
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "startedAt": 1793952450429,
+      "endedAt": 1793952450429,
+      "activationClick": "posted",
+      "activationClickKind": {
+       "when": "early",
+       "kind": "activationPoint"
+      },
+      "delivery": {
+       "otherAppFront": false,
+       "releasedAt": 1793952450478,
+       "raiseLeft": false,
+       "capped": false,
+       "screenHoldMs": 100,
+       "guardMs": 96.414,
+       "frontmostRestored": false,
+       "postedAt": 1793952450430,
+       "holdStartedAt": 1793952450378,
+       "personInput": false,
+       "restores": 1,
+       "repairedAfterRelease": false,
+       "restoreLatencyMs": 10.177
+      },
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "y": 112,
+        "x": 68
+       },
+       "windowFrame": {
+        "x": 400,
+        "width": 620,
+        "height": 674,
+        "y": 31
+       },
+       "postedLocation": {
+        "y": 143,
+        "x": 468
+       },
+       "frameBeforePost": {
+        "width": 620,
+        "height": 674,
+        "y": 31,
+        "x": 400
+       },
+       "windowPoint": {
+        "x": 68,
+        "y": 112
+       },
+       "screenshotPoint": {
+        "x": 68,
+        "y": 112
+       }
+      },
+      "activationJoin": "fresh",
+      "receivedAt": 1793952450357,
+      "inputRoute": 3,
+      "activationGuardMs": 47.388
+     }
+    }
+   },
+   "stalePoint": null,
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952450429,
+   "endedAt": 1793952450429,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 170,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "like",
+      "text": "Like (13)",
+      "gen": "1",
+      "sx": 468,
+      "sy": 143,
+      "dt": 74
+     },
+     {
+      "ev": "click",
+      "id": "like",
+      "text": "Like (13)",
+      "gen": "1",
+      "sx": 468,
+      "sy": 143,
+      "dt": 76
+     }
+    ],
+    "hit": [
+     "like"
+    ],
+    "text": [
+     "Like (13)"
+    ]
+   },
+   "pageEvents": [
+    {
+     "ev": "changed",
+     "dt": 2569
+    }
+   ],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/relabel/5s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "relabel",
+    "id": "relabel",
+    "mid": {
+     "op": "relabel"
+    },
+    "expect": "kept",
+    "limit": "ii",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/relabel/5s/branch",
+    "engine": "branch"
+   },
+   "pid": 5706,
+   "navK": "k22",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 92,
+    "sinceLaunchMs": 250362,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Save",
+    "frame": {
+     "y": 127,
+     "x": 408,
+     "height": 32,
+     "width": 120
+    }
+   },
+   "intended": "relabel",
+   "px": {
+    "x": 68,
+    "y": 112
+   },
+   "point": {
+    "x": 468,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Save",
+    "depth": 8,
+    "frame": {
+     "y": 127,
+     "x": 408,
+     "height": 32,
+     "width": 120
+    }
+   },
+   "midAtMs": 2503,
+   "clickAfterObservationMs": 5001,
+   "clickSinceLaunchMs": 255363,
+   "response": {
+    "result": {
+     "meta": {
+      "activationJoin": "fresh",
+      "stalePoint": {
+       "verdict": "kept",
+       "recordedRole": "AXButton",
+       "hitRole": "AXButton",
+       "ms": 0.366,
+       "identity": "handle",
+       "reason": "sameElement"
+      },
+      "hidIdleMs": null,
+      "activationClick": "posted",
+      "activationClickKind": {
+       "when": "early",
+       "kind": "activationPoint"
+      },
+      "activationGuardMs": 41.741,
+      "startedAt": 1793952459560,
+      "delivery": {
+       "postedAt": 1793952459559,
+       "holdStartedAt": 1793952459515,
+       "raiseLeft": false,
+       "repairedAfterRelease": false,
+       "guardMs": 63.654,
+       "restores": 1,
+       "releasedAt": 1793952459615,
+       "screenHoldMs": 100,
+       "personInput": false,
+       "capped": false,
+       "frontmostRestored": false,
+       "otherAppFront": false,
+       "restoreLatencyMs": 13.106
+      },
+      "inputRoute": 3,
+      "coordinateClick": {
+       "screenshotPoint": {
+        "x": 68,
+        "y": 112
+       },
+       "postedWindowLocation": {
+        "x": 68,
+        "y": 112
+       },
+       "windowFrame": {
+        "y": 31,
+        "x": 400,
+        "width": 620,
+        "height": 674
+       },
+       "frameBeforePost": {
+        "width": 620,
+        "height": 674,
+        "x": 400,
+        "y": 31
+       },
+       "windowPoint": {
+        "x": 68,
+        "y": 112
+       },
+       "postedLocation": {
+        "x": 468,
+        "y": 143
+       }
+      },
+      "endedAt": 1793952459560,
+      "receivedAt": 1793952459508
+     }
+    }
+   },
+   "stalePoint": {
+    "verdict": "kept",
+    "recordedRole": "AXButton",
+    "hitRole": "AXButton",
+    "ms": 0.366,
+    "identity": "handle",
+    "reason": "sameElement"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952459560,
+   "endedAt": 1793952459560,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 121,
+   "effect": {
+    "events": [
+     {
+      "ev": "click",
+      "id": "relabel",
+      "text": "Delete",
+      "sx": 468,
+      "sy": 143,
+      "dt": 54
+     },
+     {
+      "ev": "pointerdown",
+      "id": "relabel",
+      "text": "Delete",
+      "sx": 468,
+      "sy": 143,
+      "dt": 53
+     }
+    ],
+    "hit": [
+     "relabel"
+    ],
+    "text": [
+     "Delete"
+    ]
+   },
+   "pageEvents": [
+    {
+     "ev": "changed",
+     "dt": 2590
+    }
+   ],
+   "engineStderr": ""
+  },
+  {
+   "label": "safari/shared/relabel/5s/main",
+   "spec": {
+    "kind": "web",
+    "case": "relabel",
+    "id": "relabel",
+    "mid": {
+     "op": "relabel"
+    },
+    "expect": "kept",
+    "limit": "ii",
+    "app": "safari",
+    "mode": "shared",
+    "delay": 5,
+    "label": "safari/shared/relabel/5s/main",
+    "engine": "main"
+   },
+   "pid": 5706,
+   "navK": "k23",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 91,
+    "sinceLaunchMs": 259461,
+    "nodes": 32,
+    "stalePointRecord": null
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Save",
+    "frame": {
+     "x": 408,
+     "y": 127,
+     "width": 120,
+     "height": 32
+    }
+   },
+   "intended": "relabel",
+   "px": {
+    "x": 68,
+    "y": 112
+   },
+   "point": {
+    "x": 468,
+    "y": 143
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Save",
+    "depth": 8,
+    "frame": {
+     "x": 408,
+     "y": 127,
+     "width": 120,
+     "height": 32
+    }
+   },
+   "midAtMs": 2501,
+   "clickAfterObservationMs": 5001,
+   "clickSinceLaunchMs": 264462,
+   "response": {
+    "result": {
+     "meta": {
+      "inputRoute": 3,
+      "activationGuardMs": 41.777,
+      "coordinateClick": {
+       "windowPoint": {
+        "x": 68,
+        "y": 112
+       },
+       "postedLocation": {
+        "y": 143,
+        "x": 468
+       },
+       "screenshotPoint": {
+        "x": 68,
+        "y": 112
+       },
+       "postedWindowLocation": {
+        "y": 112,
+        "x": 68
+       },
+       "frameBeforePost": {
+        "width": 620,
+        "x": 400,
+        "y": 31,
+        "height": 674
+       },
+       "windowFrame": {
+        "height": 674,
+        "y": 31,
+        "x": 400,
+        "width": 620
+       }
+      },
+      "delivery": {
+       "personInput": false,
+       "releasedAt": 1793952468730,
+       "repairedAfterRelease": false,
+       "guardMs": 100.408,
+       "restores": 2,
+       "restoreLatencyMs": 7.261,
+       "holdStartedAt": 1793952468630,
+       "raiseLeft": false,
+       "postedAt": 1793952468676,
+       "otherAppFront": false,
+       "screenHoldMs": 100,
+       "frontmostRestored": false,
+       "capped": true
+      },
+      "activationClick": "posted",
+      "endedAt": 1793952468675,
+      "startedAt": 1793952468675,
+      "receivedAt": 1793952468608,
+      "activationClickKind": {
+       "kind": "activationPoint",
+       "when": "early"
+      },
+      "activationJoin": "fresh",
+      "hidIdleMs": null
+     }
+    }
+   },
+   "stalePoint": null,
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793952468675,
+   "endedAt": 1793952468675,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 169,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "relabel",
+      "text": "Delete",
+      "sx": 468,
+      "sy": 143,
+      "dt": 70
+     },
+     {
+      "ev": "click",
+      "id": "relabel",
+      "text": "Delete",
+      "sx": 468,
+      "sy": 143,
+      "dt": 72
+     }
+    ],
+    "hit": [
+     "relabel"
+    ],
+    "text": [
+     "Delete"
+    ]
+   },
+   "pageEvents": [
+    {
+     "ev": "changed",
+     "dt": 2567
+    }
+   ],
+   "engineStderr": ""
+  }
+ ]
+}

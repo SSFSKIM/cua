@@ -44,19 +44,21 @@ final class ShareableWindowCache: @unchecked Sendable {
   private var content: SCShareableContent?
   private var windowIDs: Set<CGWindowID> = []
 
-  func window(_ id: CGWindowID, timings: inout Timings, refresh: Bool = false) throws -> (window: SCWindow?, cached: Bool) {
+  /// `onScreen` is the on-screen window list this lookup read (the engine's own windows left out), which the capture
+  /// keeps with its image as the windows the screenshot's moment held (#316's rule W, StalePoint.swift `newWindowAbove`).
+  func window(_ id: CGWindowID, timings: inout Timings, refresh: Bool = false) throws -> (window: SCWindow?, cached: Bool, onScreen: Set<CGWindowID>?) {
     lock.lock()
     defer { lock.unlock() }
     let onScreen = timings.time("screenshotWindowList") { onScreenWindowIDs().map { Set($0).subtracting(EngineWindows.shared.all) } }
     if !refresh, let content, onScreen == nil || onScreen == windowIDs, let window = content.windows.first(where: { $0.windowID == id }) {
       timings.set("screenshotContentCached", true)
-      return (window, true)
+      return (window, true, onScreen)
     }
     let fresh = try timings.time("screenshotContent") { try shareableContent() }
     content = fresh
     windowIDs = onScreen ?? []
     timings.set("screenshotContentCached", false)
-    return (fresh.windows.first(where: { $0.windowID == id }), false)
+    return (fresh.windows.first(where: { $0.windowID == id }), false, onScreen)
   }
 }
 
@@ -188,6 +190,8 @@ struct CapturedScreenshot {
   let height: Int
   let frame: CGRect
   let scale: CGFloat
+  /// The on-screen window numbers read just before the capture (#316): what the screenshot's window list held.
+  var windowList: Set<CGWindowID>? = nil
 
   var wire: [String: Any] { ["url": url, "width": width, "height": height, "scale": Double(scale)] }
 }
@@ -198,19 +202,53 @@ struct CapturedScreenshot {
 /// display is unplugged or sleeps, or the window moves to another display, that scale can differ and the click would
 /// land at twice or half the offset. The vendor keeps its observation's scaling factor the same way
 /// (R/F-helper-logic.md §5.2).
+///
+/// It keeps the tree the observation walked as the screenshot showed it (`nodes`, #296's stale-point record,
+/// StalePoint.swift): an observation without a screenshot leaves it, as it leaves the screenshot.
 struct ObservedScreenshot {
   let window: AXUIElement
   let scaleX: CGFloat
   let scaleY: CGFloat
+  let nodes: [ScreenshotNode<AXUIElement>]
+  /// The window's origin (global points, top-left) when the image was captured, which the nodes' frames are relative to:
+  /// a click into the moved window is compared in the screenshot's space (StalePoint.swift `stalePointVerdict`).
+  let windowOrigin: CGPoint
+  /// The on-screen window numbers when the image was captured (#316's rule W, StalePoint.swift `newWindowAbove`): a
+  /// window of the app's above this one that the list did not hold is new since the screenshot. Nil when unread.
+  let windowList: Set<CGWindowID>?
+  /// The image's size in pixels, the space the model's coordinates arrive in (#328: a point outside it is refused).
+  let width: Int
+  let height: Int
 
-  init(window: AXUIElement, image: CapturedScreenshot) {
+  init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = []) {
     self.window = window
+    width = image.width
+    height = image.height
+    windowOrigin = image.frame.origin
+    windowList = image.windowList
     scaleX = CGFloat(image.width) / image.frame.width  // the capture refuses a frame under one point
     scaleY = CGFloat(image.height) / image.frame.height
+    self.nodes = nodes
   }
 
   /// A point in the image's pixels as the window-local point in points.
   func windowPoint(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: CGFloat(x) / scaleX, y: CGFloat(y) / scaleY) }
+
+  /// Whether a point in the image's pixels lies in the image: 0 ≤ x < width and 0 ≤ y < height.
+  func contains(_ x: Double, _ y: Double) -> Bool { x >= 0 && x < Double(width) && y >= 0 && y < Double(height) }
+}
+
+/// #328: a pointer action's point outside the screenshot it was given in, refused before anything is posted. Such a
+/// point lies outside the window the screenshot shows, where an event lands on whatever is there (another app's window,
+/// the desktop) or nowhere.
+func pointOutsideScreenshot(_ x: Double, _ y: Double, width: Int, height: Int) -> EngineError {
+  EngineError(name: "pointOutsideScreenshot",
+    "The point (\(coordinateText(x)), \(coordinateText(y))) lies outside the screenshot, which is \(width) × \(height) pixels. Give a point inside it: x from 0 to \(width - 1) and y from 0 to \(height - 1).")
+}
+
+/// A coordinate as the model wrote it: an integer without a fraction, else at most two decimals.
+private func coordinateText(_ value: Double) -> String {
+  value == value.rounded() && abs(value) < 1e15 ? String(Int64(value)) : String(format: "%.2f", value)
 }
 
 let noScreenshotForCoordinates = EngineError(name: "noScreenshotForCoordinates",
@@ -221,10 +259,14 @@ extension ConnectionState {
   /// screenshot the app's last observation on this connection returned, divided by that screenshot's scale. Refused,
   /// before anything is posted, when there is no screenshot of `window` to place them in: no observation of the app
   /// returned one yet, the request names a lineage that is not the app's current one (as for an element index), or the
-  /// app's primary window is no longer the window the screenshot shows.
+  /// app's primary window is no longer the window the screenshot shows. Refused too when the point lies outside that
+  /// screenshot (#328, `pointOutsideScreenshot`): every coordinate a pointer action takes passes here (a click's, a
+  /// scroll's, a drag's start and end), so this is the one check. A drag's middle event lies between its two ends, so
+  /// inside the screenshot whenever they are.
   func screenshotPoint(_ x: Double, _ y: Double, app: ResolvedApp, window: AXUIElement, lineage wanted: String?) throws -> CGPoint {
     guard let lineage = lineages[app.key], wanted == nil || wanted == lineage.id,
           let screenshot = lineage.screenshot, CFEqual(screenshot.window, window) else { throw noScreenshotForCoordinates }
+    guard screenshot.contains(x, y) else { throw pointOutsideScreenshot(x, y, width: screenshot.width, height: screenshot.height) }
     return screenshot.windowPoint(x, y)
   }
 }
@@ -261,7 +303,8 @@ extension Engine {
     }
     guard let data = timings.time("screenshotEncode", { jpegData(image) }) else { throw screenCaptureFailed("The image could not be encoded.") }
     let path = try timings.time("screenshotWrite") { try writePrivately(data, into: directory, name: screenshotFileName(revision: revision)) }
-    return CapturedScreenshot(url: URL(fileURLWithPath: path).absoluteString, width: image.width, height: image.height, frame: frame, scale: scale)
+    return CapturedScreenshot(url: URL(fileURLWithPath: path).absoluteString, width: image.width, height: image.height, frame: frame, scale: scale,
+                              windowList: lookup.onScreen)
   }
 }
 

@@ -379,7 +379,8 @@ test('#187: pasteUnconfirmed and its type_text count reach the model in the mess
   assert.equal(meta['cua/paste'], null, 'none left standing after a call off the paste route');
 });
 
-test('#187: a paste or type_text success the engine could not confirm puts its note in the tool result\'s text; a confirmed one adds nothing', async t => {
+test('#187, #283: a paste or type_text success the engine could not confirm, and a focusing click, put their note in the tool result\'s text; a confirmed paste adds nothing', async t => {
+  const focusNote = 'Chrome\'s text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click.';
   const pasteNote = 'Pasted, unconfirmed: the app read the text after ⌘V, but this field can\'t be read back, so the change couldn\'t be seen. Observe the field if the next step depends on it.';
   const typedNote = '3 lines pasted, 1 unconfirmed: the app read each after ⌘V, but this field can\'t be read back, so the change couldn\'t be seen. Observe the field if the next step depends on it.';
   const unconfirmed = {line: 1, lines: 1, notificationSource: 'none', baselineEmpty: true, readWait: 'handedOver', readAfterPostMs: 2, effectWait: 'noChannel',
@@ -390,7 +391,8 @@ test('#187: a paste or type_text success the engine could not confirm puts its n
       ? {meta: {...INPUT_META, inputRoute: 'paste', paste: {...unconfirmed, effectWait: 'reading', confirmed: true, unconfirmedLines: undefined}}}
       : {meta: {...INPUT_META, inputRoute: 'paste', paste: unconfirmed}, note: pasteNote}),
     'execute:type_text': () => ({meta: {...INPUT_META, inputRoute: 'paste', entered: 8, paste: {...unconfirmed, line: 3, lines: 3, confirmed: true}}, note: typedNote}),
-    'execute:click': () => ({meta: INPUT_META, note: 'not a paste'}),
+    'execute:click': () => ({meta: INPUT_META, note: focusNote}),
+    'execute:press_key': () => ({meta: INPUT_META, note: 'not a noted method'}),
   }});
   const {app} = await getApp('TextEdit');
   await call(() => app.paste('x'));
@@ -402,8 +404,10 @@ test('#187: a paste or type_text success the engine could not confirm puts its n
   assert.equal(meta['cua/entered'], 8);
   confirmedPaste = true;
   await call(() => app.paste('y'));
-  await call(() => app.click(1));
+  await call(() => app.pressKey('a'));
   assert.deepEqual(record.items, [pasteNote, typedNote], 'nothing for a confirmed paste, nor for another method');
+  await call(() => app.click(1));
+  assert.deepEqual(record.items, [pasteNote, typedNote, focusNote], 'a focusing click\'s note (#283)');
 });
 
 test('intervention, entered and routeAdvice ride as cua/ meta on results and on the userIntervened error that stopped a type_text; the next call starts over', async t => {
@@ -466,7 +470,7 @@ test('cua/afterActionRepairs rides on a later input result and on an observation
 // The engine's observation diagnostics (Skyshot timings) as Chromium and Electron rows need them: enablement, the web
 // area's wait and the settle.
 const DIAGNOSED_TIMINGS = {totalMs: 1, walkMs: 3.5, nodes: 40, webShaped: true, appRoleReadMs: 0.375, enablementPrior: 'false', enabled: 'AXManualAccessibility', enablementWrite: 'failed', enablementWriteError: -25204, chromium: true, webAreaSeen: true,
-  webAreaFound: true, webAreaWaitMs: 12.25, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
+  webAreaFound: true, webAreaWaitMs: 12.25, unplacedClips: 1, clipReread: 'unplaced', clipRereadReads: 7, clipRereadMs: 731.5, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
   settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true, focusRead: 'notAnElement', enableMs: 0.5};
 
 test('the observation\'s diagnostics ride only as cua/observation meta, a bounded whitelist; the model-facing result is byte-identical with and without them', async t => {
@@ -484,14 +488,14 @@ test('the observation\'s diagnostics ride only as cua/observation meta, a bounde
   diagnosed.service = JSON.stringify(await call(() => service.handleRpc({type: 'execute', method: 'get_app_state', args: [{app: APPS.TextEdit.appPath, disableDiff: true}]})));
   assert.equal(diagnosed.facade, plain.facade);
   assert.equal(diagnosed.service, plain.service);
-  for (const word of ['webShaped', 'enablementPrior', 'settleTreeReused', 'webArea', 'AXManualAccessibility', 'AXValueChanged']) assert.ok(!diagnosed.service.includes(word), word);
+  for (const word of ['webShaped', 'enablementPrior', 'settleTreeReused', 'webArea', 'unplacedClips', 'clipReread', 'AXManualAccessibility', 'AXValueChanged']) assert.ok(!diagnosed.service.includes(word), word);
   // The js tool result the host assembles from the execution: the content is the cell's output alone; the meta rides
   // apart in _meta, never in content.
   const {assembleResult} = await import('../src/repl-host/results.mjs');
   const output = JSON.parse(diagnosed.service).text;
   assert.deepEqual(assembleResult({ok: true, output, responseMeta: {...meta}}).content, assembleResult({ok: true, output, responseMeta: plain.meta}).content);
   assert.deepEqual(meta['cua/observation'], {webShaped: true, appRoleReadMs: 0.375, enablementPrior: 'false', enabled: 'AXManualAccessibility', enablementWrite: 'failed', enablementWriteError: -25204, chromium: true, webAreaSeen: true, webAreaFound: true,
-    webAreaWaitMs: 12.25, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
+    webAreaWaitMs: 12.25, unplacedClips: 1, clipReread: 'unplaced', clipRereadReads: 7, clipRereadMs: 731.5, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
     settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true, focusRead: 'notAnElement', focusedIndex: null},
   'the whitelist only: no phase timing, node count or unknown key, nothing nested beyond the notification counts');
   // An input call resets it, and an observation without the diagnostics leaves it reset.
@@ -544,6 +548,85 @@ test('a coordinate click\'s placement rides as cua/coordinateClick on its result
   assert.deepEqual(meta['cua/coordinateClick'], record);
   await call(() => app.getAXState({emit: false}));
   assert.equal(meta['cua/coordinateClick'], null, 'reset by the next call');
+});
+
+test('#288: a click\'s establishment of a page tree not yet seen rides as cua/pointerEstablish, on a refusal too', async t => {
+  const record = {ms: 312.5, webAreaFound: true, rehits: 9};
+  const refusal = "Google Chrome for Testing's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Google Chrome for Testing forward";
+  let refuse = false;
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => {
+    if (refuse) throw new EngineFailure(-10005, refusal, 'backgroundClickRefused', {meta: {...INPUT_META, pointerEstablish: record}});
+    return {meta: {...INPUT_META, pointerEstablish: record}};
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.click([120, 168]));
+  assert.deepEqual(meta['cua/pointerEstablish'], record);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/pointerEstablish'], null, 'reset by the next call');
+  refuse = true;
+  await assert.rejects(call(() => app.click([120, 168])));
+  assert.deepEqual(meta['cua/pointerEstablish'], record);
+});
+
+test('#296: the stale-point guard\'s verdict rides as cua/stalePoint, and its refusal reaches the model with its sentence, name and meta', async t => {
+  const kept = {verdict: 'kept', reason: 'nonInteractiveHit', identity: 'handle', recordedRole: 'AXButton', hitRole: 'AXStaticText', ms: 0.912};
+  const refused = {verdict: 'refused', reason: 'frameMoved', identity: 'handle', recordedRole: 'AXButton', hitRole: 'AXButton', ms: 0.4};
+  const sentence = 'The screen changed since the screenshot: the AXButton "Reload" it showed at this point has moved away from it. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.';
+  let refuse = false;
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => {
+    if (refuse) throw new EngineFailure(-10005, sentence, 'screenChangedSinceScreenshot', {meta: {...INPUT_META, startedAt: null, endedAt: null, stalePoint: refused}});
+    return {meta: {...INPUT_META, stalePoint: kept}};
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.click([120, 168]));
+  assert.deepEqual(meta['cua/stalePoint'], kept);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/stalePoint'], null, 'reset by the next call');
+  refuse = true;
+  await assert.rejects(call(() => app.click([918, 188])), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${sentence}`, 'the whole sentence');
+    assert.equal(error.errorName, 'screenChangedSinceScreenshot');
+    return true;
+  });
+  assert.deepEqual(meta['cua/stalePoint'], refused);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null}, 'nothing posted');
+});
+
+test('#328: a scroll\'s confirmation rides as cua/scroll, its at-end note reaches the tool result\'s text, and scrollUnconfirmed and the out-of-screenshot refusal reach the model with their sentence, name and meta', async t => {
+  const moved = {container: 'scrollArea', outcome: 'moved', moved: 120, by: 'content', polls: 3, readMs: 4.1, ms: 49.2, walked: 61};
+  const atEnd = {container: 'scrollArea', outcome: 'atEnd', atEnd: true, endBefore: true, barBefore: 1, polls: 0, readMs: 3, ms: 3.2, walked: 40};
+  const unconfirmed = {container: null, outcome: 'unconfirmed', polls: 0, readMs: 0.3, ms: 0.5};
+  const endNote = 'What is at that point in TextEdit is already scrolled as far down as it goes.';
+  const unsent = 'The scroll was sent to TextEdit, but nothing at that point was seen to move. Observe the app (take a screenshot or call getAXState()) before scrolling again.';
+  const outside = 'The point (600, 2000) lies outside the screenshot, which is 1220 × 860 pixels. Give a point inside it: x from 0 to 1219 and y from 0 to 859.';
+  let answer = 'moved';
+  const {getApp, call, meta, record} = await session(t, {handlers: {'execute:scroll': () => {
+    if (answer === 'moved') return {meta: {...INPUT_META, scroll: moved}};
+    if (answer === 'atEnd') return {meta: {...INPUT_META, scroll: atEnd}, note: endNote};
+    if (answer === 'outside') throw new EngineFailure(-10005, outside, 'pointOutsideScreenshot', {meta: {...INPUT_META, inputRoute: null, startedAt: null, endedAt: null}});
+    throw new EngineFailure(-10005, unsent, 'scrollUnconfirmed', {meta: {...INPUT_META, scroll: unconfirmed}});
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.scroll([300, 400], 'down', 1));
+  assert.deepEqual(meta['cua/scroll'], moved);
+  assert.deepEqual(record.items, [], 'no note for a move');
+  answer = 'atEnd';
+  await call(() => app.scroll([300, 400], 'down', 1));
+  assert.deepEqual(meta['cua/scroll'], atEnd);
+  assert.deepEqual(record.items, [endNote]);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/scroll'], null, 'reset by the next call');
+  answer = 'unconfirmed';
+  await assert.rejects(call(() => app.scroll([300, 400], 'down', 1)), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${unsent}`, 'the whole sentence');
+    assert.equal(error.errorName, 'scrollUnconfirmed');
+    return true;
+  });
+  assert.deepEqual(meta['cua/scroll'], unconfirmed);
+  answer = 'outside';
+  await assert.rejects(call(() => app.scroll([600, 2000], 'down', 1)), error => error.errorName === 'pointOutsideScreenshot' && error.message.endsWith(outside));
+  assert.equal(meta['cua/scroll'], null);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null}, 'nothing posted');
 });
 
 test('a control build\'s variant rides in cua/nativeEngine, on its results and its input errors alike', async t => {
@@ -693,7 +776,7 @@ async function until(check, ms = 2_000) {
   }
 }
 
-test('the service tells the engine its session\'s cursor at connect, and end_task\'s turn-ended hook hides it and closes the connection (#237)', async t => {
+test('the service tells the engine its session\'s cursor at connect, and end_task\'s turn-ended hook hides it, ends the task (#292) and closes the connection (#237)', async t => {
   const {service, engine, hooks, turnEnded} = await ownService(t, {CUA_CURSOR_LABEL: 'linux171', CUA_CURSOR_COLOR: '#8250df'});
   assert.equal(hooks.length, 1);
   assert.ok(Number.isSafeInteger(hooks[0].timeoutMs) && hooks[0].timeoutMs > 0);
@@ -704,13 +787,14 @@ test('the service tells the engine its session\'s cursor at connect, and end_tas
   await turnEnded();
   await until(() => engine.sockets.size === 0);
   assert.deepEqual(engine.received.map(r => [r.method, r.method === 'cursor' ? r.params : r.params?.method ?? null]),
-    [['ping', null], ['cursor', {label: 'linux171', color: '#8250df', enabled: true}], ['execute', 'list_apps'], ['cursor', {hide: true}]]);
+    [['ping', null], ['cursor', {label: 'linux171', color: '#8250df', enabled: true}], ['execute', 'list_apps'], ['cursor', {hide: true}], ['endTask', null]]);
   // The next task's first engine-bound call reconnects, and its end_task closes that connection too.
   assert.deepEqual(await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]}), []);
   assert.equal(engine.sockets.size, 1);
-  assert.deepEqual(engine.received.slice(4).map(r => r.method), ['ping', 'cursor', 'execute']);
+  assert.deepEqual(engine.received.slice(5).map(r => r.method), ['ping', 'cursor', 'execute']);
   await turnEnded();
   await until(() => engine.sockets.size === 0);
+  assert.deepEqual(engine.received.slice(8).map(r => r.method), ['cursor', 'endTask'], 'that task\'s end too');
 });
 
 test('the service names its session\'s device mode in the ping (#282): CUA_DESKTOP_MODE, shared when the launch names none', async t => {
@@ -725,7 +809,7 @@ test('the service names its session\'s device mode in the ping (#282): CUA_DESKT
 });
 
 test('#282: the engine\'s background-click refusal and clickUnconfirmed reach the model with their sentence, name and meta', async t => {
-  const refusal = "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop";
+  const refusal = "Google Chrome for Testing's web page does not accept a background click; use a dedicated desktop, or ask the person to bring Google Chrome for Testing forward";
   const unconfirmed = 'The click could not be confirmed: it was sent to Example in the background, but it may only have activated the window without reaching what is under the pointer. Observe the app with get_app_state before any retry, and never retry blindly.';
   for (const [name, message, meta] of [['backgroundClickRefused', refusal, {...INPUT_META, startedAt: null, endedAt: null, activationJoin: 'fresh'}],
     ['clickUnconfirmed', unconfirmed, {...INPUT_META, activationClickKind: {kind: 'action', when: 'consumedByAction'}}]]) {
@@ -741,20 +825,22 @@ test('#282: the engine\'s background-click refusal and clickUnconfirmed reach th
   }
 });
 
-test('against an engine without the cursor method the session goes on, and end_task still closes the connection, sending nothing', async t => {
+test('against an engine without the cursor method the session goes on, and end_task still ends the task and closes the connection, sending no hide', async t => {
   const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR: '0'}, {handlers: {cursor: undefined}});
   assert.deepEqual(await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]}), []);
   await turnEnded();
   await until(() => engine.sockets.size === 0);
-  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'cursor', 'execute']);
+  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'cursor', 'execute', 'endTask']);
   assert.deepEqual(engine.received[1].params, {enabled: false});
 });
 
-test('end_task\'s hook answers without waiting on the engine: a hide the engine never answers holds nothing up', async t => {
-  const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR_LABEL: 'linux171'}, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null})}});
+test('end_task\'s hook waits at most endTask\'s bound: a hide and an endTask the engine never answers hold it no longer', async t => {
+  const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR_LABEL: 'linux171'}, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null}),
+    endTask: () => NO_REPLY}});
   await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]});
   const started = performance.now();
   await turnEnded();
-  assert.ok(performance.now() - started < 100, 'the hook returned at once');
+  const waited = performance.now() - started;
+  assert.ok(waited < 1_500, `the hook returned within endTask's 1 s bound (${Math.round(waited)} ms), under its own 2 s`);
   await until(() => engine.sockets.size === 0);
 });

@@ -135,7 +135,7 @@ extension Engine {
           throw EngineError(name: "eventCreationFailed", "The scroll event could not be created.")
         }
         // #328: the container under the point read before the wheel and polled after it; the answer says what moved.
-        let record = try confirmScroll(hit: hit, direction: direction, delta: delta, ax: .live, post: {
+        let record = try confirmScroll(hit: hit, direction: direction, delta: delta, ax: .live, window: window, point: target.point, post: {
           try guarding.checkInFlight()
           cursor.act(connection: context.connection.id, app: app.key, window: target.windowID, .scroll(target.point))
           meta.posting { _ = postToProcess([event], pid: target.pid); return true }

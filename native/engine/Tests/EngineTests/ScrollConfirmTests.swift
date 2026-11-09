@@ -176,6 +176,11 @@ final class ScrollConfirmTests: XCTestCase {
     let scene = ScrollScene(offset: 0, barSettable: true)
     let record = try confirmScroll(hit: scene.row(at: 200), direction: .up, delta: 120, ax: scene.ax.ops, post: {})
     XCTAssertEqual(record.outcome, .atEnd)
+    // The bar alone at 0, nothing else to tell it (no content read).
+    let barOnly = ScrollScene(offset: 0, barSettable: true)
+    barOnly.ax.values[2]?[kAXContentsAttribute] = nil
+    barOnly.ax.children[2] = [5]
+    XCTAssertEqual(try confirmScroll(hit: barOnly.row(at: 200), direction: .up, delta: 120, ax: barOnly.ax.ops, post: {}).outcome, .atEnd)
   }
 
   func testUnmovedNotAtTheEndFallsBackToTheBarThenConfirms() throws {
@@ -256,8 +261,8 @@ final class ScrollConfirmTests: XCTestCase {
       XCTAssertTrue(scene.ax.writes.isEmpty, "\(direction) at the end")
     }
     // At the end after the wheel though not before (the content grew or the bar moved under 0.5 pt): no write either.
-    let scene = ScrollScene(offset: 799, barSettable: true)
-    let record = try confirmScroll(hit: scene.row(at: 200), direction: .down, delta: 120, ax: scene.ax.ops, post: { scene.place(799.3) })
+    let scene = ScrollScene(offset: 798.6, barSettable: true)
+    let record = try confirmScroll(hit: scene.row(at: 200), direction: .down, delta: 120, ax: scene.ax.ops, post: { scene.place(799) })
     XCTAssertEqual(record.outcome, .unconfirmed)
     XCTAssertTrue(scene.ax.writes.isEmpty)
   }
@@ -471,17 +476,148 @@ final class ScrollConfirmTests: XCTestCase {
   /// while an upward wheel goes unanswered, in a container with no readable bar), is no move: the content's trailing
   /// edge never counts, and the hit's only while pinned at a clipping edge.
   func testAnElementThatOnlyGrowsIsNoMove() throws {
-    let scene = ScrollScene(offset: 0)
+    let scene = ScrollScene(offset: 200)
     let ax = scene.ax
     ax.values[2]?[kAXVerticalScrollBarAttribute] = nil  // no readable end: the poll runs its whole window
     let hit = scene.row(at: 200)
     let record = try confirmScroll(hit: hit, direction: .up, delta: 100, ax: ax.ops, post: {
-      ax.frames[3] = CGRect(x: 0, y: 100, width: 390, height: 1100)       // content appended below
+      ax.frames[3] = CGRect(x: 0, y: -100, width: 390, height: 1100)      // content appended below
       ax.frames[FakeAX.id(hit)] = CGRect(x: 0, y: 200, width: 390, height: 120)  // the row under the point grows
     })
     XCTAssertEqual(record.outcome, .unconfirmed)
     XCTAssertNil(record.moved)
-    XCTAssertEqual(scene.offset, 0, "the offset never changed")
+    XCTAssertEqual(scene.offset, 200, "the offset never changed")
+  }
+
+  /// The hosted A/B, Catalyst328: UIKit gives every row and label of the table the page actions. The container is the
+  /// top of that run (the table), not the label under the point; the table's first row is its content, and it moves
+  /// while the tracked row, a reused cell, jumps the other way.
+  func testACatalystTablesRunOfPageScrollersIsOneContainerAndItsFirstRowMoves() throws {
+    let ax = FakeAX()
+    let page = ["AXScrollToVisible", "AXCancel", "AXScrollDownByPage", "AXScrollUpByPage"]
+    ax.roles = [1: kAXWindowRole, 2: kAXGroupRole, 3: kAXGroupRole]
+    ax.parents = [2: 1, 3: 2]
+    ax.children = [1: [2], 2: [3], 3: Array(10..<19)]
+    ax.actions = [2: ["AXScrollToVisible", "AXCancel"], 3: page]
+    ax.frames = [1: CGRect(x: 420, y: 40, width: 560, height: 420), 2: CGRect(x: 420, y: 40, width: 431, height: 308),
+                 3: CGRect(x: 420, y: 40, width: 431, height: 308)]
+    for (i, row) in (10..<19).enumerated() {
+      let label = row + 10
+      ax.roles[row] = kAXGroupRole; ax.roles[label] = kAXStaticTextRole
+      ax.parents[row] = 3; ax.parents[label] = row; ax.children[row] = [label]
+      ax.actions[row] = page; ax.actions[label] = page + ["AXPress"]
+      let frame = CGRect(x: 420, y: 71.6 + CGFloat(i) * 33.9, width: 431, height: 33.9)
+      ax.frames[row] = frame; ax.frames[label] = frame
+    }
+    XCTAssertEqual(scrollContainer(of: el(22), ax: ax.ops).map { FakeAX.id($0.element) }, 3, "the table, not the label")
+    let record = try confirmScroll(hit: el(22), direction: .down, delta: 308, ax: ax.ops, post: {
+      ax.frames[10] = CGRect(x: 420, y: 21.6, width: 431, height: 33.9)    // the first row, 50 up
+      for row in 11..<19 { ax.frames[row]?.origin.y += 187 }               // reused cells jump the other way
+    })
+    XCTAssertEqual(record.container, .pageScroller)
+    XCTAssertEqual(record.outcome, .moved)
+    XCTAssertEqual(record.by, "content")
+    XCTAssertEqual(record.moved ?? 0, 50, accuracy: 1e-6)
+  }
+
+  /// The hosted A/B, System Settings' content pane: the hit's chain holds no container. The deepest scroll area in the
+  /// window holding the point is taken (not a sibling, not the outer one), and its fallback writes its own bar.
+  func testAHitWithNoContainerTakesTheDeepestScrollAreaUnderThePoint() throws {
+    let ax = FakeAX()
+    ax.roles = [1: kAXWindowRole, 2: kAXScrollAreaRole, 3: kAXScrollAreaRole, 4: kAXGroupRole, 5: kAXScrollBarRole,
+                6: kAXScrollAreaRole, 7: kAXScrollBarRole, 8: kAXGroupRole, 9: kAXStaticTextRole]
+    ax.parents = [2: 1, 3: 1, 4: 3, 5: 3, 6: 4, 7: 6, 8: 6, 9: 1]
+    ax.children = [1: [2, 3, 9], 3: [4, 5], 4: [6], 6: [8, 7]]
+    ax.frames = [1: CGRect(x: 0, y: 0, width: 800, height: 600), 2: CGRect(x: 0, y: 0, width: 200, height: 600),
+                 3: CGRect(x: 200, y: 0, width: 600, height: 600), 4: CGRect(x: 200, y: 0, width: 600, height: 600),
+                 6: CGRect(x: 220, y: 100, width: 500, height: 400), 8: CGRect(x: 220, y: 100, width: 500, height: 900),
+                 9: CGRect(x: 0, y: 0, width: 800, height: 600)]
+    ax.values = [3: [kAXVerticalScrollBarAttribute: el(5)], 5: [kAXValueAttribute: NSNumber(value: 0.2)],
+                 6: [kAXContentsAttribute: [el(8)] as CFArray, kAXVerticalScrollBarAttribute: el(7)],
+                 7: [kAXValueAttribute: NSNumber(value: 0)]]
+    ax.settable = [5: [kAXValueAttribute], 7: [kAXValueAttribute]]
+    ax.onWrite = { id, _, value in
+      if id == 7 { ax.frames[8] = CGRect(x: 220, y: 100 - CGFloat((value as! NSNumber).doubleValue) * 500, width: 500, height: 900) }
+    }
+    XCTAssertTrue(scrollAreaUnder(CGPoint(x: 400, y: 300), in: el(1), ax: ax.ops).map { FakeAX.id($0) == 6 } ?? false)
+    XCTAssertTrue(scrollAreaUnder(CGPoint(x: 100, y: 300), in: el(1), ax: ax.ops).map { FakeAX.id($0) == 2 } ?? false, "the sidebar's")
+    XCTAssertTrue(scrollAreaUnder(CGPoint(x: 210, y: 50), in: el(1), ax: ax.ops).map { FakeAX.id($0) == 3 } ?? false,
+                  "outside the inner one: the outer one holds the point")
+    let record = try confirmScroll(hit: el(9), direction: .down, delta: 120, ax: ax.ops, window: el(1), point: CGPoint(x: 400, y: 300), post: {})
+    XCTAssertEqual(record.containerBy, "window")
+    XCTAssertEqual(record.wire["containerBy"] as? String, "window")
+    XCTAssertEqual(ax.writes.map(\.id), [7], "the inner pane's own bar, never the outer or the sibling")
+    XCTAssertEqual(record.outcome, .moved, "the pane moved by the bar write")
+    XCTAssertNil(try scrollAnswer(record, direction: .down, app: "Settings"))
+  }
+
+  /// The hosted A/B, Settings' sidebar: its outline's frame is the viewport's (clipped, never moving) and its bar reads
+  /// 0.976 to 0.986 at its real bottom. The end is told by the bar near its end with the last row inside the viewport:
+  /// answered at once, nothing written. With rows still below, it is not the end.
+  func testTheEndIsToldWithoutTheBarAtOne() throws {
+    let ax = FakeAX()
+    ax.roles = [1: kAXWindowRole, 2: kAXScrollAreaRole, 3: "AXOutline", 4: kAXScrollBarRole]
+    ax.parents = [2: 1, 3: 2, 4: 2]
+    ax.children = [2: [3, 4], 3: Array(10..<20)]
+    ax.frames = [2: CGRect(x: 408, y: 138, width: 215, height: 364), 3: CGRect(x: 408, y: 138, width: 215, height: 364)]
+    var extent = CGSize(width: 215, height: 1156)
+    ax.values = [2: [kAXContentsAttribute: [el(3)] as CFArray, kAXVerticalScrollBarAttribute: el(4), "AXContentSize": AXValueCreate(.cgSize, &extent)!],
+                 4: [kAXValueAttribute: NSNumber(value: 0.976)]]
+    ax.settable = [4: [kAXValueAttribute]]
+    func rows(lastAt y: CGFloat) {
+      for (i, row) in (10..<20).enumerated() {
+        ax.roles[row] = kAXRowRole; ax.parents[row] = 3
+        ax.frames[row] = CGRect(x: 408, y: y - CGFloat(9 - i) * 32, width: 198, height: 32)
+      }
+    }
+    rows(lastAt: 460)  // the last row ends at 492, inside the viewport's 502
+    let end = try confirmScroll(hit: el(15), direction: .down, delta: 364, ax: ax.ops, post: {})
+    XCTAssertEqual(end.outcome, .atEnd)
+    XCTAssertTrue(end.endBefore)
+    XCTAssertTrue(ax.writes.isEmpty, "the bar is never written at the real end")
+    rows(lastAt: 600)  // more rows below the viewport
+    let notEnd = try confirmScroll(hit: el(15), direction: .down, delta: 364, ax: ax.ops, post: {})
+    XCTAssertFalse(notEnd.endBefore)
+    XCTAssertEqual(ax.writes.map(\.id), [4], "not the end: the fallback writes")
+    // The clipped outline's frame equals the viewport: it never tells the end, bar or no bar.
+    ax.writes = []
+    ax.values[4] = [kAXValueAttribute: NSNumber(value: 0.5)]
+    XCTAssertFalse(try confirmScroll(hit: el(15), direction: .down, delta: 364, ax: ax.ops, post: {}).endBefore)
+    rows(lastAt: 460)  // the last row inside the viewport, the bar half way: a lazily filled list, not the end
+    ax.values[4] = [kAXValueAttribute: NSNumber(value: 0.5)]  // the write above left its value
+    XCTAssertFalse(try confirmScroll(hit: el(15), direction: .down, delta: 364, ax: ax.ops, post: {}).endBefore)
+    rows(lastAt: 600)
+    ax.values[2]?[kAXVerticalScrollBarAttribute] = nil
+    XCTAssertFalse(try confirmScroll(hit: el(15), direction: .down, delta: 364, ax: ax.ops, post: {}).endBefore)
+  }
+
+  /// A content frame that scrolls (longer than the viewport) whose edge has reached the viewport's tells the end with no
+  /// bar at all: its bottom scrolling down, its top scrolling up.
+  func testAScrollingContentFrameAtTheViewportsEdgeIsTheEnd() throws {
+    for (offset, direction, end) in [(CGFloat(800), ScrollDirection.down, true), (799, .down, true), (797, .down, false),
+                                     (0, .up, true), (3, .up, false)] {
+      let scene = ScrollScene(offset: offset)
+      scene.ax.values[2]?[kAXVerticalScrollBarAttribute] = nil
+      let record = try confirmScroll(hit: scene.row(at: 200), direction: direction, delta: 120, ax: scene.ax.ops, post: {})
+      XCTAssertEqual(record.endBefore, end, "\(direction) at \(offset)")
+    }
+  }
+
+  /// The tracked descendant's walk stops at the first candidate in the middle band of the viewport, and reads at most
+  /// `scrollTrackedBudget` (200) nodes.
+  func testTheTrackedWalkStopsInTheBandAndWithinItsBudget() {
+    let ax = FakeAX()
+    ax.roles = [2: kAXScrollAreaRole]
+    ax.frames = [2: CGRect(x: 0, y: 0, width: 400, height: 1000)]
+    ax.children = [2: Array(100..<500)]
+    for row in 100..<500 { ax.roles[row] = kAXRowRole; ax.frames[row] = CGRect(x: 0, y: CGFloat(row - 100) * 10, width: 400, height: 10) }
+    let banded = trackedDescendant(of: el(2), viewport: ax.frames[2]!, horizontal: false, ax: ax.ops)
+    XCTAssertEqual(banded.element.map(FakeAX.id), 125, "the first row whose top is 25% in")
+    XCTAssertEqual(banded.walked, 27, "the area and the rows up to it")
+    for row in 100..<500 { ax.frames[row] = CGRect(x: 0, y: 900 + CGFloat(row - 100) * 0.2, width: 400, height: 4) }  // none in the band
+    let capped = trackedDescendant(of: el(2), viewport: ax.frames[2]!, horizontal: false, ax: ax.ops)
+    XCTAssertEqual(capped.walked, 200, "the budget")
+    XCTAssertNotNil(capped.element, "the nearest seen still tracked")
   }
 
   func testAHorizontalScrollReadsTheHorizontalBarAndTheXEdges() throws {

@@ -64,10 +64,12 @@ whole field when it is 5,000 characters or shorter, otherwise the 5,000-characte
   20,499-character field read 10,000. A point on the text past the cap is a miss (`hta-far` in the replay).
 - **The cost of a miss.** A point outside the text, or past the cap, still costs the bounded linear scan: up to 5,000
   reads, about 500 ms at the runner's 0.1 ms per read.
-- **Right-to-left text** over 5,000 characters is refused with nothing read, as on main.
+- **Right-to-left text** over 5,000 characters is refused with nothing read, as on main. So is a text over 5,000
+  characters whose boxes the search reads out of reading order (a vertical layout).
 - **#341.** In a scrolled textarea the offset is the one under the point in the field's top-scrolled layout, on main
   as on the branch.
 
 ## Tests
 
-`CaretSearchTests` (9) and the engine's `swift test` pass.
+`CaretSearchTests` (10) and the engine's `swift test` pass. The hosted A/B ran on 93bc212e. 66017fb1, from the review,
+changes only text past 5,000 characters whose boxes run out of reading order, which no cell here has.

@@ -4183,7 +4183,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      answer, offset or reason, is #283's. Over 5,000 characters it gets a 5,000-character window around where the
      search ended. Each box is read at most once. An unusable box (empty, or a failed read) at a probe is stepped past
      to the nearest usable one, at most 64 of them (`caretSearchStepLimit`), and is never inferred across. Two usable
-     boxes read out of reading order (a vertical or right-to-left layout) end the search with no offset taken from it.
+     boxes read out of reading order (a vertical or right-to-left layout) end the search with no offset taken from it,
+     and past 5,000 characters are #283's refusal, since no window near the point is known (the review of 93bc212e: a
+     vertical layout of 10,000 characters answered 5,001 from that window where the point is at 1). The search
+     assumes text of one style, which every caller passes (a field's value, or one contenteditable AXStaticText, one
+     text node): a line's boxes share their top and height, so a character raised or lowered within its line, which the
+     bisections would take for a line's edge, does not arise.
   3. **Right-to-left text is not searched** (`holdsRightToLeft`: Hebrew, Arabic, Syriac, Thaana, N'Ko and the scripts
      up to U+08FF, their presentation forms, the right-to-left marks and overrides, and the supplementary right-to-left
      blocks). Its short lines may show the search too few boxes to see the order broken. Such a text is #283's
@@ -4203,12 +4208,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   `focusPlacingCaret` reads the offset). Live, both engines therefore place offset 96 on the 3,074-character field and
   the branch 96 on the 20,499-character one, where the boxes put the point at 1,408 and 9,526; the search's
   correctness rests on the offline replay below.
-  Proven offline (`CaretSearchTests`, 9):
+  Proven offline (`CaretSearchTests`, 10):
   - a property test against a frozen copy of #283's linear scan, over generated layouts with wrapped lines, empty and
     failed boxes and points everywhere, and over shortened ranges;
   - the 3,074-character field placed in at most 32 reads and a 20,000-character field in at most 40;
   - a long field's miss bounded by the 5,000-character window;
-  - boxes out of reading order falling back to the linear scan, and runs of empty boxes stepped past;
+  - boxes out of reading order falling back to the linear scan, and refused past 5,000 characters; runs of empty boxes
+    stepped past;
   - right-to-left text not searched (over 5,000 characters refused with 0 reads), and its characters and marks known.
   `WebAreaFocusTests`' too-long case now expects a placement.
   Proven live (`docs/evidence/2026-11-08-caret-search/`; run 42560301611, two runners, main 364e017d against 93bc212e):

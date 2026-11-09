@@ -25,6 +25,9 @@ private final class Node {
   /// Label attributes whose read fails, at the observation (for the walk's record) and now (the review of
   /// 7f6eb3dc..b2f00ad5, P2 2): an error, not an attribute the element lacks.
   var unreadable: Set<StalePointLabelPart> = []
+  /// Its role or its action names fail to read now (the review of b2f00ad5..25b23fbb, P2 2).
+  var roleUnread = false
+  var actionsUnread = false
   /// Its AXChildren read fails (at the observation, for the walk's record).
   var childrenUnread = false
   weak var parent: Node?
@@ -58,12 +61,12 @@ private final class Node {
 }
 
 private var reads: StalePointReads<Node> {
-  StalePointReads<Node>(role: { $0.role }, frame: { $0.frame }, parent: { $0.parent }, children: { $0.children },
+  StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { $0.frame }, parent: { $0.parent }, children: { $0.children },
                                           // A failed read answers none, as the live seam's `attribute` does.
                                           title: { $0.unreadable.contains(.title) ? nil : $0.title },
                                           description: { $0.unreadable.contains(.description) ? nil : $0.description },
                                           value: { $0.unreadable.contains(.value) ? nil : $0.value },
-                                          editableAncestor: { $0.editableAncestor }, actions: { $0.frame == nil ? nil : $0.actions },
+                                          editableAncestor: { $0.editableAncestor }, actions: { $0.frame == nil || $0.actionsUnread ? nil : $0.actions },
                                           label: { node, part in
                                             if node.unreadable.contains(part) { return .unreadable }
                                             switch part {
@@ -2216,6 +2219,24 @@ final class RelabelledEditableTests: XCTestCase {
       editor.text.value = "Goodbye"
       XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
     }
+  }
+
+  /// The review of b2f00ad5..25b23fbb (P2 2): an element between the text and the region whose role or action names
+  /// cannot be read is not known to be inert, so the exemption is withheld; one whose actions read as an empty list is
+  /// inert.
+  func testAWrapperWhoseRoleOrActionsCannotBeReadWithholdsTheExemption() {
+    for (name, fail) in [("actions", { (node: Node) in node.actionsUnread = true }), ("role", { (node: Node) in node.roleUnread = true })] {
+      let editor = Editor()
+      let nodes = recorded(editor.window)
+      fail(editor.paragraph)
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .relabelled, name)
+    }
+    let editor = Editor()
+    editor.paragraph.actions = []
+    let nodes = recorded(editor.window)
+    editor.text.value = "Goodbye"
+    XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement, "an empty list read")
   }
 
   /// The text's own AXEditableAncestor read failing on one side only (it decodes as none) still names the same region,

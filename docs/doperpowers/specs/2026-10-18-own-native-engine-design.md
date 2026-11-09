@@ -4490,7 +4490,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      each `AXStaticText` node keeps its region (`ScreenshotNode.editableAncestor`), found through the record's parents
      where the attribute is absent. **What stays judged:** anything actionable inside the region. Every
      element strictly between the text and the region is read, and one of the interactive roles (a link, a button) or
-     one whose actions include AXPress (a mention, a chip) keeps the text judged (`editedInPlace`), as does a text whose
+     one whose actions include AXPress (a mention, a chip) keeps the text judged (`editedInPlace`). So does one whose
+     role or action names cannot be read (the review of b2f00ad5..25b23fbb, P2 2: `actionNames` answered an empty list
+     for a failed read; the seam now reads `establishedActionNames`, nil on failure, an empty list for none), as does a text whose
      editable ancestor now is another one or none, or a text recorded with none. **Both paths:** on the same handle the
      exemption is read only once the words differ; on the re-created path a text re-created in its recorded region (one
      character typed over at the same width) is matched without its value, its title and description still compared.

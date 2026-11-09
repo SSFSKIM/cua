@@ -365,8 +365,9 @@ struct StalePointReads<Element> {
   /// The element's AXValue as text (#298), read only where the recorded node is an AXStaticText; a seam without one
   /// reads none, so a value never counts.
   var value: (Element) -> String? = { _ in nil }
-  /// The element's AXEditableAncestor and its action names (#298's edited-text exemption); a seam without them reads
-  /// none, so no text counts as edited.
+  /// The element's AXEditableAncestor and its action names (#298's edited-text exemption), the names nil when their read
+  /// failed and an empty list when it has none (`establishedActionNames`); a seam without them reads none, so no text
+  /// counts as edited.
   var editableAncestor: (Element) -> Element? = { _ in nil }
   var actions: (Element) -> [String]? = { _ in nil }
   /// A label attribute read so that a failed read is told from an absent one (#298's rule, the review of
@@ -390,7 +391,7 @@ extension StalePointReads where Element == AXUIElement {
                     parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead,
                     title: { liveLabel($0, kAXTitleAttribute) }, description: { liveLabel($0, kAXDescriptionAttribute) },
                     value: { liveLabel($0, kAXValueAttribute) }, editableAncestor: { elementAttribute($0, "AXEditableAncestor") },
-                    actions: { actionNames(of: $0) },
+                    actions: { establishedActionNames(of: $0) },
                     label: { element, part in
                       let read = copyAttribute(element, part.attribute)
                       return stalePointLabelRead(read.value, read.error)
@@ -564,7 +565,10 @@ func editedInPlace<Element>(_ text: Element, region: Element, _ reads: StalePoin
   for _ in 0..<stalePointAncestorLevels {
     guard let next = reads.parent(current) else { return false }
     if reads.same(next, region) { return true }
-    if stalePointInteractiveRoles.contains(reads.role(next) ?? "") || reads.actions(next)?.contains("AXPress") == true { return false }
+    // A role or action names that cannot be read leave the element not known to be inert (the review of
+    // b2f00ad5..25b23fbb, P2 2): the text stays judged.
+    guard let role = reads.role(next), let actions = reads.actions(next) else { return false }
+    if stalePointInteractiveRoles.contains(role) || actions.contains("AXPress") { return false }
     current = next
   }
   return false

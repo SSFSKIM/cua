@@ -40,9 +40,11 @@ if (eng.length) {
     const falseSuccess = ok.filter(r => r.answer === 'success' && !moved(r) && !r.meta?.scroll?.atEnd).length;
     const falseUnconf = ok.filter(r => r.answer === 'scrollUnconfirmed' && moved(r)).length;
     const room = r => { const b = r.before ?? {}; return b.contentH != null && b.viewH != null && b.offset != null && b.contentH > b.viewH + 1 ? b.contentH - b.viewH - b.offset : null; };
-    const atEndish = r => (r.before?.bar != null && r.before.bar >= 0.95) || (room(r) != null && room(r) <= 2);
+    // With a bar, the bar decides (an outline's or a List's content frame is its viewport, so the room never reads);
+    // without one, the content's room past the viewport. #324's point lands on another area, so it is not judged.
+    const atEndish = r => (r.before?.bar != null ? r.before.bar >= 0.95 : room(r) != null && room(r) <= 2);
     const writeAtEnd = ok.filter(r => r.meta?.scroll?.barWrite != null && atEndish(r)).length;
-    const endButRoom = ok.filter(r => r.name !== 'engine/nodeCentre' && r.meta?.scroll?.atEnd && ((r.before?.bar != null && r.before.bar < 0.95) || (room(r) != null && room(r) > 2))).map(r => `bar ${r.before?.bar} room ${f0(room(r))}`);
+    const endButRoom = ok.filter(r => r.name !== 'engine/nodeCentre' && r.meta?.scroll?.atEnd && !atEndish(r)).map(r => `bar ${r.before?.bar} room ${f0(room(r))}`);
     const sc = ok.map(r => r.meta?.scroll).filter(Boolean);
     const meta = sc.length ? `first ${f0(med(sc.map(s => s.firstMoveMs)))}/${f0(p95(sc.map(s => s.firstMoveMs)))}, read ${f0(med(sc.map(s => s.readMs)))}, ms ${f0(med(sc.map(s => s.ms)))}, walked ${f0(med(sc.map(s => s.walked)))}, ${tally(sc.map(outcomeOf))}` : '';
     return [`${tally(ans)}; moved ${ok.filter(moved).length}/${ok.length}${falseSuccess ? `; FALSE SUCCESS ${falseSuccess}` : ''}${falseUnconf ? `; FALSE UNCONFIRMED ${falseUnconf}` : ''}${writeAtEnd ? `; BAR WRITTEN AT END ${writeAtEnd}` : ''}${endButRoom.length ? `; AT END BUT COULD SCROLL (${endButRoom.join('; ')})` : ''}`, f0(med(ok.map(r => r.ms))), meta];

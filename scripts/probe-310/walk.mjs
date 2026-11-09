@@ -93,7 +93,7 @@ async function observe(bin, name, pid) {
     if (r.error) return {engine: name, error: JSON.stringify(r.error).slice(0, 300), ms};
     const sky = r.result, t = sky.timings ?? {};
     const sig = sky.nodes.map(n => [n.role, n.title ?? '', n.description ?? '', typeof n.value === 'string' ? n.value.slice(0, 40) : n.value ?? '', n.frame ? [n.frame.x, n.frame.y, n.frame.width, n.frame.height].map(Math.round).join(',') : ''].join('|'));
-    return {engine: name, ms, walkMs: t.walk ?? null, widthMs: t.widthMs ?? t.width ?? null, wideListMs: t.wideListMs ?? null, wideListFrames: t.wideListFrames ?? null,
+    return {engine: name, ms, walkMs: t.walkMs ?? null, widthMs: t.widthMs ?? t.width ?? null, wideListMs: t.wideListMs ?? null, wideListFrames: t.wideListFrames ?? null,
       frameReads: t.frameReads ?? null, columnsLast: t.wideListColumnsLast ?? 0, nodes: sky.nodes.length, budgetHit: !!t.budgetHit, nodeCapHit: !!t.nodeCapHit,
       deadlineHit: !!t.deadlineHit, failures: t.fetchFailures ?? 0, truncated: sky.truncated ?? null, columns: sky.nodes.filter(n => n.role === 'AXColumn').length, sig};
   } finally {

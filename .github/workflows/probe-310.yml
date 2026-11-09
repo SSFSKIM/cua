@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rep: [1, 2]
+        rep: [1, 2, 3]
     runs-on: macos-latest
     timeout-minutes: 75
     steps:

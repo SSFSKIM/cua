@@ -50,8 +50,8 @@ final class OutsideScreenshotTests: XCTestCase {
     assertRefused(600, 2000, "a scroll far below")
     assertRefused(-0.5, -0.5, "a drag's start above and left of the image")
     assertRefused(600, -1, "a drag's start above the image")
-    assertRefused(1220.25, 10, "a drag's end just past the right edge")
-    assertRefused(10, 860.5, "a drag's end just past the bottom")
+    assertRefused(1220.25, 10, "a click just past the right edge (a drag's end there: testADragsEndOutsideSaysTheDropCannotBeDone)")
+    assertRefused(10, 860.5, "a scroll just past the bottom")
   }
 
   func testTheImagesEdgePointsPass() throws {
@@ -63,6 +63,24 @@ final class OutsideScreenshotTests: XCTestCase {
   func testTheSentenceNamesThePointAndTheImage() {
     let error = pointOutsideScreenshot(1300, 12.5, width: 1220, height: 860)
     XCTAssertEqual(error.message, "The point (1300, 12.50) lies outside the screenshot, which is 1220 × 860 pixels. Give a point inside it: x from 0 to 1219 and y from 0 to 859.")
+  }
+
+  /// #334: a drag's end outside the screenshot is a drop onto another window or the desktop, which is not supported, so
+  /// its refusal says so and gives no coordinate range to clamp into (a clamped end would drop at the source window's
+  /// edge). Still `pointOutsideScreenshot`. A start, placed first, keeps #328's sentence.
+  func testADragsEndOutsideSaysTheDropCannotBeDone() {
+    for (x, y) in [(1220.25, 10.0), (10, 860.5), (-3, 400), (600, -1)] {
+      XCTAssertThrowsError(try connection().screenshotPoint(x, y, app: app, window: window, lineage: nil, dragEnd: true)) { error in
+        let error = error as? EngineError
+        XCTAssertEqual(error?.errorName, "pointOutsideScreenshot")
+        XCTAssertEqual(error?.message, "A drag cannot end outside the window the screenshot shows: dropping onto another app's window or the desktop is not supported. Nothing was sent.")
+      }
+    }
+    XCTAssertEqual(try connection().screenshotPoint(1219, 859, app: app, window: window, lineage: nil, dragEnd: true),
+                   CGPoint(x: 609.5, y: 429.5), "an end inside passes")
+    XCTAssertThrowsError(try connection().screenshotPoint(-1, 400, app: app, window: window, lineage: nil)) { error in
+      XCTAssertEqual((error as? EngineError)?.message, "The point (-1, 400) lies outside the screenshot, which is 1220 × 860 pixels. Give a point inside it: x from 0 to 1219 and y from 0 to 859.", "a start keeps #328's sentence")
+    }
   }
 
   /// A drag's middle event is the midpoint of its two ends, so inside the screenshot whenever both ends are: the ends'

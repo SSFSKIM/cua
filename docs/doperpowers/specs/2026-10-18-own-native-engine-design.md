@@ -3879,7 +3879,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      release does. Item 3 makes no claim. The docs test (`test/cua-api/core-documentation.test.mjs`), repl-parity's docs
      oracle (`scripts/repl-parity/docs-oracle.mjs`), `docs/cua-api/PROVENANCE.md` and the surface inventory's "Table 3
      addition (2026-11-08, #318)" carry the sentence. Parity's expected diff is that paragraph alone. The plugin goes to
-     0.27.12, since the document the server serves changed. (#328 takes 0.27.11.)
+     0.27.12, since the document the server serves changed. (#328 then took 0.27.13.)
   Date/Author: 2026-11-08, cursor235's lane-2 implementer for #318.
 - Decision (#328, 2026-11-08, `fix/328-scroll-confirm`; the design session's ruling b1921fc3 on the spike's findings,
   issue #328's comment, kit `probe/328-measure` e1804569, runs 42526444701, 42529832136 and 42532340875 on main

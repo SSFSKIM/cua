@@ -253,6 +253,10 @@ final class CaretSearchTests: XCTestCase {
     }
     XCTAssertEqual(textCaretOffset(at: CGPoint(x: 1020, y: 5), value: String(repeating: "a", count: 10_000), bounds: long),
                    .failure(.pointOutsideText))
+    // No box in the first characters leaves the direction unknown, which authorizes nothing (the review of a2fd1e11):
+    // the linear scan answers, here over vertical text whose first 64 boxes are still missing.
+    let late = { (index: Int) -> CGRect? in index < 64 ? nil : short[index - 64] }
+    XCTAssertEqual(textCaretOffset(at: CGPoint(x: 200, y: 25), value: String(repeating: "a", count: 68), bounds: late), .success(65))
   }
 
   /// A right-to-left line too short for the search to read two of its boxes shows it no order broken, so a text holding

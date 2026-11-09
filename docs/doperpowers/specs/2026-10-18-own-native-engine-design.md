@@ -4189,7 +4189,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      direction is read first, from the first two neighbouring characters with boxes that do not wrap (within 64): on one
      line running leftward, or stacked in a column, the text is not searched (the review of 66017fb1: four characters
      of vertical text in two columns, where sampling never saw the order broken). A text whose first characters have no
-     boxes at all is searched as before, for the wait on boxes still arriving. Every way out of the search checks the
+     boxes at all is not searched either: the linear scan within 5,000 characters, and past that `noCharacterBoxes`,
+     which the wait on boxes re-reads (the review of a2fd1e11: vertical text whose first boxes were still missing). Every way out of the search checks the
      boxes it read for order, so a search stopped early by empty boxes cannot hide what it saw. An offset
      is taken from the search only where the linear scan over its window places it, and a line end only where the next
      character lies wholly below (the linear scan's wrap test). Characters of other sizes on one line (a contenteditable

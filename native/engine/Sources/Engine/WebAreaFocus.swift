@@ -148,6 +148,7 @@ func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int
     case .window(let window): near = window.lowerBound
     case .abandoned(let at): near = at
     case .disordered: return .failure(.pointOutsideText)  // #283's refusal: no window near the point is known
+    case .boxless: return .failure(.noCharacterBoxes)  // no usable box read: the wait on boxes re-reads
     }
     let lower = min(max(scanned.lowerBound, near - caretScanLimit / 2), scanned.upperBound - caretScanLimit)
     fallback = lower..<(lower + caretScanLimit)
@@ -164,6 +165,9 @@ enum CaretSearchEnd: Equatable {
   /// point is known (#290's review of 93bc212e: a vertical layout, whose fallback window around this index answered an
   /// offset far from the linear scan's).
   case disordered(at: Int)
+  /// No usable box among the first characters, so no direction is known: nothing is searched (the review of a2fd1e11:
+  /// vertical text whose first boxes were still missing passed the search).
+  case boxless
 }
 
 /// #290's search over `scanned`'s boxes in reading order (`caretOffset`). Boxes are usable as the linear scan's: with
@@ -214,7 +218,7 @@ func caretSearch(at point: CGPoint, _ scanned: Range<Int>, box: (Int) -> CGRect?
   // The text's direction, from the first two neighbouring characters with usable boxes, neither a line break, that do
   // not wrap (the review of 66017fb1): on one line, the later one must not start left of the earlier one; one under
   // the other, overlapping across, is a vertical column. Within `caretSearchStepLimit` characters, or no direction is
-  // known and the search is not trusted, unless none of them had a box.
+  // known and the search is not trusted; none of them with a box, nothing is searched.
   var direction: Bool?, sawABox = false
   var index = scanned.lowerBound
   while direction == nil, index + 1 < min(scanned.upperBound, scanned.lowerBound + caretSearchStepLimit) {
@@ -227,9 +231,10 @@ func caretSearch(at point: CGPoint, _ scanned: Range<Int>, box: (Int) -> CGRect?
       direction = false
     }
   }
-  // No usable box at all there is no direction either way: boxes not there yet (all empty before Chromium's complete
-  // accessibility mode, #283), which the search and its fallback answer as before, for the wait to re-read.
-  if direction == false || (direction == nil && sawABox) { return .disordered(at: middle) }
+  // No usable box at all there is no direction either way (boxes not there yet, all empty before Chromium's complete
+  // accessibility mode, #283): nothing is searched.
+  if direction == nil, !sawABox { return .boxless }
+  if direction != true { return .disordered(at: middle) }
   // Every two usable boxes read must run in reading order: the earlier one on a line above the later one's or on its
   // line, and on the point's line starting left of it. Checked on every way out, so a search stopped early by a run of
   // unusable boxes cannot hide what it had already seen.

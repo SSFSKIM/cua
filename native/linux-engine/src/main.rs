@@ -2,6 +2,7 @@
 //!
 //! M1a's engine core (`README.md` says what it answers). See `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`.
 
+mod accept;
 #[cfg(test)]
 mod alloc_watch;
 mod apps;
@@ -50,6 +51,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed|quiet]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--path-step-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
+       [--drag-dnd-release-at-accept] [--drag-ignore-cover]
        [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
        cua-engine --version";
@@ -90,6 +92,8 @@ fn default_config() -> Config {
         dnd_after_take: crate::dnd::RELEASE_AFTER_TAKE,
         targets_wait: None,
         focus_ack: focus_ack::FOCUS_ACK,
+        dnd_release_at_accept: false,
+        drag_ignore_cover: false,
     }
 }
 
@@ -164,6 +168,14 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             "--dnd-defer-take" => {
                 cfg.dnd_defer_take = true;
+                takes_value = false;
+            }
+            "--drag-dnd-release-at-accept" => {
+                cfg.dnd_release_at_accept = true;
+                takes_value = false;
+            }
+            "--drag-ignore-cover" => {
+                cfg.drag_ignore_cover = true;
                 takes_value = false;
             }
             "--mouse-size-px" => cfg.mouse_size_px = number(value, arg)? as u32,
@@ -529,6 +541,25 @@ mod tests {
             panic!()
         };
         assert_eq!(cfg.capture_wait, CaptureWait::QuietOnly);
+    }
+
+    #[test]
+    fn t13_s_measurement_flags_are_off_by_default_and_each_turns_its_own_on() {
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
+            panic!()
+        };
+        assert!(
+            !cfg.dnd_release_at_accept && !cfg.drag_ignore_cover,
+            "shipped behaviour unchanged"
+        );
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-dnd-release-at-accept"])) else {
+            panic!()
+        };
+        assert!(cfg.dnd_release_at_accept && !cfg.drag_ignore_cover);
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["--drag-ignore-cover", "server"])) else {
+            panic!()
+        };
+        assert!(cfg.drag_ignore_cover && !cfg.dnd_release_at_accept);
     }
 
     #[test]

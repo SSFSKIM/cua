@@ -44,6 +44,9 @@
 //!   pointer, until stdin closes (`crossing.rs`).
 //! - `xprobe cursor-watch`: every change of the displayed cursor with its theme name, through XFixes, until stdin
 //!   closes (`cursor.rs`).
+//! - `xprobe drop-watch [window]`: what a client with no RECORD and no grab sees around a drag and drop: `XdndSelection`
+//!   takes, displayed-cursor changes with their images, `_NET_ACTIVE_WINDOW` requests, root children's maps and ends,
+//!   and the window's crossings, until stdin closes (`dropwatch.rs`; T13).
 //! - `xprobe order-watch`: the focus transitions, activation requests, root restacks with their geometry and every
 //!   pointer button press and release, in the server's order, until stdin closes (`order.rs`; task 63).
 //! - `xprobe record-run --ours <pid>`: every client's requests that can change a window, for a whole harness run,
@@ -59,6 +62,7 @@ mod collector;
 mod crossing;
 mod cursor;
 mod dnd;
+mod dropwatch;
 mod focus;
 mod motion;
 mod order;
@@ -114,6 +118,7 @@ fn main() {
         Some("request-watch") if args.len() == 1 => requests::request_watch(),
         Some("crossing-watch") if args.len() == 1 => crossing::crossing_watch(),
         Some("cursor-watch") if args.len() == 1 => cursor::cursor_watch(),
+        Some("drop-watch") => dropwatch::drop_watch(&args[1..]),
         Some("order-watch") if args.len() == 1 => order::order_watch(),
         Some("motion-watch") => motion::motion_watch(&args[1..]),
         Some("record-run") => whole::record_run(&args[1..]),

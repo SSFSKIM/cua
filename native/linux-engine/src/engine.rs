@@ -75,6 +75,13 @@ pub struct Config {
     /// for the window's frame to report the session's synthetic focus taken (`focus_ack.rs`; `--focus-ack-ms`,
     /// measurement only, sets another, 0 none).
     pub focus_ack: std::time::Duration,
+    /// Measurement only (T13, `--drag-dnd-release-at-accept`): a Chromium drag the engine lets drop, once its source
+    /// took `XdndSelection`, sends the rest of its path at its own pacing and is released at Chrome's accept cursor
+    /// (`accept.rs`), the floor after the take (`dnd_after_take`) its ceiling.
+    pub dnd_release_at_accept: bool,
+    /// Measurement only (T13, `--drag-ignore-cover`): `unless_path_unobscured` never refuses or reroutes a drag, so a
+    /// drag goes out on the background route along a covered path.
+    pub drag_ignore_cover: bool,
 }
 
 pub struct Engine {

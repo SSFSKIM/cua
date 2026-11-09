@@ -178,13 +178,25 @@ pub fn wait_for_take(mut started: impl FnMut() -> bool, deadline: Instant) -> bo
 /// `due`, the path's second-to-last sample and then its last, [`KEEPALIVE`] apart, so the drag ends on its last
 /// sample. Answers how many pairs went out; a motion that fails ends it with its error.
 pub fn keepalive(
-    mut place: impl FnMut((i16, i16)) -> anyhow::Result<()>,
+    place: impl FnMut((i16, i16)) -> anyhow::Result<()>,
     before: (i16, i16),
     last: (i16, i16),
     due: Instant,
 ) -> anyhow::Result<u32> {
+    keepalive_until(place, before, last, due, || false)
+}
+
+/// [`keepalive`] that ends sooner, before the first pair at which `done` answers true (measurement only: T13's release
+/// at the accept, `accept.rs`).
+pub fn keepalive_until(
+    mut place: impl FnMut((i16, i16)) -> anyhow::Result<()>,
+    before: (i16, i16),
+    last: (i16, i16),
+    due: Instant,
+    mut done: impl FnMut() -> bool,
+) -> anyhow::Result<u32> {
     let mut sent = 0;
-    while Instant::now() < due {
+    while Instant::now() < due && !done() {
         place(before)?;
         place(last)?;
         sent += 1;
@@ -201,6 +213,8 @@ pub struct DndWatch {
     target: Window,
     mask: u32,
     started: bool,
+    /// The server's time of the first take seen (measurement: `accept.rs` counts the cursor's changes from it).
+    taken_time: Option<u32>,
 }
 
 impl DndWatch {
@@ -216,14 +230,16 @@ impl DndWatch {
             target,
             mask: x.conn.setup().resource_id_mask,
             started: false,
+            taken_time: None,
         })
     }
 
     /// Whether the target has begun a drag and drop, from the reports that have arrived so far.
     pub fn started(&mut self, x: &mut X11) -> bool {
         for report in x.take_selection_reports() {
-            if report.selection == self.selection {
-                self.started |= taken_by_target(report.owner, self.target, self.mask);
+            if report.selection == self.selection && taken_by_target(report.owner, self.target, self.mask) {
+                self.taken_time.get_or_insert(report.timestamp);
+                self.started = true;
             }
         }
         self.started
@@ -232,6 +248,11 @@ impl DndWatch {
     /// Whether a drag and drop was seen to start.
     pub fn is_started(&self) -> bool {
         self.started
+    }
+
+    /// The server's time of the take, once one was seen.
+    pub fn taken_time(&self) -> Option<u32> {
+        self.taken_time
     }
 
     /// The watch ended: the selection no longer watched, its reports no longer kept.
@@ -644,6 +665,33 @@ mod tests {
         // a motion that fails ends the floor with its error
         let due = Instant::now() + Duration::from_millis(60);
         assert!(keepalive(|_| Err(anyhow::anyhow!("BadWindow")), (9, 5), (10, 5), due).is_err());
+    }
+
+    #[test]
+    fn the_floor_s_motions_end_early_once_done_says_so_and_never_before_the_first_look() {
+        let due = Instant::now() + Duration::from_millis(500);
+        let mut looks = 0;
+        let mut placed = 0;
+        let sent = keepalive_until(
+            |_| (placed += 1, Ok(())).1,
+            (9, 5),
+            (10, 5),
+            due,
+            || {
+                looks += 1;
+                looks > 3
+            },
+        )
+        .unwrap();
+        assert_eq!(sent, 3, "three pairs, then done");
+        assert_eq!(placed, 6);
+        assert!(Instant::now() < due, "ended before the floor");
+        let mut placed = 0;
+        assert_eq!(
+            keepalive_until(|_| (placed += 1, Ok(())).1, (9, 5), (10, 5), due, || true).unwrap(),
+            0
+        );
+        assert_eq!(placed, 0, "done at once: no motion");
     }
 
     #[test]

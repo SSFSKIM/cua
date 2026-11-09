@@ -11,12 +11,13 @@ export const USAGE = `usage:
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
       [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle --cua <bin> --out <dir> [--run <name>]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals --cua <bin> --out <dir> [--run <name>]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] [--lanes <list>] [--trace] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop, qt-activation)
       [--released <bin>] [--kinds click,key-click,press_key,drag,scroll] (qt-activation)
       [--control-root <cua checkout> [--paths idle,eof,signal,remote,held-back] [--cases hold,burst,pairs,handle] [--browsers chrome,electron] [--sandbox scoped|disabled] [--require-burst-cut]] (engine-stop)
       [--family <list>] [--kinds <list>] [--routes background,desktop,dedicated] [--lanes shipped,settle-<ms>...] [--no-audit] (settle)
+      [--plan main|cover|pilot] [--family chrome|electron] [--ballast gate] [--load-factor 2] [--lanes <labels>] [--trials <cap>] (drop-signals)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 
@@ -37,6 +38,8 @@ const VALUE_FLAGS = {
   '--control-root': 'controlRoot',
   // the qt-activation experiment's released lane: cua's engine as a release shipped it (qt-activation.mjs)
   '--released': 'released',
+  // the drop-signals experiment's plan (drop-signals.mjs PLANS)
+  '--plan': 'plan',
 };
 const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText', '--trials': 'samplesTrials', '--first-rounds': 'firstRounds' };
 
@@ -166,7 +169,8 @@ export function parseArgs(argv) {
   }
   if (a.experiment) a.mode = 'experiment';
   for (const [key, flag] of [['coverMs', '--cover-ms'], ['prelude', '--prelude'], ['ballast', '--ballast'], ['stray', '--stray'], ['parkPointer', '--park-pointer']]) {
-    if (a[key] !== undefined && !a.dndCold) throw new Error(`${flag} is the cold drag-and-drop run's (--dnd-cold)`);
+    // the drop-signals experiment opens the gate's ballast too (T13), with no cold run
+    if (a[key] !== undefined && !a.dndCold && !(key === 'ballast' && a.experiment === 'drop-signals')) throw new Error(`${flag} is the cold drag-and-drop run's (--dnd-cold)`);
   }
   if (a.dndCold) a.coverMs ??= 0;
   if (a.dev && a.mode !== 'run') throw new Error('--dev is the verdict run\'s: only a verdict run is a release gate');
@@ -181,7 +185,7 @@ export function parseArgs(argv) {
   else if (a.mode === 'summarize') require('out');
   else if (a.mode === 'experiment') {
     require('cua', 'out');
-    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd', 'atspi', 'focus-timer', 'engine-stop', 'qt-activation', 'settle'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
+    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd', 'atspi', 'focus-timer', 'engine-stop', 'qt-activation', 'settle', 'drop-signals'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
     if (['matrix', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) require('vendor', 'newest');
     if (['qt-bridge', 'engine-readiness', 'drag', 'kinds', 'dnd'].includes(a.experiment)) require('vendor');
     // the drag experiment's load lane runs 40 drags a side (T10; drag.mjs `dragTrials`), refused before anything starts

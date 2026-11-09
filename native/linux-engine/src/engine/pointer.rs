@@ -337,6 +337,21 @@ fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &m
     Err(DropCancelled.into())
 }
 
+/// What a drag records for measurement alone (`--stats`): the press's and the release's wall clock, and with T13's
+/// `--drag-dnd-release-at-accept` the displayed cursor's watch and what it decided (`accept.rs`).
+pub(super) struct DragMeasure<'a> {
+    pub(super) wall: &'a mut Option<(f64, f64)>,
+    pub(super) accept: Option<&'a mut crate::accept::CursorWatch>,
+    pub(super) accept_record: &'a mut Option<Value>,
+}
+
+/// The wall clock in milliseconds since the epoch (`--stats` only: the harness lines a drag up with its own watchers).
+fn wall_ms() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64() * 1000.0)
+}
+
 /// The drag after the pointer is placed at its first point: the chord, the press, every sample of its plan
 /// ([`drag_plan`]), the release. `pacing.step` follows each sample, the last included (where the vendor waits 1 ms,
 /// behaviour §10.4), by elapsed time where the family asks ([`next_due`]), `pacing.rest` precedes a corner's or the
@@ -371,6 +386,7 @@ fn drag_along(
     scheduled: &mut Option<Value>,
     mut press: Option<&mut ChromiumPress>,
     pressing: PressAck,
+    mut measure: DragMeasure<'_>,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
@@ -395,6 +411,9 @@ fn drag_along(
             }
         };
         let pressed_at = pressed_at.expect("the button was pressed");
+        let press_wall = wall_ms() - pressed_at.elapsed().as_secs_f64() * 1000.0;
+        // measurement only (T13): with the release at the accept, the path after a take keeps its own pacing
+        let spacing = !after_take.is_zero() && measure.accept.is_none();
         std::thread::sleep(pacing.press);
         // the path's last two samples, which a floor after a take re-visits (the path's own: not the end's second
         // visit after its rest, which would make them one point)
@@ -417,7 +436,7 @@ fn drag_along(
             let mut floor = None;
             if let Some((watch, _)) = hold.as_mut() {
                 match taken {
-                    Some((at, left)) if !after_take.is_zero() => {
+                    Some((at, left)) if spacing => {
                         since_take += 1;
                         floor = Some(crate::dnd::step_due(at, after_take, since_take, left));
                     }
@@ -426,7 +445,7 @@ fn drag_along(
                     None => {}
                 }
             }
-            let floored = taken.is_some() && !after_take.is_zero();
+            let floored = taken.is_some() && spacing;
             due = next_due(due, sent, pacing, rests_before(&rests, i + 1, floored));
             let mut wait = due.saturating_duration_since(Instant::now());
             if let Some(floor) = floor {
@@ -464,12 +483,36 @@ fn drag_along(
             if let Some((at, _)) = taken
                 && !after_take.is_zero()
             {
-                keepalives = crate::dnd::keepalive(
-                    |(px, py)| route.place_again(x, px, py),
-                    before_last,
-                    last,
-                    at + after_take,
-                )?;
+                keepalives = match (measure.accept.as_deref_mut(), watch.taken_time()) {
+                    // measurement only (T13): the floor ends at the accept, if it comes first
+                    (Some(cursor), Some(take)) => {
+                        let mut accepted = None;
+                        let sent = crate::dnd::keepalive_until(
+                            |(px, py)| route.place_again(x, px, py),
+                            before_last,
+                            last,
+                            at + after_take,
+                            || {
+                                accepted = accepted.or_else(|| {
+                                    let changes = cursor.poll().ok()?;
+                                    crate::accept::accept_index(changes, take).map(|i| changes[i].seen)
+                                });
+                                accepted.is_some()
+                            },
+                        )?;
+                        *measure.accept_record = Some(json!({
+                            "accepted": accepted.is_some(),
+                            "accept_after_take_ms": accepted.map(|seen| ms(seen.saturating_duration_since(at))),
+                        }));
+                        sent
+                    }
+                    _ => crate::dnd::keepalive(
+                        |(px, py)| route.place_again(x, px, py),
+                        before_last,
+                        last,
+                        at + after_take,
+                    )?,
+                };
             }
             // one shape for every drag the hold watched (`--stats` `hold`)
             *held_for_take = Some(json!({
@@ -506,6 +549,7 @@ fn drag_along(
         pressed = false;
         route.release_button(x, 1)?;
         let released_at = Instant::now();
+        *measure.wall = Some((press_wall, wall_ms()));
         // the watch ends at the release: what reached the window from the press on
         if let Some(press) = press
             && let Some(watching) = press.watching.take()
@@ -810,6 +854,14 @@ impl Engine {
         let mut scheduled = None;
         let bound = self.cfg.dnd_hold;
         let mut held_for_take = None;
+        // measurement only (T13, `--drag-dnd-release-at-accept`): the displayed cursor watched from before the press, on
+        // a drag the hold watches
+        let mut cursor = match (&hold, self.cfg.dnd_release_at_accept) {
+            (Some(_), true) => Some(crate::accept::CursorWatch::start()?),
+            _ => None,
+        };
+        let mut wall = None;
+        let mut accept_record = None;
         // the time field the drag's events carried at its end, beside the server's time read just after (M3.1: whether
         // a background event's time can run ahead of the server's)
         let mut times = None;
@@ -848,6 +900,11 @@ impl Engine {
                 &mut scheduled,
                 press.as_mut(),
                 pressing,
+                DragMeasure {
+                    wall: &mut wall,
+                    accept: cursor.as_mut(),
+                    accept_record: &mut accept_record,
+                },
             );
             if let Some(event) = route.event_time()
                 && let Ok(server) = crate::input::server_time(x)
@@ -865,6 +922,29 @@ impl Engine {
         }
         if let Some(scheduled) = scheduled {
             self.extra.insert("after_take".into(), scheduled);
+        }
+        if let Some((press, release)) = wall {
+            self.extra
+                .insert("wall".into(), json!({ "press_ms": press, "release_ms": release }));
+        }
+        // measurement only (T13): what the accept watch saw, every change of the displayed cursor beside it
+        if let Some(mut cursor) = cursor {
+            let mut record = accept_record.unwrap_or_else(|| json!({ "accepted": false }));
+            match cursor.finish() {
+                Ok(changes) => {
+                    record["changes"] = json!(
+                        changes
+                            .iter()
+                            .map(|c| json!([c.serial, c.time, c.named]))
+                            .collect::<Vec<_>>()
+                    );
+                }
+                Err(error) => record["error"] = json!(format!("{error:#}")),
+            }
+            if let Some(take) = hold.as_ref().and_then(|h| h.taken_time()) {
+                record["take_time"] = json!(take);
+            }
+            self.extra.insert("accept".into(), record);
         }
         // whether the target's client took `XdndSelection` by now: a drag and drop started, so no stray reset the press
         let mut taken = false;

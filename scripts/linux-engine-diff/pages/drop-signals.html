@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 drop signals</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; }
+  body { font: 20px monospace; width: 1000px; height: 700px; position: relative; background: #ffffff; color: #000000; }
+  .abs { position: absolute; margin: 0; padding: 0; }
+  #words { left: 20px; top: 20px; white-space: nowrap; }
+  #range { left: 20px; top: 70px; width: 400px; height: 24px; }
+  #scroller { left: 20px; top: 120px; width: 300px; height: 200px; overflow-y: scroll; overflow-x: hidden; background: #f4f4f4; }
+  #scroller div { height: 400px; background: linear-gradient(#f4f4f4, #c8c8c8); }
+  #canvas { left: 20px; top: 350px; width: 400px; height: 200px; background: #eeeeee; touch-action: none; }
+  #seltext { left: 20px; top: 600px; white-space: nowrap; }
+  #inert { left: 440px; top: 400px; width: 50px; height: 36px; background: #b0b0b0; }
+  #zone { left: 560px; top: 100px; width: 400px; height: 420px; background: #d8e8d0; }
+  .src { left: 505px; width: 50px; height: 36px; background: #6a8fd0; color: #ffffff; overflow: hidden; }
+  #nested { background: #ffffff; color: #000000; font: 28px monospace; line-height: 36px; }
+  #nested span { background: #6a8fd0; }
+  #slider div { width: 100%; height: 100%; }
+  #link { display: block; text-decoration: none; font-size: 14px; line-height: 36px; }
+  #status { left: 20px; top: 640px; font-size: 10px; }
+  #status p { margin: 0; white-space: nowrap; }
+</style>
+</head>
+<body>
+<!-- The drop-signals scene (#171 M4, T13: Chromium drop signals, measured only): short drags, each about 40 px, from a
+     start point whose accessible role and draggability differ, so a signal read at the start can be judged against
+     whether Chrome's drag and drop started (a take of XdndSelection), and a drop against the zone's count.
+     Every element sits at a fixed place in the page (the harness aims at the page's origin, found from the Range
+     input at (20, 70) as for the drag scene, plus these offsets).
+     - words: a text selection; range: an HTML range input; scroller: a div's scrollbar thumb; canvas: a pointer-tracking
+       canvas; inert: a plain div with no handler. None of them can start a drag and drop.
+     - seltext: text the page keeps selected while no button is down, so a press on it drags the selection (a take
+       under a text role).
+     - the sources (`data-src`), each 5 px left of the zone, a short drop 10 px into it:
+       plain: a draggable div; nested: a draggable span inline in a paragraph (the paragraph is what the tree shows
+       at the point); slider: a draggable div inside an ARIA slider, whose children are presentational; dragstart-<ms>:
+       a draggable div whose dragstart handler keeps the renderer busy that long (a delayed dragstart); press-<ms>: one
+       whose pointerdown handler does (a page that starts its drag late: the renderer reaches the drag threshold only
+       after it); link and image: draggable by default.
+     - zone: the drop target (dragover accepted), counting drops by the source that started them.
+     Status lines, each also its own accessible name, read back through the tree after each drag; every count only
+     grows. `seq` is the page's count of left presses, so the harness ties a kind's line to its own press. -->
+<p id="words" class="abs">alpha bravo charlie delta echo foxtrot golf</p>
+<input id="range" class="abs" type="range" min="0" max="100" value="0" aria-label="Range">
+<div id="scroller" class="abs" aria-label="Scroller"><div></div></div>
+<canvas id="canvas" class="abs" width="400" height="200" aria-label="Canvas"></canvas>
+<p id="seltext" class="abs" data-src="seltext">dragging selected text</p>
+<div id="inert" class="abs" aria-label="Inert"></div>
+<div id="zone" class="abs" aria-label="Zone"></div>
+<div id="plain" class="abs src" style="top: 110px" draggable="true" data-src="plain" aria-label="Plain source"></div>
+<p id="nested" class="abs src" style="top: 156px"><span draggable="true" data-src="nested">MM</span></p>
+<div id="slider" class="abs src" style="top: 202px" role="slider" aria-label="Custom slider" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" tabindex="0"><div draggable="true" data-src="slider"></div></div>
+<div id="dragstart-150" class="abs src" style="top: 248px" draggable="true" data-src="dragstart-150" data-dragstart-ms="150" aria-label="Slow dragstart 150"></div>
+<div id="press-150" class="abs src" style="top: 294px" draggable="true" data-src="press-150" data-press-ms="150" aria-label="Busy press 150"></div>
+<div id="dragstart-400" class="abs src" style="top: 340px" draggable="true" data-src="dragstart-400" data-dragstart-ms="400" aria-label="Slow dragstart 400"></div>
+<div id="press-400" class="abs src" style="top: 386px" draggable="true" data-src="press-400" data-press-ms="400" aria-label="Busy press 400"></div>
+<a id="link" class="abs src" style="top: 432px" href="#drop-signals-link" data-src="link">link</a>
+<img id="image" class="abs src" style="top: 478px" data-src="image" alt="Image source" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='50' height='36'%3E%3Crect width='50' height='36' fill='%236a8fd0'/%3E%3C/svg%3E">
+<div id="status" class="abs">
+  <p id="s-dnd">dnd</p>
+  <p id="s-select">select seq 0 text none</p>
+  <p id="s-range">range seq 0 inputs 0 value 0</p>
+  <p id="s-scroll">scroll seq 0 max 0</p>
+  <p id="s-canvas">canvas seq 0 moves 0</p>
+  <p id="s-press">press seq 0 at 0</p>
+</div>
+<script>
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  const $ = (id) => document.getElementById(id);
+  const line = (id, text) => { $(id).textContent = text; $(id).setAttribute('aria-label', text); };
+  for (const p of document.querySelectorAll('#status p')) p.setAttribute('aria-label', p.textContent);
+  const busy = (ms) => { const until = performance.now() + ms; while (performance.now() < until) { /* the renderer kept busy */ } };
+
+  // presses: every left press anywhere, and whether a button is down (the selected text is put back only while none is)
+  let seq = 0;
+  let down = false;
+  document.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    seq += 1;
+    down = true;
+    line('s-press', `press seq ${seq} at ${Math.round(performance.timeOrigin + e.timeStamp) % 1e9}`);
+    rangeInputs = 0;
+    scrollMax = 0;
+    canvasMoves = 0;
+  }, true);
+  const up = () => { if (down) { down = false; setTimeout(keepSelected, 150); } };
+  document.addEventListener('pointerup', (e) => { if (e.button === 0) { recordSelection(); up(); } }, true);
+  document.addEventListener('mouseup', (e) => { if (e.button === 0) up(); }, true);
+
+  // a drag and drop, by the source it started from: starts, drops on the zone, and the last dragend's dropEffect and
+  // times (ms from the press to dragstart, and from dragstart to dragend)
+  const SOURCES = ['plain', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext'];
+  const dnd = Object.fromEntries(SOURCES.map((s) => [s, { starts: 0, drops: 0 }]));
+  const last = { src: 'none', effect: -1, lat: -1, dur: -1 };
+  let pressedAt = null;
+  let startedAt = null;
+  document.addEventListener('pointerdown', (e) => { pressedAt = e.timeStamp; }, true);
+  const EFFECTS = { none: 0, copy: 1, move: 2, link: 3 };
+  const showDnd = () => line('s-dnd', `dnd ${SOURCES.map((s) => `${s} ${dnd[s].starts}/${dnd[s].drops}`).join(' ')} last ${last.src} effect ${last.effect} lat ${last.lat} dur ${last.dur}`);
+  const sourceOf = (node) => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('[data-src]')?.dataset.src ?? null;
+  document.addEventListener('dragstart', (e) => {
+    const src = sourceOf(e.target);
+    if (!src) return;
+    dnd[src].starts += 1;
+    startedAt = e.timeStamp;
+    last.src = src;
+    last.effect = -1;
+    last.lat = pressedAt === null ? -1 : Math.round(e.timeStamp - pressedAt);
+    last.dur = -1;
+    e.dataTransfer.setData('application/x-cua171-src', src);
+    if (!e.dataTransfer.types.includes('text/plain')) e.dataTransfer.setData('text/plain', src);
+    showDnd();
+  }, true);
+  document.addEventListener('dragend', (e) => {
+    last.effect = EFFECTS[e.dataTransfer?.dropEffect] ?? 9;
+    last.dur = startedAt === null ? -1 : Math.round(e.timeStamp - startedAt);
+    showDnd();
+    up();
+  }, true);
+  $('zone').addEventListener('dragover', (e) => e.preventDefault());
+  $('zone').addEventListener('drop', (e) => {
+    e.preventDefault();
+    const src = e.dataTransfer.getData('application/x-cua171-src');
+    if (dnd[src]) dnd[src].drops += 1;
+    showDnd();
+  });
+  // the late sources: a busy dragstart handler (a delayed dragstart), a busy pointerdown handler (a late start)
+  for (const el of document.querySelectorAll('[data-dragstart-ms]')) el.addEventListener('dragstart', () => busy(Number(el.dataset.dragstartMs)));
+  for (const el of document.querySelectorAll('[data-press-ms]')) el.addEventListener('pointerdown', () => busy(Number(el.dataset.pressMs)));
+  $('link').addEventListener('click', (e) => e.preventDefault());
+
+  // the kinds that cannot start a drag and drop, each its effect during the last press
+  const recordSelection = () => {
+    const text = String(window.getSelection()).replace(/\s+/g, '_');
+    line('s-select', `select seq ${seq} text ${text || 'none'}`);
+  };
+  let rangeInputs = 0;
+  $('range').addEventListener('input', () => { rangeInputs += 1; line('s-range', `range seq ${seq} inputs ${rangeInputs} value ${$('range').value}`); });
+  let scrollMax = 0;
+  let back = null;
+  $('scroller').addEventListener('scroll', () => {
+    scrollMax = Math.max(scrollMax, Math.round($('scroller').scrollTop));
+    line('s-scroll', `scroll seq ${seq} max ${scrollMax}`);
+    clearTimeout(back);
+    back = setTimeout(() => { $('scroller').scrollTop = 0; }, 700);
+  });
+  let canvasMoves = 0;
+  $('canvas').addEventListener('pointermove', (e) => { if (e.buttons & 1) { canvasMoves += 1; line('s-canvas', `canvas seq ${seq} moves ${canvasMoves}`); } });
+
+  // the selected text: put back whenever no button is down, so the next press on it drags the selection
+  const keepSelected = () => {
+    if (down) return;
+    const range = document.createRange();
+    range.selectNodeContents($('seltext'));
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  };
+  keepSelected();
+  showDnd();
+</script>
+</body>
+</html>

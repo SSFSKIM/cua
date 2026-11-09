@@ -10,7 +10,7 @@ import Foundation
 // retired there and never reissued in the lineage, so an element that returns gets a new one (N = 1, the vendor's
 // identity rule). cua's one departure (#303, `keepRecreated`): an element of a role Chromium synthesizes for a table
 // (an AXColumn, a table's AXGroup header), re-created since the previous revision, keeps its token when it is the old
-// element in every way the engine can read and the old handle is gone. A walk cut short by the node or byte budget or the deadline retires nothing it left unread: the
+// element in every way the engine can read, every sibling known on both sides, and the old handle is gone. A walk cut short by the node or byte budget or the deadline retires nothing it left unread: the
 // walk spends its budget on what the window shows first (#301), so what it leaves unread lies scattered through the
 // tree, and each unread child of a read element has the previous revision's entry for it, with its subtree, carried over
 // in its place among its siblings. An action names its lineage and a token; the engine

@@ -54,9 +54,13 @@ struct ElementData {
   /// AXEditableAncestor (Chromium and WebKit): the editable region the element lies in, which #298's stale-point record
   /// keeps for an AXStaticText so the model's own typing there is not taken for a relabel.
   var editableAncestor: AXUIElement?
+  /// The attributes whose read failed with an error other than their absence (`failedSlot`): each decodes as none, as
+  /// an absent one does, and #298's stale-point record tells the two apart for the label's attributes.
+  var unreadable: Set<String> = []
 
-  /// Decodes one element's attribute values, keyed by attribute name.
-  init(values: [String: CFTypeRef]) {
+  /// Decodes one element's attribute values, keyed by attribute name, and the names whose read failed.
+  init(values: [String: CFTypeRef], unreadable: Set<String> = []) {
+    self.unreadable = unreadable
     func string(_ name: String) -> String? { values[name].flatMap(stringValue) }
     func flag(_ name: String) -> Bool? { bool(values[name]) }
     role = string("AXRole") ?? "AXUnknown"
@@ -177,8 +181,11 @@ class ElementSource: @unchecked Sendable {
       let error = AXUIElementCopyMultipleAttributeValues(prepare(element), attributes as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
       guard error == .success, let slots = values as? [Any], slots.count == attributes.count else { return nil }
       var decoded: [String: CFTypeRef] = [:]
-      for (name, slot) in zip(attributes, slots) { if let value = present(slot) { decoded[name] = value } }
-      return ElementData(values: decoded)
+      var unreadable: Set<String> = []
+      for (name, slot) in zip(attributes, slots) {
+        if let value = present(slot) { decoded[name] = value } else if failedSlot(slot) { unreadable.insert(name) }
+      }
+      return ElementData(values: decoded, unreadable: unreadable)
     }
   }
 

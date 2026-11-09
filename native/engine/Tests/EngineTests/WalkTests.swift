@@ -40,6 +40,8 @@ final class FakeTree {
   var onDescription: ((Int, String) -> Void)?
   /// Elements whose AXChildren read fails (its slot an error, so the decoded data has none).
   var childrenUnread: Set<Int> = []
+  /// Attributes whose read fails with an error other than absence, by id (their slots decode as none).
+  var unreadableAttributes: [Int: Set<String>] = [:]
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
 }
@@ -70,7 +72,9 @@ final class FakeSource: ElementSource, @unchecked Sendable {
       values["AXPosition"] = AXValueCreate(.cgPoint, &origin)!
       values["AXSize"] = AXValueCreate(.cgSize, &extent)!
     }
-    return ElementData(values: values)
+    let unreadable = tree.unreadableAttributes[id] ?? []
+    for name in unreadable { values.removeValue(forKey: name) }
+    return ElementData(values: values, unreadable: unreadable)
   }
 
   override func owner(_ element: AXUIElement) -> pid_t { tree.owners[tree.id(element)] ?? 4242 }

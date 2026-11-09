@@ -4493,6 +4493,17 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      character typed over at the same width) is matched without its value, its title and description still compared.
      **The cost:** a click reads nothing more unless the rule would refuse; then the text's editable ancestor and the
      role and actions of each element up to the region.
+  8. **A failed read is not an absent label** (the review of 7f6eb3dc..b2f00ad5, P2 2). The live seam's `attribute`
+     answers nil both for an attribute the element lacks and for a read that failed, and the label took either as leave
+     to fall to the next source: a button with the title "Save" and the description "Save changes" whose title read
+     failed at the click compared its description with the recorded title and refused, and the inverse when the title
+     read had failed at the observation. Now the walk's batched read keeps which attributes failed with an error other
+     than their absence (kAXErrorNoValue, kAXErrorAttributeUnsupported; `failedSlot`, `ElementData.unreadable`), the
+     record keeps that for the label's attributes (`ScreenshotNode.labelsUnread`; the value an `AXStaticText`'s only),
+     and the click reads each label attribute with its error (`StalePointReads.readLabel`, `stalePointLabelRead`). The
+     label falls past an absent or empty attribute only; where it would depend on an unreadable higher-priority one, on
+     either side, the rule keeps the point. #296's re-created match is unchanged: there an unreadable label already
+     never counts against a match.
   Proven offline: `RelabelledGuardTests` (11) in `StalePointTests.swift`: the words over the rule's parts; the spike's
   live pairs on a live handle by title and by description (Save -> Delete, Delete -> Delete all, Follow -> Following,
   Play -> Pause refuse; Like (12) -> Like (13), 1 item -> 2 items, Inbox -> Inbox (3), "Notifications" ->
@@ -4507,7 +4518,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   in a contenteditable passing by its `AXEditableAncestor`, by an `AXTextArea`, by a contenteditable group, as a text
   run, and re-created at the same width; a relabelled link, button or AXPress chip inside the region refusing; a text
   whose editable ancestor differs (another region, none now, none recorded) still judged; the record and the walk's
-  batch keeping it (`VisibleFirstTests` for the record-only reads). 1,108 engine tests pass, 1 skipped as before. Of 39 parts
+  batch keeping it (`VisibleFirstTests` for the record-only reads). The failed reads: `UnreadableLabelTests` (4): a
+  title unreadable now and one unreadable at the observation not refusing, while an absent title still falls to the
+  description; a lower-priority unreadable attribute changing nothing, and an unreadable description or value ahead
+  of a text's value keeping the point; what counts as a failed slot and a failed single read, and the record keeping
+  it through the walk (`VisibleFirstTests` for the record-only reads). 1,113 engine tests pass, 1 skipped as before. Of 39 parts
   and bounds of the rule changed in turn (`~/.local/share/187/mutate-298.py`), 37 fail a test. Two survive by design:
   the number's internal separators, whose removal changes no output (a separator followed by a digit starts another
   number, which sets the following words aside just the same), and the live seam's value read, which only a live click

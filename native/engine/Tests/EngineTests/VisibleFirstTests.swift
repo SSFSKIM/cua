@@ -283,6 +283,17 @@ final class VisibleFirstTests: XCTestCase {
     XCTAssertEqual(text?.editableAncestor.map { tree.id($0) }, 310)
   }
 
+  /// The review of 7f6eb3dc..b2f00ad5 (P2 2): the guard's record-only reads keep which label attributes failed to read.
+  func testTheGuardsRecordOnlyReadsCarryTheUnreadableLabels() {
+    let tree = omittedList()
+    let cell = 2001 + 2 * 210
+    tree.unreadableAttributes[cell] = ["AXTitle"]
+    let recording = walk(tree, Lineage(), visibleFrame: windowFrame, recordsScreenshot: true)
+    let read = recording.screenshotReads.first { tree.id($0.element) == cell }
+    XCTAssertEqual(read.map { $0.number < 0 }, true, "a record-only cell")
+    XCTAssertEqual(read?.labelsUnread, [.title])
+  }
+
   func testAWidthRuleOmittedListKeepsItsShownRowsInTheGuardsRecordOnly() {
     let tree = omittedList()
     let shownRows = Set((200..<240).map { 100 + $0 })

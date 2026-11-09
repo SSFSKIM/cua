@@ -22,6 +22,9 @@ private final class Node {
   /// What its AXEditableAncestor answers (#298's edited-text exemption, ruling 1ea561bc:553): the contenteditable region
   /// it lies in, where the app exposes one.
   weak var editableAncestor: Node?
+  /// Label attributes whose read fails, at the observation (for the walk's record) and now (the review of
+  /// 7f6eb3dc..b2f00ad5, P2 2): an error, not an attribute the element lacks.
+  var unreadable: Set<StalePointLabelPart> = []
   /// Its AXChildren read fails (at the observation, for the walk's record).
   var childrenUnread = false
   weak var parent: Node?
@@ -56,9 +59,19 @@ private final class Node {
 
 private var reads: StalePointReads<Node> {
   StalePointReads<Node>(role: { $0.role }, frame: { $0.frame }, parent: { $0.parent }, children: { $0.children },
-                                          title: { $0.title }, description: { $0.description }, value: { $0.value },
+                                          // A failed read answers none, as the live seam's `attribute` does.
+                                          title: { $0.unreadable.contains(.title) ? nil : $0.title },
+                                          description: { $0.unreadable.contains(.description) ? nil : $0.description },
+                                          value: { $0.unreadable.contains(.value) ? nil : $0.value },
                                           editableAncestor: { $0.editableAncestor }, actions: { $0.frame == nil ? nil : $0.actions },
-                                          same: { $0 === $1 })
+                                          label: { node, part in
+                                            if node.unreadable.contains(part) { return .unreadable }
+                                            switch part {
+                                            case .title: return .text(node.title)
+                                            case .description: return .text(node.description)
+                                            case .value: return .text(node.value)
+                                            }
+                                          }, same: { $0 === $1 })
 }
 
 /// The reads an observation with a screenshot emits for `root`'s tree, every node walked but `skipped` ones (as `TreeWalk`
@@ -70,11 +83,14 @@ private func walked(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) 
     let number = next
     next += 1
     let children = node.childrenUnread ? [] : node.children  // a failed AXChildren read decodes as none
-    reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.role, title: node.title.map(bounded),
-                                    description: node.description.map(bounded), frame: node.frame, actions: node.actions, childCount: children.count,
+    func read<T>(_ part: StalePointLabelPart, _ value: T?) -> T? { node.unreadable.contains(part) ? nil : value }  // a failed read decodes as none
+    reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.role,
+                                    title: read(.title, node.title).map(bounded), description: read(.description, node.description).map(bounded),
+                                    frame: node.frame, actions: node.actions, childCount: children.count,
                                     childrenRead: !node.childrenUnread, subrole: node.subrole,
-                                    value: screenshotLabelValue(role: node.role, node.value.map { $0 as CFString }),
-                                    editableAncestor: node.editableAncestor))
+                                    value: screenshotLabelValue(role: node.role, read(.value, node.value).map { $0 as CFString }),
+                                    editableAncestor: node.editableAncestor,
+                                    labelsUnread: screenshotLabelsUnread(role: node.role, Set(node.unreadable.map(\.attribute)))))
     for child in children where !skipped.contains(ObjectIdentifier(child)) { walk(child, parent: number, depth: depth + 1) }
   }
   walk(root, parent: nil, depth: 0)
@@ -2246,5 +2262,88 @@ final class RelabelledEditableTests: XCTestCase {
     let recording = walk(tree, Lineage(), recordsScreenshot: true)
     let text = recording.screenshotReads.first { tree.id($0.element) == 1 }
     XCTAssertEqual(text?.editableAncestor.map { tree.id($0) }, 0)
+  }
+}
+
+/// The review of 7f6eb3dc..b2f00ad5 (P2 2): a label attribute whose read failed is not one the element lacks. The label
+/// falls through to the next source only past an absent or empty one; where it would depend on an unreadable
+/// higher-priority attribute, at the observation or now, rule `relabelled` does not refuse.
+final class UnreadableLabelTests: XCTestCase {
+  private let point = CGPoint(x: 60, y: 120)
+
+  /// A button "Save" whose description is "Save changes", recorded with `atRecord` unreadable, read now with `now`.
+  private func judged(atRecord: Set<StalePointLabelPart> = [], now: Set<StalePointLabelPart> = [],
+                      title: String? = "Save", description: String? = "Save changes", change: (Node) -> Void = { _ in }) -> StalePointReason {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let button = Node("AXButton", CGRect(x: 20, y: 100, width: 120, height: 40), title: title, description: description)
+    window.add(button)
+    button.unreadable = atRecord
+    let nodes = recorded(window)
+    button.unreadable = now
+    change(button)
+    return stalePointVerdict(at: point, nodes: nodes, hit: button, reads: reads).reason
+  }
+
+  /// The title read fails at the click: the description is not compared with the recorded title.
+  func testATitleUnreadableNowDoesNotRefuse() {
+    XCTAssertEqual(judged(now: [.title]), .sameElement)
+    XCTAssertEqual(judged(now: [.title], change: { $0.description = "Delete" }), .sameElement)
+    // A title absent now (not failed) is no label, and the description is: it refuses, as before.
+    XCTAssertEqual(judged(change: { $0.title = nil }), .relabelled)
+  }
+
+  /// The title read failed at the observation: the recorded description is not taken for the label.
+  func testATitleUnreadableAtTheObservationDoesNotRefuse() {
+    XCTAssertEqual(judged(atRecord: [.title]), .sameElement)
+    XCTAssertEqual(judged(atRecord: [.title], change: { $0.title = "Delete" }), .sameElement)
+    // Absent at the observation: the description was the label, and a title "Save" now has other words.
+    XCTAssertEqual(judged(title: nil, change: { $0.title = "Save" }), .relabelled)
+  }
+
+  /// Only a higher-priority attribute counts: a description or a value unreadable behind a title that reads changes
+  /// nothing, and the title relabelled refuses.
+  func testALowerPriorityUnreadableAttributeChangesNothing() {
+    XCTAssertEqual(judged(atRecord: [.description], now: [.description], change: { $0.title = "Delete" }), .relabelled)
+    XCTAssertEqual(judged(now: [.description], title: nil, change: { $0.description = "Delete" }), .sameElement,
+                   "the description, now the label, unreadable")
+    // A text's value, below an empty title and description.
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 40), value: "Save")
+    window.add(text)
+    let nodes = recorded(window)
+    text.value = "Delete"
+    text.unreadable = [.value]
+    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .sameElement)
+    text.unreadable = [.description]
+    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .sameElement)
+    text.unreadable = []
+    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .relabelled)
+  }
+
+  /// What counts as unreadable: an error other than the attribute's absence (kAXErrorNoValue,
+  /// kAXErrorAttributeUnsupported), in the walk's batched read and in a single read now; and the record keeps it for the
+  /// label's attributes, the value an AXStaticText's only.
+  func testAnUnreadableAttributeIsAnErrorOtherThanAbsence() {
+    func errorSlot(_ code: AXError) -> Any { var code = code; return AXValueCreate(.axError, &code)! }
+    XCTAssertTrue(failedSlot(errorSlot(.cannotComplete)))
+    XCTAssertTrue(failedSlot(errorSlot(.failure)))
+    XCTAssertFalse(failedSlot(errorSlot(.noValue)))
+    XCTAssertFalse(failedSlot(errorSlot(.attributeUnsupported)))
+    XCTAssertFalse(failedSlot("Save" as CFString))
+    XCTAssertFalse(failedSlot(nil))
+    XCTAssertEqual(stalePointLabelRead("Save" as CFString, .success), .text("Save"))
+    XCTAssertEqual(stalePointLabelRead(nil, .noValue), .text(nil))
+    XCTAssertEqual(stalePointLabelRead(nil, .attributeUnsupported), .text(nil))
+    XCTAssertEqual(stalePointLabelRead(3 as CFNumber, .success), .text(nil))
+    XCTAssertEqual(stalePointLabelRead(nil, .cannotComplete), .unreadable)
+    XCTAssertEqual(screenshotLabelsUnread(role: "AXButton", ["AXTitle", "AXValue", "AXHelp"]), [.title])
+    XCTAssertEqual(screenshotLabelsUnread(role: "AXStaticText", ["AXDescription", "AXValue"]), [.description, .value])
+    XCTAssertEqual(ElementData(values: [:], unreadable: ["AXTitle"]).unreadable, ["AXTitle"])
+    // Through the walk.
+    let tree = FakeTree()
+    tree.children = [0: [1]]
+    tree.unreadableAttributes[1] = ["AXTitle"]
+    let recording = walk(tree, Lineage(), recordsScreenshot: true)
+    XCTAssertEqual(recording.screenshotReads.first { tree.id($0.element) == 1 }?.labelsUnread, [.title])
   }
 }

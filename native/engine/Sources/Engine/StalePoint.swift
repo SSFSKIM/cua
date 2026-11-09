@@ -45,6 +45,8 @@ struct ScreenshotNode<Element> {
   /// else the nearest ancestor in the record that is an AXTextArea or answers an AXEditableAncestor of its own. #298's
   /// edited-text exemption (the design session's ruling 1ea561bc:553) compares it with the one found now. Nil otherwise.
   let editableAncestor: Element?
+  /// Its label's attributes whose read failed at the observation, so the label read then is unknown past them (#298).
+  let labelsUnread: Set<StalePointLabelPart>
   /// Its AX frame at the observation, in global screen points (top-left origin), as coordinate clicks are posted.
   let frame: CGRect
   /// The part of the frame its clipping ancestors left showing (`visibleFrame`'s rule over the recorded tree): what the
@@ -93,6 +95,42 @@ struct ScreenshotNodeRead<Element> {
   var value: String? = nil
   /// Its AXEditableAncestor (`ElementData.editableAncestor`), for #298's edited-text exemption.
   var editableAncestor: Element? = nil
+  /// The label's attributes whose read failed at the observation (`screenshotLabelsUnread`): an error, not their absence.
+  var labelsUnread: Set<StalePointLabelPart> = []
+}
+
+/// The attributes a node's label (#298's `stalePointLabel`) is taken from, in priority order: the title, the
+/// description, and an AXStaticText's value.
+enum StalePointLabelPart: CaseIterable, Hashable {
+  case title, description, value
+  var attribute: String {
+    switch self {
+    case .title: return kAXTitleAttribute
+    case .description: return kAXDescriptionAttribute
+    case .value: return kAXValueAttribute
+    }
+  }
+}
+
+/// One label attribute read now (the review of 7f6eb3dc..b2f00ad5, P2 2): its text, nil when the element lacks it (an
+/// absent attribute, or a value that is no text), or unreadable (any other error), which the label must not fall past.
+enum StalePointLabelRead: Equatable { case text(String?), unreadable }
+
+/// The label attributes the record keeps as unreadable, from the walk's failed reads (`ElementData.unreadable`): the
+/// title and the description, and the value of an AXStaticText only (no other role's value is its label).
+func screenshotLabelsUnread(role: String, _ unreadable: Set<String>) -> Set<StalePointLabelPart> {
+  Set(StalePointLabelPart.allCases.filter { unreadable.contains($0.attribute) && ($0 != .value || role == "AXStaticText") })
+}
+
+/// A label attribute's single read now (`copyAttribute`'s value and error) as `StalePointLabelRead`: a string or an
+/// attributed string's text; nothing for kAXErrorNoValue, kAXErrorAttributeUnsupported or a value that is no text;
+/// unreadable for any other error.
+func stalePointLabelRead(_ value: CFTypeRef?, _ error: AXError) -> StalePointLabelRead {
+  switch error {
+  case .success: return .text(value.flatMap(labelText))
+  case .noValue, .attributeUnsupported: return .text(nil)
+  default: return .unreadable
+  }
 }
 
 /// The value the record keeps of an element (#298): an AXStaticText's, as the walk read it (a string, or an attributed
@@ -166,6 +204,7 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
     nodes.append(ScreenshotNode(element: read.element, role: read.role, title: read.title, description: read.description,
                                 subrole: read.subrole, value: read.value,
                                 editableAncestor: read.role == "AXStaticText" ? read.editableAncestor ?? editableAbove : nil,
+                                labelsUnread: read.labelsUnread,
                                 frame: frame, shown: shown, depth: read.depth,
                                 subtreeRecorded: !incomplete.contains(read.number),
                                 thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
@@ -330,7 +369,19 @@ struct StalePointReads<Element> {
   /// none, so no text counts as edited.
   var editableAncestor: (Element) -> Element? = { _ in nil }
   var actions: (Element) -> [String]? = { _ in nil }
+  /// A label attribute read so that a failed read is told from an absent one (#298's rule, the review of
+  /// 7f6eb3dc..b2f00ad5, P2 2). A seam without it reads through `title`, `description` and `value`, whose nil is absence.
+  var label: ((Element, StalePointLabelPart) -> StalePointLabelRead)? = nil
   var same: (Element, Element) -> Bool
+
+  func readLabel(_ element: Element, _ part: StalePointLabelPart) -> StalePointLabelRead {
+    if let label { return label(element, part) }
+    switch part {
+    case .title: return .text(title(element))
+    case .description: return .text(description(element))
+    case .value: return .text(value(element))
+    }
+  }
 }
 
 extension StalePointReads where Element == AXUIElement {
@@ -339,7 +390,11 @@ extension StalePointReads where Element == AXUIElement {
                     parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead,
                     title: { liveLabel($0, kAXTitleAttribute) }, description: { liveLabel($0, kAXDescriptionAttribute) },
                     value: { liveLabel($0, kAXValueAttribute) }, editableAncestor: { elementAttribute($0, "AXEditableAncestor") },
-                    actions: { actionNames(of: $0) }, same: { CFEqual($0, $1) })
+                    actions: { actionNames(of: $0) },
+                    label: { element, part in
+                      let read = copyAttribute(element, part.attribute)
+                      return stalePointLabelRead(read.value, read.error)
+                    }, same: { CFEqual($0, $1) })
   }
 }
 
@@ -445,15 +500,34 @@ let relabelUncomparedSubroles: Set<String> = ["AXTabButton"]
 /// #298's rule `relabelled` (the design session's ruling 31a62775), on a node found by its own handle whose frame still
 /// holds the point: the label it reads now when that label's words differ from the recorded label's, both labels
 /// non-empty, the node not one of the uncompared (`relabelUncomparedRoles`, `relabelUncomparedSubroles`); else nil. It
-/// reads the title, then the description only when the title is empty, then (for an AXStaticText) the value only when
-/// both are, each cut as the record's was.
+/// reads the title, then the description only when the title is empty or absent, then (for an AXStaticText) the value
+/// only when both are, each cut as the record's was. A label never falls past an attribute whose read failed, at the
+/// observation (`ScreenshotNode.labelsUnread`) or now (`StalePointReads.readLabel`): the label is then unknown, and the
+/// rule keeps the point (the review of 7f6eb3dc..b2f00ad5, P2 2: a button "Save" described "Save changes", its title
+/// read failing on one side, would otherwise compare its description with its title).
 func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> String? {
-  guard !relabelUncomparedRoles.contains(node.role), !relabelUncomparedSubroles.contains(node.subrole ?? ""),
-        let was = stalePointLabel(title: node.title, description: node.description, value: node.value) else { return nil }
+  guard !relabelUncomparedRoles.contains(node.role), !relabelUncomparedSubroles.contains(node.subrole ?? "") else { return nil }
+  let parts: [StalePointLabelPart] = node.role == "AXStaticText" ? [.title, .description, .value] : [.title, .description]
+  var was: String?
+  for part in parts {
+    if node.labelsUnread.contains(part) { return nil }
+    let recorded = part == .title ? node.title : part == .description ? node.description : node.value
+    if let text = nonEmpty(recorded) {
+      was = text
+      break
+    }
+  }
+  guard let was else { return nil }
   let element = node.element
-  guard let now = nonEmpty(reads.title(element).map(bounded)) ?? nonEmpty(reads.description(element).map(bounded))
-          ?? (node.role == "AXStaticText" ? nonEmpty(reads.value(element).map(bounded)) : nil),
-        stalePointLabelWords(was) != stalePointLabelWords(now) else { return nil }
+  var now: String?
+  for part in parts {
+    guard case .text(let text) = reads.readLabel(element, part) else { return nil }
+    if let text = nonEmpty(text.map(bounded)) {
+      now = text
+      break
+    }
+  }
+  guard let now, stalePointLabelWords(was) != stalePointLabelWords(now) else { return nil }
   // The edited-text exemption (ruling 1ea561bc:553): the text of an editable region, changed by the model's own typing.
   if let region = node.editableAncestor, editedInPlace(element, region: region, reads) { return nil }
   return now

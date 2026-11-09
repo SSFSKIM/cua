@@ -879,7 +879,7 @@ final class RereadDeadlineTests: XCTestCase {
     var clock: Double = 10_000
     func caret(boxesAt: Double, freshSince: Double?) -> Result<Int, CaretNotPlaced> {
       caretAwaitingBoxes(fresh: true, freshSince: freshSince, offset: { clock >= boxesAt ? .success(4) : .failure(.noCharacterBoxes) },
-                         focused: { true }, sameTarget: { true }, valueLength: { 10 }, now: { clock }, sleep: { clock += $0 })
+                         sameTarget: { true }, valueLength: { 10 }, now: { clock }, sleep: { clock += $0 })
     }
     XCTAssertEqual(caret(boxesAt: 12_400, freshSince: 10_000), .success(4), "boxes 2.4 s after the write")
     clock = 10_000

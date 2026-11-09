@@ -14,6 +14,8 @@ final class FakeTree {
   var visible: [Int: [Int]] = [:]
   var frames: [Int: CGRect] = [:]
   var unreadable: Set<Int> = []
+  /// The elements whose handle reads as destroyed (kAXErrorInvalidUIElement), by id: Chromium's re-created columns (#303).
+  var gone: Set<Int> = []
   /// Attributes beyond role, title and children, by id.
   var extra: [Int: [String: CFTypeRef]] = [:]
   /// What the per-element reads answer, by id: the settable attributes, the actions, the Markdown value.
@@ -67,6 +69,12 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   }
 
   override func owner(_ element: AXUIElement) -> pid_t { tree.owners[tree.id(element)] ?? 4242 }
+  /// Gone checks by id.
+  var goneReads: [Int: Int] = [:]
+  override func isGone(_ element: AXUIElement) -> Bool {
+    goneReads[tree.id(element), default: 0] += 1
+    return tree.gone.contains(tree.id(element))
+  }
   var markdownCalls = 0
   override func actions(_ element: AXUIElement) -> [String] { tree.actions[tree.id(element)] ?? [] }
   override func isSettable(_ element: AXUIElement, _ attribute: String, phase: String) -> Bool {

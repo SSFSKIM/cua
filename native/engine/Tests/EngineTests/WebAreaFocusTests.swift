@@ -258,8 +258,13 @@ final class WebAreaFocusTests: XCTestCase {
     XCTAssertEqual(lines(CGPoint(x: 5, y: 60)), outside, "below every line")
     XCTAssertEqual(lines(CGPoint(x: -4, y: 5)), outside, "left of the first character")
     XCTAssertEqual(lines(CGPoint(x: 12, y: 5), range: 3..<5), outside, "the line's characters outside the scanned range")
-    XCTAssertEqual(caretOffset(at: .zero, length: caretScanLimit + 1, range: 0..<(caretScanLimit + 1),
-                               bounds: { _ in CGRect(x: 0, y: 0, width: 1, height: 1) }, isLineBreak: { _ in false }, mayLackBox: { _ in false }), outside, "too long to scan")
+  }
+
+  /// #290: a text longer than the linear scan's reach is searched, no longer refused for its length (CaretSearchTests).
+  func testATextLongerThanTheScanLimitIsSearched() {
+    XCTAssertEqual(caretOffset(at: CGPoint(x: 0.75, y: 0.5), length: caretScanLimit + 1, range: 0..<(caretScanLimit + 1),
+                               bounds: { CGRect(x: CGFloat($0), y: 0, width: 1, height: 1) }, isLineBreak: { _ in false }, mayLackBox: { _ in false }),
+                   .success(1))
   }
 
   /// Before Chromium's complete accessibility mode every character's box is empty: that is told apart from boxes read

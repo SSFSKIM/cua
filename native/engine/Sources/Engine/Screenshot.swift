@@ -219,9 +219,13 @@ struct ObservedScreenshot {
   /// The image's size in pixels, the space the model's coordinates arrive in (#328: a point outside it is refused).
   let width: Int
   let height: Int
+  /// Every element the walk recorded, framed or frameless, with whether it recorded all of the element's children
+  /// (#330's rule dL, StalePoint.swift `screenshotChildrenRecorded`).
+  let recorded: [ElementKey: Bool]
 
-  init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = []) {
+  init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = [], recorded: [ElementKey: Bool] = [:]) {
     self.window = window
+    self.recorded = recorded
     width = image.width
     height = image.height
     windowOrigin = image.frame.origin

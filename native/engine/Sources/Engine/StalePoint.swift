@@ -20,7 +20,10 @@ import Foundation
 // window that the screenshot's window list did not hold refuses (`newWindowAbove`: Safari's address-field overlay, which
 // swallows the next click anywhere in the page), and a recorded node inside an AXWebArea requires the hit inside that
 // same web area (`otherWebArea`: Chrome keeps answering the page a tab has left, and Firefox's urlbar list lies over the
-// page). Everything here reads through closures, so the rule is unit-tested over a fake tree.
+// page). #330 adds rule dL (the design session's ruling 11bec0ed): in a web area, a point the rest keeps refuses when the
+// hit lies in an element the record lacks, under a parent the record holds with every child and that lists it now
+// (`newElementOverPoint`: a page's own suggestion list over the control). Everything here reads through closures, so the
+// rule is unit-tested over a fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
 struct ScreenshotNode<Element> {
@@ -132,6 +135,18 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
   return nodes
 }
 
+/// #330's rule dL: every element of the walk's record (`reads`), framed or frameless, keyed by `key`, with whether the walk
+/// recorded every one of its direct children (none left out by a width cut, the depth cap, the budget or deadline, or a
+/// failed read). A child such an element lists now that the record lacks is new since the screenshot.
+func screenshotChildrenRecorded<Element, Key: Hashable>(_ reads: [ScreenshotNodeRead<Element>], key: (Element) -> Key) -> [Key: Bool] {
+  var recordedChildren: [Int: Int] = [:]
+  for read in reads { if let parent = read.parent { recordedChildren[parent, default: 0] += 1 } }
+  var complete: [Key: Bool] = [:]
+  complete.reserveCapacity(reads.count)
+  for read in reads { complete[key(read.element)] = (recordedChildren[read.number] ?? 0) >= read.childCount }
+  return complete
+}
+
 /// Whether `rect` holds `point`, its edges included.
 func holdsPoint(_ rect: CGRect, _ point: CGPoint) -> Bool {
   point.x >= rect.minX && point.x <= rect.maxX && point.y >= rect.minY && point.y <= rect.maxY
@@ -208,9 +223,13 @@ enum StalePointReason: String, Equatable {
   /// Refused (#316's rule G): the recorded node lies in an AXWebArea and the hit does not (`ScreenshotNode.webArea`): the
   /// point reaches another document now, or something over the page.
   case otherWebArea
+  /// Refused (#330's rule dL, `newElementOverPoint`): the recorded node lies in an AXWebArea and the hit lies in an element
+  /// the page added over the point since the screenshot (a suggestion list, a popup).
+  case newElementOverPoint
 
   var refuses: Bool {
     self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther || self == .newWindow || self == .otherWebArea
+      || self == .newElementOverPoint
   }
 }
 
@@ -241,6 +260,9 @@ struct StalePointVerdict<Element> {
   /// #316's rule G: how many parents of the hit were read to find the recorded node's web area (nil when the rule did not
   /// walk: no web area recorded, no hit, or the hit the node itself).
   var webAreaReads: Int?
+  /// #330's rule dL: what it read once the record named a new element on the hit's chain (its parent's children, then the
+  /// node's parents when the node is not on the chain); nil when it read nothing.
+  var newElementReads: Int?
   /// #316's rule W: the new window over the screenshot's, for `newWindow`.
   var newWindow: ListedWindow?
   var refused: Bool { reason.refuses }
@@ -325,18 +347,71 @@ private func isInside<Element>(_ element: Element, _ container: Element, _ reads
 }
 
 /// #316's rule G: whether `hit` is `area` or lies inside it, its parents walked (nothing else read) until one is `area`, up
-/// to `stalePointAncestorLevels`, and how many were read. Inside, the walk stops at the area, so a hit in a nested
-/// document (an iframe's web area inside the page's) reaches the page's further up; outside, it ends at the application,
-/// whose parent is none.
-func liesIn<Element>(_ hit: Element, _ area: Element, _ reads: StalePointReads<Element>) -> (inside: Bool, reads: Int) {
-  if reads.same(hit, area) { return (true, 0) }
+/// to `stalePointAncestorLevels`, how many were read, and the chain walked: the hit, then each parent read (inside, the
+/// area last), which #330's rule dL judges. Inside, the walk stops at the area, so a hit in a nested document (an iframe's
+/// web area inside the page's) reaches the page's further up; outside, it ends at the application, whose parent is none.
+func liesIn<Element>(_ hit: Element, _ area: Element, _ reads: StalePointReads<Element>) -> (inside: Bool, reads: Int, chain: [Element]) {
+  if reads.same(hit, area) { return (true, 0, [hit]) }
+  var chain = [hit]
   var current = hit
   for level in 0..<stalePointAncestorLevels {
-    guard let next = reads.parent(current) else { return (false, level + 1) }
-    if reads.same(next, area) { return (true, level + 1) }
+    guard let next = reads.parent(current) else { return (false, level + 1, chain) }
+    chain.append(next)
+    if reads.same(next, area) { return (true, level + 1, chain) }
     current = next
   }
-  return (false, stalePointAncestorLevels)
+  return (false, stalePointAncestorLevels, chain)
+}
+
+/// How #330's rule dL reads an element of the hit's chain against the record (`newElementOverPoint`).
+private enum ChainStatus { case recorded(allChildren: Bool), new, insideNew, unknown }
+
+/// #330's rule dL (the design session's ruling 11bec0ed): whether the hit lies in an element the page added over the point
+/// since the screenshot, and what that took to read. `chain` is the hit and its parents up to the recorded node's web area
+/// (rule G's walk, `liesIn`, which found the hit inside); `recorded` answers, for each element of the record, whether the
+/// walk recorded every one of its children (`screenshotChildrenRecorded`), and nil for an element the record lacks. From
+/// the web area down, an element is recorded; new (the record lacks it, its parent recorded with every child); inside a
+/// new one; or unknown (the record lacks it, under a parent whose children the record does not all hold, or under an
+/// unknown one). The topmost new element refuses when its parent's AXChildren lists it now, since Chrome hit-tests a
+/// button to its label's text, which no AXChildren lists and the walk never records, and when it is neither `current`,
+/// the recorded node as found now, nor holds it: #296's control re-created in place, and a wrapper re-created around it,
+/// are the node, not something over it. Nothing is read until the record names a new element; then its parent's
+/// children, and, when `current` is not on the chain, `current`'s parents up to the new element or the web area.
+func newElementOverPoint<Element>(chain: [Element], current: Element, recorded: (Element) -> Bool?,
+                                  reads: StalePointReads<Element>) -> (found: Bool, reads: Int) {
+  var parent = ChainStatus.unknown
+  var topmost: Int?
+  for index in chain.indices.reversed() {
+    let status: ChainStatus
+    if let allChildren = recorded(chain[index]) {
+      status = .recorded(allChildren: allChildren)
+    } else {
+      switch parent {
+      case .new, .insideNew: status = .insideNew
+      case .recorded(allChildren: true): status = .new
+      case .recorded(allChildren: false), .unknown: status = .unknown
+      }
+    }
+    if case .new = status { topmost = index; break }
+    parent = status
+  }
+  guard let topmost else { return (false, 0) }
+  let element = chain[topmost]
+  let currentAt = chain.firstIndex { reads.same($0, current) }
+  if let currentAt, topmost >= currentAt { return (false, 0) }  // the node itself, or an element holding it
+  var count = 1
+  guard reads.children(chain[topmost + 1])?.contains(where: { reads.same($0, element) }) == true else { return (false, count) }
+  if currentAt == nil, let area = chain.last {
+    var below = current
+    for _ in 0..<stalePointAncestorLevels {
+      guard let next = reads.parent(below) else { break }
+      count += 1
+      if reads.same(next, element) { return (false, count) }
+      if reads.same(next, area) { break }
+      below = next
+    }
+  }
+  return (true, count)
 }
 
 /// Up to `stalePointDescendantBound` of `element`'s descendants, breadth-first.
@@ -380,7 +455,11 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
 ///
 /// With the node's handle gone and no real hit (none, or one whose role cannot be read), `rehit` hit-tests the point again
 /// (`stalePointRehits` times, `sleep` `stalePointRehitMs` before each) until a real hit comes, which the rest judges.
-func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero, nodes: [ScreenshotNode<Element>], hit first: Element?,
+///
+/// `recorded` is the record's every element, framed or frameless, with whether its children all were recorded
+/// (`screenshotChildrenRecorded`; nil for an element the record lacks), which #330's rule dL judges the hit's chain by.
+func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero, nodes: [ScreenshotNode<Element>],
+                                recorded: (Element) -> Bool? = { _ in nil }, hit first: Element?,
                                 rehit: () -> Element? = { nil }, sleep: (Double) -> Void = { _ in },
                                 reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
   let shown = CGPoint(x: point.x - windowShift.dx, y: point.y - windowShift.dy)
@@ -408,9 +487,10 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   guard let current = verdict.current else { return verdict }
   let gaps = node.gapsBelow
   var webAreaReads: Int?
+  var newElementReads: Int?
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
     StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: hitRole, hit: hit, gaps: gaps,
-                      point: point, windowShift: windowShift, nodes: nodes, webAreaReads: webAreaReads)
+                      point: point, windowShift: windowShift, nodes: nodes, webAreaReads: webAreaReads, newElementReads: newElementReads)
   }
   // Judged in order: the node's identity (above) and its frame, then the hit (the reasons name what was read, kept or
   // refused). A node the record holds incompletely has passed as every node passes by here (the design session's
@@ -420,29 +500,45 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   // #316's rule G: a node the screenshot showed in a web area is judged only by a hit in that same web area, its nearest
   // one in the record (so an iframe's hit passes inside the page's, and a page's inside its iframe's own). The hit that is
   // the node's own handle is in it by the record; an empty hit is judged as before.
+  var chain: [Element]?
   if let hit, let area = node.webArea, !reads.same(hit, node.element) {
     let walk = liesIn(hit, area, reads)
     webAreaReads = walk.reads
     if !walk.inside { return judged(.otherWebArea) }
+    chain = walk.chain
   }
-  if !node.subtreeRecorded, hit.map({ reads.same($0, current) || isInside($0, current, reads) }) ?? true {
-    return judged(.unrecordedDescendant)
+  func judgedByHit() -> StalePointVerdict<Element> {
+    if !node.subtreeRecorded, hit.map({ reads.same($0, current) || isInside($0, current, reads) }) ?? true {
+      return judged(.unrecordedDescendant)
+    }
+    guard let hit else { return judged(.noHit) }
+    if reads.same(hit, current) { return judged(.sameElement) }
+    guard let hitRole, stalePointInteractiveRoles.contains(hitRole) else { return judged(.nonInteractiveHit) }
+    if isInside(current, hit, reads) { return judged(.hitAboveNode) }
+    // #301: an interactive hit under a strip in the node's recorded subtree whose children the record lacks lies in its
+    // unrecorded interior (a collapsed container's control the budget cut), so the node, which passed as every node does,
+    // is all that is checked.
+    if insideGap(hit, gaps, reads) { return judged(.unrecordedDescendant) }
+    // #305: the hit is itself a recorded node the screenshot showed at the point, in its place.
+    if let by = recordedHitAtPoint(hit, at: point, windowShift: windowShift, nodes: nodes, reads) {
+      var kept = judged(.recordedHit)
+      kept.recordedHitBy = by
+      return kept
+    }
+    return judged(.interactiveHit)
   }
-  guard let hit else { return judged(.noHit) }
-  if reads.same(hit, current) { return judged(.sameElement) }
-  guard let hitRole, stalePointInteractiveRoles.contains(hitRole) else { return judged(.nonInteractiveHit) }
-  if isInside(current, hit, reads) { return judged(.hitAboveNode) }
-  // #301: an interactive hit under a strip in the node's recorded subtree whose children the record lacks lies in its
-  // unrecorded interior (a collapsed container's control the budget cut), so the node, which passed as every node does,
-  // is all that is checked.
-  if insideGap(hit, gaps, reads) { return judged(.unrecordedDescendant) }
-  // #305: the hit is itself a recorded node the screenshot showed at the point, in its place.
-  if let by = recordedHitAtPoint(hit, at: point, windowShift: windowShift, nodes: nodes, reads) {
-    var kept = judged(.recordedHit)
-    kept.recordedHitBy = by
+  let byHit = judgedByHit()
+  // #330's rule dL, after #296's checks and rule G: a point they keep in a web area refuses when the hit lies in an element
+  // the page added over it since the screenshot (`newElementOverPoint`), judged on G's walk. A refusal keeps its reason.
+  guard !byHit.refused, let chain else { return byHit }
+  let added = newElementOverPoint(chain: chain, current: current, recorded: recorded, reads: reads)
+  if added.reads > 0 { newElementReads = added.reads }
+  guard added.found else {
+    var kept = byHit
+    kept.newElementReads = newElementReads
     return kept
   }
-  return judged(.interactiveHit)
+  return judged(.newElementOverPoint)
 }
 
 /// Which frame carried a `recordedHit` (#305, the design session's ruling a27fc57c; the meta's `recordedHitBy`): the
@@ -560,6 +656,8 @@ struct StalePointRecord: Equatable {
   /// #316's costs, apart from `ms`, which covers them: rule W's window-list read and check, and rule G's parent reads.
   var windowsMs: Double?
   let webAreaReads: Int?
+  /// #330's rule dL's reads (`StalePointVerdict.newElementReads`), also inside `ms`.
+  let newElementReads: Int?
   /// For `newWindow`, the new window's number.
   let newWindow: CGWindowID?
 
@@ -571,6 +669,7 @@ struct StalePointRecord: Equatable {
     hitRole = verdict.hitRole
     recordedHitBy = verdict.recordedHitBy
     webAreaReads = verdict.webAreaReads
+    newElementReads = verdict.newElementReads
     newWindow = verdict.newWindow?.number
     self.ms = ms
     self.rechecked = rechecked
@@ -584,6 +683,7 @@ struct StalePointRecord: Equatable {
     if let recordedHitBy { wire["recordedHitBy"] = recordedHitBy.rawValue }
     if let windowsMs { wire["windowsMs"] = (windowsMs * 1000).rounded() / 1000 }
     if let webAreaReads { wire["webAreaReads"] = webAreaReads }
+    if let newElementReads { wire["newElementReads"] = newElementReads }
     if let newWindow { wire["newWindow"] = Int(newWindow) }
     if rechecked { wire["rechecked"] = true }
     if afterActivation { wire["afterActivation"] = true }
@@ -604,7 +704,8 @@ func stalePointPressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVe
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
     StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: reads.role(pressed), hit: pressed,
                       gaps: verdict.gaps, point: verdict.point, windowShift: verdict.windowShift, nodes: verdict.nodes,
-                      webAreaReads: verdict.webAreaReads)  // #316: the hit's walk, which this verdict was judged after
+                      webAreaReads: verdict.webAreaReads,  // #316: the hit's walk, which this verdict was judged after
+                      newElementReads: verdict.newElementReads)  // #330: and rule dL's reads on it
   }
   // Inside a node the record holds incompletely, or under one of its strips whose children it lacks (#301).
   if (!node.subtreeRecorded && isInside(pressed, current, reads)) || insideGap(pressed, verdict.gaps, reads) {
@@ -695,6 +796,13 @@ func stalePointName(role: String?, title: String?, description: String?) -> Stri
 /// The guard's refusal (#296): the screenshot's element at the point and what became of it, what the point reaches now,
 /// and the re-observation that lets the model aim again. Nothing was posted.
 func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: String?, afterActivation: Bool = false) -> EngineError {
+  let there = now.map { "; \($0) is there now" } ?? ""
+  let sent = afterActivation ? "The app was activated in the background, but nothing was pressed." : "Nothing was sent."
+  // #330's rule dL: the recorded element is still there, under something the page added; dismissing that is a way on too.
+  if reason == .newElementOverPoint {
+    return EngineError(name: "screenChangedSinceScreenshot",
+      "The screen changed since the screenshot: a new element, such as a suggestion list or popup, has appeared over the \(was) it showed at this point\(there). \(sent) Call getScreenshot for a new screenshot, or press Escape to dismiss what appeared, before clicking.")
+  }
   let change: String
   switch reason {
   case .frameMoved: change = "has moved away from it"
@@ -702,9 +810,8 @@ func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: St
   case .otherWebArea: change = "is in a page the point no longer reaches"
   default: change = "is gone"
   }
-  let there = now.map { "; \($0) is there now" } ?? ""
   return EngineError(name: "screenChangedSinceScreenshot",
-    "The screen changed since the screenshot: the \(was) it showed at this point \(change)\(there). \(afterActivation ? "The app was activated in the background, but nothing was pressed." : "Nothing was sent.") Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    "The screen changed since the screenshot: the \(was) it showed at this point \(change)\(there). \(sent) Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
 }
 
 /// #316's rule W's refusal: the same name as the guard's other refusals, since the model's remedy is the same (a new
@@ -754,8 +861,8 @@ extension Engine {
       defer { windowsMs = monotonicMilliseconds() - read }
       return onScreenWindowList()
     }) {
-      stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], hit: hit, rehit: rehit,
-                        sleep: { usleep(UInt32($0 * 1000)) }, reads: reads)
+      stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], recorded: { screenshot?.recorded[ElementKey(element: $0)] },
+                        hit: hit, rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) }, reads: reads)
     }
     var outcome = stalePointOutcome(verdict, ms: monotonicMilliseconds() - started, app: app.displayName, reads: reads)
     outcome.record.windowsMs = windowsMs
@@ -766,7 +873,8 @@ extension Engine {
   func stalePointRecheck(at point: CGPoint, shift: CGVector, window: AXUIElement, appPid: pid_t, app: ResolvedApp,
                          context: ExecutionContext) -> StalePointVerdict<AXUIElement> {
     let rehit = { hitTest(window: window, pid: appPid, at: point) }
-    return stalePointVerdict(at: point, windowShift: shift, nodes: context.connection.observedScreenshot(app: app)?.nodes ?? [], hit: rehit(),
-                             rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) }, reads: .live)
+    let screenshot = context.connection.observedScreenshot(app: app)
+    return stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], recorded: { screenshot?.recorded[ElementKey(element: $0)] },
+                             hit: rehit(), rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) }, reads: .live)
   }
 }

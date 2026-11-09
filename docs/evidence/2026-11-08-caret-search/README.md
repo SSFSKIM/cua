@@ -46,14 +46,14 @@ They do not show that the offset is the one under the point. That rests on the r
 
 ## Offline replay over the dumped boxes
 
-`replay <boxes.json> 0.1`: the branch's `caretOffset` (extracted from 93bc212e) against #283's linear scan alone. It runs
+`replay <boxes.json> 0.1`: the branch's `caretOffset` (extracted from the head, with the review's direction probe) against #283's linear scan alone. It runs
 at the click point and at a grid of 24,400 points over each field and 20 pt past it on every side. Same on both runners.
 
 | dump | value read | at the click: search | at the click: linear scan | grid agreement | search reads, mean / max |
 |---|---|---|---|---|---|
-| `lta` | 3,074 | 1,408 in 27 reads | 1,408 in 1,409 reads | 24,400 / 24,400 | 357 / 3,074 |
-| `hta` | 10,000 (capped) | 9,526 in 27 reads | 9,526 in 9,527 reads | 24,400 / 24,400 | 557 / 5,002 |
-| `hta-far` | 10,000 (capped) | `pointOutsideText` in 5,000 reads | `pointOutsideText` in 10,000 reads | 24,400 / 24,400 | 557 / 5,002 |
+| `lta` | 3,074 | 1,408 in 29 reads | 1,408 in 1,409 reads | 24,400 / 24,400 | 358 / 3,074 |
+| `hta` | 10,000 (capped) | 9,526 in 29 reads | 9,526 in 9,527 reads | 24,400 / 24,400 | 559 / 5,003 |
+| `hta-far` | 10,000 (capped) | `pointOutsideText` in 5,002 reads | `pointOutsideText` in 10,000 reads | 24,400 / 24,400 | 559 / 5,003 |
 
 The grid's means are carried by its misses (2,650 and 2,592 of the points fall outside the text). Each miss reads the
 whole field when it is 5,000 characters or shorter, otherwise the 5,000-character window.
@@ -65,11 +65,15 @@ whole field when it is 5,000 characters or shorter, otherwise the 5,000-characte
 - **The cost of a miss.** A point outside the text, or past the cap, still costs the bounded linear scan: up to 5,000
   reads, about 500 ms at the runner's 0.1 ms per read.
 - **Right-to-left text** over 5,000 characters is refused with nothing read, as on main. So is a text over 5,000
-  characters whose boxes the search reads out of reading order (a vertical layout).
+  characters whose boxes the search reads out of reading order, or whose first characters run vertically or leftward;
+  within 5,000 characters such a text gets the linear scan.
+- **A character set wholly below its line** (vertical-align) in a contenteditable region could be taken for a line's
+  wrap. Characters of other sizes on one line overlap vertically and fall back to the linear scan.
 - **#341.** In a scrolled textarea the offset is the one under the point in the field's top-scrolled layout, on main
   as on the branch.
 
 ## Tests
 
-`CaretSearchTests` (10) and the engine's `swift test` pass. The hosted A/B ran on 93bc212e. 66017fb1, from the review,
-changes only text past 5,000 characters whose boxes run out of reading order, which no cell here has.
+`CaretSearchTests` (11) and the engine's `swift test` pass. The hosted A/B ran on 93bc212e. The review's changes (66017fb1 and the direction
+probe after it) change only text whose boxes do not run rightward on a line (vertical or out of order), which no cell
+here has; the probe adds 2 reads at each click.

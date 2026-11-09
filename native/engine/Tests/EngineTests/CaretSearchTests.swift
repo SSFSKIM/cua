@@ -236,7 +236,23 @@ final class CaretSearchTests: XCTestCase {
     let bounds = { (index: Int) -> CGRect? in CGRect(x: 1000 - CGFloat(index / 100) * 10, y: CGFloat(index % 100) * 20, width: 10, height: 20) }
     let value = String(repeating: "a", count: 10_000)
     XCTAssertEqual(textCaretOffset(at: CGPoint(x: 1020, y: 5), value: value, bounds: bounds), .failure(.pointOutsideText))
-    XCTAssertEqual(caretSearch(at: CGPoint(x: 1020, y: 5), 0..<10_000, box: bounds, isLineBreak: { _ in false }), .disordered(at: 7501))
+    guard case .disordered = caretSearch(at: CGPoint(x: 1020, y: 5), 0..<10_000, box: bounds, isLineBreak: { _ in false }) else {
+      return XCTFail("a vertical layout is disordered")
+    }
+  }
+
+  /// Vertical text is known before any bisection, from the first two neighbouring characters (the review of 66017fb1):
+  /// four characters in two columns get the linear scan's answer, and a long vertical text whose run of empty boxes
+  /// stops the search early is refused, not answered from a window.
+  func testVerticalTextIsKnownFromItsFirstCharacters() {
+    let short: [CGRect] = [CGRect(x: 200, y: 0, width: 10, height: 20), CGRect(x: 200, y: 20, width: 10, height: 20),
+                           CGRect(x: 190, y: 0, width: 10, height: 20), CGRect(x: 190, y: 20, width: 10, height: 20)]
+    XCTAssertEqual(textCaretOffset(at: CGPoint(x: 200, y: 25), value: "abcd", bounds: { short[$0] }), .success(1))
+    let long = { (index: Int) -> CGRect? in
+      (7000..<7070).contains(index) ? nil : CGRect(x: 1000 - CGFloat(index / 100) * 10, y: CGFloat(index % 100) * 20, width: 10, height: 20)
+    }
+    XCTAssertEqual(textCaretOffset(at: CGPoint(x: 1020, y: 5), value: String(repeating: "a", count: 10_000), bounds: long),
+                   .failure(.pointOutsideText))
   }
 
   /// A right-to-left line too short for the search to read two of its boxes shows it no order broken, so a text holding

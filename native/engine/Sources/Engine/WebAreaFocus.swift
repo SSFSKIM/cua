@@ -114,9 +114,11 @@ func webAreaFocusTarget<Element>(_ hit: Element, role: (Element) -> String?, sub
 /// failed read) at a probe is stepped past to the nearest usable one, never inferred across, at most
 /// `caretSearchStepLimit` of them; two usable boxes read out of that order (a vertical or right-to-left layout), or a
 /// step limit reached, end the search with no offset taken from it; out of order, a range past `caretScanLimit` is
-/// refused (`pointOutsideText`, #283's answer), since no window near the point is known. Every caller passes text of
-/// one style, a field's value or one static text, so a line's boxes share their top and height: a character raised or
-/// lowered within its line, which the bisections would read as a line's edge, comes only from mixed styles. `searchable` false skips the search: a text holding
+/// refused (`pointOutsideText`, #283's answer), since no window near the point is known. The direction is read first
+/// (`caretSearch`): vertical or leftward text is not searched. A line end is taken from the search only where the next
+/// character lies wholly below (the linear scan's wrap test); characters of other sizes on one line overlap vertically,
+/// so a line the bisections cut short at one fails it and the linear scan answers. A character set wholly below its
+/// line (vertical-align) would pass it: a stated limit. `searchable` false skips the search: a text holding
 /// right-to-left characters (`holdsRightToLeft`), whose short lines may show the search too few boxes to see the order
 /// broken. Such a text is #283's exactly: the linear scan within `caretScanLimit` characters, and past it
 /// `pointOutsideText` with nothing read, since without the search no window near the point is known.
@@ -209,9 +211,43 @@ func caretSearch(at point: CGPoint, _ scanned: Range<Int>, box: (Int) -> CGRect?
     return lower
   }
   let middle = scanned.lowerBound + scanned.count / 2
+  // The text's direction, from the first two neighbouring characters with usable boxes, neither a line break, that do
+  // not wrap (the review of 66017fb1): on one line, the later one must not start left of the earlier one; one under
+  // the other, overlapping across, is a vertical column. Within `caretSearchStepLimit` characters, or no direction is
+  // known and the search is not trusted, unless none of them had a box.
+  var direction: Bool?, sawABox = false
+  var index = scanned.lowerBound
+  while direction == nil, index + 1 < min(scanned.upperBound, scanned.lowerBound + caretSearchStepLimit) {
+    defer { index += 1 }
+    if usable(index) != nil { sawABox = true }
+    guard !isLineBreak(index), !isLineBreak(index + 1), let earlier = usable(index), let later = usable(index + 1) else { continue }
+    if earlier.minY < later.maxY, later.minY < earlier.maxY {
+      direction = later.minX >= earlier.minX
+    } else if later.minX < earlier.maxX, earlier.minX < later.maxX {
+      direction = false
+    }
+  }
+  // No usable box at all there is no direction either way: boxes not there yet (all empty before Chromium's complete
+  // accessibility mode, #283), which the search and its fallback answer as before, for the wait to re-read.
+  if direction == false || (direction == nil && sawABox) { return .disordered(at: middle) }
+  // Every two usable boxes read must run in reading order: the earlier one on a line above the later one's or on its
+  // line, and on the point's line starting left of it. Checked on every way out, so a search stopped early by a run of
+  // unusable boxes cannot hide what it had already seen.
+  let onLine = { (found: CGRect) in found.minY <= point.y && point.y < found.maxY }
+  func ordered() -> Bool {
+    samples.sort { $0.index < $1.index }
+    for (earlier, later) in zip(samples, samples.dropFirst()) where earlier.index != later.index {
+      if earlier.box.minY >= later.box.maxY { return false }
+      if onLine(earlier.box), onLine(later.box), earlier.box.minX > later.box.minX { return false }
+    }
+    return true
+  }
   guard let lineStart = first(scanned.lowerBound, scanned.upperBound, where: { point.y < $0.maxY }),
         let lineEnd = first(lineStart, scanned.upperBound, where: { point.y < $0.minY }),
-        let place = first(lineStart, lineEnd, where: { point.x < $0.maxX }) else { return .abandoned(at: gaveUp ?? middle) }
+        let place = first(lineStart, lineEnd, where: { point.x < $0.maxX }) else {
+    let at = gaveUp ?? middle
+    return ordered() ? .abandoned(at: at) : .disordered(at: at)
+  }
   // The window's start: the last usable box before `place` on the line, if any.
   var start = place
   var passed = 0
@@ -219,17 +255,9 @@ func caretSearch(at point: CGPoint, _ scanned: Range<Int>, box: (Int) -> CGRect?
     start -= 1
     if let found = usable(start) { samples.append((start, found)); break }
     passed += 1
-    if passed > caretSearchStepLimit { return .abandoned(at: place) }
+    if passed > caretSearchStepLimit { return ordered() ? .abandoned(at: place) : .disordered(at: place) }
   }
-  // Every two usable boxes read must run in reading order: the earlier one on a line above the later one's or on its
-  // line, and on the point's line starting left of it.
-  samples.sort { $0.index < $1.index }
-  let onLine = { (found: CGRect) in found.minY <= point.y && point.y < found.maxY }
-  for (earlier, later) in zip(samples, samples.dropFirst()) where earlier.index != later.index {
-    if earlier.box.minY >= later.box.maxY { return .disordered(at: place) }
-    if onLine(earlier.box), onLine(later.box), earlier.box.minX > later.box.minX { return .disordered(at: place) }
-  }
-  return .window(start..<min(lineEnd, place + 1))
+  return ordered() ? .window(start..<min(lineEnd, place + 1)) : .disordered(at: place)
 }
 
 /// #283's linear scan over `range`: in the box that holds the point, before the character on its left half and after it

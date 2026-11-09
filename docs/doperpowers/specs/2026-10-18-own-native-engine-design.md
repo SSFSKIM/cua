@@ -4185,10 +4185,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      to the nearest usable one, at most 64 of them (`caretSearchStepLimit`), and is never inferred across. Two usable
      boxes read out of reading order (a vertical or right-to-left layout) end the search with no offset taken from it,
      and past 5,000 characters are #283's refusal, since no window near the point is known (the review of 93bc212e: a
-     vertical layout of 10,000 characters answered 5,001 from that window where the point is at 1). The search
-     assumes text of one style, which every caller passes (a field's value, or one contenteditable AXStaticText, one
-     text node): a line's boxes share their top and height, so a character raised or lowered within its line, which the
-     bisections would take for a line's edge, does not arise.
+     vertical layout of 10,000 characters answered 5,001 from that window where the point is at 1). The text's
+     direction is read first, from the first two neighbouring characters with boxes that do not wrap (within 64): on one
+     line running leftward, or stacked in a column, the text is not searched (the review of 66017fb1: four characters
+     of vertical text in two columns, where sampling never saw the order broken). A text whose first characters have no
+     boxes at all is searched as before, for the wait on boxes still arriving. Every way out of the search checks the
+     boxes it read for order, so a search stopped early by empty boxes cannot hide what it saw. An offset
+     is taken from the search only where the linear scan over its window places it, and a line end only where the next
+     character lies wholly below (the linear scan's wrap test). Characters of other sizes on one line (a contenteditable
+     region's mixed styles) overlap vertically, so a line the bisections cut short at one fails that test and the
+     linear scan answers. A limit: a character set wholly below its line by vertical-align would pass it.
   3. **Right-to-left text is not searched** (`holdsRightToLeft`: Hebrew, Arabic, Syriac, Thaana, N'Ko and the scripts
      up to U+08FF, their presentation forms, the right-to-left marks and overrides, and the supplementary right-to-left
      blocks). Its short lines may show the search too few boxes to see the order broken. Such a text is #283's
@@ -4198,7 +4204,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      - Chromium serves at most 10,000 characters of a field's `AXValue` (the probe's 20,499-character textarea read
        10,000). A point on text past that is a miss.
      - A miss, meaning a point outside the text or past the 10,000, still costs the bounded linear scan: up to 5,000
-       reads, about 500 ms at the runner's 0.1 ms per read. In the replay it was 5,000 reads for the point past the cap
+       reads, about 500 ms at the runner's 0.1 ms per read. In the replay it was 5,002 reads for the point past the cap
        and at most 3,074 on the 3,074-character field.
      - A right-to-left text over 5,000 characters is refused, as on main.
      - In a scrolled textarea the offset is the one under the point in the field's top-scrolled layout, as on main
@@ -4208,13 +4214,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   `focusPlacingCaret` reads the offset). Live, both engines therefore place offset 96 on the 3,074-character field and
   the branch 96 on the 20,499-character one, where the boxes put the point at 1,408 and 9,526; the search's
   correctness rests on the offline replay below.
-  Proven offline (`CaretSearchTests`, 10):
+  Proven offline (`CaretSearchTests`, 11):
   - a property test against a frozen copy of #283's linear scan, over generated layouts with wrapped lines, empty and
     failed boxes and points everywhere, and over shortened ranges;
   - the 3,074-character field placed in at most 32 reads and a 20,000-character field in at most 40;
   - a long field's miss bounded by the 5,000-character window;
-  - boxes out of reading order falling back to the linear scan, and refused past 5,000 characters; runs of empty boxes
-    stepped past;
+  - boxes out of reading order falling back to the linear scan, and refused past 5,000 characters; vertical text
+    known from its first characters, short and long, also with a run of empty boxes; runs of empty boxes stepped past;
   - right-to-left text not searched (over 5,000 characters refused with 0 reads), and its characters and marks known.
   `WebAreaFocusTests`' too-long case now expects a placement.
   Proven live (`docs/evidence/2026-11-08-caret-search/`; run 42560301611, two runners, main 364e017d against 93bc212e):
@@ -4223,7 +4229,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   - on the 20,499-character field, main refuses `pointOutsideText` in all 24 cells (fresh and late, at a line, past a
     line's end and at the far point) and the branch places in all 24, typing landing at the placed offset;
   - the offline replay over the runners' box dumps (unfocused, scrolled) answers exactly as the linear scan at all
-    24,400 grid points of each dump, and at the click in 27 reads against the linear scan's 1,409 and 9,527.
+    24,400 grid points of each dump, and at the click in 29 reads against the linear scan's 1,409 and 9,527.
   Date/Author: 2026-11-08, cursor235's lane-3 implementer for #290.
 
 ## Outcomes & Retrospective

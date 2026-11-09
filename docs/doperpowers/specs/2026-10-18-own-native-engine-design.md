@@ -4294,6 +4294,78 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   A/B (run 42558781067, fd51d41b, before the completeness condition) had kept the cut tables' tokens too.
   Date/Author: 2026-11-08, cursor235's lane-3 implementer for #303.
 
+- Decision (#341, 2026-11-08, `fix/341-scrolled-caret`; the design session's ruling 1ea561bc:544 on the measured
+  direction; amends #283's items 3, 4 and 6 and #296's second check on the focus route): **a click into a Chromium
+  web area's text field computes its caret's offset before anything is written, then writes AXSelectedTextRange
+  {offset, 0}, which focuses the field; AXFocused is only the fallback. "Placed" is answered only where the caret reads
+  back at the offset and the field's text has not moved.**
+  1. **The measurement** (run 42568677106, https://github.com/SSFSKIM/cua/actions/runs/42568677106, kit
+     `probe/341-measure` at 506ddda8; Chrome for Testing 156 on two runners, late and fresh). Writing AXFocused scrolls
+     Chromium's textarea to its existing caret (`scrollTop` to 0 within 0 to 8 ms), so the boxes #283 read after focus
+     described the top-scrolled layout, not the screenshot: main's engine claimed "placed" with the caret on the wrong
+     line in 46 of 60 placed claims. AXSelectedTextRange {k, 0} written on the unfocused textarea focused it by itself
+     (read focused 11 to 63 ms later) and left the scroll unchanged: 72 of 72 cells right, late and fresh. A following
+     AXFocused write changed nothing. A fresh Chromium fills the boxes without focus, 1.24 to 1.91 s after the
+     observation: the same wait #283 paid after focus.
+  2. **The order** (`focusPlacingCaret`, WebAreaFocus.swift). A password field is focused only, by AXFocused, as
+     before. Otherwise:
+     - The offset first, with nothing written: #283's box scan (#290's search), and in a fresh process
+       `caretAwaitingBoxes`' wait for boxes. **Its cap is #292's deadline, unchanged** (`webAreaRereadDeadline`: 2 s
+       from its start, up to 3 s just after an enablement write), so the wait before focus is never longer than the
+       wait after it was. Before focus the field is not focused, so a re-read's offset counts where the hit still
+       resolves to the same element, not a secure one (`sameTarget`), with the value's length read when the wait began.
+     - #296's guard after that wait (`beforeCaret`), which now runs before every write: a changed page is refused
+       `screenChangedSinceScreenshot` with nothing written (it used to answer `focusedNotPlaced screenChanged`, since
+       the focus had already happened; that caret reason is gone).
+     - No offset (`noCharacterBoxes`, `pointOutsideText`, `unmapped`, `unreadable`): AXFocused as before, and the
+       reason answered.
+     - An offset: the reference character's box read (below), the in-flight check, AXSelectedTextRange {offset, 0},
+       and focus polled for #283's settle (300 ms, every 20 ms). Still unfocused: the in-flight check, AXFocused and
+       its poll; still unfocused then, `clickUnconfirmed`.
+     - The selection polled back for the same settle, then the reference box read again.
+  3. **Placed only where proven** (the ruling's condition 1). The scroll signal is the box (`AXBoundsForRange`) of one
+     character next to the caret, the one after it, else the one before (`caretMarkIndex`), in the element whose boxes
+     gave the offset (a contenteditable region's hit text, in its own offsets). It is read before the writes and after
+     the caret's read-back, and may move at most 1 pt in x and y (`caretMarkTolerance`). A move past that, or a box
+     that cannot be read again, answers `focusedNotPlaced` with the new caret reason `layoutMoved`, and a note that
+     the caret was written at the point but its place against the screenshot is not confirmed, so take a new
+     screenshot. An empty field needs no box (offset 0 in a text of length 0). A caret read back elsewhere is
+     `selectionMismatch`, as before.
+  4. **The record.** `elementClick` keeps `reason focusField | focusedNotPlaced`. Its `action` is now the write the field
+     took focus from (`AXSelectedTextRange`, or `AXFocused` on the fallback and the no-offset paths), `focusStep` says
+     the same (`selection` | `focused`), and `caretMarkShift` gives the box's move in points where it was read twice.
+  5. **Unchanged.** Safari's path (#313's element click and #324's caret-first focusField) never reaches
+     `focusPlacingCaret`, nor does Gecko's press route (#315, `webAreaFocusCarrier`); neither is touched, and the A/B's
+     Safari cells answer alike on both engines. Firefox's selection-first placement is registered separately.
+  6. **Limits.**
+     - A click on a line the field shows only in part is answered `layoutMoved`: the caret's write scrolls that line
+       into view (5 pt in the A/B's wheel-scrolled field), so the box moves although the caret is at the point.
+     - A fresh click still costs the wait for boxes, now before focus (1.5 to 2.0 s in the A/B, as on main).
+     - Not measured live: the AXFocused fallback after a caret's write that does not focus (no Chromium cell needed it),
+       a contenteditable region and an empty field; the unit tests cover them.
+  Proven offline (`WebAreaFocusTests`, 46): the caret written first and nothing else; the fallback to AXFocused with the
+  caret re-read, and a focus that puts the caret back elsewhere; a field scrolled by focus or by the caret's write and a
+  reference box that cannot be read again not placed, a shift within a point placed; an empty field placed without a
+  box; no offset and a password field focused by AXFocused with nothing read; the in-flight check stopping the click
+  before any write, and between the caret's write and the fallback; the guard after the wait refusing with nothing
+  written; the wait's re-validation without focus; the reference character's choice; the record and the `layoutMoved`
+  note. The engine's `swift test` passes (1,074).
+  Proven live (`docs/evidence/2026-11-08-scrolled-caret/`; run 42578081142,
+  https://github.com/SSFSKIM/cua/actions/runs/42578081142, kit `probe/341-ab` at e91c1e6c, two runners, main 4cb51b3b
+  against de3973ef; coordinate clicks on six textareas, top, scrolled by script with overflow hidden and auto, at the
+  end, 20,499 characters, and scrolled by a scroll-wheel event; Chrome for Testing late and fresh, Safari late with
+  token clicks too; 3 repeats):
+  - Chrome, 72 cells per engine: main claimed placed in all 72 and was wrong in 59 (every scrolled field, the field
+    scrolled to its top). The branch claimed placed in 63, none wrong, and the caret and the typed marker were at the
+    point in all 72, every one focused by the caret's write. The 9 not placed are `layoutMoved` on the wheel-scrolled
+    field (the limit above), each with the caret right. The reference box moved 0 in every placed cell.
+  - Late clicks took 57 to 83 ms at the median per field, against main's 118 to 168 ms; fresh clicks 1.47 to 2.04 s,
+    against 1.16 to 2.05 s.
+  - Nothing raised: TextEdit stayed frontmost and the window order (the engine's cursor overlay aside) was unchanged
+    just after and 0.8 s after every Chrome click, on both engines.
+  - Safari: both engines answered alike in all 72 cells each, caret and marker at the point.
+  Date/Author: 2026-11-08, cursor235's implementer for #341.
+
 ## Outcomes & Retrospective
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.

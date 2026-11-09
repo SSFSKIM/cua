@@ -180,7 +180,9 @@ final class ScrollConfirmTests: XCTestCase {
     let barOnly = ScrollScene(offset: 0, barSettable: true)
     barOnly.ax.values[2]?[kAXContentsAttribute] = nil
     barOnly.ax.children[2] = [5]
-    XCTAssertEqual(try confirmScroll(hit: barOnly.row(at: 200), direction: .up, delta: 120, ax: barOnly.ax.ops, post: {}).outcome, .atEnd)
+    let top = try confirmScroll(hit: barOnly.row(at: 200), direction: .up, delta: 120, ax: barOnly.ax.ops, post: {})
+    XCTAssertEqual(top.outcome, .atEnd)
+    XCTAssertTrue(top.endBefore, "told before the wheel, at once")
   }
 
   func testUnmovedNotAtTheEndFallsBackToTheBarThenConfirms() throws {
@@ -261,10 +263,21 @@ final class ScrollConfirmTests: XCTestCase {
       XCTAssertTrue(scene.ax.writes.isEmpty, "\(direction) at the end")
     }
     // At the end after the wheel though not before (the content grew or the bar moved under 0.5 pt): no write either.
+    // The bar near its end too: the end judged after the wheel.
     let scene = ScrollScene(offset: 798.6, barSettable: true)
     let record = try confirmScroll(hit: scene.row(at: 200), direction: .down, delta: 120, ax: scene.ax.ops, post: { scene.place(799) })
-    XCTAssertEqual(record.outcome, .unconfirmed)
+    XCTAssertEqual(record.outcome, .atEnd)
+    XCTAssertFalse(record.endBefore)
     XCTAssertTrue(scene.ax.writes.isEmpty)
+    // The content frame at its end after the wheel while the bar reads half way: no write.
+    let frameEnd = ScrollScene(offset: 798.6, barSettable: true)
+    frameEnd.ax.values[5]?[kAXValueAttribute] = NSNumber(value: 0.5)
+    let framed = try confirmScroll(hit: frameEnd.row(at: 200), direction: .down, delta: 120, ax: frameEnd.ax.ops, post: {
+      frameEnd.place(799)
+      frameEnd.ax.values[5]?[kAXValueAttribute] = NSNumber(value: 0.5)
+    })
+    XCTAssertEqual(framed.outcome, .unconfirmed)
+    XCTAssertTrue(frameEnd.ax.writes.isEmpty)
   }
 
   /// The hit lies in a group that is in no scroll area, while a sibling scroll area's bar is settable: nothing is
@@ -582,7 +595,8 @@ final class ScrollConfirmTests: XCTestCase {
     XCTAssertEqual(end.outcome, .atEnd)
     XCTAssertTrue(end.endBefore)
     XCTAssertTrue(ax.writes.isEmpty, "the bar is never written at the real end")
-    rows(lastAt: 600)  // more rows below the viewport
+    rows(lastAt: 600)  // more rows below the viewport, the bar short of its end
+    ax.values[4] = [kAXValueAttribute: NSNumber(value: 0.9)]
     let notEnd = try confirmScroll(hit: el(15), direction: .down, delta: 364, ax: ax.ops, post: {})
     XCTAssertFalse(notEnd.endBefore)
     XCTAssertEqual(ax.writes.map(\.id), [4], "not the end: the fallback writes")
@@ -708,6 +722,51 @@ final class ScrollConfirmTests: XCTestCase {
     ax.values[4] = [kAXValueAttribute: NSNumber(value: 0.98)]
     ax.frames[3] = CGRect(x: 0, y: -600, width: 300, height: 1150)
     XCTAssertFalse(atEnd(.down))
+  }
+
+  /// The final hosted pass (run 42546633581): the sidebar's real bottom reads 0.976 with its last row clipped, so the
+  /// strict rule does not call it the end before the wheel. The wheel goes and nothing moves: the end is judged after
+  /// the window, success with atEnd and no write. A bar at 0.98 is never written. A virtualized list at 0.96 that the
+  /// wheel moves answers moved. A bar that crosses into the near-end band by less than half a point is not written.
+  func testTheEndIsJudgedAfterTheWheelWhenTheBarSitsNearItsEnd() throws {
+    let ax = FakeAX()
+    ax.roles = [1: kAXWindowRole, 2: kAXScrollAreaRole, 3: "AXOutline", 4: kAXScrollBarRole]
+    ax.parents = [2: 1, 3: 2, 4: 2]
+    ax.children = [2: [3, 4], 3: Array(10..<20)]
+    ax.frames = [2: CGRect(x: 408, y: 138, width: 215, height: 364), 3: CGRect(x: 408, y: 138, width: 215, height: 364)]
+    var extent = CGSize(width: 215, height: 1156)
+    ax.values = [2: [kAXContentsAttribute: [el(3)] as CFArray, kAXVerticalScrollBarAttribute: el(4), "AXContentSize": AXValueCreate(.cgSize, &extent)!],
+                 4: [kAXValueAttribute: NSNumber(value: 0.976)]]
+    ax.settable = [4: [kAXValueAttribute]]
+    func rows(lastAt y: CGFloat) {
+      for (i, row) in (10..<20).enumerated() {
+        ax.roles[row] = kAXRowRole; ax.parents[row] = 3
+        ax.frames[row] = CGRect(x: 408, y: y - CGFloat(9 - i) * 32, width: 198, height: 32)
+      }
+    }
+    rows(lastAt: 480)  // the last row ends at 512, past the viewport's 502: not wholly inside
+    let sidebar = try confirmScroll(hit: el(15), direction: .down, delta: 364, ax: ax.ops, post: {})
+    XCTAssertEqual(sidebar.outcome, .atEnd)
+    XCTAssertFalse(sidebar.endBefore)
+    XCTAssertGreaterThanOrEqual(ax.clock, scrollConfirmWindowMs, "judged after the window")
+    XCTAssertTrue(ax.writes.isEmpty)
+    XCTAssertEqual(try scrollAnswer(sidebar, direction: .down, app: "Settings"),
+                   "What is at that point in Settings is already scrolled as far down as it goes.")
+    ax.values[4] = [kAXValueAttribute: NSNumber(value: 0.98)]
+    _ = try confirmScroll(hit: el(15), direction: .down, delta: 364, ax: ax.ops, post: {})
+    XCTAssertTrue(ax.writes.isEmpty, "a bar at 0.98 is never written")
+    // A virtualized list at 0.96 with 32 points left, which the wheel moves: moved.
+    ax.values[4] = [kAXValueAttribute: NSNumber(value: 0.96)]
+    let moved = try confirmScroll(hit: el(15), direction: .down, delta: 364, ax: ax.ops, post: { rows(lastAt: 448) })
+    XCTAssertEqual(moved.outcome, .moved)
+    // The bar crossing into the band by under half a point, nothing else moving: not the end, and still not written.
+    ax.values[4] = [kAXValueAttribute: NSNumber(value: 0.9699)]
+    rows(lastAt: 600)
+    let crossed = try confirmScroll(hit: el(15), direction: .down, delta: 364, ax: ax.ops, post: {
+      ax.values[4] = [kAXValueAttribute: NSNumber(value: 0.9701)]
+    })
+    XCTAssertEqual(crossed.outcome, .unconfirmed)
+    XCTAssertTrue(ax.writes.isEmpty, "the fallback never writes a bar near its end")
   }
 
   /// P2: a page scroller's first child is a movement probe only: a first row taller than the viewport is neither the

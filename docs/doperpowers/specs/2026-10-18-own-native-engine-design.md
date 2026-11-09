@@ -3995,12 +3995,19 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
        walk stops at the first candidate in the middle band. Expected: `walked` at most 200, usually far fewer where the
        page's first band candidate comes early in its tree, and `readMs` about a quarter of the measured cost at the
        cap (25 to 50 ms), less below it. Unmeasured: the hosted check measures it.
+     - **The final hosted pass** (run 42546633581 on b1d51686; Chrome's walk read 8 to 133 nodes, `readMs` 5 to 41;
+       every other gate clean): round 4's strict edge-child rule no longer called Settings' sidebar's real bottom (bar
+       0.976, last row clipped) the end, so the fallback wrote 1.0 and answered `scrollUnconfirmed` after about 1.7 s,
+       8 of 8. The strict rule before the wheel stays; after the wheel, when nothing moved within the window and the bar
+       read within `scrollBarNearEnd` (0.03) of its end both before and after, the answer is success with `atEnd` and
+       `endBefore` false (a list with content left would have moved under the wheel; the cost is the 800 ms window,
+       there only), and the fallback never writes a bar already within 0.03 of its end.
   Proven offline:
   - `OutsideScreenshotTests` (4): each side of the image refused as each method's coordinates would arrive (a click's,
     a scroll's, a drag's start and end), the sentence; the edge points (0, 0), (W−1, H−1) and a fraction short of the
     width pass; the drag's middle between its ends. `TuningTests`' two coordinate tests now aim inside the image (one
     aimed at its far corner, which the rule refuses).
-  - `ScrollConfirmTests` (33): moved up and down, the move in the meta; a move the wrong way is none; the bar at its
+  - `ScrollConfirmTests` (34): moved up and down, the move in the meta; a move the wrong way is none; the bar at its
     end before the wheel (down and up) answered `atEnd` and `endBefore` at once, the wheel posted, nothing polled or
     written; the fallback written
     with the converted value and confirmed, a fallback that moves nothing unconfirmed though its bar reads the value
@@ -4029,11 +4036,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     own not merged (the inner at its end answering atEnd, the outer bar unwritten), no fallback on a page scroller
     though its own bar is settable, the bar near its end needing the edge child wholly inside (not at 0.96 with the
     last row clipped at the bottom, not with a first row running past the bottom scrolling up, never past a document
-    frame running on), and a page scroller's tall first row neither the extent nor the end.
+    frame running on), and a page scroller's tall first row neither the extent nor the end; for the final pass, the
+    sidebar's bottom (bar 0.976, last row clipped, wheel ignored) answering atEnd after the window with no write, a bar
+    at 0.98 never written, a virtualized list at 0.96 the wheel moves answering moved, and a bar crossing into the band
+    by under half a point neither the end nor written.
   - `ScrollWheelUnchangedTests` (1): the posted wheel's units, source, phases, deltas and field 51.
   - `services-engine-service.test.mjs`' #328 test: `cua/scroll`, the at-end note in the tool result's text, and both
     errors with their sentence, name and meta.
-  - Each of 82 rule parts and bounds removed in turn (`~/.local/share/187/mutate-328.py`) fails a test: 9 for the
+  - Each of 86 rule parts and bounds removed in turn (`~/.local/share/187/mutate-328.py`) fails a test: 9 for the
     refusal, 16 for the read and the poll (the window pinned at 800 from both sides; the hit's trailing edge unread,
     and for the re-review the content's trailing edge counted, the trailing edge counted unpinned, the hit's clipping
     ancestors unread), 11 for the container (3 for the review's P1: the first scroll area winning, a page's web area
@@ -4045,10 +4055,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     off the point; the walk's budget back to 800 or with no stop in the band; and 8 for round 4: an empty-framed scroll
     area selected, the run merging past an element with its own bar, the fallback on a page scroller, the edge child
     needing only to reach the edge, the edge child overriding a document running on, the near end back to 0.05, a
-    page scroller's first child as the extent and as the end. Three survive by design, since only a live
+    page scroller's first child as the extent and as the end; and 4 for the final pass: no end judged after the wheel,
+    that end judged from the after reading alone or claimed before the wheel, the fallback writing a bar near its end.
+    Three survive by design, since only a live
     scroll reaches them: the method not confirming, the coordinate's hit not passed to the confirmation, and the meta
     dropping `scroll`.
-  - Every other suite passes (1,053 engine tests, 1 skipped as before), and the docs test, repl-parity's docs oracle
+  - Every other suite passes (1,054 engine tests, 1 skipped as before), and the docs test, repl-parity's docs oracle
     suites and the service file's focused tests.
   **What the hosted check must verify** (main against the branch, background targets behind a frontmost cover, as the
   spike ran):

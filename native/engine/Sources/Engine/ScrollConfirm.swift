@@ -356,6 +356,12 @@ func scrollAtEnd(_ reading: ScrollReading, direction: ScrollDirection, geometry:
   return false
 }
 
+/// Whether a bar reads within `scrollBarNearEnd` of its end in the scroll's direction; false unread.
+func scrollBarNearItsEnd(_ bar: Double?, direction: ScrollDirection) -> Bool {
+  guard let bar else { return false }
+  return scrollSign(direction) > 0 ? bar >= 1 - scrollBarNearEnd : bar <= scrollBarNearEnd
+}
+
 /// The bar value the fallback writes: the current value moved by `delta` points over the scrollable length, the way
 /// asked, clamped to 0…1. Its precision is the lengths': the content's and the viewport's frames are in points, so a
 /// move lands within the app's own rounding plus delta × (the lengths' error / the scrollable length); a scroll area
@@ -474,7 +480,16 @@ private func confirming(_ record: inout ScrollConfirmRecord, hit: AXUIElement?, 
 
   let after = poll(countsBar: true)
   if record.outcome == .moved { return }
+  // The end judged after the wheel (the final hosted pass, run 42546633581: Settings' sidebar reads 0.976 at its real
+  // bottom with its last row clipped, so the strict rule before the wheel does not call it the end): the wheel went and
+  // nothing moved within the window, the bar near its end before and after. A list with content left would have moved.
+  if scrollBarNearItsEnd(before.bar, direction: direction) && scrollBarNearItsEnd(after.bar, direction: direction) {
+    record.outcome = .atEnd
+    return
+  }
+  // The fallback never writes a bar already near its end, whatever the end rule says.
   guard let bar = geometry.bar, let value = after.bar, !scrollAtEnd(after, direction: direction, geometry: geometry),
+        !scrollBarNearItsEnd(value, direction: direction),
         let scrollable = geometry.scrollableLength, ax.isSettable(bar, kAXValueAttribute), let found,
         found.kind == .scrollArea else { return }  // never a page scroller's or a web area's (round 4's P1)
   if let skip = scrollFallbackSkip(path: found.path, container: found.element, kind: found.kind, content: geometry.content,

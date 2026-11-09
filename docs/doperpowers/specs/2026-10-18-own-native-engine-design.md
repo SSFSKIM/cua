@@ -3908,7 +3908,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      A drag's middle event is the midpoint of its two ends, so inside the screenshot whenever they are; it has no check
      of its own. An element's own point (an element click or scroll) is not a coordinate and is not checked. **The
      stated limit:** a drag can no longer end outside the window, on another app or the desktop; dropping across windows
-     is #334.
+     is #334. Amended by the #334 entry (2026-11-08, below): a drag's end outside takes a sentence of its own.
   4. **The confirmation** (ScrollConfirm.swift `confirmScroll`, from `scroll` in ScrollDrag.swift). The element under
      the point (the coordinate's or the centre's hit-test, as before; for an element scroll the hit-test at its
      clickable point, else the element) is walked up to its window (`scrollContainerLevels`, 300) for its container,
@@ -4146,6 +4146,27 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   item 9 states. Chrome's walk before the wheel, at the 200-node cap: 8–133 nodes, 5–41 ms.
   Date/Author: 2026-11-08, cursor235's implementer for the design session's ruling b1921fc3 on #328; the hosted results
   by cursor235.
+- Decision (#334, 2026-11-08, `fix/334-drag-end-refusal`; the design session's go-ahead on lane 2's proposal, issue
+  comment https://github.com/SSFSKIM/cua/issues/334#issuecomment-6730863638; amends #328's item 3): **a drag whose end
+  lies outside the screenshot is refused with a sentence that says the drop cannot be done, with no coordinate range.**
+  #334 stays open for the drop across windows itself.
+  1. **Why.** #328's sentence tells the model to "Give a point inside it: x from 0 to W−1 and y from 0 to H−1". For a
+     drag's end that remedy misleads. A model that meant to drop onto another app, or onto the desktop, would clamp the
+     end into the window, and the item would drop at the source window's edge. That is a wrong action, not a retry of
+     the one intended.
+  2. **The sentence** (Screenshot.swift `dragEndOutsideScreenshot`): `A drag cannot end outside the window the
+     screenshot shows: dropping onto another app's window or the desktop is not supported. Nothing was sent.` It is
+     still `pointOutsideScreenshot`, so callers that branch on the name are unchanged. `screenshotPoint` takes it when
+     its `dragEnd` flag is set, and `drag` (ScrollDrag.swift) sets the flag only for the end, through
+     `coordinatePoint` and `coordinatePlacement`.
+  3. **The start keeps #328's sentence.** The start is placed first, so a drag with both ends outside is refused by
+     its start with #328's sentence; only a drag whose start is inside gets this one.
+  4. **The first-call document is unchanged.** #328's paragraph in `docs/cua-api/agent-cursor.md` already says that
+     "a drag cannot end outside the app's window, on another app or the desktop".
+  Proven offline: `OutsideScreenshotTests.testADragsEndOutsideSaysTheDropCannotBeDone` checks an end past each edge
+  for the name and the exact sentence, an end inside passing, and a start outside keeping #328's sentence. The suite's
+  other tests pass unchanged. Not unit tested: `drag`'s glue, which passes the flag for the end (it reads live AX).
+  Date/Author: 2026-11-08, cursor235's lane-2 implementer for #334.
 
 ## Outcomes & Retrospective
 

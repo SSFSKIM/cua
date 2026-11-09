@@ -51,6 +51,17 @@ const WEB = [
   ['region', 'container-content', `<section class="t298 box" role="region" aria-label="Inbox"><p>Messages</p></section>`, `e.setAttribute('aria-label', 'Inbox (3)')`],
   ['labelledby', 'container-content', `<div class="t298 box" role="group" aria-labelledby="h-lb"><b id="h-lb">Inbox</b><p>Messages</p></div>`, `document.getElementById('h-lb').textContent = 'Inbox (3)'`],
   ['dialog', 'container-meaning', `<div class="t298 box" role="dialog" aria-label="Save changes?"><p>Body</p></div>`, `e.setAttribute('aria-label', 'Delete file?')`],
+  // Wave 2: text changed in its own text node (nodeValue, as React and most frameworks update text) against the node
+  // replaced (textContent), where the deepest node at the point is the text inside the control, not the control.
+  ['linknv', 'content', `<a href="#" class="t298">Inbox</a>`, `e.firstChild.nodeValue = 'Inbox (3)'`],
+  ['linksavenv', 'meaning', `<a href="#" class="t298">Save</a>`, `e.firstChild.nodeValue = 'Delete'`],
+  ['linksave', 'meaning', `<a href="#" class="t298">Save</a>`, `e.textContent = 'Delete'`],
+  ['linkmono', 'meaning', `<a href="#" class="t298" style="font-family:monospace">Save</a>`, `e.textContent = 'Send'`],
+  ['divbtn', 'meaning', `<div class="t298" onclick="void 0" style="cursor:pointer;display:inline-block">Save</div>`, `e.firstChild.nodeValue = 'Delete'`],
+  ['divtick', 'content', `<div class="t298" onclick="void 0" style="cursor:pointer;display:inline-block">Elapsed 0.0 s</div>`, null],
+  ['spanbtn', 'meaning', `<button class="t298 fixed"><span>Save</span></button>`, `e.firstChild.textContent = 'Delete'`],
+  ['btnnv', 'meaning', `<button class="t298 fixed">Save</button>`, `e.firstChild.nodeValue = 'Delete'`],
+  ['linklike', 'content', `<a href="#" class="t298">Like (12)</a>`, `e.textContent = 'Like (13)'`],
 ];
 const WEB_EXTRA = [  // the page's title gains a count: its window, web area and (Chrome's) tab
   {key: 'window', truth: 'container-content', by: 'window'}, {key: 'webarea', truth: 'container-content', by: 'webarea'},
@@ -71,7 +82,7 @@ const K = new URLSearchParams(location.search).get('k');
 const send = (ev, extra) => navigator.sendBeacon('/b', JSON.stringify({ev, k: K, t: Date.now(), ...extra}));
 const $ = id => document.getElementById(id);
 const target = key => $('w-' + key).querySelector('.t298');
-setInterval(() => { $('label').textContent = 'Elapsed ' + (performance.now() / 1000).toFixed(1) + ' s'; $('counter').textContent = (performance.now() / 1000).toFixed(1); }, 100);
+setInterval(() => { $('label').textContent = 'Elapsed ' + (performance.now() / 1000).toFixed(1) + ' s'; $('counter').textContent = (performance.now() / 1000).toFixed(1); target('divtick').firstChild.nodeValue = 'Elapsed ' + (performance.now() / 1000).toFixed(1) + ' s'; }, 100);
 const MUT = {${WEB.filter(c => c[3]).map(([key, , , m]) => `${JSON.stringify(key)}: e => { ${m}; }`).join(',\n')}};
 const run = c => {
   if (c.op === 'nav') location.href = '/?k=' + c.k;

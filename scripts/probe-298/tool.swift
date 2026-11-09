@@ -115,7 +115,10 @@ func locate(_ spec: [String: Any], in all: [AXUIElement]) -> AXUIElement? {
   switch by {
   case "wrap":
     guard let id = spec["id"] as? String, let wrap = all.first(where: { text(attr($0, "AXDOMIdentifier")) == id }) else { return nil }
-    return walk(wrap, limit: 400).first(where: { ((attr($0, "AXDOMClassList") as? [String]) ?? []).contains("t298") })
+    let inside = walk(wrap, limit: 400)
+    // A clickable div the browser leaves out of the tree: its text instead.
+    return inside.first(where: { ((attr($0, "AXDOMClassList") as? [String]) ?? []).contains("t298") })
+      ?? inside.first(where: { role($0) == "AXStaticText" })
   case "axid":
     return all.first(where: { text(attr($0, "AXIdentifier")) == spec["id"] as? String })
   case "title":
@@ -133,7 +136,7 @@ func locate(_ spec: [String: Any], in all: [AXUIElement]) -> AXUIElement? {
   }
 }
 
-struct Held { let spec: [String: Any]; let handle: AXUIElement; let centre: CGPoint?; let firstHit: AXUIElement? }
+struct Held { let spec: [String: Any]; let handle: AXUIElement; let centre: CGPoint?; let firstHit: AXUIElement?; let deepFirst: [String: Any] }
 let args = CommandLine.arguments
 guard args.count > 2, args[1] == "measure", let pid = pid_t(args[2]) else { emit(["error": "usage: tool measure <pid>"]); exit(2) }
 let app = prepare(AXUIElementCreateApplication(pid))
@@ -151,6 +154,38 @@ func hitReading(_ h: Held, _ hit: AXUIElement?) -> [String: Any] {
                   "frame": wire(frame(hit))],
           "hitIsHandle": CFEqual(hit, h.handle), "hitInsideHandle": isInside(hit, h.handle), "handleInsideHit": isInside(h.handle, hit),
           "hitSameAsFirst": h.firstHit.map { CFEqual($0, hit) } ?? NSNull()]
+}
+
+/// #296's re-created search (StalePoint.swift `recreatedHandle`): among the hit, its ancestors and up to 300 descendants,
+/// the element of the recorded role whose frame lies within 2 pt, whose title (else description) agrees when both sides
+/// carry one. Answers the match, and the nearest of the role whatever its label.
+func recreated(of recorded: [String: Any], near hit: AXUIElement) -> [String: Any] {
+  guard let wantRole = recorded["AXRole"] as? String, let f = recorded["frame"] as? [Double] else { return ["error": "no recorded role or frame"] }
+  let want = CGRect(x: f[0], y: f[1], width: f[2], height: f[3])
+  var family = [hit]
+  var current = hit
+  for _ in 0..<80 {
+    guard let p = element(attr(current, kAXParentAttribute)).map(prepare) else { break }
+    family.append(p)
+    if ["AXWindow", "AXApplication"].contains(role(p) ?? "") { break }
+    current = p
+  }
+  family += Array(walk(hit, limit: 301).dropFirst())
+  func ne(_ s: Any?) -> String? { (s as? String).flatMap { $0.isEmpty ? nil : $0 } }
+  var nearest: (Double, [String: Any])?
+  var match: [String: Any]?
+  for c in family where role(c) == wantRole {
+    guard let cf = frame(c) else { continue }
+    let d = Double(max(abs(cf.minX - want.minX), abs(cf.minY - want.minY), abs(cf.maxX - want.maxX), abs(cf.maxY - want.maxY)))
+    let desc = describe(c)
+    if nearest == nil || d < nearest!.0 { nearest = (d, desc) }
+    guard d <= 2 else { continue }
+    var agree = true
+    if let a = ne(recorded["AXTitle"]), let b = ne(desc["AXTitle"]) { agree = a == b }
+    else if ne(recorded["AXTitle"]) == nil, ne(desc["AXTitle"]) == nil, let a = ne(recorded["AXDescription"]), let b = ne(desc["AXDescription"]) { agree = a == b }
+    if agree, match == nil { match = desc }
+  }
+  return ["match": match ?? NSNull(), "nearestDistance": nearest.map { r2($0.0) } ?? NSNull(), "nearest": nearest?.1 ?? NSNull()]
 }
 
 while let line = readLine() {
@@ -171,10 +206,11 @@ while let line = readLine() {
       let f = frame(e)
       let centre = f.map { CGPoint(x: $0.midX, y: $0.midY) }
       let hit = centre.flatMap(hitTest)
-      let h = Held(spec: spec, handle: e, centre: centre, firstHit: hit)
+      let h = Held(spec: spec, handle: e, centre: centre, firstHit: hit, deepFirst: hit.map(describe) ?? [:])
       held[key] = h; order.append(key)
       var r: [String: Any] = ["found": true, "node": describe(e)]
       r.merge(hitReading(h, hit)) { a, _ in a }
+      if let hit, !CFEqual(hit, e) { r["deep"] = describe(hit) }
       out[key] = r
     }
     emit(["walked": all.count, "ms": r2(nowMs() - t0), "cells": out])
@@ -191,7 +227,14 @@ while let line = readLine() {
         r["refoundSame"] = again.map { CFEqual($0, h.handle) } ?? NSNull()
         if let again, !CFEqual(again, h.handle) { r["refound"] = describe(again) }
       }
-      if let c = h.centre { r.merge(hitReading(h, hitTest(c))) { a, _ in a } }
+      if let c = h.centre {
+        let now = hitTest(c)
+        r.merge(hitReading(h, now)) { a, _ in a }
+        if let deep = h.firstHit, !CFEqual(deep, h.handle) {
+          r["deep"] = describe(deep)
+          if role(deep) == nil, let now { r["deepRecreated"] = recreated(of: h.deepFirst, near: now) }
+        }
+      }
       out[key] = r
     }
     emit(["ms": r2(nowMs() - t0), "cells": out])

@@ -15,7 +15,8 @@ import Foundation
 // success when it moved, success with a note at its end, else `scrollUnconfirmed`.
 //
 // #328: every coordinate (a scroll's, a drag's start and end, a click's) is refused outside the screenshot it came from
-// (`pointOutsideScreenshot`, Screenshot.swift `screenshotPoint`), so a drag cannot end outside the window (#334).
+// (`pointOutsideScreenshot`, Screenshot.swift `screenshotPoint`), so a drag cannot end outside the window (#334); a
+// drag's end outside is refused with a sentence of its own that says the drop cannot be done (`dragEndOutsideScreenshot`).
 //
 // drag: the vendor's five events (down, dragged at the start, the midpoint and the end, up), all aimed at the start
 // point's window, posted to the process serving the start point; into a background app by route 3's activation like a
@@ -164,7 +165,8 @@ extension Engine {
     do {
       let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
       let start = try coordinatePoint(fromX, fromY, app: app, appPid: appPid, context: context)
-      let end = try coordinatePoint(toX, toY, app: app, appPid: appPid, context: context)
+      // The start is placed first, so a start outside keeps #328's sentence; an end outside is #334's (the drop).
+      let end = try coordinatePoint(toX, toY, app: app, appPid: appPid, context: context, dragEnd: true)
       // Both points were refused in a minimized window as they were placed (coordinatePoint), before anything below.
       let hit = hitTest(window: start.window, pid: appPid, at: start.point)
       let owner = hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid

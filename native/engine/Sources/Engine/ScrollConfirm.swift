@@ -40,9 +40,10 @@ let scrollBarEndTolerance: Double = 0.001
 /// The end told without the bar (the hosted A/B, run 42537713415: Settings' sidebar reads 0.976 to 0.986 at its real
 /// bottom): a content frame that scrolls reaching the viewport's edge within `scrollEndEdgeTolerance` points; or the bar
 /// within `scrollBarNearEnd` of its end while the content's last child (first, scrolling up) lies inside the viewport's
-/// edge within that tolerance.
+/// edge within that tolerance. 0.03 holds the sidebar's 0.976 to 0.986 and no more (round 4: a virtualized list's bar
+/// at 0.96 had 32 points to go).
 let scrollEndEdgeTolerance: CGFloat = 1
-let scrollBarNearEnd: Double = 0.05
+let scrollBarNearEnd: Double = 0.03
 /// The levels walked up from the element under the point to its container, and the tracked descendant's walk: at most
 /// this many nodes, this deep below the container, aimed this far into the viewport, stopping at the first candidate
 /// whose leading edge lies in `scrollTrackedBand` of it (the hosted A/B: the spike's 800 nodes cost Chrome 96 to 202 ms
@@ -87,8 +88,13 @@ func scrollContainerPath(of hit: AXUIElement, ax: AXOps)
     } else if !pageScrollActions.isDisjoint(with: ax.actions(node)) {
       // UIKit (Catalyst) gives every row and label of a scroll view the page actions: the boundary is the top of the run
       // of ancestors that all advertise them, not the hit itself (the hosted A/B: 3 of 3 false answers on a table).
+      // An element with a scroll bar of its own is a boundary: the run stops there (round 4's P1: two genuinely nested
+      // page-scrolling groups).
+      let ownsBar = { (element: AXUIElement) in
+        ax.element(element, kAXVerticalScrollBarAttribute) != nil || ax.element(element, kAXHorizontalScrollBarAttribute) != nil
+      }
       var top = (element: node, role: role), up = parent
-      while let next = up, path.count < scrollContainerLevels {
+      while let next = up, path.count < scrollContainerLevels, !ownsBar(top.element) {
         let nextRole = ax.role(next) ?? ""
         if [kAXScrollAreaRole, "AXWebArea", kAXWindowRole, kAXApplicationRole].contains(nextRole)
           || pageScrollActions.isDisjoint(with: ax.actions(next)) { break }
@@ -115,7 +121,9 @@ func scrollAreaUnder(_ point: CGPoint, in window: AXUIElement, ax: AXOps) -> AXU
     guard budget > 0, depth < scrollWindowScanDepth else { return }
     budget -= 1
     if let frame = ax.frame(element), !frame.isEmpty, !frame.contains(point) { return }
-    if ax.role(element) == kAXScrollAreaRole, ax.frame(element) != nil, depth > (deepest?.depth ?? -1) { deepest = (element, depth) }
+    // Passed through when frameless or empty; selected only when its own non-empty frame holds the point (round 4's P1).
+    if ax.role(element) == kAXScrollAreaRole, let frame = ax.frame(element), !frame.isEmpty, frame.contains(point),
+       depth > (deepest?.depth ?? -1) { deepest = (element, depth) }
     for child in ax.children(element) { walk(child, depth + 1) }
   }
   walk(window, 0)
@@ -252,7 +260,9 @@ func scrollGeometry(_ container: AXUIElement, kind: ScrollContainerKind, hit: AX
   let viewport = ax.frame(container)
   let content = scrollContent(container, kind: kind, ax: ax)
   let bar = ax.element(container, horizontal ? kAXHorizontalScrollBarAttribute : kAXVerticalScrollBarAttribute)
-  var contentLength = content.flatMap(ax.frame).map { horizontal ? $0.width : $0.height }
+  // The document's extent: a scroll area's content frame, or AXContentSize. A page scroller's or a web area's first
+  // child is a movement probe only, never the extent (round 4's P2).
+  var contentLength = kind == .scrollArea ? content.flatMap(ax.frame).map { horizontal ? $0.width : $0.height } : nil
   if let viewport, (contentLength ?? 0) <= (horizontal ? viewport.width : viewport.height) + 1,
      let extent = size(ax.read(container, "AXContentSize")) {
     let length = horizontal ? extent.width : extent.height
@@ -334,9 +344,14 @@ func scrollAtEnd(_ reading: ScrollReading, direction: ScrollDirection, geometry:
   let reached = { (edges: ScrollEdges) in
     towardEnd ? edges.trail <= viewTrail + scrollEndEdgeTolerance : edges.lead >= viewLead - scrollEndEdgeTolerance
   }
-  if let content = reading.content, content.trail - content.lead > viewTrail - viewLead + scrollEndEdgeTolerance, reached(content) { return true }
-  if let bar = reading.bar, towardEnd ? bar >= 1 - scrollBarNearEnd : bar <= scrollBarNearEnd, let child = reading.edgeChild, reached(child) {
-    return true
+  // A scroll area's content frame is the document's extent; a page scroller's first child is not (round 4's P2).
+  let document = geometry.kind == .scrollArea ? reading.content.flatMap { content in
+    content.trail - content.lead > viewTrail - viewLead + scrollEndEdgeTolerance ? content : nil
+  } : nil
+  if let document { return reached(document) }  // it tells the end, and the edge child never overrides it
+  if let bar = reading.bar, towardEnd ? bar >= 1 - scrollBarNearEnd : bar <= scrollBarNearEnd, let child = reading.edgeChild,
+     child.lead >= viewLead - scrollEndEdgeTolerance, child.trail <= viewTrail + scrollEndEdgeTolerance {
+    return true  // the edge child wholly inside the viewport (round 4's P2)
   }
   return false
 }
@@ -460,7 +475,8 @@ private func confirming(_ record: inout ScrollConfirmRecord, hit: AXUIElement?, 
   let after = poll(countsBar: true)
   if record.outcome == .moved { return }
   guard let bar = geometry.bar, let value = after.bar, !scrollAtEnd(after, direction: direction, geometry: geometry),
-        let scrollable = geometry.scrollableLength, ax.isSettable(bar, kAXValueAttribute), let found else { return }
+        let scrollable = geometry.scrollableLength, ax.isSettable(bar, kAXValueAttribute), let found,
+        found.kind == .scrollArea else { return }  // never a page scroller's or a web area's (round 4's P1)
   if let skip = scrollFallbackSkip(path: found.path, container: found.element, kind: found.kind, content: geometry.content,
                                    horizontal: direction.horizontal, ax: ax) {
     record.fallbackSkipped = skip

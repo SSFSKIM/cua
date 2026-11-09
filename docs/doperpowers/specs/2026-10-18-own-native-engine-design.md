@@ -3872,7 +3872,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      bar. (Corrected by the review of f859ce68..b2281926, P1: the first build took the first AXScrollArea on the way up
      and looked at page scrollers and web areas only when there was none, so a nested scroller under the point lost to
      the page's scroll area, and the fallback could write the outer page's bar.) Before the wheel the engine reads the container's frame (the viewport), its content (AXContents'
-     first, else its first child that is not a scroll bar, for every kind of container: item 10), its bar on the
+     first, else its first child that is not a scroll bar, for every kind of container, where a page scroller's or a
+     web area's is a movement probe only: item 10), its bar on the
      scroll's axis, and one descendant about 40% into the viewport (`scrollTrackedAim`; the spike's walk, shorter than
      30% of the viewport, wholly inside it, 10 deep; subtrees wholly outside the viewport are skipped; at most
      `scrollTrackedBudget` nodes, 200, stopping at the first candidate whose leading edge lies 25 to 60% into the
@@ -3910,8 +3911,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      scrollable length), and a scroll area whose frame includes a bar across the axis overstates the viewport by that
      bar's thickness (a 15 pt bar on 800 scrollable points: 2 points on a 120-point delta). The spike's System Settings
      writes, by the same formula, moved to within 1 point. **Gate (c): only the bar of the hit's nearest scroller.**
-     Never on any container but the hit's nearest boundary, nor on a bar that is not that boundary's own (one without a
-     settable bar has no fallback), nor at the end. And the boundary must be the hit's nearest scrollable ancestor as far
+     Only on a real AXScrollArea container with its own settable AXScrollBar, never on a page scroller or a web area
+     (corrected by round 4's review, P1: page scrollers, Catalyst's among them, take the wheel, and Settings' pane, the
+     fallback's reason, is an AXScrollArea). Never on any container but the hit's nearest boundary, nor on a bar that is
+     not that boundary's own (one without a settable bar has no fallback), nor at the end. And the boundary must be the hit's nearest scrollable ancestor as far
      as the tree can tell (`scrollFallbackSkip`, the meta's `fallbackSkipped`): in all three browsers a nested overflow
      div is a plain AXGroup with no bar and no page action, and Chrome exposes an iframe no better (Safari and Firefox
      expose it as its own AXScrollArea), so the page's scroll area can be the nearest boundary the tree shows while an
@@ -3959,22 +3962,33 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      iframe, hdiv, raf and mid in all three browsers on 8b5d314f; divEnd wrote no outer bar. Four failures, each fixed:
      - **Catalyst's table (gate b), 3 of 3 false `scrollUnconfirmed`, main moving it.** UIKit gives every row and label
        of a scroll view the page actions, so the nearest boundary was the label under the point itself (its walk read 1
-       node). A page scroller is now the top of the run of ancestors that all advertise page scrolling. And every kind
-       of container reads its first child as its content, as the spike's `contentOf` did: the table's first row moved
-       50 points where its reused cells jumped the other way.
+       node). A page scroller is now the top of the run of ancestors that all advertise page scrolling; the run stops
+       at an element with a scroll bar of its own, which is a boundary (round 4's P1: two genuinely nested
+       page-scrolling groups were merged, and the outer bar written). And every kind of container reads its first
+       child as its content, as the spike's `contentOf` did: the table's first row moved 50 points where its reused
+       cells jumped the other way. For a page scroller or a web area that child is a movement probe only (round 4's
+       P2: a first row taller than the viewport read as the whole document): the document's extent, for the end and
+       the conversion, comes only from a scroll area's content frame or AXContentSize, and without one there is no
+       geometric end and no conversion.
      - **System Settings' content pane (gate c), the fallback never ran.** The hit's chain there holds no container
        (`container: null`). When it holds none, the deepest AXScrollArea in the window whose frame holds the point is
-       taken (`scrollAreaUnder`, at most 3,000 nodes 30 deep, subtrees not holding the point skipped; `containerBy:
-       "window"` in the meta): still the scroller under the point, never a sibling nor an outer one when a deeper one
-       holds it. Then the confirmation and the fallback run as usual.
+       taken (`scrollAreaUnder`, at most 3,000 nodes 30 deep, subtrees whose non-empty frame does not hold the point
+       skipped; `containerBy: "window"` in the meta): still the scroller under the point, never a sibling nor an outer
+       one when a deeper one holds it. The walk passes through frameless and empty-framed elements, but selects a
+       scroll area only when its own non-empty frame holds the point (round 4's P1: a deeper zero-frame scroll area was
+       selected and its bar written). Then the confirmation and the fallback run as usual.
      - **Settings' sidebar at its real end (gate c), the bar written.** Its bar reads 0.976 to 0.986 at the bottom, and
        its outline's frame is the viewport's (clipped, never moving), so neither the bar nor the content frame told the
        end; the fallback wrote 1.0 and answered `scrollUnconfirmed` after about 1.7 s. The end (`scrollAtEnd`, for
        `endBefore` and the fallback's guard alike) is now also reached when a content frame longer than the viewport
-       has its edge that way within `scrollEndEdgeTolerance` (1 point) of the viewport's, or when the bar is within
-       `scrollBarNearEnd` (0.05) of its end and the content's last child (first, scrolling up) lies inside the
-       viewport's edge within that point. A content frame no longer than the viewport is clipped to it and tells
-       nothing; a bar half way with the last child showing is a lazily filled list, not the end. The 11 points the
+       has its edge that way within `scrollEndEdgeTolerance` (1 point) of the viewport's (a scroll area's only, and when
+       it reads it decides: an edge child never overrides a document frame running on past the viewport), or when the
+       bar is within `scrollBarNearEnd` (0.03) of its end and the content's last child (first, scrolling up) lies
+       wholly inside the viewport within that point. A content frame no longer than the viewport is clipped to it and
+       tells nothing; a bar half way with the last child showing is a lazily filled list, not the end. (Narrowed by
+       round 4's review, P2: a virtualized list exposes a subset, and with its bar at 0.96 and its last exposed row
+       clipped at the bottom the first build answered the end with 32 points to go; 0.03 holds the sidebar's 0.976 to
+       0.986 and no more.) The 11 points the
        spike's read-back counted after one write were the bar's own value read back: its offset and tracked measures
        read 0, and after a write the confirmation already reads every measure but the bar.
      - **Chrome's descendant walk, 800 nodes on every page, 96 to 202 ms before the wheel.** The budget is 200 and the
@@ -3986,7 +4000,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     a scroll's, a drag's start and end), the sentence; the edge points (0, 0), (W−1, H−1) and a fraction short of the
     width pass; the drag's middle between its ends. `TuningTests`' two coordinate tests now aim inside the image (one
     aimed at its far corner, which the rule refuses).
-  - `ScrollConfirmTests` (28): moved up and down, the move in the meta; a move the wrong way is none; the bar at its
+  - `ScrollConfirmTests` (33): moved up and down, the move in the meta; a move the wrong way is none; the bar at its
     end before the wheel (down and up) answered `atEnd` and `endBefore` at once, the wheel posted, nothing polled or
     written; the fallback written
     with the converted value and confirmed, a fallback that moves nothing unconfirmed though its bar reads the value
@@ -4010,11 +4024,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     move confirms, the sidebar's end told by the bar near its end with the last row showing (and not with rows below,
     nor with the bar half way, nor by an outline frame clipped to the viewport), a scrolling content frame at the
     viewport's edge telling the end with no bar, the bar alone telling the top, and the walk stopping in the band and
-    within 200 nodes.
+    within 200 nodes; for round 4, a deeper empty-framed scroll area never selected by the window scan (its bar never
+    written), the scan skipping a 3,000-row subtree off the point, two nested page-scrolling groups with bars of their
+    own not merged (the inner at its end answering atEnd, the outer bar unwritten), no fallback on a page scroller
+    though its own bar is settable, the bar near its end needing the edge child wholly inside (not at 0.96 with the
+    last row clipped at the bottom, not with a first row running past the bottom scrolling up, never past a document
+    frame running on), and a page scroller's tall first row neither the extent nor the end.
   - `ScrollWheelUnchangedTests` (1): the posted wheel's units, source, phases, deltas and field 51.
   - `services-engine-service.test.mjs`' #328 test: `cua/scroll`, the at-end note in the tool result's text, and both
     errors with their sentence, name and meta.
-  - Each of 74 rule parts and bounds removed in turn (`~/.local/share/187/mutate-328.py`) fails a test: 9 for the
+  - Each of 82 rule parts and bounds removed in turn (`~/.local/share/187/mutate-328.py`) fails a test: 9 for the
     refusal, 16 for the read and the poll (the window pinned at 800 from both sides; the hit's trailing edge unread,
     and for the re-review the content's trailing edge counted, the trailing edge counted unpinned, the hit's clipping
     ancestors unread), 11 for the container (3 for the review's P1: the first scroll area winning, a page's web area
@@ -4023,10 +4042,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     gate (c)), 4 for the wheel, and 11 for the hosted A/B: the end's edge child never read or read without the bar
     near its end, the content frame never read or read though clipped to the viewport, a 20-point tolerance; a page
     scroller with no content; the window scan off, taking the first area rather than the deepest, or walking subtrees
-    off the point; the walk's budget back to 800 or with no stop in the band. Three survive by design, since only a live
+    off the point; the walk's budget back to 800 or with no stop in the band; and 8 for round 4: an empty-framed scroll
+    area selected, the run merging past an element with its own bar, the fallback on a page scroller, the edge child
+    needing only to reach the edge, the edge child overriding a document running on, the near end back to 0.05, a
+    page scroller's first child as the extent and as the end. Three survive by design, since only a live
     scroll reaches them: the method not confirming, the coordinate's hit not passed to the confirmation, and the meta
     dropping `scroll`.
-  - Every other suite passes (1,048 engine tests, 1 skipped as before), and the docs test, repl-parity's docs oracle
+  - Every other suite passes (1,053 engine tests, 1 skipped as before), and the docs test, repl-parity's docs oracle
     suites and the service file's focused tests.
   **What the hosted check must verify** (main against the branch, background targets behind a frontmost cover, as the
   spike ran):

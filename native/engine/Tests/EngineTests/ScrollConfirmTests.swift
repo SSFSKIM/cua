@@ -371,9 +371,11 @@ final class ScrollConfirmTests: XCTestCase {
     XCTAssertTrue(ax.writes.isEmpty)
   }
 
-  /// Gate (c): the fallback writes only the bar of the hit's nearest scroller. A page-scrolling group with a settable
-  /// bar of its own under the point: its bar is written, never the outer one. A plain group that clips the hit (an
-  /// unexposed nested scroller): nothing is written though the outer bar is settable. Web content: nothing either.
+  /// Gate (c): the fallback writes only the bar of the hit's nearest scroller, and only a real AXScrollArea's. A
+  /// page-scrolling group with a settable bar of its own under the point: nothing is written, its bar nor the outer one
+  /// (round 4's P1: page scrollers take the wheel). An inner AXScrollArea with its own settable bar: its bar is written,
+  /// never the outer one. A plain group that clips the hit (an unexposed nested scroller): nothing is written though the
+  /// outer bar is settable. Web content: nothing either.
   func testTheFallbackWritesOnlyTheNearestScrollersOwnBar() throws {
     let scene = ScrollScene(offset: 200, barSettable: true)
     let ax = scene.ax
@@ -385,13 +387,18 @@ final class ScrollConfirmTests: XCTestCase {
     ax.values[70] = [kAXVerticalScrollBarAttribute: el(71), "AXContentSize": AXValueCreate(.cgSize, [CGSize(width: 390, height: 500)])!]
     ax.values[71] = [kAXValueAttribute: NSNumber(value: 0.5)]
     ax.settable[71] = [kAXValueAttribute]
+    let page = try confirmScroll(hit: el(72), direction: .down, delta: 120, ax: ax.ops, post: {})
+    XCTAssertEqual(page.container, .pageScroller)
+    XCTAssertTrue(ax.writes.isEmpty, "no fallback on a page scroller")
+    ax.roles[70] = kAXScrollAreaRole; ax.actions[70] = []
     let own = try confirmScroll(hit: el(72), direction: .down, delta: 120, ax: ax.ops, post: {})
-    XCTAssertEqual(ax.writes.map(\.id), [71], "the nearest scroller's own bar")
+    XCTAssertEqual(own.container, .scrollArea)
+    XCTAssertEqual(ax.writes.map(\.id), [71], "the nearest scroll area's own bar")
     XCTAssertEqual(own.barWrite ?? 0, 0.8, accuracy: 1e-9, "0.5 + 120 / (500 - 100)")
     XCTAssertNil(own.fallbackSkipped)
     // A plain group (no page action, no bar) smaller than the outer area, the hit reaching past its top: clipped.
     ax.writes = []
-    ax.actions[70] = []
+    ax.roles[70] = kAXGroupRole
     ax.values[70] = [:]
     ax.frames[72] = CGRect(x: 0, y: 140, width: 100, height: 20)
     let clipped = try confirmScroll(hit: el(72), direction: .down, delta: 120, ax: ax.ops, post: {})
@@ -618,6 +625,109 @@ final class ScrollConfirmTests: XCTestCase {
     let capped = trackedDescendant(of: el(2), viewport: ax.frames[2]!, horizontal: false, ax: ax.ops)
     XCTAssertEqual(capped.walked, 200, "the budget")
     XCTAssertNotNil(capped.element, "the nearest seen still tracked")
+  }
+
+  // MARK: Round 4 (the review of 8b5d314f..ca835ff4)
+
+  /// P1: a deeper scroll area whose frame is empty is passed through, never selected; the visible one holding the point
+  /// is, and only its bar is written.
+  func testTheWindowScanNeverSelectsAnEmptyFramedScrollArea() throws {
+    let ax = FakeAX()
+    ax.roles = [1: kAXWindowRole, 2: kAXScrollAreaRole, 3: kAXGroupRole, 4: kAXScrollAreaRole, 5: kAXScrollBarRole,
+                6: kAXScrollBarRole, 7: kAXGroupRole, 9: kAXStaticTextRole]
+    ax.parents = [2: 1, 3: 2, 4: 3, 5: 4, 6: 2, 7: 2, 9: 1]
+    ax.children = [1: [2, 9], 2: [7, 3, 6], 3: [4], 4: [5]]
+    ax.frames = [1: CGRect(x: 0, y: 0, width: 800, height: 600), 2: CGRect(x: 200, y: 100, width: 500, height: 400),
+                 3: .zero, 4: .zero, 7: CGRect(x: 200, y: 100, width: 500, height: 900), 9: CGRect(x: 0, y: 0, width: 800, height: 600)]
+    ax.values = [2: [kAXContentsAttribute: [el(7)] as CFArray, kAXVerticalScrollBarAttribute: el(6)], 6: [kAXValueAttribute: NSNumber(value: 0)],
+                 4: [kAXVerticalScrollBarAttribute: el(5)], 5: [kAXValueAttribute: NSNumber(value: 0)]]
+    ax.settable = [5: [kAXValueAttribute], 6: [kAXValueAttribute]]
+    XCTAssertEqual(scrollAreaUnder(CGPoint(x: 400, y: 300), in: el(1), ax: ax.ops).map(FakeAX.id), 2)
+    _ = try confirmScroll(hit: el(9), direction: .down, delta: 120, ax: ax.ops, window: el(1), point: CGPoint(x: 400, y: 300), post: {})
+    XCTAssertEqual(ax.writes.map(\.id), [6], "the visible area's bar, never the empty one's")
+  }
+
+  /// The window scan skips subtrees whose frame does not hold the point, so a large one elsewhere (a sidebar's 3,000
+  /// rows) does not spend its budget before the scroll area under the point.
+  func testTheWindowScanSkipsSubtreesOffThePoint() {
+    let ax = FakeAX()
+    ax.roles = [1: kAXWindowRole, 2: kAXGroupRole, 3: kAXScrollAreaRole]
+    ax.children = [1: [2, 3], 2: Array(1000..<4000)]
+    ax.frames = [1: CGRect(x: 0, y: 0, width: 800, height: 600), 2: CGRect(x: 0, y: 0, width: 200, height: 600),
+                 3: CGRect(x: 200, y: 0, width: 600, height: 600)]
+    for row in 1000..<4000 { ax.roles[row] = kAXRowRole; ax.frames[row] = CGRect(x: 0, y: 0, width: 200, height: 20) }
+    XCTAssertEqual(scrollAreaUnder(CGPoint(x: 400, y: 300), in: el(1), ax: ax.ops).map(FakeAX.id), 3)
+  }
+
+  /// P1: two genuinely nested page-scrolling groups, each with a bar of its own. The run stops at the inner one, whose
+  /// bar at its end answers atEnd; the outer bar (0.25) is never written.
+  func testNestedPageScrollersWithBarsOfTheirOwnAreNotMerged() throws {
+    let ax = FakeAX()
+    let page = ["AXScrollDownByPage", "AXScrollUpByPage"]
+    ax.roles = [1: kAXWindowRole, 2: kAXGroupRole, 3: kAXScrollBarRole, 4: kAXGroupRole, 5: kAXScrollBarRole, 6: kAXStaticTextRole]
+    ax.parents = [2: 1, 3: 2, 4: 2, 5: 4, 6: 4]
+    ax.children = [2: [4, 3], 4: [6, 5]]
+    ax.actions = [2: page, 4: page, 6: page]
+    ax.frames = [2: CGRect(x: 0, y: 0, width: 400, height: 400), 4: CGRect(x: 0, y: 100, width: 400, height: 200),
+                 6: CGRect(x: 10, y: 150, width: 100, height: 20)]
+    ax.values = [2: [kAXVerticalScrollBarAttribute: el(3)], 3: [kAXValueAttribute: NSNumber(value: 0.25)],
+                 4: [kAXVerticalScrollBarAttribute: el(5)], 5: [kAXValueAttribute: NSNumber(value: 1)]]
+    ax.settable = [3: [kAXValueAttribute], 5: [kAXValueAttribute]]
+    XCTAssertEqual(scrollContainer(of: el(6), ax: ax.ops).map { FakeAX.id($0.element) }, 4, "the inner group, not the outer")
+    let record = try confirmScroll(hit: el(6), direction: .down, delta: 120, ax: ax.ops, post: {})
+    XCTAssertEqual(record.outcome, .atEnd)
+    XCTAssertTrue(ax.writes.isEmpty)
+  }
+
+  /// P2: the bar near its end tells the end only with the edge child wholly inside the viewport, never past a document
+  /// frame that runs on, and only within 0.03 (a virtualized list's bar at 0.96 had 32 points to go).
+  func testTheBarNearItsEndNeedsTheEdgeChildWhollyInside() {
+    // A clipped outline (frame = viewport) of exposed rows; the last one reported clipped at the viewport's bottom.
+    let ax = FakeAX()
+    ax.roles = [2: kAXScrollAreaRole, 3: "AXOutline", 4: kAXScrollBarRole]
+    ax.parents = [3: 2, 4: 2]
+    ax.children = [2: [3, 4], 3: Array(10..<20)]
+    ax.frames = [2: CGRect(x: 0, y: 100, width: 300, height: 400), 3: CGRect(x: 0, y: 100, width: 300, height: 400)]
+    var extent = CGSize(width: 300, height: 1200)
+    ax.values = [2: [kAXContentsAttribute: [el(3)] as CFArray, kAXVerticalScrollBarAttribute: el(4), "AXContentSize": AXValueCreate(.cgSize, &extent)!],
+                 4: [kAXValueAttribute: NSNumber(value: 0.96)]]
+    for (i, row) in (10..<20).enumerated() { ax.roles[row] = kAXRowRole; ax.frames[row] = CGRect(x: 0, y: 180 + CGFloat(i) * 32, width: 300, height: 32) }
+    ax.frames[19] = CGRect(x: 0, y: 468, width: 300, height: 32)  // clipped at 500 as reported
+    func atEnd(_ direction: ScrollDirection) -> Bool {
+      let geometry = scrollGeometry(el(2), kind: .scrollArea, hit: nil, horizontal: false, ax: ax.ops, towardEnd: scrollSign(direction) > 0)
+      return scrollAtEnd(readScroll(geometry, ax: ax.ops), direction: direction, geometry: geometry)
+    }
+    XCTAssertFalse(atEnd(.down), "0.96 is not near enough")
+    ax.values[4] = [kAXValueAttribute: NSNumber(value: 0.98)]
+    XCTAssertTrue(atEnd(.down), "0.98 with the last row inside: the sidebar's end")
+    // Scrolling up: the bar near 0, the first row's top inside but its bottom past the viewport's: not wholly inside.
+    ax.values[4] = [kAXValueAttribute: NSNumber(value: 0.02)]
+    ax.frames[10] = CGRect(x: 0, y: 100, width: 300, height: 450)
+    XCTAssertFalse(atEnd(.up))
+    // A document frame that runs 50 points past the viewport's bottom: never overridden by an edge child inside.
+    ax.values[4] = [kAXValueAttribute: NSNumber(value: 0.98)]
+    ax.frames[3] = CGRect(x: 0, y: -600, width: 300, height: 1150)
+    XCTAssertFalse(atEnd(.down))
+  }
+
+  /// P2: a page scroller's first child is a movement probe only: a first row taller than the viewport is neither the
+  /// document's extent for the conversion nor its end.
+  func testAPageScrollersFirstChildIsNoExtent() throws {
+    let ax = FakeAX()
+    let page = ["AXScrollDownByPage", "AXScrollUpByPage"]
+    ax.roles = [1: kAXWindowRole, 2: kAXGroupRole, 3: kAXGroupRole, 4: kAXStaticTextRole]
+    ax.parents = [2: 1, 3: 2, 4: 3]
+    ax.children = [2: [3], 3: [4]]
+    ax.actions = [2: page, 3: page, 4: page]
+    ax.actions[2] = page; ax.roles[1] = kAXWindowRole
+    ax.frames = [2: CGRect(x: 0, y: 40, width: 400, height: 308), 3: CGRect(x: 0, y: 40, width: 400, height: 500),
+                 4: CGRect(x: 0, y: 40, width: 400, height: 500)]
+    let geometry = scrollGeometry(el(2), kind: .pageScroller, hit: nil, horizontal: false, ax: ax.ops, towardEnd: false)
+    XCTAssertNil(geometry.scrollableLength, "no extent, so no conversion")
+    XCTAssertFalse(scrollAtEnd(readScroll(geometry, ax: ax.ops), direction: .up, geometry: geometry), "no geometric end")
+    ax.parents[2] = 1
+    let record = try confirmScroll(hit: el(4), direction: .up, delta: 120, ax: ax.ops, post: {})
+    XCTAssertFalse(record.endBefore)
   }
 
   func testAHorizontalScrollReadsTheHorizontalBarAndTheXEdges() throws {

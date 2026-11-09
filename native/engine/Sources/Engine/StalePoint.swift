@@ -71,6 +71,9 @@ struct ScreenshotNodeRead<Element> {
   let frame: CGRect?
   let actions: [String]
   let childCount: Int
+  /// Whether the walk read its AXChildren (`ElementData.childrenRead`): a failed read counts no children, so with it
+  /// unread the record cannot say whether it holds them all (#330's rule dL).
+  var childrenRead = true
 }
 
 /// The record of a walk's window tree (`reads` in the walk's preorder, parents before their children): each node with a
@@ -136,14 +139,16 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
 }
 
 /// #330's rule dL: every element of the walk's record (`reads`), framed or frameless, keyed by `key`, with whether the walk
-/// recorded every one of its direct children (none left out by a width cut, the depth cap, the budget or deadline, or a
-/// failed read). A child such an element lists now that the record lacks is new since the screenshot.
+/// recorded every one of its direct children (its AXChildren read, and none left out by a width cut, the depth cap, the
+/// budget or deadline, or a failed read of a child). A child such an element lists now that the record lacks is new since
+/// the screenshot. An element whose AXChildren read failed decodes as having none, so it never counts as complete (the
+/// review of 364e017d..51ce4138).
 func screenshotChildrenRecorded<Element, Key: Hashable>(_ reads: [ScreenshotNodeRead<Element>], key: (Element) -> Key) -> [Key: Bool] {
   var recordedChildren: [Int: Int] = [:]
   for read in reads { if let parent = read.parent { recordedChildren[parent, default: 0] += 1 } }
   var complete: [Key: Bool] = [:]
   complete.reserveCapacity(reads.count)
-  for read in reads { complete[key(read.element)] = (recordedChildren[read.number] ?? 0) >= read.childCount }
+  for read in reads { complete[key(read.element)] = read.childrenRead && (recordedChildren[read.number] ?? 0) >= read.childCount }
   return complete
 }
 
@@ -373,11 +378,13 @@ private enum ChainStatus { case recorded(allChildren: Bool), new, insideNew, unk
 /// the web area down, an element is recorded; new (the record lacks it, its parent recorded with every child); inside a
 /// new one; or unknown (the record lacks it, under a parent whose children the record does not all hold, or under an
 /// unknown one). The topmost new element refuses when its parent's AXChildren lists it now, since Chrome hit-tests a
-/// button to its label's text, which no AXChildren lists and the walk never records, and when it is neither `current`,
-/// the recorded node as found now, nor holds it: #296's control re-created in place, and a wrapper re-created around it,
-/// are the node, not something over it. Nothing is read until the record names a new element; then its parent's
-/// children, and, when `current` is not on the chain, `current`'s parents up to the new element or the web area.
-func newElementOverPoint<Element>(chain: [Element], current: Element, recorded: (Element) -> Bool?,
+/// button to its label's text, which no AXChildren lists and the walk never records, and when it neither is nor holds one
+/// of `found`, the recorded nodes as found now: the node at the point (#296's control re-created in place, and a wrapper
+/// re-created around it, are the node, not something over it; the design session's acceptance cd365f0e), and a hit #305
+/// kept as a recorded control, perhaps re-created in place (the review of 364e017d..51ce4138). Nothing is read until the
+/// record names a new element; then its parent's children, and, for each of `found` not on the chain, its parents up to
+/// the new element or the web area.
+func newElementOverPoint<Element>(chain: [Element], found: [Element], recorded: (Element) -> Bool?,
                                   reads: StalePointReads<Element>) -> (found: Bool, reads: Int) {
   var parent = ChainStatus.unknown
   var topmost: Int?
@@ -397,12 +404,19 @@ func newElementOverPoint<Element>(chain: [Element], current: Element, recorded: 
   }
   guard let topmost else { return (false, 0) }
   let element = chain[topmost]
-  let currentAt = chain.firstIndex { reads.same($0, current) }
-  if let currentAt, topmost >= currentAt { return (false, 0) }  // the node itself, or an element holding it
+  var offChain: [Element] = []
+  for node in found {
+    if let at = chain.firstIndex(where: { reads.same($0, node) }) {
+      if topmost >= at { return (false, 0) }  // a recorded node as found now, or an element holding it
+    } else {
+      offChain.append(node)
+    }
+  }
   var count = 1
   guard reads.children(chain[topmost + 1])?.contains(where: { reads.same($0, element) }) == true else { return (false, count) }
-  if currentAt == nil, let area = chain.last {
-    var below = current
+  guard let area = chain.last else { return (true, count) }
+  for node in offChain {
+    var below = node
     for _ in 0..<stalePointAncestorLevels {
       guard let next = reads.parent(below) else { break }
       count += 1
@@ -531,7 +545,10 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   // #330's rule dL, after #296's checks and rule G: a point they keep in a web area refuses when the hit lies in an element
   // the page added over it since the screenshot (`newElementOverPoint`), judged on G's walk. A refusal keeps its reason.
   guard !byHit.refused, let chain else { return byHit }
-  let added = newElementOverPoint(chain: chain, current: current, recorded: recorded, reads: reads)
+  // The recorded nodes as found now: the node, and a hit #305 kept as a recorded control (its own handle or one
+  // re-created in place).
+  let found = byHit.reason == .recordedHit ? [current] + (hit.map { [$0] } ?? []) : [current]
+  let added = newElementOverPoint(chain: chain, found: found, recorded: recorded, reads: reads)
   if added.reads > 0 { newElementReads = added.reads }
   guard added.found else {
     var kept = byHit

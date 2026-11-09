@@ -15,6 +15,8 @@ private final class Node {
   var description: String?
   var frame: CGRect?
   var actions: [String] = []
+  /// Its AXChildren read fails (at the observation, for the walk's record).
+  var childrenUnread = false
   weak var parent: Node?
   var children: [Node] = []
 
@@ -54,9 +56,11 @@ private func walked(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) 
   func walk(_ node: Node, parent: Int?, depth: Int) {
     let number = next
     next += 1
+    let children = node.childrenUnread ? [] : node.children  // a failed AXChildren read decodes as none
     reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.role, title: node.title.map(bounded),
-                                    description: node.description.map(bounded), frame: node.frame, actions: node.actions, childCount: node.children.count))
-    for child in node.children where !skipped.contains(ObjectIdentifier(child)) { walk(child, parent: number, depth: depth + 1) }
+                                    description: node.description.map(bounded), frame: node.frame, actions: node.actions, childCount: children.count,
+                                    childrenRead: !node.childrenUnread))
+    for child in children where !skipped.contains(ObjectIdentifier(child)) { walk(child, parent: number, depth: depth + 1) }
   }
   walk(root, parent: nil, depth: 0)
   return reads
@@ -1636,6 +1640,78 @@ final class NewElementGuardTests: XCTestCase {
                                                          "newElementReads": 3, "ms": 0.4] as NSDictionary)
     XCTAssertEqual(screenChangedSinceScreenshot(was: "AXButton \"Go\"", reason: .newElementOverPoint, now: nil, afterActivation: true).message,
                    "The screen changed since the screenshot: a new element, such as a suggestion list or popup, has appeared over the AXButton \"Go\" it showed at this point. The app was activated in the background, but nothing was pressed. Call getScreenshot for a new screenshot, or press Escape to dismiss what appeared, before clicking.")
+  }
+
+  /// The review of 364e017d..51ce4138 (P2): a hit #305 keeps as a recorded control re-created in place (GitHub's code
+  /// view in a page, its overlay textarea re-created with the same role, frame and label) is that control, not new; nor
+  /// is a wrapper re-created around it.
+  func testARecordedHitReCreatedInPlaceIsNotNew() {
+    func codeView() -> (window: Node, main: Node, textArea: Node) {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 1000, height: 800))
+      let page = Node("AXWebArea", CGRect(x: 0, y: 50, width: 1000, height: 750))
+      let main = Node("AXGroup", CGRect(x: 0, y: 100, width: 1000, height: 700))
+      let textArea = Node("AXTextArea", CGRect(x: 100, y: 200, width: 800, height: 400), description: "file content")
+      let lines = Node("AXGroup", CGRect(x: 100, y: 200, width: 800, height: 400))
+      window.add(page)
+      page.add(main)
+      main.add(textArea)
+      main.add(lines)
+      return (window, main, textArea)
+    }
+    let codePoint = CGPoint(x: 300, y: 300)
+    func again() -> Node { Node("AXTextArea", CGRect(x: 100, y: 200, width: 800, height: 400), description: "file content") }
+    do {
+      let view = codeView()
+      let record = Record(view.window)
+      view.textArea.destroy()
+      let textArea = again()
+      view.main.add(textArea)
+      let kept = stalePointVerdict(at: codePoint, nodes: record.nodes, recorded: record.members, hit: textArea, reads: reads)
+      XCTAssertEqual(kept.reason, .recordedHit)
+      XCTAssertFalse(kept.refused)
+    }
+    do {
+      let view = codeView()
+      let record = Record(view.window)
+      view.textArea.destroy()
+      let wrapper = Node("AXGroup", CGRect(x: 100, y: 200, width: 800, height: 400))
+      let textArea = again()
+      wrapper.add(textArea)
+      view.main.add(wrapper)
+      XCTAssertEqual(stalePointVerdict(at: codePoint, nodes: record.nodes, recorded: record.members, hit: textArea, reads: reads).reason,
+                     .recordedHit)
+    }
+  }
+
+  /// The review of 364e017d..51ce4138 (P2): an element whose AXChildren read failed at the observation records no
+  /// children and says nothing of them, so a child it lists at the click is not new: Chrome's button whose children read
+  /// failed then, its label's text listed now.
+  func testSilentWhenTheParentsChildrenWereNotRead() {
+    let page = Page()
+    let label = Node("AXStaticText", CGRect(x: 60, y: 166, width: 40, height: 18), description: "Go")
+    page.button.add(label)
+    page.button.childrenUnread = true
+    let record = Record(page.window)
+    page.button.childrenUnread = false
+    let kept = judged(record, hit: label)
+    XCTAssertEqual(kept.reason, .nonInteractiveHit)
+    XCTAssertNil(kept.newElementReads)
+  }
+
+  /// The walk's record says whether it read each element's AXChildren: one whose read failed (its data decoding no
+  /// children) is not recorded with every child.
+  func testTheWalkRecordsAFailedChildrenRead() {
+    let tree = FakeTree()
+    tree.children = [0: [1], 1: [2, 3], 2: [4]]
+    tree.childrenUnread = [2]
+    let recording = walk(tree, Lineage(), recordsScreenshot: true)
+    let complete = screenshotChildrenRecorded(recording.screenshotReads) { tree.id($0) }
+    XCTAssertEqual(complete[1], true)
+    XCTAssertEqual(complete[2], false, "its children unread")
+    XCTAssertEqual(complete[3], true, "a leaf whose read answered none")
+    XCTAssertNil(complete[4])
+    XCTAssertTrue(ElementData(values: ["AXChildren": [] as CFArray]).childrenRead)
+    XCTAssertFalse(ElementData(values: [:]).childrenRead)
   }
 
   /// The observed screenshot keeps the record's elements the guard looks the chain up in.

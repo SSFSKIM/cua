@@ -47,6 +47,9 @@ struct ElementData {
   var frame: CGRect?
   /// AXChildren, in order.
   var children: [AXUIElement]
+  /// Whether AXChildren was read: false when its slot held an error or nothing, which decodes as no children (#330's
+  /// rule dL then cannot tell a child the page added from one this read missed).
+  var childrenRead: Bool
 
   /// Decodes one element's attribute values, keyed by attribute name.
   init(values: [String: CFTypeRef]) {
@@ -78,6 +81,7 @@ struct ElementData {
     domClassList = values["AXDOMClassList"].flatMap { CFGetTypeID($0) == CFArrayGetTypeID() ? ($0 as! [AnyObject]).compactMap { $0 as? String }.map(bounded) : nil }
     frame = point(values["AXPosition"]).flatMap { origin in size(values["AXSize"]).map { CGRect(origin: origin, size: $0) } }
     children = elementList(values["AXChildren"])
+    childrenRead = values["AXChildren"].map { CFGetTypeID($0) == CFArrayGetTypeID() } ?? false
   }
 }
 

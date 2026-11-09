@@ -44,8 +44,9 @@ final class FakeTree {
 
 final class FakeSource: ElementSource, @unchecked Sendable {
   let tree: FakeTree
-  /// Uncached reads by id, and settability calls by attribute.
+  /// Uncached reads by id, in the order made, and settability calls by attribute.
   var reads: [Int: Int] = [:]
+  var readOrder: [Int] = []
   var settableCalls: [String: Int] = [:]
   /// Reads through the listed attributes only (the menu bar's), by id; action-description calls by action name.
   var listedReads: [Int: Int] = [:]
@@ -57,6 +58,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   override func read(_ element: AXUIElement) -> ElementData? {
     let id = tree.id(element)
     reads[id, default: 0] += 1
+    readOrder.append(id)
     if let delay = tree.slow[id] { usleep(delay) }
     if tree.unreadable.contains(id) { return nil }
     var values: [String: CFTypeRef] = ["AXRole": "AXGroup" as CFString, "AXTitle": "node \(id)" as CFString,
@@ -102,12 +104,16 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     return data
   }
   override func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? { tree.visible[tree.id(element)].map { $0.map(Engine.element) } }
-  /// Frame reads (AXPosition and AXSize alone) by id.
+  /// Frame reads (AXPosition and AXSize, with AXRole) by id.
   var frameReads: [Int: Int] = [:]
   override func readFrame(_ element: AXUIElement) -> CGRect? {
     frameReads[tree.id(element), default: 0] += 1
     if let delay = tree.slowFrames[tree.id(element)] { usleep(delay) }
     return tree.frames[tree.id(element)]
+  }
+  override func readFramedRole(_ element: AXUIElement) -> (frame: CGRect?, role: String?) {
+    let id = tree.id(element)
+    return (readFrame(element), tree.unreadable.contains(id) ? nil : (tree.extra[id]?["AXRole"] as? String) ?? "AXGroup")
   }
 
   override func scrollBars(_ element: AXUIElement) -> (horizontal: Bool, vertical: Bool) {

@@ -25,9 +25,13 @@ import Foundation
 /// How long the focus write's read-back and the caret's are polled, and how often.
 let webAreaFocusSettleMs: Double = 300
 let webAreaFocusSampleMs: Double = 20
-/// The most characters a caret scan reads boxes for (round 2's probe: 3,074 in 165 to 185 ms, linear); a longer range is
-/// not scanned and the caret is not placed.
+/// The most characters the caret's linear scan reads boxes for (round 2's probe: 3,074 in 165 to 185 ms). Since #290 the
+/// caret is searched for first (`caretOffset`), and the linear scan decides only what the search could not: over the
+/// whole range when it is no longer than this, else over this many characters around where the search ended.
 let caretScanLimit = 5_000
+/// The most unusable boxes (empty, or a failed read) the caret's search steps past from one probe toward the nearest
+/// usable box before it leaves the answer to the linear scan (#290).
+let caretSearchStepLimit = 64
 /// The most nodes `regionTextStart` walks in a contenteditable region before it gives up on mapping the hit.
 let regionWalkLimit = 2_000
 
@@ -99,22 +103,140 @@ func webAreaFocusTarget<Element>(_ hit: Element, role: (Element) -> String?, sub
 }
 
 /// The caret offset a click at `point` places in a text of `length` UTF-16 units, from its characters' boxes
-/// (`bounds`, screen coordinates, nil or empty for a character with none) over `range`: in the box that holds the point,
-/// before the character on its left half and after it on its right; past a line's last character (to the right of every
-/// box in the line the point's height falls in), the end of that line, before its line break. That end counts only
-/// once it is established: a line break's own box, or after the rightmost character read when the next offset is the
-/// text's end, a line break, or a character whose non-empty box starts below this one's (a soft wrap; read even outside
-/// `range`). Otherwise the rightmost box read need not be the line's last (a failed read, a scan cut short). An empty text is 0. Not placed: `noCharacterBoxes` when the scan read no usable box at all (one with
-/// height, and width unless it is a line break's), as every box is before Chromium's complete accessibility mode;
-/// `boxesIncomplete` when usable boxes were read but none holds the point and it is past no established line end, while
-/// some character that should have a box had none (Chromium's boxes still arriving: `mayLackBox` names those that may
-/// legitimately have none, line breaks always among them); `pointOutsideText` for such a miss with every expected box
-/// read, or a range longer than `caretScanLimit`.
+/// (`bounds`, screen coordinates, nil or empty for a character with none) over `range`, as #283's linear scan
+/// (`linearCaretOffset`) answers it, searched for first (#290): a bisection over the boxes in reading order for the
+/// point's line (box y), then for its place on that line (box x), and the linear scan over the few characters it ends
+/// at; an offset is taken from there only where that scan places it. Anything else is the linear scan's over the whole
+/// range when it is at most `caretScanLimit` characters, so its answer, offset or reason, is the linear scan's; over that
+/// many characters around where the search ended when the range is longer. Each box is read at most once.
+///
+/// The search assumes lines run downward and characters rightward in the text's order. An unusable box (empty, or a
+/// failed read) at a probe is stepped past to the nearest usable one, never inferred across, at most
+/// `caretSearchStepLimit` of them; two usable boxes read out of that order (a vertical or right-to-left layout), or a
+/// step limit reached, end the search with no offset taken from it. `searchable` false skips the search: a text holding
+/// right-to-left characters (`holdsRightToLeft`), whose short lines may show the search too few boxes to see the order
+/// broken.
 func caretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int) -> CGRect?,
-                 isLineBreak: (Int) -> Bool, mayLackBox: (Int) -> Bool) -> Result<Int, CaretNotPlaced> {
+                 isLineBreak: (Int) -> Bool, mayLackBox: (Int) -> Bool, searchable: Bool = true) -> Result<Int, CaretNotPlaced> {
   if length == 0 { return .success(0) }
   let scanned = range.clamped(to: 0..<length)
-  guard scanned.count <= caretScanLimit else { return .failure(.pointOutsideText) }
+  var read: [Int: CGRect?] = [:]
+  func box(_ index: Int) -> CGRect? {
+    if let known = read[index] { return known }
+    let found = bounds(index)
+    read[index] = .some(found)
+    return found
+  }
+  let searched = searchable ? caretSearch(at: point, scanned, box: box, isLineBreak: isLineBreak)
+                            : .abandoned(at: scanned.lowerBound + scanned.count / 2)
+  if case .window(let window) = searched,
+     case .success(let offset) = linearCaretOffset(at: point, length: length, range: window, bounds: box, isLineBreak: isLineBreak,
+                                                   mayLackBox: mayLackBox) {
+    return .success(offset)
+  }
+  var fallback = scanned
+  if scanned.count > caretScanLimit {
+    let near: Int
+    switch searched {
+    case .window(let window): near = window.lowerBound
+    case .abandoned(let at): near = at
+    }
+    let lower = min(max(scanned.lowerBound, near - caretScanLimit / 2), scanned.upperBound - caretScanLimit)
+    fallback = lower..<(lower + caretScanLimit)
+  }
+  return linearCaretOffset(at: point, length: length, range: fallback, bounds: box, isLineBreak: isLineBreak, mayLackBox: mayLackBox)
+}
+
+/// Where `caretSearch` ended: the few characters around the point's place for the linear scan to decide, or the index
+/// it had reached when it stopped with nothing to offer.
+enum CaretSearchEnd: Equatable {
+  case window(Range<Int>)
+  case abandoned(at: Int)
+}
+
+/// #290's search over `scanned`'s boxes in reading order (`caretOffset`). Boxes are usable as the linear scan's: with
+/// height, and width unless a line break's. First the point's line: the first index whose usable box is not above the
+/// point (its bottom below the point's y) and the first whose usable box is below it (its top below the point's y).
+/// Then, between them, the first whose usable box is not left of the point (its right edge past the point's x). The
+/// window runs from the last usable box before that one (the line's rightmost when the point is past its end) through
+/// that one.
+func caretSearch(at point: CGPoint, _ scanned: Range<Int>, box: (Int) -> CGRect?, isLineBreak: (Int) -> Bool) -> CaretSearchEnd {
+  func usable(_ index: Int) -> CGRect? {
+    guard let found = box(index), found.height > 0, isLineBreak(index) || found.width > 0 else { return nil }
+    return found
+  }
+  var samples: [(index: Int, box: CGRect)] = []
+  var gaveUp: Int?
+  /// The usable box nearest `middle` in `lower..<upper`, looking outward on both sides alternately; nil with `gaveUp`
+  /// unset when the interval has none, with it set when more than `caretSearchStepLimit` unusable boxes came first.
+  func nearest(_ middle: Int, _ lower: Int, _ upper: Int) -> (index: Int, box: CGRect)? {
+    var passed = 0
+    var distance = 0
+    while middle - distance >= lower || middle + distance < upper {
+      for index in distance == 0 ? [middle] : [middle + distance, middle - distance] where index >= lower && index < upper {
+        if let found = usable(index) {
+          samples.append((index, found))
+          return (index, found)
+        }
+        passed += 1
+        if passed > caretSearchStepLimit { gaveUp = middle; return nil }
+      }
+      distance += 1
+    }
+    return nil
+  }
+  /// The first index in `lower..<upper` whose usable box meets `holds`, which every usable box after one that meets it
+  /// meets too; unusable boxes count for neither side. Nil when the search gave up.
+  func first(_ lower: Int, _ upper: Int, where holds: (CGRect) -> Bool) -> Int? {
+    var lower = lower, upper = upper
+    while lower < upper {
+      guard let (index, found) = nearest(lower + (upper - lower) / 2, lower, upper) else {
+        if gaveUp != nil { return nil }
+        break  // nothing usable left between: the boundary is anywhere there
+      }
+      if holds(found) { upper = index } else { lower = index + 1 }
+    }
+    return lower
+  }
+  let middle = scanned.lowerBound + scanned.count / 2
+  guard let lineStart = first(scanned.lowerBound, scanned.upperBound, where: { point.y < $0.maxY }),
+        let lineEnd = first(lineStart, scanned.upperBound, where: { point.y < $0.minY }),
+        let place = first(lineStart, lineEnd, where: { point.x < $0.maxX }) else { return .abandoned(at: gaveUp ?? middle) }
+  // The window's start: the last usable box before `place` on the line, if any.
+  var start = place
+  var passed = 0
+  while start > lineStart {
+    start -= 1
+    if let found = usable(start) { samples.append((start, found)); break }
+    passed += 1
+    if passed > caretSearchStepLimit { return .abandoned(at: place) }
+  }
+  // Every two usable boxes read must run in reading order: the earlier one on a line above the later one's or on its
+  // line, and on the point's line starting left of it.
+  samples.sort { $0.index < $1.index }
+  let onLine = { (found: CGRect) in found.minY <= point.y && point.y < found.maxY }
+  for (earlier, later) in zip(samples, samples.dropFirst()) where earlier.index != later.index {
+    if earlier.box.minY >= later.box.maxY { return .abandoned(at: place) }
+    if onLine(earlier.box), onLine(later.box), earlier.box.minX > later.box.minX { return .abandoned(at: place) }
+  }
+  return .window(start..<min(lineEnd, place + 1))
+}
+
+/// #283's linear scan over `range`: in the box that holds the point, before the character on its left half and after it
+/// on its right; past a line's last character (to the right of every box in the line the point's height falls in), the
+/// end of that line, before its line break. That end counts only once it is established: a line break's own box, or
+/// after the rightmost character read when the next offset is the text's end, a line break, or a character whose
+/// non-empty box starts below this one's (a soft wrap; read even outside `range`). Otherwise the rightmost box read need
+/// not be the line's last (a failed read, a scan cut short). An empty text is 0. Not placed: `noCharacterBoxes` when the
+/// scan read no usable box at all (one with height, and width unless it is a line break's), as every box is before
+/// Chromium's complete accessibility mode; `boxesIncomplete` when usable boxes were read but none holds the point and it
+/// is past no established line end, while some character that should have a box had none (Chromium's boxes still
+/// arriving: `mayLackBox` names those that may legitimately have none, line breaks always among them);
+/// `pointOutsideText` for such a miss with every expected box read.
+func linearCaretOffset(at point: CGPoint, length: Int, range: Range<Int>, bounds: (Int) -> CGRect?,
+                       isLineBreak: (Int) -> Bool, mayLackBox: (Int) -> Bool) -> Result<Int, CaretNotPlaced> {
+  if length == 0 { return .success(0) }
+  let scanned = range.clamped(to: 0..<length)
   var readABox = false, missedABox = false
   // The rightmost line-end candidate: its offset, its x, and the box of the character it follows (nil for a line break).
   var lineEnd: (offset: Int, x: CGFloat, after: CGRect?)?
@@ -217,7 +339,7 @@ enum CaretNotPlaced: String, Error, Equatable {
   case unreadable
   /// The scan read no usable character box at all (Chromium before its complete accessibility mode).
   case noCharacterBoxes
-  /// Character boxes were read, but none holds the point and it is past no line's end (or the text was too long to scan).
+  /// Character boxes were read, but none holds the point and it is past no line's end.
   case pointOutsideText
   /// Such a miss while some boxes were still empty: the scan's and its wait's only, never recorded
   /// (`caretAwaitingBoxes` re-reads it where fresh and answers it otherwise as `pointOutsideText`).
@@ -326,15 +448,31 @@ func focusNote(_ app: String, _ outcome: WebAreaFocusOutcome) -> String {
 }
 
 /// The caret offset a click at `point` places in a field whose value read as `value`, from its characters' boxes
-/// (`caretOffset`): all of the value's UTF-16 units, bounded only by `caretScanLimit`. Only a value read as a string is
-/// text: anything else (a failed read, no value, another type) is `unreadable`, never an empty field.
+/// (`caretOffset`): all of the value's UTF-16 units, searched, and read linearly within `caretScanLimit`; not searched when
+/// it holds right-to-left characters. Only a value read as a string is text: anything else (a failed read, no value,
+/// another type) is `unreadable`, never an empty field.
 func textCaretOffset(at point: CGPoint, value: Any?, bounds: (Int) -> CGRect?) -> Result<Int, CaretNotPlaced> {
   guard let string = value as? String else { return .failure(.unreadable) }
   let text = string as NSString
   let length = text.length
   return caretOffset(at: point, length: length, range: 0..<length, bounds: bounds,
                      isLineBreak: { $0 < length && [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: $0)) },
-                     mayLackBox: { mayLackBox(text, $0) })
+                     mayLackBox: { mayLackBox(text, $0) }, searchable: !holdsRightToLeft(text))
+}
+
+/// Whether `text` holds a character written right to left, or a mark that orders text so (#290: such a line's boxes do
+/// not run rightward in the text's order, so the caret is not searched for): the Hebrew, Arabic, Syriac, Thaana, NKo,
+/// Samaritan and Mandaic blocks (U+0590 to U+08FF), their presentation forms (U+FB1D to U+FDFF, U+FE70 to U+FEFE), the
+/// right-to-left mark, embedding, override and isolate (U+200F, U+202B, U+202E, U+2067), and the supplementary
+/// right-to-left planes' ranges U+10800 to U+10FFF and U+1E800 to U+1EFFF (by their leading surrogates).
+func holdsRightToLeft(_ text: NSString) -> Bool {
+  for index in 0..<text.length {
+    switch text.character(at: index) {
+    case 0x0590...0x08FF, 0xFB1D...0xFDFF, 0xFE70...0xFEFE, 0x200F, 0x202B, 0x202E, 0x2067, 0xD802...0xD803, 0xD83A...0xD83B: return true
+    default: continue
+    }
+  }
+  return false
 }
 
 /// `textCaretOffset` over an element's own AXValue and characters' boxes: a text field, or a contenteditable region's

@@ -80,8 +80,9 @@ the notice to the window state, and the observation shows it as its first line.
   - a long path that outlasts the floor and releases right after its last step.
   
   At floor timing neither has shown it. The press-inside control, 9 of 9 in the gate's scene and 60 of 60 in the
-  counts, never dropped and was reported unconfirmed every time. The long path, 330 drags at three loads, answered ok
-  with nothing pending 0 times (`tables/long-path.md`). Both controls stay in place; the press-inside one is in the
+  counts, never dropped and was reported unconfirmed every time. The long path, 330 drags at three loads, never landed
+  and answered ok with nothing pending 0 times, so the honest answer and the page agree: not observed in 330
+  (`tables/long-path.md`). Both controls stay in place; the press-inside one is in the
   gate.
 - **The real late takes are fewer on the final engines than on the old one** (5 of 40 against 25 of 40). The thaw is
   fixed at 250 ms after the request. The new engine's press comes a few ms later after the request, because it first

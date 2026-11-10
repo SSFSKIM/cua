@@ -66,27 +66,49 @@ export function caseLanes(c, args) {
 const refusal = (r) => r.ok !== true && DEVICE_REFUSAL.test(String(r.error ?? ''));
 const leftAnswer = (r) => r.ok !== true && GECKO_POINTER_LEFT.test(String(r.error ?? ''));
 
+/** Whether a run proves anything: its park held at the request, and its effect was read (`took` true or false). */
+const parkHeldAt = (r) => r.pointer?.held === true;
+const effectRead = (r) => typeof r.took === 'boolean';
+
 /**
- * One case judged from its runs (each `{engine, ok, error, took, witness}`): an allowed case passes when cua ran
- * `ALLOWED_RUNS` or more, every one ok, taking effect and with the witness unchanged; a refused one when cua ran
- * `REFUSED_RUNS` or more, every one the Device mode sentence with the witness unchanged and no effect. The other lanes'
- * counts stand beside it, never judged.
+ * One case judged from its runs (each `{engine, ok, error, took, witness, pointer}`, the effect read whatever the
+ * answer). Only a valid run counts: its park held at the request (`pointer.held`) and its effect was read; the others
+ * are left out, counted as such, and a case short of its valid runs fails. An allowed case passes when cua has
+ * `ALLOWED_RUNS` valid runs or more, every one ok and taking effect; a refused one `REFUSED_RUNS`, every one the Device
+ * mode sentence with no effect; a leave case `LEAVE_RUNS`, none ok with no effect and no refusal taking effect. Every
+ * run of cua's, valid or not, must leave the witness unchanged. The other lanes' counts stand beside it, never judged.
  */
 export function judgeCase(c, runs, { allowedRuns = ALLOWED_RUNS, refusedRuns = REFUSED_RUNS, leaveRuns = LEAVE_RUNS } = {}) {
-  const mine = runs.filter((r) => r.engine === 'cua');
   const counts = {};
   for (const r of runs) {
-    counts[r.engine] ??= { took: 0, n: 0, refused: 0, left: 0, ok_no_effect: 0 };
-    counts[r.engine].n++;
-    if (r.took === true) counts[r.engine].took++;
-    if (refusal(r)) counts[r.engine].refused++;
-    if (leftAnswer(r)) counts[r.engine].left++;
-    if (r.ok === true && r.took !== true) counts[r.engine].ok_no_effect++;
+    const n = (counts[r.engine] ??= { n: 0, took: 0, ok_took: 0, ok_no_effect: 0, refused: 0, refused_took: 0, left: 0, left_took: 0, park_missed: 0, unread: 0 });
+    if (!parkHeldAt(r)) n.park_missed++;
+    else if (!effectRead(r)) n.unread++;
+    else {
+      n.n++;
+      if (r.took) n.took++;
+      if (r.ok === true) n[r.took ? 'ok_took' : 'ok_no_effect']++;
+      if (refusal(r)) {
+        n.refused++;
+        if (r.took) n.refused_took++;
+      }
+      if (leftAnswer(r)) {
+        n.left++;
+        if (r.took) n.left_took++;
+      }
+    }
   }
+  const all = runs.filter((r) => r.engine === 'cua');
+  const mine = all.filter((r) => parkHeldAt(r) && effectRead(r));
   const need = c.expect === 'allowed' ? allowedRuns : c.expect === 'honest' ? leaveRuns : refusedRuns;
   const failed = [];
-  if (mine.length < need) failed.push(`cua ran ${mine.length} of ${need}`);
-  const unclean = mine.filter((r) => r.witness !== true).length;
+  if (mine.length < need) {
+    const missed = all.filter((r) => !parkHeldAt(r)).length;
+    const unread = all.filter((r) => parkHeldAt(r) && !effectRead(r)).length;
+    const why = [missed ? `the park missed on ${missed}` : null, unread ? `the effect not read on ${unread}` : null].filter(Boolean);
+    failed.push(why.length ? `cua ran ${mine.length} valid of ${need}: ${why.join(', ')}` : `cua ran ${mine.length} of ${need}`);
+  }
+  const unclean = all.filter((r) => r.witness !== true).length;
   if (unclean) failed.push(`the witness changed on ${unclean}`);
   if (c.expect === 'allowed') {
     const missed = mine.filter((r) => r.ok !== true || r.took !== true).length;
@@ -125,8 +147,9 @@ export function predicatesMarkdown(rows) {
   const cua = (row) => {
     const c = row.counts.cua;
     if (!c) return '–';
-    if (row.expect === 'honest') return `took ${c.took}, left ${c.left}, refused ${c.refused}, ok with no effect ${c.ok_no_effect} (of ${c.n})`;
-    return row.expect === 'allowed' ? `took ${c.took}/${c.n}` : `refused ${c.refused}/${c.n}`;
+    const out = c.park_missed || c.unread ? `; left out: park missed ${c.park_missed}, effect not read ${c.unread}` : '';
+    if (row.expect === 'honest') return `ok and took ${c.ok_took}, left ${c.left} (${c.left_took} took), refused ${c.refused} (${c.refused_took} took), ok with no effect ${c.ok_no_effect} (of ${c.n})${out}`;
+    return (row.expect === 'allowed' ? `took ${c.took}/${c.n}` : `refused ${c.refused}/${c.n}, ${c.took} took`) + out;
   };
   return [
     '| occlusion | pointer | kind | expected | cua | pinned took | cua:any-pointer took | why | verdict |',
@@ -163,7 +186,7 @@ export async function runPredicates(args, { desktop, emit }) {
   const verdict = judgePredicates(plan, runs);
   for (const row of verdict.rows) emit({ ...row, kind: 'predicate-verdict' });
   const md = [
-    `T19's adopted cases (predicates.mjs): Gecko's pointer kinds by the real pointer. Each allowed case ${ALLOWED_RUNS} runs of cua as it ships, every one taking effect with the witness unchanged; each still-refused counterexample ${REFUSED_RUNS}, every one the Device mode sentence with the witness unchanged; each leave case (the pointer moved out during the request) ${LEAVE_RUNS}, none answered ok with no effect. Beside them the pinned build's counts and, on a refused case, cua's own events with the pointer unjudged (\`cua:any-pointer\`, \`--ignore-pointer\`).`,
+    `T19's adopted cases (predicates.mjs): Gecko's pointer kinds by the real pointer. Each run's effect is read whatever it answered, and a run counts only when its park held at the request and its effect was read (the rest are left out and listed). Each allowed case ${ALLOWED_RUNS} such runs of cua as it ships, every one taking effect; each still-refused counterexample ${REFUSED_RUNS}, every one the Device mode sentence with no effect; each leave case (the pointer moved out during the request) ${LEAVE_RUNS}, none answered ok with no effect and no refusal taking effect; every run with the witness unchanged. Beside them the pinned build's counts and, on a refused case, cua's own events with the pointer unjudged (\`cua:any-pointer\`, \`--ignore-pointer\`).`,
     '',
     ...predicatesMarkdown(verdict.rows),
     '',

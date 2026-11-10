@@ -245,7 +245,12 @@ function request(scene, kind, i, point) {
 // ---------------------------------------------------------------------------------------------------------------
 // the run
 
-export async function series(ctx, spec, scene, kind, n) {
+/**
+ * One lane's runs of a cell. `readFailed` reads the effect of a request the engine answered with an error too, and
+ * judges it as any other (T19's manifest and sitting: what the application did, whatever the answer; `took` is null
+ * when the effect could not be read); otherwise a failed request is not read and counts as no effect.
+ */
+export async function series(ctx, spec, scene, kind, n, { readFailed = false } = {}) {
   const { witness, emit, family, desktop } = ctx;
   const engine = new Engine(spec).start();
   const runs = [];
@@ -269,8 +274,9 @@ export async function series(ctx, spec, scene, kind, n) {
       }
       const { value, witness: w } = sent;
       const ok = value.response.ok === true;
-      const after = ok ? await settledEffect(read, (now) => judge(scene, kind, input, before, now)) : null;
-      const took = ok ? judge(scene, kind, input, before, after) : false;
+      const observed = ok || readFailed;
+      const after = observed ? await settledEffect(read, (now) => judge(scene, kind, input, before, now)) : null;
+      const took = observed ? judge(scene, kind, input, before, after) : false;
       const shown = (v) => (typeof v === 'string' && v.length > 80 ? `${v.length} bytes` : v);
       const run = { kind: 'kinds-run', family, input: kind, occlusion: ctx.occlusion, engine: spec.label, i, point, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before: shown(before), after: shown(after), took };
       // a hover read as pixels: how many changed, for the record

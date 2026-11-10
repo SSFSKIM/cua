@@ -69,6 +69,7 @@ test("a selection took only when it is the stretch its path spans, and on a page
   assert.equal(selectTook({ ok: true, i: 1, after: even }, false), false, 'the other stretch is an old selection');
   assert.equal(selectTook({ ok: true, i: 0, after: '' }, false), false);
   assert.equal(selectTook({ ok: false, i: 0, after: even }, false), true, 'the effect, whatever the engine answered');
+  assert.equal(selectTook({ ok: false, i: 0, after: null }, false), null, 'a selection not read is no observation');
   const page = { ok: true, i: 0, after: even.replaceAll(' ', '_') };
   assert.equal(selectTook({ ...page, received: { seq: 3 } }, true), true);
   assert.equal(selectTook({ ...page, received: null }, true), false, 'no press of its own reached the page');

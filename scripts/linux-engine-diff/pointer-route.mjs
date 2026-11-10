@@ -138,9 +138,10 @@ export function parkHeld(park, where, point, window) {
  * selection, read after it, is the stretch of the line its path spans (drag.mjs
  * `selectionCovers`), and on a page the press reached the page (`received`, the drag's own motion record). A page
  * shows the selection with its spaces as `_`. gedit's selection is cleared before each run, so an old one cannot count.
+ * Null when the selection was not read: no observation either way.
  */
 export function selectTook(run, page) {
-  if (typeof run.after !== 'string') return false;
+  if (typeof run.after !== 'string') return null;
   if (page && !run.received) return false;
   return selectionCovers(page ? run.after.replaceAll('_', ' ') : run.after, run.i);
 }
@@ -338,7 +339,7 @@ export async function measureRoute(args, { desktop, emit }, plan, { lanesOf, run
               const scene = scenes[spec.label];
               Object.assign(state, { scene, park: c.park, kind: c.kind, requests: [], clearSelection: group === 'drag' && scene.kindOf === 'editor' ? at[spec.label].text.id : null });
               const ctx = { desktop: seenDesktop, oracle, witness: seenWitness, emit, family, occlusion: c.occlusion, cua: args.cua, dir: desktop.dir, pointFor };
-              const own = group === 'drag' ? await dragSeries(ctx, spec, scene, at[spec.label], 'select', n, { start: next[spec.label], readFailed: true }) : await kindSeries(ctx, spec, scene, c.kind, n);
+              const own = group === 'drag' ? await dragSeries(ctx, spec, scene, at[spec.label], 'select', n, { start: next[spec.label], readFailed: true }) : await kindSeries(ctx, spec, scene, c.kind, n, { readFailed: true });
               next[spec.label] += n;
               own.forEach((r, k) => {
                 r.pointer = state.requests[k] ?? null;

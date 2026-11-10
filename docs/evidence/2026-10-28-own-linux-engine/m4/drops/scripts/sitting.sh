@@ -6,6 +6,7 @@
 #        sitting.sh <harness dir> <candidate engine> <name> short-drop|select|long-drop
 #        sitting.sh <harness dir> <engine> <name> late idle|gate|load2
 #        sitting.sh <harness dir> <candidate engine> <name> floor idle|gate|load2
+#        sitting.sh <harness dir> <candidate engine> <name> long idle|gate|load2
 set -u
 d=$(dirname "$0")
 . "$d/env.sh"
@@ -28,6 +29,9 @@ case $kind in
   counts) "$d/private.sh" "$h" "$name" --experiment drop-signals --cua "$cand" --run "t69-$name" --plan t14 "${loadArgs[@]}" ;;
   # the same drags on the engine as it ships: the floor and the confirmation (plan t14-floor)
   floor) "$d/private.sh" "$h" "$name" --experiment drop-signals --cua "$cand" --run "t69-$name" --plan t14-floor "${loadArgs[@]}" ;;
+  # the long-path accepted-then-left control on the engine as it ships (plan t14-long, 30 at the gate's load)
+  long) plan=t14-long; [ "$load" = gate ] && plan=t14-long-gate
+    "$d/private.sh" "$h" "$name" --experiment drop-signals --cua "$cand" --run "t69-$name" --plan "$plan" "${loadArgs[@]}" ;;
   # #264's real late takes: task 68's freeze cell (drop-signals.mjs plan t14-late), on this engine or the one before T14
   late) "$d/private.sh" "$h" "$name" --experiment drop-signals --cua "$cand" --run "t69-$name" --plan t14-late "${loadArgs[@]}" ;;
   # the gate's Chrome drag-and-drop device cases, cua alone, 3 blocks (9 samples a case, cold ones included)

@@ -25,7 +25,7 @@ const median = (xs) => {
 const r1 = (v) => (v === null ? '–' : (Math.round(v * 10) / 10).toFixed(1));
 
 const UNCONFIRMED = /^Pending from your last drag, an unconfirmed drop: /;
-const BARS = { 'plain-long': { n: 300, falseReleases: 0 }, left: { n: 30, okWithoutDrop: 0 }, 'inzone-out': { n: 30, okWithoutDrop: 0 } };
+const BARS = { 'plain-long': { n: 300, falseReleases: 0 }, left: { n: 30, okWithoutDrop: 0 }, 'inzone-out': { n: 30, okWithoutDrop: 0 }, 'long-left': { n: 30, okWithoutDrop: 0 } };
 
 let failed = false;
 const out = ['| run | load | cell | drags | started | landed | released at the accept | false releases | ok with no drop and nothing pending | unconfirmed notices | answer median, accept / floor (ms) | bar |', '|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|'];
@@ -54,6 +54,15 @@ for (const dir of process.argv.slice(2)) {
   }
 }
 if (out.length > 2) console.log(out.join('\n'));
+
+// the long path's drags (`long-left`): whether their steps after the take outlasted the floor, so the release came
+// right after the last step, with no keepalive (the design session's question, 2026-11-10)
+for (const dir of process.argv.slice(2)) {
+  const long = rowsOf(dir).filter((r) => r.kind === 'drop-signal' && r.cell === 'long-left' && r.after_take);
+  if (!long.length) continue;
+  const past = long.filter((r) => r.after_take.release_after_take_ms > 355 && !r.hold?.keepalives);
+  console.log(`\n${basename(dir)} long-left: ${past.length} of ${long.length} took and released more than 355 ms after the take with no keepalive; release after the take median ${r1(median(long.map((r) => r.after_take.release_after_take_ms)))} ms`);
+}
 
 // #264's real late takes (plan `t14-late`, task 68's freeze cell): a take after the release (the judge's `late_take`)
 // is reported when the read after the watch's lifetime carried the late notice and the acting request after it (a

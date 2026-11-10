@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 import { candidateLine, gateLabel } from './candidate.mjs';
 import { matrixMarkdown } from './matrix-judge.mjs';
-import { summarizeEngine, verdictLine } from './stats.mjs';
+import { UNCONFIRMED_LANDED_SHARE, dropCounts, summarizeEngine, verdictLine } from './stats.mjs';
 
 const fmt = (v) => (v === null || v === undefined ? '–' : String(v));
 
@@ -142,6 +142,15 @@ export function renderSummary(lines) {
         out.push(`| ${scene} | ${op} | ${engine} | ${fmt(s.cold)} | ${fmt(s.warm)} | ${s.n_warm} | ${cold ? `${cold.calls} / ${warm?.calls ?? '–'}` : '–'} | ${cold ? `${cold.serial_calls} / ${warm?.serial_calls ?? '–'}` : '–'} | ${wasted.length ? Math.max(...wasted) : '–'} | ${frac(mine, 'witness')} | ${audit} | ${frac(mine, 'effect')} | ${eq ? `${eq.equal}/${eq.of}${eq.declared ? ` (${eq.declared} declared)` : ''}` : '–'} | ${verdict} |`);
       }
       if (bar) out.push(`| ${scene} | ${op} | **bar** | ${fmt(bar.cold)} | ${fmt(bar.warm)} | | | | | | | | | |`);
+    }
+    // the Chrome drops the engine confirms or reports, per case and for the run, one load (M4's T14; the design
+    // session, 2026-11-10): an unconfirmed drop that landed is honest, a finding only over its share of the landed
+    const drops = dropCounts(verdicts);
+    if (drops.cases) {
+      out.push('', `Chrome's drops, confirmed or reported. A landed drop reported unconfirmed is honest, and a finding only above ${UNCONFIRMED_LANDED_SHARE * 100}% of the run's landed drops${drops.finding ? ' (**this run is above it**)' : ''}. A false ok (answered ok with no drop and nothing pending) fails its case:`, '');
+      out.push('| scene | op | samples | landed | answered ok | false ok | landed, reported unconfirmed |', '|---|---|---:|---:|---:|---:|---:|');
+      for (const v of verdicts.filter((x) => x.drops)) out.push(`| ${v.scene} | ${v.op} | ${v.drops.samples} | ${v.drops.landed} | ${v.drops.ok} | ${v.drops.false_ok} | ${v.drops.unconfirmed_landed} |`);
+      out.push(`| **run** | | ${drops.samples} | ${drops.landed} | ${drops.ok} | ${drops.false_ok} | ${drops.unconfirmed_landed} |`);
     }
     // every pass that is a small measured loss inside the bound, in one table (Acceptance 3)
     // a label's `candidate` is the candidate's median; the engine is the verdict's own `candidate`

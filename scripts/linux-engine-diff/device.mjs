@@ -153,6 +153,8 @@ const DND_SETTLE_MS = 1200;
 const dndDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.scene.dndPath }];
 /** The short drag and drop (`scene.dndShortPath`): the page's near source to just inside the drop zone, 40 px. */
 const dndShortDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.scene.dndShortPath }];
+/** The press-inside control (M4's T14): the in-zone source pressed inside the target and dragged out of it. */
+const dndInzoneDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.scene.dndInzonePath }];
 
 /** The input page back at its top after a scroll series: Home through the background route (Gecko takes keys). */
 async function pageHome({ scene, cua }) {
@@ -353,6 +355,12 @@ function device({ device: expect, condition = covered, park, read, request, effe
         out.state_notice = state.response.notice ?? null;
         if (out.state_notice !== null) await ctx.engine.request('preflight', {});
       }
+      if (expect === 'inzone') {
+        // whether the press-inside drag's drag and drop started, and whether anything dropped on the zone
+        const after = await read(ctx);
+        out.started = typeof ctx.before?.starts === 'number' && typeof after?.starts === 'number' && after.starts > ctx.before.starts;
+        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
+      }
       if (expect === 'refusal') {
         out.expected_error = deviceSentence(ctx.scene.app);
         await sleep(QUIET_MS);
@@ -466,6 +474,10 @@ export const DEVICE_OPS = {
   // a short drag and drop (40 px) where the drop goes ahead, in front and dedicated: released at Chrome's accept cursor,
   // or at the floor after the take (dnd.rs RELEASE_AFTER_TAKE), so it lands
   chrome_dnd_short_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndShortDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
+  // the press-inside control at the floor (the design session, 2026-11-10): a press on a source inside the zone, its
+  // first status already an accept, and a path out of it. Chrome must not drop on the stale accept; nothing landing,
+  // the drag is never answered ok with nothing pending (task 69 saw one released early that Chrome confirmed)
+  chrome_dnd_inzone_out_in_front_shared: device({ device: 'inzone', route: 'background', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndInzoneDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS, confirm: true }),
   chrome_dnd_short_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndShortDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS, confirm: true }),
   // the same with the drop's signature already held (Chrome active, focused, on top) and a corner covered, so the drag
   // is watched: cancelled in time and said so; with the cancel forced late, every answer says the drop may have happened
@@ -511,7 +523,8 @@ export const DEVICE_SCENE_OPS = {
   // the scroll last: its series ends with the page put back at its top (`reset`)
   'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered', 'firefox_move_overlap_shared', 'firefox_move_covered_dedicated', 'firefox_drag_overlap_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_overlap_shared', 'firefox_scroll_covered_dedicated'],
   'device-chrome': ['chrome_drag_visible_path_shared', 'chrome_drag_covered_path_shared', 'chrome_drag_covered_dedicated'],
-  'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_short_covered_dedicated', 'chrome_dnd_obscured_in_front_shared', 'chrome_dnd_obscured_in_front_late_shared', 'chrome_dnd_late_take_shared', 'chrome_dnd_short_pointer_outside_shared', 'chrome_dnd_short_pointer_outside_dedicated', 'chrome_select_nudged_shared'],
+  'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_short_covered_dedicated', 'chrome_dnd_obscured_in_front_shared', 'chrome_dnd_obscured_in_front_late_shared', 'chrome_dnd_late_take_shared', 'chrome_dnd_short_pointer_outside_shared', 'chrome_dnd_short_pointer_outside_dedicated', 'chrome_select_nudged_shared',
+    'chrome_dnd_inzone_out_in_front_shared'],
   'device-qt': ['qt_scroll_shared', 'qt_scroll_dedicated'],
   'device-xterm': ['xterm_key_shared', 'xterm_key_dedicated', 'xterm_click_shared'],
   'gnome-text-editor': ['gte_type_text_shared'],
@@ -578,7 +591,22 @@ export function judgeDevice(op, rows, audit) {
     bad('a drop the witness did not record', (r) => !r.dropped || r.witness === false);
     if (!rows.some((r) => r.dropped && r.witness === false)) reasons.push('no drop landed: the case showed no change for the notice to report');
   }
-  if (DEVICE_OPS[op].confirm) bad('a drop that landed left a notice pending', (r) => r.effect !== true || r.state_notice === null);
+  // the drops the engine confirms or reports, counted (the design session, 2026-11-10): a drop that landed and was
+  // reported unconfirmed is honest, counted for the run (stats.mjs `dropCounts`, a finding only over 5% of a load's
+  // landed drops); a drag answered ok with no drop and nothing pending is a false ok, the one failure
+  let drops = null;
+  if (DEVICE_OPS[op].confirm) {
+    const pending = (r) => r.state_notice != null;
+    const landed = rows.filter((r) => r.effect === true);
+    const falseOk = rows.filter((r) => r.ok && r.effect !== true && !pending(r));
+    drops = { samples: rows.length, landed: landed.length, ok: rows.filter((r) => r.ok).length, false_ok: falseOk.length, unconfirmed_landed: landed.filter(pending).length };
+    if (falseOk.length) reasons.push(`a drag answered ok with no drop and nothing pending on ${falseOk.length} of ${rows.length} samples (${falseOk.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+  }
+  if (expect === 'inzone') {
+    // the press inside the zone, its path out of it, at the floor: Chrome must not drop on a stale accept; a drag that
+    // started is what the control needs
+    if (!rows.some((r) => r.started)) reasons.push('no drag and drop started: the control proved nothing');
+  }
   if (expect === 'late') {
     bad('a request answered success', (r) => !r.ok);
     // "nothing was dropped" only where nothing dropped and the desktop is as it was
@@ -615,5 +643,5 @@ export function judgeDevice(op, rows, audit) {
       else if (!answered.every(expected)) reasons.push(`the ${audit.kind} audit's requests did not answer as the case expects (${answered.map((a) => (a.ok ? 'success' : a.error)).join('; ').slice(0, 200)})`);
     }
   }
-  return { pass: reasons.length === 0, reasons };
+  return { pass: reasons.length === 0, reasons, ...(drops ? { drops } : {}) };
 }

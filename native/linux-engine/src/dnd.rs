@@ -545,7 +545,9 @@ fn watch_loop(
     mut cancel: impl FnMut(u32) -> bool,
 ) -> WatchEnd {
     let mut taken: Option<(u32, Instant)> = None;
-    let mut activated: Option<Instant> = None;
+    // every activation request as it was read: one during the drag predates the release and must not hide the drop's
+    // own, so each is judged against the window once the release is known
+    let mut activations: Vec<Instant> = Vec::new();
     let mut released: Option<(Instant, bool)> = None;
     let mut stopping = false;
     loop {
@@ -570,16 +572,18 @@ fn watch_loop(
                     taken.get_or_insert((time, Instant::now()));
                 }
                 if seen.activated {
-                    activated.get_or_insert(Instant::now());
+                    activations.push(Instant::now());
                 }
             }
             Err(error) => return WatchEnd::Failed(format!("{error:#}")),
         }
         match released {
-            // a drag and drop under way at the release: its drop is confirmed by the target's activation request after
-            // the release, or not at all within the window (an acting request meanwhile waits for the window's rest)
+            // a drag and drop under way at the release: its drop is confirmed by the target's activation request read
+            // inside the window, from the release to `DROP_CONFIRM` after it (the design session's ruling on task 68),
+            // or not at all (an acting request meanwhile waits for the window's rest). One read after the window's
+            // end, however it came to be read late, does not confirm
             Some((at, true)) => {
-                if !confirming || activated.is_some_and(|seen| seen >= at) {
+                if !confirming || activations.iter().any(|&seen| seen >= at && seen - at <= DROP_CONFIRM) {
                     return WatchEnd::Quiet;
                 }
                 if at.elapsed() >= DROP_CONFIRM {
@@ -1067,6 +1071,53 @@ mod tests {
             })
             .unwrap();
         assert_eq!(thread.join().unwrap(), WatchEnd::Unconfirmed);
+    }
+
+    #[test]
+    fn a_request_first_read_after_the_window_s_end_confirms_nothing() {
+        // the watch read nothing until 200 ms after the release (descheduled across the deadline, or the request came
+        // late): a request read then is outside the window, so the drop stays unconfirmed (the fix wave of task 69)
+        let (notes, inbox) = std::sync::mpsc::channel();
+        notes
+            .send(Note::Released {
+                at: Instant::now() - Duration::from_millis(200),
+                taken: true,
+            })
+            .unwrap();
+        let end = watch_loop(&inbox, true, || {}, || Ok(ACTIVATED), || Ok(()), |_| true);
+        assert_eq!(end, WatchEnd::Unconfirmed);
+    }
+
+    #[test]
+    fn a_request_during_the_drag_does_not_hide_the_drop_s_own_after_the_release() {
+        // a request read before the release, then the release, then the drop's request inside the window: confirmed
+        // (the fix wave of task 69: the first request read used to stand for every later one)
+        let (notes, inbox) = std::sync::mpsc::channel();
+        let mut looks = 0;
+        let end = watch_loop(
+            &inbox,
+            true,
+            || {},
+            || {
+                looks += 1;
+                if looks == 2 {
+                    notes
+                        .send(Note::Released {
+                            at: Instant::now(),
+                            taken: true,
+                        })
+                        .unwrap();
+                }
+                Ok(if looks == 1 || looks == 3 {
+                    ACTIVATED
+                } else {
+                    Seen::default()
+                })
+            },
+            || Ok(()),
+            |_| true,
+        );
+        assert_eq!(end, WatchEnd::Quiet);
     }
 
     #[test]

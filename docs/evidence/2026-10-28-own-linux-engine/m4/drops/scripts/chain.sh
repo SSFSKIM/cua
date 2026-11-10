@@ -21,6 +21,9 @@ for step in "$@"; do
     select) args=(select-40 select) ;;
     long-drop) args=(long-drop long-drop) ;;
     floor-idle) args=(floor-idle floor idle) ;;
+    long-idle) args=(long-idle long idle) ;;
+    long-gate) args=(long-gate long gate) ;;
+    long-load2) args=(long-load2 long load2) ;;
     late-idle) args=(late-idle late idle) ;;
     late-gate) args=(late-gate late gate) ;;
     late-load2) args=(late-load2 late load2) ;;

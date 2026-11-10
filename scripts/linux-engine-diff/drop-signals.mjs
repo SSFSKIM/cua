@@ -76,10 +76,13 @@ export const CELLS = {
   // zone, whose first status already accepts, then a path out of the zone below it
   left: () => [[530, 128], [640, 128], [500, 128]],
   'inzone-out': () => [[725, 578], [725, 632]],
+  // the long path that crosses the zone and ends outside it, long enough (about 940 px) that its steps after the take
+  // outlast the floor, so the release follows its last step at once (the design session, 2026-11-10: measure first)
+  'long-left': () => [[530, 128], [800, 128], [800, 500], [500, 500]],
 };
 
 /** T14's cells' sources, beside the judge's (drop-signals-judge.mjs `CELL_SOURCE`): each a drop the zone never counts. */
-export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone' };
+export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain' };
 
 /** A T14 cell's outcome from the page's status before and after: its source's drag and drop started, and dropped. */
 export function t14Outcome(cell, before, after) {
@@ -181,6 +184,10 @@ export const PLANS = {
   // it to this measurement flag. `t14-floor`: the same drags on the engine as it ships, the floor and the confirmation
   t14: [['cua:accept', 'plain-long', 300], ['cua:accept', 'left', 30], ['cua:accept', 'inzone-out', 30]],
   't14-floor': [['cua', 'plain-long', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
+  // the long-path accepted-then-left control on the engine as it ships: 100 a load at idle and twice the load, 30 at
+  // the gate's window load
+  't14-long': [['cua', 'long-left', 100]],
+  't14-long-gate': [['cua', 'long-left', 30]],
   // #264's real late takes (the design session's ruling 4, 2026-11-10): task 68's reproduction, the run's own browser
   // stopped from 60 ms after the request to 250 ms (its late takes came there), on a drag the engine lets drop; run on
   // the engine before T14 too, its failing first

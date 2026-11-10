@@ -123,3 +123,45 @@ fn a_gecko_click_scroll_or_move_the_real_pointer_leaves_after_its_events_went_ou
         }
     }
 }
+
+/// The button presses the window was sent since the last call.
+fn presses(gecko: &Gecko) -> usize {
+    gecko.conn.sync().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let mut n = 0;
+    while let Some(event) = gecko.conn.poll_for_event().unwrap() {
+        n += usize::from(matches!(event, x11rb::protocol::Event::ButtonPress(_)));
+    }
+    n
+}
+
+#[test]
+#[cfg_attr(
+    not(feature = "live"),
+    ignore = "needs an X display with XTEST and XInput 2 (--features live)"
+)]
+fn a_gecko_request_whose_pointer_left_before_the_watch_s_read_is_refused_though_the_pointer_comes_back() {
+    // the route's read finds the pointer in; it is out at the watch's read (the second), back in by any later read,
+    // and out again once the request's events went out: refused in shared mode with nothing sent, never success
+    let gecko = Gecko::open();
+    let mut engine = Engine::new(crate::default_config()).unwrap();
+    for (command, _, input) in requests(gecko.id) {
+        pointer_to(100, 60);
+        presses(&gecko);
+        fault::arm_identity(Identity::PointerRead, 2, || {
+            pointer_to(600, 500);
+            fault::arm_identity(Identity::PointerRead, 1, || {
+                pointer_to(100, 60);
+                fault::arm_identity(Identity::PointerSent, 1, || pointer_to(600, 500));
+            });
+        });
+        let answer = request(&mut engine, command, input.clone());
+        fault::identity_hook_ran();
+        let error = answer.expect_err(&format!("{command}: answered success"));
+        assert!(
+            error.starts_with("firefox does not accept background input"),
+            "{command}: {error}"
+        );
+        assert_eq!(presses(&gecko), 0, "{command}: nothing sent");
+    }
+}

@@ -124,6 +124,8 @@ pub enum Identity {
     MenuLookup,
     /// A watched pointer request's events sent, just before its pointer watch is read (`engine/within.rs`).
     PointerSent,
+    /// Just before each read of whether the real pointer is in a window (`Engine::pointer_within`, `engine/way.rs`).
+    PointerRead,
 }
 
 /// A hook armed for the `nth` time (from 1) its point is reached since arming.

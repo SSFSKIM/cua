@@ -89,12 +89,21 @@ impl Engine {
                     }
                     None => false,
                 };
-                match (ignored, self.cfg.desktop) {
-                    (false, _) => Way::Background,
-                    (true, DesktopMode::Dedicated) => Way::Foreground,
-                    (true, DesktopMode::Shared) => bail!(no_background_input(&self.x.get_window(window)?.app)),
-                }
+                return self.route_judged(window, ignored);
             }
+        };
+        self.record_route(way);
+        Ok(way)
+    }
+
+    /// The route into `window` once whether its family ignores the request there is judged (`ignored`): the background
+    /// route if not, else the foreground route in dedicated mode, refused in shared mode. Recorded as `--stats`'s
+    /// `route`.
+    pub(super) fn route_judged(&mut self, window: Window, ignored: bool) -> Result<Way> {
+        let way = match (ignored, self.cfg.desktop) {
+            (false, _) => Way::Background,
+            (true, DesktopMode::Dedicated) => Way::Foreground,
+            (true, DesktopMode::Shared) => bail!(no_background_input(&self.x.get_window(window)?.app)),
         };
         self.record_route(way);
         Ok(way)
@@ -103,6 +112,9 @@ impl Engine {
     /// Whether the real pointer is in `window`: the deepest window the server finds under it is the window or below it
     /// (`X11::pointer_in`, from the window's parent). A read that fails is doubt, which counts as outside.
     pub(super) fn pointer_within(&self, window: Window) -> bool {
+        // test builds only: the desktop changed just before this read
+        #[cfg(test)]
+        crate::fault::identity(crate::fault::Identity::PointerRead);
         self.x
             .parent(window)
             .and_then(|parent| self.x.pointer_in(window, parent))

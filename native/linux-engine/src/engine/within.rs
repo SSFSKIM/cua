@@ -49,8 +49,9 @@ pub(super) fn pointer_watch_failed(app: &str, what: &str, why: &str) -> String {
 impl Engine {
     /// The route `way` (just chosen for `kind` into `window`) with its pointer watch: on the background route into a
     /// family listed `unless_pointer_within` (and without `--ignore-pointer`), the watch begins and the pointer is read
-    /// again, so a leave after the route's own read is seen; a pointer already gone by then routes the request afresh
-    /// (refused in shared mode, the foreground route in dedicated mode), nothing sent. Otherwise `way`, unwatched.
+    /// again, so a leave after the route's own read is seen; a pointer already gone by then is judged outside, with no
+    /// third read (refused in shared mode, the foreground route in dedicated mode), nothing sent. Otherwise `way`,
+    /// unwatched.
     pub(super) fn watch_within(
         &mut self,
         window: Option<Window>,
@@ -80,7 +81,9 @@ impl Engine {
         }
         let _ = watch.finish(watching);
         self.stray_watch = Some(watch).filter(StrayWatch::healthy);
-        Ok((self.route_for(Some(window), kind)?, None))
+        // judged outside on this read, never read a third time: a pointer back by then would take the background
+        // route with no watch, and a leave during the request would answer success
+        Ok((self.route_judged(window, true)?, None))
     }
 
     /// The watch's word once the request's events went out (`what` names the request): None when the pointer stayed

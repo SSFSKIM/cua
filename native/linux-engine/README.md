@@ -204,7 +204,8 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   paste route). A Gecko click, scroll, move or drag on the background route is watched for the real pointer leaving
   the window (a `LeaveNotify` of the window to no window inside it, on the press watch's connection, `stray.rs`),
   from a second read of the pointer to a round trip after its events went out, and the pointer is read again at its
-  end (`engine/within.rs`): a request the pointer left during, or ended outside, is answered `<app> may not have
+  end (`engine/within.rs`). A pointer gone at the second read is judged outside then, with no third read: the
+  request is refused or takes the foreground route as below, nothing sent on the background route. A request the pointer left during, or ended outside, is answered `<app> may not have
   taken the <request>: the desktop pointer left its window during the <request>, and <app> takes background pointer
   input only while the pointer is in its window. Read the window to see what happened before trying again`, never
   success (`--stats` `pointer_watch`). Element actions through AT-SPI are never listed. For a listed kind and condition, `--desktop shared`

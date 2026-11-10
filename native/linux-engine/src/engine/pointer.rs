@@ -11,7 +11,7 @@ use x11rb::protocol::xproto::{ConnectionExt as _, Window};
 use super::way::{Way, target_of};
 use super::{DesktopMode, Engine};
 use crate::desktop::Desktop;
-use crate::dnd::{DndWatch, LateWatch, Outcome, Standing};
+use crate::dnd::{DndWatch, EscapeRoute, LateWatch, Outcome, Standing};
 use crate::families::DragPacing;
 use crate::families::Kind;
 use crate::focus_ack::{PressAck, nothing_pressed, press_ack, refused_press};
@@ -310,8 +310,6 @@ pub(super) struct DropGuard {
     /// after-release watch is what finds it.
     defer: bool,
     outcome: Option<Outcome>,
-    /// The watch that goes on after the release, off the request path (`dnd::LateWatch`), subscribed before the drag.
-    after: Option<LateWatch>,
 }
 
 impl DropGuard {
@@ -337,11 +335,10 @@ fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &m
     Err(DropCancelled.into())
 }
 
-/// What a drag records for measurement alone (`--stats`): the press's and the release's wall clock, and with T13's
-/// `--drag-dnd-release-at-accept` the displayed cursor's watch and what it decided (`accept.rs`).
+/// What a drag records for `--stats` alone: the press's and the release's wall clock, and what the release at the
+/// accept decided (`accept.rs`).
 pub(super) struct DragMeasure<'a> {
     pub(super) wall: &'a mut Option<(f64, f64)>,
-    pub(super) accept: Option<&'a mut crate::accept::CursorWatch>,
     pub(super) accept_record: &'a mut Option<Value>,
 }
 
@@ -368,10 +365,13 @@ fn wall_ms() -> f64 {
 /// keepalive motions on the path's last two samples, ending on the last ([`crate::dnd::keepalive`]): Chrome's target
 /// accepts only on a motion (task 22). With no take by the path's end, the button stays down until the bound after the
 /// press for one (task 22), a take then, or one seen at that last look, getting the same floor; no take by then
-/// releases the drag as before. `scheduled` records a take, `held_for_take` the hold. With `press` (a
+/// releases the drag as before. `scheduled` records a take, `held_for_take` the hold. With `accept` (a Chrome drop the
+/// engine can confirm, `accept.rs`), the path after a take keeps its own pacing, and the floor's motions end at Chrome's
+/// accept cursor when it comes first, the release then at once. With `press` (a
 /// Chromium-family drag), the press and the samples through Blink's drag threshold, at most [`PRESS_SAMPLES_MAX`], go
 /// out under one server grab ([`atomic_press`]), its watch begun just before the grab and ended just after the
-/// release, what it saw kept in `press.strays`.
+/// release, what it saw kept in `press.strays`. `after`, the drag's after-release watch, is told the instant the
+/// button went up and whether a take came before it.
 #[allow(clippy::too_many_arguments)]
 fn drag_along(
     x: &mut X11,
@@ -386,7 +386,9 @@ fn drag_along(
     scheduled: &mut Option<Value>,
     mut press: Option<&mut ChromiumPress>,
     pressing: PressAck,
-    mut measure: DragMeasure<'_>,
+    mut accept: Option<&mut crate::accept::CursorWatch>,
+    after: Option<&LateWatch>,
+    measure: DragMeasure<'_>,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
@@ -412,8 +414,9 @@ fn drag_along(
         };
         let pressed_at = pressed_at.expect("the button was pressed");
         let press_wall = wall_ms() - pressed_at.elapsed().as_secs_f64() * 1000.0;
-        // measurement only (T13): with the release at the accept, the path after a take keeps its own pacing
-        let spacing = !after_take.is_zero() && measure.accept.is_none();
+        // with the release at the accept, the path after a take keeps its own pacing (task 68's live lane): spread over
+        // the floor, the steps would reach the zone, and the accept with them, only near the floor's end
+        let spacing = !after_take.is_zero() && accept.is_none();
         std::thread::sleep(pacing.press);
         // the path's last two samples, which a floor after a take re-visits (the path's own: not the end's second
         // visit after its rest, which would make them one point)
@@ -432,6 +435,11 @@ fn drag_along(
         for (i, &(sx, sy)) in samples.iter().enumerate().skip(first) {
             route.place_again(x, sx, sy)?;
             let sent = Instant::now();
+            // the cursors read as they come, so each one's image is fetched while it is shown (a read that fails leaves
+            // the drag to its floor, `accept_shown`)
+            if let Some(cursor) = accept.as_deref_mut() {
+                let _ = cursor.poll();
+            }
             // when the floor after a take spaces this step to, if it does
             let mut floor = None;
             if let Some((watch, _)) = hold.as_mut() {
@@ -473,7 +481,16 @@ fn drag_along(
             let mut waited = Duration::ZERO;
             if held {
                 let since = Instant::now();
-                if crate::dnd::wait_for_take(|| watch.started(x), pressed_at + *bound) {
+                let looked = crate::dnd::wait_for_take(
+                    || {
+                        if let Some(cursor) = accept.as_deref_mut() {
+                            let _ = cursor.poll();
+                        }
+                        watch.started(x)
+                    },
+                    pressed_at + *bound,
+                );
+                if looked {
                     taken = Some((Instant::now(), 0));
                 }
                 waited = since.elapsed();
@@ -483,8 +500,8 @@ fn drag_along(
             if let Some((at, _)) = taken
                 && !after_take.is_zero()
             {
-                keepalives = match (measure.accept.as_deref_mut(), watch.taken_time()) {
-                    // measurement only (T13): the floor ends at the accept, if it comes first
+                keepalives = match (accept, watch.taken_time()) {
+                    // the floor ends at Chrome's accept cursor, if it comes first (`accept.rs`)
                     (Some(cursor), Some(take)) => {
                         let mut accepted = None;
                         let sent = crate::dnd::keepalive_until(
@@ -493,10 +510,7 @@ fn drag_along(
                             last,
                             at + after_take,
                             || {
-                                accepted = accepted.or_else(|| {
-                                    let changes = cursor.poll().ok()?;
-                                    crate::accept::accept_index(changes, take).map(|i| changes[i].seen)
-                                });
+                                accepted = accepted.or_else(|| cursor.accepted(take).ok().flatten());
                                 accepted.is_some()
                             },
                         )?;
@@ -563,12 +577,13 @@ fn drag_along(
                 escape(x, route)?;
                 return Err(DropCancelled.into());
             }
-            // no take seen by the release: a plain drag, answered now; the after-release watch, told the instant the
-            // button went up, cancels a late take at once from here on and ends 300 ms after it (`drag`)
-            if let Some(after) = &guard.after {
-                after.released(released_at);
-            }
             guard.outcome = Some(Outcome::NoStart);
+        }
+        // the after-release watch, told the instant the button went up: with no take seen by the release (a plain drag,
+        // answered now) it cancels a late take at once from here on and ends 300 ms after it; after a take it looks for
+        // the drop's confirmation (`dnd::LateWatch`, `drag`)
+        if let Some(after) = after {
+            after.released(released_at, taken.is_some());
         }
         Ok(())
     })();
@@ -798,15 +813,12 @@ impl Engine {
                 if in_front {
                     None
                 } else {
-                    // the after-release watch subscribes before the drag begins, so no take can fall between
-                    let escape = chord_keycodes(&self.x, "Escape")?;
                     Some(DropGuard {
                         watch: DndWatch::start(&mut self.x, window)?,
                         before: standing,
                         late: self.cfg.dnd_cancel_late,
                         defer: self.cfg.dnd_defer_take,
                         outcome: None,
-                        after: Some(LateWatch::start(window, escape[0])?),
                     })
                 }
             }
@@ -850,15 +862,67 @@ impl Engine {
             }),
             _ => None,
         };
+        // the drop's window, where Chrome's drop asks for activation: the named window, or on the desktop route the
+        // top-level under the path's end. Its confirmation is live on a drag the engine lets drop into Chrome, under a
+        // window manager that lists `_NET_ACTIVE_WINDOW` as supported (the design session's ruling on task 68,
+        // 2026-11-09); Electron, and every window it does not cover, keeps the floor with nothing to confirm
+        let drop_window = match (hold.is_some(), target) {
+            (false, _) => None,
+            (true, Target::Window(window) | Target::Foreground(window)) => Some(window),
+            (true, Target::Desktop) => input.path.last().and_then(|p| self.x.client_at(p.x, p.y)),
+        };
+        let confirm = match drop_window {
+            Some(window)
+                if self
+                    .family_of(window)
+                    .is_some_and(|f| crate::families::confirms_drop(f.name)) =>
+            {
+                let supported = crate::dnd::active_window_supported(&self.x);
+                self.extra.insert(
+                    "confirm".into(),
+                    match &supported {
+                        Ok(supported) => json!({ "window": window, "supported": supported }),
+                        Err(error) => json!({ "window": window, "supported": false, "error": format!("{error:#}") }),
+                    },
+                );
+                supported.unwrap_or(false).then_some(window)
+            }
+            _ => None,
+        };
+        // the after-release watch, subscribed before the drag begins so no take can fall between: the guard's, and that
+        // of every Chromium drag the engine lets drop (#264; the design session's rulings, 2026-11-02), its late take's
+        // Escape on the route the drag used
+        let watched = match &guard {
+            Some(_) => named,
+            None => hold.as_ref().and(pressing_into),
+        };
+        let after = match watched {
+            Some(window) => {
+                let escape = chord_keycodes(&self.x, "Escape")?;
+                let route = match target {
+                    Target::Window(window) => EscapeRoute::Synthetic(window),
+                    Target::Foreground(_) | Target::Desktop => EscapeRoute::Xtest,
+                };
+                Some(LateWatch::start(window, route, escape[0], confirm)?)
+            }
+            None => None,
+        };
         let after_take = self.cfg.dnd_after_take;
         let mut scheduled = None;
         let bound = self.cfg.dnd_hold;
         let mut held_for_take = None;
-        // measurement only (T13, `--drag-dnd-release-at-accept`): the displayed cursor watched from before the press, on
-        // a drag the hold watches
-        let mut cursor = match (&hold, self.cfg.dnd_release_at_accept) {
-            (Some(_), true) => Some(crate::accept::CursorWatch::start()?),
-            _ => None,
+        // a drop the engine can confirm is released at Chrome's accept cursor, read from before the press
+        // (`accept.rs`); a watch that cannot start leaves the drag to its floor
+        let mut cursor = match confirm {
+            Some(_) => match crate::accept::CursorWatch::start() {
+                Ok(cursor) => Some(cursor),
+                Err(error) => {
+                    self.extra
+                        .insert("accept".into(), json!({ "error": format!("{error:#}") }));
+                    None
+                }
+            },
+            None => None,
         };
         let mut wall = None;
         let mut accept_record = None;
@@ -867,7 +931,7 @@ impl Engine {
         let mut times = None;
         // a watched drag's session is kept focused past its answer while its late-take watch is armed, so the watch's
         // Escape lands inside it (the design session's ruling on task 60); a drag that arms no watch ends it below
-        let may_arm_watch = guard.is_some();
+        let may_arm_watch = after.is_some();
         let Engine { x, inputs, bus, .. } = self;
         let dragged = inputs.with_route_kept(x, target, may_arm_watch, |x, route, _| {
             let points = input
@@ -900,9 +964,10 @@ impl Engine {
                 &mut scheduled,
                 press.as_mut(),
                 pressing,
+                cursor.as_mut(),
+                after.as_ref(),
                 DragMeasure {
                     wall: &mut wall,
-                    accept: cursor.as_mut(),
                     accept_record: &mut accept_record,
                 },
             );
@@ -927,15 +992,20 @@ impl Engine {
             self.extra
                 .insert("wall".into(), json!({ "press_ms": press, "release_ms": release }));
         }
-        // measurement only (T13): what the accept watch saw, every change of the displayed cursor beside it
+        // what the release at the accept saw (`--stats`): every change of the displayed cursor, with its image when known
         if let Some(mut cursor) = cursor {
             let mut record = accept_record.unwrap_or_else(|| json!({ "accepted": false }));
-            match cursor.finish() {
+            match cursor.finish().map(<[_]>::to_vec) {
                 Ok(changes) => {
                     record["changes"] = json!(
                         changes
                             .iter()
-                            .map(|c| json!([c.serial, c.time, c.named]))
+                            .map(|c| json!([
+                                c.serial,
+                                c.time,
+                                c.named,
+                                cursor.image_of(c.serial).map(|i| format!("{i:016x}"))
+                            ]))
                             .collect::<Vec<_>>()
                     );
                 }
@@ -965,20 +1035,44 @@ impl Engine {
             }
             (press.grab, press.strays)
         });
-        // what the watch says about a drag that otherwise succeeded: None, or its refusal
-        let watched = match strays {
+        // what the press watch says about a drag that otherwise succeeded: None, or its refusal
+        let watched_answer = match strays {
             Some((grab, strays)) => self.press_answer(pressing_into, grab, strays, taken, watch),
             None => None,
         };
-        let Some(mut guard) = guard else {
-            return match watched {
+        let Some(guard) = guard else {
+            // a Chromium drag the engine lets drop: its watch is handed over once the button went up with no take (the
+            // late take is the watch's to cancel and report), or after a take on a drop the watch confirms; otherwise
+            // (no release, or a take with nothing to confirm) there is nothing more to watch
+            if let Some(after) = after {
+                let released = after.released_with_take();
+                self.extra.insert(
+                    "after_release".into(),
+                    json!({ "released_with_take": released, "confirming": confirm.is_some() }),
+                );
+                match (released, confirm) {
+                    (Some(false), _) | (Some(true), Some(_)) => {
+                        let window = watched.expect("a watched drag has its window");
+                        let app = self
+                            .x
+                            .get_window(window)
+                            .map_or_else(|_| format!("window {window}"), |w| w.app);
+                        self.late_watch = Some(after.handed_over(app));
+                    }
+                    _ => {
+                        after.done();
+                        self.inputs.end_watched(&mut self.x);
+                    }
+                }
+            }
+            return match watched_answer {
                 Some(refusal) if dragged.is_ok() => Err(refusal),
                 _ => dragged.map(|()| Value::Null),
             };
         };
         let started = guard.watch.is_started();
         guard.watch.stop(&mut self.x);
-        let after = guard.after.take().expect("a guard starts its after-release watch");
+        let after = after.expect("a guard starts its after-release watch");
         let Some(outcome) = guard.outcome else {
             // the drag failed before anything was decided: its own error is the answer
             after.done();
@@ -1023,7 +1117,7 @@ impl Engine {
         match crate::dnd::answer(outcome, signature, &self.x.get_window(window)?.app) {
             Some(sentence) => bail!(sentence),
             // no drag and drop began: what the press watch saw decides
-            None => match watched {
+            None => match watched_answer {
                 Some(refusal) if dragged.is_ok() => Err(refusal),
                 _ => dragged.map(|()| Value::Null),
             },

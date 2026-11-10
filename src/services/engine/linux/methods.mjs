@@ -18,6 +18,9 @@
 //   waited is judged by its own report. Window-targeted input needs input.background, input with no window
 //   input.desktop, text paste text.paste, a desktop screenshot capture.desktop, an observation tree and, with its
 //   screenshot (the default), capture.window.
+// - The pending drag notice (#171 M4 T14): get_window_state's state carries the engine's `notice` as its own field,
+//   which the facade renders as the observation's first line (src/cua-api/bind-linux-app.mjs); the other answers keep
+//   their shapes, and a failed request's sentence carries it after its own (./client.mjs).
 // Every input passes to the engine as the caller gave it (an absent one as {}), field for field: what cua-engine
 // validates, it refuses with its own sentence.
 import {readFile} from 'node:fs/promises';
@@ -127,10 +130,10 @@ export function createLinuxMethods({engine, settler, ids}) {
     launch_app: input('launch_app'),
     async get_window_state(request) {
       await settler.wait();
-      const state = await engine.request('get_window_state', request ?? {}, needs('tree', ...(request?.include_screenshot !== false ? ['capture.window'] : [])));
+      const {output: state, notice} = await engine.exchange('get_window_state', request ?? {}, needs('tree', ...(request?.include_screenshot !== false ? ['capture.window'] : [])));
       const screenshots = await Promise.all(state.screenshots.map(capture));
       ids.assign(state.ax_tree, state.window, Boolean(request.query?.trim()));
-      return {...state, screenshots};
+      return {...state, screenshots, ...(notice !== undefined ? {notice} : {})};
     },
   };
 }

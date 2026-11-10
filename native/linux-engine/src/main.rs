@@ -51,7 +51,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed|quiet]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--path-step-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
-       [--drag-dnd-release-at-accept] [--drag-ignore-cover]
+       [--drag-ignore-cover]
        [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
        cua-engine --version";
@@ -92,7 +92,6 @@ fn default_config() -> Config {
         dnd_after_take: crate::dnd::RELEASE_AFTER_TAKE,
         targets_wait: None,
         focus_ack: focus_ack::FOCUS_ACK,
-        dnd_release_at_accept: false,
         drag_ignore_cover: false,
     }
 }
@@ -168,10 +167,6 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             "--dnd-defer-take" => {
                 cfg.dnd_defer_take = true;
-                takes_value = false;
-            }
-            "--drag-dnd-release-at-accept" => {
-                cfg.dnd_release_at_accept = true;
                 takes_value = false;
             }
             "--drag-ignore-cover" => {
@@ -544,22 +539,18 @@ mod tests {
     }
 
     #[test]
-    fn t13_s_measurement_flags_are_off_by_default_and_each_turns_its_own_on() {
+    fn t13_s_cover_flag_is_off_by_default_and_its_accept_flag_is_gone_with_the_release_it_measured_shipped() {
         let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
             panic!()
         };
-        assert!(
-            !cfg.dnd_release_at_accept && !cfg.drag_ignore_cover,
-            "shipped behaviour unchanged"
-        );
-        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-dnd-release-at-accept"])) else {
-            panic!()
-        };
-        assert!(cfg.dnd_release_at_accept && !cfg.drag_ignore_cover);
+        assert!(!cfg.drag_ignore_cover, "shipped behaviour unchanged");
         let Ok(Command::Server(cfg)) = parse_args(&args(&["--drag-ignore-cover", "server"])) else {
             panic!()
         };
-        assert!(cfg.drag_ignore_cover && !cfg.dnd_release_at_accept);
+        assert!(cfg.drag_ignore_cover);
+        // T14 ships the release at the accept on every drag Chrome's drop confirmation covers (`accept.rs`): no second
+        // path beside it
+        assert!(parse_args(&args(&["server", "--drag-dnd-release-at-accept"])).is_err());
     }
 
     #[test]

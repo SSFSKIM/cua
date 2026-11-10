@@ -1,7 +1,8 @@
 //! The line protocol between the service and the engine (R/A §1.6; `sky-linux-behaviour.md` §1–2).
 //!
 //! One JSON object per line on stdin, `{id, command, input}`; one compact JSON line per request on stdout,
-//! `{id, ok, output, error, restart}` in that key order. `output` is a JSON value, never a JSON-encoded string.
+//! `{id, ok, output, error, restart}` in that key order, with cua's `notice` after them only while a drag's watch left
+//! something pending (M4's T14). `output` is a JSON value, never a JSON-encoded string.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -24,6 +25,11 @@ pub struct Response {
     pub output: Value,
     pub error: Option<String>,
     pub restart: bool,
+    /// cua's addition after the vendor's keys (M4's T14, #264; the design session's rulings, 2026-11-02): what a drag's
+    /// after-release watch left pending (`dnd::pending_notice`), on every reply until the first acting request, which
+    /// is refused with it. Absent otherwise, so the line is the vendor's; the vendor's JavaScript ignores the key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
 }
 
 impl Response {
@@ -34,6 +40,7 @@ impl Response {
             output,
             error: None,
             restart: false,
+            notice: None,
         }
     }
 
@@ -44,7 +51,14 @@ impl Response {
             output: Value::Null,
             error: Some(error),
             restart: false,
+            notice: None,
         }
+    }
+
+    /// The response carrying `notice`, if there is one.
+    pub fn with_notice(mut self, notice: Option<String>) -> Self {
+        self.notice = notice;
+        self
     }
 
     /// One line, no trailing newline.
@@ -356,6 +370,20 @@ mod tests {
         assert_eq!(
             failed.to_line(),
             r#"{"id":7,"ok":false,"output":null,"error":"key must be a non-empty string","restart":false}"#
+        );
+    }
+
+    #[test]
+    fn a_pending_notice_follows_the_vendor_s_keys_and_is_absent_otherwise() {
+        let read = Response::success(json!(4), json!([])).with_notice(Some("Pending from your last drag".into()));
+        assert_eq!(
+            read.to_line(),
+            r#"{"id":4,"ok":true,"output":[],"error":null,"restart":false,"notice":"Pending from your last drag"}"#
+        );
+        assert_eq!(
+            Response::success(json!(5), Value::Null).with_notice(None).to_line(),
+            r#"{"id":5,"ok":true,"output":null,"error":null,"restart":false}"#,
+            "no notice: the vendor's line, byte for byte"
         );
     }
 

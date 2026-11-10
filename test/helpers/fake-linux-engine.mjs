@@ -58,9 +58,9 @@ createInterface({input: process.stdin}).on('line', async line => {
   const result = (await answer(request.command, request.input, {pid: process.pid, desktop, count})) ?? fallback(request.command, request.input);
   if ('exit' in result) { if (result.stderr) process.stderr.write(result.stderr); setTimeout(() => process.exit(result.exit), 20); return; }
   if ('raw' in result) { process.stdout.write(result.raw + '\\n'); return; }
-  const answerLine = 'error' in result
+  const answerLine = {...('error' in result
     ? {id: request.id, ok: false, error: result.error, ...(result.restart ? {restart: true} : {})}
-    : {id: request.id, ok: true, output: result.output};
+    : {id: request.id, ok: true, output: result.output ?? fallback(request.command, request.input).output}), ...('notice' in result ? {notice: result.notice} : {})};
   process.stdout.write(JSON.stringify(answerLine) + '\\n');
 });
 `;

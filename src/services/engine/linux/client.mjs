@@ -11,7 +11,9 @@
 // The wire is the vendor's (R/A §1.6): one `{id, command, input}` line per request on stdin, ids increasing from 1 for
 // the client's life; each stdout line `{id, ok, output | error, restart?}` settles the pending request with that id, so
 // requests may be pipelined (the engine executes them one at a time, in order). `output` is the command's JSON value.
-// An error answer rejects with its sentence. `restart: true` ends that engine and fails every other request pending on
+// An error answer rejects with its sentence. A line may carry cua's `notice` (what a drag's after-release watch left
+// pending, #171 M4 T14): `exchange` resolves to it beside the output, and an error answer's sentence is followed by it on
+// a line of its own, so a failed read still reports it. `restart: true` ends that engine and fails every other request pending on
 // it with the same error; a line that is not JSON or carries no numeric id ends it too; an engine that exits fails what
 // was pending with its status and the last 8 KiB of its stderr. The next request starts a fresh engine. As the vendor's
 // transport does, the child's pipes are unref'd and the child is ref'd only while a request is pending, so an idle
@@ -93,8 +95,10 @@ export function createEngineClient({path, desktop = 'shared', env, versionTimeou
     if (!waiter) return;
     pending.delete(answer.id);
     if (![...pending.values()].some(other => other.proc === proc)) proc.unref();
-    if (answer.ok === true) return waiter.resolve(answer.output);
-    const error = new Error(typeof answer.error === 'string' ? answer.error : `cua-engine request failed: ${waiter.command}`);
+    const notice = typeof answer.notice === 'string' && answer.notice !== '' ? answer.notice : undefined;
+    if (answer.ok === true) return waiter.resolve({output: answer.output, notice});
+    const sentence = typeof answer.error === 'string' ? answer.error : `cua-engine request failed: ${waiter.command}`;
+    const error = new Error(notice === undefined ? sentence : `${sentence}\n${notice}`);
     if (answer.restart === true) retire(proc, error);
     waiter.reject(error);
   }
@@ -144,7 +148,7 @@ export function createEngineClient({path, desktop = 'shared', env, versionTimeou
       const proc = launch();
       child = proc;
       try {
-        reports.set(proc, await send(proc, 'capabilities', {}));
+        reports.set(proc, (await send(proc, 'capabilities', {})).output);
       } catch (error) {
         retire(proc, error);
         throw error;
@@ -159,6 +163,11 @@ export function createEngineClient({path, desktop = 'shared', env, versionTimeou
     // the process the request is about to be written to, with nothing awaited in between, so no restart can come
     // between the check and the dispatch; it throws to refuse, and then nothing is sent.
     async request(command, input, check) {
+      return (await this.exchange(command, input, check)).output;
+    },
+    // `request`, resolving to {output, notice}: `notice` the pending drag notice the engine put beside the output, or
+    // undefined.
+    async exchange(command, input, check) {
       const proc = await engine();
       check?.(reports.get(proc));
       return send(proc, command, input);

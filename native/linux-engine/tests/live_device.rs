@@ -167,6 +167,55 @@ fn app_of(engine: &mut Engine, window: Window) -> String {
         .expect("the probe window is listed")
 }
 
+/// What a late drag and drop leaves pending (`dnd::pending_notice`), as every reply carries it, and as the first acting
+/// request, `command`, is refused with it (`dnd::pending_refusal`).
+fn late_cause(app: &str) -> String {
+    format!(
+        "Pending from your last drag, a late drag and drop: {app} started a drag and drop after your drag into it ended, \
+         so the drag did not end as it answered; it may have dropped and changed the desktop"
+    )
+}
+fn late_notice(app: &str) -> String {
+    format!(
+        "{}. Read the window before sending input again: your next input request will not be run",
+        late_cause(app)
+    )
+}
+fn late_refusal(app: &str, command: &str) -> String {
+    format!(
+        "{}; this {command} request was not run, so read the window before sending it again",
+        late_cause(app)
+    )
+}
+/// The same for a drop its target did not confirm.
+fn unconfirmed_cause(app: &str) -> String {
+    format!(
+        "Pending from your last drag, an unconfirmed drop: your drag into {app} began a drag and drop, and {app} did not \
+         confirm a drop after the release, so the drop may not have landed as the drag answered"
+    )
+}
+fn unconfirmed_notice(app: &str) -> String {
+    format!(
+        "{}. Read the window before sending input again: your next input request will not be run",
+        unconfirmed_cause(app)
+    )
+}
+fn unconfirmed_refusal(app: &str, command: &str) -> String {
+    format!(
+        "{}; this {command} request was not run, so read the window before sending it again",
+        unconfirmed_cause(app)
+    )
+}
+/// Whether `sentence` is the refusal of `command` after the watch of a drag into `app` failed (its cause in between).
+fn is_watch_failed_refusal(sentence: &str, app: &str, command: &str) -> bool {
+    sentence.starts_with(&format!(
+        "Pending from your last drag, a failed watch: the drag-and-drop watch after your drag into {app} failed ("
+    )) && sentence.ends_with(&format!(
+        "), so a drop may have happened unseen and changed the desktop; this {command} request was not run, so read the \
+         window before sending it again"
+    ))
+}
+
 fn sent(inputs: &[Input]) -> bool {
     inputs.iter().all(|i| match i {
         Input::KeyPress { sent } | Input::KeyRelease { sent } => *sent,
@@ -430,12 +479,84 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
             .reply()
             .unwrap()
             .atom;
+        // a `Drops` source's cursors: each a cursor of its own, as Chrome makes them, the no-drop pattern for its drag
+        // loop's and its no-drop status's, another for its accept
+        let cursor_of = |probe: &Probe, pattern: u8| -> u32 {
+            let pixmap = probe.conn.generate_id().unwrap();
+            probe.conn.create_pixmap(1, pixmap, probe.id, 16, 16).unwrap();
+            let gc = probe.conn.generate_id().unwrap();
+            probe
+                .conn
+                .create_gc(gc, pixmap, &x11rb::protocol::xproto::CreateGCAux::new().foreground(1))
+                .unwrap();
+            let bits: Vec<x11rb::protocol::xproto::Rectangle> = (0..16)
+                .filter(|row| row % pattern as i16 == 0)
+                .map(|row| x11rb::protocol::xproto::Rectangle {
+                    x: 0,
+                    y: row,
+                    width: 16,
+                    height: 1,
+                })
+                .collect();
+            probe.conn.poly_fill_rectangle(pixmap, gc, &bits).unwrap();
+            let cursor = probe.conn.generate_id().unwrap();
+            probe
+                .conn
+                .create_cursor(cursor, pixmap, pixmap, 0, 0, 0, 0xffff, 0xffff, 0xffff, 0, 0)
+                .unwrap();
+            cursor
+        };
+        let show = |probe: &Probe, cursor: u32| {
+            probe
+                .conn
+                .change_window_attributes(
+                    probe.id,
+                    &x11rb::protocol::xproto::ChangeWindowAttributesAux::new().cursor(cursor),
+                )
+                .unwrap();
+            probe.conn.flush().unwrap();
+        };
+        let mut pending_cursors: Vec<(Duration, u32)> = match on_release {
+            OnRelease::Drops { cursors, .. } => cursors
+                .iter()
+                .map(|&(ms, shape)| {
+                    let cursor = cursor_of(&probe, if shape == Shape::NoDrop { 2 } else { 3 });
+                    (Duration::from_millis(ms), cursor)
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        let loop_cursor = matches!(on_release, OnRelease::Drops { .. }).then(|| cursor_of(&probe, 2));
+        let active_window = probe
+            .conn
+            .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+            .unwrap()
+            .reply()
+            .unwrap()
+            .atom;
         probe.conn.sync().unwrap();
         ready.send(probe.id).unwrap();
         let take = |probe: &Probe| {
+            if let Some(cursor) = loop_cursor {
+                show(probe, cursor);
+            }
             probe
                 .conn
                 .set_selection_owner(probe.id, selection, x11rb::CURRENT_TIME)
+                .unwrap();
+            probe.conn.flush().unwrap();
+        };
+        let activate = |probe: &Probe| {
+            let request =
+                x11rb::protocol::xproto::ClientMessageEvent::new(32, probe.id, active_window, [1, 0, 0, 0, 0]);
+            probe
+                .conn
+                .send_event(
+                    false,
+                    probe.root,
+                    EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT,
+                    request,
+                )
                 .unwrap();
             probe.conn.flush().unwrap();
         };
@@ -463,6 +584,15 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
         AFTER_TAKE_MOTIONS.lock().unwrap().clear();
         ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clear();
         while stopped.try_recv().is_err() {
+            if let Some(took) = took_at {
+                pending_cursors.retain(|&(after, cursor)| {
+                    let due = took.elapsed() >= after;
+                    if due {
+                        show(&probe, cursor);
+                    }
+                    !due
+                });
+            }
             if let (OnRelease::TakesAfter(after), Some(pressed), None) = (on_release, pressed_at, took_at)
                 && pressed.elapsed() >= after
                 && !seen.iter().any(|i| matches!(i, Input::ButtonRelease { .. }))
@@ -519,6 +649,12 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
                                 take(&probe);
                                 late_take = Some(Instant::now());
                             }
+                            // an Escape on either route ends Chrome's drag and drop before its drop
+                            OnRelease::Drops { activates: true, .. }
+                                if !seen.iter().any(|i| matches!(i, Input::KeyPress { .. })) =>
+                            {
+                                activate(&probe)
+                            }
                             _ => {}
                         }
                     }
@@ -548,6 +684,20 @@ enum OnRelease {
     NeverTakes,
     /// A take this long after the press, the button still down, whatever motion came.
     TakesAfter(Duration),
+    /// A Chrome drop: the take at the first motion, its drag loop's cursor shown on the window just before it, then
+    /// each of `cursors` that many milliseconds after the take; at the release, unless an Escape came, an activation
+    /// request for its window when `activates`, as Chrome's drop asks the window manager (`WebContents::Focus`).
+    Drops {
+        activates: bool,
+        cursors: &'static [(u64, Shape)],
+    },
+}
+
+/// A cursor a `Drops` source shows: Chrome's no-drop status, whose image is its drag loop's, or its accept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Shape {
+    NoDrop,
+    Accept,
 }
 
 /// The window-relative places of the motions the last drag's source saw after its take.
@@ -643,6 +793,9 @@ fn a_drag_that_becomes_a_drag_and_drop_is_cancelled_before_the_drop_when_shared(
     );
     drop(shared);
     let (window, stop, recorder) = drag_source(OnRelease::Nothing);
+    // the real pointer in the window, as a dedicated drag needs for the background route (the test's server centres it
+    // whenever its last client left)
+    pointer_to(100, 100);
     let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
     dedicated
         .request("drag", json!({"window": {"id": window}, "path": path}))
@@ -904,13 +1057,21 @@ fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_acting_
         waited < Duration::from_millis(50),
         "the Escape {waited:?} after the take: at once"
     );
-    assert!(shared.request("list_windows", json!({})).is_ok(), "a read runs");
+    let read = shared.exchange("list_windows", json!({}));
+    assert_eq!(read["ok"], json!(true), "a read runs");
+    assert_eq!(
+        read["notice"],
+        json!(late_notice(&app)),
+        "and its reply carries the notice"
+    );
     assert_eq!(
         shared.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
-        Err(format!(
-            "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this \
-             request was not run, so read the window before sending it again"
-        ))
+        Err(late_refusal(&app, "click"))
+    );
+    assert_eq!(
+        shared.exchange("list_windows", json!({}))["notice"],
+        Value::Null,
+        "reported, and gone"
     );
     stop.send(()).unwrap();
     assert_eq!(
@@ -938,6 +1099,267 @@ fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_acting_
         answered < unwatched + Duration::from_millis(150),
         "no settle on the request path: {answered:?} against {unwatched:?} unwatched"
     );
+}
+
+/// The root's `_NET_SUPPORTED` listing `_NET_ACTIVE_WINDOW`, as a window manager that supports the request lists it,
+/// for the guard's life, and deleted at its end: the test's display has no window manager. The guard keeps its X
+/// connection open, since the test's server resets (its root properties gone, its pointer centred) once its last
+/// client leaves.
+struct ActiveWindowSupported {
+    conn: RustConnection,
+    root: Window,
+    supported: u32,
+}
+
+impl ActiveWindowSupported {
+    fn listed() -> ActiveWindowSupported {
+        let (conn, screen) = x11rb::connect(None).expect("an X connection");
+        let root = conn.setup().roots[screen].root;
+        let atom = |name: &[u8]| conn.intern_atom(false, name).unwrap().reply().unwrap().atom;
+        let (supported, active) = (atom(b"_NET_SUPPORTED"), atom(b"_NET_ACTIVE_WINDOW"));
+        conn.change_property32(PropMode::REPLACE, root, supported, AtomEnum::ATOM, &[active])
+            .unwrap();
+        conn.sync().unwrap();
+        ActiveWindowSupported { conn, root, supported }
+    }
+}
+
+impl Drop for ActiveWindowSupported {
+    fn drop(&mut self) {
+        let _ = self.conn.delete_property(self.root, self.supported);
+        let _ = self.conn.sync();
+    }
+}
+
+/// #264 (M4's T14): a late take on every Chromium drag whose drop the engine lets land, not only a guarded background
+/// one. In front on a shared desktop (the background route), on a dedicated desktop, and on the desktop route over
+/// Chromium, a source that takes `XdndSelection` only after the drag's release (a real take, no fault injected) is
+/// cancelled at once by an Escape on the route the drag used (synthetic, or XTEST); the drag answered at its release, a
+/// read that follows runs and its reply carries the notice, and the next acting request is refused once, sending
+/// nothing. On the background route the Escape comes inside the drag's session, before its `FocusOut`.
+#[test]
+fn a_late_take_into_a_chromium_window_the_engine_lets_drop_is_cancelled_on_the_drag_s_route_and_reported_by_every_reply()
+ {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    for (case, args, named, synthetic) in [
+        ("in front, shared", &[][..], true, true),
+        ("dedicated", &["--desktop", "dedicated"][..], true, true),
+        ("the desktop route", &[][..], false, false),
+    ] {
+        let (window, stop, recorder) = drag_source(OnRelease::TakesLate);
+        managed(window);
+        in_front(window);
+        // the real pointer in the window, so the dedicated drag keeps the background route
+        pointer_to(100, 100);
+        let mut engine = Engine::start_with(args);
+        let app = app_of(&mut engine, window);
+        *TAKE_TO_ESCAPE.lock().unwrap() = None;
+        let request = if named {
+            json!({"window": {"id": window}, "path": path})
+        } else {
+            json!({"path": path})
+        };
+        assert_eq!(
+            engine.request("drag", request),
+            Ok(Value::Null),
+            "{case}: answered at the release"
+        );
+        sleep(SETTLE);
+        let waited = TAKE_TO_ESCAPE
+            .lock()
+            .unwrap()
+            .unwrap_or_else(|| panic!("{case}: the watch's Escape reached the source"));
+        assert!(
+            waited < Duration::from_millis(50),
+            "{case}: the Escape {waited:?} after the take"
+        );
+        let read = engine.exchange("list_windows", json!({}));
+        assert_eq!(read["ok"], json!(true), "{case}: a read runs");
+        assert_eq!(
+            read["notice"],
+            json!(late_notice(&app)),
+            "{case}: its reply carries the notice"
+        );
+        assert_eq!(
+            engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+            Err(late_refusal(&app, "click")),
+            "{case}"
+        );
+        assert_eq!(
+            engine.exchange("list_windows", json!({}))["notice"],
+            Value::Null,
+            "{case}: reported once"
+        );
+        set_active_window(None);
+        stop.send(()).unwrap();
+        let seen = recorder.join().unwrap();
+        assert_eq!(
+            seen,
+            vec![
+                Input::ButtonPress {
+                    button: 1,
+                    sent: synthetic
+                },
+                Input::ButtonRelease {
+                    button: 1,
+                    sent: synthetic
+                },
+                Input::KeyPress { sent: synthetic },
+                Input::KeyRelease { sent: synthetic },
+            ],
+            "{case}: the drag, the watch's Escape on its route, nothing of the refused click"
+        );
+        // the window holds the real focus here, so its session synthesizes no focus change; whatever `FocusOut` it
+        // sent comes after the watch's Escape (the guard's case above proves the session kept for it)
+        let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+        let at = |kind: &str| order.iter().position(|(what, _)| *what == kind);
+        assert!(
+            at("focus-out").is_none_or(|out| at("escape").is_some_and(|escape| escape < out)),
+            "{case}: the Escape before any FocusOut: {order:?}"
+        );
+    }
+}
+
+/// The drop's confirmation (the design session's ruling on task 68, 2026-11-09): a Chrome drag and drop under way at
+/// its release, under a window manager that lists `_NET_ACTIVE_WINDOW`, is confirmed by Chrome's own activation request
+/// for its window after the release; with none inside `dnd::DROP_CONFIRM` the drop is unconfirmed, never ok, and every
+/// reply carries that notice until the next acting request, refused. An acting request straight after the drag waits
+/// for the rest of the window rather than run first. With no window manager support, the floor answers as before.
+#[test]
+fn a_chrome_drop_under_way_at_its_release_is_confirmed_by_its_activation_request_or_reported_unconfirmed() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let drop_with = |activates: bool, supported: bool| {
+        let listed = supported.then(ActiveWindowSupported::listed);
+        let (window, stop, recorder) = drag_source(OnRelease::Drops {
+            activates,
+            cursors: &[],
+        });
+        in_front(window);
+        let mut engine = Engine::start();
+        let app = app_of(&mut engine, window);
+        let dragged = engine.request("drag", json!({"window": {"id": window}, "path": path}));
+        (listed, window, stop, recorder, engine, app, dragged)
+    };
+    // confirmed: no notice, and the next acting request runs
+    let (listed, window, stop, recorder, mut engine, _, dragged) = drop_with(true, true);
+    assert_eq!(dragged, Ok(Value::Null));
+    sleep(SETTLE);
+    assert_eq!(
+        engine.exchange("list_windows", json!({}))["notice"],
+        Value::Null,
+        "a confirmed drop"
+    );
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Ok(Value::Null)
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    let _ = recorder.join();
+    drop(listed);
+    // unconfirmed: every reply carries the notice, the next acting request is refused once
+    let (listed, window, stop, recorder, mut engine, app, dragged) = drop_with(false, true);
+    assert_eq!(dragged, Ok(Value::Null), "the drag answered at its release");
+    sleep(SETTLE);
+    for read in ["list_windows", "list_apps"] {
+        let answer = engine.exchange(read, json!({}));
+        assert_eq!(answer["notice"], json!(unconfirmed_notice(&app)), "{read}");
+    }
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Err(unconfirmed_refusal(&app, "click"))
+    );
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Ok(Value::Null)
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    let seen = recorder.join().unwrap();
+    assert_eq!(
+        seen.iter().filter(|i| matches!(i, Input::ButtonPress { .. })).count(),
+        2,
+        "the drag's press and the second click's, nothing of the refused one: {seen:?}"
+    );
+    drop(listed);
+    // an acting request straight after the drag's answer waits for the window's rest, and is refused
+    let (listed, window, stop, recorder, mut engine, app, dragged) = drop_with(false, true);
+    assert_eq!(dragged, Ok(Value::Null));
+    let started = Instant::now();
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Err(unconfirmed_refusal(&app, "click"))
+    );
+    assert!(
+        started.elapsed() < Duration::from_millis(200),
+        "bounded by the window: {:?}",
+        started.elapsed()
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    let _ = recorder.join();
+    drop(listed);
+    // no window manager support: nothing to confirm by, the floor answers as before
+    let (_, window, stop, recorder, mut engine, _, dragged) = drop_with(false, false);
+    assert_eq!(dragged, Ok(Value::Null));
+    sleep(SETTLE);
+    assert_eq!(engine.exchange("list_windows", json!({}))["notice"], Value::Null);
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Ok(Value::Null)
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    let _ = recorder.join();
+}
+
+/// The release at the accept (the design session's ruling on task 68): on the desktop route over a Chrome window whose
+/// drop the engine can confirm, the drag is released once its source shows the accept cursor, not at the floor 350 ms
+/// after the take. The cursors are told apart by their image: an accept a later no-drop withdrew, an accept shown as the
+/// first status (a press inside the zone), and a window manager without `_NET_ACTIVE_WINDOW` all leave the drag to the
+/// floor.
+#[test]
+fn a_chrome_drop_is_released_at_its_accept_cursor_and_never_at_an_accept_withdrawn_or_shown_first() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    const ACCEPTS: &[(u64, Shape)] = &[(3, Shape::NoDrop), (40, Shape::Accept)];
+    const LEAVES: &[(u64, Shape)] = &[(3, Shape::NoDrop), (40, Shape::Accept), (70, Shape::NoDrop)];
+    const INSIDE: &[(u64, Shape)] = &[(3, Shape::Accept), (70, Shape::NoDrop)];
+    for (case, cursors, supported, early) in [
+        ("an accept", ACCEPTS, true, true),
+        ("an accept the path then left", LEAVES, true, false),
+        ("a first status that accepts, then leaves", INSIDE, true, false),
+        ("no window manager support", ACCEPTS, false, false),
+    ] {
+        let listed = supported.then(ActiveWindowSupported::listed);
+        let (window, stop, recorder) = drag_source(OnRelease::Drops {
+            activates: true,
+            cursors,
+        });
+        managed(window);
+        let mut engine = Engine::start();
+        assert_eq!(engine.request("drag", json!({"path": path})), Ok(Value::Null), "{case}");
+        sleep(SETTLE);
+        assert_eq!(
+            engine.exchange("list_windows", json!({}))["notice"],
+            Value::Null,
+            "{case}: confirmed"
+        );
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        let after_take = TAKE_TO_RELEASE.lock().unwrap().expect("the source took XdndSelection");
+        if early {
+            assert!(
+                after_take < Duration::from_millis(250),
+                "{case}: released {after_take:?} after the take"
+            );
+        } else {
+            assert!(
+                after_take >= Duration::from_millis(345) && after_take < Duration::from_millis(600),
+                "{case}: released {after_take:?} after the take, at the floor"
+            );
+        }
+        drop(listed);
+    }
 }
 
 /// How long after the release the exit test's late drag and drop begins: well after the drag answered, inside the
@@ -1197,13 +1619,15 @@ fn a_late_drag_and_drop_lets_releases_and_reads_run_and_refuses_the_next_acting_
         "a release runs"
     );
     assert!(!held(&conn), "Shift up at the server");
-    assert!(deferred.request("list_windows", json!({})).is_ok(), "a read runs");
+    let read = deferred.exchange("list_windows", json!({}));
+    assert_eq!(
+        (read["ok"].clone(), read["notice"].clone()),
+        (json!(true), json!(late_notice(&app))),
+        "a read runs, carrying the notice"
+    );
     assert_eq!(
         deferred.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
-        Err(format!(
-            "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this \
-             request was not run, so read the window before sending it again"
-        ))
+        Err(late_refusal(&app, "click"))
     );
     deferred
         .request("click", json!({"window": {"id": window}, "x": 50, "y": 50}))
@@ -1249,10 +1673,7 @@ fn preflight_answers_a_pending_late_drag_and_drop_or_watch_failure_as_an_acting_
     );
     assert_eq!(
         deferred.request("preflight", json!({})),
-        Err(format!(
-            "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this \
-             request was not run, so read the window before sending it again"
-        ))
+        Err(late_refusal(&app, "preflight"))
     );
     assert_eq!(
         deferred.request("preflight", json!({})),
@@ -1283,10 +1704,7 @@ fn preflight_answers_a_pending_late_drag_and_drop_or_watch_failure_as_an_acting_
     let sentence = lost
         .request("preflight", json!({}))
         .expect_err("the failed watch is the answer");
-    assert!(
-        sentence.starts_with(&format!("the drag-and-drop watch after your drag into {app} failed (")),
-        "{sentence}"
-    );
+    assert!(is_watch_failed_refusal(&sentence, &app, "preflight"), "{sentence}");
     assert_eq!(
         lost.request("preflight", json!({"x": 1})),
         Err("failed to parse command input: unknown field `x`, there are no fields".into()),
@@ -1332,14 +1750,7 @@ fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {
     let sentence = lost
         .request("click", json!({"window": {"id": window}, "x": 50, "y": 50}))
         .expect_err("the click is refused");
-    assert!(
-        sentence.starts_with(&format!("the drag-and-drop watch after your drag into {app} failed ("))
-            && sentence.ends_with(
-                "), so a drop may have happened unseen and changed the desktop; this request was not run, so read the \
-                 window before sending it again"
-            ),
-        "{sentence}"
-    );
+    assert!(is_watch_failed_refusal(&sentence, &app, "click"), "{sentence}");
     stop.send(()).unwrap();
     assert_eq!(
         recorder.join().unwrap(),
@@ -1459,11 +1870,7 @@ fn a_watch_whose_x_connection_is_lost_refuses_the_next_acting_request_and_sends_
             .request(command, input)
             .expect_err("the failed watch is the answer");
         assert!(
-            sentence.starts_with(&format!("the drag-and-drop watch after your drag into {app} failed ("))
-                && sentence.ends_with(
-                    "), so a drop may have happened unseen and changed the desktop; this request was not run, so \
-                     read the window before sending it again"
-                ),
+            is_watch_failed_refusal(&sentence, &app, command),
             "{command}: {sentence}"
         );
         assert_eq!(engine.request("preflight", json!({})), Ok(Value::Null), "reported once");

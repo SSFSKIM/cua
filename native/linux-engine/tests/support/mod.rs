@@ -266,6 +266,23 @@ impl Engine {
         }
     }
 
+    /// One request's whole answer line, `notice` included when the engine sent one.
+    pub fn exchange(&mut self, command: &str, input: Value) -> Value {
+        let id = self.next_id;
+        self.next_id += 1;
+        let line = json!({"id": id, "command": command, "input": input}).to_string();
+        let stdin = self.stdin.as_mut().unwrap();
+        writeln!(stdin, "{line}").unwrap();
+        stdin.flush().unwrap();
+        let answer = self
+            .lines
+            .recv_timeout(REQUEST_TIMEOUT)
+            .unwrap_or_else(|_| panic!("no answer to {command} within {REQUEST_TIMEOUT:?}"));
+        let answer: Value = serde_json::from_str(&answer).unwrap_or_else(|e| panic!("not JSON ({e}): {answer}"));
+        assert_eq!(answer["id"], json!(id), "answers come in request order");
+        answer
+    }
+
     /// One request; the output on success, the error sentence otherwise.
     pub fn request(&mut self, command: &str, input: Value) -> Result<Value, String> {
         let id = self.next_id;

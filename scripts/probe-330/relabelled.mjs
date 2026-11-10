@@ -51,22 +51,30 @@ export function relabelledPage(key,script) {
     change=key==='typed-link'?"e.textContent='Delete';e.setAttribute('aria-label','Delete')":'';
   }
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>probe298 page</title><style>body{margin:16px;font:13px sans-serif}button{font:13px sans-serif;padding:4px 8px}.fixed{width:170px;height:30px;padding:0}.box{border:1px solid;width:320px;height:70px;overflow:hidden}.box p{margin:0}</style></head><body><h3>probe298 ${key}</h3>${body}<script>(()=>{
-const kind=${JSON.stringify(key)},$=s=>document.querySelector(s),editor=$('#editor'),target=$('#target')||editor;
+const kind=${JSON.stringify(key)},sentence=${JSON.stringify(TYPED)},$=s=>document.querySelector(s),editor=$('#editor'),target=$('#target')||editor;
 const rect=r=>({x:r.x,y:r.y,width:r.width,height:r.height});
 const content=()=>editor?(editor.value??editor.textContent):target.textContent;
 const geometry=()=>{
  const e=target,host=editor||e;let textRects=[];
- if(editor&&editor.tagName==='TEXTAREA') {const f=host.getBoundingClientRect(),s=getComputedStyle(host),c=document.createElement('canvas').getContext('2d');c.font=s.font;textRects=[{x:f.x+parseFloat(s.paddingLeft)+1,y:f.y+parseFloat(s.paddingTop)+1,width:c.measureText(content().split('\\n')[0]).width,height:parseFloat(s.lineHeight)}];}
+ if(editor&&editor.tagName==='TEXTAREA') {const f=host.getBoundingClientRect(),s=getComputedStyle(host),c=document.createElement('canvas').getContext('2d');c.font=s.fontSize+' '+s.fontFamily;textRects=[{x:f.x+parseFloat(s.paddingLeft)+1,y:f.y+parseFloat(s.paddingTop)+1,width:c.measureText(content().split('\\n')[0]).width,height:parseFloat(s.lineHeight)}];}
  else {const r=document.createRange();r.selectNodeContents(editor&&kind!=='typed-link'?editor:e);textRects=Array.from(r.getClientRects(),rect).filter(r=>r.width>0&&r.height>0).sort((a,b)=>a.width*a.height-b.width*b.height);}
  let editorRects=[];if(editor&&editor.tagName!=='TEXTAREA'){const r=document.createRange();r.selectNodeContents(editor.querySelector('#seed')||editor);editorRects=Array.from(r.getClientRects(),rect).filter(r=>r.width>0&&r.height>0).sort((a,b)=>a.width*a.height-b.width*b.height);}
- const labelled=e.getAttribute('aria-labelledby');return {kind,case:location.search,text:content(),label:e.getAttribute('aria-label')||(labelled?document.getElementById(labelled).textContent:e.textContent),anchor:rect(host.getBoundingClientRect()),target:rect(e.getBoundingClientRect()),textRects,editorRects,inEditable:!!e.closest('[contenteditable="true"]')};
+ let typedTextRects=[],index=editor?content().indexOf(sentence):-1;
+ if(editor&&index>=0){
+  if(editor.tagName==='TEXTAREA'){const s=getComputedStyle(editor),c=document.createElement('canvas').getContext('2d');c.font=s.fontSize+' '+s.fontFamily;typedTextRects=[{...textRects[0],x:textRects[0].x+c.measureText(content().slice(0,index)).width,width:c.measureText(sentence).width}];}
+  else {const w=document.createTreeWalker(editor,NodeFilter.SHOW_TEXT);let n,start=null,end=null,offset=0;while(n=w.nextNode()){if(!start&&index<offset+n.data.length)start=[n,index-offset];if(index+sentence.length<=offset+n.data.length){end=[n,index+sentence.length-offset];break;}offset+=n.data.length;}if(start&&end){const r=document.createRange();r.setStart(...start);r.setEnd(...end);typedTextRects=Array.from(r.getClientRects(),rect).filter(r=>r.width>0&&r.height>0);}}
+ }
+ const labelled=e.getAttribute('aria-labelledby');return {kind,case:location.search,text:content(),label:e.getAttribute('aria-label')||(labelled?document.getElementById(labelled).textContent:e.textContent),anchor:rect(host.getBoundingClientRect()),target:rect(e.getBoundingClientRect()),textRects,typedTextRects,editorRects,inEditable:!!e.closest('[contenteditable="true"]')};
 };
-const send=o=>navigator.sendBeacon('/ev',JSON.stringify({kind,case:location.search,...o}));
-addEventListener('load',()=>send({type:'fixture',...geometry()}));
+const send=o=>navigator.sendBeacon('/ev',JSON.stringify({kind,case:location.search,browserAt:Date.now(),...o}));
+const focusState=()=>({activeId:document.activeElement?.id??null,editorFocused:!!editor&&(document.activeElement===editor||editor.contains(document.activeElement))});
+if(editor)for(const event of ['focusin','beforeinput','input','keydown','keyup'])editor.addEventListener(event,e=>send({type:'edit-event',event,key:e.key??null,data:e.data??null,metaKey:e.metaKey??false,shiftKey:e.shiftKey??false,text:content(),...focusState()}));
+addEventListener('load',()=>send({type:'fixture',...geometry(),...focusState()}));
 window.__change=()=>{const before=geometry(),e=target,start=performance.now();
  if(['tick','divtick','nextto'].includes(kind)) {setInterval(()=>{const s=((performance.now()-start)/1000).toFixed(1);if(kind==='nextto')$('#counter').textContent=s;else if(kind==='divtick')e.firstChild.nodeValue='Elapsed '+s+' s';else e.textContent='Elapsed '+s+' s';send({type:'mutation',mutation:'relabel',before,after:geometry()});},100);return;}
  ${change};if(['webarea','window','tab'].includes(kind))document.title='(3) probe298 page';
- send({type:'mutation',mutation:'relabel',before,after:geometry(),title:document.title});
+ send({type:'mutation',mutation:'relabel',before,after:geometry(),title:document.title,...focusState()});
+ if(editor)for(const delayMs of [0,250,1000,3000]){const sample=()=>send({type:'typing-sample',delayMs,...geometry(),...focusState()});if(delayMs===0)sample();else setTimeout(sample,delayMs);}
 };
 document.addEventListener('click',e=>{if(e.target.closest('a'))e.preventDefault();},true);
 })();</script>${script}</body></html>`;
@@ -99,14 +107,15 @@ export function relabelTarget(sky,plan,fixture) {
   return {node:n,point,fixture:{before:fixture}};
 }
 export function typedCoverage(row,plan) {
-  const m=row.mutations?.find(m=>m.mutation==='relabel'),before=row.fixture?.before,after=m?.after,issues=[];
+  const m=row.mutations?.find(m=>m.mutation==='relabel'),before=row.fixture?.before,after=row.typingSamples?.at(-1)??m?.after,issues=[];
   if(!row.click||row.problem||row.exception)issues.push('click did not complete');
   if(!m)issues.push('fixture mutation evidence missing');
   if(plan.typed) {
     if(!row.steps?.length||row.steps.some(s=>s.answer?.error))issues.push('typing sequence failed');
+    if(plan.delivery&&[0,250,1000,3000].some(ms=>!row.typingSamples?.some(s=>s.delayMs===ms)))issues.push('settled typing samples incomplete');
     const expected=plan.key==='typed-link'?'Typed sentence.':TYPED;
     if(!after?.text?.includes(expected))issues.push('typed sentence absent from editor');
-    if(plan.key!=='typed-link'&&!after?.textRects?.some(r=>holds(r,row.fixture?.domPoint)))issues.push('old screenshot point is outside typed text');
+    if(plan.key!=='typed-link'&&!(after?.typedTextRects??after?.textRects)?.some(r=>holds(r,row.fixture?.domPoint)))issues.push('old screenshot point is outside typed text');
     if(plan.key==='typed-link') {
       if(before?.label!=='Save'||after?.label!=='Delete'||!before?.inEditable||!after?.inEditable)issues.push('edited-region link did not change Save to Delete inside the editor');
       const n=row.observation?.chosen;
@@ -116,28 +125,45 @@ export function typedCoverage(row,plan) {
   return {valid:!issues.length,issues,oldLabel:before?.label,newLabel:after?.label,oldText:before?.text,newText:after?.text};
 }
 
+export async function deliverText(text,run,sleep,paced) {
+  if(!paced)return run('type_text',{text});
+  for(const character of text){await run('type_text',{text:character});await sleep(100);}
+}
+
 export async function runRelabel(kind,a) {
   const {config,stillHarness,stillCell,URL_,events,sendCmd,sleep,save,REPS,overBudget,toPixels,brief,version}=a;
   config[`${kind}Version`]=version(kind);
-  const plan=WEB_PLAN.filter(p=>p.key!=='tab'||kind==='cft');
-  config.relabelCases=plan.map(p=>({caseName:p.caseName,expectation:p.expectation}));
+  const typedOnly=config.group.startsWith('typed-'),probe=typedOnly&&process.env.P330_TYPED_VARIANTS==='probe';
+  const base=WEB_PLAN.filter(p=>(p.key!=='tab'||kind==='cft')&&(!typedOnly||p.typed)&&(!probe||p.key!=='typed-link'));
+  const plan=base.flatMap(p=>p.typed&&probe?['cmd-a-immediate','direct-immediate','direct-pause500','paced'].map(delivery=>({...p,caseName:`${p.caseName}/${delivery}`,delivery,diagnostic:delivery!=='paced'})):[{...p,delivery:p.typed?'paced':undefined}]);
+  config.typingProtocol={mode:probe?'main-only diagnostics':'paced gate',samplesMs:[0,250,1000,3000],pacedCharacterPauseMs:100};
+  config.relabelCases=plan.map(p=>({caseName:p.caseName,expectation:p.expectation,delivery:p.delivery,diagnostic:p.diagnostic??false}));
   const h=await stillHarness(kind);
   try {for(let rep=1;rep<=REPS;rep++)for(const p of plan) {
     if(overBudget()){config.budgetStop=true;return;}
     const url=new URL(`r?kind=${p.key}&case=${rep}-${p.caseName}`,URL_),mark=events.length;
     const reset=await h.reset(url.href);
     let fixture;for(let i=0;i<30;i++){fixture=events.slice(mark).find(e=>e.type==='fixture'&&e.kind===p.key&&e.case===url.search);if(fixture)break;await sleep(100);}
-    const row=await stillCell({app:kind,scene:'relabelled',cell:p.caseName,caseName:p.caseName,expectation:p.expectation,at:'old-screenshot',rep,reset},h.pid(),'shared',sky=>relabelTarget(sky,p,fixture),async({w,sky,row})=>{
+    const row=await stillCell({app:kind,scene:'relabelled',cell:p.caseName,caseName:p.caseName,expectation:p.expectation,delivery:p.delivery,diagnostic:p.diagnostic??false,at:'old-screenshot',rep,reset},h.pid(),'shared',sky=>relabelTarget(sky,p,fixture),async({w,sky,row})=>{
+      const traceMark=events.length;
       if(p.typed) {
         const point=p.key==='typed-link'?relabelTarget(sky,{...p,key:'typed-contenteditable'}, {...fixture,text:SEED,textRects:fixture.editorRects}):{point:row.point.screen};
         if(!point?.point)throw new Error('no editable text point');
         row.steps=[];
-        const run=async(method,args)=>{const answer=brief(await w.execute(method,{pid:h.pid(),...args}));row.steps.push({method,answer});if(answer.error)throw new Error(`typing ${method}: ${answer.message}`);};
+        const run=async(method,args)=>{
+          const startedAt=Date.now(),raw=await w.execute(method,{pid:h.pid(),...args}),endedAt=Date.now(),answer=brief(raw),m=raw.result?.meta??raw.error?.data?.meta;
+          row.steps.push({method,args,startedAt,endedAt,engineStartedAt:m?.startedAt,engineEndedAt:m?.endedAt,entered:m?.entered,answer});
+          if(answer.error)throw new Error(`typing ${method}: ${answer.message}`);
+        };
         await run('click',toPixels(sky,point.point).px);
-        if(p.key!=='typed-link')await run('press_key',{key:'cmd+a'});
-        await run('type_text',{text:p.key==='typed-link'?'Typed sentence. ':TYPED});
+        const paced=p.delivery==='paced';
+        if(paced)await sleep(800);else if(p.delivery==='direct-pause500')await sleep(500);
+        if(p.key!=='typed-link'&&!p.delivery.startsWith('direct-')){await run('press_key',{key:'cmd+a'});if(paced)await sleep(800);}
+        await deliverText(p.key==='typed-link'?'Typed sentence. ':TYPED,run,sleep,paced);
+        row.typeCompletedAt=Date.now();
       }
-      sendCmd('change');await sleep(p.delay??500);
+      row.changeSentAt=Date.now();sendCmd('change');await sleep(p.typed?3300:(p.delay??500));
+      if(p.typed){row.typingTrace=events.slice(traceMark).filter(e=>e.kind===p.key&&e.case===url.search);row.typingSamples=row.typingTrace.filter(e=>e.type==='typing-sample');}
     });
     row.coverage=typedCoverage(row,p);save();
   }} finally {await h.close();save();}

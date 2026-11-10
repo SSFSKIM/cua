@@ -1,8 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import * as relabel from './relabelled.mjs';
 import {WEB_PLAN,NATIVE_PLAN,SEED,TYPED,relabelledPage,relabelTarget,typedCoverage} from './relabelled.mjs';
 const rect=(x,y,width,height)=>({x,y,width,height});
+
+test('paced typing uses real one-character calls with settling, while bulk stays one call',async()=>{
+  const calls=[],run=async(method,args)=>calls.push([method,args]),sleep=async ms=>calls.push(['wait',ms]);
+  await relabel.deliverText('New.',run,sleep,true);
+  assert.deepEqual(calls,[['type_text',{text:'N'}],['wait',100],['type_text',{text:'e'}],['wait',100],['type_text',{text:'w'}],['wait',100],['type_text',{text:'.'}],['wait',100]]);
+  calls.length=0;await relabel.deliverText('New.',run,sleep,false);
+  assert.deepEqual(calls,[['type_text',{text:'New.'}]]);
+});
 
 test('edited-region negative control targets the actionable link, not its replaced short text',()=>{
   const n={role:'AXLink',title:'Save',actions:['AXPress'],frame:rect(400,100,130,32)};
@@ -21,6 +30,14 @@ test('typed coverage rejects padding clicks and requires an actionable link insi
   assert.equal(typedCoverage(row,{key:'typed-link',typed:true}).valid,true);
   row.observation.chosen.actions=[];assert.equal(typedCoverage(row,{key:'typed-link',typed:true}).valid,false);
 });
+test('settled coverage distinguishes an immediate partial value from a later complete sentence',()=>{
+  const partial={text:'New t',textRects:[rect(16,60,50,20)]};
+  const full={text:TYPED,typedTextRects:[rect(16,60,280,20)]};
+  const row={click:{},fixture:{before:{text:SEED},domPoint:{x:30,y:70}},steps:[{answer:{error:null}}],mutations:[{mutation:'relabel',after:partial}],typingSamples:[0,250,1000,3000].map(delayMs=>({delayMs,...(delayMs===3000?full:partial)}))};
+  assert.equal(typedCoverage(row,{key:'typed-gmail',typed:true,delivery:'paced'}).valid,true);
+  row.typingSamples.pop();assert.equal(typedCoverage(row,{key:'typed-gmail',typed:true,delivery:'paced'}).valid,false);
+});
+
 test('all requested fixture scripts parse, with complete must-refuse and timing manifests',()=>{
   const required=['save','btnnv','linksavenv','divbtn','linkmono','savearia','deleteall','dialog','follow','play','typed-link'];
   for(const name of required)assert.ok(WEB_PLAN.some(p=>p.caseName===name&&p.expectation==='relabelled'));

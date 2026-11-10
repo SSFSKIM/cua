@@ -23,7 +23,12 @@ on:
         description: engine selection (shadow applies the runner-only patch)
         type: choice
         options: ['ab', 'main', 'shadow', 'branch']
-        default: 'ab'
+        default: 'main'
+      typing:
+        description: probe variants or paced complete-sentence gate
+        type: choice
+        options: ['probe', 'paced']
+        default: 'probe'
       reps:
         description: repetitions per cell
         required: false
@@ -40,7 +45,7 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        group: ${{ fromJSON(github.event.inputs.groups || '["relabel-chrome", "relabel-safari", "relabel-firefox", "relabel-native", "gate-chrome", "gate-safari", "gate-firefox", "gate-native", "sweep-chrome", "sweep-safari", "sweep-firefox"]') }}
+        group: ${{ fromJSON(github.event.inputs.groups || '["typed-chrome", "typed-safari", "typed-firefox"]') }}
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
@@ -70,7 +75,7 @@ jobs:
         env:
           REF: ${{ github.event.inputs.ref || env.P330_REF_DEFAULT }}
           BRANCH_REF: ${{ github.event.inputs.branch_ref || env.P330_BRANCH_DEFAULT }}
-          ENGINE: ${{ github.event.inputs.engine || 'ab' }}
+          ENGINE: ${{ github.event.inputs.engine || 'main' }}
         run: |
           sw_vers
           git log -1 --format='kit %H %s'
@@ -91,8 +96,9 @@ jobs:
           GROUP: ${{ matrix.group }}
           REF: ${{ github.event.inputs.ref || env.P330_REF_DEFAULT }}
           BRANCH_REF: ${{ github.event.inputs.branch_ref || env.P330_BRANCH_DEFAULT }}
-          ENGINE: ${{ github.event.inputs.engine || 'ab' }}
+          ENGINE: ${{ github.event.inputs.engine || 'main' }}
           REPS: ${{ github.event.inputs.reps || '1' }}
+          P330_TYPED_VARIANTS: ${{ github.event.inputs.typing || 'probe' }}
         run: |
           if [ "$ENGINE" = ab ]; then HEADS='main branch'; else HEADS="$ENGINE"; fi
           for HEAD in $HEADS; do

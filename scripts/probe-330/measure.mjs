@@ -1248,11 +1248,11 @@ try {
   else if (GROUP === 'sweep-chrome') await stillBrowser('cft');
   else if (GROUP === 'sweep-firefox') await stillBrowser('firefox');
   else if (GROUP === 'sweep-native') { await stillTextEdit(); await stillFinder(); }
-  else if (GROUP.startsWith('gate-') || GROUP.startsWith('tick-') || GROUP.startsWith('relabel-')) {
+  else if (GROUP.startsWith('gate-') || GROUP.startsWith('tick-') || GROUP.startsWith('relabel-') || GROUP.startsWith('typed-')) {
     const api = {config, version, stillHarness, URL_, REPS, overBudget, save, connect, observe, sweepPicks, stillCell, refind,
       centre, edgePoint, EDGES, sleep, sendCmd, findNode, toPixels, brief, OUT, WIN, stillNative, escapeTwice, setFront, events};
     if (GROUP === 'relabel-native') await runRelabelNative(api);
-    else if (GROUP.startsWith('relabel-')) await runRelabel(GROUP === 'relabel-chrome'?'cft':GROUP.slice(8),api);
+    else if (GROUP.startsWith('relabel-') || GROUP.startsWith('typed-')) await runRelabel(GROUP.endsWith('-chrome')?'cft':GROUP.slice(GROUP.startsWith('typed-')?6:8),api);
     else if (GROUP.startsWith('tick-')) await runTicking(GROUP.slice(5),api);
     else if (GROUP === 'gate-native') { await stillTextEdit(); await stillFinder(); await runMailLike(api); }
     else await runGate(GROUP === 'gate-chrome' ? 'cft' : GROUP.slice(5), api);

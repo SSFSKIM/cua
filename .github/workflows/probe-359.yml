@@ -1,0 +1,90 @@
+# Offline-prepared kit. Manual ONLY. Do not dispatch without the owner's hosted-run ruling.
+name: probe-359
+on:
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: '20 for measurement, 1 for an explicitly labelled smoke'
+        default: '20'
+        type: choice
+        options: ['20', '1']
+      smoke:
+        description: 'Smoke evidence is not primary-rate evidence'
+        default: false
+        type: boolean
+permissions:
+  contents: read
+env:
+  ENGINE_REF: '9020bb18acb9091f817a4b648f7c332174b11153'
+jobs:
+  measure:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        browser: [safari, cft, firefox]
+        editor: [textarea, input, contenteditable, compose]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate measurement inputs
+        env:
+          REPS: ${{ inputs.reps }}
+          SMOKE: ${{ inputs.smoke }}
+        run: |
+          test "$REPS" = 20 || test "$SMOKE" = true
+      - name: Disposable runner apps
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          case "$BROWSER" in
+            cft) bash scripts/probe-316/install.sh chrome ;;
+            firefox)
+              bash scripts/probe-316/install.sh firefox
+              mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+              printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json ;;
+            *) bash scripts/probe-316/install.sh ;;
+          esac
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+          for key in NSAutomaticSpellingCorrectionEnabled NSAutomaticTextReplacementEnabled NSAutomaticQuoteSubstitutionEnabled NSAutomaticDashSubstitutionEnabled NSAutomaticCapitalizationEnabled NSAutomaticPeriodSubstitutionEnabled; do
+            defaults write -g "$key" -bool NO
+            defaults write com.apple.TextEdit "$key" -bool NO
+          done
+      - name: Build pinned plain and traced engines
+        run: |
+          git log -1 --format='kit %H %s'
+          git worktree add --detach "$RUNNER_TEMP/plain" "$ENGINE_REF"
+          git worktree add --detach "$RUNNER_TEMP/traced" "$ENGINE_REF"
+          node scripts/probe-359/patch.mjs "$RUNNER_TEMP/traced"
+          swift build -c release --package-path "$RUNNER_TEMP/plain/native/engine" --scratch-path "$RUNNER_TEMP/plain-build"
+          swift build -c release --package-path "$RUNNER_TEMP/traced/native/engine" --scratch-path "$RUNNER_TEMP/traced-build"
+          swiftc -O -o "$RUNNER_TEMP/tool359" scripts/probe-354/tool.swift
+          swiftc -O -o "$RUNNER_TEMP/watch359" scripts/probe-359/watch.swift
+      - name: Measure shared-mode ordering
+        env:
+          BROWSER: ${{ matrix.browser }}
+          EDITOR: ${{ matrix.editor }}
+          REPS: ${{ inputs.reps }}
+          SMOKE: ${{ inputs.smoke }}
+        run: |
+          node scripts/probe-359/measure.mjs --browser "$BROWSER" --editor "$EDITOR" --engine "$RUNNER_TEMP/plain-build/release/cua-engine" --traced-engine "$RUNNER_TEMP/traced-build/release/cua-engine" --tool "$RUNNER_TEMP/tool359" --watch "$RUNNER_TEMP/watch359" --out "$RUNNER_TEMP/probe-359/$BROWSER-$EDITOR" --reps "$REPS" --smoke "$SMOKE"
+      - name: Upload evidence even on incomplete coverage
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-359-${{ matrix.browser }}-${{ matrix.editor }}
+          path: |
+            ${{ runner.temp }}/probe-359/**/rows.jsonl
+            ${{ runner.temp }}/probe-359/**/config.json
+            ${{ runner.temp }}/probe-359/**/summary.json
+            ${{ runner.temp }}/probe-359/**/progress.json
+            ${{ runner.temp }}/probe-359/**/transport.jsonl
+            ${{ runner.temp }}/probe-359/**/engine-stderr.txt
+            ${{ runner.temp }}/probe-359/**/shots/**
+          if-no-files-found: warn
+          retention-days: 14

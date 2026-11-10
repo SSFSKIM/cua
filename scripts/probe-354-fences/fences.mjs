@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {launch,placePid,version} from '../probe-316/browser.mjs';
 import {page,SEED} from './page.mjs';
-import {plan,modeSpec,expectedFinal,initialSelection,analyzeTrace,readbackVerdict,privacyViolation,abortReason,coverage,sentence,BUDGET_MS} from './classify.mjs';
+import {plan,modeSpec,expectedFinal,initialSelection,analyzeTrace,readbackVerdict,privacyViolation,READBACK_VALUE_KEYS,setupForeground,measuredFrontPid,FOREGROUND_REASON,abortReason,coverage,sentence,BUDGET_MS} from './classify.mjs';
 import {createFixture,FixtureLost} from './fixture.mjs';
 
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
@@ -50,7 +50,7 @@ async function rpc(w,method,args){const t=Date.now(),r=await w.execute(method,{p
 const fixture=await createFixture(page());
 const cells=plan({shard:SHARD,reps:REPS,lanes:LANES});
 const meta={kit:process.env.GITHUB_SHA??null,engine:process.env.ENGINE_REF??null,image:process.env.ImageVersion??null,browser:KIND,shard:SHARD,lanes:LANES,reps:REPS,smoke:SMOKE,startedAt:start,planned:cells.length,
- setupProtocol:'foreground fixture DOM focus/selection, no engine click; cover brought forward, 250ms real deactivation settle, strict DOM state re-read, actual frontmost pid checked without activation as the last step before the measured key (or text)',
+ setupProtocol:'foreground fixture DOM focus/selection, no engine click; cover brought forward, 250ms real deactivation settle, strict DOM state re-read, actual frontmost pid checked without activation as the last step before the measured key (or text); password cells keep the browser frontmost (row.foregroundSetup)',
  fixtureProtocol:'explicit visible owner: the page whose title nonce the browser window AX title shows is bound; no document takes over; only the bound document is handed commands; commands expire; Cache-Control no-store',
  immediacy:'no awaited operation between key return and type_text except the measured fence (marker-ack waits for the page; ax waits inside press_key)',
  fences:{'marker':'F20 posted behind cmd+a in the same press_key; marker-ack waits soft 1000ms for the page keydown acknowledgement (cooperative page instrumentation, not a generic capability)',
@@ -71,11 +71,13 @@ async function setup(row){
  row.reset=await fixture.command({op:'reset',cell:row.id,editor:row.editor,expected});
  row.setup=await fixture.command({op:'prepare',cell:row.id,editor:row.editor,selection:row.initialSelection,expected});
  check(row.setup,row,'prepared');
- row.foregroundTransition=await front(coverPid);
+ // Behind the cover unless the cell keeps the browser frontmost (classify.mjs setupForeground); the row says which.
+ const measuredFront=measuredFrontPid(row,{pid,coverPid});
+ row.foregroundTransition=await front(measuredFront);
  row.setupSettleMs=250;await sleep(250);
  row.settledSetup=await fixture.command({op:'read',cell:row.id,expected});
  check(row.settledSetup,row,'settled');
- row.beforeMeasuredForeground=await front(coverPid,false);
+ row.beforeMeasuredForeground=await front(measuredFront,false);
 }
 function check(s,row,label){
  const text=row.editor==='password'?s.matchesExpected===true&&s.length===SEED.length:s.text===SEED;
@@ -92,7 +94,8 @@ async function cell(c,{warmup=false}={}){
  const text=sentence(c.length),spec=c.part==='fence'?modeSpec(c.mode):null;
  const row={recordKind:warmup?'warmup':'cell',id:c.id,part:c.part,browser:KIND,shard:SHARD,editor:c.editor,scene:c.scene,mode:c.mode,length:c.length,rep:c.rep,text,
   key:c.part==='unreadable'?null:(spec?.key??'cmd+a'),fence:spec?.fence??'none',readback:spec?spec.readback:true,concealed:c.mode==='readback-concealed',
-  initialSelection:initialSelection(c.scene),expectedFinal:expectedFinal(c,text),fixtureDoc:fixture.fx.bound,startedAt:Date.now()};
+  initialSelection:initialSelection(c.scene),expectedFinal:expectedFinal(c,text),foregroundSetup:setupForeground(c),
+  foregroundReason:setupForeground(c)?FOREGROUND_REASON:null,fixtureDoc:fixture.fx.bound,startedAt:Date.now()};
  let w,stage='setup',lost=false;
  try{
   w=await connect();await setup(row);
@@ -118,7 +121,7 @@ async function cell(c,{warmup=false}={}){
   if(row.typeRPC.error)throw Error('measured type '+JSON.stringify(row.typeRPC.error));
   const rb=row.typeRPC.readback;
   if(row.readback&&!rb?.active)throw Error('readback requested but not run: '+JSON.stringify(row.typeRPC.meta?.inputRoute??null));
-  if(privacyViolation(rb,{passwordField:row.editor==='password'})){row.privacyViolation=true;privacyViolations++;for(const k of ['before','actual','expected','beforeRange'])if(rb[k]!=null)rb[k]='[redacted-by-harness]'}
+  if(privacyViolation(rb,{passwordField:row.editor==='password'})){row.privacyViolation=true;privacyViolations++;for(const k of READBACK_VALUE_KEYS)if(rb[k]!=null)rb[k]='[redacted-by-harness]'}
   stage='sampling';
   const delays=c.part==='fence'?[0,500]:[0,250,1000,3000];
   row.samples=await samples(row,delays);

@@ -93,3 +93,41 @@ func fence354Snapshot<Element>(concealed: Bool, typed: String, focused: () -> El
 
 /// A value the readback may put on the wire: only under a plan that read the field, else null whatever was seen.
 func fence354Reported(_ plan: Fence354Plan, _ value: String?) -> String? { plan.reportsValues ? value : nil }
+
+/// Why a field may no longer be read after the input: it became secure, or its role or subrole stopped being readable.
+func fence354Closed(role: String?, subrole: Fence354Subrole) -> String? {
+  guard role != nil else { return "roleUnreadableAfterInput" }
+  if case .failed = subrole { return "subroleUnreadableAfterInput" }
+  return fence354Secure(role: role, subrole: subrole) ? "becameSecureAfterInput" : nil
+}
+
+/// The post-input readback of the snapshotted field. Role and subrole are re-read immediately before every value read
+/// and before the final range read; once the field is secure or unreadable nothing more is read, and `closed` tells the
+/// caller to report no before, expected, actual or range at all. `stop` ends the soft budget; `pause` waits between reads.
+struct Fence354Poll: Equatable {
+  var matched = false
+  var reads = 0
+  var actual: String?
+  var actualRange: [Int]?
+  var closed: String?
+}
+
+func fence354Poll<Element>(_ element: Element, expected: String, role: (Element) -> String?, subrole: (Element) -> Fence354Subrole,
+                           value: (Element) -> String?, range: (Element) -> [Int]?, stop: () -> Bool, pause: () -> Void) -> Fence354Poll {
+  var poll = Fence354Poll()
+  func closed() -> String? {
+    let seenRole = role(element)
+    return fence354Closed(role: seenRole, subrole: seenRole == nil ? .failed : subrole(element))
+  }
+  repeat {
+    if let why = closed() { return Fence354Poll(reads: poll.reads, closed: why) }
+    poll.reads += 1
+    poll.actual = value(element)
+    if poll.actual == expected { poll.matched = true; break }
+    if stop() { break }
+    pause()
+  } while true
+  if let why = closed() { return Fence354Poll(reads: poll.reads, closed: why) }
+  poll.actualRange = range(element)
+  return poll
+}

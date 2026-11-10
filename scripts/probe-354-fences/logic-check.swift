@@ -73,6 +73,49 @@ struct Fence354LogicCheck {
     check(plainCalls == ["focused", "role", "subrole", "value", "range"], "plain field: role and subrole before value \(plainCalls)")
     check(plain.plan == .expect("New") && fence354Reported(plain.plan, "Newer") == "Newer", "plain field: a mismatch reports its readable actual")
 
+    // Post-input transitions: the field changes after `after` value reads. From then on no value or range read may
+    // happen and nothing is reported.
+    final class Live {
+      var role: String? = "AXTextArea", subrole: Fence354Subrole = .absent, calls: [String] = []
+      var valueReads = 0, changed = false
+      let values: [String], after: Int, change: (Live) -> Void
+      init(values: [String], after: Int, change: @escaping (Live) -> Void) { self.values = values; self.after = after; self.change = change }
+    }
+    func poll(_ f: Live, maxReads: Int = 6) -> Fence354Poll {
+      fence354Poll(f, expected: "New", role: { $0.calls.append("role"); return $0.role }, subrole: { $0.calls.append("subrole"); return $0.subrole },
+                   value: { x in
+                     x.calls.append(x.changed ? "value-after-change" : "value")
+                     let v = x.values[min(x.valueReads, x.values.count - 1)]
+                     x.valueReads += 1
+                     if x.valueReads == x.after { x.change(x); x.changed = true }
+                     return v
+                   }, range: { x in x.calls.append(x.changed ? "range-after-change" : "range"); return [3, 0] },
+                   stop: { f.valueReads >= maxReads }, pause: {})
+    }
+    let transitions: [(String, (Live) -> Void, String)] = [
+      ("role becomes AXSecureTextField", { $0.role = "AXSecureTextField" }, "becameSecureAfterInput"),
+      ("subrole becomes AXSecureTextField", { $0.role = "AXTextField"; $0.subrole = .value("AXSecureTextField") }, "becameSecureAfterInput"),
+      ("role read fails", { $0.role = nil }, "roleUnreadableAfterInput"),
+      ("subrole read fails", { $0.subrole = .failed }, "subroleUnreadableAfterInput"),
+    ]
+    for (name, change, why) in transitions {
+      let f = Live(values: ["N", "Ne", "New"], after: 2, change: change)
+      let p = poll(f)
+      check(p.closed == why, "\(name): closed as \(why), got \(String(describing: p.closed))")
+      check(!f.calls.contains("value-after-change") && !f.calls.contains("range-after-change"), "\(name): no read after the change \(f.calls)")
+      check(p.actual == nil && p.actualRange == nil && !p.matched && p.reads == 2, "\(name): nothing reported")
+      // A change right after a matching read still closes it before the range read.
+      let g = Live(values: ["New"], after: 1, change: change)
+      let q = poll(g)
+      check(q.closed == why && !g.calls.contains("range-after-change") && q.actual == nil && !q.matched, "\(name) after a match: closed before the range read \(g.calls)")
+    }
+    let steady = Live(values: ["N", "Ne", "New"], after: 99, change: { _ in })
+    let s = poll(steady)
+    check(s.matched && s.reads == 3 && s.actual == "New" && s.actualRange == [3, 0] && s.closed == nil, "steady field matches on the third read")
+    check(steady.calls == ["role", "subrole", "value", "role", "subrole", "value", "role", "subrole", "value", "role", "subrole", "range"], "recheck before each read \(steady.calls)")
+    let never = poll(Live(values: ["Old"], after: 99, change: { _ in }), maxReads: 4)
+    check(!never.matched && never.reads == 4 && never.actual == "Old" && never.closed == nil, "a mismatch keeps its readable actual")
+
     // Only a selected-text change from posting on acknowledges a key.
     check(fence354Accepts(name: "AXSelectedTextChanged", arrivedAt: 10, postStartedAt: 10), "at post start")
     check(!fence354Accepts(name: "AXSelectedTextChanged", arrivedAt: 9.9, postStartedAt: 10), "setup traffic")

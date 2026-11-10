@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SEED,page} from './page.mjs';
-import {plan,modeSpec,expectedFinal,analyzeTrace,readbackVerdict,privacyViolation,abortReason,coverage,sentence,FENCE_MODES} from './classify.mjs';
+import {measuredFrontPid,setupForeground,plan,modeSpec,expectedFinal,analyzeTrace,readbackVerdict,privacyViolation,abortReason,coverage,sentence,FENCE_MODES} from './classify.mjs';
 import {matrix} from './matrix.mjs';
 import {createFixture,FixtureLost} from './fixture.mjs';
 
@@ -20,6 +20,16 @@ test('plan sizes and identities', () => {
  assert.ok(t.slice(-60).every(c=>c.part==='unreadable')&&t.slice(0,-60).every(c=>c.part!=='unreadable'));
  assert.equal(plan({shard:'compose',reps:1,lanes:['readback']}).every(c=>c.part==='readback'),true);
  assert.throws(()=>modeSpec('nope'));
+});
+
+test('password cells keep the browser frontmost and run after every canvas cell (smoke 42806930603)', () => {
+ const t=plan({shard:'textarea',reps:20,lanes:['fence','readback','unreadable']}),tail=t.slice(-60);
+ assert.ok(tail.slice(0,20).every(c=>c.editor==='canvas')&&tail.slice(20).every(c=>c.editor==='password'));
+ assert.deepEqual([...new Set(tail.slice(20).map(c=>c.mode))].sort(),['readback','readback-concealed']);
+ const pids={pid:11,coverPid:22};
+ for(const c of t)assert.equal(measuredFrontPid(c,pids),c.editor==='password'?11:22,c.id);
+ assert.equal(t.filter(setupForeground).length,40);
+ assert.equal(plan({shard:'input',reps:20,lanes:['fence','readback','unreadable']}).some(setupForeground),false);
 });
 
 test('intended finals', () => {
@@ -73,6 +83,9 @@ test('readback verdicts and privacy', () => {
  assert.equal(privacyViolation({active:true,secure:false,reason:null,before:'Old',actual:'New'}),false);
  assert.equal(privacyViolation({active:true,secure:false,reason:null,before:'Old',actual:'New'},{passwordField:true}),true);
  assert.equal(privacyViolation({active:true,secure:true,reason:'concealed'},{passwordField:true}),false);
+ // A field that became secure or unreadable after the input reports no value, range or caret at all.
+ assert.equal(privacyViolation({active:true,secure:false,reason:'becameSecureAfterInput',closedAfterInput:'becameSecureAfterInput',before:null,beforeRange:null,expected:null,actual:null,actualRange:null,expectedCaret:null}),false);
+ for(const k of ['before','beforeRange','expected','actual','actualRange','expectedCaret'])assert.equal(privacyViolation({active:true,secure:false,closedAfterInput:'roleUnreadableAfterInput',[k]:k.endsWith('Range')||k==='expectedCaret'?[0,1]:'leak'}),true,k);
 });
 
 test('abort and coverage', () => {

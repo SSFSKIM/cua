@@ -22,22 +22,26 @@ export function modeSpec(mode){
 }
 
 /// The shard's cells, interleaved by repetition so drift spreads over every mode; the unreadable lane runs last, so a
-/// failure particular to its fixtures can only truncate the tail.
+/// failure particular to its fixtures can only truncate the tail, and its password cells run after every canvas cell.
 export function plan({shard,reps,lanes}){
- const cells=[];
+ const cells=[],unreadable=lanes.includes('unreadable')&&shard==='textarea';
  for(let rep=1;rep<=reps;rep++){
   if(lanes.includes('fence'))for(const scene of SCENES)for(const mode of FENCE_MODES)cells.push({part:'fence',editor:shard,scene,mode,length:30,rep});
   if(lanes.includes('readback'))for(const length of LENGTHS)cells.push({part:'readback',editor:shard,scene:'normal',mode:'readback',length,rep});
  }
- for(let rep=1;rep<=reps;rep++){
-  if(lanes.includes('unreadable')&&shard==='textarea'){
-   cells.push({part:'unreadable',editor:'canvas',scene:'normal',mode:'readback',length:30,rep});
-   cells.push({part:'unreadable',editor:'password',scene:'normal',mode:'readback',length:30,rep});
-   cells.push({part:'unreadable',editor:'password',scene:'normal',mode:'readback-concealed',length:30,rep});
-  }
- }
+ if(unreadable)for(let rep=1;rep<=reps;rep++)cells.push({part:'unreadable',editor:'canvas',scene:'normal',mode:'readback',length:30,rep});
+ if(unreadable)for(let rep=1;rep<=reps;rep++)for(const mode of ['readback','readback-concealed'])cells.push({part:'unreadable',editor:'password',scene:'normal',mode,length:30,rep});
  return cells.map(c=>({...c,id:cellId(c)}));
 }
+
+/// Whether a cell's setup keeps the browser frontmost instead of bringing the cover forward. Smoke run 42806930603: in
+/// all three browsers, with a password field focused the cover's activation was accepted but the browser stayed
+/// frontmost (secure event input, presumably), so every password cell failed setup. The password cells measure the
+/// readback's privacy refusal, not key ordering, so they type into the frontmost browser; every other cell stays behind.
+export const FOREGROUND_REASON='focused password field: the cover cannot become frontmost (smoke 42806930603); privacy lane, not an ordering lane';
+export const setupForeground=c=>c.editor==='password';
+/// The pid that must be frontmost through the settle and at the last check before the measured key or text.
+export const measuredFrontPid=(c,{pid,coverPid})=>setupForeground(c)?pid:coverPid;
 
 export const initialSelection=scene=>scene==='already-selected'?[0,SEED.length]:[3,0];
 export const insertAtCaret=text=>SEED.slice(0,3)+text+SEED.slice(3);
@@ -87,13 +91,14 @@ export function readbackVerdict(rb,{correct,intent}){
   expectedIsIntent:typeof rb.expected==='string'?rb.expected===intent:null};
 }
 
-/// Whether a secure or concealed readback leaked anything it must not have read, or read a password field that was
-/// not exposed as secure.
+/// Whether a secure, concealed or after-input-closed readback leaked anything it must not have read, or read a
+/// password field that was not exposed as secure.
+export const READBACK_VALUE_KEYS=['before','beforeRange','expected','actual','actualRange','expectedCaret'];
 export function privacyViolation(rb,{passwordField=false}={}){
  if(!rb?.active)return false;
  if(passwordField&&rb.reason!=='concealed'&&rb.secure!==true)return true;
- const closed=rb.secure===true||rb.reason==='concealed'||rb.reason==='secure';
- return closed&&(rb.before!=null||rb.actual!=null||rb.expected!=null||rb.beforeRange!=null);
+ const closed=rb.secure===true||rb.reason==='concealed'||rb.reason==='secure'||rb.closedAfterInput!=null;
+ return closed&&READBACK_VALUE_KEYS.some(k=>rb[k]!=null);
 }
 
 /// Repeated setup loss aborts the shard; its coverage is then incomplete by construction.

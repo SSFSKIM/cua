@@ -54,6 +54,15 @@ func fence354Range(_ element: AXUIElement) -> [Int]? {
 
 func fence354Null(_ value: Any?) -> Any { value ?? NSNull() }
 
+func fence354ReadSubrole(_ field: AXUIElement) -> Fence354Subrole {
+  let (raw, error) = copyAttribute(field, kAXSubroleAttribute)
+  if error == .success {
+    if let raw, CFGetTypeID(raw) == CFStringGetTypeID() { return .value(raw as! String) }
+    return .failed
+  }
+  return error == .noValue || error == .attributeUnsupported ? .absent : .failed
+}
+
 /// One observer for one key: the app element (selected text, value, focus and menu traffic) and the focused field
 /// (selected text), its run-loop source on the main run loop the engine's NSApplication turns, as Monitor.swift's.
 final class Fence354Observer {
@@ -249,14 +258,8 @@ final class Fence354Readback {
       guard let field = elementAttribute(application, kAXFocusedUIElementAttribute) else { return nil }
       AXUIElementSetMessagingTimeout(field, fence354AXTimeout)
       return field
-    }, role: { stringAttribute($0, kAXRoleAttribute) }, subrole: { field in
-      let (raw, error) = copyAttribute(field, kAXSubroleAttribute)
-      if error == .success {
-        if let raw, CFGetTypeID(raw) == CFStringGetTypeID() { return .value(raw as! String) }
-        return .failed
-      }
-      return error == .noValue || error == .attributeUnsupported ? .absent : .failed
-    }, value: { stringAttribute($0, kAXValueAttribute) }, range: { fence354Range($0) })
+    }, role: { stringAttribute($0, kAXRoleAttribute) }, subrole: fence354ReadSubrole,
+       value: { stringAttribute($0, kAXValueAttribute) }, range: { fence354Range($0) })
     field = snapshot.element
     role = snapshot.role
     subrole = snapshot.subrole
@@ -291,31 +294,36 @@ final class Fence354Readback {
       return wire
     }
     let start = fence354Now()
-    var reads = 0
-    var actual: String?
-    var matched = false
-    repeat {
-      reads += 1
-      actual = stringAttribute(field, kAXValueAttribute)
-      if actual == expected { matched = true; break }
-      usleep(5000)
-    } while fence354Now() - start < fence354BudgetMs
+    // Role and subrole are re-read before every value read and the range read (logic.swift's fence354Poll).
+    let poll = fence354Poll(field, expected: expected, role: { stringAttribute($0, kAXRoleAttribute) }, subrole: fence354ReadSubrole,
+                            value: { stringAttribute($0, kAXValueAttribute) }, range: { fence354Range($0) },
+                            stop: { fence354Now() - start >= fence354BudgetMs }, pause: { usleep(5000) })
     let ended = fence354Now()
     let application = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(application, fence354AXTimeout)
     let focusedNow = elementAttribute(application, kAXFocusedUIElementAttribute)
-    wire["expected"] = expected
-    wire["actual"] = fence354Null(fence354Reported(plan, actual))
-    wire["actualRange"] = fence354Null(fence354Range(field))
-    wire["expectedCaret"] = [(range?[0] ?? 0) + (text as NSString).length, 0]  // evidence only; the predicate is the value
     wire["focusRetained"] = focusedNow.map { CFEqual($0, field) } ?? false
-    wire["confirmed"] = matched
-    wire["status"] = matched ? "confirmed" : "typeUnconfirmed"
-    wire["reason"] = matched ? NSNull() : (actual == nil ? "actualUnreadable" : "valueMismatch")
     wire["readbackMs"] = ended - start
-    wire["matchedAt"] = matched ? ended : NSNull()
-    wire["reads"] = reads
+    wire["reads"] = poll.reads
     wire["overrunMs"] = max(0, ended - start - fence354BudgetMs)
+    if let closed = poll.closed {
+      // The field became secure or unreadable during the input: nothing of it is reported, before included.
+      for key in ["before", "beforeRange", "expected", "actual", "actualRange", "expectedCaret"] { wire[key] = NSNull() }
+      wire["closedAfterInput"] = closed
+      wire["confirmed"] = false
+      wire["status"] = "typeUnconfirmed"
+      wire["reason"] = closed
+      wire["matchedAt"] = NSNull()
+      return wire
+    }
+    wire["expected"] = expected
+    wire["actual"] = fence354Null(fence354Reported(plan, poll.actual))
+    wire["actualRange"] = fence354Null(poll.actualRange)
+    wire["expectedCaret"] = [(range?[0] ?? 0) + (text as NSString).length, 0]  // evidence only; the predicate is the value
+    wire["confirmed"] = poll.matched
+    wire["status"] = poll.matched ? "confirmed" : "typeUnconfirmed"
+    wire["reason"] = poll.matched ? NSNull() : (poll.actual == nil ? "actualUnreadable" : "valueMismatch")
+    wire["matchedAt"] = poll.matched ? ended : NSNull()
     return wire
   }
 }

@@ -1,0 +1,69 @@
+name: probe-354
+on:
+  push:
+    branches: ['probe/354-measure']
+    paths-ignore: ['scripts/probe-354/offline/**', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      reps:
+        default: '20'
+      smoke:
+        default: 'false'
+permissions:
+  contents: read
+env:
+  ENGINE_REF: '3c669314e0a5f35aedf20f9b792604fc09628c45'
+jobs:
+  measure:
+    runs-on: macos-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        browser: ['safari', 'cft', 'firefox', 'native']
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apps
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          case "$BROWSER" in
+            cft) bash scripts/probe-316/install.sh chrome ;;
+            firefox)
+              bash scripts/probe-316/install.sh firefox
+              mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+              printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json ;;
+            *) bash scripts/probe-316/install.sh ;;
+          esac
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+      - name: Build instrumented main, only on runner
+        run: |
+          git log -1 --format='kit %H %s'
+          git worktree add --detach "$RUNNER_TEMP/src" "$ENGINE_REF"
+          node scripts/probe-354/patch.mjs "$RUNNER_TEMP/src"
+          swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/build"
+          swiftc -O -o "$RUNNER_TEMP/tool354" scripts/probe-354/tool.swift
+      - name: Measure
+        env:
+          BROWSER: ${{ matrix.browser }}
+          REPS: ${{ github.event.inputs.reps || '1' }}
+          SMOKE: ${{ github.event.inputs.smoke || 'true' }}
+        run: |
+          node scripts/probe-354/measure.mjs --browser "$BROWSER" --engine "$RUNNER_TEMP/build/release/cua-engine" --tool "$RUNNER_TEMP/tool354" --out "$RUNNER_TEMP/probe-354/$BROWSER" --reps "$REPS" --smoke "$SMOKE"
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-354-${{ matrix.browser }}
+          path: |
+            ${{ runner.temp }}/probe-354/**/rows.jsonl
+            ${{ runner.temp }}/probe-354/**/config.json
+            ${{ runner.temp }}/probe-354/**/progress.json
+            ${{ runner.temp }}/probe-354/**/engine-stderr.txt
+            ${{ runner.temp }}/probe-354/**/shots/**
+          if-no-files-found: warn

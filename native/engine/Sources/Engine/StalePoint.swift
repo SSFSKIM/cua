@@ -41,9 +41,10 @@ struct ScreenshotNode<Element> {
   /// An AXStaticText's value (`screenshotLabelValue`): its label when it has no title or description (#298); nil for
   /// every other role.
   let value: String?
-  /// For an AXStaticText, the editable region it lay in at the observation (`screenshotNodes`, `stalePointRegion`): the
-  /// one its AXEditableAncestor names, else the one its nearest ancestor in the record names (an AXTextArea itself, or
-  /// the region its AXEditableAncestor names, never that ancestor). #298's edited-text exemption (the design session's ruling 1ea561bc:553) compares it with the one found now. Nil otherwise.
+  /// For an AXStaticText, the editable region it lay in at the observation (`screenshotNodes`), derived from what the
+  /// walk already read (the design session's ruling 1ea561bc:565): its nearest recorded ancestor of an editable text
+  /// role (`stalePointEditableTextRoles`). #298's edited-text exemption (ruling 1ea561bc:553) checks at the click that
+  /// the text's AXEditableAncestor, read then, names it. Nil otherwise.
   let editableAncestor: Element?
   /// Its label's attributes whose read failed at the observation, so the label read then is unknown past them (#298).
   let labelsUnread: Set<StalePointLabelPart>
@@ -93,8 +94,6 @@ struct ScreenshotNodeRead<Element> {
   /// Its AXSubrole, and an AXStaticText's value (`screenshotLabelValue`), for #298's rule `relabelled`.
   var subrole: String? = nil
   var value: String? = nil
-  /// Its AXEditableAncestor (`ElementData.editableAncestor`), for #298's edited-text exemption.
-  var editableAncestor: Element? = nil
   /// The label's attributes whose read failed at the observation (`screenshotLabelsUnread`): an error, not their absence.
   var labelsUnread: Set<StalePointLabelPart> = []
 }
@@ -166,15 +165,14 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
   var framed: [Int: Int] = [:]
   /// Each read's nearest AXWebArea at or above it (#316).
   var webAreas: [Int: Element] = [:]
-  /// The editable region each read lies in (#298, `stalePointRegion`): the one it names, else its parent's.
+  /// The editable region each read lies in (#298): itself when its role is an editable text role, else its parent's.
   var regions: [Int: Element] = [:]
   var nodes: [ScreenshotNode<Element>] = []
   nodes.reserveCapacity(reads.count)
   for read in reads {
     let webArea = read.role == "AXWebArea" ? read.element : read.parent.flatMap { webAreas[$0] }
     if let webArea { webAreas[read.number] = webArea }
-    if let region = stalePointRegion(read.element, role: read.role, editableAncestor: read.editableAncestor)
-        ?? read.parent.flatMap({ regions[$0] }) {
+    if let region = stalePointRegion(read.element, role: read.role, editableAncestor: nil) ?? read.parent.flatMap({ regions[$0] }) {
       regions[read.number] = region
     }
     let boundary = clipBoundaryRoles.contains(read.role)
@@ -534,18 +532,26 @@ func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePoi
   return now
 }
 
-/// The editable region an element names for #298's edited-text exemption: the one its AXEditableAncestor names (a
-/// contenteditable region, from anything inside it), else the element itself when it is an AXTextArea (a text area, or a
-/// contenteditable region as the browsers expose it); nil otherwise. Never the element answering the attribute, which
-/// may be a link or a chip inside the region (the review of b2f00ad5..25b23fbb, P2 1).
+/// The roles of an editable text region for #298's edited-text exemption: a text area or a text field, and a
+/// contenteditable region, which Chromium, WebKit and Gecko expose as an AXTextArea (#283's focus route reaches one
+/// there). The record derives a text's region from these alone (the design session's ruling 1ea561bc:565), since the
+/// walk reads no AXEditableAncestor: a contenteditable group the browsers expose as a plain group is not told apart
+/// from any group, and its text stays judged.
+let stalePointEditableTextRoles: Set<String> = ["AXTextArea", "AXTextField"]
+
+/// The editable region an element names for #298's edited-text exemption: the one its AXEditableAncestor names (read
+/// at the click only; the record passes none), else the element itself when its role is an editable text role; nil
+/// otherwise. Never the element answering the attribute, which may be a link or a chip inside the region (the review
+/// of b2f00ad5..25b23fbb, P2 1).
 func stalePointRegion<Element>(_ element: Element, role: String?, editableAncestor: Element?) -> Element? {
-  editableAncestor ?? (role == "AXTextArea" ? element : nil)
+  editableAncestor ?? (role.map(stalePointEditableTextRoles.contains) == true ? element : nil)
 }
 
 /// #298's edited-text exemption (the design session's ruling 1ea561bc:553): whether `text`, read now, lies in `region`,
-/// the editable ancestor recorded for it, with nothing actionable between them. Its editable ancestor now is the region
-/// it names (`stalePointRegion`), else the one its nearest parent naming one names, up to its web area, window, sheet or
-/// application, as the record found it; it must be `region`. Then every element strictly between the text and the region is read: one of
+/// the region the record derived for it, with nothing actionable between them. At the click (ruling 1ea561bc:565) the
+/// text's AXEditableAncestor is read live and must name `region`; where that read answers nothing (failed or absent),
+/// the region its nearest parent names (`stalePointRegion`: that parent's AXEditableAncestor, or the parent itself by
+/// its role), up to its web area, window, sheet or application, must. Then every element strictly between the text and the region is read: one of
 /// `stalePointInteractiveRoles` (a link, a button), or one whose actions include AXPress (a mention or a chip), keeps
 /// the text judged. A click there only places a caret, and the text changing is the model's own typing; a control's text
 /// is not. Read only where the rule would otherwise refuse, or a re-created text's words disagree.

@@ -92,7 +92,6 @@ private func walked(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) 
                                     frame: node.frame, actions: node.actions, childCount: children.count,
                                     childrenRead: !node.childrenUnread, subrole: node.subrole,
                                     value: screenshotLabelValue(role: node.role, read(.value, node.value).map { $0 as CFString }),
-                                    editableAncestor: node.editableAncestor,
                                     labelsUnread: screenshotLabelsUnread(role: node.role, Set(node.unreadable.map(\.attribute)))))
     for child in children where !skipped.contains(ObjectIdentifier(child)) { walk(child, parent: number, depth: depth + 1) }
   }
@@ -2138,9 +2137,9 @@ final class RelabelledEditableTests: XCTestCase {
     stalePointVerdict(at: point, nodes: nodes, hit: hit, reads: reads).reason
   }
 
-  /// Typed text in a contenteditable passes: by the exposed AXEditableAncestor; by the region's role where nothing
-  /// exposes it (an AXTextArea); by a contenteditable group that exposes it while its text does not; a text run inside
-  /// the text; and a text re-created in place as it is typed over.
+  /// Typed text in a contenteditable passes: the record's nearest text-entry ancestor (an AXTextArea, an AXTextField)
+  /// named again at the click by the text's AXEditableAncestor, or by the region's role where nothing exposes it; a
+  /// text run inside the text; and a text re-created in place as it is typed over.
   func testTypedTextInAnEditableRegionPasses() {
     do {
       let editor = Editor()
@@ -2149,18 +2148,11 @@ final class RelabelledEditableTests: XCTestCase {
       XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement, "AXEditableAncestor")
       XCTAssertEqual(judged(nodes, hit: editor.region), .hitAboveNode, "the hit the region, above the text: kept")
     }
-    do {
-      let editor = Editor(exposed: false)
+    for role in ["AXTextArea", "AXTextField"] {
+      let editor = Editor(role: role, exposed: false)
       let nodes = recorded(editor.window)
       editor.text.value = "Goodbye"
-      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement, "the nearest AXTextArea")
-    }
-    do {
-      let editor = Editor(role: "AXGroup", exposed: false)
-      editor.region.editableAncestor = editor.region
-      let nodes = recorded(editor.window)
-      editor.text.value = "Goodbye"
-      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement, "a contenteditable group")
+      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement, "the nearest \(role)")
     }
     do {
       let editor = Editor()
@@ -2219,8 +2211,8 @@ final class RelabelledEditableTests: XCTestCase {
       editor.text.value = "Goodbye"
       XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
     }
-    do {  // Only the text answers: a group region nothing above it names.
-      let editor = Editor(role: "AXGroup", exposed: false)
+    do {  // Only the text answers, at the click: the region the record derived from its role.
+      let editor = Editor(exposed: false)
       editor.text.editableAncestor = editor.region
       let nodes = recorded(editor.window)
       XCTAssertTrue(nodes.first { $0.element === editor.text }?.editableAncestor === editor.region)
@@ -2247,10 +2239,11 @@ final class RelabelledEditableTests: XCTestCase {
     XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement, "an empty list read")
   }
 
-  /// The text's own AXEditableAncestor read failing on one side only (it decodes as none) still names the same region,
-  /// through its paragraph: typed text passes either way.
+  /// The text's own AXEditableAncestor read failing at the click (it decodes as none) still names the same region,
+  /// through its paragraph; the observation never reads it (ruling 1ea561bc:565), so a text that answered nothing then
+  /// passes as well.
   func testATextsOwnAncestorReadFailingOnOneSideStillPasses() {
-    do {  // Failed at the observation.
+    do {  // Answering nothing at the observation.
       let editor = Editor()
       editor.text.editableAncestor = nil
       let nodes = recorded(editor.window)
@@ -2294,8 +2287,16 @@ final class RelabelledEditableTests: XCTestCase {
   }
 
   /// A static text whose editable ancestor now is not the one recorded for it is still judged: moved into another
-  /// region, left with none (the region no longer editable), or recorded with none (text outside any editor).
+  /// region, left with none (the region no longer editable), or recorded with none (text outside any editor, or in a
+  /// contenteditable group the record's roles cannot tell from any group).
   func testATextWhoseEditableAncestorDiffersIsStillJudged() {
+    do {
+      let editor = Editor(role: "AXGroup")
+      let nodes = recorded(editor.window)
+      XCTAssertNil(nodes.first { $0.element === editor.text }?.editableAncestor)
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .relabelled, "a contenteditable group")
+    }
     do {
       let editor = Editor()
       let other = Node("AXTextArea", CGRect(x: 40, y: 450, width: 600, height: 100))
@@ -2321,10 +2322,10 @@ final class RelabelledEditableTests: XCTestCase {
     }
   }
 
-  /// The record keeps, for an AXStaticText only, its nearest editable ancestor: its AXEditableAncestor, else the nearest
-  /// ancestor that is an AXTextArea or answers an AXEditableAncestor of its own; the walk reads AXEditableAncestor in its
-  /// batch.
-  func testTheRecordKeepsATextsEditableAncestor() {
+  /// The record derives, for an AXStaticText only, its region from what the walk already read (the design session's
+  /// ruling 1ea561bc:565): its nearest recorded ancestor of an editable text role (AXTextArea, AXTextField). Nothing the
+  /// app answers as AXEditableAncestor counts there, and the walk's batch does not request it.
+  func testTheRecordDerivesATextsRegionFromItsReads() {
     func recordedAncestor(_ editor: Editor, _ node: Node) -> Node? {
       recorded(editor.window).first { $0.element === node }?.editableAncestor
     }
@@ -2333,21 +2334,21 @@ final class RelabelledEditableTests: XCTestCase {
     XCTAssertNil(recordedAncestor(exposed, exposed.paragraph), "not a static text")
     let textArea = Editor(exposed: false)
     XCTAssertTrue(recordedAncestor(textArea, textArea.text) === textArea.region)
-    let group = Editor(role: "AXGroup", exposed: false)
-    XCTAssertNil(recordedAncestor(group, group.text), "nothing says the group is editable")
-    group.paragraph.editableAncestor = group.region
-    XCTAssertTrue(recordedAncestor(group, group.text) === group.region, "the region the nearest that answers one names")
-    // Through the walk's batch.
-    XCTAssertTrue(observedAttributes.contains("AXEditableAncestor"))
-    let region = AXUIElementCreateApplication(990_004)
-    XCTAssertTrue(ElementData(values: ["AXEditableAncestor": region]).editableAncestor.map { CFEqual($0, region) } ?? false)
-    XCTAssertNil(ElementData(values: ["AXEditableAncestor": "x" as CFString]).editableAncestor)
+    let textField = Editor(role: "AXTextField", exposed: false)
+    XCTAssertTrue(recordedAncestor(textField, textField.text) === textField.region)
+    let group = Editor(role: "AXGroup")
+    XCTAssertNil(recordedAncestor(group, group.text), "a group answering AXEditableAncestor: not among the reads")
+    // Through the walk, whose batch no longer asks for AXEditableAncestor.
+    XCTAssertFalse(observedAttributes.contains("AXEditableAncestor"))
     let tree = FakeTree()
-    tree.children = [0: [1]]
-    tree.extra[1] = ["AXRole": "AXStaticText" as CFString, "AXEditableAncestor": Engine.element(0)]
+    tree.children = [0: [1], 1: [2]]
+    tree.frames = [0: CGRect(x: 0, y: 0, width: 800, height: 600), 1: CGRect(x: 40, y: 100, width: 600, height: 300),
+                   2: CGRect(x: 40, y: 105, width: 200, height: 20)]
+    tree.extra[1] = ["AXRole": "AXTextArea" as CFString]
+    tree.extra[2] = ["AXRole": "AXStaticText" as CFString, "AXValue": "Hello" as CFString]
     let recording = walk(tree, Lineage(), recordsScreenshot: true)
-    let text = recording.screenshotReads.first { tree.id($0.element) == 1 }
-    XCTAssertEqual(text?.editableAncestor.map { tree.id($0) }, 0)
+    let text = screenshotNodes(recording.screenshotReads).first { tree.id($0.element) == 2 }
+    XCTAssertEqual(text?.editableAncestor.map { tree.id($0) }, 1)
   }
 }
 

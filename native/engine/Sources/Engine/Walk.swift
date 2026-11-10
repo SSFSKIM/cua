@@ -928,7 +928,6 @@ final class TreeWalk {
                                                 title: data.title, description: data.description, frame: data.frame,
                                                 actions: item.read.actions, childCount: data.children.count, childrenRead: data.childrenRead,
                                                 subrole: data.subrole, value: screenshotLabelValue(role: data.role, data.value),
-                                                editableAncestor: data.editableAncestor,
                                                 labelsUnread: screenshotLabelsUnread(role: data.role, data.unreadable)))
       emitRecord(item.read.children + item.recordChildren, parent: number, depth: depth + 1)
     }
@@ -1116,7 +1115,6 @@ final class TreeWalk {
                                                 title: read.data.title, description: read.data.description, frame: read.data.frame,
                                                 actions: read.actions, childCount: read.data.children.count, childrenRead: read.data.childrenRead,
                                                 subrole: read.data.subrole, value: screenshotLabelValue(role: read.data.role, read.data.value),
-                                                editableAncestor: read.data.editableAncestor,
                                                 labelsUnread: screenshotLabelsUnread(role: read.data.role, read.data.unreadable)))
     }
     attach(number, parent: parent, inMenu: inMenu)

@@ -12,7 +12,7 @@ import {abortReason,coverage} from './classify.mjs';
 import {abPlan,answer,privacyFindings} from './ab-model.mjs';
 import {writeTables} from './offline/ab-table.mjs';
 import {snapshot} from '../probe-354-substitutions/diagnostic.mjs';
-import {readbackStatus,qualifiedKeyAnswer} from './ab-extra.mjs';
+import {readbackStatus,qualifiedKeyAnswer,diagnosticContractFailure} from './ab-extra.mjs';
 import {createSyntheticSecretProbe} from './ab-secret.mjs';
 
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only; never run GUI steps on a Mac');
@@ -61,15 +61,18 @@ const meta={kit:process.env.GITHUB_SHA??null,engine:HEAD,arm:ARM,image:process.e
  clean:'Cmd+A independently settled and its DOM value/range checked at 500ms before type_text; 30/120/500 characters',
  sampling:'DOM at 0/250/1000/3000ms after real type_text response, including refusals; final is last sample',
  substitutions:'runner defaults unchanged: original spike CE500 plus separately labelled deliberate double-space CE500 diagnostic, CFT only; no period-off preference writes',
- extraCells:'ending Return in input: keysUnconfirmed; ending Return in textarea/contenteditable: text confirmed; Tab: keysUnconfirmed in all editors; multiline text; CFT 10001-character non-ASCII field; separate diagnostic denominators',
- secrets:'real trusted wrapper and native service from each pinned source; synthetic random value in a temporary HOME only; normal input, equality and forced mismatch; replies/meta and complete engine/service log lines scanned for the value and every 8-byte fragment, private values/lengths withheld and violations counted',
+ extraCells:'ending Return in input and Tab everywhere: success with confirmed nonempty prefix and checkpoint/keysUnconfirmed metadata; a changed final state qualifies only with the complete prefix witnessed at keydown; multiline Return is text; identical-seed input with consumed-caret and cancelled-beforeinput unchanged controls; CFT 10001-character non-ASCII cap must say possiblyTruncated without field values/lengths; separate diagnostic denominators',
+ secrets:'real trusted wrapper/native service from each pinned source; isolated synthetic HOME; normal-input equality, forced concealedMismatch, and same-prefix one/three trailing CR controls; compare complete typeReadback objects exactly, retain real action/service timings separately; reject values, lengths, entered, keysUnconfirmed and checkpoints in replies/meta/structured logs; scan every 8-byte secret fragment before saving',
  abort:'3 consecutive invalid cells or 6 setup failures; incomplete coverage and branch contract failures exit nonzero'};
 let done=0,valid=0,invalid=0,setupFailures=0,consecutiveInvalid=0,aborted=null;
 const compact=[],calibrations=new Map();
 function progress(last){writeFileSync(join(OUT,'progress.json'),JSON.stringify({done,valid,invalid,planned:cells.length,setupFailures,consecutiveInvalid,aborted,last,elapsedMs:Date.now()-start,fixture:{bound:fixture.fx.bound,foreignPolls:fixture.fx.foreignPolls,expired:fixture.fx.expired,bindings:fixture.fx.bindings.length}},null,2))}
 function save(row){
  appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');
- const {samples,trace,reset,setup,settledSetup,priorKeyEffect,...small}=row;compact.push(small);writeTables(OUT,compact);
+ const {samples,trace,reset,setup,settledSetup,priorKeyEffect,...small}=row;
+ // Preserve just the pre-effect key witnesses needed by incremental scoring, not the whole text event trace.
+ if(['ending-return','ending-tab'].includes(row.part))small.trace=(trace??[]).filter(t=>t.event==='keydown'&&['Enter','Tab'].includes(t.key));
+ compact.push(small);writeTables(OUT,compact);
 }
 const seedFor=c=>c.seed??SEED;
 function initial(c){const seed=seedFor(c),undo=c.key==='cmd+z';return {text:seed+(undo?' undo':''),selection:[c.key==='cmd+v'?0:undo?seed.length+5:3,0]}}
@@ -79,7 +82,7 @@ function check(s,c,label){const intended=initial(c),text=c.privateField||c.secre
 async function setup(c,row){
  row.prepareForeground=await front(pid);
  const expected=c.privateField||c.secret?initial(c).text:undefined;
- row.reset=await fixture.command({op:'reset',cell:c.id,editor:c.editor,seed:c.seed,privateField:c.privateField||c.secret,renderedText:c.renderedText,dropInput:c.secret&&c.variant==='mismatch',expected});
+ row.reset=await fixture.command({op:'reset',cell:c.id,editor:c.editor,seed:c.seed,privateField:c.privateField||c.secret,renderedText:c.renderedText,dropInput:c.secret&&c.variant==='mismatch',preventInput:c.preventInput,expected});
  const selection=c.key==='cmd+z'?[seedFor(c).length,0]:initial(c).selection;
  row.setup=await fixture.command({op:'prepare',cell:c.id,editor:c.editor,key:c.key,selection,expected});check(row.setup,c,'prepared state');
  if(c.key==='cmd+v'){row.clip=await ask({op:'clip',text:CLIP});if(!row.clip.ok)throw new SetupError('known clipboard not established')}
@@ -126,8 +129,8 @@ async function cell(c,{warmup=false}={}){
   const auditPromise=auditRequested?waitAudit(c.id):null;
   if(c.secret){
    const app={safari:'/Applications/Safari.app',cft:'/Applications/Google Chrome for Testing.app',firefox:'/Applications/Firefox.app'}[KIND],bundle={safari:'com.apple.Safari',cft:'com.google.chrome.for.testing',firefox:'org.mozilla.firefox'}[KIND];
-   const startedAt=Date.now(),reply=await secretProbe.run({app,bundle,pid,id:c.id,identity:w.identity,execute:(method,args)=>w.execute(method,args)}),endedAt=Date.now();
-   row.typeRPC={startedAt,endedAt,durationMs:endedAt-startedAt,raw:reply.engineRaw,meta:reply.engineRaw.result?.meta??reply.engineRaw.error?.meta??null};row.secretService=reply.service;row.secretFindings=reply.findings;
+   const startedAt=Date.now(),reply=await secretProbe.run({app,bundle,pid,id:c.id,returnUnits:c.returnUnits,pair:'return-metadata/'+c.rep,identity:w.identity,execute:(method,args)=>w.execute(method,args)}),endedAt=Date.now();
+   row.typeRPC={startedAt,endedAt,durationMs:endedAt-startedAt,raw:reply.engineRaw,meta:reply.engineRaw.result?.meta??reply.engineRaw.error?.meta??null};row.secretService=reply.service;row.secretFindings=reply.findings;row.secretReadbackEqual=reply.returnMetadataEqual;
   }else row.typeRPC=await rpc(w,'type_text',{text:c.text,...(c.concealed?{concealed:true}:{}),...(auditRequested?{probe354Audit:c.id}:{})});
   row.readbackStatus=readbackStatus(row.typeRPC.raw);
   row.returnedAt=row.typeRPC.endedAt;row.answer=answer(row.typeRPC.raw);row.keyToTypeGapMs=row.keyRPC?row.typeRPC.startedAt-row.keyRPC.endedAt:null;
@@ -144,11 +147,12 @@ async function cell(c,{warmup=false}={}){
   row.samples=(await fixture.collect(n,delays.length,8500)).sort((a,b)=>a.delay-b.delay);
   const last=row.samples.at(-1);row.final=c.privateField||c.secret?null:last.text;row.correct=c.privateField||c.secret?last.matchesExpected===true:last.text===expected.final;
   row.requestedExact=c.expectedText!==undefined?last.text===requestedFinal:row.correct;
+  row.finalSelection=c.privateField||c.secret?null:last.selection;
   row.finalLength=last.length;row.firstSampleDelayMs=row.samples[0].at-row.returnedAt;
   row.trace=[row.settledSetup,row.priorKeyEffect,...row.samples].flatMap(s=>s?.trace??[]).sort((a,b)=>a.seq-b.seq);
   for(const s of [row.reset,row.setup,row.settledSetup,row.priorKeyEffect,...row.samples])if(s)delete s.trace;
   if(c.secret){row.finalLength=null;row.trace=[];for(const s of [row.reset,row.setup,row.settledSetup,...row.samples])if(s){delete s.length;delete s.selection;delete s.trace}}
-  row.contractFailure=ARM==='branch'&&!!c.expectedAnswer&&(c.expectedAnswer==='keysUnconfirmed'?!row.readbackStatus.keysUnconfirmed:c.expectedAnswer==='typeUnconfirmed'?!row.answer.unconfirmed:!row.answer.success||!row.correct||!row.readbackStatus.confirmed);
+  row.contractFailure=ARM==='branch'&&diagnosticContractFailure(row,row.typeRPC.raw);
   row.valid=true;
   if(ARM==='branch'&&row.answer.success&&!row.correct&&!qualifiedKeyAnswer(row,row.typeRPC.raw))console.error('BRANCH SUCCESS WITH WRONG FINAL VALUE',KIND,SHARD,c.id);
  }catch(e){

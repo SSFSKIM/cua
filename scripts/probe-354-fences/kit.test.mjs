@@ -2,6 +2,7 @@
 // node --test scripts/probe-354-fences/kit.test.mjs. Touches no browser, GUI or engine.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createContext,runInContext} from 'node:vm';
 import {SEED,page} from './page.mjs';
 import {measuredFrontPid,setupForeground,plan,modeSpec,expectedFinal,analyzeTrace,readbackVerdict,privacyViolation,abortReason,coverage,sentence,FENCE_MODES} from './classify.mjs';
 import {matrix} from './matrix.mjs';
@@ -106,6 +107,44 @@ test('matrix', () => {
 test('page script parses', () => {
  const html=page(),src=html.slice(html.indexOf('<script>')+8,html.lastIndexOf('</script>'));
  assert.doesNotThrow(()=>new Function(src));
+});
+
+// Run the real fixture script against a small DOM boundary, without launching a browser.
+function fixtureScript(){
+ const listeners=new Map(),answers=[],host={},document={activeElement:null,title:'',addEventListener(event,fn){if(!listeners.has(event))listeners.set(event,[]);listeners.get(event).push(fn)},querySelector:s=>s==='#host'?host:element};
+ const element={value:'',selectionStart:0,selectionEnd:0,focus(){document.activeElement=this},setSelectionRange(start,end){this.selectionStart=start;this.selectionEnd=end},getBoundingClientRect:()=>({x:0,y:0,width:500,height:44})};
+ const context=createContext({document,self:{},performance:{getEntriesByType:()=>[]},location:{href:'http://fixture/'},setTimeout,fetch:(url,options)=>{
+  if(url.startsWith('/cmd'))return new Promise(()=>{});answers.push(JSON.parse(options.body));return Promise.resolve({});
+ }}),html=page();
+ runInContext(html.slice(html.indexOf('<script>')+8,html.lastIndexOf('</script>')),context);
+ return {element,answers,run:c=>context.run(c),dispatch:(event,properties={})=>{
+  const x={target:element,defaultPrevented:false,preventDefault(){this.defaultPrevented=true},...properties};
+  for(const fn of listeners.get(event)??[])fn(x);return x;
+ }};
+}
+
+test('ending keydown text survives the ordinary trace bound, but private field text never does',async()=>{
+ for(const privateField of [false,true]){
+  const f=fixtureScript();await f.run({op:'reset',cell:'ending',editor:'input',privateField});
+  for(let i=0;i<70;i++)f.dispatch('keyup',{key:'x'});
+  f.element.value='Complete intended prefix';
+  f.dispatch('keydown',{key:'Tab',code:'Tab'});await f.run({op:'read',cell:'ending'});
+  const trace=f.answers.at(-1).trace,last=trace.at(-1);
+  assert.ok(last.seq>=60);assert.equal(last.text,privateField?undefined:'Complete intended prefix');
+  assert.equal(last.targetEditor,true);
+  assert.equal(Object.hasOwn(trace[65],'text'),false,'ordinary events remain bounded');
+ }
+});
+
+test('unchanged negative control cancels text input without resetting the selected seed',async()=>{
+ for(const preventInput of [false,true]){
+  const f=fixtureScript();await f.run({op:'reset',cell:'unchanged',editor:'input',preventInput});
+  await f.run({op:'prepare',cell:'unchanged',editor:'input',key:'cmd+a',selection:[0,SEED.length]});
+  const event=f.dispatch('beforeinput',{inputType:'insertText',data:'O'});
+  assert.equal(event.defaultPrevented,preventInput);
+  await f.run({op:'read',cell:'unchanged'});
+  const state=f.answers.at(-1);assert.equal(state.text,SEED);assert.deepEqual(state.selection,[0,SEED.length]);
+ }
 });
 
 // A fake page document: the same /cmd and /answer protocol as page.mjs.

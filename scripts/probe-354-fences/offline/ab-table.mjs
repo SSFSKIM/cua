@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {abPlan,summarize} from '../ab-model.mjs';
 import {matrix} from '../matrix.mjs';
+import {readbackStatus} from '../ab-extra.mjs';
 function tsv(rows,columns){return [columns.join('\t'),...rows.map(r=>columns.map(k=>r[k]==null?'':typeof r[k]==='object'?JSON.stringify(r[k]):r[k]).join('\t'))].join('\n')+'\n'}
 export function writeTables(out,rows,collection={status:'incremental',complete:false}){
  mkdirSync(out,{recursive:true});const s=summarize(rows),privacy=rows.filter(r=>r.recordKind==='cell'&&['unsupported','secret'].includes(r.part)).map(r=>({id:r.id,arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,variant:r.variant,valid:r.valid,unconfirmed:r.answer?.unconfirmed??false,textReadAttempts:r.audit?.textReadAttempts??null,rangeReadAttempts:r.audit?.rangeReadAttempts??null,privacyViolation:!!r.privacyViolation,findings:r.privacyFindings??[]}));
@@ -18,8 +19,8 @@ export function writeTables(out,rows,collection={status:'incremental',complete:f
  const paired=[];
  for(const m of s.cost.filter(c=>c.arm==='main')){const b=s.cost.find(c=>c.arm==='branch'&&c.browser===m.browser&&c.length===m.length&&c.path===m.path);if(b)paired.push({browser:m.browser,length:m.length,path:m.path,mainN:m.n,branchN:b.n,mainP50:m.p50,branchP50:b.p50,deltaP50:+(b.p50-m.p50).toFixed(2),mainP95:m.p95,branchP95:b.p95,deltaP95:+(b.p95-m.p95).toFixed(2)})}
  writeFileSync(join(out,'cost-ab.tsv'),tsv(paired,['browser','length','path','mainN','branchN','mainP50','branchP50','deltaP50','mainP95','branchP95','deltaP95']));
- const diagnostics=rows.filter(r=>r.recordKind==='cell'&&r.expectedAnswer).map(r=>({arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,variant:r.variant,rep:r.rep,expectedAnswer:r.expectedAnswer,errorName:r.answer?.errorName??null,confirmed:r.readbackStatus?.confirmed??false,keysUnconfirmed:r.readbackStatus?.keysUnconfirmed??0,checkpoints:r.readbackStatus?.checkpoints??0,correct:r.correct,requestedExact:r.requestedExact,contractFailure:!!r.contractFailure,privacyViolation:!!r.privacyViolation,serviceError:r.secretService?.error?.code??null}));
- writeFileSync(join(out,'diagnostics.tsv'),tsv(diagnostics,['arm','browser','editor','part','variant','rep','expectedAnswer','errorName','confirmed','keysUnconfirmed','checkpoints','correct','requestedExact','contractFailure','privacyViolation','serviceError']));
+ const diagnostics=rows.filter(r=>r.recordKind==='cell'&&r.expectedAnswer).map(r=>({arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,variant:r.variant,rep:r.rep,expectedAnswer:r.expectedAnswer,expectedReason:r.expectedReason??null,errorName:r.typeRPC?.raw?.error?.errorName??null,...readbackStatus(r.typeRPC?.raw),correct:r.correct,requestedExact:r.requestedExact,finalSelection:r.finalSelection,secretReadbackEqual:r.secretReadbackEqual,contractFailure:!!r.contractFailure,privacyViolation:!!r.privacyViolation,serviceError:r.secretService?.error?.code??null}));
+ writeFileSync(join(out,'diagnostics.tsv'),tsv(diagnostics,['arm','browser','editor','part','variant','rep','expectedAnswer','expectedReason','errorName','reason','confirmed','keysUnconfirmed','checkpoints','correct','requestedExact','finalSelection','secretReadbackEqual','contractFailure','privacyViolation','serviceError']));
  return s;
 }
 function collectionCoverage(sets,only){
@@ -50,7 +51,7 @@ function collectionCoverage(sets,only){
     if(seen.has(r.id))issues.push('duplicate planned cell: '+r.id);seen.set(r.id,r);
     if(config&&['arm','browser','shard','kit','engine'].some(k=>r[k]!==config[k]))issues.push('row/config identity mismatch: '+r.id);
     const c=expectedCells.get(r.id);
-    if(c&&['part','editor','key','length','variant','rep','concealed','privateField'].some(k=>(r[k]??null)!==(c[k]??null)))issues.push('row/plan mismatch: '+r.id);
+    if(c&&['part','editor','key','length','variant','rep','concealed','privateField','expectedAnswer','expectedReason','preventInput','secret','returnUnits'].some(k=>(r[k]??null)!==(c[k]??null)))issues.push('row/plan mismatch: '+r.id);
    }
    const missing=plan.filter(c=>!seen.has(c.id)).map(c=>c.id),invalid=rows.filter(r=>r.valid!==true).map(r=>r.id),unexpected=rows.filter(r=>!expectedCells.has(r.id)).map(r=>r.id);
    const valid=plan.filter(c=>seen.get(c.id)?.valid===true).length,planned=plan.length||null;

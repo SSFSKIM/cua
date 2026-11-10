@@ -19,12 +19,12 @@ export function abPlan({browser,editor,reps}){
   for(const key of KEYS)add({part:'race',editor,key,length:30,rep});
   for(const length of [30,120,500])add({part:'clean',editor,key:'cmd+a',length,rep});
   if(browser==='cft'&&editor==='contenteditable')for(const variant of ['spike','double-space'])add({part:'substitution',editor,key:'cmd+a',length:500,variant,rep});
-  if(browser==='cft'&&editor==='textarea')add({part:'truncation',editor,key:null,length:30,seed:LONG_SEED,rep});
+  if(browser==='cft'&&editor==='textarea')add({part:'truncation',editor,key:null,length:30,seed:LONG_SEED,rep,expectedAnswer:'typeUnconfirmed',expectedReason:'possiblyTruncated'});
  }
  out.push(...extraPlan({browser,editor,reps}));
- // Canvas, then concealed ordinary input, then passwords: secure event input can resist a foreground cover.
+ // Concealed ordinary fields use equality readback in the secret lane. Only canvas and passwords forbid reads.
  if(editor==='textarea'){
-  for(const [field,concealed] of [['canvas',false],['input',true],['password',false],['password',true]])for(let rep=1;rep<=reps;rep++)add({part:'unsupported',editor:field,key:null,length:30,rep,concealed,privateField:true,variant:concealed?'concealed':'spike'});
+  for(const [field,concealed] of [['canvas',false],['password',false],['password',true]])for(let rep=1;rep<=reps;rep++)add({part:'unsupported',editor:field,key:null,length:30,rep,concealed,privateField:true,variant:concealed?'concealed':'spike',expectedAnswer:'typeUnconfirmed',expectedReason:field==='canvas'?'notTextField':'secure'});
  }
  return out.map(c=>({...c,variant:c.variant??'spike',text:c.text??(c.variant==='double-space'?sentence(c.length).replace('word is','word  is').slice(0,c.length):sentence(c.length))}));
 }

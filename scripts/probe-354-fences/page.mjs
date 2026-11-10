@@ -11,7 +11,7 @@ const DOC=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now().toStri
 const NAV=(performance.getEntriesByType&&performance.getEntriesByType('navigation')[0]||{}).type||null,NONCE=DOC.replace(/-/g,'').slice(0,12);
 // The visible owner: the harness binds only the document whose nonce its browser window's AX title shows.
 document.title='probe354f '+NONCE;
-let e=null,editor=null,cell=null,trace=[],lastSent=0,model='',caret=0,seedValue=SEED,privateFixture=false,renderedFixture=false,dropInput=false;
+let e=null,editor=null,cell=null,trace=[],lastSent=0,model='',caret=0,seedValue=SEED,privateFixture=false,renderedFixture=false,dropInput=false,preventInput=false;
 const secure=()=>editor==='password'||privateFixture;
 const value=()=>editor==='canvas'?model:e?(e.value??(renderedFixture?e.innerText:e.textContent)):null;
 function selection(){if(!e)return null;if(editor==='canvas')return [caret,0];if('selectionStart'in e&&e.selectionStart!==null)return [e.selectionStart,e.selectionEnd-e.selectionStart];const s=getSelection();if(!s.rangeCount)return null;let r=s.getRangeAt(0),b=document.createRange();b.selectNodeContents(e);try{b.setEnd(r.startContainer,r.startOffset);return [b.toString().length,r.toString().length]}catch{return null}}
@@ -24,10 +24,13 @@ function state(expected){const v=value(),o={doc:DOC,cell,editor,selection:select
 const send=o=>fetch('/answer',{method:'POST',body:JSON.stringify(o)}).catch(()=>{});
 function take(){const t=trace.slice(lastSent);lastSent=trace.length;return t}
 const isMarker=x=>x.code==='F20'||x.key==='F20'||x.keyCode===131;
+// The unchanged negative control cancels input; it never rewrites a value or restores a caret after typing.
+document.addEventListener('beforeinput',x=>{if(preventInput&&x.target===e)x.preventDefault()},true);
 for(const event of ['keydown','keyup','beforeinput','input','selectionchange','select','focusin','focusout'])document.addEventListener(event,x=>{
  if(!e)return;const v=value(),hide=secure()&&typeof x.key==='string'&&x.key.length===1;
- const t={event,seq:trace.length,key:hide?null:(x.key??null),code:secure()?null:(x.code??null),data:secure()?null:(x.data??null),inputType:x.inputType??null,meta:!!x.metaKey,alt:!!x.altKey,shift:!!x.shiftKey,selection:selection(),len:v==null?null:v.length,at:Date.now()};
- if(!secure()&&trace.length<TEXT_EVENTS)t.text=v;trace.push(t);
+ const t={event,seq:trace.length,key:hide?null:(x.key??null),code:secure()?null:(x.code??null),data:secure()?null:(x.data??null),inputType:x.inputType??null,meta:!!x.metaKey,alt:!!x.altKey,ctrl:!!x.ctrlKey,shift:!!x.shiftKey,targetEditor:x.target===e,defaultPrevented:!!x.defaultPrevented,selection:selection(),len:v==null?null:v.length,at:Date.now()};
+ // A leaving key needs its complete pre-effect prefix even after the ordinary text trace bound.
+ if(!secure()&&(trace.length<TEXT_EVENTS||(event==='keydown'&&x.target===e&&['Enter','Tab'].includes(x.key))))t.text=v;trace.push(t);
  // The marker's acknowledgement is cooperative page instrumentation, sent the moment the page sees the key.
  if((event==='keydown'||event==='keyup')&&isMarker(x))send({kind:'marker',phase:event,doc:DOC,cell,at:t.at,seq:t.seq,meta:t.meta,selection:t.selection,len:t.len,text:secure()?null:v});
 },true);
@@ -35,7 +38,7 @@ document.addEventListener('input',()=>{if(dropInput&&editor==='input'){seed();se
  document.addEventListener('keydown',x=>{if(editor!=='canvas'||document.activeElement!==e||x.metaKey||x.ctrlKey)return;if(typeof x.key==='string'&&x.key.length===1){model=model.slice(0,caret)+x.key+model.slice(caret);caret++;draw();x.preventDefault()}else if(x.key==='Backspace'&&caret>0){model=model.slice(0,caret-1)+model.slice(caret);caret--;draw();x.preventDefault()}});
 async function run(c){
  if(c.op==='reset'){
-  cell=c.cell;editor=c.editor;seedValue=typeof c.seed==='string'?c.seed:SEED;privateFixture=!!c.privateField;renderedFixture=!!c.renderedText;dropInput=!!c.dropInput;trace=[];lastSent=0;const host=document.querySelector('#host');
+  cell=c.cell;editor=c.editor;seedValue=typeof c.seed==='string'?c.seed:SEED;privateFixture=!!c.privateField;renderedFixture=!!c.renderedText;dropInput=!!c.dropInput;preventInput=!!c.preventInput;trace=[];lastSent=0;const host=document.querySelector('#host');
   if(editor==='canvas')host.innerHTML='<canvas id="editor" tabindex="0" width="500" height="120" aria-label="Canvas draft"></canvas>';
   else if(editor==='password')host.innerHTML='<input id="editor" type="password" autocomplete="off" aria-label="Fixture secret control">';
   else if(editor==='input'||editor==='textarea')host.innerHTML='<'+editor+' id="editor" aria-label="Draft control"></'+editor+'>';

@@ -13,11 +13,13 @@ test('every race/clean cell has twenty trials; unsupported cells cannot silently
   for(const key of ['cmd+a','cmd+z','cmd+v'])assert.equal(cells.filter(c=>c.part==='race'&&c.key===key).length,20);
   for(const length of [30,120,500])assert.equal(cells.filter(c=>c.part==='clean'&&c.length===length).length,20);
   assert.ok(cells.filter(c=>c.part==='race').every(c=>c.length===30));
-  assert.equal(cells.filter(c=>c.part==='unsupported').length,editor==='textarea'?80:0);
+  assert.equal(cells.filter(c=>c.part==='unsupported').length,editor==='textarea'?60:0);
+  assert.ok(cells.filter(c=>c.part==='unsupported').every(c=>c.editor==='canvas'||c.editor==='password'));
+  assert.equal(cells.filter(c=>c.part==='unchanged').length,editor==='input'?40:0);
   assert.equal(cells.filter(c=>c.part==='truncation'&&c.variant==='spike').length,browser==='cft'&&editor==='textarea'?20:0);
   assert.equal(cells.filter(c=>c.part==='substitution').length,browser==='cft'&&editor==='contenteditable'?40:0);
  }
- assert.equal(total,4840);
+ assert.equal(total,5200);
  assert.deepEqual(abPlan({browser:'cft',editor:'textarea',reps:1}).slice(-2).map(c=>c.editor),['password','password']);
  assert.throws(()=>abPlan({browser:'cft',editor:'input',reps:0}));
  assert.throws(()=>abPlan({browser:'native',editor:'input',reps:20}));
@@ -46,10 +48,13 @@ test('a later wrong value dominates success; an honest refusal stays in the rate
 });
 
 test('an unconfirmed-ending-key qualifier cannot hide wrong success in an ordinary race cell',()=>{
- const raw={result:{meta:{typeReadback:{confirmed:true,keysUnconfirmed:1}}}},base={recordKind:'cell',arm:'branch',browser:'cft',editor:'input',key:'cmd+a',length:30,variant:'spike',valid:true,correct:false,typeRPC:{raw,durationMs:10}};
- const s=summarize([{...base,id:'ordinary',part:'race'},{...base,id:'ending',part:'ending-tab',expectedAnswer:'keysUnconfirmed'}]);
- assert.deepEqual(s.wrongSuccesses.map(r=>r.id),['ordinary']);
- assert.equal(s.groups.find(g=>g.part==='ending-tab').keysUnconfirmed,1);
+ const raw={result:{meta:{typeReadback:{confirmed:true,keysUnconfirmed:1,checkpoints:1}}}},base={recordKind:'cell',arm:'branch',browser:'cft',editor:'input',key:'cmd+a',length:30,variant:'spike',valid:true,correct:false,text:'Tab prefix\t',expectedFinal:'Tab prefix',typeRPC:{raw,durationMs:10}};
+ const witness={event:'keydown',key:'Tab',targetEditor:true,text:'Tab prefix',seq:85};
+ const s=summarize([{...base,id:'ordinary',part:'race',trace:[witness]},
+  {...base,id:'ending-wrong-prefix',part:'ending-tab',expectedAnswer:'keysUnconfirmed',trace:[{...witness,text:'Tab pre'}]},
+  {...base,id:'ending-qualified',part:'ending-tab',expectedAnswer:'keysUnconfirmed',trace:[witness]}]);
+ assert.deepEqual(s.wrongSuccesses.map(r=>r.id).sort(),['ending-wrong-prefix','ordinary']);
+ assert.equal(s.groups.find(g=>g.part==='ending-tab').keysUnconfirmed,2);
 });
 
 test('clean false refusals and cost are reported separately from wrong race values',()=>{

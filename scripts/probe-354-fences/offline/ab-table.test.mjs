@@ -30,8 +30,8 @@ test('a complete 20-rep pair is a successful final collection with explicit cove
  assert.equal(r.status,0,r.stderr);
  assert.equal(r.summary.collection.complete,true);
  assert.equal(r.summary.collection.arms.length,2);
- assert.ok(r.summary.collection.arms.every(a=>a.planned===200&&a.valid===200&&a.complete));
- assert.equal(r.summary.groups.reduce((n,g)=>n+g.attempted,0),400);
+ assert.ok(r.summary.collection.arms.every(a=>a.planned===280&&a.valid===280&&a.complete));
+ assert.equal(r.summary.groups.reduce((n,g)=>n+g.attempted,0),560);
  assert.match(readFileSync(join(root,'cost-ab.tsv'),'utf8'),/cft\t30\tclean-all/);
 });
 
@@ -46,12 +46,12 @@ test('an absent arm is conspicuous and non-successful, without hiding the collec
 });
 
 test('a calibration-only arm config with no row file cannot disappear from the denominator',t=>{
- const root=fixture(t);arm(root,'main');arm(root,'branch',{rows:[],coverage:{planned:200,valid:0,missing:200,complete:false,invalid:0,setupFailures:1,aborted:'calibration failed'}});
+ const root=fixture(t);arm(root,'main');arm(root,'branch',{rows:[],coverage:{planned:280,valid:0,missing:280,complete:false,invalid:0,setupFailures:1,aborted:'calibration failed'}});
  const r=run(root);
  assert.equal(r.status,1,r.stdout+r.stderr);
  assert.equal(r.summary.collection.complete,false);
  const b=r.summary.collection.arms.find(a=>a.arm==='branch');
- assert.equal(b.planned,200);assert.equal(b.valid,0);assert.equal(b.complete,false);
+ assert.equal(b.planned,280);assert.equal(b.valid,0);assert.equal(b.complete,false);
  assert.match(r.stdout+r.stderr,/INCOMPLETE/i);
 });
 
@@ -60,12 +60,12 @@ test('missing cells fail even if the arm config claims complete coverage',t=>{
  const r=run(root);
  assert.equal(r.status,1,r.stdout+r.stderr);
  const b=r.summary.collection.arms.find(a=>a.arm==='branch');
- assert.equal(b.valid,199);assert.equal(b.complete,false);
+ assert.equal(b.valid,279);assert.equal(b.complete,false);
  assert.ok(b.missing.includes('race/input/cmd+a/spike/30/1'));
 });
 
 test('a complete set of rows does not override an aborted or unfinished per-arm config',t=>{
- for(const coverage of [{planned:200,valid:200,missing:0,complete:false,invalid:0,aborted:'stopped'},null]){
+ for(const coverage of [{planned:280,valid:280,missing:0,complete:false,invalid:0,aborted:'stopped'},null]){
   const root=fixture(t);arm(root,'main');arm(root,'branch');
   const path=join(root,'cft-input/branch/config.json'),config=JSON.parse(readFileSync(path,'utf8'));config.coverage=coverage;writeFileSync(path,JSON.stringify(config));
   const r=run(root);assert.equal(r.status,1,r.stdout+r.stderr);assert.equal(r.summary.collection.complete,false);
@@ -91,7 +91,7 @@ test('a valid selective smoke shard is complete without requiring the other elev
  const r=run(root,'--only','safari-textarea');
  assert.equal(r.status,0,r.stderr);assert.equal(r.summary.collection.complete,true);
  assert.deepEqual(r.summary.collection.shards,['safari-textarea']);
- assert.ok(r.summary.collection.arms.every(a=>a.planned===13&&a.valid===13));
+ assert.ok(r.summary.collection.arms.every(a=>a.planned===12&&a.valid===12));
 });
 
 test('an explicitly expected shard missing both arms is incomplete',t=>{
@@ -99,6 +99,14 @@ test('an explicitly expected shard missing both arms is incomplete',t=>{
  const r=run(root,'--only','cft-input,safari-input');
  assert.equal(r.status,1,r.stdout+r.stderr);assert.equal(r.summary.collection.complete,false);
  assert.ok(r.summary.collection.arms.filter(a=>a.browser==='safari').every(a=>!a.complete));
+});
+
+test('diagnostic tables expose the actual refusal reason, not just the expected answer',t=>{
+ const root=fixture(t),raw={error:{errorName:'typeUnconfirmed',meta:{typeReadback:{confirmed:false,reason:'valueMismatch',expectedLength:10001,actualLength:3333}}}};
+ writeTables(root,[{id:'unicode-cap',recordKind:'cell',arm:'branch',browser:'cft',editor:'textarea',part:'truncation',variant:'unicode-cap',expectedAnswer:'typeUnconfirmed',expectedReason:'possiblyTruncated',rep:1,valid:true,contractFailure:true,typeRPC:{raw,durationMs:10}}]);
+ const [header,line]=readFileSync(join(root,'diagnostics.tsv'),'utf8').trim().split('\n').map(l=>l.split('\t'));
+ const result=Object.fromEntries(header.map((k,i)=>[k,line[i]]));
+ assert.equal(result.reason,'valueMismatch');assert.equal(result.expectedReason,'possiblyTruncated');assert.equal(result.contractFailure,'true');
 });
 
 test('per-cell incremental tables remain writable before config or the other arm exists',t=>{

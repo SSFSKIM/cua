@@ -64,6 +64,8 @@ const TARGET = 0x01400003;
 const take = (wall, owner = 0x0140000c) => ({ kind: 'take', owner, subtype: 0, server_time: wall - 900, wall_ms: wall });
 const cursor = (wall, serial, named = false) => ({ kind: 'cursor', serial, named, server_time: wall - 900, image: `i${serial}`, wall_ms: wall });
 const activate = (wall, window = 0x0140000c, source = 1) => ({ kind: 'activate', window, source, user_time: 0, wall_ms: wall });
+// the engine's server-time probe: a 1×1 window at the origin (input.rs `server_time`)
+const probeAt = (wall) => ({ kind: 'create', window: 0x00a00001, override_redirect: false, x: 0, y: 0, w: 1, h: 1, wall_ms: wall });
 
 test("a drag's signals from the watch: the take, a late take after the release, Chrome's activation after it, the cursors", () => {
   const lines = [cursor(990, 80), cursor(1003, 81), take(1004), cursor(1007, 82), cursor(1020, 83), activate(1053), cursor(1052, 81), take(1100, 0x02000001), activate(1060, 0x02000005)];
@@ -81,7 +83,7 @@ test("a drag's signals from the watch: the take, a late take after the release, 
   const reset = signalsOf([cursor(1003, 81), take(1004), cursor(1008, 82), cursor(1047, 81)], { target: TARGET, pressMs: 1000, releaseMs: 1050 });
   assert.deepEqual([reset.accept_shown, reset.accept_indeterminate], [false, true]);
   // a leave: the take, the first status, no accept, no activation
-  const leave = signalsOf([cursor(1003, 81), take(1004), cursor(1007, 82), cursor(1051, 81)], { target: TARGET, pressMs: 1000, releaseMs: 1050 });
+  const leave = signalsOf([cursor(1003, 81), take(1004), cursor(1007, 82), probeAt(1051), cursor(1051, 81)], { target: TARGET, pressMs: 1000, releaseMs: 1050 });
   assert.equal(leave.activation_after_release_ms, null);
   assert.deepEqual([leave.accept_shown, leave.accept_indeterminate], [false, false]);
   // an activation before the take is not the drop's (the harness's own activation comes before the press); one after
@@ -117,8 +119,16 @@ test("a change the records cannot order against the release makes the drag's rea
   }
   // well before the release: a plain accept
   assert.deepEqual([at(stalled(1030)).accept_shown, at(stalled(1030)).accept_indeterminate], [true, false]);
-  // after the stamp on the server's clock: after the release, whatever the watch's read time
-  assert.deepEqual([at(stalled(1053)).accept_shown, at(stalled(1053)).accept_indeterminate], [false, false]);
+  // after the stamp on the server's clock but with no probe after it: the clock's offset is an estimate, not a bound,
+  // so only the probe orders a change after the release (the re-review of task 68's fix wave)
+  assert.deepEqual([at(stalled(1053)).accept_shown, at(stalled(1053)).accept_indeterminate], [false, true]);
+  assert.deepEqual([at([...stalled(1053), probeAt(1052)]).accept_shown, at([...stalled(1053), probeAt(1052)]).accept_indeterminate], [false, true], 'read after the probe, but ordered before it');
+  const afterProbe = at([cursor(1003, 81), take(1004), cursor(1007, 82), probeAt(1052), cursor(1053, 83)]);
+  assert.deepEqual([afterProbe.accept_shown, afterProbe.accept_indeterminate], [false, false]);
+  // the re-review's case: the deciding change mapped 0.03 ms after the stamp, before the probe
+  const edge = { ...cursor(1050, 83), wall_ms: 1051 };
+  const justAfter = at([cursor(1003, 81), take(1004), cursor(1007, 82), edge, probeAt(1051)], { serverOffsetMs: 900.03 });
+  assert.deepEqual([justAfter.accept_shown, justAfter.accept_indeterminate], [false, true], 'inside the offset\'s uncertainty: indeterminate');
   // the watch read a change 10 ms late: its server time puts it before the release, so it is judged there
   const lagged = { ...cursor(1030, 83), wall_ms: 1060 };
   assert.equal(at([cursor(1003, 81), take(1004), cursor(1007, 82), lagged]).accept_shown, true, "ordered by the server's clock, not the read");

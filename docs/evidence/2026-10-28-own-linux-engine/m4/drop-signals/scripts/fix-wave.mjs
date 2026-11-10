@@ -59,9 +59,9 @@ const reading = (r) => {
   const loop = cursors.filter((c) => !c.named && !after(c.server_time, take.server_time)).at(-1);
   const back = loop ? cursors.findIndex((c) => !c.named && after(c.server_time, take.server_time) && c.serial === loop.serial) : -1;
   if (back < 0) return { shown: r.signals.accept_shown, indeterminate: r.signals.accept_indeterminate, back: false };
-  // the lines up to Chrome's return, judged as before
+  // Chrome's return and every cursor change after it put after the release, the other lines (the probe) kept
   const cut = r.watch.indexOf(cursors[back]);
-  const s = judge.signalsOf(r.watch.slice(0, cut), { target: r.window, pressMs: r.wall.press_ms, releaseMs: r.wall.release_ms, engineTook: typeof r.hold?.taken === 'boolean' ? r.hold.taken : null, serverOffsetMs: r.offset });
+  const s = judge.signalsOf(r.watch.filter((w, k) => k < cut || w.kind !== 'cursor'), { target: r.window, pressMs: r.wall.press_ms, releaseMs: r.wall.release_ms, engineTook: typeof r.hold?.taken === 'boolean' ? r.hold.taken : null, serverOffsetMs: r.offset });
   return { shown: s.accept_shown, indeterminate: s.accept_indeterminate, back: true };
 };
 out.push(

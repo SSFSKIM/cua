@@ -142,16 +142,18 @@ export function releaseProbeIndex(lines, releaseMs) {
 
 /**
  * Whether the accept rule's cursor was shown at the release, from the watch's lines (in the server's order) and the
- * engine's release stamp: `{shown, indeterminate}`. A cursor change is after the release when it follows the engine's
- * probe after the release (`releaseProbeIndex`), or when the server's clock (mapped by `offset`) puts it after the
- * stamp, which the engine took after sending the release. It is before the release when the server's clock puts it more than
- * `RELEASE_STAMP_MARGIN_MS` before the stamp. The release falls somewhere among the changes between, so the reading is
- * indeterminate when any split of them would read otherwise.
+ * engine's release stamp: `{shown, indeterminate}`. A cursor change is after the release only when it follows the
+ * engine's probe after the release (`releaseProbeIndex`), the server's own order. It is before the release when the
+ * server's clock (mapped by `offset`) puts it more than `RELEASE_STAMP_MARGIN_MS` before the stamp: the offset can only
+ * read late (the least read lag and the clock's whole milliseconds are in it), so that side is a bound. The clock never
+ * places a change after the release, since there the offset's error is unbounded (the re-review of task 68's fix wave).
+ * The release falls somewhere among the changes between, so the reading is indeterminate when any split of them would
+ * read otherwise; with no probe in the lines, every change not before the release is among them.
  */
 function acceptAtRelease(lines, cursors, take, releaseMs, offset) {
   const at = (c) => c.server_time + offset;
   const probe = releaseProbeIndex(lines, releaseMs);
-  const after = (c) => at(c) > releaseMs || (probe >= 0 && lines.indexOf(c) > probe);
+  const after = (c) => probe >= 0 && lines.indexOf(c) > probe;
   const before = cursors.filter((c) => !after(c) && at(c) + SERVER_TICK_MS <= releaseMs - RELEASE_STAMP_MARGIN_MS);
   const open = cursors.filter((c) => !after(c) && !before.includes(c));
   const readings = open.map((_, k) => acceptIndex([...before, ...open.slice(0, k + 1)], take) >= 0);

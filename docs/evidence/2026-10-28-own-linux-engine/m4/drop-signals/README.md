@@ -44,7 +44,7 @@ tables are under `tables/`.
      The shipped floor answers in 367–372 ms. There were 0 accepts on 90 drags bound to leave. The gate sequence's cold
      drags (30) also had 0 false releases, 25 released at the accept.
    - The same rule replayed passively over every drag that took read no accept on any leave (0 of 97, 98 and 112).
-     **Superseded by the fix wave**: with the release ordered as the records allow, 6, 13 and 37 of those leaves are
+     **Superseded by the fix wave**: with the release ordered as the records allow, 6, 13 and 42 of those leaves are
      indeterminate, and they count as false accepts against the bar ("Fix wave", finding 2).
    - A first replay read 2 at twice the load, both drags of selected text. They were the release's own reset to the
      loop's cursor, read 1.8–3.1 ms before the engine's release stamp. The engine stamps its release after sending it.
@@ -108,8 +108,8 @@ tables are under `tables/`.
 | signal | what it would decide | false negatives | false releases or false "landed" | at a load where it is noise |
 |---|---|---|---|---|
 | Chrome's activation request after the take | after the release: the drop landed, or (none within 300 ms) it did not | 0 of 1,861 drops | 0 of 307 leaves after an in-time take, and 0 of 47 late takes | none seen; Electron gives nothing to read |
-| accept cursor (second unnamed change after the take, while still shown) | when to release a Chromium drop (early release) | not a release: 42 / 28 / 5 of 300 went to the floor | 0 false releases in 900 drops live; replayed on the 307 leaves: 0 false accepts read, 56 indeterminate, counted as false accepts (fix wave) | none seen |
-| accept cursor shown by the release | before the release: whether the drop will land | 64 / 68 / 77 drops called lost | 0 / 0 / 0 | none seen, but it misses a drop pending a status at the release |
+| accept cursor (second unnamed change after the take, while still shown) | when to release a Chromium drop (early release) | not a release: 42 / 28 / 5 of 300 went to the floor | 0 false releases in 900 drops live; replayed on the 307 leaves: 0 false accepts read, 61 indeterminate, counted as false accepts (fix wave) | none seen |
+| accept cursor shown by the release (passive replay; the fix wave's figures, `tables/fix-wave.md`) | before the release: whether the drop will land | 62 / 64 / 15 drops called lost, and 13 / 33 / 218 drops indeterminate | 0 / 0 / 0 clean; 6 / 13 / 42 leaves indeterminate, counted against the bar as false "landed" | none seen, but it misses a drop pending a status at the release |
 | start role (any rule) | skip the hold for drags that never take | 80 a load; at idle also 30 of 30 after the path (`nested-late`) and 30 of 30 from a draggable canvas | – | at every load: the role does not see draggability |
 | `XdndAware` | nothing (every Chrome window has it) | – | – | – |
 
@@ -188,7 +188,8 @@ committed records by `scripts/fix-wave.mjs`.
    - **Placement.** Each cursor change is placed on the server's clock, mapped by the run's least offset
      (`serverOffset`). The read time is no longer used: the watch's reads lagged up to 8.7 ms (p99) and 16.7 ms at twice
      the load.
-   - **After the release:** a change that follows the probe, or that comes after the stamp on the server's clock.
+   - **After the release:** a change that follows the probe. The server's clock never places a change after the
+     release (the re-review fixes, below).
    - **Before the release:** a change more than 10 ms before the stamp (`RELEASE_STAMP_MARGIN_MS`). On the server's clock,
      Chrome's return to its loop's cursor came up to 4.8 ms before the stamp, and the release event's own time (carried
      by Chrome's activation request) up to 6.5 ms before it, both at twice the load.
@@ -200,17 +201,20 @@ committed records by `scripts/fix-wave.mjs`.
      |---|---:|---:|---:|---:|---:|
      | idle | 97 | 0 | 6 | 6 | 91 |
      | gate's windows | 98 | 0 | 13 | 13 | 85 |
-     | twice the load | 112 | 0 | 37 | 37 | 75 |
+     | twice the load | 112 | 0 | 42 | 42 | 70 |
 
-     Electron: 2 of 34 leaves indeterminate, 0 clean false accepts. Of the drops, 13, 33 and 174 are indeterminate.
-   - **Why they are indeterminate.** In every indeterminate leave, the first change the records cannot order is Chrome's
-     return to its drag loop's cursor: the serial it showed at the take, shown again, before the engine's probe. In 34 of
-     the 37 at twice the load one more change follows it.
+     Electron: 2 of 34 leaves indeterminate, 0 clean false accepts. Of the drops, 13, 33 and 218 are indeterminate.
+   - **Why they are indeterminate.** In all but one indeterminate leave, the first change the records cannot order is
+     Chrome's return to its drag loop's cursor: the serial it showed at the take, shown again, before the engine's probe.
+     The exception is at twice the load (`cua nozone` i=13): its first unordered change is serial 81, 0.16 ms before the
+     stamp on the server's clock, followed by the default cursor.
    - **A second reading, resting on Chrome's behaviour rather than the server's order.** That return is taken as
      Chrome's handling of the release; in no drag that took was it read more than 10 ms before the stamp. On this
-     reading: 0 false accepts and 0 indeterminate leaves at every load, in Chrome and in Electron.
+     reading there are 0 false accepts at every load, in Chrome and in Electron. Every leave is determinate except the
+     one at twice the load above.
    - **What the claim now says.** The passive replay found no clean false accept. Counted against a bar, it stands at 6,
-     13 and 37 possible false accepts, or 0 if Chrome's return to its loop's cursor is accepted as the release's. The
+     13 and 42 possible false accepts, or 0, 0 and 1 if Chrome's return to its loop's cursor is accepted as the
+     release's. The
      live lane needs no margin: the engine reads the cursor itself before it releases.
 3. **The ancestor rule was measured on hit-test results only.** `GetAccessibleAtPoint` answered the deepest accessible
    from the frame in one step. In every drag the probe's chain is a single node, a link's text one `static`, so the
@@ -238,6 +242,27 @@ committed records by `scripts/fix-wave.mjs`.
 6. **The populations, apart.** The 307 leaves (97, 98 and 112) are drags whose source took by the release and did not
    land. The 47 late takes (21, 20 and 6) are further non-landings. That is 354 drags that did not land after a take,
    none with an activation request (`tables/fix-wave.md`).
+
+### Re-review fixes
+
+The re-review (reviewer-medium) closed findings 1 and 3–6, and left two small items in the passive replay.
+- **The clock no longer places a change after the release.** The run's least offset still holds an unknown least read
+  lag and the clock's whole milliseconds. That makes it a bound on the before side, where it can only read late, but an
+  estimate on the after side. At twice the load, two leaves read clean only because their deciding change mapped 0.027
+  and 0.005 ms after the stamp.
+  - A change is now after the release only when it follows the engine's probe. A change before the probe that is not
+    surely before the stamp is open, and so is every such change when there is no probe.
+  - A display-free test covers the boundary: a deciding change 0.03 ms after the stamp, before the probe, reads
+    indeterminate.
+  - The recount moves twice the load from 37 to 42 indeterminate leaves (70 clean). Its drops move from 174 to 218
+    indeterminate. Idle, the gate's windows and Electron are unchanged.
+  - On the second reading, 1 leave at twice the load stays indeterminate.
+  - `scripts/fix-wave.mjs`'s second reading now drops only the cursor changes from Chrome's return on, and keeps the
+    probe.
+- **The overview row "accept cursor shown by the release"** now carries the fix wave's figures in place of the old
+  judge's `64 / 68 / 77` and `0 / 0 / 0`.
+- The design session ruled (2026-11-10) that the passive replay no longer decides ruling (2); the live counts alone do.
+  These fixes state the replay exactly, and they change no bar.
 
 ### The fix wave's sitting
 

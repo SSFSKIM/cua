@@ -11,7 +11,7 @@ After the release, for drags whose source took by the release: a signal says the
 | gate-windows | activation | 739 | 641 | 98 | 641 | 0 | 0 | 98 | 0 / 0 | 0 | 1.2 / 2.2 / 52.9 |
 | gate-windows | accept cursor at the release | 739 | 641 | 98 | 544 | 64 | 0 | 85 | 33 / 13 | 13 | – |
 | load2 | activation | 694 | 582 | 112 | 582 | 0 | 0 | 112 | 0 / 0 | 0 | 1.4 / 4.9 / 34.7 |
-| load2 | accept cursor at the release | 694 | 582 | 112 | 393 | 15 | 0 | 75 | 174 / 37 | 37 | – |
+| load2 | accept cursor at the release | 694 | 582 | 112 | 349 | 15 | 0 | 70 | 218 / 42 | 42 | – |
 
 ### electron
 
@@ -28,7 +28,7 @@ The accept read at the release, read again taking Chrome's return to its drag lo
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | idle | 97 | 89 | 0 | 0 | 0 | 638 | 572 | 62 | 4 |
 | gate-windows | 98 | 85 | 0 | 0 | 0 | 641 | 572 | 64 | 5 |
-| load2 | 112 | 109 | 0 | 0 | 0 | 582 | 492 | 15 | 75 |
+| load2 | 112 | 109 | 0 | 1 | 1 | 582 | 491 | 15 | 76 |
 | idle (electron) | 34 | 29 | 0 | 0 | 0 | 116 | 92 | 18 | 6 |
 
 The live accept lane (`--drag-dnd-release-at-accept`) replayed on the engine's own cursor record (`accept.changes`: each change's serial, server time and name) with the withdrawal rule, over the changes up to Chrome's return to its drag loop's cursor (the release's; the whole record where there is none): whether the accept the engine released on was still the cursor shown, and the sequences seen after the take (L: the loop's cursor).

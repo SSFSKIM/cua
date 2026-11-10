@@ -66,6 +66,7 @@ private final class FakeApp {
                   role: { $0.calls.append("role"); return $0.role },
                   subrole: { $0.calls.append("subrole"); return $0.subrole },
                   value: { $0.readValue() },
+                  valueUnits: { field in field.readValue().map { Array($0.utf16) } },
                   range: { $0.calls.append("range"); return $0.range },
                   same: { $0 === $1 },
                   now: { self.clock },
@@ -211,14 +212,54 @@ final class TypeReadbackTests: XCTestCase {
     }
   }
 
-  func testAConcealedRequestReadsNothingAtAll() {
-    let field = FakeField(value: "user", range: NSRange(location: 4, length: 0))
-    let (error, meta) = type("secret", into: FakeApp(field), concealed: true)
-    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
-    XCTAssertEqual(record(meta)["reason"] as? String, "concealed")
-    XCTAssertEqual(field.calls, [], "not even focus is read")
+  // MARK: Concealed (a {{secret:…}} substitution, ruling 1ea561bc:589)
+
+  func testAConcealedTextThatReadsBackEqualConfirms() {
+    let field = FakeField(value: "token: ", range: NSRange(location: 7, length: 0))
+    let (error, meta) = type("s3cr3t-Zebra", into: FakeApp(field), concealed: true)
+    XCTAssertNil(error)
+    XCTAssertEqual(record(meta)["confirmed"] as? Bool, true)
+    XCTAssertNil(meta.entered, "a concealed request never reports a count")
+  }
+
+  /// A mismatching secret: its answer, the meta on it and the reads made carry none of its characters, and no length.
+  func testAConcealedMismatchCarriesNoneOfTheSecretAndNoLength() throws {
+    let secret = "s3cr3t-Zebra", before = "token: "
+    let field = FakeField(value: before, range: NSRange(location: 7, length: 0))
+    field.transform = { $0.uppercased() }  // a field that changes what it is given
+    let (error, meta) = type(secret, into: FakeApp(field), concealed: true)
+    let failure = try XCTUnwrap(error)
+    XCTAssertEqual(failure.errorName, "typeUnconfirmed")
+    XCTAssertTrue(failure.message.hasPrefix("The text was typed, but the field does not match what was typed, so it is not confirmed"), failure.message)
+    XCTAssertEqual(record(meta)["reason"] as? String, "concealedMismatch")
+    let reply = withMeta(failure, meta).wire
+    let data = try JSONSerialization.data(withJSONObject: reply, options: [.sortedKeys])
+    let text = String(decoding: data, as: UTF8.self)
+    for fragment in [secret, secret.uppercased(), "s3c", "ZEB", "Zebra"] {
+      XCTAssertFalse(text.contains(fragment), "the reply carries \(fragment): \(text)")
+    }
+    XCTAssertFalse(failure.message.contains { $0.isNumber }, "no length or offset in the sentence: \(failure.message)")
+    XCTAssertFalse(text.contains("Length"), "no length in the meta: \(text)")
     XCTAssertNil(meta.entered)
-    XCTAssertNil(record(meta)["actualLength"])
+    XCTAssertTrue(field.calls.allSatisfy { ["focused", "role", "subrole", "value", "range"].contains($0) }, "the reads log names, never values")
+  }
+
+  func testAConcealedTextIntoASecureFieldIsNeverRead() {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.role = "AXSecureTextField"
+    let (error, meta) = type("s3cr3t", into: FakeApp(field), concealed: true)
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(meta)["reason"] as? String, "secure")
+    XCTAssertFalse(field.calls.contains("value") || field.calls.contains("range"), "\(field.calls)")
+  }
+
+  func testAConcealedBufferIsZeroedInPlace() {
+    var buffer: [UInt16] = Array("s3cr3t".utf16)
+    readbackZero(&buffer)
+    XCTAssertEqual(buffer, [0, 0, 0, 0, 0, 0])
+    XCTAssertTrue(readbackMayBeTruncated(units: Array(String(repeating: "가", count: 3_333).utf16)), "the buffer's UTF-8 length counted as a String's")
+    XCTAssertFalse(readbackMayBeTruncated(units: Array(String(repeating: "\u{1F600}", count: 2_000).utf16)), "8,000 bytes, 4,000 units")
+    XCTAssertTrue(readbackMayBeTruncated(units: Array(String(repeating: "\u{1F600}", count: 2_500).utf16)), "10,000 bytes")
   }
 
   func testAFieldTurningSecureIsReadNoFurther() {

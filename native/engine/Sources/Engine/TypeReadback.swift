@@ -5,10 +5,14 @@ import Foundation
 // spec's Decision Log, the #354 entry). The vendor answers once its events are posted; cua's keyed route answers once
 // the field reads what was typed. The rule is the spike's reader (`probe/354-measure`, scripts/probe-354-fences/logic.swift
 // and fence.swift `Fence354Readback`), with the ruling's guards added:
-// - Before the first event, the focused field is snapshotted in the only order allowed: a concealed request reads
-//   nothing, not even focus; otherwise focus, then role and subrole, and value and selected range (UTF-16, as AX counts)
-//   only for a text-entry role (`typeReadbackTextRoles`) that is not secure. Chrome's canvas exposes an empty string
-//   value that is not its text, so a string value alone never makes a field readable.
+// - Before the first event, the focused field is snapshotted in the only order allowed: focus, then role and subrole,
+//   and value and selected range (UTF-16, as AX counts) only for a text-entry role (`typeReadbackTextRoles`) that is
+//   not secure. Chrome's canvas exposes an empty string value that is not its text, so a string value alone never
+//   makes a field readable.
+// - A concealed request (a `{{secret:…}}` substitution; the design session's ruling 1ea561bc:589) keeps the read-back as
+//   equality only: the expected value is built and compared in buffers the read-back owns, zeroed after each use, and a
+//   mismatch says only that the field does not match what was typed, with no excerpt, values or lengths (a length
+//   tells the secret's). A secure field is never read, concealed or not.
 // - The expected value is the snapshot's with the selected range replaced by the typed text.
 // - After the last event, the same field is polled until its value equals the expected one, at most
 //   `typeReadbackBudgetMs`, its role and subrole read again before every value read: a field that turns secure or
@@ -48,8 +52,8 @@ enum ReadbackSubrole: Equatable {
 
 /// Why a type_text is unconfirmed (the meta's `typeReadback.reason`). Only `valueMismatch` reports values.
 enum TypeReadbackReason: String, Equatable {
-  case concealed, noFocusedElement, roleUnreadable, secure, notTextField, valueUnreadable, rangeUnreadable, possiblyTruncated
-  case valueMismatch, becameSecure, fieldUnreadable, fieldChanged
+  case noFocusedElement, roleUnreadable, secure, notTextField, valueUnreadable, rangeUnreadable, possiblyTruncated
+  case valueMismatch, concealedMismatch, becameSecure, fieldUnreadable, fieldChanged
 }
 
 /// Whether nothing of a field's value or range may be read: role or subrole AXSecureTextField, or a role or subrole that
@@ -80,6 +84,27 @@ func readbackMayBeTruncated(_ value: String) -> Bool {
   return (typeReadbackValueCap - 3...typeReadbackValueCap).contains(bytes) || (typeReadbackValueCap - 1...typeReadbackValueCap).contains(units)
 }
 
+/// `readbackMayBeTruncated` over a buffer of UTF-16 units, its UTF-8 length counted without making a String of it.
+func readbackMayBeTruncated(units: [UInt16]) -> Bool {
+  var bytes = 0, index = 0
+  while index < units.count {
+    let unit = units[index]
+    if unit < 0x80 { bytes += 1 } else if unit < 0x800 { bytes += 2 }
+    else if UTF16.isLeadSurrogate(unit), index + 1 < units.count, UTF16.isTrailSurrogate(units[index + 1]) { bytes += 4; index += 1 }
+    else { bytes += 3 }
+    index += 1
+  }
+  return (typeReadbackValueCap - 3...typeReadbackValueCap).contains(bytes) || (typeReadbackValueCap - 1...typeReadbackValueCap).contains(units.count)
+}
+
+/// Overwrites a buffer that held concealed text, in place (memset_s, which the compiler may not drop).
+func readbackZero(_ buffer: inout [UInt16]) {
+  buffer.withUnsafeMutableBufferPointer { units in
+    guard let base = units.baseAddress, units.count > 0 else { return }
+    _ = memset_s(base, units.count * 2, 0, units.count * 2)
+  }
+}
+
 /// A typed unit whose key is a control character (a Return, a Tab): its effect may not be text, so it is a checkpoint.
 func readbackKey(_ unit: TypedUnit) -> Bool {
   unit.press != nil && unit.text.count == 1 && (unit.text[0] < 0x20 || unit.text[0] == 0x7F)
@@ -96,6 +121,8 @@ struct ReadbackReads<Element> {
   var role: (Element) -> String?
   var subrole: (Element) -> ReadbackSubrole
   var value: (Element) -> String?
+  /// The value as UTF-16 units in a buffer of its own, for a concealed comparison that zeroes it after use.
+  var valueUnits: (Element) -> [UInt16]?
   var range: (Element) -> NSRange?
   var same: (Element, Element) -> Bool
   var now: () -> Double = monotonicMilliseconds
@@ -113,12 +140,23 @@ extension ReadbackReads where Element == AXUIElement {
       AXUIElementSetMessagingTimeout(field, typeReadbackMessagingTimeout)
       return field
     }, role: { stringAttribute($0, kAXRoleAttribute) }, subrole: liveReadbackSubrole,
-       value: { stringAttribute($0, kAXValueAttribute) }, range: { element in
+       value: { stringAttribute($0, kAXValueAttribute) }, valueUnits: liveReadbackValueUnits, range: { element in
       guard let range = rangeWire(attribute(element, kAXSelectedTextRangeAttribute)), let location = range["location"],
             let length = range["length"] else { return nil }
       return NSRange(location: location, length: length)
     }, same: { CFEqual($0, $1) })
   }
+}
+
+/// AXValue copied straight from its CFString into a buffer the caller owns and zeroes (no Swift String is made of it).
+/// The CFString the app's reply was decoded into is released, not overwritten: it is immutable and the process's own.
+func liveReadbackValueUnits(_ field: AXUIElement) -> [UInt16]? {
+  guard let raw = attribute(field, kAXValueAttribute), CFGetTypeID(raw) == CFStringGetTypeID() else { return nil }
+  let string = raw as! CFString
+  let length = CFStringGetLength(string)
+  var units = [UInt16](repeating: 0, count: length)
+  units.withUnsafeMutableBufferPointer { CFStringGetCharacters(string, CFRange(location: 0, length: length), $0.baseAddress) }
+  return units
 }
 
 /// AXSubrole with its error: absent for kAXErrorNoValue and kAXErrorAttributeUnsupported, failed for any other error or
@@ -138,8 +176,7 @@ enum ReadbackPlan<Element> {
   case expect(field: Element, role: String, before: String, range: NSRange)
 }
 
-func readbackSnapshot<Element>(concealed: Bool, reads: ReadbackReads<Element>) -> ReadbackPlan<Element> {
-  if concealed { return .refused(.concealed) }
+func readbackSnapshot<Element>(reads: ReadbackReads<Element>) -> ReadbackPlan<Element> {
   guard let field = reads.focused() else { return .refused(.noFocusedElement) }
   guard let role = reads.role(field) else { return .refused(.roleUnreadable) }
   if readbackSecure(role: role, subrole: reads.subrole(field)) { return .refused(.secure) }
@@ -150,17 +187,25 @@ func readbackSnapshot<Element>(concealed: Bool, reads: ReadbackReads<Element>) -
   return .expect(field: field, role: role, before: before, range: range)
 }
 
-/// One poll of the snapshotted field for `expected`: role and subrole re-read before every value read, a field that is
-/// no longer the snapshot's role, or is secure or unreadable, read no further. `closed` names such a field; otherwise
-/// `actual` is the last value read.
+/// What one value read answered against the expected value: unreadable, equal, or different (possibly cut at the
+/// cap; `actual` kept only for a plain request's excerpt, never for a concealed one).
+enum ReadbackRead: Equatable {
+  case unreadable
+  case equal
+  case differs(cut: Bool, actual: String?)
+}
+
+/// One poll of the snapshotted field: role and subrole re-read before every value read, a field that is no longer the
+/// snapshot's role, or is secure or unreadable, read no further. `closed` names such a field; otherwise `last` is what
+/// the last value read answered (`compare`).
 struct ReadbackPoll: Equatable {
   var matched = false
   var reads = 0
-  var actual: String?
+  var last: ReadbackRead?
   var closed: TypeReadbackReason?
 }
 
-func readbackPoll<Element>(_ field: Element, role: String, expected: String, reads: ReadbackReads<Element>) -> ReadbackPoll {
+func readbackPoll<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>, compare: (Element) -> ReadbackRead) -> ReadbackPoll {
   var poll = ReadbackPoll()
   let started = reads.now()
   repeat {
@@ -170,8 +215,8 @@ func readbackPoll<Element>(_ field: Element, role: String, expected: String, rea
     if readbackSecure(role: seenRole, subrole: subrole) { return ReadbackPoll(reads: poll.reads, closed: .becameSecure) }
     if seenRole != role { return ReadbackPoll(reads: poll.reads, closed: .fieldChanged) }
     poll.reads += 1
-    poll.actual = reads.value(field)
-    if poll.actual == expected { poll.matched = true; break }
+    poll.last = compare(field)
+    if poll.last == .equal { poll.matched = true; break }
     if reads.now() - started >= typeReadbackBudgetMs { break }
     reads.sleep(typeReadbackPollIntervalMs)
   } while true
@@ -236,6 +281,7 @@ final class TypeReadback<Element> {
   private let units: [TypedUnit]
   private let reads: ReadbackReads<Element>
   private let plan: ReadbackPlan<Element>
+  private let concealed: Bool
   /// Units after the last checkpoint (or the start) that put text in, which a checkpoint or the final poll must confirm.
   private var unchecked = false
   private(set) var record = TypeReadbackRecord()
@@ -243,8 +289,9 @@ final class TypeReadback<Element> {
   init(units: [TypedUnit], concealed: Bool, reads: ReadbackReads<Element>) {
     self.units = units
     self.reads = reads
+    self.concealed = concealed
     let started = reads.now()
-    plan = readbackSnapshot(concealed: concealed, reads: reads)
+    plan = readbackSnapshot(reads: reads)
     record.snapshotMs = reads.now() - started
     if case .refused(let reason) = plan { record.reason = reason }
   }
@@ -278,19 +325,46 @@ final class TypeReadback<Element> {
   /// Polls for the snapshot with its selection replaced by units `0..<end`, then checks the field is still the focus.
   private func confirm(through end: Int, beforeKey: Bool) throws {
     guard case .expect(let field, let role, let before, let range) = plan else { return }
-    let typed = units[0..<end].map(readbackInsertion).joined()
-    guard let expected = readbackExpected(before: before, range: range, typed: typed) else { throw unconfirmed(.rangeUnreadable, beforeKey) }
-    if readbackMayBeTruncated(expected) { throw unconfirmed(.possiblyTruncated, beforeKey) }
+    let poll: ReadbackPoll
+    var excerpt: (() -> ReadbackExcerpt)?  // a plain mismatch's, made only once the field is known to be the same
     let started = reads.now()
-    let poll = readbackPoll(field, role: role, expected: expected, reads: reads)
-    record.pollMs += reads.now() - started
+    defer { record.pollMs += reads.now() - started }
+    if concealed {
+      // Equality only, in buffers the read-back owns: the expected value's units and each read's, zeroed after use.
+      let value = Array(before.utf16)
+      guard range.location >= 0, range.length >= 0, range.location + range.length <= value.count else { throw unconfirmed(.rangeUnreadable, beforeKey) }
+      var expected = Array(value[0..<range.location])
+      for unit in units[0..<end] { expected += unit.text == [0x0D] ? [0x0A] : unit.text }
+      expected += value[(range.location + range.length)...]
+      defer { readbackZero(&expected) }
+      if readbackMayBeTruncated(units: expected) { throw unconfirmed(.possiblyTruncated, beforeKey) }
+      let valueUnits = reads.valueUnits
+      poll = readbackPoll(field, role: role, reads: reads) { element in
+        guard var read = valueUnits(element) else { return .unreadable }
+        defer { readbackZero(&read) }
+        return read == expected ? .equal : .differs(cut: readbackMayBeTruncated(units: read), actual: nil)
+      }
+    } else {
+      let typed = units[0..<end].map(readbackInsertion).joined()
+      guard let expected = readbackExpected(before: before, range: range, typed: typed) else { throw unconfirmed(.rangeUnreadable, beforeKey) }
+      if readbackMayBeTruncated(expected) { throw unconfirmed(.possiblyTruncated, beforeKey) }
+      let value = reads.value
+      poll = readbackPoll(field, role: role, reads: reads) { element in
+        guard let read = value(element) else { return .unreadable }
+        return read == expected ? .equal : .differs(cut: readbackMayBeTruncated(read), actual: read)
+      }
+      if case .differs(_, let actual?) = poll.last { excerpt = { readbackExcerpt(expected: expected, actual: actual) } }
+    }
     record.reads += poll.reads
     if let closed = poll.closed { throw unconfirmed(closed, beforeKey) }
     guard let focused = reads.focused(), reads.same(focused, field) else { throw unconfirmed(.fieldChanged, beforeKey) }
-    guard let actual = poll.actual else { throw unconfirmed(.valueUnreadable, beforeKey) }
-    if poll.matched { return }
-    if readbackMayBeTruncated(actual) { throw unconfirmed(.possiblyTruncated, beforeKey) }
-    let excerpt = readbackExcerpt(expected: expected, actual: actual)
+    switch poll.last {
+    case .equal?: return
+    case .unreadable?, nil: throw unconfirmed(.valueUnreadable, beforeKey)
+    case .differs(cut: true, _)?: throw unconfirmed(.possiblyTruncated, beforeKey)
+    case .differs?: break
+    }
+    guard let excerpt = excerpt?() else { throw unconfirmed(.concealedMismatch, beforeKey) }
     record.expectedLength = excerpt.expectedLength
     record.actualLength = excerpt.actualLength
     throw unconfirmed(.valueMismatch, beforeKey, excerpt: excerpt)
@@ -342,7 +416,7 @@ func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = n
   let why: String
   switch reason {
   case .valueMismatch: why = "the field does not read as expected"
-  case .concealed: why = "concealed text is never read back"
+  case .concealedMismatch: why = "the field does not match what was typed"
   case .secure, .becameSecure: why = "the field is a password field, which is never read back"
   case .noFocusedElement: why = "no focused field could be found to read back"
   case .notTextField: why = "the focused element is not a text field"

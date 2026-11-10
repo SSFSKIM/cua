@@ -561,8 +561,11 @@ fn drag_along(
                 Some(json!({ "steps_after_take": left, "release_after_take_ms": at.elapsed().as_secs_f64() * 1000.0 }));
         }
         pressed = false;
-        route.release_button(x, 1)?;
+        // stamped as the release goes out, not once its round trip is back: Chrome's drop confirmation answers the
+        // release itself, and the watch may read it before that reply (task 68 saw requests up to 2.7 ms before a stamp
+        // taken after the release; 1 of 300 drops in task 69's idle counts was left unconfirmed so)
         let released_at = Instant::now();
+        route.release_button(x, 1)?;
         *measure.wall = Some((press_wall, wall_ms()));
         // the watch ends at the release: what reached the window from the press on
         if let Some(press) = press

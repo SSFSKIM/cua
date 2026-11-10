@@ -565,7 +565,8 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     "fieldChanged", snapshotMs, pollMs, reads, checkpoints? (keys that can leave or submit whose preceding text was
     confirmed before they were posted), keysUnconfirmed? (those keys, posted, their effect unconfirmed),
     expectedLength?, actualLength? (a plain mismatch's only, never a concealed one's), stoppedBeforeKey?: true};
-    value-free
+    value-free. A concealed request's is {confirmed, concealed: true, snapshotMs, reason?, keysUnconfirmed?: true,
+    stoppedBeforeKey?: true}: no count and no poll time, which would tell the secret's control characters and segments
   keyEffect (#354, on a press_key's result and errors once a press was posted): "unconfirmed", since press_key answers
     once its keys are posted
   scroll (#328, on a scroll's result and its scrollUnconfirmed): {container: "scrollArea" | "pageScroller" | "webArea" |
@@ -4883,7 +4884,17 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
       6. **The documents** add that typing into an element that is not a text field (Finder's type-to-select) answers
          unconfirmed and is checked by observing the selection, and say each of the above; the surface inventory's
          Table 3 amendment (2026-11-10, #354, ruling 1ea561bc:589) carries the paragraph.
-  Proven offline: `TypeReadbackTests` (34) drive the real keyText through `keyTextReadBack` over a fake app whose field
+      7. **Only a value read after the caret counts** (the review of dad56362..af1860ef, P1). The reader judged the
+         caret after a value read, so a stale value read before a newer caret confirmed what the app had already
+         changed ("a" typed over a selected "a" and stored as "A": the first read still "a", the caret at {1, 0}). The
+         equal read that first sees the caret past the insertion now only marks it seen; only a later equal read, its
+         role and subrole read again before it, confirms. Plain and concealed, at every checkpoint.
+      8. **A concealed record counts nothing** (that review's P2). `keysUnconfirmed` and `checkpoints` told how many
+         control characters and segments a secret holds, and a secret of leaving keys alone its length; the reads and
+         poll time of each checkpoint's poll tell the segments too. A concealed record carries `confirmed`,
+         `concealed: true`, `snapshotMs` (taken before any input), the reason, and `keysUnconfirmed` and
+         `stoppedBeforeKey` as flags only.
+  Proven offline: `TypeReadbackTests` (36) drive the real keyText through `keyTextReadBack` over a fake app whose field
   takes the posted text: equal, a caret insertion, a late equal inside the window and one past it; a mismatch's
   sentence, excerpt and lengths, a 20,000-character field's answer holding two 200-unit windows at the difference, the
   excerpt's surrogate pairs and quoting; secure by role, subrole or an unreadable subrole with no value or range read,
@@ -4892,14 +4903,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   buffers zeroed; non-text roles with a string value refused and the three text roles read; no focus, an unreadable
   role, value or range; a value and an expected value at the cap, a read cut at it, the UTF-8 window, canonically
   equivalent text unequal, a read at the cap never accepted though Swift's `==` would call it equal; typing over the
-  same text unconfirmed until the caret moves, at a checkpoint too; focus moving, a role changing or no longer
+  same text unconfirmed until the caret moves, at a checkpoint too, and a stale value read before the caret never
+  confirming, plain or concealed; a concealed record giving one Return and three identical meta; focus moving, a role changing or no longer
   reading; UTF-16 replacement with emoji and combining marks; a text area's Returns read back as text and a dropped
   one a mismatch, a single-line field's and a combo box's trailing Return confirmed before it is posted, a wrong text
   never submitted, text after it expected without it, a Tab checked in a text area and moving focus answered
   `fieldChanged`, the exclusion set, keys alone, empty text, the guard before a key read after the checkpoint's wait;
-  the snapshot's read order; an intervention's stop keeping the record; press_key's `keyEffect`. 1,161 engine tests
-  pass, 1 skipped as before. Of 72 parts and bounds of the rule changed in turn (`~/.local/share/187/mutate-354.py`),
-  65 fail a test. Seven survive by design: the zeroing of the read and the expected buffers, which no answer shows
+  the snapshot's read order; an intervention's stop keeping the record; press_key's `keyEffect`. 1,163 engine tests
+  pass, 1 skipped as before. Of 76 parts and bounds of the rule changed in turn (`~/.local/share/187/mutate-354.py`),
+  69 fail a test. Seven survive by design: the zeroing of the read and the expected buffers, which no answer shows
   (`readbackZero` itself is tested), and five reached only by a live type_text: the engine's call into the read-back,
   and the live seam's value, units, subrole-error and identity reads. The service (`cua/typeReadback`,
   `cua/keyEffect`, the sentence reaching the model), the wrapper's admission and the matrix's expected difference have

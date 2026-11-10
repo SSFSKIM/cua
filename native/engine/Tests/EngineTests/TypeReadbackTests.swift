@@ -293,6 +293,7 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(segmented.sleeps, joined.sleeps)
     XCTAssertEqual(segmented.record, joined.record)
     XCTAssertEqual(segmented.record["keysUnconfirmed"] as? Bool, true)
+    XCTAssertEqual(waits("\n\n").confirms, 1, "a secret of keys alone is read back once too, so it is not told apart by a missing wait")
     // A secret that would submit wrong text is not stopped before its Return: the mismatch is answered after it.
     let wrong = FakeField(value: "", range: NSRange(location: 0, length: 0))
     wrong.role = "AXTextField"

@@ -173,7 +173,7 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(error?.errorName, "typeUnconfirmed")
     let message = error?.message ?? ""
     let quoted = message.components(separatedBy: "\"").enumerated().filter { $0.offset % 2 == 1 }.map(\.element)
-    XCTAssertEqual(quoted.count, 2, message)
+    guard quoted.count == 2 else { return XCTFail("two quoted excerpts expected: \(message)") }
     XCTAssertEqual(quoted.map(\.count), [200, 200])
     XCTAssertLessThanOrEqual(message.count, 400 + 500, "the field's text in the answer is at most about 400 characters")
     XCTAssertTrue(quoted[0].hasSuffix("xyz" + String(repeating: "b", count: 97)), "the window centred on the first difference")
@@ -259,6 +259,13 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(type("abc", into: FakeApp(FakeField(value: nil, range: NSRange(location: 0, length: 0)))).1)["reason"] as? String, "valueUnreadable")
     XCTAssertEqual(record(type("abc", into: FakeApp(FakeField(value: "ab", range: nil))).1)["reason"] as? String, "rangeUnreadable")
     XCTAssertEqual(record(type("abc", into: FakeApp(FakeField(value: "ab", range: NSRange(location: 3, length: 0)))).1)["reason"] as? String, "rangeUnreadable")
+    // A range outside the value is refused at the snapshot, like every unreadable field: no checkpoint stops the key.
+    let outside = FakeField(value: "ab", range: NSRange(location: 3, length: 0))
+    let (error, meta) = type("a\nb", into: FakeApp(outside))
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(meta)["reason"] as? String, "rangeUnreadable")
+    XCTAssertNil(record(meta)["stoppedBeforeKey"])
+    XCTAssertEqual(meta.entered, 3, "every unit sent")
   }
 
   // MARK: Truncation
@@ -271,8 +278,11 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertNil(record(meta)["expectedLength"], "a cut value's length says nothing")
 
     // A field just under the cap whose text would reach it: the read would be cut, so it is never compared.
-    let below = FakeField(value: String(repeating: "a", count: 9_998), range: NSRange(location: 9_998, length: 0))
-    XCTAssertEqual(record(type("bb", into: FakeApp(below)).1)["reason"] as? String, "possiblyTruncated")
+    let below = FakeField(value: String(repeating: "a", count: 9_990), range: NSRange(location: 9_990, length: 0))
+    let (reached, reachedMeta) = type(String(repeating: "b", count: 10), into: FakeApp(below))
+    XCTAssertEqual(reached?.errorName, "typeUnconfirmed", "the field reads 10,000 long, equal or cut alike")
+    XCTAssertEqual(record(reachedMeta)["reason"] as? String, "possiblyTruncated")
+    XCTAssertEqual(below.calls.filter { $0 == "value" }.count, 1, "never polled")
 
     // Blink cuts in UTF-8 bytes: 3,333 three-byte characters read as 9,999 bytes, at the cap.
     XCTAssertTrue(readbackMayBeTruncated(String(repeating: "가", count: 3_333)))
@@ -413,6 +423,21 @@ final class TypeReadbackTests: XCTestCase {
     type("c", into: FakeApp(field))
     XCTAssertEqual(field.calls, ["focused", "role", "subrole", "value", "range", "role", "subrole", "value", "focused"],
                    "snapshot: focus, role, subrole, then value and range; each poll re-reads role and subrole; focus checked last")
+  }
+
+  /// The checkpoint's wait comes before the intervention guard, so a user event during it stops the key.
+  func testTheGuardBeforeAKeyRunsAfterTheCheckpointsWait() throws {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.lagReads = 10
+    let app = FakeApp(field)
+    var guardedAt: [Double] = []
+    var meta = meta()
+    try keyTextReadBack(units("ab\n"), concealed: false, reads: app.reads, checkSource: { _, _ in },
+                        checkIntervention: { guardedAt.append(app.clock) }, post: { event in
+                          if event.kind == .down, let text = event.text { field.deliver(text) }
+                          return true
+                        }, pause: {}, meta: &meta)
+    XCTAssertEqual(guardedAt, [0, 0, 50], "the Return's guard read after the 50 ms the text took to read back")
   }
 
   func testAnInterventionStopKeepsTheRecord() {

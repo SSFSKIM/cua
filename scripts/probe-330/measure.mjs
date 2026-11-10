@@ -25,6 +25,7 @@ import {createInterface} from 'node:readline';
 import {launch, placePid, version, CFT, STABLE} from '../probe-316/browser.mjs';
 import {gatePage, runGate, runMailLike, runTicking, hasRefusalHit} from './gate.mjs';
 import {childRunning, stopOwnedChild} from './browser-lifecycle.mjs';
+import {relabelledPage,runRelabel,runRelabelNative} from './relabelled.mjs';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-330: runs only on a GitHub-hosted runner'); process.exit(2); }
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -178,6 +179,11 @@ function nearPage(change) {
 const events = [];
 let pollers = [], queued = null;
 function serve(req, res) {
+  if (req.method === 'GET' && req.url.startsWith('/r?')) {
+    res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'});
+    res.end(relabelledPage(new URL(req.url, 'http://x').searchParams.get('kind'), SCRIPT));
+    return;
+  }
   if (req.method === 'GET' && req.url.startsWith('/g?')) {
     res.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'});
     res.end(gatePage(new URL(req.url, 'http://x').searchParams.get('kind'), SCRIPT));
@@ -306,6 +312,7 @@ async function observe(w, pid, label) {
   const shots = join(OUT, 'shots', fileName(label)); mkdirSync(shots, {recursive: true});
   const r = await w.execute('get_app_state', {pid, includeScreenshot: true, outputDirectory: shots});
   if (r.error) throw new Error(`get_app_state: ${JSON.stringify(r.error).slice(0, 400)}`);
+  (config.observationTimings ??= []).push({label,pid,app:r.result.app,timings:r.result.timings});
   return r.result;
 }
 const label = n => [n.title, n.description, n.placeholder, n.help].filter(Boolean).join(' | ');
@@ -1241,10 +1248,12 @@ try {
   else if (GROUP === 'sweep-chrome') await stillBrowser('cft');
   else if (GROUP === 'sweep-firefox') await stillBrowser('firefox');
   else if (GROUP === 'sweep-native') { await stillTextEdit(); await stillFinder(); }
-  else if (GROUP.startsWith('gate-') || GROUP.startsWith('tick-')) {
+  else if (GROUP.startsWith('gate-') || GROUP.startsWith('tick-') || GROUP.startsWith('relabel-')) {
     const api = {config, version, stillHarness, URL_, REPS, overBudget, save, connect, observe, sweepPicks, stillCell, refind,
       centre, edgePoint, EDGES, sleep, sendCmd, findNode, toPixels, brief, OUT, WIN, stillNative, escapeTwice, setFront, events};
-    if (GROUP.startsWith('tick-')) await runTicking(GROUP.slice(5),api);
+    if (GROUP === 'relabel-native') await runRelabelNative(api);
+    else if (GROUP.startsWith('relabel-')) await runRelabel(GROUP === 'relabel-chrome'?'cft':GROUP.slice(8),api);
+    else if (GROUP.startsWith('tick-')) await runTicking(GROUP.slice(5),api);
     else if (GROUP === 'gate-native') { await stillTextEdit(); await stillFinder(); await runMailLike(api); }
     else await runGate(GROUP === 'gate-chrome' ? 'cft' : GROUP.slice(5), api);
   }

@@ -106,6 +106,16 @@ export function relabelTarget(sky,plan,fixture) {
     :text?centre(n):{x:n.frame.x+4,y:n.frame.y+n.frame.height/2};
   return {node:n,point,fixture:{before:fixture}};
 }
+export function editorEvidence(sky,fixture) {
+  const f=fixture?.anchor;
+  const candidates=sky.nodes.filter(n=>n.frame&&f&&['AXTextArea','AXTextField','AXGroup'].includes(n.role)&&Math.abs(n.frame.width-f.width)<=2&&Math.abs(n.frame.height-f.height)<=2);
+  const root=candidates.find(n=>['AXTextArea','AXTextField'].includes(n.role))??[...candidates].sort((a,b)=>(b.depth??0)-(a.depth??0))[0];
+  if(!root)return {role:null,emittedRoleChain:[],candidates:[]};
+  const chain=[root.role];let depth=root.depth;
+  for(let i=sky.nodes.indexOf(root)-1;i>=0;i--){const n=sky.nodes[i];if(n.depth<depth){chain.push(n.role);depth=n.depth;}}
+  return {role:root.role,token:root.token,subrole:root.subrole,actions:root.actions??[],frame:root.frame,emittedRoleChain:chain,candidates:candidates.map(n=>({role:n.role,depth:n.depth,token:n.token,frame:n.frame}))};
+}
+
 export function typedCoverage(row,plan) {
   const m=row.mutations?.find(m=>m.mutation==='relabel'),before=row.fixture?.before,after=row.typingSamples?.at(-1)??m?.after,issues=[];
   if(!row.click||row.problem||row.exception)issues.push('click did not complete');
@@ -144,7 +154,7 @@ export async function runRelabel(kind,a) {
     const url=new URL(`r?kind=${p.key}&case=${rep}-${p.caseName}`,URL_),mark=events.length;
     const reset=await h.reset(url.href);
     let fixture;for(let i=0;i<30;i++){fixture=events.slice(mark).find(e=>e.type==='fixture'&&e.kind===p.key&&e.case===url.search);if(fixture)break;await sleep(100);}
-    const row=await stillCell({app:kind,scene:'relabelled',cell:p.caseName,caseName:p.caseName,expectation:p.expectation,delivery:p.delivery,diagnostic:p.diagnostic??false,at:'old-screenshot',rep,reset},h.pid(),'shared',sky=>relabelTarget(sky,p,fixture),async({w,sky,row})=>{
+    const row=await stillCell({app:kind,scene:'relabelled',cell:p.caseName,caseName:p.caseName,expectation:p.expectation,delivery:p.delivery,diagnostic:p.diagnostic??false,at:'old-screenshot',rep,reset},h.pid(),'shared',sky=>{const found=relabelTarget(sky,p,fixture);if(found&&p.typed)found.fixture.editorAX=editorEvidence(sky,fixture);return found;},async({w,sky,row})=>{
       const traceMark=events.length;
       if(p.typed) {
         const point=p.key==='typed-link'?relabelTarget(sky,{...p,key:'typed-contenteditable'}, {...fixture,text:SEED,textRects:fixture.editorRects}):{point:row.point.screen};
@@ -165,6 +175,7 @@ export async function runRelabel(kind,a) {
       row.changeSentAt=Date.now();sendCmd('change');await sleep(p.typed?3300:(p.delay??500));
       if(p.typed){row.typingTrace=events.slice(traceMark).filter(e=>e.kind===p.key&&e.case===url.search);row.typingSamples=row.typingTrace.filter(e=>e.type==='typing-sample');}
     });
+    if(p.typed){row.editorAX=row.fixture?.editorAX;row.editorSideRoleChain=row.signals?.hit?.chain?.map(c=>c[0])??[];}
     row.coverage=typedCoverage(row,p);save();
   }} finally {await h.close();save();}
 }

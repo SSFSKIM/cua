@@ -13,6 +13,15 @@ test('paced typing uses real one-character calls with settling, while bulk stays
   assert.deepEqual(calls,[['type_text',{text:'New.'}]]);
 });
 
+test('editor evidence distinguishes AXTextArea from a plain AXGroup without changing focus',()=>{
+  const web={role:'AXWebArea',depth:3,frame:rect(0,0,620,700)},group={role:'AXGroup',depth:4,frame:rect(16,60,500,140)};
+  const area={role:'AXTextArea',depth:5,frame:rect(16,60,500,140),actions:['AXFocus']};
+  const fixture={anchor:rect(16,60,500,140)};
+  assert.equal(relabel.editorEvidence({nodes:[web,group,area]},fixture).role,'AXTextArea');
+  const plain=relabel.editorEvidence({nodes:[web,group]},fixture);
+  assert.equal(plain.role,'AXGroup');assert.deepEqual(plain.emittedRoleChain,['AXGroup','AXWebArea']);
+});
+
 test('edited-region negative control targets the actionable link, not its replaced short text',()=>{
   const n={role:'AXLink',title:'Save',actions:['AXPress'],frame:rect(400,100,130,32)};
   const found=relabelTarget({nodes:[n]},{key:'typed-link',typed:true},{label:'Save'});

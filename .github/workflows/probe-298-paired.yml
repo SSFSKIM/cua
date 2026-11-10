@@ -1,0 +1,84 @@
+# Same probe/330-measure kit; explicit dispatch only. The push registers this workflow without using a runner.
+name: probe-298-paired
+on:
+  push:
+    branches: ['probe/330-measure']
+    paths: ['.github/workflows/probe-298-paired.yml']
+  workflow_dispatch:
+    inputs:
+      control_ref:
+        description: control engine SHA
+        required: true
+        default: '3c669314e0a5f35aedf20f9b792604fc09628c45'
+      branch_ref:
+        description: original AXEditableAncestor-batch engine SHA
+        required: true
+        default: '562274758e30c6d7ce6b3511a785c1a2d44db9b0'
+      candidate_ref:
+        description: candidate engine SHA
+        required: true
+        default: 'f8a3500164faa0022125a08e1632d3c4751f2100'
+permissions:
+  contents: read
+jobs:
+  paired:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      CONTROL_REF: ${{ inputs.control_ref }}
+      BRANCH_REF: ${{ inputs.branch_ref }}
+      CANDIDATE_REF: ${{ inputs.candidate_ref }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apps
+        run: |
+          bash scripts/probe-316/install.sh firefox
+          mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+          printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+      - name: Build the three unmodified engines
+        run: |
+          git log -1 --format='kit %H %s'
+          for HEAD in control branch candidate; do
+            case "$HEAD" in control) REF="$CONTROL_REF";; branch) REF="$BRANCH_REF";; candidate) REF="$CANDIDATE_REF";; esac
+            git worktree add --detach "$RUNNER_TEMP/src-$HEAD" "$REF"
+            git -C "$RUNNER_TEMP/src-$HEAD" log -1 --format="engine $HEAD %H %s"
+            swift build -c release --package-path "$RUNNER_TEMP/src-$HEAD/native/engine" --scratch-path "$RUNNER_TEMP/eng-$HEAD"
+          done
+      - name: Paired observations on fixed windows
+        env:
+          P330_CONTROL_REF: ${{ inputs.control_ref }}
+          P330_BRANCH_REF: ${{ inputs.branch_ref }}
+          P330_CANDIDATE_REF: ${{ inputs.candidate_ref }}
+        run: |
+          node scripts/probe-330/paired.mjs \
+            --control "$RUNNER_TEMP/eng-control/release/cua-engine" \
+            --branch "$RUNNER_TEMP/eng-branch/release/cua-engine" \
+            --candidate "$RUNNER_TEMP/eng-candidate/release/cua-engine" \
+            --control-ref "$CONTROL_REF" --branch-ref "$BRANCH_REF" --candidate-ref "$CANDIDATE_REF" \
+            --out "$RUNNER_TEMP/probe-330/paired"
+      - name: Write paired tables (the old branch may intentionally fail)
+        if: always()
+        continue-on-error: true
+        run: node scripts/probe-330/offline/paired-table.mjs "$RUNNER_TEMP/probe-330/paired"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-298-paired
+          path: |
+            ${{ runner.temp }}/probe-316/*.txt
+            ${{ runner.temp }}/probe-330/paired/results.json
+            ${{ runner.temp }}/probe-330/paired/*.json
+            ${{ runner.temp }}/probe-330/paired/*.jsonl
+            ${{ runner.temp }}/probe-330/paired/*.txt
+            ${{ runner.temp }}/probe-330/paired/fixtures/**
+            ${{ runner.temp }}/probe-330/paired/engine-logs/**
+            ${{ runner.temp }}/probe-330/paired/shots/**/*.png
+            ${{ runner.temp }}/probe-330/paired/shots/**/*.jpg
+          if-no-files-found: warn

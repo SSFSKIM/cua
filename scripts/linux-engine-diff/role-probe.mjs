@@ -1,7 +1,8 @@
 // The role probe (#171 M4, T13: Chromium drop signals, measured only): what the accessibility tree says is at a drag's
 // start point, read before the press as an engine would read it to decide that a drag will never start a drag and drop
 // (the hold's never-take signal, #263). From a window's frame, `Component.GetAccessibleAtPoint` (screen coordinates)
-// is followed down to the deepest accessible; each step's role, name, states, interfaces and attributes are kept, and
+// is followed down to the deepest accessible; each step's role, name, states, interfaces and attributes are kept (the
+// hit test's steps, not the parent chain: Chrome can answer the deepest from the frame in one step), and
 // where the deepest carries `Text`, whether the point's character lies inside a selection (a press there drags the
 // selected text). The harness's own reads (oracle.mjs, `busctl`), only of windows the harness opened.
 

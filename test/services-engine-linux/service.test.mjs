@@ -129,6 +129,29 @@ test('get_window_state numbers the tree as the vendor does, keeps the native ids
   assert.deepEqual(sent(engine), [['get_window_state', {window: W}], ['get_window_state', {window: W, include_screenshot: false}], ['get_window_state', {window: W, query: 'trunc'}]]);
 });
 
+// The pending drag notice (#171 M4 T14): cua-engine puts it beside every reply's output while a drag's watch left
+// something pending; the state carries it to the facade, which renders it first (src/cua-api/bind-linux-app.mjs). The
+// other replies keep their shapes, and a read that fails carries it after its own sentence.
+test('a pending drag notice reaches the facade on the window state; lists, handles and void answers keep their shapes; a failed read carries it after its sentence', async t => {
+  const NOTICE = 'Pending from your last drag, a late drag and drop: Google-chrome started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop. Read the window before sending input again: your next input request will not be run';
+  const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command, input) {
+    const notice = ${JSON.stringify(NOTICE)};
+    if (command === 'get_window_state' && input.query === 'fails') return {error: 'Window 7 is gone', notice};
+    if (command === 'get_window_state' && input.query === 'clear') return undefined;
+    if (['get_window_state', 'list_windows', 'clipboard_read', 'key_up', 'get_screenshot'].includes(command)) return {notice};
+  }`});
+  const svc = service(t, engine);
+  const state = await execute(svc, 'get_window_state', {window: W});
+  assert.equal(state.notice, NOTICE);
+  assert.equal(state.ax_tree.children[1].id, '2', 'the state is otherwise as without it');
+  assert.equal('notice' in (await execute(svc, 'get_window_state', {window: W, query: 'clear'})), false, 'no notice, no field');
+  assert.deepEqual(await execute(svc, 'list_windows'), WINDOWS);
+  assert.equal(await execute(svc, 'clipboard_read', {window: W}), 'handle-1');
+  assert.equal(await execute(svc, 'key_up', {window: W, key: 'a'}), undefined);
+  assert.deepEqual(await execute(svc, 'get_screenshot'), [{filepath: engine.shot, data_url: JPEG_URL}]);
+  await assert.rejects(execute(svc, 'get_window_state', {window: W, query: 'fails'}), {message: `Window 7 is gone\n${NOTICE}`});
+});
+
 test('element ids are translated back to native ids before input reaches the engine; an unknown one is refused and nothing is sent', async t => {
   const engine = fakeLinuxEngine(t);
   const svc = service(t, engine);
@@ -157,7 +180,7 @@ test('answers: lists and handles as the engine gives them, void methods undefine
 });
 
 test('an engine error reaches the caller as its sentence, the late drag-and-drop notice included, and defers nothing', async t => {
-  const notice = 'Google-chrome started a drag and drop after your drag ended; it may have dropped and changed the desktop; this request was not run, so read the window before sending it again';
+  const notice = 'Pending from your last drag, a late drag and drop: Google-chrome started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop; this click request was not run, so read the window before sending it again';
   const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command) { if (command === 'click') return {error: ${JSON.stringify(notice)}}; }`});
   const events = [];
   const svc = service(t, engine, {settler: recordingSettler(events)});
@@ -166,7 +189,7 @@ test('an engine error reaches the caller as its sentence, the late drag-and-drop
 });
 
 test('beforeLaunch sends the engine its preflight, which acts: a pending late drag-and-drop notice is its answer, else it resolves', async t => {
-  const notice = 'Google-chrome started a drag and drop after your drag ended; it may have dropped and changed the desktop; this request was not run, so read the window before sending it again';
+  const notice = 'Pending from your last drag, a late drag and drop: Google-chrome started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop; this preflight request was not run, so read the window before sending it again';
   const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command, input, ctx) { if (command === 'preflight' && ctx.count === 2) return {error: ${JSON.stringify(notice)}}; }`});
   const events = [];
   const svc = service(t, engine, {settler: recordingSettler(events)});

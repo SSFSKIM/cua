@@ -235,14 +235,18 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     session's ruling on task 60). A drag that arms no watch ends its session with its answer. The first request that sends input or changes state
     (`press_key`, `key_down`, `click`, `move`, `move_relative`, `scroll`, `drag`, `drag_handle`'s start and moves,
     `perform_secondary_action`, `activate_window`, `launch_app`, `clipboard_write`, `type_text`, `type_characters`,
-    `preflight`) is answered, not run, with `<app> started a drag and drop after your drag ended; it may have dropped
-    and changed the desktop; this request was not run, so read the window before sending it again` (`--stats`
-    `late_dnd`). Reads
-    (`list_windows`, `list_apps`, `get_screenshot`, `get_window_state`, `clipboard_read`, `capabilities`) and releases
-    of what is held (`key_up`, `clipboard_release`, `drag_handle`'s end) run meanwhile, so no key or button stays down
-    at the server. A watch that failed (its connection lost, a round trip failed) is reported the same way: `the
-    drag-and-drop watch after your drag into <app> failed (<why>), so a drop may have happened unseen and changed the
-    desktop; …`; a panicking watch ends the engine (the release profile aborts on a panic). The live tests inject both
+    `preflight`) is answered, not run, with `Pending from your last drag, a late drag and drop: <app> started a drag
+    and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the
+    desktop; this <command> request was not run, so read the window before sending it again` (`--stats` `late_dnd`).
+    Reads (`list_windows`, `list_apps`, `get_screenshot`, `get_window_state`, `clipboard_read`, `capabilities`) and
+    releases of what is held (`key_up`, `clipboard_release`, `drag_handle`'s end) run meanwhile, so no key or button
+    stays down at the server, and each of their replies carries the pending cause as `notice` after the vendor's keys
+    (`Pending from your last drag, …. Read the window before sending input again: your next input request will not be
+    run`; M4's T14, the design session's rulings of 2026-11-02 and 2026-11-10), which cua's service hands the facade in
+    the window state, rendered as the observation's first line. A watch that failed (its connection lost, a round trip
+    failed) is reported the same way, its cause `a failed watch: the drag-and-drop watch after your drag into <app>
+    failed (<why>), so a drop may have happened unseen and changed the desktop`; a panicking watch ends the engine (the
+    release profile aborts on a panic). The live tests inject both
     through `CUA_ENGINE_FAULT`, honoured only in a build with the `live` feature, never a release asset. `preflight`
     (no input, answers null) is for a caller about to change the desktop by a route the engine never sees: cua's
     service sends it just before its wrapper launches an application through the supervisor, so that launch gets the
@@ -265,6 +269,27 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   floor waited out without one dropped nothing after a take on the path's last sample or after it. These keepalives
   come only after a take, only on such a Chromium drag.
 
+  Every such drag has the after-release watch too (M4's T14, #264; the design session's rulings, 2026-11-02): one
+  that reached its release with no take is watched for a late one exactly as the shared-mode guard's is, its Escape on
+  the route the drag used (synthetic to the window on the background route, XTEST on the foreground and desktop
+  routes), and reported the same way. A Chrome drop that was under way at its release is confirmed by Chrome's own
+  `_NET_ACTIVE_WINDOW` request for the drop's window (source 1), which its drop sends (`WebContents::Focus`) and a
+  leave never does (task 68: 1,861 of 1,861 drops, none of 354 drags that did not land), read inside the window from
+  the release's stamp (taken as the release goes out) to 150 ms after it (`dnd.rs` `DROP_CONFIRM`: about three times
+  task 68's largest, 52.9 ms; a request read before the stamp, or after the window however late it was read, confirms
+  nothing: task 69's fix wave), read on the watch's own connection with
+  `SubstructureNotify` on the root. Only a request for that window counts, and only where the window manager lists
+  `_NET_ACTIVE_WINDOW` in `_NET_SUPPORTED`, read at the drag; Electron, whose drop sends none, and every other window
+  keep the floor with nothing to confirm. With no request in time the drop is unconfirmed, never ok: `Pending from
+  your last drag, an unconfirmed drop: …`, on every reply until the first acting request, refused with it. An acting
+  request that comes before the 150 ms are over waits for the rest of them. The release at Chrome's accept cursor
+  (`accept.rs`, the cursors told apart by their image) is measurement only (`--drag-dnd-release-at-accept`): Chrome's
+  cursor is its last status, which answers a position the renderer has handled, not necessarily the path's last. In
+  task 69's press-inside control one drag of 30 was released at the path's end on an in-zone accept not yet
+  withdrawn; Chrome dropped and confirmed it, and the page took nothing (evidence `m4/drops/`; the design session's
+  ruling, 2026-11-10: a single false release reverts the early release, not the confirmation). The floor gives the
+  renderer time to answer the last position, and its keepalives revisit it.
+
   A short path can end before the take (task 22, evidence `m3/drop-misses/task22/`): under a load of Chrome windows
   the renderer gets the drag's first moves a frame or a stall late and starts the drag and drop after a 40 px path has
   ended, and a release before the take drops nothing while the drag answers success (`m3-gate-final`'s three cold
@@ -279,11 +304,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     later than 250 ms after the press: the drag answers success;
   - a speed gap: a Chromium drag that never takes (a text selection, a range, a short thumb drag) holds its button
     until 250 ms after the press, paying 250 ms less its path's time: a 40 px Chrome selection goes from about 134 ms
-    to about 355, a 40 px range from about 130 to about 350; a drag whose path lasts 250 ms or more pays nothing;
-  - a speed gap: the short Chrome drop (40 px, in front) takes 469 ms, against the newest vendor build's 258 and the
-    pinned build's 280 (which lands 11 of 12). A lead: release when Chrome's accept cursor shows, with the take plus
-    350 ms as the ceiling, which helps only if reading the accept cursor has no false positives (task 18's replay of it
-    matched Chrome's accept in 85 to 100% of drags by condition, without saying which way the rest failed).
+    to about 254, a 40 px range from about 130 to about 350; a drag whose path lasts 250 ms or more pays nothing. On
+    the selection the vendor builds take as long (task 69, every lane in front: cua 254.4 ms, the newest build 251.9,
+    the pinned 254.1), so the speed rule passes;
+  - a speed gap: the short Chrome drop (40 px, in front) takes 365.9 ms and lands 40 of 40, against the newest vendor
+    build's 251.5 (25 of 40 landed) and the pinned build's 252.9 (22 of 40; task 69). The release at Chrome's accept
+    cursor closes it (task 68: medians of 54 to 66 ms) but does not ship: a stale accept released one drop Chrome
+    confirmed and the page never took (above).
 
   Every drag into a Chromium-family window (Chrome by its classes, the Chromium toolkit) presses atomically and is
   watched (`stray.rs`; task 20, evidence `m3/drop-misses/task20/`). Blink resets its press on any mouse move that

@@ -21,6 +21,7 @@ export function median(values) {
 export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null, warmUps = null, foreign = [] }) {
   const name = (v) => `${v.scene} ${v.op} ${v.candidate}`;
   const judged = verdicts.filter((v) => v.kind === 'verdict');
+  const drops = dropCounts(judged);
   const parity = judged.filter((v) => !v.pass && v.verdict === 'parity').map(name);
   // a declared refusal (deviations.mjs REFUSALS) is a recorded loss: listed apart, never a pass, not a failure
   const refused = judged.filter((v) => !v.pass && v.verdict === 'declared refusal').map(name);
@@ -30,8 +31,26 @@ export function runOutcome(verdicts, { valid, faults = null, restores = null, st
   if (warmUps && !warmUps.pass) failed.push(...warmUps.reasons);
   if (stop) failed.push(stop);
   for (const f of foreign) failed.push(`a window the harness did not open was changed: ${f}`);
+  if (drops.finding) failed.push(drops.finding);
   const pass = failed.length === 0;
   return { valid, pass, failed, parity, refused, ...(restores ? { restores } : {}), code: valid && pass ? 0 : 1 };
+}
+
+/** The share of a run's landed drops left unconfirmed above which the run has a finding (the design session, 2026-11-10). */
+export const UNCONFIRMED_LANDED_SHARE = 0.05;
+
+/**
+ * A run's Chrome drops the engine confirms or reports (device.mjs `confirm`, each verdict's `drops`), summed over its
+ * cases: a run is one load. A drop that landed but was reported unconfirmed is honest (Chrome's request came after the
+ * window), counted apart, and a finding only above `UNCONFIRMED_LANDED_SHARE` of the landed drops; a drag answered ok
+ * with no drop and nothing pending (false ok) fails its own case.
+ */
+export function dropCounts(verdicts) {
+  const counted = verdicts.filter((v) => v.drops);
+  const sum = (key) => counted.reduce((n, v) => n + v.drops[key], 0);
+  const c = { cases: counted.length, samples: sum('samples'), landed: sum('landed'), ok: sum('ok'), false_ok: sum('false_ok'), unconfirmed_landed: sum('unconfirmed_landed') };
+  const over = c.unconfirmed_landed > UNCONFIRMED_LANDED_SHARE * c.landed;
+  return { ...c, finding: over ? `landed drops reported unconfirmed: ${c.unconfirmed_landed} of ${c.landed}, over ${UNCONFIRMED_LANDED_SHARE * 100}%` : null };
 }
 
 /**

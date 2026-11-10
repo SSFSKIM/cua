@@ -398,6 +398,12 @@ test('the Interfaces command line parses, with M0 variants', async () => {
   assert.equal(short.dndShort, true);
   assert.deepEqual(dndLanes(short).map((l) => [l.label, l.activate]), [['pinned', true], ['newest', true], ['cua', true]]);
   assert.deepEqual(dndLanes(parseArgs([...dnd, '--lanes', 'pinned,cua'])).map((l) => l.activate ?? false), [false, false]);
+  // the 40 px selection (M4's T14, the hold's cost): every lane in front too, on its own path, runs apart
+  const select = parseArgs([...dnd, '--newest', '/n', '--dnd-select', '--lanes', 'pinned,newest,cua']);
+  assert.equal(select.dndSelect, true);
+  assert.deepEqual(dndLanes(select).map((l) => [l.label, l.activate]), [['pinned', true], ['newest', true], ['cua', true]]);
+  const { pagePath } = await import('../../scripts/linux-engine-diff/drag.mjs');
+  assert.deepEqual([pagePath('select-short', 0), pagePath('select-short', 1)], [[[50, 32], [90, 32]], [[314, 32], [354, 32]]]);
   // the cold drop (task 20): every drag the first request of a fresh engine, its window in front, after a full cover
   const cold = parseArgs([...dnd, '--dnd-short', '--dnd-cold', '--cover-ms', '3000', '--lanes', 'pinned,cua']);
   assert.equal(cold.dndCold, true);

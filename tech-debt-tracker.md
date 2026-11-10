@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-11-10 — A parity cell failed once on the hosted denials gate: `cells/native-pipe/data-close-error` (flake, hosted CI, sandbox-denials).** On b72324f3 (#171 M4, T13's fix wave, a change to the Linux engine's measurement code and the Linux harness only), the `sandbox-denials` gate's cua-host cells suite covered 149 of 150 with one failed assertion, `cells/native-pipe/data-close-error` (run [42734658633](https://github.com/SSFSKIM/cua/actions/runs/42734658633)). Its rerun on f7e793f7, which adds only spec commits, passed (42739040400). Cause not looked into. Workaround: rerun the gate. Check: search sandbox-denials logs for `failed assertion: cells/native-pipe/data-close-error`.
+
 - **2026-11-09 — A racy test: Chrome host protocol notifications waited for a fixed 5 ms (flake, hosted CI, test gate).** In `test/chrome-host-protocol.test.mjs` (around 73), "peer: notifications reach their handler, an unknown one is ignored, and nothing is answered" sends a notification and asserts after `setTimeout(5)`. On the hosted macOS runner it failed once with `[]` against `[{method: 'Page.loadEventFired'}]` (run [42572177620](https://github.com/SSFSKIM/cua/actions/runs/42572177620), 9ecfedab, #171 M4 T13, a commit that touched only the Linux engine's measurement flags and harness). Its rerun passed (42576709273). Fix: wait for the handler (a promise its handler resolves) rather than for elapsed time. Workaround: rerun the gate. Check: search test-gate logs for `notifications reach their handler`.
 
 - **2026-11-07 — Four small harness debts T9 met (minor, #171 M4, task 64).**

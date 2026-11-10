@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (3fcf2a88ad0d)
+start short-drop 2026-11-10T09:17:47Z loadavg 1.30 0.70 0.50
+run exit 0; watchdog clean
+private run short-drop exit 0 09:30:00
+end short-drop 2026-11-10T09:30:00Z loadavg 0.35 0.41 0.41 status 0

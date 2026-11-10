@@ -1,7 +1,9 @@
 // The drop-signals experiment (#171 M4, T13: Chromium drop signals, measured only; the design session's M4 pre-flight,
 // "The Chrome drop"): what the engine could observe of a Chromium drag and drop, measured against what landed, so the
 // design session can rule on T14. It adopts nothing and changes no default: its lanes are the head's engine as it ships
-// and its measurement flags (`--drag-dnd-release-at-accept`, `--drag-dnd-after-take-ms`, `--drag-ignore-cover`).
+// and its measurement flags (`--drag-dnd-release-at-accept`, `--drag-dnd-after-take-ms`, `--drag-ignore-cover`). T14
+// reuses it for its live counts (plans `t14`, `t14-floor` and `t14-late`): each row also carries what the drag left
+// pending, read on the same engine after its watch's lifetime (`notice`), and the answer of the acting request after it.
 //
 // Every drag goes into the drop-signals page (pages/drop-signals.html) in a window of the run's own Chrome (or Electron,
 // `--family electron`), and around it:
@@ -61,13 +63,35 @@ export const CELLS = {
   'press-400': () => [[530, 404], [570, 404]],
   link: () => [[530, 450], [570, 450]],
   image: () => [[530, 496], [570, 496]],
+  // a draggable canvas: a drop source under the role the canvas rule predicts never takes (the review of task 68)
+  'canvas-drag': () => [[530, 588], [570, 588]],
   seltext: () => [[60, 612], [100, 612]],
   select: () => [[50, 32], [90, 32]],
   range: (i) => (i % 2 === 0 ? [[28, 82], [68, 82]] : [[68, 82], [28, 82]]),
   scroller: () => [[313, 160], [313, 200]],
   canvas: () => [[60, 400], [100, 400]],
   inert: () => [[452, 418], [492, 418]],
+  // T14's controls of the release at the accept (the design session, 2026-11-09 and 2026-11-10): a path that enters
+  // the zone, 80 px in, and leaves it before its end, so its accept is withdrawn; and a press on a source inside the
+  // zone, whose first status already accepts, then a path out of the zone below it
+  left: () => [[530, 128], [640, 128], [500, 128]],
+  'inzone-out': () => [[725, 578], [725, 632]],
+  // the long path that crosses the zone and ends outside it, long enough (about 940 px) that its steps after the take
+  // outlast the floor, so the release follows its last step at once (the design session, 2026-11-10: measure first)
+  'long-left': () => [[530, 128], [800, 128], [800, 500], [500, 500]],
 };
+
+/** T14's cells' sources, beside the judge's (drop-signals-judge.mjs `CELL_SOURCE`): each a drop the zone never counts. */
+export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain' };
+
+/** A T14 cell's outcome from the page's status before and after: its source's drag and drop started, and dropped. */
+export function t14Outcome(cell, before, after) {
+  const src = T14_SOURCE[cell];
+  const b = before?.dnd?.[src];
+  const a = after?.dnd?.[src];
+  if (!a || !b) return { started: false, landed: false, effect: null };
+  return { started: a.starts > b.starts, landed: a.drops > b.drops, effect: null };
+}
 
 /**
  * A freeze cell's browser stop, in ms after the drag is sent: Chrome refuses a renderer's mouse drag once the browser
@@ -142,6 +166,8 @@ export const PLANS = {
   'cover-managed': Object.keys(COVER_CELLS).flatMap((cell) => COVER_PARTS.map((part) => ['cua:cover-managed', `${cell}@${part}`, 20])),
   // the false-negative control that joins two: a draggable under a text role whose take comes after the path
   extra: [['cua', 'nested-late', 30]],
+  // the canvas rule's taking control: one take disproves a never-take rule, so idle is enough
+  'canvas-drag': [['cua', 'canvas-drag', 30]],
   // the after-release signals and the accept in Electron (`--family electron`), which has no freeze cell: whether
   // Chrome's signals hold for the Chromium toolkit the floor and the hold also cover
   electron: [
@@ -152,6 +178,20 @@ export const PLANS = {
   ],
   // the freeze sweep: where a lagging browser's thaw falls against the release
   freeze: FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]),
+  // T14's live counts for the release at the accept (the design session, 2026-11-10): a second source, the long drag
+  // and drop, 300 drops; the accepted-then-left control and the press inside the zone, 30 each. Task 69 ran them on an
+  // engine that shipped the release (f9bdb5c2, the lane `cua` there); the press-inside control's false release reverted
+  // it to this measurement flag. `t14-floor`: the same drags on the engine as it ships, the floor and the confirmation
+  t14: [['cua:accept', 'plain-long', 300], ['cua:accept', 'left', 30], ['cua:accept', 'inzone-out', 30]],
+  't14-floor': [['cua', 'plain-long', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
+  // the long-path accepted-then-left control on the engine as it ships: 100 a load at idle and twice the load, 30 at
+  // the gate's window load
+  't14-long': [['cua', 'long-left', 100]],
+  't14-long-gate': [['cua', 'long-left', 30]],
+  // #264's real late takes (the design session's ruling 4, 2026-11-10): task 68's reproduction, the run's own browser
+  // stopped from 60 ms after the request to 250 ms (its late takes came there), on a drag the engine lets drop; run on
+  // the engine before T14 too, its failing first
+  't14-late': [['cua', 'freeze-250', 40]],
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],
@@ -342,6 +382,13 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
   await sleep(1000);
+  // what the drag left pending, past its watch's lifetime (M4's T14): the notice on a read's reply on the same engine,
+  // then an acting request that sends nothing, refused while anything is pending (so the next drag is not the one
+  // refused), its answer and the late drag and drop it reports kept: an engine before T14 runs it
+  const read = await engine.request('list_windows', {});
+  const notice = read.response.notice ?? null;
+  const preflight = await engine.request('preflight', {});
+  const next = { ok: preflight.response.ok === true, error: preflight.response.ok ? null : String(preflight.response.error), late_dnd: preflight.stats?.late_dnd ?? null };
   let after = await readStatus(desktop, scene);
   const stats = value.stats ?? {};
   const wall = stats.wall ?? null;
@@ -382,7 +429,10 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     before,
     after,
     signals,
-    outcome: dragOutcome(base, before, after, { i, rangeEnd }),
+    outcome: T14_SOURCE[base] ? t14Outcome(base, before, after) : dragOutcome(base, before, after, { i, rangeEnd }),
+    notice,
+    next,
+    after_release: stats.after_release,
     escaped,
     freeze,
     // the watch's own lines for the drag, the crossings left out (their count kept)

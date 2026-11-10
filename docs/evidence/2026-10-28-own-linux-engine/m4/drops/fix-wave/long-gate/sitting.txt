@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (bba041594132)
+start long-gate 2026-11-10T16:19:37Z loadavg 0.91 0.78 0.71
+run exit 0; watchdog clean
+private run long-gate exit 0 16:21:17
+end long-gate 2026-11-10T16:21:17Z loadavg 1.17 0.88 0.75 status 0

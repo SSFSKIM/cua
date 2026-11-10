@@ -78,9 +78,11 @@ pub struct Config {
     /// for the window's frame to report the session's synthetic focus taken (`focus_ack.rs`; `--focus-ack-ms`,
     /// measurement only, sets another, 0 none).
     pub focus_ack: std::time::Duration,
-    /// Measurement only (T13, `--drag-dnd-release-at-accept`): a Chromium drag the engine lets drop, once its source
-    /// took `XdndSelection`, sends the rest of its path at its own pacing and is released at Chrome's accept cursor
-    /// (`accept.rs`), the floor after the take (`dnd_after_take`) its ceiling.
+    /// Measurement only (T13 and T14, `--drag-dnd-release-at-accept`): a Chrome drop whose confirmation the engine reads
+    /// (`dnd::LateWatch`), once its source took `XdndSelection`, sends the rest of its path at its own pacing and is
+    /// released at Chrome's accept cursor (`accept.rs`), the floor after the take (`dnd_after_take`) its ceiling. Not
+    /// shipped: task 69's press-inside control had one drop released at a stale accept that Chrome confirmed and the
+    /// page never took (the design session's ruling, 2026-11-10: a single false release reverts it).
     pub dnd_release_at_accept: bool,
     /// Measurement only (T13, `--drag-ignore-cover`): `unless_path_unobscured` never refuses or reroutes a drag, so a
     /// drag goes out on the background route along a covered path.
@@ -122,15 +124,17 @@ pub struct Engine {
     handles: crate::clipboard::Handles,
     /// A watched drag's after-release watch (`dnd::LateWatch`), until it ends by itself or an acting request stops it.
     late_watch: Option<crate::dnd::LateWatch>,
-    /// What an ended watch left to report (a late drag and drop, or the watch's own failure), with the application:
-    /// the first acting request answers it, not run.
+    /// What an ended watch left to report (a late drag and drop, an unconfirmed drop, or the watch's own failure), with
+    /// the application: every reply carries it as its `notice` until the first acting request, which answers it, not
+    /// run.
     late_pending: Option<(String, crate::dnd::WatchEnd)>,
     /// The Chromium drags' press watch (`stray.rs`), its connection opened by the first such drag.
     stray_watch: Option<crate::stray::StrayWatch>,
 }
 
-/// Whether a request sends input or changes state, and so is refused while a late drag and drop or a failed watch is
-/// unreported (the design session's ruling, 2026-10-31). Reads run (`list_windows`, `list_apps`, `get_screenshot`,
+/// Whether a request sends input or changes state, and so is refused while a late drag and drop, an unconfirmed drop
+/// or a failed watch is unreported (the design session's rulings, 2026-10-31 and 2026-11-02). Reads run, their replies
+/// carrying the notice (`list_windows`, `list_apps`, `get_screenshot`,
 /// `get_window_state`, `clipboard_read`, `capabilities`), and so do releases of what is held (`key_up`,
 /// `clipboard_release`, `drag_handle`'s `end`), so a held key or button is never left down at the server; unknown
 /// commands answer their own error. `preflight` sends nothing, but stands for an action its caller takes by another
@@ -250,6 +254,7 @@ fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
             "escaped": late.escaped,
         }),
         crate::dnd::WatchEnd::Failed(why) => json!({ "app": app, "failed": why }),
+        crate::dnd::WatchEnd::Unconfirmed => json!({ "app": app, "unconfirmed": true }),
         crate::dnd::WatchEnd::Quiet => json!({ "app": app }),
     }
 }
@@ -300,8 +305,8 @@ impl Engine {
         let acting = acts(&request.command, request.input.as_ref());
         self.collect_late_watch(acting);
         self.inputs.request = request.id.clone();
-        // a late drag and drop, or a watch that failed, is the first acting request's answer, the request not run;
-        // reads and releases run meanwhile, and the report waits for the request that would act
+        // a late drag and drop, an unconfirmed drop or a watch that failed is the first acting request's answer, the
+        // request not run; reads and releases run meanwhile, and each of their replies carries the notice
         let refusal = if acting { self.late_pending.take() } else { None };
         if let Some((app, end)) = &refusal {
             self.extra.insert("late_dnd".into(), late_stats(app, end));
@@ -322,10 +327,10 @@ impl Engine {
             _ => None,
         };
         let result = match request.command.as_str() {
-            _ if refusal.is_some() => Err(anyhow!(match refusal.as_ref().expect("checked") {
-                (app, crate::dnd::WatchEnd::Failed(why)) => crate::dnd::watch_failed_notice(app, why),
-                (app, _) => crate::dnd::late_notice(app),
-            })),
+            _ if refusal.is_some() => {
+                let (app, end) = refusal.as_ref().expect("checked");
+                Err(anyhow!(crate::dnd::pending_refusal(app, end, &request.command)))
+            }
             _ if minimized.is_some() => Err(anyhow!(minimized_sentence(minimized.expect("checked")))),
             _ if blocked.is_some() => Err(anyhow!(blocked.expect("checked"))),
             "list_windows" => self.list_windows(request.input),
@@ -364,6 +369,20 @@ impl Engine {
         if self.late_watch.is_none() {
             self.inputs.end_watched(&mut self.x);
         }
+        // a reply that ran while something is pending carries its notice: a watch that ended during the request is
+        // collected first, so a read that follows a late take reports it (the design session's rulings, 2026-11-02)
+        let notice = match refusal {
+            Some(_) => None,
+            None => {
+                self.collect_late_watch(false);
+                self.late_pending
+                    .as_ref()
+                    .map(|(app, end)| crate::dnd::pending_notice(app, end))
+            }
+        };
+        if notice.is_some() {
+            self.extra.insert("notice".into(), json!(true));
+        }
         let sent = self.inputs.take_sent();
         if !sent.is_empty() {
             self.extra
@@ -385,6 +404,7 @@ impl Engine {
             Ok(output) => Response::success(request.id, output),
             Err(error) => Response::failure(request.id, format!("{error:#}")),
         }
+        .with_notice(notice)
     }
 
     /// Collects the after-release watch when `acting` (stopping it) or once it has ended by itself: what it saw waits in
@@ -401,8 +421,10 @@ impl Engine {
         match watch.stop() {
             crate::dnd::WatchEnd::Quiet => {}
             end => {
+                // a synthetic Escape is a key to the window's redirected session; one through XTEST is the desktop's
                 if let crate::dnd::WatchEnd::Late(late) = &end
                     && let Some(at) = late.escaped_at
+                    && let Some(target) = target
                 {
                     self.inputs.note_key(target, at);
                 }

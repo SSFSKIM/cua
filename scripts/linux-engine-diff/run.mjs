@@ -697,6 +697,8 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
     opened.dndAt = await locate({ desktop, oracle: desktop.oracle }, opened, ['dnd']);
     opened.dndPath = runPath(opened.dndAt, 'dnd', 0);
     opened.dndShortPath = runPath(opened.dndAt, 'dnd-short', 0);
+    opened.dndInzonePath = runPath(opened.dndAt, 'dnd-inzone', 0);
+    opened.dndLongLeftPath = runPath(opened.dndAt, 'dnd-long-left', 0);
     opened.selectPaths = [runPath(opened.dndAt, 'select', 0), runPath(opened.dndAt, 'select', 1)];
     return withApp(desktop, opened);
   }

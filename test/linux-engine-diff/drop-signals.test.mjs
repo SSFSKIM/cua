@@ -64,6 +64,8 @@ const TARGET = 0x01400003;
 const take = (wall, owner = 0x0140000c) => ({ kind: 'take', owner, subtype: 0, server_time: wall - 900, wall_ms: wall });
 const cursor = (wall, serial, named = false) => ({ kind: 'cursor', serial, named, server_time: wall - 900, image: `i${serial}`, wall_ms: wall });
 const activate = (wall, window = 0x0140000c, source = 1) => ({ kind: 'activate', window, source, user_time: 0, wall_ms: wall });
+// the engine's server-time probe: a 1×1 window at the origin (input.rs `server_time`)
+const probeAt = (wall) => ({ kind: 'create', window: 0x00a00001, override_redirect: false, x: 0, y: 0, w: 1, h: 1, wall_ms: wall });
 
 test("a drag's signals from the watch: the take, a late take after the release, Chrome's activation after it, the cursors", () => {
   const lines = [cursor(990, 80), cursor(1003, 81), take(1004), cursor(1007, 82), cursor(1020, 83), activate(1053), cursor(1052, 81), take(1100, 0x02000001), activate(1060, 0x02000005)];
@@ -75,13 +77,15 @@ test("a drag's signals from the watch: the take, a late take after the release, 
   assert.equal(s.accept_shown, true, "the accept rule's change (the second strictly after the take, server time) came before the release");
   // the first status in the take's own millisecond: not counted, so no accept is read (accept.rs)
   assert.equal(signalsOf([cursor(1003, 81), take(1004), cursor(1004, 82), cursor(1020, 83)], { target: TARGET, pressMs: 1000, releaseMs: 1050 }).accept_shown, false);
-  // the release's own reset to the loop's cursor, read up to a few ms before the engine's release stamp (the engine
-  // stamps after sending; load2's selected-text drags): not a change before the release
-  assert.equal(signalsOf([cursor(1003, 81), take(1004), cursor(1008, 82), cursor(1047, 81)], { target: TARGET, pressMs: 1000, releaseMs: 1050 }).accept_shown, false);
+  // the release's own reset to the loop's cursor, up to a few ms before the engine's release stamp (the engine stamps
+  // after sending; load2's selected-text drags): the records cannot order it against the release, so the drag's
+  // reading is indeterminate, never a plain negative
+  const reset = signalsOf([cursor(1003, 81), take(1004), cursor(1008, 82), cursor(1047, 81)], { target: TARGET, pressMs: 1000, releaseMs: 1050 });
+  assert.deepEqual([reset.accept_shown, reset.accept_indeterminate], [false, true]);
   // a leave: the take, the first status, no accept, no activation
-  const leave = signalsOf([cursor(1003, 81), take(1004), cursor(1007, 82), cursor(1051, 81)], { target: TARGET, pressMs: 1000, releaseMs: 1050 });
+  const leave = signalsOf([cursor(1003, 81), take(1004), cursor(1007, 82), probeAt(1051), cursor(1051, 81)], { target: TARGET, pressMs: 1000, releaseMs: 1050 });
   assert.equal(leave.activation_after_release_ms, null);
-  assert.equal(leave.accept_shown, false);
+  assert.deepEqual([leave.accept_shown, leave.accept_indeterminate], [false, false]);
   // an activation before the take is not the drop's (the harness's own activation comes before the press); one after
   // the take and a little before the engine's release stamp is (load2: the engine stamps its release after sending it,
   // and the drop's request came up to 2 ms before the stamp), its latency negative
@@ -96,6 +100,71 @@ test("a drag's signals from the watch: the take, a late take after the release, 
   assert.equal(signalsOf([], { target: TARGET, pressMs: 1000, releaseMs: 1250 }).take_after_press_ms, null);
 });
 
+test('the accept read at the release follows the cursor the drag ends on: an accept a later change withdrew does not count', () => {
+  const at = (lines) => signalsOf(lines, { target: TARGET, pressMs: 1000, releaseMs: 1050 });
+  // none, accept, none: a path that entered an accepting zone and left it (the review of task 68)
+  assert.equal(at([cursor(1003, 81), take(1004), cursor(1007, 82), cursor(1020, 83), cursor(1030, 82)]).accept_shown, false);
+  assert.equal(at([cursor(1003, 81), take(1004), cursor(1007, 82), cursor(1020, 83), cursor(1030, 84)]).accept_shown, false, 'another cursor withdraws it too');
+  assert.equal(at([cursor(1003, 81), take(1004), cursor(1007, 82), cursor(1020, 83), cursor(1030, 82), cursor(1035, 83)]).accept_shown, true, 'shown again, it counts again');
+  assert.equal(at([cursor(1003, 81), take(1004), cursor(1007, 82), cursor(1020, 83), cursor(1030, 2, true)]).accept_shown, true, "another client's theme cursor does not withdraw it");
+});
+
+test("a change the records cannot order against the release makes the drag's reading indeterminate, never a negative", () => {
+  const at = (lines, opts = {}) => signalsOf(lines, { target: TARGET, pressMs: 1000, releaseMs: 1050, ...opts });
+  const stalled = (second) => [cursor(1003, 81), take(1004), cursor(1007, 82), cursor(second, 83)];
+  // the review's case: the second change 6 ms and 3 ms before the stamp. Neither is read as a plain negative.
+  for (const second of [1044, 1047]) {
+    const s = at(stalled(second));
+    assert.deepEqual([s.accept_shown, s.accept_indeterminate], [false, true], `${1050 - second} ms before the stamp`);
+  }
+  // well before the release: a plain accept
+  assert.deepEqual([at(stalled(1030)).accept_shown, at(stalled(1030)).accept_indeterminate], [true, false]);
+  // after the stamp on the server's clock but with no probe after it: the clock's offset is an estimate, not a bound,
+  // so only the probe orders a change after the release (the re-review of task 68's fix wave)
+  assert.deepEqual([at(stalled(1053)).accept_shown, at(stalled(1053)).accept_indeterminate], [false, true]);
+  assert.deepEqual([at([...stalled(1053), probeAt(1052)]).accept_shown, at([...stalled(1053), probeAt(1052)]).accept_indeterminate], [false, true], 'read after the probe, but ordered before it');
+  const afterProbe = at([cursor(1003, 81), take(1004), cursor(1007, 82), probeAt(1052), cursor(1053, 83)]);
+  assert.deepEqual([afterProbe.accept_shown, afterProbe.accept_indeterminate], [false, false]);
+  // the re-review's case: the deciding change mapped 0.03 ms after the stamp, before the probe
+  const edge = { ...cursor(1050, 83), wall_ms: 1051 };
+  const justAfter = at([cursor(1003, 81), take(1004), cursor(1007, 82), edge, probeAt(1051)], { serverOffsetMs: 900.03 });
+  assert.deepEqual([justAfter.accept_shown, justAfter.accept_indeterminate], [false, true], 'inside the offset\'s uncertainty: indeterminate');
+  // the watch read a change 10 ms late: its server time puts it before the release, so it is judged there
+  const lagged = { ...cursor(1030, 83), wall_ms: 1060 };
+  assert.equal(at([cursor(1003, 81), take(1004), cursor(1007, 82), lagged]).accept_shown, true, "ordered by the server's clock, not the read");
+  // a run's offset given: the drag's own lines need not carry the least lag
+  const late = (wall, serial) => ({ ...cursor(wall, serial), wall_ms: wall + 3 });
+  const run = (second) => at([late(1003, 81), { ...take(1004), wall_ms: 1007 }, late(1007, 82), late(second, 83)], { serverOffsetMs: 900 });
+  assert.deepEqual([run(1049).accept_shown, run(1049).accept_indeterminate], [false, true], "on the drag's own lines it would read after the stamp");
+  assert.deepEqual([run(1039).accept_shown, run(1039).accept_indeterminate], [true, false], "on the drag's own lines it would read inside the margin");
+  // the engine's server-time probe after the release orders what follows it: Chrome's return to its loop's cursor,
+  // read after the probe, is after the release whatever its server time says
+  const probe = (wall) => ({ kind: 'create', window: 0x00a00001, override_redirect: false, x: 0, y: 0, w: 1, h: 1, wall_ms: wall });
+  const anchor = probe(999);
+  const reset = { ...cursor(1048, 81), wall_ms: 1052 };
+  const ordered = at([anchor, cursor(1003, 81), take(1004), cursor(1007, 82), probe(1051), reset]);
+  assert.deepEqual([ordered.accept_shown, ordered.accept_indeterminate], [false, false]);
+  const unordered = at([anchor, cursor(1003, 81), take(1004), cursor(1007, 82), reset, probe(1053)]);
+  assert.deepEqual([unordered.accept_shown, unordered.accept_indeterminate], [false, true], 'before the probe: the records cannot order it');
+  // an accept withdrawn by a change the records cannot order: indeterminate as well
+  const withdrawn = at([cursor(1003, 81), take(1004), cursor(1007, 82), cursor(1020, 83), cursor(1046, 82)]);
+  assert.deepEqual([withdrawn.accept_shown, withdrawn.accept_indeterminate], [true, true]);
+});
+
+test("the least offset of the watch's wall clock to the server's, over the lines that carry a server time", async () => {
+  const { serverOffset } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
+  assert.equal(serverOffset([{ ...cursor(1003, 81), wall_ms: 1905 }, cursor(1010, 82), activate(1020)]), 900);
+  assert.equal(serverOffset([activate(1020)]), null);
+});
+
+test("the engine's probe after the release: a 1×1 window at the origin, read at or after the release stamp", async () => {
+  const { releaseProbeIndex } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
+  const create = (wall, extra = {}) => ({ kind: 'create', window: 0x00a00001, override_redirect: false, x: 0, y: 0, w: 1, h: 1, wall_ms: wall, ...extra });
+  assert.equal(releaseProbeIndex([create(999), cursor(1003, 81), create(1051)], 1050), 2, "the route's anchor before the press is not it");
+  assert.equal(releaseProbeIndex([create(1051, { x: -10000, y: -10000, w: 10, h: 10 })], 1050), -1, "Chrome's own windows are not it");
+  assert.equal(releaseProbeIndex([create(1051, { override_redirect: true })], 1050), -1);
+});
+
 test('the never-take rules read the deepest accessible at the start point', () => {
   const at = (role, extra = {}) => ({ deepest: { role, states: [], interfaces: ['Accessible'], attributes: {} }, in_selection: false, ...extra });
   assert.equal(NEVER_TAKE_RULES['role:range'](at('slider')), true);
@@ -106,11 +175,11 @@ test('the never-take rules read the deepest accessible at the start point', () =
   assert.equal(NEVER_TAKE_RULES['role:any'](at('canvas')), true);
   assert.equal(NEVER_TAKE_RULES['role:any'](at('section')), false);
   assert.equal(NEVER_TAKE_RULES['role:any'](null), false, 'no probe: no prediction');
-  // a link's or an image's text inside the deepest's ancestors: draggable by default, so not predicted
+  // a link or an image on the hit-test chain above the deepest: draggable by default, so not predicted
   const inLink = { ...at('static'), chain: [{ role: 'document web' }, { role: 'link' }, { role: 'static' }] };
   assert.equal(NEVER_TAKE_RULES['role:any'](inLink), true);
-  assert.equal(NEVER_TAKE_RULES['role:any-chain'](inLink), false);
-  assert.equal(NEVER_TAKE_RULES['role:any-chain']({ ...at('static'), chain: [{ role: 'paragraph' }, { role: 'static' }] }), true);
+  assert.equal(NEVER_TAKE_RULES['role:any-hit-chain'](inLink), false);
+  assert.equal(NEVER_TAKE_RULES['role:any-hit-chain']({ ...at('static'), chain: [{ role: 'paragraph' }, { role: 'static' }] }), true);
   assert.equal(NEVER_TAKE_RULES['xdnd-aware']({ ...at('section'), xdnd_aware: true }), false);
   assert.equal(NEVER_TAKE_RULES['xdnd-aware']({ ...at('section'), xdnd_aware: false }), true);
 });
@@ -158,6 +227,14 @@ test('the after-release table: Chrome\'s activation against the drop, for drags 
   assert.deepEqual(c.latency_ms, { p50: 2, p95: 4, max: 4 }, "the drops' own activations");
   const a = t.counts.find((x) => x.signal === 'accept cursor at the release');
   assert.deepEqual({ tp: a.tp, fn: a.fn, fp: a.fp, tn: a.tn }, { tp: 3, fn: 0, fp: 0, tn: 2 });
+  // the accept read at the release, its indeterminates kept apart: a leave's counts against the bar as a false positive
+  const read = (landed, shown, indeterminate) => row('plain', { outcome: { started: true, landed, effect: null }, signals: { take_after_press_ms: 5, late_take: false, activation_after_release_ms: landed ? 2 : null, accept_shown: shown, accept_indeterminate: indeterminate } });
+  const i = afterReleaseTable([read(true, true, false), read(true, false, true), read(true, false, false), read(false, false, true), read(false, true, false), read(false, false, false), read(false, false, false)]).counts.find((x) => x.signal === 'accept cursor at the release');
+  assert.deepEqual(
+    { tp: i.tp, fn: i.fn, fp: i.fp, tn: i.tn, drops: i.indeterminate_drops, leaves: i.indeterminate_leaves, worst: i.fp_counting_indeterminate, clean: i.clean_leaves },
+    { tp: 1, fn: 1, fp: 1, tn: 2, drops: 1, leaves: 1, worst: 2, clean: 3 },
+  );
+  assert.equal(afterReleaseTable([read(true, true, false)]).counts.find((x) => x.signal === 'activation').indeterminate_leaves, 0, 'the activation has none');
   // a drop seen past the window counts as missed
   assert.equal(afterReleaseTable([took(true, 450)], { windowMs: 300 }).counts.find((x) => x.signal === 'activation').fn, 1);
 });
@@ -219,7 +296,7 @@ test("a covered range's drag ends where its own path ends, and a plain range's a
 test("the plan's cells: every drop path 40 px into the zone, the covers placed on the part they name, every spec capped by --trials", async () => {
   const { CELLS, COVER_CELLS, LANES, PLANS, coverRect, planSpecs } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
   const { ZONE_CELLS } = await import('../../scripts/linux-engine-diff/drop-signals-judge.mjs');
-  const zone = { x0: 560, x1: 960, y0: 100, y1: 560 };
+  const zone = { x0: 560, x1: 960, y0: 100, y1: 620 };
   const inZone = ([x, y]) => x >= zone.x0 && x < zone.x1 && y >= zone.y0 && y < zone.y1;
   for (const cell of ZONE_CELLS.filter((c) => c !== 'plain-long')) {
     const path = CELLS[cell](0);
@@ -228,6 +305,7 @@ test("the plan's cells: every drop path 40 px into the zone, the covers placed o
     assert.ok(!inZone(path[0]) && inZone(path[1]), `${cell}: from outside the zone into it`);
   }
   assert.ok(!inZone(CELLS.nozone(0).at(-1)), 'the leave ends outside the zone');
+  assert.deepEqual(planSpecs({ plan: 'canvas-drag' }), [{ lane: 'cua', cell: 'canvas-drag', n: 30 }], "the canvas rule's taking control");
   const path = COVER_CELLS.select(0);
   const hides = (r, [x, y]) => r && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
   assert.equal(coverRect('none', path), null);

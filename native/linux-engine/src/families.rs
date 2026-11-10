@@ -477,6 +477,15 @@ pub fn blink(family: &str) -> bool {
     matches!(family, "Chrome" | "Chromium")
 }
 
+/// Whether a family's drop asks the window manager to activate its window, so the engine can confirm the drop by that
+/// request after the release (`dnd::DROP_CONFIRM`) and release at the accept cursor (`accept.rs`): Chrome, whose drop
+/// calls `WebContents::Focus` (1,861 of 1,861 drops sent it, task 68). Electron's drop, the same engine's, sent none in
+/// 116 drops, so its drops keep the floor and are not confirmed (evidence `m4/drop-signals/`; the design session's
+/// ruling, 2026-11-09).
+pub fn confirms_drop(family: &str) -> bool {
+    family == "Chrome"
+}
+
 /// Whether any entry is keyed by toolkit, so a lookup that found no class needs the application's `ToolkitName`.
 pub fn needs_toolkit() -> bool {
     FAMILIES.iter().any(|f| f.toolkit.is_some())
@@ -801,6 +810,9 @@ mod tests {
                 .filter(|f| f.drop_changes_desktop)
                 .all(|f| f.name == "Chrome")
         );
+        // and only Chrome's drop asks for its window's activation, which confirms it (task 68)
+        assert!(confirms_drop(chrome.name) && !confirms_drop(electron.name));
+        assert!(FAMILIES.iter().filter(|f| confirms_drop(f.name)).all(|f| blink(f.name)));
     }
 
     #[test]

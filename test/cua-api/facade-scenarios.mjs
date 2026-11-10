@@ -28,9 +28,9 @@ const linuxTree = () => ({id: 'n1', native_id: 'at:1', role: 'frame', name: 'Edi
 ]});
 
 const linuxWindow = {id: 7, app: 'gedit', title: 'Untitled'};
-const linuxSky = (ctx, f, {screenshots = [{bytes: Uint8Array.from([5, 6])}], truncated} = {}) => skyDouble(ctx, 'linux', {
+const linuxSky = (ctx, f, {screenshots = [{bytes: Uint8Array.from([5, 6])}], truncated, notice} = {}) => skyDouble(ctx, 'linux', {
   get_window_state: request => ({window: {...request.window, title: 'Refreshed'}, ax_tree_source: 'at_spi', ax_tree: f.accessibility_tree(linuxTree()),
-    screenshots: request.include_screenshot ? screenshots : [], ...(truncated ? {truncated} : {})}),
+    screenshots: request.include_screenshot ? screenshots : [], ...(truncated ? {truncated} : {}), ...(notice !== undefined ? {notice} : {})}),
 });
 const RENDERED = ['Accessibility source: at_spi', 'n1 frame Editor', '\tn2 container', '\t\tn3 push button (focused) Save, Description: Save the file', '\t\tn4 text Line 1 Col 2\\tok',
   `\t\tn6 entry (settable, disabled) Find, Secondary Actions: activate, Value: ${'x'.repeat(120)}`].join('\n');
@@ -255,6 +255,26 @@ export const scenarios = [
         `${RENDERED}\nAccessibility tree truncated: at least 33 elements not shown (30 over the element limit, 2 below the depth limit, 1 unreadable)`]);
       assert.deepEqual(writes(record), [['cua.state', state], ['cua.state', state]], 'the emitted state carries the line too');
     }},
+  {name: 'linux app: a pending drag notice is the state\'s first line, before the source, in getAXState and the combined observation, emitted or not (#171 M4 T14)',
+    differs: 'own Linux engine spec (#171), M4 T14: the drag notice line (the design session, 2026-11-10)', run: async (f, ctx) => {
+      const notice = 'Pending from your last drag, an unconfirmed drop: your drag into Google-chrome began a drag and drop, and Google-chrome did not confirm a drop after the release, so the drop may not have landed as the drag answered. Read the window before sending input again: your next input request will not be run';
+      const app = f.bind_linux_app(linuxSky(ctx, f, {notice}), linuxWindow);
+      const both = f.bind_linux_app(linuxSky(ctx, f, {notice, truncated: {nodes: 1200, depth: 0, failed: 0}}), {...linuxWindow, id: 8});
+      return [notice, await app.getAXState(), await app.getAXStateAndScreenshot(), await app.getAXState({emit: false}), await both.getAXState({emit: false})];
+    }, check(record, assert) {
+      const [notice] = record.result;
+      const state = `${notice}\n${RENDERED}`;
+      assert.deepEqual(record.result.slice(1), [state, {state, screenshot: {uint8: [5, 6]}}, state,
+        `${state}\nAccessibility tree truncated: at least 1200 elements not shown (over the element limit)`]);
+      assert.deepEqual(writes(record), [['cua.state', state], ['cua.state', state]], 'the emitted state carries the notice too');
+    }},
+  {name: 'linux app: a state with no notice, or an empty one, renders byte for byte as before', run: async (f, ctx) => {
+    const absent = f.bind_linux_app(linuxSky(ctx, f), linuxWindow);
+    const empty = f.bind_linux_app(linuxSky(ctx, f, {notice: ''}), {...linuxWindow, id: 8});
+    return [await absent.getAXState({emit: false}), await empty.getAXState({emit: false}), await empty.getAXStateAndScreenshot({emit: false})];
+  }, check(record, assert) {
+    assert.deepEqual(record.result, [RENDERED, RENDERED, {state: RENDERED, screenshot: {uint8: [5, 6]}}]);
+  }},
   {name: 'linux app: a state whose truncated counts nothing renders as one without it', run: async (f, ctx) => {
     const app = f.bind_linux_app(linuxSky(ctx, f, {truncated: {nodes: 0, depth: 0, failed: 0}}), linuxWindow);
     return [await app.getAXState({emit: false}), await app.getAXStateAndScreenshot({emit: false})];

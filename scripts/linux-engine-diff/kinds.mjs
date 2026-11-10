@@ -109,6 +109,9 @@ export function wheelReported(before, after) {
   return /\x1b\[M[`a]/.test(fresh);
 }
 
+/** An editor's click: its caret moved (the document's caret offset changed). */
+export const caretMoved = (before, after) => (Number.isFinite(before) && Number.isFinite(after) ? after !== before : null);
+
 /** A count that grew. */
 export const grew = (before, after) => (typeof before === 'number' && typeof after === 'number' ? after > before : null);
 
@@ -148,6 +151,8 @@ function target(scene, kind, i) {
     if (kind === 'move') return { x: i % 2 ? 100 : 300, y: Math.round(w.height / 2) };
     return { x: Math.round(w.width / 2), y: Math.round(w.height / 2) };
   }
+  // an editor's click alternates between two lines of its document, so each one it takes moves the caret (T19)
+  if (kind === 'click' && scene.kindOf === 'editor') return { x: 100, y: Math.round(w.height * (i % 2 ? 0.35 : 0.25)) };
   // an editor or a document: a move alternates between a toolbar button and the middle of the window
   if (kind === 'move' && i % 2 === 0) return scene.hover;
   return { x: Math.round(w.width / 2), y: Math.round(w.height / 2) };
@@ -195,6 +200,7 @@ async function readValue(ctx, scene, kind) {
       return s === null ? null : kind === 'scroll' ? s.wheels : kind === 'move' ? s.moves : s.presses;
     }
     if (scene.kindOf === 'terminal') return readFileSync(scene.record, 'latin1');
+    if (kind === 'click' && scene.kindOf === 'editor') return Number(oracle.caret(scene.field));
     if (kind === 'move' || scene.pixels || !scene.scrollbar) return await captureWindow(ctx.cua, scene, ctx.dir);
     return Number(oracle.currentValue(scene.scrollbar));
   } catch {
@@ -206,6 +212,7 @@ async function readValue(ctx, scene, kind) {
 function judge(scene, kind, input, before, after) {
   if (scene.kindOf === 'terminal') return kind === 'move' ? motionReported(before, after) : wheelReported(before, after);
   if (scene.kindOf === 'qt-input') return grew(before, after);
+  if (kind === 'click' && scene.kindOf === 'editor') return caretMoved(before, after);
   if (kind === 'move' && !['page', 'gtk4-input'].includes(scene.kindOf)) {
     const over = pixelsOver(XPROBE, before, after);
     return over === null ? null : over > HOVER_PIXELS;
@@ -244,9 +251,10 @@ export async function series(ctx, spec, scene, kind, n) {
   const runs = [];
   try {
     for (let i = 0; i < n; i++) {
-      desktop.arrange(scene, ctx.occlusion);
+      await desktop.arrange(scene, ctx.occlusion);
       await sleep(300);
-      const point = target(scene, kind, i);
+      // a caller may aim the request elsewhere (T19's sitting keeps every point in the window's visible part)
+      const point = ctx.pointFor?.(scene, kind, i) ?? target(scene, kind, i);
       const [command, input] = request(scene, kind, i, point);
       const read = () => readValue(ctx, scene, kind);
       const before = await read();

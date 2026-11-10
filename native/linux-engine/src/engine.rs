@@ -82,6 +82,10 @@ pub struct Config {
     /// Measurement only (T13, `--drag-ignore-cover`): `unless_path_unobscured` never refuses or reroutes a drag, so a
     /// drag goes out on the background route along a covered path.
     pub drag_ignore_cover: bool,
+    /// Measurement only (T19, `--ignore-cover`): no cover condition (`unless_unobscured`, `unless_path_unobscured`)
+    /// refuses or reroutes a request, so a covered window's listed kinds go out on the background route and the harness
+    /// measures what the application does with them; a kind listed `always` is still refused.
+    pub ignore_cover: bool,
 }
 
 pub struct Engine {

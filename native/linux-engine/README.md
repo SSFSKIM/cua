@@ -408,6 +408,8 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--drag-dnd-hold-ms` | 250 | how long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when none came by the path's end (measurement only; 0 turns the hold off; `--stats` `hold`) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
+| `--drag-ignore-cover` | off | a drag into a family listed `unless_path_unobscured` (Chromium) goes out on the background route along a covered path (measurement only: T13's covered paths) |
+| `--ignore-cover` | off | no cover condition (`unless_unobscured`, `unless_path_unobscured`) refuses or reroutes a request, so a covered window's listed kinds go out on the background route; a kind listed `always` is still refused (measurement only: what the application does with them, T19's sitting) |
 | `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, how a desktop screenshot was read (`shm` or `get_image`), each `FocusOut` (`focus_out`, above), the exit's on a line of its own, a paste's settle (`paste.settle`), and a press's wait for Qt's focus (`focus_ack`) |
 
 ## Dependencies

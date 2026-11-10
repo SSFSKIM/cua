@@ -366,6 +366,46 @@ fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_an
     );
 }
 
+/// `--ignore-cover`, a measurement flag (T19's sitting): no cover condition refuses or reroutes, so a covered
+/// window's listed pointer kinds go out on the background route in shared mode, a Gecko window's click, scroll and
+/// drag (`unless_unobscured`) and a Chromium drag along a covered path (`unless_path_unobscured`) alike, and the
+/// harness measures what the application does with them.
+#[test]
+fn the_ignore_cover_flag_sends_a_covered_window_s_listed_kinds_on_the_background_route() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let chrome = Probe::open("Google-chrome", (0, 220, 320, 200));
+    let _cover = Probe::open("Cover", (0, 100, 400, 400));
+    let mut measuring = Engine::start_with(&["--ignore-cover"]);
+    for (command, input) in [
+        ("click", json!({"window": firefox.target(), "x": 40, "y": 150})),
+        (
+            "scroll",
+            json!({"window": firefox.target(), "x": 40, "y": 150, "direction": "down", "pixels": 100}),
+        ),
+        (
+            "drag",
+            json!({"window": firefox.target(), "path": [{"x": 20, "y": 20}, {"x": 200, "y": 150}]}),
+        ),
+    ] {
+        measuring.request(command, input).unwrap();
+        let received = firefox.inputs();
+        assert_eq!(received.len(), 2, "{command}: a press and a release: {received:?}");
+        assert!(sent(&received), "{command}: the background route: {received:?}");
+    }
+    measuring
+        .request("move", json!({"window": firefox.target(), "x": 60, "y": 150}))
+        .unwrap();
+    measuring
+        .request(
+            "drag",
+            json!({"window": chrome.target(), "path": [{"x": 20, "y": 20}, {"x": 200, "y": 150}]}),
+        )
+        .unwrap();
+    let dragged = chrome.inputs();
+    assert_eq!(dragged.len(), 2, "a press and a release: {dragged:?}");
+    assert!(sent(&dragged), "the background route: {dragged:?}");
+}
+
 /// Chromium (class `Google-chrome`) takes a background drag only along a path that is visible in its window: with
 /// its bottom half covered, a drag across its top half takes the background route; one whose path runs under the
 /// cover is refused in shared mode with nothing sent.

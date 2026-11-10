@@ -90,10 +90,11 @@ impl Engine {
                 let family = self.family_of(window);
                 let ignored = match family.and_then(|f| f.ignores(kind)) {
                     Some(When::Always) => true,
-                    Some(When::UnlessUnobscured) => !self.x.unobscured(window),
-                    // measurement only (T13): the path's cover left unjudged
+                    // measurement only (T19): no cover judged
+                    Some(When::UnlessUnobscured) => !self.cfg.ignore_cover && !self.x.unobscured(window),
+                    // measurement only (T13, T19): the path's cover left unjudged
                     Some(When::UnlessPathUnobscured) => {
-                        !self.cfg.drag_ignore_cover && !self.x.points_unobscured(window, path)
+                        !self.cfg.drag_ignore_cover && !self.cfg.ignore_cover && !self.x.points_unobscured(window, path)
                     }
                     None => false,
                 };

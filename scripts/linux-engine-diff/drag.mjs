@@ -623,7 +623,7 @@ export async function series(ctx, spec, scene, at, kind, n, { prime = false, sta
       const read = () => readEffect(ctx, scene, at, kind);
       // the page's scroller goes back to its top by itself; the drag waits for it
       if (kind === 'scroller') for (let tries = 0; (await read()) !== 0 && tries < 40; tries++) await sleep(200);
-      ctx.desktop.arrange(scene, ctx.occlusion);
+      await ctx.desktop.arrange(scene, ctx.occlusion);
       if (inFront(family, kind)) {
         // the window in front for every lane, the device case's way (dnd.mjs): raised, then activated
         xdotool('windowactivate', '--sync', scene.id);

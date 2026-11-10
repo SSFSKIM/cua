@@ -11,7 +11,7 @@ export const USAGE = `usage:
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
       [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates --cua <bin> --out <dir> [--run <name>]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route --cua <bin> --out <dir> [--run <name>]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] [--lanes <list>] [--trace] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop, qt-activation)
       [--released <bin>] [--kinds click,key-click,press_key,drag,scroll] (qt-activation)
@@ -19,6 +19,7 @@ export const USAGE = `usage:
       [--family <list>] [--kinds <list>] [--routes background,desktop,dedicated] [--lanes shipped,settle-<ms>...] [--no-audit] (settle)
       [--plan main|cover|pilot] [--family chrome|electron] [--ballast gate] [--load-factor 2] [--lanes <labels>] [--trials <cap>] (drop-signals)
       --vendor <bin> [--ops <kinds>] (predicates: T15's adopted cases, predicates.mjs; the gate runs every case)
+      --vendor <bin> [--family firefox,chrome,electron,gedit] [--ops click,scroll,move,select] [--trials 10] (pointer-route: T19's sitting, pointer-route.mjs)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 
@@ -186,9 +187,9 @@ export function parseArgs(argv) {
   else if (a.mode === 'summarize') require('out');
   else if (a.mode === 'experiment') {
     require('cua', 'out');
-    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd', 'atspi', 'focus-timer', 'engine-stop', 'qt-activation', 'settle', 'drop-signals', 'predicates'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
+    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd', 'atspi', 'focus-timer', 'engine-stop', 'qt-activation', 'settle', 'drop-signals', 'predicates', 'pointer-route'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
     if (['matrix', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) require('vendor', 'newest');
-    if (['qt-bridge', 'engine-readiness', 'drag', 'kinds', 'dnd', 'predicates'].includes(a.experiment)) require('vendor');
+    if (['qt-bridge', 'engine-readiness', 'drag', 'kinds', 'dnd', 'predicates', 'pointer-route'].includes(a.experiment)) require('vendor');
     // the drag experiment's load lane runs 40 drags a side (T10; drag.mjs `dragTrials`), refused before anything starts
     if (a.experiment === 'drag' && a.load && a.samplesTrials !== undefined && a.samplesTrials < 40) throw new Error(`--trials ${a.samplesTrials}: the drag experiment under load runs 40 drags a side`);
     // the drag and kinds experiments also measure a window with its bottom half covered (Gecko's cover condition)

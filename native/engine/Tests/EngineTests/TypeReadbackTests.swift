@@ -262,6 +262,12 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertTrue(readbackMayBeTruncated(units: Array(String(repeating: "가", count: 3_333).utf16)), "the buffer's UTF-8 length counted as a String's")
     XCTAssertFalse(readbackMayBeTruncated(units: Array(String(repeating: "\u{1F600}", count: 2_000).utf16)), "8,000 bytes, 4,000 units")
     XCTAssertTrue(readbackMayBeTruncated(units: Array(String(repeating: "\u{1F600}", count: 2_500).utf16)), "10,000 bytes")
+    XCTAssertTrue(readbackMayBeTruncated(units: Array(String(repeating: "\u{E9}", count: 5_000).utf16)), "two bytes each: 10,000 bytes")
+    // A concealed Return in a multi-line field is a newline in the expected buffer, as a plain one is.
+    let area = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    let (error, meta) = type("pa\nss", into: FakeApp(area), concealed: true)
+    XCTAssertNil(error)
+    XCTAssertEqual(record(meta)["confirmed"] as? Bool, true)
   }
 
   func testAFieldTurningSecureIsReadNoFurther() {
@@ -304,7 +310,7 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(type("abc", into: FakeApp(FakeField(value: "ab", range: NSRange(location: 3, length: 0)))).1)["reason"] as? String, "rangeUnreadable")
     // A range outside the value is refused at the snapshot, like every unreadable field: no checkpoint stops the key.
     let outside = FakeField(value: "ab", range: NSRange(location: 3, length: 0))
-    let (error, meta) = type("a\nb", into: FakeApp(outside))
+    let (error, meta) = type("a\tb", into: FakeApp(outside))
     XCTAssertEqual(error?.errorName, "typeUnconfirmed")
     XCTAssertEqual(record(meta)["reason"] as? String, "rangeUnreadable")
     XCTAssertNil(record(meta)["stoppedBeforeKey"])
@@ -417,6 +423,10 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(error?.errorName, "typeUnconfirmed")
     XCTAssertEqual(record(meta)["reason"] as? String, "possiblyTruncated")
     XCTAssertNil(record(meta)["expectedLength"])
+    let concealed = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    concealed.transform = { $0.decomposedStringWithCanonicalMapping }
+    XCTAssertEqual(record(type(typed, into: FakeApp(concealed), concealed: true).1)["reason"] as? String, "possiblyTruncated",
+                   "a concealed read at the cap is never compared either")
   }
 
   // MARK: Identity

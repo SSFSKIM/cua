@@ -1313,22 +1313,31 @@ fn a_chrome_drop_under_way_at_its_release_is_confirmed_by_its_activation_request
     let _ = recorder.join();
 }
 
-/// The release at the accept (the design session's ruling on task 68): on the desktop route over a Chrome window whose
-/// drop the engine can confirm, the drag is released once its source shows the accept cursor, not at the floor 350 ms
-/// after the take. The cursors are told apart by their image: an accept a later no-drop withdrew, an accept shown as the
-/// first status (a press inside the zone), and a window manager without `_NET_ACTIVE_WINDOW` all leave the drag to the
-/// floor.
+/// The release at the accept, measurement only (`--drag-dnd-release-at-accept`): on the desktop route over a Chrome
+/// window whose drop the engine can confirm, the drag is released once its source shows the accept cursor, not at the
+/// floor 350 ms after the take. The cursors are told apart by their image: an accept a later no-drop withdrew, an
+/// accept shown as the first status (a press inside the zone), and a window manager without `_NET_ACTIVE_WINDOW` all
+/// leave the drag to the floor. The shipped engine keeps the floor on every drop (task 69's live counts: a release at a
+/// stale accept that Chrome confirmed and the page never took; the design session's ruling, 2026-11-10).
 #[test]
-fn a_chrome_drop_is_released_at_its_accept_cursor_and_never_at_an_accept_withdrawn_or_shown_first() {
+fn a_chrome_drop_keeps_its_floor_and_only_the_measurement_flag_releases_it_at_its_accept_cursor() {
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     const ACCEPTS: &[(u64, Shape)] = &[(3, Shape::NoDrop), (40, Shape::Accept)];
     const LEAVES: &[(u64, Shape)] = &[(3, Shape::NoDrop), (40, Shape::Accept), (70, Shape::NoDrop)];
     const INSIDE: &[(u64, Shape)] = &[(3, Shape::Accept), (70, Shape::NoDrop)];
-    for (case, cursors, supported, early) in [
-        ("an accept", ACCEPTS, true, true),
-        ("an accept the path then left", LEAVES, true, false),
-        ("a first status that accepts, then leaves", INSIDE, true, false),
-        ("no window manager support", ACCEPTS, false, false),
+    const AT_ACCEPT: &[&str] = &["--drag-dnd-release-at-accept"];
+    for (case, cursors, supported, options, early) in [
+        ("shipped: an accept", ACCEPTS, true, &[][..], false),
+        ("an accept", ACCEPTS, true, AT_ACCEPT, true),
+        ("an accept the path then left", LEAVES, true, AT_ACCEPT, false),
+        (
+            "a first status that accepts, then leaves",
+            INSIDE,
+            true,
+            AT_ACCEPT,
+            false,
+        ),
+        ("no window manager support", ACCEPTS, false, AT_ACCEPT, false),
     ] {
         let listed = supported.then(ActiveWindowSupported::listed);
         let (window, stop, recorder) = drag_source(OnRelease::Drops {
@@ -1336,7 +1345,7 @@ fn a_chrome_drop_is_released_at_its_accept_cursor_and_never_at_an_accept_withdra
             cursors,
         });
         managed(window);
-        let mut engine = Engine::start();
+        let mut engine = Engine::start_with(options);
         assert_eq!(engine.request("drag", json!({"path": path})), Ok(Value::Null), "{case}");
         sleep(SETTLE);
         assert_eq!(

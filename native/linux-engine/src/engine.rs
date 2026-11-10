@@ -75,6 +75,12 @@ pub struct Config {
     /// for the window's frame to report the session's synthetic focus taken (`focus_ack.rs`; `--focus-ack-ms`,
     /// measurement only, sets another, 0 none).
     pub focus_ack: std::time::Duration,
+    /// Measurement only (T13 and T14, `--drag-dnd-release-at-accept`): a Chrome drop whose confirmation the engine reads
+    /// (`dnd::LateWatch`), once its source took `XdndSelection`, sends the rest of its path at its own pacing and is
+    /// released at Chrome's accept cursor (`accept.rs`), the floor after the take (`dnd_after_take`) its ceiling. Not
+    /// shipped: task 69's press-inside control had one drop released at a stale accept that Chrome confirmed and the
+    /// page never took (the design session's ruling, 2026-11-10: a single false release reverts it).
+    pub dnd_release_at_accept: bool,
     /// Measurement only (T13, `--drag-ignore-cover`): `unless_path_unobscured` never refuses or reroutes a drag, so a
     /// drag goes out on the background route along a covered path.
     pub drag_ignore_cover: bool,

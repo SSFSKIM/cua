@@ -365,9 +365,9 @@ fn wall_ms() -> f64 {
 /// keepalive motions on the path's last two samples, ending on the last ([`crate::dnd::keepalive`]): Chrome's target
 /// accepts only on a motion (task 22). With no take by the path's end, the button stays down until the bound after the
 /// press for one (task 22), a take then, or one seen at that last look, getting the same floor; no take by then
-/// releases the drag as before. `scheduled` records a take, `held_for_take` the hold. With `accept` (a Chrome drop the
-/// engine can confirm, `accept.rs`), the path after a take keeps its own pacing, and the floor's motions end at Chrome's
-/// accept cursor when it comes first, the release then at once. With `press` (a
+/// releases the drag as before. `scheduled` records a take, `held_for_take` the hold. With `accept` (measurement only,
+/// a Chrome drop the engine can confirm, `accept.rs`), the path after a take keeps its own pacing, and the floor's
+/// motions end at Chrome's accept cursor when it comes first, the release then at once. With `press` (a
 /// Chromium-family drag), the press and the samples through Blink's drag threshold, at most [`PRESS_SAMPLES_MAX`], go
 /// out under one server grab ([`atomic_press`]), its watch begun just before the grab and ended just after the
 /// release, what it saw kept in `press.strays`. `after`, the drag's after-release watch, is told the instant the
@@ -914,10 +914,11 @@ impl Engine {
         let mut scheduled = None;
         let bound = self.cfg.dnd_hold;
         let mut held_for_take = None;
-        // a drop the engine can confirm is released at Chrome's accept cursor, read from before the press
-        // (`accept.rs`); a watch that cannot start leaves the drag to its floor
-        let mut cursor = match confirm {
-            Some(_) => match crate::accept::CursorWatch::start() {
+        // measurement only (`--drag-dnd-release-at-accept`, reverted from shipping by the design session's ruling on
+        // task 69's counts): a drop the engine can confirm released at Chrome's accept cursor, read from before the
+        // press (`accept.rs`); a watch that cannot start leaves the drag to its floor
+        let mut cursor = match (confirm, self.cfg.dnd_release_at_accept) {
+            (Some(_), true) => match crate::accept::CursorWatch::start() {
                 Ok(cursor) => Some(cursor),
                 Err(error) => {
                     self.extra
@@ -925,7 +926,7 @@ impl Engine {
                     None
                 }
             },
-            None => None,
+            _ => None,
         };
         let mut wall = None;
         let mut accept_record = None;

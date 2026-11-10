@@ -1,8 +1,15 @@
-//! The release at Chrome's accept cursor (#171 M4: T13 measured it, T14 ships it; the design session's rulings on task
-//! 68, 2026-11-09 and 2026-11-10). A Chrome drop on a drag the engine lets land, once its source took `XdndSelection`,
-//! is released as soon as Chrome shows that its target accepts, instead of at the 350 ms floor after the take
-//! (`dnd::RELEASE_AFTER_TAKE`, which stays the ceiling), and only on a drag whose drop Chrome's own activation request
-//! confirms (`dnd::DROP_CONFIRM`), so that a false release is still reported, never answered ok.
+//! The release at Chrome's accept cursor, measurement only (`--drag-dnd-release-at-accept`; #171 M4: T13 measured it,
+//! T14 built it to ship and task 69's live counts reverted it). A Chrome drop on a drag the engine lets land, once its
+//! source took `XdndSelection`, is released as soon as Chrome shows that its target accepts, instead of at the 350 ms
+//! floor after the take (`dnd::RELEASE_AFTER_TAKE`, which stays the ceiling), on a drag whose drop Chrome's own
+//! activation request confirms (`dnd::DROP_CONFIRM`).
+//!
+//! Why it does not ship: the cursor is Chrome's last status, which answers a position the renderer has handled, not
+//! necessarily the drag's last. Task 69's press-inside control (a press in the zone, a path out of it) had one drag of
+//! 30 at idle released at the path's end while the accept for an in-zone position was still shown: Chrome dropped,
+//! sent its activation request, and the page took nothing, so the drag answered ok with nothing pending. The floor
+//! leaves the renderer time to answer the last position, and its keepalives revisit it. The design session's ruling
+//! (2026-11-10): a single false release reverts the early release, not the confirmation.
 //!
 //! Chrome shows its target's answer as its drag grab's cursor: `XDragDropClient::OnXdndStatus` sets the negotiated
 //! operation and then `UpdateCursor` changes the active grab's cursor (`X11WholeScreenMoveLoop::UpdateCursor`), which
@@ -15,8 +22,9 @@
 //! accept is the cursor shown now when its image is none of those shown up to the take (the drag loop's, the page's
 //! own, the one shown when the watch began). So a path that leaves the zone after its accept withdraws it, and a press
 //! inside the zone, whose first status already accepts, reads as accepted only while that status is shown: the no-drop
-//! status of a path that then leaves withdraws it. A release on an accept Chrome is about to withdraw is still a drop
-//! the confirmation reports when it does not land.
+//! status of a path that then leaves withdraws it, once Chrome has answered a position outside the zone. A release
+//! before that answer, on an accept Chrome has yet to withdraw, is the false release above: Chrome drops on it and
+//! confirms the drop.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -243,11 +251,23 @@ mod tests {
         // the first status already accepts: by order, the second change (no drop, after the path left) would read as
         // the accept (the fix wave's gap); by image the accept is the accept while shown, and no drop is never one
         let inside = [change(81, 99), change(83, 102)];
-        assert_eq!(accept_shown(&inside, &chrome(), ARROW, 100), Some(1), "accepted while it is shown");
+        assert_eq!(
+            accept_shown(&inside, &chrome(), ARROW, 100),
+            Some(1),
+            "accepted while it is shown"
+        );
         let inside_left = [change(81, 99), change(83, 102), change(82, 110)];
-        assert_eq!(accept_shown(&inside_left, &chrome(), ARROW, 100), None, "no drop, after the path left");
+        assert_eq!(
+            accept_shown(&inside_left, &chrome(), ARROW, 100),
+            None,
+            "no drop, after the path left"
+        );
         let inside_back = [change(81, 99), change(83, 102), change(82, 110), change(83, 118)];
-        assert_eq!(accept_shown(&inside_back, &chrome(), ARROW, 100), Some(3), "back in the zone");
+        assert_eq!(
+            accept_shown(&inside_back, &chrome(), ARROW, 100),
+            Some(3),
+            "back in the zone"
+        );
     }
 
     #[test]

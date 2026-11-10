@@ -270,14 +270,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   `_NET_ACTIVE_WINDOW` in `_NET_SUPPORTED`, read at the drag; Electron, whose drop sends none, and every other window
   keep the floor with nothing to confirm. With no request in time the drop is unconfirmed, never ok: `Pending from
   your last drag, an unconfirmed drop: …`, on every reply until the first acting request, refused with it. An acting
-  request that comes before the 150 ms are over waits for the rest of them. On a drag whose drop it can confirm, the
-  engine also releases at Chrome's accept cursor (`accept.rs`), the take plus 350 ms its ceiling: after the take the
-  path keeps its own pacing, and the floor's keepalives end at the first look that reads the accept. Chrome shows its
-  target's answer as its drag grab's cursor (XFixes `DisplayCursorNotify` on the root); the cursors are told apart by
-  their image: the accept is the cursor shown now when its image is none of those shown up to the take (the drag
-  loop's own, which is also the no-drop status's, and any the page showed). So a path that leaves the zone withdraws
-  its accept by the no-drop image, a press inside the zone (whose first status already accepts) is accepted only while
-  that status is shown, and a false release would still be reported by the confirmation.
+  request that comes before the 150 ms are over waits for the rest of them. The release at Chrome's accept cursor
+  (`accept.rs`, the cursors told apart by their image) is measurement only (`--drag-dnd-release-at-accept`): Chrome's
+  cursor is its last status, which answers a position the renderer has handled, not necessarily the path's last. In
+  task 69's press-inside control one drag of 30 was released at the path's end on an in-zone accept not yet
+  withdrawn; Chrome dropped and confirmed it, and the page took nothing (evidence `m4/drops/`; the design session's
+  ruling, 2026-11-10: a single false release reverts the early release, not the confirmation). The floor gives the
+  renderer time to answer the last position, and its keepalives revisit it.
 
   A short path can end before the take (task 22, evidence `m3/drop-misses/task22/`): under a load of Chrome windows
   the renderer gets the drag's first moves a frame or a stall late and starts the drag and drop after a 40 px path has

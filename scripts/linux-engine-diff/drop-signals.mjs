@@ -1,9 +1,9 @@
 // The drop-signals experiment (#171 M4, T13: Chromium drop signals, measured only; the design session's M4 pre-flight,
 // "The Chrome drop"): what the engine could observe of a Chromium drag and drop, measured against what landed, so the
 // design session can rule on T14. It adopts nothing and changes no default: its lanes are the head's engine as it ships
-// and its measurement flags (`--drag-dnd-after-take-ms`, `--drag-ignore-cover`; T14 shipped the release at the accept
-// that `--drag-dnd-release-at-accept` measured). T14 reuses it for its live counts (plan `t14`): each row also carries
-// what the drag left pending, read on the same engine after its watch's lifetime (`notice`).
+// and its measurement flags (`--drag-dnd-release-at-accept`, `--drag-dnd-after-take-ms`, `--drag-ignore-cover`). T14
+// reuses it for its live counts (plans `t14`, `t14-floor` and `t14-late`): each row also carries what the drag left
+// pending, read on the same engine after its watch's lifetime (`notice`), and the answer of the acting request after it.
 //
 // Every drag goes into the drop-signals page (pages/drop-signals.html) in a window of the run's own Chrome (or Electron,
 // `--family electron`), and around it:
@@ -135,13 +135,11 @@ export const COVER_PARTS = ['none', 'start', 'middle', 'end', 'all'];
 /** The lanes: the engine's flags for each, and how its drags are made. */
 export const LANES = {
   cua: { args: [] },
-  // task 68's measurement flag, `--drag-dnd-release-at-accept`, is gone: T14 ships the release at the accept on every
-  // drag Chrome's drop confirmation covers, so this lane is the shipped engine, named as task 68's records name it
-  'cua:accept': { args: [] },
+  'cua:accept': { args: ['--drag-dnd-release-at-accept'] },
   'cua:floor0': { args: ['--drag-dnd-after-take-ms', '0'] },
   // the gate's own sequence (`--ballast gate`): a fresh engine a drag, after the gate's preceding dedicated drop
   'cua:gate': { args: [], gate: true },
-  'cua:accept-gate': { args: [], gate: true },
+  'cua:accept-gate': { args: ['--drag-dnd-release-at-accept'], gate: true },
   // background drags along a covered path (measurement only), Chrome not in front
   'cua:cover': { args: ['--drag-ignore-cover'], cover: true },
   // the same under the harness's managed front window (frame and title bar included) in place of the override-redirect
@@ -177,10 +175,12 @@ export const PLANS = {
   ],
   // the freeze sweep: where a lagging browser's thaw falls against the release
   freeze: FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]),
-  // T14's live counts for the release at the accept (the design session, 2026-11-10), each at idle, at the gate's
-  // window load and at twice the load: a second source, the long drag and drop, 300 drops; the accepted-then-left
-  // control and the press inside the zone, 30 each
-  t14: [['cua', 'plain-long', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
+  // T14's live counts for the release at the accept (the design session, 2026-11-10): a second source, the long drag
+  // and drop, 300 drops; the accepted-then-left control and the press inside the zone, 30 each. Task 69 ran them on an
+  // engine that shipped the release (f9bdb5c2, the lane `cua` there); the press-inside control's false release reverted
+  // it to this measurement flag. `t14-floor`: the same drags on the engine as it ships, the floor and the confirmation
+  t14: [['cua:accept', 'plain-long', 300], ['cua:accept', 'left', 30], ['cua:accept', 'inzone-out', 30]],
+  't14-floor': [['cua', 'plain-long', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
   // #264's real late takes (the design session's ruling 4, 2026-11-10): task 68's reproduction, the run's own browser
   // stopped from 60 ms after the request to 250 ms (its late takes came there), on a drag the engine lets drop; run on
   // the engine before T14 too, its failing first

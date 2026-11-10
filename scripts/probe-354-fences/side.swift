@@ -32,6 +32,9 @@ while let line = readLine() {
     answer["frontmostPid"] = actual.map { Int($0) } ?? NSNull()
     answer["ok"] = actual == pid
     if actual != pid { answer["error"] = "target did not become foreground" }
+  } else if let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], q["op"] as? String == "clip", let text = q["text"] as? String {
+    NSPasteboard.general.clearContents()
+    answer["ok"] = NSPasteboard.general.setString(text, forType: .string)
   } else if let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], q["op"] as? String == "titles" {
     answer["titles"] = windowTitles((q["pid"] as? NSNumber)?.int32Value ?? 0)
   } else {

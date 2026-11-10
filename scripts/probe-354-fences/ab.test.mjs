@@ -1,0 +1,75 @@
+// Offline only: no engine, browser or GUI. Protects the A/B denominator and verdict/reporting boundaries.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {abPlan,answer,privacyFindings,summarize,assertPins,armOrder} from './ab-model.mjs';
+const ok={jsonrpc:'2.0',id:1,result:{meta:{entered:30}}};
+const refused={jsonrpc:'2.0',id:1,error:{code:-32000,errorName:'typeUnconfirmed',message:'Observe, then use setValue.',meta:{entered:30}}};
+
+test('every race/clean cell has twenty trials; unsupported cells cannot silently dilute their denominator',()=>{
+ let total=0;
+ for(const browser of ['safari','cft','firefox'])for(const editor of ['textarea','input','contenteditable','compose']){
+  const cells=abPlan({browser,editor,reps:20});total+=cells.length*2;
+  assert.equal(new Set(cells.map(c=>c.id)).size,cells.length);
+  for(const key of ['cmd+a','cmd+z','cmd+v'])assert.equal(cells.filter(c=>c.part==='race'&&c.key===key).length,20);
+  for(const length of [30,120,500])assert.equal(cells.filter(c=>c.part==='clean'&&c.length===length).length,20);
+  assert.ok(cells.filter(c=>c.part==='race').every(c=>c.length===30));
+  assert.equal(cells.filter(c=>c.part==='unsupported').length,editor==='textarea'?80:0);
+  assert.equal(cells.filter(c=>c.part==='truncation').length,browser==='cft'&&editor==='textarea'?20:0);
+  assert.equal(cells.filter(c=>c.part==='substitution').length,browser==='cft'&&editor==='contenteditable'?40:0);
+ }
+ assert.equal(total,3480);
+ assert.deepEqual(abPlan({browser:'cft',editor:'textarea',reps:1}).slice(-2).map(c=>c.editor),['password','password']);
+ assert.throws(()=>abPlan({browser:'cft',editor:'input',reps:0}));
+ assert.throws(()=>abPlan({browser:'native',editor:'input',reps:20}));
+});
+
+test('only a real result is success; typeUnconfirmed remains a scored answer, not a setup loss',()=>{
+ assert.deepEqual(answer(ok),{success:true,unconfirmed:false,errorName:null});
+ assert.deepEqual(answer(refused),{success:false,unconfirmed:true,errorName:'typeUnconfirmed'});
+ assert.deepEqual(answer({error:{errorName:'intervened'}}),{success:false,unconfirmed:false,errorName:'intervened'});
+ assert.throws(()=>answer({id:1}));
+ assert.throws(()=>answer({...ok,error:refused.error}));
+});
+
+test('a later wrong value dominates success; an honest refusal stays in the rate denominator',()=>{
+ const base={recordKind:'cell',arm:'branch',browser:'cft',editor:'textarea',part:'race',key:'cmd+a',length:30,variant:'spike',valid:true};
+ const rows=[{...base,id:'bad',correct:false,typeRPC:{raw:ok,durationMs:10}},
+  {...base,id:'refusal',correct:false,typeRPC:{raw:refused,durationMs:1000}},
+  {...base,id:'right',correct:true,typeRPC:{raw:ok,durationMs:20}},
+  {...base,id:'invalid',valid:false,problem:'fixture lost'},
+  {...base,id:'warm',recordKind:'warmup',correct:false,typeRPC:{raw:ok,durationMs:1}}];
+ const s=summarize(rows);
+ assert.deepEqual(s.wrongSuccesses.map(r=>r.id),['bad']);
+ assert.equal(s.groups.length,1);
+ assert.deepEqual(s.groups[0],{arm:'branch',browser:'cft',editor:'textarea',part:'race',key:'cmd+a',length:30,variant:'spike',attempted:4,valid:3,invalid:1,success:2,unconfirmed:1,otherErrors:0,wrong:2,wrongSuccess:1,falseUnconfirmed:0,privacyViolations:0});
+ assert.equal(s.cost.find(c=>c.path==='unconfirmed-race-or-substitution').p95,1000);
+});
+
+test('clean false refusals and cost are reported separately from wrong race values',()=>{
+ const b={recordKind:'cell',browser:'safari',editor:'compose',part:'clean',key:'cmd+a',length:120,variant:'spike',valid:true,correct:true};
+ const rows=[{...b,id:'a',arm:'main',typeRPC:{raw:ok,durationMs:100}},
+  {...b,id:'b',arm:'branch',typeRPC:{raw:ok,durationMs:130}},
+  {...b,id:'c',arm:'branch',typeRPC:{raw:refused,durationMs:1200}}];
+ const s=summarize(rows);
+ assert.equal(s.groups.find(g=>g.arm==='branch').falseUnconfirmed,1);
+ assert.equal(s.cost.find(c=>c.arm==='branch'&&c.path==='clean-all').p95,1200);
+ assert.equal(s.cost.find(c=>c.arm==='branch'&&c.path==='clean-success').p50,130);
+});
+
+test('secure, concealed and canvas error payloads never carry values; length metadata is allowed',()=>{
+ assert.deepEqual(privacyFindings(refused,{privateField:true}),[]);
+ assert.deepEqual(privacyFindings({...refused,error:{...refused.error,expectedLength:30,actualLength:29}},{privateField:true}),[]);
+ assert.ok(privacyFindings({...refused,error:{...refused.error,readback:{actual:'fixture text'}}},{privateField:true}).some(p=>p.includes('actual')));
+ assert.ok(privacyFindings({...refused,error:{...refused.error,expectedExcerpt:'fixture text'}},{privateField:true}).length);
+ assert.deepEqual(privacyFindings({...refused,error:{...refused.error,actual:'x'}},{privateField:false}),[]);
+ assert.ok(privacyFindings({...refused,error:{...refused.error,message:'Mismatch: Old draft sentence goes here.'}},{privateField:true,knownValues:['Old draft sentence goes here.']}).includes('error.message'));
+});
+
+test('pending or mutable heads cannot reach a hosted measurement; pair order is counterbalanced',()=>{
+ assert.throws(()=>assertPins('9020bb18','PENDING_BRANCH_HEAD'));
+ assert.throws(()=>assertPins('a'.repeat(40),'fix/354-type-readback'));
+ assert.equal(assertPins('a'.repeat(40),'b'.repeat(40)),true);
+ const orders=[];for(const b of ['safari','cft','firefox'])for(const e of ['textarea','input','contenteditable','compose'])orders.push(armOrder(b,e).join(','));
+ assert.equal(orders.filter(s=>s==='main,branch').length,6);
+ assert.equal(orders.filter(s=>s==='branch,main').length,6);
+});

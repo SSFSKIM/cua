@@ -1,31 +1,24 @@
 name: probe-354-fences
-# #354's fence follow-up spike: hosted only, one engine per runner, runner-owned apps only. The pinned engine is
-# instrumented in a scratch worktree on the runner (scripts/probe-354-fences/patch.mjs); the checkout is never patched.
+# A/B mode of the already registered spike workflow (historical fence runs remain available).
+# Manual only. Preparation pushes must never consume the shared macOS hosted queue.
+# Real-engine A/B extension to the #354 spike. No shadow reader or fence patch.
 on:
-  push:
-    branches: ['probe/354-measure']
-    paths:
-      - 'scripts/probe-354-fences/**'
-      - '!scripts/probe-354-fences/offline/**'
-      - '.github/workflows/probe-354-fences.yml'
   workflow_dispatch:
     inputs:
       reps:
-        description: 'Repetitions per cell (20 for measurement; 1 for smoke)'
+        description: 'Repetitions per cell (20 for gate; 1 for smoke)'
         default: '20'
       smoke:
-        description: 'Label this as smoke evidence (also set reps to 1)'
+        description: 'Label smoke evidence separately (set reps to 1)'
         default: 'false'
       only:
-        description: 'Comma-separated shard ids (safari-textarea, cft-compose, firefox-input, ...) or all'
+        description: 'Comma-separated browser-editor shard ids, or all'
         default: 'all'
-      lanes:
-        description: 'Comma-separated lanes: fence, readback, unreadable (unreadable runs in textarea shards)'
-        default: 'fence,readback,unreadable'
 permissions:
   contents: read
 env:
-  ENGINE_REF: '3c669314e0a5f35aedf20f9b792604fc09628c45'
+  MAIN_REF: '9020bb18acb9091f817a4b648f7c332174b11153'
+  BRANCH_REF: 'PENDING_BRANCH_HEAD'
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -35,30 +28,31 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
-      - name: Pure checks
-        run: node --test scripts/probe-354-fences/kit.test.mjs
+      - name: Refuse an unpinned branch and check pure kit logic
+        env:
+          REPS: ${{ github.event.inputs.reps }}
+          SMOKE: ${{ github.event.inputs.smoke }}
+        run: |
+          node --input-type=module -e 'import {assertPins} from "./scripts/probe-354-fences/ab-model.mjs"; assertPins(process.env.MAIN_REF, process.env.BRANCH_REF); const n=Number(process.env.REPS); if(![1,20].includes(n)||!(["true","false"].includes(process.env.SMOKE))||((process.env.SMOKE==="true")!==(n===1)))throw Error("use 20/full or 1/smoke");'
+          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs
       - id: matrix
         env:
-          ONLY: ${{ github.event.inputs.only || 'all' }}
+          ONLY: ${{ github.event.inputs.only }}
         run: node scripts/probe-354-fences/matrix.mjs "$ONLY" >> "$GITHUB_OUTPUT"
   measure:
     needs: plan
     runs-on: macos-latest
-    timeout-minutes: 75
+    timeout-minutes: 115
     strategy:
       fail-fast: false
-      max-parallel: 6
+      max-parallel: 4
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Pure Swift checks
-        run: |
-          swiftc -parse-as-library -O -o "$RUNNER_TEMP/fence354-logic" scripts/probe-354-fences/logic.swift scripts/probe-354-fences/logic-check.swift
-          "$RUNNER_TEMP/fence354-logic"
-      - name: Apps
+      - name: Install runner-owned browsers without changing period substitution
         env:
           BROWSER: ${{ matrix.browser }}
         run: |
@@ -70,35 +64,56 @@ jobs:
               printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json ;;
             *) bash scripts/probe-316/install.sh ;;
           esac
-          # The runner's disposable TextEdit cover only: never the owner's preferences.
           defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
           defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
-      - name: Build instrumented engine, only on runner
+      - name: Build both pinned engines with read-count auditing only
         run: |
           git log -1 --format='kit %H %s'
-          git worktree add --detach "$RUNNER_TEMP/src" "$ENGINE_REF"
-          node scripts/probe-354-fences/patch.mjs "$RUNNER_TEMP/src"
-          swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/build"
+          mkdir -p "$RUNNER_TEMP/probe-354-ab"
+          for arm in main branch; do
+            if [ "$arm" = main ]; then ref="$MAIN_REF"; else ref="$BRANCH_REF"; fi
+            git worktree add --detach "$RUNNER_TEMP/$arm-src" "$ref"
+            git -C "$RUNNER_TEMP/$arm-src" rev-parse HEAD
+            node scripts/probe-354-fences/audit-patch.mjs "$RUNNER_TEMP/$arm-src" > "$RUNNER_TEMP/probe-354-ab/$arm-audit-patch.json"
+            swift build -c release --package-path "$RUNNER_TEMP/$arm-src/native/engine" --scratch-path "$RUNNER_TEMP/$arm-build"
+          done
           swiftc -O -o "$RUNNER_TEMP/side354" scripts/probe-354-fences/side.swift
-      - name: Measure
+      - name: Paired real-engine measurements, one engine process at a time
         env:
           BROWSER: ${{ matrix.browser }}
           SHARD: ${{ matrix.shard }}
           JOB_ID: ${{ matrix.id }}
-          REPS: ${{ github.event.inputs.reps || '20' }}
-          SMOKE: ${{ github.event.inputs.smoke || 'false' }}
-          LANES: ${{ github.event.inputs.lanes || 'fence,readback,unreadable' }}
+          REPS: ${{ github.event.inputs.reps }}
+          SMOKE: ${{ github.event.inputs.smoke }}
         run: |
-          node scripts/probe-354-fences/fences.mjs --browser "$BROWSER" --shard "$SHARD" --lanes "$LANES" --engine "$RUNNER_TEMP/build/release/cua-engine" --side "$RUNNER_TEMP/side354" --out "$RUNNER_TEMP/probe-354-fences/$JOB_ID" --reps "$REPS" --smoke "$SMOKE"
-      - name: Upload measurements
+          order=$(node --input-type=module -e 'import {armOrder} from "./scripts/probe-354-fences/ab-model.mjs"; console.log(armOrder(process.env.BROWSER,process.env.SHARD).join(" "))')
+          result=0
+          for arm in $order; do
+            if [ "$arm" = main ]; then ref="$MAIN_REF"; else ref="$BRANCH_REF"; fi
+            out="$RUNNER_TEMP/probe-354-ab/$JOB_ID/$arm"
+            code=0
+            node scripts/probe-354-fences/ab.mjs --browser "$BROWSER" --shard "$SHARD" --arm "$arm" --head "$ref" --engine "$RUNNER_TEMP/$arm-build/release/cua-engine" --side "$RUNNER_TEMP/side354" --out "$out" --reps "$REPS" --smoke "$SMOKE" || code=$?
+            # A scored contract failure must not suppress the other head. An un-stopped engine must.
+            if [ ! -f "$out/engine-stopped.json" ]; then exit 1; fi
+            if [ "$code" != 0 ]; then result=1; fi
+          done
+          node scripts/probe-354-fences/offline/ab-table.mjs "$RUNNER_TEMP/probe-354-ab/$JOB_ID"
+          exit "$result"
+      - name: Upload rows, incremental tables and provenance
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: probe-354-fences-${{ matrix.id }}
+          name: probe-354-ab-${{ matrix.id }}
           path: |
-            ${{ runner.temp }}/probe-354-fences/**/rows.jsonl
-            ${{ runner.temp }}/probe-354-fences/**/config.json
-            ${{ runner.temp }}/probe-354-fences/**/progress.json
-            ${{ runner.temp }}/probe-354-fences/**/engine-stderr.txt
+            ${{ runner.temp }}/probe-354-ab/*-audit-patch.json
+            ${{ runner.temp }}/probe-354-ab/**/config.json
+            ${{ runner.temp }}/probe-354-ab/**/progress.json
+            ${{ runner.temp }}/probe-354-ab/**/engine-stopped.json
+            ${{ runner.temp }}/probe-354-ab/**/summary.json
+            ${{ runner.temp }}/probe-354-ab/**/rows.jsonl
+            ${{ runner.temp }}/probe-354-ab/**/calibrations.jsonl
+            ${{ runner.temp }}/probe-354-ab/**/wrong-successes.jsonl
+            ${{ runner.temp }}/probe-354-ab/**/*.tsv
+            ${{ runner.temp }}/probe-354-ab/**/engine-stderr.txt
             ${{ runner.temp }}/probe-316/install.txt
           if-no-files-found: warn

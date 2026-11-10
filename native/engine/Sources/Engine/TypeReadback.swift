@@ -19,6 +19,11 @@ import Foundation
 //   unreadable is read no further. Equal, and the field still the app's focused element: success, `confirmed` in the
 //   meta. Anything else is `typeUnconfirmed`, never retried; only a mismatch on a field that stayed readable carries
 //   values, a bounded excerpt around the first difference (`readbackExcerpt`) and both lengths.
+// - Equality proves nothing when the expected value is the snapshot's own (the selection already held the typed text:
+//   the review of 9020bb18..dad56362, P1, #354's race itself, since a late select-all could still rewrite the field). Then
+//   the selected range must also read the caret past the insertion, {location + typed length, 0}, which differs from the
+//   snapshot's non-empty selection; without it within the budget, `typeUnconfirmed` (`unchanged`). The same holds at a
+//   checkpoint before a key.
 // - A value at Chromium's AXValue cap (`typeReadbackValueCap`, #350) may be cut, so it never compares: unconfirmed, with
 //   no values. So is an expected value at the cap, which a whole field and a cut one would read alike.
 // - A Return or Tab in the text (any keyed control character) is a checkpoint, cua's own: the text typed since the last
@@ -53,7 +58,7 @@ enum ReadbackSubrole: Equatable {
 /// Why a type_text is unconfirmed (the meta's `typeReadback.reason`). Only `valueMismatch` reports values.
 enum TypeReadbackReason: String, Equatable {
   case noFocusedElement, roleUnreadable, secure, notTextField, valueUnreadable, rangeUnreadable, possiblyTruncated
-  case valueMismatch, concealedMismatch, becameSecure, fieldUnreadable, fieldChanged
+  case valueMismatch, concealedMismatch, unchanged, becameSecure, fieldUnreadable, fieldChanged
 }
 
 /// Whether nothing of a field's value or range may be read: role or subrole AXSecureTextField, or a role or subrole that
@@ -192,6 +197,9 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>) -> ReadbackPlan<El
 enum ReadbackRead: Equatable {
   case unreadable
   case equal
+  /// Equal to an expected value that is the snapshot's own (the selection held the typed text), with nothing yet
+  /// showing the typing was consumed.
+  case equalUnconsumed
   case differs(cut: Bool, actual: String?)
 }
 
@@ -329,6 +337,11 @@ final class TypeReadback<Element> {
     var excerpt: (() -> ReadbackExcerpt)?  // a plain mismatch's, made only once the field is known to be the same
     let started = reads.now()
     defer { record.pollMs += reads.now() - started }
+    // Where the expected value is the snapshot's own, equality needs the caret past the insertion as well (`consumed`).
+    let range16 = range, readRange = reads.range
+    func consumed(_ element: Element, inserted: Int) -> Bool {
+      readRange(element) == NSRange(location: range16.location + inserted, length: 0)
+    }
     if concealed {
       // Equality only, in buffers the read-back owns: the expected value's units and each read's, zeroed after use.
       let value = Array(before.utf16)
@@ -338,23 +351,28 @@ final class TypeReadback<Element> {
       expected += value[(range.location + range.length)...]
       defer { readbackZero(&expected) }
       if readbackMayBeTruncated(units: expected) { throw unconfirmed(.possiblyTruncated, beforeKey) }
+      let unchanged = expected == value, inserted = expected.count - (value.count - range.length)
       let valueUnits = reads.valueUnits
       poll = readbackPoll(field, role: role, reads: reads) { element in
         guard var read = valueUnits(element) else { return .unreadable }
         defer { readbackZero(&read) }
         if readbackMayBeTruncated(units: read) { return .differs(cut: true, actual: nil) }  // a cut read never counts as equal
-        return read == expected ? .equal : .differs(cut: false, actual: nil)
+        guard read == expected else { return .differs(cut: false, actual: nil) }
+        return unchanged && !consumed(element, inserted: inserted) ? .equalUnconsumed : .equal
       }
     } else {
       let typed = units[0..<end].map(readbackInsertion).joined()
       guard let expected = readbackExpected(before: before, range: range, typed: typed) else { throw unconfirmed(.rangeUnreadable, beforeKey) }
       if readbackMayBeTruncated(expected) { throw unconfirmed(.possiblyTruncated, beforeKey) }
+      let unchanged = expected.utf16.elementsEqual(before.utf16)
+      let inserted = (expected as NSString).length - ((before as NSString).length - range.length)
       let value = reads.value
       poll = readbackPoll(field, role: role, reads: reads) { element in
         guard let read = value(element) else { return .unreadable }
         if readbackMayBeTruncated(read) { return .differs(cut: true, actual: read) }  // a cut read never counts as equal
         // Code units, never Swift's ==, which takes canonically equivalent strings of different lengths for equal.
-        return read.utf16.elementsEqual(expected.utf16) ? .equal : .differs(cut: false, actual: read)
+        guard read.utf16.elementsEqual(expected.utf16) else { return .differs(cut: false, actual: read) }
+        return unchanged && !consumed(element, inserted: inserted) ? .equalUnconsumed : .equal
       }
       if case .differs(_, let actual?) = poll.last { excerpt = { readbackExcerpt(expected: expected, actual: actual) } }
     }
@@ -363,6 +381,7 @@ final class TypeReadback<Element> {
     guard let focused = reads.focused(), reads.same(focused, field) else { throw unconfirmed(.fieldChanged, beforeKey) }
     switch poll.last {
     case .equal?: return
+    case .equalUnconsumed?: throw unconfirmed(.unchanged, beforeKey)
     case .unreadable?, nil: throw unconfirmed(.valueUnreadable, beforeKey)
     case .differs(cut: true, _)?: throw unconfirmed(.possiblyTruncated, beforeKey)
     case .differs?: break
@@ -420,6 +439,7 @@ func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = n
   switch reason {
   case .valueMismatch: why = "the field does not read as expected"
   case .concealedMismatch: why = "the field does not match what was typed"
+  case .unchanged: why = "the field still reads as it did before (its selection held the same text) and its caret did not move past the text"
   case .secure, .becameSecure: why = "the field is a password field, which is never read back"
   case .noFocusedElement: why = "no focused field could be found to read back"
   case .notTextField: why = "the focused element is not a text field"

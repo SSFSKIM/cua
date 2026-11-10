@@ -17,6 +17,8 @@ private final class FakeField {
   var transform: (String) -> String = { $0 }
   /// Whether a Return inserts a newline (a text area) or does nothing to the value (a single-line field).
   var returnInserts = true
+  /// An app that has not consumed the typing (yet): delivered text changes nothing.
+  var ignoresInput = false
   /// A change after this many value reads (a field turning secure, unreadable, or re-created).
   var changeAfterReads: Int?
   var change: (FakeField) -> Void = { _ in }
@@ -32,7 +34,7 @@ private final class FakeField {
   }
 
   func deliver(_ text: [UInt16]) {
-    guard var current = value, let selection = range, NSMaxRange(selection) <= (current as NSString).length else { return }
+    guard !ignoresInput, var current = value, let selection = range, NSMaxRange(selection) <= (current as NSString).length else { return }
     let typed = String(utf16CodeUnits: text, count: text.count)
     if typed == "\r" && !returnInserts { return }
     let inserted = transform(typed == "\r" ? "\n" : typed)
@@ -348,6 +350,46 @@ final class TypeReadbackTests: XCTestCase {
       XCTAssertEqual((error as? EngineError)?.errorName, "typeUnconfirmed")
     }
     XCTAssertEqual(record(meta)["reason"] as? String, "possiblyTruncated")
+  }
+
+  /// The review of 9020bb18..dad56362, P1: typing over a selection that holds the same text leaves the value unchanged,
+  /// so equality alone proves nothing; the caret past the insertion must read too.
+  func testTypingOverTheSameTextNeedsTheCaretToMove() {
+    let idle = FakeField(value: "x abc y", range: NSRange(location: 2, length: 3))
+    idle.ignoresInput = true  // never consumed: a late select-all could still rewrite it
+    let app = FakeApp(idle)
+    let (error, meta) = type("abc", into: app)
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(meta)["reason"] as? String, "unchanged")
+    XCTAssertEqual(app.clock, typeReadbackBudgetMs, "waited the whole window for the caret")
+    XCTAssertNil(record(meta)["expectedLength"])
+
+    let consumed = FakeField(value: "x abc y", range: NSRange(location: 2, length: 3))
+    let (none, consumedMeta) = type("abc", into: FakeApp(consumed))
+    XCTAssertNil(none, "the range moved to the caret after the insertion, {5, 0}")
+    XCTAssertEqual(consumed.range, NSRange(location: 5, length: 0))
+    XCTAssertEqual(record(consumedMeta)["confirmed"] as? Bool, true)
+
+    let concealed = FakeField(value: "abc", range: NSRange(location: 0, length: 3))
+    concealed.ignoresInput = true
+    XCTAssertEqual(record(type("abc", into: FakeApp(concealed), concealed: true).1)["reason"] as? String, "unchanged")
+  }
+
+  /// The same at a checkpoint: a Return is never released by the old value reading equal.
+  func testACheckpointOverTheSameTextNeedsTheCaretToMove() {
+    let field = FakeField(value: "abc", range: NSRange(location: 0, length: 3))
+    field.role = "AXTextField"
+    field.ignoresInput = true
+    var returns = 0
+    var meta = meta()
+    XCTAssertThrowsError(try keyTextReadBack(units("abc\n"), concealed: false, reads: FakeApp(field).reads, checkSource: { _, _ in },
+                                             checkIntervention: {}, post: { event in
+                                               if event.kind == .down, event.text == [0x0D] { returns += 1 }
+                                               return true
+                                             }, pause: {}, meta: &meta))
+    XCTAssertEqual(returns, 0, "the Return is never posted")
+    XCTAssertEqual(record(meta)["reason"] as? String, "unchanged")
+    XCTAssertEqual(record(meta)["stoppedBeforeKey"] as? Bool, true)
   }
 
   /// The review of 9020bb18..dad56362, P2: equality is of UTF-16 code units, never Swift's canonical ==.

@@ -71,9 +71,18 @@ the notice to the window state, and the observation shows it as its first line.
   - the long drop (the drag experiment's Chrome cell): 368.8 ms against 339, which fails the speed rule by about
     30 ms. The pinned build takes 514.1. All three lanes landed 30 of 30.
 - **A lagging browser can make an honest "unconfirmed" on a drop that landed.** The request then comes after the
-  150 ms. Task 69's first device pilot froze the run's own browser across the release and saw this. The gate's
-  device cases judge a landed drop with a notice as a failure (`device.mjs` `confirm`), so a stall past 150 ms
-  there would fail a case that answered honestly.
+  150 ms. Task 69's first device pilot froze the run's own browser across the release and saw this. Since the fix
+  wave the gate counts such a drop apart, as honest, and treats it as a finding only above 5% of a load's landed
+  drops (below).
+- **Chrome's confirmation is the browser's drop, not the page's.** The confirmation is sound only where Chrome has
+  answered the path's last position before the release. Two cases could break that:
+  - the press inside the zone (point 3), now a gate case at floor timing;
+  - a long path that outlasts the floor and releases right after its last step.
+  
+  At floor timing neither has shown it. The press-inside control, 9 of 9 in the gate's scene and 60 of 60 in the
+  counts, never dropped and was reported unconfirmed every time. The long path, 330 drags at three loads, answered ok
+  with nothing pending 0 times (`tables/long-path.md`). Both controls stay in place; the press-inside one is in the
+  gate.
 - **The real late takes are fewer on the final engines than on the old one** (5 of 40 against 25 of 40). The thaw is
   fixed at 250 ms after the request. The new engine's press comes a few ms later after the request, because it first
   reads `_NET_SUPPORTED` and subscribes the watch's own connection. So more thaws fall before the hold's release, and
@@ -168,6 +177,63 @@ The final engine's sittings, on 3fcf2a88's engine and harness:
   the counted sittings above. In b472e43f the plan `t14` ran the lane `cua`, which on f9bdb5c2 was the shipped early
   release. At 3fcf2a88 the plan `t14` runs `cua:accept`, the measurement flag, and `t14-floor` runs the engine as it
   ships.
+
+## Fix wave (the review of task 69)
+
+The review (reviewer-medium on 54654c22..b553c5c1) had two P2 findings. The design session also made two rulings
+(2026-11-10). The fix wave's commits are bba04159 and 203b77f4.
+
+1. **The confirmation window has both ends** (finding 1). A request counted as soon as it was read after the release
+   stamp, and that check ran before the deadline's. So one first read after 150 ms (a request that came late, or a
+   watcher descheduled across the deadline) confirmed the drop. Now only a request read from the stamp to 150 ms
+   after it confirms. The unit test `a_request_first_read_after_the_window_s_end_confirms_nothing` fails on the old
+   loop.
+2. **A request before the stamp no longer hides the drop's own** (finding 2; the ruling: the first activation after
+   the stamp counts, anything before it is ignored). The watch kept the first request it read, so one read during
+   the drag left the drop unconfirmed and refused the next action. Every request read is now judged against the
+   window.
+   - `a_request_during_the_drag_does_not_hide_the_drop_s_own_after_the_release` (before, then inside: confirmed)
+     fails on the old loop.
+   - `an_activation_request_before_the_release_confirms_nothing` (only before: unconfirmed) passes on both.
+3. **The gate counts an honest unconfirmed drop apart** (the ruling). A drop that landed and was reported unconfirmed
+   is honest, not a failure. Each case of the gate's Chrome drag-and-drop scene that confirms counts its samples,
+   landed, answered ok, false ok, and landed but reported unconfirmed (`device.mjs` `judgeDevice`'s `drops`). The run,
+   one load, sums them (`stats.mjs` `dropCounts`), and the summary prints the table. Landed-but-unconfirmed drops are a
+   finding, which fails the run, only above 5% of the run's landed drops. A false ok (answered ok, no drop, nothing
+   pending) is the one failure of its case.
+4. **Both controls joined the gate at floor timing.**
+   - **The press inside the zone** (`chrome_dnd_inzone_out_in_front_shared`, the ruling): an in-zone source on the
+     drag page, dragged out of the zone's bottom edge.
+   - **The long path that crosses the zone and ends outside it** (`chrome_dnd_long_left_in_front_shared`): about
+     750 px, so its steps after the take outlast the floor.
+   
+   Both are judged as `leaves`: a drag and drop must have started, and no answer may be a false ok.
+5. **The long path, measured first** (the design session's question). On the fixed build, the drop-signals cell
+   `long-left` (about 940 px, crossing the zone and leaving it) took and released 457–460 ms (median) after the take,
+   with no keepalive. So the release followed the path's last step, past the floor.
+   - At idle 100, at the gate's window load 30, and at twice the load 100: 0 answered ok with nothing pending.
+   - None landed, and every one was reported unconfirmed (`tables/long-path.md`).
+   
+   No end rest was added. The case is a stated limit (above), and its control stays in the gate.
+
+| run | engine, harness | plan or scene | load | lock acquire, release (UTC, 2026-11-10) | load average at acquire / release (1 min) | drags |
+|---|---|---|---|---|---|---:|
+| `fix-wave/long-idle` | bba04159 | t14-long | idle | 16:15:43, 16:19:37 | 0.39 / 0.91 | 100 |
+| `fix-wave/long-gate` | bba04159 | t14-long-gate | the gate's windows (18) | 16:19:37, 16:21:17 | 0.91 / 1.17 | 30 |
+| `fix-wave/long-load2` | bba04159 | t14-long | twice the load | 16:21:17, 16:25:47 | 1.17 / 17.23 | 100 |
+| `fix-wave/superseded/long-idle-loaded` | bba04159 | t14-long | idle | 15:55:36, 15:59:29 | 2.00 / 0.69 | 100 |
+| `fix-wave/device-idle-13-cases` | bba04159 | device-chrome-dnd, 13 cases (the press-inside one added) | idle | 15:59:29, 16:15:25 | 0.69 / 0.55 | 117 |
+| `fix-wave/device-idle` | bba04159's engine, 203b77f4's harness | device-chrome-dnd, 14 cases | idle | 16:47:00, 17:04:32 | 1.32 / 0.74 | 126 |
+
+- `fix-wave/device-idle`: 14 of 14 cases passed, 9 samples each, cold samples included. Its drops: 63 samples, 45
+  landed, 63 answered ok, 0 false ok, and 0 landed drops reported unconfirmed. The two controls each started 9 drag
+  and drops, dropped nothing, and were reported unconfirmed every time.
+
+- `long-idle-loaded` took the lock at 2.00, right after the fix wave's build: more than 1.0 above idle. It was rerun
+  (`long-idle`), and its counts match: 100 of 100 unconfirmed, none ok with nothing pending.
+- A first run of the 14-case device scene took the lock at 2.40, falling after `long-load2`. It was rerun, and it is
+  not kept.
+- The engine of 203b77f4 is bba04159's (sha256 `d53aa03f…c067`): 203b77f4 changed only the harness.
 
 ## Instruments
 

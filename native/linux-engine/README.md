@@ -264,8 +264,10 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   the route the drag used (synthetic to the window on the background route, XTEST on the foreground and desktop
   routes), and reported the same way. A Chrome drop that was under way at its release is confirmed by Chrome's own
   `_NET_ACTIVE_WINDOW` request for the drop's window (source 1), which its drop sends (`WebContents::Focus`) and a
-  leave never does (task 68: 1,861 of 1,861 drops, none of 354 drags that did not land), within 150 ms of the release
-  (`dnd.rs` `DROP_CONFIRM`: about three times task 68's largest, 52.9 ms), read on the watch's own connection with
+  leave never does (task 68: 1,861 of 1,861 drops, none of 354 drags that did not land), read inside the window from
+  the release's stamp (taken as the release goes out) to 150 ms after it (`dnd.rs` `DROP_CONFIRM`: about three times
+  task 68's largest, 52.9 ms; a request read before the stamp, or after the window however late it was read, confirms
+  nothing: task 69's fix wave), read on the watch's own connection with
   `SubstructureNotify` on the root. Only a request for that window counts, and only where the window manager lists
   `_NET_ACTIVE_WINDOW` in `_NET_SUPPORTED`, read at the drag; Electron, whose drop sends none, and every other window
   keep the floor with nothing to confirm. With no request in time the drop is unconfirmed, never ok: `Pending from

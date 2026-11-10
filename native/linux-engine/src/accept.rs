@@ -6,8 +6,9 @@
 //! Around the take the drag loop shows its own cursor, on the server's clock in the take's millisecond or just before
 //! it (task 68's pilot: 1-2 ms before, every drag), then the first status's (none, on a press outside a drop zone),
 //! then the accept's: the accept is read as the second change to an unnamed cursor strictly after the take's server
-//! time ([`accept_index`]). A first status in the take's own millisecond is not counted, so the accept after it is not
-//! read and the ceiling decides. Chrome makes its cursors itself, so they carry no XFixes name; a named one is another
+//! time ([`accept_index`]), and only while it is still the cursor shown: a later change to another cursor withdraws it.
+//! A first status in the take's own millisecond is not counted, so the accept after it is not read and the ceiling
+//! decides. Chrome makes its cursors itself, so they carry no XFixes name; a named one is another
 //! client's.
 //! This module only measures: the shipped engine never builds a [`CursorWatch`], and the flag that does is off by
 //! default (`main.rs`).
@@ -43,11 +44,16 @@ fn after(t: u32, since: u32) -> bool {
 }
 
 /// The index in `changes` (in arrival order) of the change read as the accept: the [`ACCEPT_CHANGE`]-th change to an
-/// unnamed cursor strictly after the take's server time `take`, a serial repeated back to back counted once. None until
-/// then: a drag whose first status already accepts shows one change fewer and is never read as accepted.
+/// unnamed cursor strictly after the take's server time `take`, a serial repeated back to back counted once, and only
+/// while it is the cursor shown. A later change to another unnamed cursor withdraws it (a path that entered an
+/// accepting zone and left it), and it counts again, at its last showing, when shown again; so the release follows the
+/// cursor the drag is on. None until then: a drag whose first status already accepts shows one change fewer and is
+/// never read as accepted. A target whose answer is still pending shows nothing yet, so its last answer stands.
 pub fn accept_index(changes: &[CursorChange], take: u32) -> Option<usize> {
     let mut counted = 0;
     let mut last = None;
+    let mut accept = None;
+    let mut shown = None;
     for (i, c) in changes.iter().enumerate() {
         if c.named || !after(c.time, take) || last == Some(c.serial) {
             continue;
@@ -55,10 +61,13 @@ pub fn accept_index(changes: &[CursorChange], take: u32) -> Option<usize> {
         last = Some(c.serial);
         counted += 1;
         if counted == ACCEPT_CHANGE {
-            return Some(i);
+            accept = Some(c.serial);
+        }
+        if counted >= ACCEPT_CHANGE {
+            shown = (accept == Some(c.serial)).then_some(i);
         }
     }
-    None
+    shown
 }
 
 /// The displayed cursor watched on a connection of its own, subscribed before the drag's press, read by polling.
@@ -153,6 +162,37 @@ mod tests {
     fn a_first_status_that_accepts_is_never_read_as_the_accept() {
         // a press inside a drop zone, or a stall whose first status already accepts: one change after the take
         assert_eq!(accept_index(&[change(81, 99), change(83, 102)], 100), None);
+    }
+
+    #[test]
+    fn an_accept_a_later_change_withdrew_does_not_count() {
+        // a path that enters an accepting zone and leaves it: none, accept, none (the review of task 68)
+        let left = [change(81, 99), change(82, 101), change(83, 105), change(82, 110)];
+        assert_eq!(
+            accept_index(&left, 100),
+            None,
+            "the cursor the path ends on says no drop"
+        );
+        // a change to a third cursor after the accept withdraws it as well
+        let other = [change(81, 99), change(82, 101), change(83, 105), change(84, 110)];
+        assert_eq!(accept_index(&other, 100), None);
+        // a theme cursor of another client's between does not
+        let named_after = [change(81, 99), change(82, 101), change(83, 105), named(2, 106)];
+        assert_eq!(accept_index(&named_after, 100), Some(2));
+    }
+
+    #[test]
+    fn an_accept_shown_again_counts_at_its_last_showing() {
+        let back = [
+            change(81, 99),
+            change(82, 101),
+            change(83, 105),
+            change(82, 110),
+            change(83, 120),
+        ];
+        assert_eq!(accept_index(&back, 100), Some(4));
+        let repeated = [change(81, 99), change(82, 101), change(83, 105), change(83, 106)];
+        assert_eq!(accept_index(&repeated, 100), Some(2), "a repeat is not a change");
     }
 
     #[test]

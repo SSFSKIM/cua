@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (6c4a739ca342)
+fa4a45cd2246d300a8a66eb04f2184e1b80060eb09ade600d2b29cec8d150a17  <task70>/build/6c4a739ca3420b7ef4d4dca4b078c0d915948b68/src/native/linux-engine/target/x86_64-unknown-linux-musl/release/cua-engine
+start idle1-predicates 2026-11-10T00:58:44Z loadavg 0.94 1.03 0.89
+cua171 WATCHDOG: the watchdog of the X display :1 is gone (it ended before the run did (signal SIGTERM)), so the display is no longer watched; the run is stopped.
+cua171 STOPPED: the run lost the watchdog of the X display :1 (it ended before the run did (signal SIGTERM)), so the display went unwatched; no cleanup was in place, so none ran.

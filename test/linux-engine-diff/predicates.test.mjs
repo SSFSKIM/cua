@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { DRAG_FAMILIES } from '../../scripts/linux-engine-diff/drag.mjs';
-import { ALLOWED_RUNS, DRAG_KINDS, OCCLUSIONS, PREDICATE_CASES, REFUSED_RUNS, caseKey, caseLanes, judgeCase, judgePredicates, predicatePlan, predicatesMarkdown } from '../../scripts/linux-engine-diff/predicates.mjs';
+import { ALLOWED_RUNS, DRAG_KINDS, OCCLUSIONS, POINTER_CLICKS_PROBE, POINTER_PROBE, PREDICATE_CASES, REFUSED_RUNS, caseKey, caseLanes, judgeCase, judgePredicates, parkPoint, predicatePlan, predicatesMarkdown } from '../../scripts/linux-engine-diff/predicates.mjs';
 
 const SENTENCE = 'firefox does not accept background input; use a dedicated desktop or activate the window first';
 const took = (engine, n, extra = {}) => Array.from({ length: n }, (_, i) => ({ engine, i, ok: true, took: true, witness: true, ...extra }));
@@ -80,4 +80,24 @@ test('the lanes: the pinned reference and cua; the any-cover lane only on a refu
   assert.deepEqual(caseLanes({ ...refusedCase, kind: 'click' }, args).map((l) => l.label), ['pinned', 'cua'], "the cover flag does not touch the window's rule");
   assert.equal(predicatePlan({}).length, PREDICATE_CASES.length, 'the gate runs every case');
   assert.ok(predicatePlan({ ops: ['move'] }).every((c) => c.kind === 'move'));
+});
+
+test('the pointer probes: measured on their lanes, never judged, the pointer parked in the window or outside it', () => {
+  const args = { vendor: 'v', cua: 'c' };
+  assert.deepEqual(predicatePlan({ plan: 'pointer' }).map(caseKey), POINTER_PROBE.map(caseKey));
+  assert.deepEqual(predicatePlan({ plan: 'pointer-clicks' }).map(caseKey), POINTER_CLICKS_PROBE.map(caseKey));
+  assert.throws(() => predicatePlan({ plan: 'nope' }), /the predicates plans/);
+  for (const c of [...POINTER_PROBE, ...POINTER_CLICKS_PROBE]) {
+    assert.equal(judgeCase(c, []).pass, true, 'a probe is a finding, not a verdict');
+    assert.ok(['in', 'out'].includes(c.park));
+    const [lane] = caseLanes(c, args);
+    assert.equal(lane.label, ['click', 'scroll'].includes(c.kind) ? 'pinned' : 'cua:any-cover', caseKey(c));
+  }
+  const w = { x: 0, y: 23, width: 1050, height: 757 };
+  const inside = (p, x0 = w.x) => p.x >= x0 && p.x < x0 + w.width && p.y >= w.y && p.y < w.y + w.height;
+  const top = parkPoint(w, 'partial', 'in');
+  assert.ok(inside(top) && top.y < w.y + w.height * 0.3, 'in the top 30%, which every bottom cover leaves');
+  assert.ok(parkPoint(w, 'partial-top', 'in').y > w.y + w.height * 0.55, 'below a top cover');
+  for (const occlusion of ['visible', 'partial', 'partial-top', 'overlay']) assert.ok(!inside(parkPoint(w, occlusion, 'out')), occlusion);
+  assert.ok(!inside(parkPoint(w, 'offscreen', 'out', { offscreenX: 440 }), 440), 'outside the moved window');
 });

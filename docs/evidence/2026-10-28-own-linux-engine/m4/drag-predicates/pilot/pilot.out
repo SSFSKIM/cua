@@ -1,0 +1,26 @@
+cua-engine 0.3.0 (2917848db187)
+start pilot-kinds-covered 2026-11-09T07:31:17Z loadavg 1.13 0.75 0.46
+run exit 0; watchdog clean
+private run pilot-kinds-covered exit 0 07:38:49
+start pilot-drag-covered 2026-11-09T07:38:49Z loadavg 0.55 0.63 0.53
+run exit 1; watchdog clean
+private run pilot-drag-covered exit 1 07:59:59
+start pilot-kinds-partial 2026-11-09T07:59:59Z loadavg 0.38 0.39 0.48
+run exit 0; watchdog clean
+private run pilot-kinds-partial exit 0 08:06:57
+start pilot-drag-partial 2026-11-09T08:06:57Z loadavg 0.53 0.52 0.52
+run exit 1; watchdog clean
+private run pilot-drag-partial exit 1 08:27:12
+start pilot-kinds-partial-deep 2026-11-09T08:27:12Z loadavg 0.40 0.44 0.45
+run exit 0; watchdog clean
+private run pilot-kinds-partial-deep exit 0 08:34:22
+start pilot-drag-partial-deep 2026-11-09T08:34:22Z loadavg 0.79 0.43 0.43
+run exit 1; watchdog clean
+private run pilot-drag-partial-deep exit 1 08:55:17
+start pilot-kinds-partial-top 2026-11-09T08:55:17Z loadavg 0.67 0.49 0.44
+run exit 0; watchdog clean
+private run pilot-kinds-partial-top exit 0 09:02:51
+start pilot-drag-partial-top 2026-11-09T09:02:51Z loadavg 0.52 0.42 0.43
+run exit 1; watchdog clean
+private run pilot-drag-partial-top exit 1 09:23:00
+end 2026-11-09T09:23:00Z loadavg 0.29 0.37 0.42

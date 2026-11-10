@@ -44,6 +44,7 @@ export const REFUSED_RUNS = 10;
 
 /** The occlusions, as each case's request meets its window (`arrangeCase`). */
 export const OCCLUSIONS = {
+  visible: 'the window raised, nothing over it (the pointer probe)',
   partial: 'a managed window over the bottom half of the window',
   'partial-deep': 'a managed window over its bottom 70%',
   'partial-top': 'a managed window over its top 55%',
@@ -85,10 +86,36 @@ export const PREDICATE_CASES = [
   ...refused('covered', ['move', ...DRAG_KINDS], COVERED_POINT),
 ];
 
-export const caseKey = (c) => `${c.family} ${c.kind} ${c.occlusion}`;
+/**
+ * The pointer probe (`--plan pointer`, measured, never judged): what Gecko takes from cua's own background events (the
+ * cover left unjudged, `cua:any-cover`) with the real pointer parked in the window's visible part (`park: 'in'`) or
+ * outside the window (`'out'`), at visible and at covered points, so the plan tells the point's part from the pointer's.
+ */
+const probe = (occlusion, kinds, park) => kinds.map((kind) => ({ family: 'firefox', kind, occlusion, park, expect: 'probe', why: `the real pointer ${park === 'in' ? 'in the window' : 'outside it'}` }));
+export const POINTER_PROBE = [
+  ...probe('visible', ['move', 'select', 'canvas'], 'out'),
+  ...probe('partial-deep', ['move', 'range'], 'in'),
+  ...probe('partial-deep', ['move', 'range'], 'out'),
+  ...probe('partial-top', ['move', 'range', 'canvas'], 'in'),
+  ...probe('partial-top', ['move', 'range', 'canvas'], 'out'),
+  ...probe('partial', ['move', 'select', 'canvas'], 'in'),
+  ...probe('partial', ['move', 'select', 'canvas'], 'out'),
+];
+
+/** The pointer probe's second plan (`--plan pointer-clicks`): Gecko's clicks and scrolls, which keep the window's rule. */
+export const POINTER_CLICKS_PROBE = [
+  ...probe('visible', ['click', 'scroll', 'select'], 'in'),
+  ...probe('visible', ['click', 'scroll'], 'out'),
+  ...probe('partial', ['click', 'scroll'], 'in'),
+  ...probe('partial', ['click', 'scroll'], 'out'),
+];
+
+export const caseKey = (c) => `${c.family} ${c.kind} ${c.occlusion}${c.park ? ` pointer-${c.park}` : ''}`;
 
 /** The lanes a case runs: the reference and cua always; the any-cover lane on a refused move or drag. */
 export function caseLanes(c, args) {
+  // a probe's clicks and scrolls go out through the pinned build, which has no device mode (cua's keep the window's rule)
+  if (c.expect === 'probe') return [['click', 'scroll'].includes(c.kind) ? { label: 'pinned', bin: args.vendor, args: [] } : { label: 'cua:any-cover', bin: args.cua, args: ['--drag-ignore-cover'] }];
   const lanes = [
     { label: 'pinned', bin: args.vendor, args: [] },
     { label: 'cua', bin: args.cua, args: [] },
@@ -117,6 +144,8 @@ export function judgeCase(c, runs, { allowedRuns = ALLOWED_RUNS, refusedRuns = R
     if (r.took === true) counts[r.engine].took++;
     if (refusal(r)) counts[r.engine].refused++;
   }
+  // a probe's counts are its finding
+  if (c.expect === 'probe') return { kind: 'predicate-case', ...c, counts, pass: true, failed: [] };
   const need = c.expect === 'allowed' ? allowedRuns : refusedRuns;
   const failed = [];
   if (mine.length < need) failed.push(`cua ran ${mine.length} of ${need}`);
@@ -156,7 +185,7 @@ export function predicatesMarkdown(rows) {
   return [
     '| occlusion | kind | expected | cua | pinned took | cua:any-cover took | why | verdict |',
     '|---|---|---|---:|---:|---:|---|---|',
-    ...rows.map((r) => `| ${r.occlusion} | ${r.kind} | ${r.expect} | ${cua(r)} | ${count(r, 'pinned')} | ${count(r, 'cua:any-cover')} | ${r.why} | ${r.pass ? 'PASS' : `**FAIL**: ${r.failed.join(', ')}`} |`),
+    ...rows.map((r) => `| ${r.occlusion}${r.park ? `, pointer ${r.park}` : ''} | ${r.kind} | ${r.expect} | ${cua(r)} | ${count(r, 'pinned')} | ${count(r, 'cua:any-cover')} | ${r.why} | ${r.pass ? 'PASS' : `**FAIL**: ${r.failed.join(', ')}`} |`),
   ];
 }
 
@@ -174,6 +203,10 @@ const OVERLAY_MARGIN = 20;
  */
 function arranging(desktop, state) {
   const arrange = (scene, occlusion) => {
+    arrangeOcclusion(scene, occlusion);
+    if (state.park) parkPointer(scene, occlusion, state.park);
+  };
+  const arrangeOcclusion = (scene, occlusion) => {
     const [w, h] = [scene.window.width, scene.window.height];
     if (state.moved.has(scene.id) && occlusion !== 'offscreen') {
       configure(scene.id, 0, 0, w, h);
@@ -203,6 +236,23 @@ function arranging(desktop, state) {
   });
 }
 
+/**
+ * The real pointer parked for a case that names where (`park`), in root coordinates: `in`, a point of the window the
+ * occlusion leaves visible and no case aims at (its top right, or its bottom right under a top cover); `out`, a point
+ * of the screen outside the window (its bottom-right corner, or its bottom-left one while the window is off the right).
+ */
+export function parkPoint(window, occlusion, park, { offscreenX = null } = {}) {
+  const x0 = offscreenX ?? window.x;
+  if (park === 'in') return { x: x0 + Math.round(window.width * 0.7), y: window.y + (occlusion === 'partial-top' ? window.height - 40 : 110) };
+  return occlusion === 'offscreen' ? { x: 20, y: 795 } : { x: 1265, y: 795 };
+}
+
+function parkPointer(scene, occlusion, park) {
+  const offscreenX = occlusion === 'offscreen' ? 1280 - Math.round(scene.window.width * 0.8) : null;
+  const { x, y } = parkPoint(scene.window, occlusion, park, { offscreenX });
+  xdotool('mousemove', x, y);
+}
+
 /** What an occlusion needs beyond each request's arrangement: the overlay at the scene windows' common corner. */
 async function startCaseOcclusion(occlusion, scenes, state) {
   if (occlusion !== 'overlay') return;
@@ -219,7 +269,8 @@ async function stopCaseOcclusion(state) {
 // the run
 
 /** The cases a run measures: the manifest, narrowed by `--ops` (kinds) where asked; the gate runs them all. */
-export function predicatePlan(args, cases = PREDICATE_CASES) {
+export function predicatePlan(args, cases = { pointer: POINTER_PROBE, 'pointer-clicks': POINTER_CLICKS_PROBE }[args.plan] ?? PREDICATE_CASES) {
+  if (args.plan && !['pointer', 'pointer-clicks', 'manifest'].includes(args.plan)) throw new Error(`--plan ${args.plan}: the predicates plans are manifest (the gate's), pointer and pointer-clicks`);
   const kinds = args.ops && args.ops !== 'all' ? args.ops : null;
   return cases.filter((c) => !kinds || kinds.includes(c.kind));
 }
@@ -236,7 +287,8 @@ export async function runPredicates(args, { desktop, emit }) {
   const seen = arranging(desktop, state);
   const runs = [];
   const errors = [];
-  const laneLabels = ['pinned', 'cua', 'cua:any-cover'];
+  // a window a lane for every lane some case of the plan runs
+  const laneLabels = [...new Set(plan.flatMap((c) => caseLanes(c, args).map((l) => l.label)))];
   try {
     if (!(await negativeCheck(desktop, witness, stubScene, emit))) throw new Error('the witness did not fail the activating stub; the run is invalid');
     // the move, click and scroll cases on the input page, then the drags on the drag page: each page's windows once,
@@ -266,6 +318,7 @@ export async function runPredicates(args, { desktop, emit }) {
               process.stdout.write(`case ${caseKey(c)} (${c.expect})\n`);
               const own = [];
               const ctx = { desktop: seen, oracle, witness, emit, family: c.family, occlusion, cua: args.cua, dir: desktop.dir };
+              state.park = c.park ?? null;
               for (const spec of caseLanes(c, args)) {
                 const n = c.expect === 'allowed' ? ALLOWED_RUNS : REFUSED_RUNS;
                 const scene = scenes[spec.label];

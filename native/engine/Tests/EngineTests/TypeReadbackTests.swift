@@ -246,6 +246,34 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertTrue(field.calls.allSatisfy { ["focused", "role", "subrole", "value", "range"].contains($0) }, "the reads log names, never values")
   }
 
+  /// The review of dad56362..af1860ef, P2: a concealed record counts nothing, so one Return and three in a secret read
+  /// alike; a key left unconfirmed is a flag.
+  func testAConcealedRecordCountsNoKeysNorSegments() {
+    func concealedMeta(_ text: String, role: String) -> NSDictionary {
+      let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+      field.role = role
+      field.returnInserts = role == "AXTextArea"
+      let (error, meta) = type(text, into: FakeApp(field), concealed: true)
+      XCTAssertNil(error, "\(role) \(text.debugDescription)")
+      return record(meta) as NSDictionary
+    }
+    for role in ["AXTextField", "AXTextArea"] {
+      XCTAssertEqual(concealedMeta("\n", role: role), concealedMeta("\n\n\n", role: role), role)
+      XCTAssertEqual(concealedMeta("a\nb", role: role), concealedMeta("a\n\n\nb", role: role), role)
+    }
+    let single = concealedMeta("a\nb", role: "AXTextField")
+    XCTAssertEqual(single["keysUnconfirmed"] as? Bool, true, "a flag, not a count")
+    XCTAssertEqual(single["concealed"] as? Bool, true)
+    for key in ["checkpoints", "reads", "pollMs", "expectedLength", "actualLength"] { XCTAssertNil(single[key], key) }
+    // A plain request keeps its counts.
+    let plain = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    plain.role = "AXTextField"
+    plain.returnInserts = false
+    let plainRecord = record(type("a\n\n\nb", into: FakeApp(plain)).1)
+    XCTAssertEqual(plainRecord["keysUnconfirmed"] as? Int, 3)
+    XCTAssertEqual(plainRecord["checkpoints"] as? Int, 1)
+  }
+
   func testAConcealedTextIntoASecureFieldIsNeverRead() {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     field.role = "AXSecureTextField"

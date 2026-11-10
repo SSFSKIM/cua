@@ -286,11 +286,22 @@ struct TypeReadbackRecord: Equatable {
   var actualLength: Int?
   /// The mismatch stopped the text before a key it was checked ahead of, so the key and what follows were not sent.
   var stoppedBeforeKey = false
+  /// A concealed request's record (the review of dad56362..af1860ef, P2): no count and no poll time on the wire, since the
+  /// checkpoints, the keys and the reads and time of each checkpoint's poll tell how many control characters and
+  /// segments the secret holds (a secret of keys alone, its length); a key left unconfirmed is a flag.
+  var concealed = false
 
   var wire: [String: Any] {
-    var wire: [String: Any] = ["confirmed": confirmed, "snapshotMs": (snapshotMs * 10).rounded() / 10,
-                               "pollMs": (pollMs * 10).rounded() / 10, "reads": reads]
+    var wire: [String: Any] = ["confirmed": confirmed, "snapshotMs": (snapshotMs * 10).rounded() / 10]
     if let reason { wire["reason"] = reason.rawValue }
+    if concealed {
+      wire["concealed"] = true
+      if keysUnconfirmed > 0 { wire["keysUnconfirmed"] = true }
+      if stoppedBeforeKey { wire["stoppedBeforeKey"] = true }
+      return wire
+    }
+    wire["pollMs"] = (pollMs * 10).rounded() / 10
+    wire["reads"] = reads
     if checkpoints > 0 { wire["checkpoints"] = checkpoints }
     if keysUnconfirmed > 0 { wire["keysUnconfirmed"] = keysUnconfirmed }
     if let expectedLength { wire["expectedLength"] = expectedLength }
@@ -315,6 +326,7 @@ final class TypeReadback<Element> {
     self.units = units
     self.reads = reads
     self.concealed = concealed
+    record.concealed = concealed
     let started = reads.now()
     plan = readbackSnapshot(reads: reads)
     record.snapshotMs = reads.now() - started

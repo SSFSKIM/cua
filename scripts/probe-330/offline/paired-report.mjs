@@ -12,26 +12,43 @@ export function quantiles(values) {
 export function summarizePaired(data) {
   const {config, results = [], warmups = []} = data;
   if (config?.group !== 'paired' || !Number.isInteger(config.rounds) || config.rounds < 1 || !config.scenes?.length ||
-      new Set(config.scenes.map(s => s.id)).size !== config.scenes.length ||
+      new Set(config.scenes.map(s => s.id)).size !== config.scenes.length || config.warmupsPerVisit !== 2 ||
       heads.some(head => config.engines?.filter(e => e.head === head).length !== 1)) throw new Error('invalid paired manifest');
-  const issues = [], slots = new Map(), indexed = new Map();
+  const issues = [], slots = new Map(), indexed = new Map(), warmSlots = new Map(), warmIndexed = new Map();
+  const warmKey = row => `${key(row)}|${row.warm}`;
   for (const scene of config.scenes) for (const head of heads) for (let round = 1; round <= config.rounds; round++) {
-    slots.set(key({scene: scene.id, head, round}), {scene: scene.id, app: scene.app, head, round});
+    const slot = {scene: scene.id, app: scene.app, head, round, phase: 'measured'};
+    slots.set(key(slot), slot);
+    for (const warm of [1, 2]) {const w = {...slot, phase: 'warm', warm}; warmSlots.set(warmKey(w), w);}
   }
-  for (const row of results) {
-    if (!slots.has(key(row))) {issues.push({...row, reason: 'unplanned observation'}); continue;}
-    const list = indexed.get(key(row)) ?? []; list.push(row); indexed.set(key(row), list);
+  function index(rows, plan, index, idOf, phase) {
+    for (const row of rows) {
+      const id = idOf(row);
+      if (!plan.has(id)) {issues.push({...row, phase, reason: 'unplanned observation'}); continue;}
+      const list = index.get(id) ?? []; list.push(row); index.set(id, list);
+    }
   }
-  const usable = new Map();
-  for (const [id, slot] of slots) {
-    const rows = indexed.get(id) ?? [], row = rows[0];
-    const engine = config.engines.find(e => e.head === slot.head);
-    const reason = !rows.length ? 'missing' : rows.length !== 1 ? 'duplicate slot' :
+  index(results, slots, indexed, key, 'measured');
+  index(warmups, warmSlots, warmIndexed, warmKey, 'warm');
+  function problem(rows, slot) {
+    const row = rows[0], engine = config.engines.find(e => e.head === slot.head);
+    return !rows.length ? 'missing' : rows.length !== 1 ? 'duplicate slot' :
       row.status !== 'ok' ? row.status ?? 'missing status' : !finiteCost(row) ? 'missing/invalid walkMs' :
       row.ref !== engine.ref ? 'engine ref mismatch' : row.app !== slot.app ? 'app mismatch' :
-      row.phase !== 'measured' ? 'not measured' : null;
+      row.phase !== slot.phase ? `not ${slot.phase}` : slot.phase === 'warm' && row.requestSent !== true ? 'warm request not sent' : null;
+  }
+  const usableWarm = new Map(), usable = new Map();
+  for (const [id, slot] of warmSlots) {
+    const rows = warmIndexed.get(id) ?? [], reason = problem(rows, slot);
     if (reason) issues.push({...slot, reason, observations: rows});
-    else usable.set(id, row);
+    else usableWarm.set(id, rows[0]);
+  }
+  for (const [id, slot] of slots) {
+    const rows = indexed.get(id) ?? [];
+    const badWarm = [1, 2].filter(warm => !usableWarm.has(warmKey({...slot, warm})));
+    const reason = problem(rows, slot) ?? (badWarm.length ? 'invalid/missing warm-ups for measured visit' : null);
+    if (reason) issues.push({...slot, reason, ...(badWarm.length ? {invalidWarmSlots: badWarm} : {}), observations: rows});
+    else usable.set(id, rows[0]);
   }
   function group(scenes, identity) {
     const ids = new Set(scenes.map(s => s.id)), expected = scenes.length * config.rounds;
@@ -71,20 +88,31 @@ export function summarizePaired(data) {
     return {...identity, engines, comparisons};
   }
   const scenes = config.scenes.map(scene => group([scene], {scene: scene.id, app: scene.app}));
-  // App summaries pool equally sampled scene/rounds. Per-scene flags remain independently binding.
+  // The binding threshold is per APP. Scene flags and quantiles remain diagnostics, not extra rejection criteria.
   const apps = [...new Set(config.scenes.map(s => s.app))].map(app => group(config.scenes.filter(s => s.app === app), {app}));
   const warmGroups = config.scenes.flatMap(scene => heads.map(head => {
     const rows = warmups.filter(r => r.scene === scene.id && r.head === head);
-    const expected = Number.isInteger(config.warmupsPerVisit) ? config.rounds * config.warmupsPerVisit : null;
-    return {scene: scene.id, app: scene.app, head, expected, total: rows.length,
-      missing: expected == null ? null : Math.max(0, expected - rows.length), requestsSent: rows.filter(r => r.requestSent === true).length,
-      ok: rows.filter(r => r.status === 'ok').length,
+    const planned = [...warmSlots].filter(([, s]) => s.scene === scene.id && s.head === head);
+    const valid = planned.map(([id]) => usableWarm.get(id)).filter(Boolean);
+    const missing = planned.filter(([id]) => !warmIndexed.has(id)).length;
+    return {scene: scene.id, app: scene.app, head, expected: planned.length, total: rows.length,
+      valid: valid.length, failed: planned.length - missing - valid.length, missing,
+      duplicateSlots: planned.filter(([id]) => warmIndexed.get(id)?.length > 1).length,
+      requestsSent: rows.filter(r => r.requestSent === true).length, ok: rows.filter(r => r.status === 'ok').length,
       statuses: Object.fromEntries([...new Set(rows.map(r => r.status))].map(status => [status, rows.filter(r => r.status === status).length])),
-      ...quantiles(rows.filter(r => r.status === 'ok' && finiteCost(r)).map(r => r.timings.walkMs))};
+      ...quantiles(valid.map(r => r.timings.walkMs))};
   }));
-  return {schema: 1, config, quantiles: 'p50: sample median; p95: nearest rank ceil(.95*n)',
-    gate: 'Complete measured slots; each scene AND each app p50 <= 1.10 * control; faster passes; null means unjudgeable.',
-    scenes, apps, warmups: {total: warmups.length, groups: warmGroups}, issues,
-    passed: config.completed === true && !config.exception && !config.signal && issues.length === 0 &&
-      [...scenes, ...apps].every(g => Object.values(g.comparisons).every(c => c.within10PctP50 === true))};
+  const runComplete = config.completed === true && !config.exception && !config.cleanupException && !config.signal &&
+    config.scenes.every(s => !s.exception && !s.cleanupException);
+  const acceptance = Object.fromEntries(['branch', 'candidate'].map(head => {
+    // A diagnostic head's failures must not reject the other head. Unknown attribution is a dataset-wide error.
+    const relevantIssues = issues.filter(i => !heads.includes(i.head) || i.head === 'control' || i.head === head);
+    const complete = runComplete && relevantIssues.length === 0 && apps.every(a => a.comparisons[head].complete);
+    return [head, {complete, passed: complete && apps.every(a => a.comparisons[head].within10PctP50 === true),
+      issueCount: relevantIssues.length, appFlags: Object.fromEntries(apps.map(a => [a.app, a.comparisons[head].within10PctP50]))}];
+  }));
+  return {schema: 2, config, quantiles: 'p50: sample median; p95: nearest rank ceil(.95*n)',
+    gate: 'Complete measured visits with both valid, correctly attributed warm-ups; each APP p50 <= 1.10 * control. Scene limits are diagnostic only; faster passes; null means unjudgeable.',
+    scenes, apps, warmups: {total: warmups.length, groups: warmGroups}, issues, acceptance,
+    passed: Object.values(acceptance).every(a => a.passed)};
 }

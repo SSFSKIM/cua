@@ -66,6 +66,9 @@ jobs:
         if: always()
         continue-on-error: true
         run: node scripts/probe-330/offline/paired-table.mjs "$RUNNER_TEMP/probe-330/paired"
+      - name: Enforce candidate per-app walk p50 and warm-up validity
+        if: always()
+        run: node scripts/probe-330/offline/paired-table.mjs "$RUNNER_TEMP/probe-330/paired" --accept candidate
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f

@@ -95,7 +95,7 @@ test('offline CLI exposes a missing candidate slot in scene and app denominators
   try {
     const data = createDataset(engines);
     data.config.completed = true;
-    for (const row of data.results) Object.assign(row, {status: 'ok', timings: {walkMs: row.head === 'control' ? 100 : 105}});
+    for (const row of [...data.results, ...data.warmups]) Object.assign(row, {status: 'ok', requestSent: true, timings: {walkMs: row.head === 'control' ? 100 : 105}});
     const missing = data.results.find(r => r.head === 'candidate' && r.scene === 'firefox-body');
     data.results = data.results.filter(r => r !== missing);
     writeFileSync(join(dir, 'results.json'), JSON.stringify(data));

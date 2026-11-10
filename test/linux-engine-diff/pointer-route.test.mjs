@@ -26,7 +26,7 @@ test('the sitting crosses every pointer place each occlusion has with the four k
 
 test("cua's lane runs with no cover rule in the way, and only the subject has the pinned build beside it", () => {
   const args = { cua: '/c', vendor: '/v' };
-  assert.deepEqual(routeLanes('firefox', args), [{ label: 'cua', bin: '/c', args: ['--ignore-cover'] }, { label: 'pinned', bin: '/v', args: [] }]);
+  assert.deepEqual(routeLanes('firefox', args), [{ label: 'cua', bin: '/c', args: ['--ignore-cover', '--ignore-pointer'] }, { label: 'pinned', bin: '/v', args: [] }]);
   for (const family of ['chrome', 'electron', 'gedit']) assert.deepEqual(routeLanes(family, args).map((l) => l.label), ['cua']);
 });
 

@@ -18,7 +18,9 @@ use anyhow::{Context, Result};
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
 use x11rb::protocol::xinput::{self, ConnectionExt as _};
-use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt as _, EventMask, NotifyMode, Window};
+use x11rb::protocol::xproto::{
+    ChangeWindowAttributesAux, ConnectionExt as _, EventMask, NotifyDetail, NotifyMode, Window,
+};
 use x11rb::rust_connection::RustConnection;
 
 /// A pointer event the watch saw, as it bears on the drag.
@@ -124,6 +126,15 @@ pub struct Watching {
     target: Window,
     own_source: Option<u16>,
     strays: Strays,
+    /// Only the real pointer leaving the target counts (`StrayWatch::begin_leaves`), not every stray.
+    leaves: bool,
+}
+
+/// Whether a crossing the watch saw is the real pointer leaving `target` itself (T19, Gecko's drags): a `LeaveNotify`
+/// of the target whose pointer went to no window inside it, in any mode, since a grab that takes the pointer from the
+/// window takes it out as surely as a motion does. A move into one of its own child windows is not a leave.
+pub fn left_window(target: Window, event: Window, detail: NotifyDetail) -> bool {
+    event == target && detail != NotifyDetail::INFERIOR
 }
 
 impl StrayWatch {
@@ -178,7 +189,16 @@ impl StrayWatch {
             target,
             own_source: if xtest_route { self.xtest_pointer } else { None },
             strays: Strays::default(),
+            leaves: false,
         })
+    }
+
+    /// Starts watching a background drag into `target` for the real pointer leaving it (T19): [`StrayWatch::begin`]'s
+    /// selections, of which only the target's leaves are kept (`left_window`).
+    pub fn begin_leaves(&mut self, target: Window) -> Result<Watching> {
+        let mut watching = self.begin(target, false)?;
+        watching.leaves = true;
+        Ok(watching)
     }
 
     /// Reads what reached the watch up to now, just before the drag's release: a round trip, so every event the server
@@ -205,6 +225,18 @@ impl StrayWatch {
     fn read(&mut self, watching: &mut Watching, phase: Phase) -> Result<()> {
         self.conn.get_input_focus()?.reply()?;
         while let Some(event) = self.conn.poll_for_event()? {
+            if watching.leaves {
+                if let Event::LeaveNotify(e) = &event
+                    && left_window(watching.target, e.event, e.detail)
+                {
+                    watching.strays.0.push(Seen::Crossing {
+                        window: e.event,
+                        enter: false,
+                        mode: e.mode,
+                    });
+                }
+                continue;
+            }
             let seen = match event {
                 Event::XinputRawMotion(e) => Seen::RawMotion { source: e.sourceid },
                 Event::EnterNotify(e) => Seen::Crossing {
@@ -263,6 +295,26 @@ mod tests {
 
     const TARGET: Window = 0x0640_0003;
     const XTEST: u16 = 4;
+
+    #[test]
+    fn the_pointer_leaves_a_gecko_window_only_to_no_window_inside_it() {
+        for detail in [
+            NotifyDetail::ANCESTOR,
+            NotifyDetail::VIRTUAL,
+            NotifyDetail::NONLINEAR,
+            NotifyDetail::NONLINEAR_VIRTUAL,
+        ] {
+            assert!(left_window(TARGET, TARGET, detail), "{detail:?}");
+        }
+        assert!(
+            !left_window(TARGET, TARGET, NotifyDetail::INFERIOR),
+            "into one of its own children: still inside"
+        );
+        assert!(
+            !left_window(TARGET, TARGET + 1, NotifyDetail::NONLINEAR),
+            "another window's leave"
+        );
+    }
 
     fn crossing(window: Window, enter: bool, mode: NotifyMode) -> Seen {
         Seen::Crossing { window, enter, mode }

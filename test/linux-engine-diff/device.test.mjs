@@ -5,7 +5,7 @@ import { auditNothingSent, parseXtrace } from '../../scripts/linux-engine-diff/a
 import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndMayHaveDroppedSentence, judgeDevice, strayNotice } from '../../scripts/linux-engine-diff/device.mjs';
 import { allowPointer } from '../../scripts/linux-engine-diff/safety.mjs';
 import { OPS, SCENE_OPS } from '../../scripts/linux-engine-diff/ops.mjs';
-import { DEVICE_REFUSAL, DND_REFUSAL, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
+import { DEVIATIONS, DEVICE_REFUSAL, DND_REFUSAL, GECKO_POINTER_LEFT, GECKO_POINTER_REFUSALS, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
 import { pagePath } from '../../scripts/linux-engine-diff/drag.mjs';
 import { planOps, routeOf, runsOp } from '../../scripts/linux-engine-diff/run.mjs';
 import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
@@ -25,7 +25,7 @@ test('a refused request is audited for nothing sent: a SendEvent of any kind, or
 
 test("Acceptance 8's cases: each kind and condition, refused in shared mode, foreground in dedicated, the rest background", () => {
   const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'device-chrome', 'device-chrome-dnd', 'gnome-text-editor'], Object.entries(DEVICE_SCENE_OPS).filter(([scene]) => !scene.startsWith('minimized') && !scene.startsWith('identity')).flatMap(([, ops]) => ops).filter((op) => op !== 'capabilities'));
-  assert.equal(plan.length, 46);
+  assert.equal(plan.length, 50);
   for (const { op, scene } of plan) {
     const def = OPS[op];
     assert.ok(SCENE_OPS[scene].includes(op));
@@ -40,6 +40,19 @@ test("Acceptance 8's cases: each kind and condition, refused in shared mode, for
     }
   }
   assert.equal(routeOf('firefox_click_visible_shared', 'device-firefox'), 'background');
+  // Gecko by the real pointer (T19): every Firefox case parks it, in the window's visible part for the background
+  // route, under the cover or outside for a refusal, and the background route is taken half covered too
+  for (const op of SCENE_OPS['device-firefox']) assert.ok(OPS[op].park, `${op} parks the real pointer`);
+  for (const op of ['firefox_click_overlap_pointer_in_shared', 'firefox_move_overlap_pointer_in_shared', 'firefox_drag_overlap_pointer_in_shared', 'firefox_scroll_overlap_pointer_in_shared']) {
+    assert.equal(OPS[op].device, 'background', op);
+    assert.equal(routeOf(op, 'device-firefox'), 'background', op);
+  }
+  for (const op of ['firefox_click_pointer_out_shared', 'firefox_click_pointer_under_shared', 'firefox_move_pointer_out_shared', 'firefox_drag_pointer_out_shared', 'firefox_scroll_pointer_out_shared']) assert.equal(OPS[op].device, 'refusal', op);
+  // each Firefox refusal is declared against the vendor, which answers ok there for input Gecko ignores
+  const refusals = SCENE_OPS['device-firefox'].filter((op) => OPS[op].device === 'refusal');
+  assert.deepEqual([...refusals].sort(), [...GECKO_POINTER_REFUSALS].sort());
+  for (const op of refusals) assert.ok(DEVIATIONS.some((d) => d.op === op && d.scene === 'device-firefox' && d.answer({ ok: false, error: 'firefox does not accept background input; use a dedicated desktop or activate the window first' })), op);
+  assert.ok(GECKO_POINTER_LEFT.test('firefox may not have taken the drag: the desktop pointer left its window while the drag ran, and firefox takes background pointer input only while the pointer is in its window. Read the window to see what happened before dragging again'));
   assert.equal(routeOf('chrome_drag_visible_path_shared', 'device-chrome'), 'background', 'a visible path in a partly covered window');
   assert.equal(routeOf('gtk4_element_click', 'device-gtk4'), null, 'an element action records no route');
   assert.equal(routeOf('chrome_dnd_in_front_shared', 'device-chrome-dnd'), 'background', 'Chrome already in front');

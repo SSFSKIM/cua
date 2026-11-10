@@ -31,8 +31,9 @@
 // - `answer`: `capabilities`, its answer checked.
 //
 // Scenes: `device-gtk4` (the harness's GTK 4 scene, pages/gtk4-input.py: GTK 4 ignores synthetic input always),
-// `device-firefox` (Firefox on pages/input.html: Gecko ignores synthetic coordinate clicks unless its window is fully
-// unobscured; the cases put a window over its bottom half, or part of it off the screen, or leave it fully visible),
+// `device-firefox` (Firefox on pages/input.html: Gecko takes synthetic pointer input only while the real pointer is in
+// its window, T19; the cases park the pointer in the window's visible part, under a window over its bottom half, or
+// outside it),
 // `device-xterm` (xterm running the recorder: it ignores synthetic keys and takes clicks), `device-qt` (kate on a long
 // document: Qt ignores synthetic wheel events), `device-chrome` (Chrome on pages/input.html: Chromium takes a drag only
 // along a visible path), `device-chrome-dnd` (Chrome on pages/drag.html: its HTML5 drag and drop, cancelled in shared
@@ -263,6 +264,10 @@ export function parkPointer(ctx, point, { tool = xdotool } = {}) {
  */
 const INSIDE = { x: 600, y: 600 };
 const INSIDE_TOP = { x: 950, y: 150 };
+/** Under the window over the scene's bottom half (`overlapped`), inside the scene's geometry: window-relative. */
+const UNDER = { x: 700, y: 650 };
+/** Outside every scene window, on the front window in its corner: a screen point (`OUTSIDE`). */
+const OUT = () => OUTSIDE;
 
 /** Chrome in front (`alreadyInFront`) with the real pointer parked outside its window, on the front window. */
 function pointerOutside(ctx) {
@@ -318,11 +323,12 @@ function device({ device: expect, condition = covered, park, read, request, effe
     cuaArgs: () => args ?? (dedicated ? DEDICATED : []),
     // the witness: the foreground allowance only where the foreground route is expected and reported (run.mjs)
     route: () => route ?? (dedicated ? 'foreground' : null),
-    // the real pointer parked in the window, window-relative, after the condition (`INSIDE`)
+    // the real pointer parked after the condition: window-relative (`INSIDE`), or a screen point a function gives
+    // (`OUT`)
     park,
     prepare: async (ctx) => {
       await condition(ctx);
-      if (park) parkPointer(ctx, { x: ctx.scene.window.x + park.x, y: ctx.scene.window.y + park.y });
+      if (park) parkPointer(ctx, typeof park === 'function' ? park(ctx) : { x: ctx.scene.window.x + park.x, y: ctx.scene.window.y + park.y });
       await sleep(settleMs);
       if (inFront) ctx.desktopBefore = desktopState();
     },
@@ -398,24 +404,32 @@ export const DEVICE_OPS = {
   gtk4_move_dedicated: device({ device: 'foreground', read: gtk4, request: (ctx) => moveTo(ctx, { x: 200, y: 300 }, { x: 400, y: 300 }), effect: grew('moves') }),
   // gnome-text-editor (GTK 4): typeText in shared mode
   gte_type_text_shared: device({ device: 'refusal', read: fieldText, request: (ctx) => ['type_text', { window: { id: ctx.scene.id }, text: 'cua171 refused' }] }),
-  // Firefox (`device-firefox`): coordinate clicks refused with any overlap and with part of the window off the screen,
-  // foreground in dedicated mode, background while fully visible; the element right click refused under overlap; the
-  // element click on a covered window, background
-  firefox_click_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }] }),
-  firefox_click_offscreen_shared: device({ device: 'refusal', condition: offscreen, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }] }),
-  firefox_right_click_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.elements.menu, mouse_button: 'right' }] }),
-  firefox_click_overlap_dedicated: device({ device: 'foreground', condition: overlapped, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }], effect: rose('downs') }),
-  firefox_click_visible_shared: device({ device: 'background', route: 'background', condition: visible, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }], effect: rose('downs') }),
-  firefox_scroll_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...PAD }] }),
-  firefox_scroll_covered_dedicated: {
-    ...device({ device: 'foreground', condition: covered, read: page, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...PAD }], effect: grew('scroll') }),
+  // Firefox (`device-firefox`), by the real pointer (T19): with it in the window's visible part, coordinate clicks,
+  // scrolls, moves and drags take the background route, half covered or not; with it under the cover or outside, they
+  // are refused in shared mode and take the foreground route in dedicated mode; the element click on a covered window,
+  // background
+  firefox_click_pointer_out_shared: device({ device: 'refusal', condition: visible, park: OUT, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }] }),
+  firefox_click_pointer_under_shared: device({ device: 'refusal', condition: overlapped, park: UNDER, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }] }),
+  firefox_right_click_pointer_out_shared: device({ device: 'refusal', condition: overlapped, park: OUT, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.elements.menu, mouse_button: 'right' }] }),
+  firefox_click_pointer_out_dedicated: device({ device: 'foreground', condition: overlapped, park: OUT, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }], effect: rose('downs') }),
+  firefox_click_visible_shared: device({ device: 'background', route: 'background', condition: visible, park: INSIDE_TOP, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }], effect: rose('downs') }),
+  firefox_click_overlap_pointer_in_shared: device({ device: 'background', route: 'background', condition: overlapped, park: INSIDE_TOP, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, ...PAD }], effect: rose('downs') }),
+  firefox_scroll_pointer_out_shared: device({ device: 'refusal', condition: overlapped, park: OUT, read: page, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...PAD }] }),
+  firefox_scroll_overlap_pointer_in_shared: {
+    ...device({ device: 'background', route: 'background', condition: overlapped, park: INSIDE_TOP, read: page, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...PAD }], effect: grew('scroll') }),
     reset: pageHome,
   },
-  firefox_move_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2) }),
-  firefox_move_covered_dedicated: device({ device: 'foreground', condition: covered, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2), effect: grew('moves') }),
-  firefox_drag_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: padDrag }),
-  firefox_drag_covered_dedicated: device({ device: 'foreground', condition: covered, read: page, request: padDrag, effect: rose('drags') }),
-  firefox_element_click_covered: device({ device: 'background', condition: covered, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.elements.press }], effect: rose('clicks') }),
+  firefox_scroll_covered_dedicated: {
+    ...device({ device: 'foreground', condition: covered, park: OUT, read: page, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...PAD }], effect: grew('scroll') }),
+    reset: pageHome,
+  },
+  firefox_move_pointer_out_shared: device({ device: 'refusal', condition: overlapped, park: OUT, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2) }),
+  firefox_move_overlap_pointer_in_shared: device({ device: 'background', route: 'background', condition: overlapped, park: INSIDE_TOP, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2), effect: grew('moves') }),
+  firefox_move_covered_dedicated: device({ device: 'foreground', condition: covered, park: OUT, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2), effect: grew('moves') }),
+  firefox_drag_pointer_out_shared: device({ device: 'refusal', condition: overlapped, park: OUT, read: page, request: padDrag }),
+  firefox_drag_overlap_pointer_in_shared: device({ device: 'background', route: 'background', condition: overlapped, park: INSIDE_TOP, read: page, request: padDrag, effect: rose('drags') }),
+  firefox_drag_covered_dedicated: device({ device: 'foreground', condition: covered, park: OUT, read: page, request: padDrag, effect: rose('drags') }),
+  firefox_element_click_covered: device({ device: 'background', condition: covered, park: OUT, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.elements.press }], effect: rose('clicks') }),
   // xterm (`device-xterm`): keys refused or foreground; a click on the background route (a mouse report arrives)
   xterm_key_shared: device({ device: 'refusal', read: record, request: (ctx) => ['press_key', { window: { id: ctx.scene.id }, key: 'x' }] }),
   xterm_key_dedicated: device({ device: 'foreground', read: record, request: (ctx) => ['press_key', { window: { id: ctx.scene.id }, key: 'x' }], effect: (before, after) => typeof before === 'string' && after === `${before}x` }),
@@ -484,7 +498,7 @@ for (const op of Object.values(DEVICE_OPS)) {
 export const DEVICE_SCENE_OPS = {
   'device-gtk4': ['gtk4_click_shared', 'gtk4_click_dedicated', 'gtk4_key_shared', 'gtk4_key_dedicated', 'gtk4_key_down_shared', 'gtk4_right_click_shared', 'gtk4_element_click', 'gtk4_scroll_shared', 'gtk4_scroll_dedicated', 'gtk4_move_shared', 'gtk4_move_dedicated', 'gtk4_drag_shared', 'gtk4_drag_dedicated'],
   // the scroll last: its series ends with the page put back at its top (`reset`)
-  'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered', 'firefox_move_overlap_shared', 'firefox_move_covered_dedicated', 'firefox_drag_overlap_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_overlap_shared', 'firefox_scroll_covered_dedicated'],
+  'device-firefox': ['firefox_click_pointer_out_shared', 'firefox_click_pointer_under_shared', 'firefox_right_click_pointer_out_shared', 'firefox_click_pointer_out_dedicated', 'firefox_click_visible_shared', 'firefox_click_overlap_pointer_in_shared', 'firefox_element_click_covered', 'firefox_move_pointer_out_shared', 'firefox_move_overlap_pointer_in_shared', 'firefox_move_covered_dedicated', 'firefox_drag_pointer_out_shared', 'firefox_drag_overlap_pointer_in_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_pointer_out_shared', 'firefox_scroll_overlap_pointer_in_shared', 'firefox_scroll_covered_dedicated'],
   'device-chrome': ['chrome_drag_visible_path_shared', 'chrome_drag_covered_path_shared', 'chrome_drag_covered_dedicated'],
   'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_short_covered_dedicated', 'chrome_dnd_obscured_in_front_shared', 'chrome_dnd_obscured_in_front_late_shared', 'chrome_dnd_late_take_shared', 'chrome_dnd_short_pointer_outside_shared', 'chrome_dnd_short_pointer_outside_dedicated', 'chrome_select_nudged_shared'],
   'device-qt': ['qt_scroll_shared', 'qt_scroll_dedicated'],

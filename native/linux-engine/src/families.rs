@@ -85,8 +85,10 @@ pub enum Kind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum When {
     Always,
-    /// Unless the window is fully unobscured (`cover.rs`; any doubt counts as obscured).
-    UnlessUnobscured,
+    /// Unless the real pointer is in the window: the deepest window the X server finds under the pointer is the window
+    /// or one of its inferiors (`QueryPointer`; T19). A pointer over a window that covers it is outside, and so is any
+    /// doubt (a failed read).
+    UnlessPointerWithin,
     /// For a drag: unless every point of its path, vertices and the segments between them, is unobscured in the window
     /// (`cover.rs` `points_unobscured`; any doubt counts as obscured). Another kind, which has no path, is ignored.
     UnlessPathUnobscured,
@@ -273,11 +275,12 @@ pub const FAMILIES: &[Family] = &[
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible",
     },
     // Gecko's Text answers a U+FEFF after each character beyond the BMP (M0.4), which the paste's confirmation strips
-    // there and only there, so a real U+FEFF still counts. Gecko ignores synthetic coordinate clicks while any of its
-    // window is covered or off the screen, by a rule that is neither the click point nor the visible area (M0.4 at
-    // 1280×781; M1a.3 at 800×600), and takes them while it is fully unobscured; its scrolls and pointer moves likewise
-    // (M3.1: ignored fully covered, taken with half the window covered, so the clicks' predicate covers them), and its
-    // drags.
+    // there and only there, so a real U+FEFF still counts. Gecko takes synthetic pointer input (coordinate clicks,
+    // scrolls, moves and drags) only while the real pointer is in its window, whatever covers the window and wherever
+    // the request's points are (T19, evidence `m4/pointer-route/`, on `:0` and on a private display, the pinned build
+    // the same): with the pointer in its visible part every kind 10 of 10, half covered or not; with the pointer under
+    // a window over it or outside it, 0 of 10, the window fully visible included. M0.4's and M3.1's cover results
+    // followed where the pointer happened to be.
     Family {
         name: "Gecko",
         toolkit: Some("Gecko"),
@@ -297,19 +300,19 @@ pub const FAMILIES: &[Family] = &[
         ignores: &[
             Ignored {
                 kind: Kind::Clicks,
-                when: When::UnlessUnobscured,
+                when: When::UnlessPointerWithin,
             },
             Ignored {
                 kind: Kind::Scroll,
-                when: When::UnlessUnobscured,
+                when: When::UnlessPointerWithin,
             },
             Ignored {
                 kind: Kind::Move,
-                when: When::UnlessUnobscured,
+                when: When::UnlessPointerWithin,
             },
             Ignored {
                 kind: Kind::Drag,
-                when: When::UnlessUnobscured,
+                when: When::UnlessPointerWithin,
             },
         ],
         feff_after_astral: true,
@@ -322,7 +325,7 @@ pub const FAMILIES: &[Family] = &[
         evidence: "m4/drag-motion/; m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
                    m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600; m3/kinds/ \
                    runs m31-kinds-covered, m31-kinds-partial, m31-kinds-partial-deep, m31-move-covered, \
-                   m31-drag-covered, m31-drag-partial, m31-drag-partial-deep, m31-dnd-covered",
+                   m31-drag-covered, m31-drag-partial, m31-drag-partial-deep, m31-dnd-covered; m4/drag-predicates/; m4/pointer-route/",
     },
     // GTK 4 reads input only as XInput 2 events: a synthetic key, click, scroll, drag or pointer move never arrives,
     // covered or visible, in every engine (M0.4; M3.1), so these take the foreground route in dedicated mode and are
@@ -708,7 +711,7 @@ mod tests {
     }
 
     #[test]
-    fn coordinate_clicks_are_ignored_by_gtk_4_always_and_by_gecko_unless_unobscured() {
+    fn coordinate_clicks_are_ignored_by_gtk_4_always_and_by_gecko_unless_the_real_pointer_is_in_its_window() {
         let clicks = |class, toolkit: Option<Toolkit>| {
             family(FAMILIES, Some(class), toolkit.as_ref()).and_then(|f| f.ignores(Kind::Clicks))
         };
@@ -716,7 +719,7 @@ mod tests {
             clicks("gnome-text-editor", Some(toolkit("GTK", Some("4.14.2")))),
             Some(When::Always)
         );
-        assert_eq!(clicks("firefox", None), Some(When::UnlessUnobscured));
+        assert_eq!(clicks("firefox", None), Some(When::UnlessPointerWithin));
         assert_eq!(clicks("XTerm", None), None, "xterm takes synthetic clicks");
         assert_eq!(clicks("Google-chrome", None), None);
         assert_eq!(clicks("Gedit", Some(toolkit("GTK", Some("3.24.41")))), None);
@@ -725,7 +728,7 @@ mod tests {
     }
 
     #[test]
-    fn scroll_and_move_are_ignored_by_gtk_4_always_and_by_gecko_unless_unobscured() {
+    fn scroll_and_move_are_ignored_by_gtk_4_always_and_by_gecko_unless_the_real_pointer_is_in_its_window() {
         for kind in [Kind::Scroll, Kind::Move] {
             let ignores = |class, toolkit: Option<Toolkit>| {
                 family(FAMILIES, Some(class), toolkit.as_ref()).and_then(|f| f.ignores(kind))
@@ -735,7 +738,7 @@ mod tests {
                 Some(When::Always),
                 "{kind:?}"
             );
-            assert_eq!(ignores("firefox", None), Some(When::UnlessUnobscured), "{kind:?}");
+            assert_eq!(ignores("firefox", None), Some(When::UnlessPointerWithin), "{kind:?}");
             for class in ["Google-chrome", "XTerm", "Gnome-terminal"] {
                 assert_eq!(ignores(class, None), None, "{class} takes background {kind:?}");
             }
@@ -744,7 +747,8 @@ mod tests {
     }
 
     #[test]
-    fn drags_are_ignored_by_gtk_4_always_by_gecko_unless_unobscured_and_by_chromium_unless_their_path_is() {
+    fn drags_are_ignored_by_gtk_4_always_by_gecko_unless_the_real_pointer_is_in_its_window_and_by_chromium_unless_their_path_is_unobscured()
+     {
         let drag = |class, toolkit: Option<Toolkit>| {
             family(FAMILIES, Some(class), toolkit.as_ref()).and_then(|f| f.ignores(Kind::Drag))
         };
@@ -754,8 +758,8 @@ mod tests {
         );
         assert_eq!(
             drag("firefox", None),
-            Some(When::UnlessUnobscured),
-            "Gecko's flip is the window's"
+            Some(When::UnlessPointerWithin),
+            "Gecko takes a background drag only while the real pointer is in its window (T19)"
         );
         assert_eq!(drag("Google-chrome", None), Some(When::UnlessPathUnobscured));
         assert_eq!(

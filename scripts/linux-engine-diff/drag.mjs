@@ -604,8 +604,28 @@ async function readReceived(ctx, scene) {
 }
 
 /**
+ * Where a drag cell parks the real pointer before each run, window-relative, for a family that takes background pointer
+ * input only while the pointer is in its window (Gecko, T19): the drag page's top right, away from every path, so its
+ * cells measure the drag rather than where the pointer happened to be.
+ */
+export const POINTER_INSIDE = { firefox: { x: 970, y: 110 } };
+
+/**
+ * The real pointer parked in the scene window for a family `POINTER_INSIDE` names, only where nothing but the run's own
+ * windows lies at the point (scenes.mjs `pointerSafeAt`); a point under another's window fails the run unmoved.
+ */
+export function parkInside(desktop, scene, family, { tool = xdotool } = {}) {
+  const at = POINTER_INSIDE[family];
+  if (!at) return;
+  const point = { x: scene.window.x + at.x, y: scene.window.y + at.y };
+  if (!desktop.pointerSafeAt(point)) throw new Error(`the pointer's park point (${point.x}, ${point.y}) in ${family} is under a window the run did not open`);
+  tool('mousemove', point.x, point.y);
+}
+
+/**
  * One lane's runs of a cell. `readFailed` reads the effect of a drag the engine answered with an error too (T19's
- * sitting: what the application did, whatever the answer).
+ * sitting: what the application did, whatever the answer). `ctx.parkInside` parks the real pointer in the window first
+ * (`parkInside`).
  */
 export async function series(ctx, spec, scene, at, kind, n, { prime = false, start = 0, readFailed = false } = {}) {
   const { witness, emit, family } = ctx;
@@ -628,6 +648,7 @@ export async function series(ctx, spec, scene, at, kind, n, { prime = false, sta
       // the page's scroller goes back to its top by itself; the drag waits for it
       if (kind === 'scroller') for (let tries = 0; (await read()) !== 0 && tries < 40; tries++) await sleep(200);
       await ctx.desktop.arrange(scene, ctx.occlusion);
+      if (ctx.parkInside) parkInside(ctx.desktop, scene, family);
       if (inFront(family, kind)) {
         // the window in front for every lane, the device case's way (dnd.mjs): raised, then activated
         xdotool('windowactivate', '--sync', scene.id);
@@ -840,7 +861,8 @@ export async function runDrag(args, { desktop, emit }) {
       let measuring = null;
       process.stdout.write(`family ${family}: ${kinds.join(', ')}\n`);
       const scenes = {};
-      const ctx = { desktop, oracle, witness, emit, family, occlusion: args.occlusion, cua: args.cua };
+      // a Gecko window takes the drag only with the real pointer in it (T19): parked there before each run
+      const ctx = { desktop, oracle, witness, emit, family, occlusion: args.occlusion, cua: args.cua, parkInside: Boolean(POINTER_INSIDE[family]) };
       // the browsers show the drag page; gedit gets classic scroll bars (GTK 3's overlay ones hide until hovered)
       const page = ['chrome', 'firefox', 'electron'].includes(family) ? PAGE : null;
       const env = family === 'gedit' ? { GTK_OVERLAY_SCROLLING: '0' } : {};

@@ -151,7 +151,8 @@ const browserCells = (browser, { pointer, clipboard = true }) => [
   cell(`${browser}-input`, 'secondary_action'),
   cell(`${browser}-input`, 'move', 'background', pointer),
   cell(`${browser}-input`, 'scroll', 'background', pointer),
-  // Chromium refuses a background drag unless its whole path is in view; Gecko any pointer kind unless the window is
+  // Chromium refuses a background drag unless its whole path is in view; Gecko any pointer kind unless the real
+  // pointer is in its window (T19), which an unobscured cell parks there (action-settle.mjs `arrange`)
   cell(`${browser}-input`, 'drag', 'background', 'unobscured'),
   // a key into the page's field, whose text takes it at its keydown (the input page also counts the keyup)
   cell(`${browser}-text`, 'press_key'),

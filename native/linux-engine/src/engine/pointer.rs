@@ -8,12 +8,12 @@ use serde_json::{Value, json};
 use x11rb::connection::Connection as _;
 use x11rb::protocol::xproto::{ConnectionExt as _, Window};
 
-use super::way::{Way, target_of};
+use super::way::{Way, pointer_left, pointer_watch_failed, target_of};
 use super::{DesktopMode, Engine};
 use crate::desktop::Desktop;
 use crate::dnd::{DndWatch, LateWatch, Outcome, Standing};
 use crate::families::DragPacing;
-use crate::families::Kind;
+use crate::families::{Kind, When};
 use crate::focus_ack::{PressAck, nothing_pressed, press_ack, refused_press};
 use crate::input::chord_keycodes;
 use crate::route::{Route, Target};
@@ -868,6 +868,24 @@ impl Engine {
         // a watched drag's session is kept focused past its answer while its late-take watch is armed, so the watch's
         // Escape lands inside it (the design session's ruling on task 60); a drag that arms no watch ends it below
         let may_arm_watch = guard.is_some();
+        // a background drag into a family that takes pointer input only while the real pointer is in its window
+        // (Gecko): the route found the pointer in it, and a watch on the window's crossings sees it leave while the drag
+        // runs, so such a drag never answers success (T19)
+        let mut leave = match target {
+            Target::Window(window)
+                if !self.cfg.ignore_pointer
+                    && self.family_of(window).and_then(|f| f.ignores(Kind::Drag))
+                        == Some(When::UnlessPointerWithin) =>
+            {
+                let mut watch = match self.stray_watch.take() {
+                    Some(watch) => watch,
+                    None => StrayWatch::connect()?,
+                };
+                let watching = watch.begin_leaves(window)?;
+                Some((watch, watching, window))
+            }
+            _ => None,
+        };
         let Engine { x, inputs, bus, .. } = self;
         let dragged = inputs.with_route_kept(x, target, may_arm_watch, |x, route, _| {
             let points = input
@@ -914,6 +932,32 @@ impl Engine {
             dragged
         });
         self.record_focus_ack(ack.as_ref());
+        // the pointer watch's word on a drag that otherwise succeeded: it left the window while the drag ran, or the
+        // drag ended with the pointer outside, or the watch failed and cannot tell
+        let left = leave.take().and_then(|(mut watch, watching, window)| {
+            let seen = watch.finish(watching);
+            let inside_at_end = self.pointer_within(window);
+            self.stray_watch = Some(watch).filter(StrayWatch::healthy);
+            let app = self
+                .x
+                .get_window(window)
+                .map_or_else(|_| format!("window {window}"), |w| w.app);
+            let (leaves, answer) = match seen {
+                Ok(leaves) => (
+                    json!(leaves.count()),
+                    (leaves.count() > 0 || !inside_at_end).then(|| anyhow!(pointer_left(&app))),
+                ),
+                Err(error) => (
+                    json!(format!("{error:#}")),
+                    Some(anyhow!(pointer_watch_failed(&app, &format!("{error:#}")))),
+                ),
+            };
+            self.extra.insert(
+                "pointer_watch".into(),
+                json!({ "leaves": leaves, "inside_at_end": inside_at_end }),
+            );
+            answer
+        });
         if let Some((event, server)) = times {
             self.extra.insert(
                 "event_time".into(),
@@ -968,7 +1012,7 @@ impl Engine {
         // what the watch says about a drag that otherwise succeeded: None, or its refusal
         let watched = match strays {
             Some((grab, strays)) => self.press_answer(pressing_into, grab, strays, taken, watch),
-            None => None,
+            None => left,
         };
         let Some(mut guard) = guard else {
             return match watched {

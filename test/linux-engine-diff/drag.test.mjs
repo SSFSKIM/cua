@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { CORNERS, DRAG_FAMILIES, dragEngines, dragPlan, judgeCell, judgeRuns, pagePath, parseDragStatus, runPath, selectOffsets } from '../../scripts/linux-engine-diff/drag.mjs';
+import { CORNERS, DRAG_FAMILIES, POINTER_INSIDE, dragEngines, dragPlan, judgeCell, judgeRuns, pagePath, parkInside, parseDragStatus, runPath, selectOffsets } from '../../scripts/linux-engine-diff/drag.mjs';
 import { FAMILIES } from '../../scripts/linux-engine-diff/families.mjs';
 
 test("the drag page's status lines parse into each kind's value", () => {
@@ -524,4 +524,22 @@ test("a cell's drags run in rotating blocks of fresh engines, the top-ups contin
   // a cell's offset (its kind's index) shifts the first block, and a short tail is its own block
   assert.deepEqual(T10.blockPlan(lanes, 5, 0, { offset: 1 }).map((b) => [b.spec.label, b.count]), [['newest', 5], ['cua', 5], ['pinned', 5]]);
   assert.deepEqual(T10.blockPlan(lanes, 15, 0).map((b) => b.count), [10, 10, 10, 5, 5, 5]);
+});
+
+test("a Gecko drag cell parks the real pointer in its window, away from every path, and only onto the run's own windows", () => {
+  const moves = [];
+  const tool = (...a) => moves.push(a);
+  const scene = { window: { x: 2, y: 30, width: 1050, height: 760 } };
+  const safe = { pointerSafeAt: () => true };
+  parkInside(safe, scene, 'firefox', { tool });
+  assert.deepEqual(moves, [['mousemove', 972, 140]]);
+  // the page sits about 85 px below the window's top (drag.mjs `locate`)
+  const at = { x: POINTER_INSIDE.firefox.x, y: POINTER_INSIDE.firefox.y - 85 };
+  for (const kind of ['select', 'range', 'scroller', 'dnd', 'canvas']) {
+    for (const i of [0, 1]) for (const [x, y] of pagePath(kind, i)) assert.ok(Math.hypot(x - at.x, y - at.y) > 200, `${kind} ${i}: far from the park point`);
+  }
+  parkInside(safe, scene, 'chrome', { tool });
+  assert.equal(moves.length, 1, 'Chromium parks nothing here');
+  assert.throws(() => parkInside({ pointerSafeAt: () => false }, scene, 'firefox', { tool }), /under a window the run did not open/);
+  assert.equal(moves.length, 1, 'a refused park moves nothing');
 });

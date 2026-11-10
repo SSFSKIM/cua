@@ -280,62 +280,83 @@ fn keys_to_a_family_that_ignores_them_are_refused_when_shared_and_sent_to_the_ac
     assert_eq!(xterm.inputs(), vec![]);
 }
 
-/// Gecko (class `firefox`) ignores synthetic coordinate clicks unless its window is fully unobscured: fully visible,
-/// the click takes the background route in shared mode; with another window over part of it, the click and an
-/// element's right click are refused in shared mode with nothing sent, and in dedicated mode the window is activated,
-/// raised and clicked through XTEST at the same window-relative point. Its keys are not listed.
+/// Gecko (class `firefox`) takes background pointer input only while the real pointer is in its window (T19, evidence
+/// `m4/pointer-route/`): the deepest window the server finds under the pointer is the window or below it. With the
+/// pointer in its visible part, a click, a scroll, a move and a drag take the background route in shared mode, a window
+/// over part of it or not; with the pointer under that window or outside, they are refused in shared mode with nothing
+/// sent, its keys still go, and in dedicated mode the window is activated, raised and clicked through XTEST. With
+/// `--ignore-pointer` (measurement only) the pointer is not judged.
 #[test]
-fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_and_sent_through_the_desktop_when_dedicated()
- {
+fn gecko_pointer_input_takes_the_background_route_only_while_the_real_pointer_is_in_its_window() {
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    pointer_to(100, 60);
     let mut shared = Engine::start();
     let refusal = format!("{}{SENTENCE}", app_of(&mut shared, firefox.id));
-    shared
-        .request("click", json!({"window": firefox.target(), "x": 40, "y": 40}))
-        .unwrap();
-    let clicked = firefox.inputs();
-    assert_eq!(clicked.len(), 2, "{clicked:?}");
-    assert!(sent(&clicked), "fully unobscured: the background route: {clicked:?}");
-
+    let pressing = || {
+        vec![
+            ("click", json!({"window": firefox.target(), "x": 40, "y": 40})),
+            (
+                "scroll",
+                json!({"window": firefox.target(), "x": 40, "y": 40, "direction": "down", "pixels": 100}),
+            ),
+            (
+                "drag",
+                json!({"window": firefox.target(), "path": [{"x": 20, "y": 20}, {"x": 180, "y": 100}]}),
+            ),
+        ]
+    };
+    let moving = || ("move", json!({"window": firefox.target(), "x": 60, "y": 60}));
+    let sent_each = |engine: &mut Engine, what: &str| {
+        for (command, input) in pressing() {
+            engine.request(command, input).unwrap();
+            let received = firefox.inputs();
+            assert_eq!(
+                received.len(),
+                2,
+                "{what}: {command}: a press and a release: {received:?}"
+            );
+            assert!(sent(&received), "{what}: {command}: the background route: {received:?}");
+        }
+        let (command, input) = moving();
+        engine.request(command, input).unwrap();
+    };
+    sent_each(&mut shared, "the pointer in it, nothing over it");
     let cover = Probe::open("Cover", (200, 120, 200, 200));
-    assert_eq!(
-        shared.request("click", json!({"window": firefox.target(), "x": 40, "y": 40})),
-        Err(refusal.clone()),
-        "partly covered (the click point itself visible)"
-    );
-    assert_eq!(
-        shared.request(
+    sent_each(&mut shared, "the pointer in its visible part, a window over part of it");
+    for (place, (x, y)) in [("under the cover", (300, 180)), ("outside the window", (600, 500))] {
+        pointer_to(x, y);
+        let right = (
             "click",
-            json!({"window": firefox.target(), "x": 40, "y": 40, "mouse_button": "right", "click_count": 2})
-        ),
-        Err(refusal.clone()),
-    );
-    shared
-        .request("press_key", json!({"window": firefox.target(), "key": "a"}))
-        .unwrap();
-    let keyed = firefox.inputs();
-    assert_eq!(keyed.len(), 2, "keys are not listed for Gecko: {keyed:?}");
-    assert!(sent(&keyed));
-    // its scrolls and pointer moves follow the clicks' rule
-    for (command, input) in [
-        (
-            "scroll",
-            json!({"window": firefox.target(), "x": 40, "y": 40, "direction": "down", "pixels": 100}),
-        ),
-        ("move", json!({"window": firefox.target(), "x": 60, "y": 60})),
-    ] {
-        assert_eq!(shared.request(command, input), Err(refusal.clone()), "{command}");
+            json!({"window": firefox.target(), "x": 40, "y": 40, "mouse_button": "right", "click_count": 2}),
+        );
+        for (command, input) in pressing().into_iter().chain([moving(), right]) {
+            assert_eq!(
+                shared.request(command, input),
+                Err(refusal.clone()),
+                "{place}: {command}"
+            );
+        }
+        assert_eq!(firefox.inputs(), vec![], "{place}: nothing was sent");
+        shared
+            .request("press_key", json!({"window": firefox.target(), "key": "a"}))
+            .unwrap();
+        let keyed = firefox.inputs();
+        assert_eq!(keyed.len(), 2, "{place}: keys are not listed for Gecko: {keyed:?}");
+        assert!(sent(&keyed));
     }
-    assert_eq!(firefox.inputs(), vec![], "nothing was sent");
     drop(shared);
+    // measurement only: the pointer not judged, so the harness can count what Gecko does with such input
+    let mut measuring = Engine::start_with(&["--ignore-pointer"]);
+    sent_each(&mut measuring, "--ignore-pointer, the pointer outside");
+    drop(measuring);
 
     let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
     firefox.unfocus();
     cover.raise();
     assert!(cover.above(&firefox));
-    // a point under the cover: the foreground route raises the window first, so the click lands in it
+    // the pointer outside: the foreground route raises the window first, so the click lands in it
     dedicated
-        .request("click", json!({"window": firefox.target(), "x": 300, "y": 180}))
+        .request("click", json!({"window": firefox.target(), "x": 40, "y": 40}))
         .unwrap();
     assert!(firefox.has_focus() && firefox.above(&cover), "activated and raised");
     assert_eq!(
@@ -347,9 +368,10 @@ fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_an
         "real button events, through XTEST"
     );
     assert_eq!(cover.inputs(), vec![], "nothing reached the window that covered it");
-    // covered again: a scroll through the foreground route, one wheel step as real button 5 events
+    // under the cover again: a scroll through the foreground route, one wheel step as real button 5 events
     firefox.unfocus();
     cover.raise();
+    pointer_to(300, 180);
     dedicated
         .request(
             "scroll",
@@ -366,35 +388,55 @@ fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_an
     );
 }
 
-/// `--ignore-cover`, a measurement flag (T19's sitting): no cover condition refuses or reroutes, so a covered
-/// window's listed pointer kinds go out on the background route in shared mode, a Gecko window's click, scroll and
-/// drag (`unless_unobscured`) and a Chromium drag along a covered path (`unless_path_unobscured`) alike, and the
-/// harness measures what the application does with them.
+/// A Gecko drag whose real pointer leaves the window while it runs never answers success (T19): Gecko stops taking the
+/// drag's events once the pointer is out, so the engine reports it, whether the pointer stays out or comes back before
+/// the release. A drag the pointer stays in for answers success.
 #[test]
-fn the_ignore_cover_flag_sends_a_covered_window_s_listed_kinds_on_the_background_route() {
-    let firefox = Probe::open("firefox", (0, 0, 320, 200));
-    let chrome = Probe::open("Google-chrome", (0, 220, 320, 200));
+fn a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported() {
+    let firefox = Probe::open("firefox", (0, 0, 400, 300));
+    let mut shared = Engine::start();
+    let app = app_of(&mut shared, firefox.id);
+    // a zigzag, every corner a rest of the browsers' pacing: a drag of a few hundred milliseconds
+    let path: Vec<Value> = (0..12)
+        .map(|i| json!({"x": 20 + 30 * i, "y": if i % 2 == 0 { 40 } else { 200 }}))
+        .collect();
+    let drag = json!({"window": firefox.target(), "path": path});
+    pointer_to(350, 280);
+    shared.request("drag", drag.clone()).unwrap();
+    assert_eq!(firefox.inputs().len(), 2, "the pointer stayed in: a plain drag");
+    for (what, back) in [("left and stayed out", false), ("left and came back", true)] {
+        pointer_to(350, 280);
+        let mover = std::thread::spawn(move || {
+            sleep(Duration::from_millis(60));
+            pointer_to(600, 500);
+            if back {
+                sleep(Duration::from_millis(40));
+                pointer_to(350, 280);
+            }
+        });
+        let answer = shared.request("drag", drag.clone());
+        mover.join().unwrap();
+        let error = answer.expect_err(what);
+        assert!(
+            error.starts_with(&format!("{app} may not have taken the drag")),
+            "{what}: {error}"
+        );
+        assert_eq!(
+            firefox.inputs().len(),
+            2,
+            "{what}: the drag was sent, a press and a release"
+        );
+    }
+}
+
+/// `--ignore-cover`, a measurement flag (T19's sitting): no cover condition refuses or reroutes, so a Chromium drag
+/// along a covered path (`unless_path_unobscured`) goes out on the background route in shared mode, and the harness
+/// measures what the application does with it.
+#[test]
+fn the_ignore_cover_flag_sends_a_drag_along_a_covered_path_on_the_background_route() {
+    let chrome = Probe::open("Google-chrome", (0, 0, 320, 200));
     let _cover = Probe::open("Cover", (0, 100, 400, 400));
     let mut measuring = Engine::start_with(&["--ignore-cover"]);
-    for (command, input) in [
-        ("click", json!({"window": firefox.target(), "x": 40, "y": 150})),
-        (
-            "scroll",
-            json!({"window": firefox.target(), "x": 40, "y": 150, "direction": "down", "pixels": 100}),
-        ),
-        (
-            "drag",
-            json!({"window": firefox.target(), "path": [{"x": 20, "y": 20}, {"x": 200, "y": 150}]}),
-        ),
-    ] {
-        measuring.request(command, input).unwrap();
-        let received = firefox.inputs();
-        assert_eq!(received.len(), 2, "{command}: a press and a release: {received:?}");
-        assert!(sent(&received), "{command}: the background route: {received:?}");
-    }
-    measuring
-        .request("move", json!({"window": firefox.target(), "x": 60, "y": 150}))
-        .unwrap();
     measuring
         .request(
             "drag",
@@ -2179,8 +2221,9 @@ fn set_atoms(probe: &Probe, property: &str, values: &[&str]) {
 /// `activate_window` waits only for windows of the window manager's normal layer (the design session's ruling on task
 /// 63, 2026-11-06): with an ABOVE window and a dock strip kept over part of the window, it answers once the normal
 /// window covering it is lowered, in both modes. Its success says nothing of what they cover: a click at a point under
-/// the strip is decided by the click's own rules, refused in shared mode (Gecko takes no click while covered) and in
-/// dedicated mode held to the foreground route's bound and refused, never sent to the strip or the window.
+/// the strip is decided by the click's own rules, refused in shared mode (Gecko takes no click while the real pointer is
+/// not in its window, and here it is on the strip, T19) and in dedicated mode held to the foreground route's bound and
+/// refused, never sent to the strip or the window.
 #[test]
 fn activation_waits_for_no_window_kept_above_the_normal_layer_and_a_click_under_one_is_not_sent() {
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
@@ -2211,10 +2254,12 @@ fn activation_waits_for_no_window_kept_above_the_normal_layer_and_a_click_under_
             dock.above(&firefox) && above.above(&firefox),
             "{mode}: the layers kept above it"
         );
+        // the real pointer on the strip, at the click's point
+        pointer_to(100, 185);
         let clicked = engine.request("click", json!({"window": firefox.target(), "x": 100, "y": 185}));
         drop(raises);
         match mode {
-            "shared" => assert_eq!(clicked, Err(refusal), "shared: covered, so refused"),
+            "shared" => assert_eq!(clicked, Err(refusal), "shared: the pointer on the strip, so refused"),
             _ => assert!(
                 clicked.as_ref().is_err_and(
                     |e| e.starts_with(&format!("window {} was still covered at the input's point", firefox.id))

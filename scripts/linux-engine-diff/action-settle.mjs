@@ -43,6 +43,7 @@ import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 
 import { auditRequests, parseXtrace, startProxy } from './audit.mjs';
+import { POINTER_INSIDE, parkInside } from './drag.mjs';
 import { AsyncOracle } from './bus-client.mjs';
 import { startOwner, startReader } from './clip.mjs';
 import {
@@ -407,6 +408,8 @@ function arrange(ctx, cell, sc) {
     // the front window in its corner, clear of the scene window, which is raised above the family's other one
     desktop.arrangeFront('visible');
     desktop.raise(sc);
+    // a Gecko window takes background pointer input only with the real pointer in it (T19): parked there
+    if (POINTER_INSIDE[sc.family]) parkInside(desktop, sc, sc.family);
   } else {
     desktop.arrangeFront('visible');
     xdotool('windowraise', sc.id);

@@ -103,7 +103,38 @@ function cutShownByTree(truncated, state) {
  */
 const FIXTURE_CUTS = { 'over-budget': { causes: 'the element limit and the depth limit', holds: (t) => t.nodes > 0 && t.depth > 0 } };
 
+/**
+ * The answer to a background Gecko drag the real pointer left the window during (T19, engine/way.rs `pointer_left`).
+ */
+export const GECKO_POINTER_LEFT = /^\S.* may not have taken the drag: the desktop pointer left its window while the drag ran, and \S.* takes background pointer input only while the pointer is in its window\. Read the window to see what happened before dragging again$/;
+
+/** device.mjs's Firefox cases refused by the real pointer's place (T19), each declared against the vendor. */
+export const GECKO_POINTER_REFUSALS = ['firefox_click_pointer_out_shared', 'firefox_click_pointer_under_shared', 'firefox_right_click_pointer_out_shared', 'firefox_scroll_pointer_out_shared', 'firefox_move_pointer_out_shared', 'firefox_drag_pointer_out_shared'];
+
 export const DEVIATIONS = [
+  // M4's T19 (#353): Gecko's pointer kinds by the real pointer. The vendor answers ok for a Gecko window's background
+  // click, scroll, move and drag wherever the person's pointer is, and Gecko ignores them while it is outside the
+  // window or under another window over it (0 of 10 in every such cell, the pinned build's included, on `:0` and on a
+  // private display); cua refuses them in shared mode with the Device mode sentence, sending nothing, and takes the
+  // foreground route in dedicated mode. A drag the pointer leaves the window during is sent and answered with an error
+  // naming the pointer, never success.
+  ...GECKO_POINTER_REFUSALS.map((op) => ({
+    op,
+    scene: 'device-firefox',
+    field: 'answer',
+    answer: (c) => c.ok === false && DEVICE_REFUSAL.test(String(c.error)),
+    reason:
+      "Firefox takes background pointer input only while the real pointer is in its window: with the pointer outside it or under another window over it, the vendor's request answers ok and Gecko takes nothing (m4/pointer-route/: 0 of 10 in every such cell, the pinned build's and cua's own events alike), so cua refuses it in shared mode with nothing sent, where the vendor answers a false success",
+    section: 'Plan of Work, M4, T19; Decision Log, 2026-11-10 (T15 closed as superseded; T19 added)',
+  })),
+  {
+    op: 'drag',
+    field: 'error',
+    answer: (c) => c.ok === false && GECKO_POINTER_LEFT.test(String(c.error)),
+    reason:
+      "a background drag into Firefox the real pointer leaves the window during is answered with an error naming the pointer, since Gecko stops taking the drag's events once the pointer is out; the vendor answers ok",
+    section: 'Plan of Work, M4, T19',
+  },
   appliedWhereNoVendorDoes('type_text', 'gnome-text-editor', 'GTK 4 ignores the background route, where both builds send their text, and cua takes the foreground route in dedicated mode (M0.4 matrix; Decision Log, M2 pre-flight)'),
   appliedWhereNoVendorDoes('clipboard_write', 'gedit', "both builds paste a snapshot with EditableText.PasteText after taking CLIPBOARD themselves; GTK 3's text-view PasteText hands its clipboard request a stack pointer, so whenever another process owns CLIPBOARD its callback reads freed stack and inserts nothing (gedit's criticals; arm64 crashed), and the builds fail after 10 s (R/F §7; #268); cua pastes it with the family's chord"),
   {

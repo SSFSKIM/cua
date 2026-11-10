@@ -12,8 +12,9 @@
 // part the occlusion leaves visible, where there is one, so the pointer, and not the points, is what differs.
 //
 // Firefox is the subject, through cua and the pinned build; Chrome, Electron and gedit (GTK 3) are the controls,
-// through cua, to learn whether their routes depend on the pointer too. cua's lane runs with `--ignore-cover`, so no
-// cover rule of cua's refuses a request and what is counted is the application's answer, not cua's.
+// through cua, to learn whether their routes depend on the pointer too. cua's lane runs with `--ignore-cover` and
+// `--ignore-pointer` (the sitting itself, before T19's build, with the first alone), so no rule of cua's refuses a
+// request and what is counted is the application's answer, not cua's.
 //
 // The real pointer is parked before every run (`parkFor`) and read again just before every request, with what lies
 // under it (`pointerRecord`). A park goes only onto the root or a live window of the run's, read at its point just
@@ -73,9 +74,13 @@ export function routePlan(families = Object.keys(ROUTE_FAMILIES), kindsAsked = n
 
 export const cellKey = (c) => `${c.family} ${c.kind} ${c.occlusion} pointer-${c.park}`;
 
-/** The lanes of a family: cua with no cover rule of its own in the way, and the pinned build where the family has it. */
+/**
+ * The lanes of a family: cua with no rule of its own in the way (no cover condition, and from T19's build no pointer
+ * condition either; the sitting itself ran 7ada8597's lanes, `--ignore-cover` alone, on an engine before the
+ * pointer rule), and the pinned build where the family has it.
+ */
 export function routeLanes(family, args) {
-  return ROUTE_FAMILIES[family].map((label) => (label === 'pinned' ? { label, bin: args.vendor, args: [] } : { label, bin: args.cua, args: ['--ignore-cover'] }));
+  return ROUTE_FAMILIES[family].map((label) => (label === 'pinned' ? { label, bin: args.vendor, args: [] } : { label, bin: args.cua, args: ['--ignore-cover', '--ignore-pointer'] }));
 }
 
 /** The front window's middle in its corner in the visible arrangement (scenes.mjs `arrangeFront`), outside every scene. */
@@ -252,19 +257,20 @@ async function openGroup(desktop, oracle, family, group, label) {
   return scene;
 }
 
-export async function runPointerRoute(args, { desktop, emit }) {
-  if (!args.vendor) throw new Error('the pointer-route sitting needs --vendor (the pinned build beside cua on Firefox)');
-  const families = args.families?.length ? args.families : Object.keys(ROUTE_FAMILIES);
-  const kindsAsked = args.ops && args.ops !== 'all' ? args.ops : null;
-  const plan = routePlan(families, kindsAsked);
-  if (!plan.length) throw new Error('no pointer-route cell to measure');
-  const n = args.samplesTrials ?? ROUTE_RUNS;
+/**
+ * Measures cells of the pointer-route kind (`routePlan`'s shape: family, group, kind, occlusion, park), each lane of a
+ * cell `runsOf(cell)` runs in its own window of the family, the real pointer parked before each run and read before
+ * each request, every run emitted as a `pointer-route-run` row: the sitting's runner, and the gate's manifest's
+ * (predicates.mjs). `lanesOf(cell)` names a cell's lanes; each group's windows are opened for every lane its cells run.
+ * `cellRow(cell, runs)` makes the cell's row, emitted and returned. A park point over another's window stops the run.
+ */
+export async function measureRoute(args, { desktop, emit }, plan, { lanesOf, runsOf, cellRow }) {
   const oracle = new Oracle();
   const stubScene = await desktop.openChrome('stub', 'scene.html');
   await desktop.openFront('visible');
   const witness = await startWitness(XPROBE);
   const started = pointerAt();
-  emit({ kind: 'pointer-route-start', pointer: started, runs: n, cells: plan.length });
+  emit({ kind: 'pointer-route-start', pointer: started, cells: plan.length });
   const state = { scene: null, park: null, clearSelection: null, requests: [] };
   const { seenDesktop, seenWitness } = instrumented(desktop, witness, oracle, state);
   const rows = [];
@@ -272,11 +278,11 @@ export async function runPointerRoute(args, { desktop, emit }) {
   try {
     if (!(await negativeCheck(desktop, witness, stubScene, emit))) throw new Error('the witness did not fail the activating stub; the run is invalid');
     for (const family of [...new Set(plan.map((c) => c.family))]) {
-      const lanes = routeLanes(family, args);
       for (const { group } of ROUTE_GROUPS) {
         const cells = plan.filter((c) => c.family === family && c.group === group);
         if (!cells.length) continue;
         process.stdout.write(`family ${family}, ${group}: ${cells.length} cells\n`);
+        const lanes = [...new Map(cells.flatMap((c) => lanesOf(c)).map((l) => [l.label, l])).values()];
         const scenes = {};
         const at = {};
         try {
@@ -293,8 +299,9 @@ export async function runPointerRoute(args, { desktop, emit }) {
           const next = Object.fromEntries(lanes.map((l) => [l.label, 0]));
           for (const c of cells) {
             process.stdout.write(`cell ${cellKey(c)}\n`);
+            const n = runsOf(c);
             const runs = [];
-            for (const spec of lanes) {
+            for (const spec of lanesOf(c)) {
               const scene = scenes[spec.label];
               Object.assign(state, { scene, park: c.park, requests: [], clearSelection: group === 'drag' && scene.kindOf === 'editor' ? at[spec.label].text.id : null });
               const ctx = { desktop: seenDesktop, oracle, witness: seenWitness, emit, family, occlusion: c.occlusion, cua: args.cua, dir: desktop.dir, pointFor };
@@ -309,16 +316,15 @@ export async function runPointerRoute(args, { desktop, emit }) {
               });
               desktop.focusFront();
             }
-            const row = { kind: 'pointer-route-cell', ...c, lanes: cellCounts(runs) };
+            const row = cellRow(c, runs);
             emit(row);
             rows.push(row);
-            process.stdout.write(`${routeMarkdown([row]).at(-1)}\n`);
           }
         } catch (error) {
           errors.push(`${family} ${group}: ${String(error.message ?? error).split('\n')[0].slice(0, 200)}`);
           emit({ kind: 'pointer-route-error', family, group, error: String(error.stack ?? error).slice(0, 1000) });
           process.stdout.write(`${family} ${group} failed: ${error.message}\n`);
-          // a park point over another's window stops the sitting: nothing more moves the pointer
+          // a park point over another's window stops the run: nothing more moves the pointer
           if (/the sitting stops/.test(String(error.message))) throw error;
         } finally {
           await desktop.close(Object.values(scenes));
@@ -329,9 +335,28 @@ export async function runPointerRoute(args, { desktop, emit }) {
     await witness.stop();
     emit({ kind: 'pointer-route-end', pointer: pointerAt(), started });
   }
+  return { rows, errors };
+}
+
+export async function runPointerRoute(args, { desktop, emit }) {
+  if (!args.vendor) throw new Error('the pointer-route sitting needs --vendor (the pinned build beside cua on Firefox)');
+  const families = args.families?.length ? args.families : Object.keys(ROUTE_FAMILIES);
+  const kindsAsked = args.ops && args.ops !== 'all' ? args.ops : null;
+  const plan = routePlan(families, kindsAsked);
+  if (!plan.length) throw new Error('no pointer-route cell to measure');
+  const n = args.samplesTrials ?? ROUTE_RUNS;
+  const { rows, errors } = await measureRoute(args, { desktop, emit }, plan, {
+    lanesOf: (c) => routeLanes(c.family, args),
+    runsOf: () => n,
+    cellRow: (c, runs) => {
+      const row = { kind: 'pointer-route-cell', ...c, lanes: cellCounts(runs) };
+      process.stdout.write(`${routeMarkdown([row]).at(-1)}\n`);
+      return row;
+    },
+  });
   const missed = rows.filter((r) => Object.values(r.lanes).some((c) => c.park_held < c.n));
   const md = [
-    `T19's sitting (pointer-route.mjs): each cell ${n} runs a lane, the real pointer parked before each run and read before each request; cua's lane with \`--ignore-cover\`, so the counts are the application's. Occlusions: \`visible\` (raised, nothing over it), \`partial\` (a window over its bottom half), \`covered\` (a window over the whole screen). Pointer: \`in\` the window's visible part, \`under\` the cover inside its geometry, \`out\` of its geometry, on the front window.`,
+    `T19's sitting (pointer-route.mjs): each cell ${n} runs a lane, the real pointer parked before each run and read before each request; cua's lane with \`--ignore-cover\` and \`--ignore-pointer\`, so the counts are the application's. Occlusions: \`visible\` (raised, nothing over it), \`partial\` (a window over its bottom half), \`covered\` (a window over the whole screen). Pointer: \`in\` the window's visible part, \`under\` the cover inside its geometry, \`out\` of its geometry, on the front window.`,
     '',
     ...routeMarkdown(rows),
     '',

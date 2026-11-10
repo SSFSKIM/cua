@@ -90,8 +90,8 @@ impl Engine {
                 let family = self.family_of(window);
                 let ignored = match family.and_then(|f| f.ignores(kind)) {
                     Some(When::Always) => true,
-                    // measurement only (T19): no cover judged
-                    Some(When::UnlessUnobscured) => !self.cfg.ignore_cover && !self.x.unobscured(window),
+                    // measurement only (T19, `--ignore-pointer`): the pointer not judged
+                    Some(When::UnlessPointerWithin) => !self.cfg.ignore_pointer && !self.pointer_within(window),
                     // measurement only (T13, T19): the path's cover left unjudged
                     Some(When::UnlessPathUnobscured) => {
                         !self.cfg.drag_ignore_cover && !self.cfg.ignore_cover && !self.x.points_unobscured(window, path)
@@ -107,6 +107,15 @@ impl Engine {
         };
         self.record_route(way);
         Ok(way)
+    }
+
+    /// Whether the real pointer is in `window`: the deepest window the server finds under it is the window or below it
+    /// (`X11::pointer_in`, from the window's parent). A read that fails is doubt, which counts as outside.
+    pub(super) fn pointer_within(&self, window: Window) -> bool {
+        self.x
+            .parent(window)
+            .and_then(|parent| self.x.pointer_in(window, parent))
+            .unwrap_or(false)
     }
 
     /// The input target `kind` takes into `window` (None: the desktop), refused in shared mode where the family ignores
@@ -203,6 +212,26 @@ impl Engine {
         }
         Ok(())
     }
+}
+
+/// The answer to a background drag into a family that takes pointer input only while the real pointer is in its
+/// window (Gecko), when the pointer left the window while the drag ran (T19): never success, since the family stopped
+/// taking the drag's events once the pointer was out.
+pub(super) fn pointer_left(app: &str) -> String {
+    format!(
+        "{app} may not have taken the drag: the desktop pointer left its window while the drag ran, and {app} takes \
+         background pointer input only while the pointer is in its window. Read the window to see what happened before \
+         dragging again"
+    )
+}
+
+/// The answer to such a drag whose pointer watch failed before it could say whether the pointer stayed in the window.
+pub(super) fn pointer_watch_failed(app: &str, why: &str) -> String {
+    format!(
+        "the pointer watch on your drag into {app} failed ({why}), so whether {app} took the drag cannot be told: it \
+         takes background pointer input only while the desktop pointer is in its window. Read the window to see what \
+         happened before dragging again"
+    )
 }
 
 #[cfg(test)]

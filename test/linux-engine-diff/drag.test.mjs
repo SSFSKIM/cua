@@ -313,15 +313,15 @@ test("the unprimed Writer lane: a fresh window's first drag took when it selecte
   assert.equal(cell.reference, true);
   assert.equal(cell.lanes.cua.pass, false, 'every engine missing it is still a miss');
   assert.deepEqual(judgeRuns('select-unprimed', [{ engine: 'cua', i: 0, ok: true, before: '', after: 'pha bravo charlie d' }]).runs.map((r) => r.took), [true]);
-  // its positive reference: the primed cell's even runs that took, which the unprimed judge must take too, or it could
+  // its positive reference: the select cell's even runs that took, which the unprimed judge must take too, or it could
   // never see a first drag that selects
-  const primed = [{ i: 0, took: true, after: 'pha bravo charlie d' }, { i: 1, took: true, after: 'avo charlie delta e' }, { i: 2, took: false, after: '' }, { i: 4, took: true, after: 'pha bravo charlie d' }];
-  assert.deepEqual(T10.primedReference(primed), { covers: 2, n: 2 });
-  const mismatch = T10.primedReference([{ i: 0, took: true, after: 'pha_bravo_charlie_d' }]);
+  const select = [{ i: 0, took: true, after: 'pha bravo charlie d' }, { i: 1, took: true, after: 'avo charlie delta e' }, { i: 2, took: false, after: '' }, { i: 4, took: true, after: 'pha bravo charlie d' }];
+  assert.deepEqual(T10.selectReference(select), { covers: 2, n: 2 });
+  const mismatch = T10.selectReference([{ i: 0, took: true, after: 'pha_bravo_charlie_d' }]);
   assert.deepEqual(mismatch, { covers: 0, n: 1 });
-  assert.match(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', primed_reference: mismatch })]).failed.join(), /REFERENCE MISMATCH/);
-  assert.match(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', primed_reference: { covers: 0, n: 0 } })]).failed.join(), /REFERENCE MISMATCH/, 'no primed run to check the judge against');
-  assert.equal(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', primed_reference: { covers: 3, n: 3 } })]).pass, true);
+  assert.match(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', select_reference: mismatch })]).failed.join(), /REFERENCE MISMATCH/);
+  assert.match(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', select_reference: { covers: 0, n: 0 } })]).failed.join(), /REFERENCE MISMATCH/, 'no select run to check the judge against');
+  assert.equal(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', select_reference: { covers: 3, n: 3 } })]).pass, true);
 });
 
 test("Firefox's held-move cells: drag_handle's start, a held move to each point, its end, in root coordinates, with a no-press control", () => {

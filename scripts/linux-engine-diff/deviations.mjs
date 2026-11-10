@@ -47,6 +47,9 @@ export const PENDING_REFUSAL = /^Pending from your last drag, (a late drag and d
 /** cua's answer for a window whose frame cannot be told apart from its duplicates' (identity.rs). */
 export const DUPLICATES = /^Window \d+ matches several accessibility windows; close or retitle the duplicates$/;
 
+/** The refusal of a point-based element action on LibreOffice whose VCL position cannot be corrected (M4's T16). */
+export const VCL_UNTRUSTED = /^LibreOffice's reported position for this element can't be trusted until the pointer has moved over its window; nothing was sent$/;
+
 /** The counts of cua's `truncated` (Interfaces: `{nodes: u32, depth: u32, failed: u32}`). */
 const TRUNCATION_KEYS = ['nodes', 'depth', 'failed'];
 
@@ -185,6 +188,16 @@ export const DEVIATIONS = [
       "after a Chromium drag the engine let drop, cua watches the release off the request path: a drag and drop that started only after the release (cancelled at once with an Escape on the drag's route), a Chrome drop that Chrome did not confirm with its own activation request within 150 ms of the release, or the watch's own failure is pending; every reply then carries it as `notice` beside the vendor's keys, and the first acting request is refused with it, not run, naming what is pending and the request. The vendor answers the drag ok and runs the next request",
     section: 'Plan of Work, M4 T14; Decision Log, M4 pre-flight (the Chrome drop), the design session\'s rulings on task 68 (2026-11-09, 2026-11-10)',
   },
+  // M4's T16: LibreOffice's VCL positions (engine vcl.rs; writer-drag.mjs `--plan element`)
+  ...['click', 'type_text', 'scroll'].map((op) => ({
+    op,
+    scene: 'libreoffice-element',
+    field: 'point',
+    answer: (c) => c.ok === true || (c.ok === false && VCL_UNTRUSTED.test(String(c.error))),
+    reason:
+      "LibreOffice 24.2 on its gtk3 VCL plugin reports what VCL draws (a document's paragraphs, a sheet's cells, a slide's shapes) 27 px too high, the native menu bar's height, after a ConfigureNotify and until the next pointer event (its frame's position set to the client's origin by the configure, to VCL's widget by each pointer event, `vcl/unx/gtk3/gtkframe.cxx` `UpdateGeometryFromEvent`); the pinned build right-clicks there, above the element, and answers ok. cua moves a LibreOffice element's VCL extents by the GTK host panel's offset from VCL's root pane wherever the two disagree in the menu bar's shape, so an element right click, a paste's focusing click and an element scroll land on the element, and refuses them, nothing sent, wherever the structure is another one. Left element clicks are DoAction and take no point. Measured on LibreOffice 24.2.7 (vcl gtk3); another version or VCL plugin may differ",
+    section: 'Plan of Work, M4 T16; the design session\'s ruling (2026-11-10: B, the refusal for an unrecognized structure)',
+  })),
   {
     op: 'interrupted_hold',
     scene: 'events',

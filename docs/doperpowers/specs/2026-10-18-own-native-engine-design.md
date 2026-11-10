@@ -4617,16 +4617,20 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   7. **The edited-text exemption** (the design session's ruling 1ea561bc:553, on the build's concern that the model's
      own typing would be refused; the review of 7f6eb3dc..b2f00ad5, P2 1, found the same). An `AXStaticText`, or a
      text run inside one, whose nearest editable ancestor is the one recorded for it is not compared: a click there only
-     places a caret, and the text changing is the model's own typing. The editable ancestor is the region the text's
-     `AXEditableAncestor` names where the app exposes it (Chromium, WebKit), else the one its nearest ancestor names: an
-     `AXTextArea` itself (a text area, or a contenteditable region as the browsers expose it), or the region an
-     ancestor's own `AXEditableAncestor` names (`stalePointRegion`). Never the ancestor answering the attribute: the
-     review of b2f00ad5..25b23fbb (P2 1) found that taking it recorded a link that answers the editor as the region,
-     exempting its relabelled text, and that a text whose own read failed on one side only resolved to its paragraph on
-     that side and refused typed text. Both sides resolve the same way. **The record:** the walk reads
-     `AXEditableAncestor` in its batched attribute read (one more slot per element, the record-only reads included), and
-     each `AXStaticText` node keeps its region (`ScreenshotNode.editableAncestor`), found through the record's parents
-     where the attribute is absent. **What stays judged:** anything actionable inside the region. Every
+     places a caret, and the text changing is the model's own typing. **The record** (the design session's ruling
+     1ea561bc:565, on the walk's cost: with `AXEditableAncestor` in the batched read, the hosted gate measured walk p50
+     174 -> 385 ms in Firefox and 177 -> 313 ms in Finder) derives the region from what the walk already reads: an
+     `AXStaticText` node keeps its nearest recorded ancestor of an editable text role, `AXTextArea` or `AXTextField`
+     (`ScreenshotNode.editableAncestor`, `stalePointEditableTextRoles`). Chromium, WebKit and Gecko expose a
+     contenteditable region as an `AXTextArea`, which #283's focus route already reaches. The batch no longer requests
+     `AXEditableAncestor`, so a contenteditable group the browsers expose as a plain group cannot be told from any
+     group, and its text stays judged. The ruling's fallback, a lazy per-record read, was not needed. **At the click**,
+     and only where the value comparison would refuse, the text's `AXEditableAncestor` is read live and must name that
+     region. Where that read answers nothing, failed or absent, the region its nearest parent names must: that parent's
+     `AXEditableAncestor`, or the parent itself by its role (`stalePointRegion`). That is never the parent answering
+     the attribute. The review of b2f00ad5..25b23fbb (P2 1) found that taking the answering parent made a link that
+     answers the editor the region, exempting its relabelled text, and made a text whose own read failed on one side
+     resolve to its paragraph and refuse typed text. **What stays judged:** anything actionable inside the region. Every
      element strictly between the text and the region is read, and one of the interactive roles (a link, a button) or
      one whose actions include AXPress (a mention, a chip) keeps the text judged (`editedInPlace`). So does one whose
      role or action names cannot be read (the review of b2f00ad5..25b23fbb, P2 2: `actionNames` answered an empty list
@@ -4634,8 +4638,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      editable ancestor now is another one or none, or a text recorded with none. **Both paths:** on the same handle the
      exemption is read only once the words differ; on the re-created path a text re-created in its recorded region (one
      character typed over at the same width) is matched without its value, its title and description still compared.
-     **The cost:** a click reads nothing more unless the rule would refuse; then the text's editable ancestor and the
-     role and actions of each element up to the region.
+     **The cost:** the observation reads nothing more. A click reads nothing more unless the rule would refuse; then it
+     reads the text's `AXEditableAncestor` (and its parents' until one names a region, where the text's answers
+     nothing), and the role and actions of each element up to the region.
+  9. **linkmono on the branch** (the hosted gate, b9236c78 against 494857c8). Save -> Send at the same width, re-created
+     by a `textContent` replacement, refuses as `nodeGone` on the branch, where main keeps it as re-created. The
+     extended re-created match (item 2) rejects the new text, whose words differ, so no re-created handle is found.
+     That is the safe side, and the findings' expected "refuse (re-created path)".
   8. **A failed read is not an absent label** (the review of 7f6eb3dc..b2f00ad5, P2 2). The live seam's `attribute`
      answers nil both for an attribute the element lacks and for a read that failed, and the label took either as leave
      to fall to the next source: a button with the title "Save" and the description "Save changes" whose title read
@@ -4658,10 +4667,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   after a route's wait, and a truncated container; the record keeping the value and subrole, through both of the walk's
   emitters (`VisibleFirstTests` for the record-only one). #296's `testASurvivingHandleRelabelledInPlacePasses` now
   refuses (`testASurvivingHandleRelabelledInPlaceRefuses`). The exemption: `RelabelledEditableTests` (7): typed text
-  in a contenteditable passing by its `AXEditableAncestor`, by an `AXTextArea`, by a contenteditable group, as a text
-  run, and re-created at the same width; a relabelled link, button or AXPress chip inside the region refusing; a text
-  whose editable ancestor differs (another region, none now, none recorded) still judged; the record and the walk's
-  batch keeping it (`VisibleFirstTests` for the record-only reads); and, after the review of b2f00ad5..25b23fbb,
+  in a contenteditable passing by its `AXEditableAncestor`, by an `AXTextArea` or an `AXTextField` where nothing
+  answers it, as a text run, and re-created at the same width; a relabelled link, button or AXPress chip inside the
+  region refusing; a text whose editable ancestor differs (another region, none now, none recorded, a contenteditable
+  plain group) still judged; the record deriving the region from its roles and the batch no longer requesting
+  `AXEditableAncestor` (`VisibleFirstTests` for the record-only reads); and, after the review of b2f00ad5..25b23fbb,
   partial exposure (a link answering the editor around text answering nothing refused, a paragraph's text and a text
   answering alone passing), the text's own read failing on one side only still passing, and a wrapper whose role or
   action names cannot be read withholding the exemption while an empty action list does not. The failed reads: `UnreadableLabelTests` (4): a
@@ -4686,7 +4696,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   final A/B set unchanged; and `stalePoint.ms` against main. For the exemption: a click into a contenteditable's text
   after typing into it, with no new screenshot, passing in Chrome for Testing and Safari (Gmail-style compose; Chromium
   may give a paragraph inside a clickable page AXPress, which would keep the text judged), a relabelled link inside it
-  refusing, and the observation's cost with `AXEditableAncestor` in the batch against main.
+  refusing, and the walk's cost back at main's now that `AXEditableAncestor` is out of the batch (the paired timing
+  run the ruling named).
   Date/Author: 2026-11-09, cursor235's lane-1 implementer for the design session's ruling 31a62775 on #298.
 
 ## Outcomes & Retrospective

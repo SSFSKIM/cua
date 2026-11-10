@@ -624,6 +624,8 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m4/drag-motion/`.
 - Observation (M4, T15): Firefox (GTK 3 Gecko) acts on synthetic pointer input to its window only while the real pointer is inside that window, whatever covers the window and wherever the request's points are. A fully visible Firefox with the pointer elsewhere took 0 of 10 of every pointer kind, from cua and from the pinned build, though every request answered ok. A synthetic `EnterNotify` does not stand in for the real pointer. The probe ran on private displays; `:0` is T19's first sitting.
   Evidence: `m4/drag-predicates/` (`feat/171-m4-t15`, be009c24).
+- Observation (M4, T13): when an HTML drop lands, Chrome asks the window manager to activate its window (`_NET_ACTIVE_WINDOW`) within about 53 ms of the release, and it never does after a leave. Electron does not. Chrome's drag loop shows its own cursor, and its no-drop cursor is the same image. A renderer that is busy cannot start a drag after the release, because the browser checks the button is still down; a lagging browser can, and such a late take answered ok on every run.
+  Evidence: `m4/drop-signals/`.
 
 ## Decision Log
 
@@ -1605,6 +1607,40 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - Not yet measured: whether other families depend on the pointer. gedit took covered drags in M3.1.
   Evidence: `m4/drag-predicates/` (`feat/171-m4-t15`, be009c24); the task-70 report (local).
   Date/Author: 2026-11-10, the plan-executor (session linux171), from task 70's report and the design session's rulings.
+
+- Decision (2026-11-10, M4, T13: Chromium drop signals, measured only): task 68, 405aa773..2917848d; fix da70d909..4598425e and af5c01d6; evidence `m4/drop-signals/`. The design session ruled on its recommendation (2026-11-09 and 2026-11-10).
+  - **The drop evidence.** When a drop lands, Chrome sends its own `_NET_ACTIVE_WINDOW` request for its window (`WebContentsViewAura::CompleteDrop` calls `WebContents::Focus`; a leave never reaches it). The engine reads it through `SubstructureNotify` on the root, with no RECORD and no grab.
+    - It came on 1,861 of 1,861 landed drops, idle, at the gate's window load and at twice the load: at most 7.4, 52.9 and 34.7 ms after the release.
+    - It came on none of 354 non-landings: 307 leaves after an in-time take, 37 thin-margin drags among them, and 47 late takes.
+    - Electron sent none, on 116 of 116 drops.
+  - **Ruling (1): adopted as drop evidence, for the floor and for #264's watch.** Four bounds apply:
+    - only a request for the drop target's own top-level window counts;
+    - it must come inside a stated window after the release, which T14 sets from the 52.9 ms maximum with a margin; the value and its basis come into this spec;
+    - it applies only where the window manager lists `_NET_ACTIVE_WINDOW` in `_NET_SUPPORTED`, read at runtime;
+    - Electron, and every window the signal does not cover, keep today's floor.
+    A drag with no request inside the window is unconfirmed, never ok.
+  - **The early release at the accept cursor (F1).** The accept is the second change to an unnamed cursor after the take's server time. The review found that the rule kept an accept a later change had withdrawn, so it now counts only while the accept is still the cursor shown.
+    - Live, on the plain short drop: 0 false releases in 300 at each load. It released at the accept on 258, 272 and 295 of the 300, and the answer medians were 54, 55 and 66 ms, against 367–372 ms for the floor.
+    - A replay of the live lane on the engine's records found every release still on the accept.
+  - **Ruling (2): adopted, only on a drag where (1) is live, and live counts alone decide it.** T13's passive replay over leaves no longer counts as support.
+    - The replay puts cursor changes on the X server's clock, with the engine's own 1×1 window, created after the release, as the boundary and a 10 ms margin. It reads 0 clean false accepts at every load. But 6 of 97, 13 of 98 and 42 of 112 leaves are indeterminate (idle, the gate's windows, twice the load): a change after the release counts only when it follows the engine's probe, and one that is not surely before the stamp is indeterminate (the re-review). In all but one of the 42, the first change the records cannot order is Chrome's return to its drag loop's cursor.
+    - They do not decide (the design session, 2026-11-10). They are all on leave paths, where a stale accept releases where the floor would also have released with nothing under it, and (1) answers unconfirmed either way. Their worst case is a faster honest no, not a wrong ok.
+    - T14's proof has three live populations at each load: at least 300 drops on a second source, with 0 false releases; and two controls, a path that is accepted and then leaves, and a press inside the zone followed by a path out of it, each at least 30 a load, with none answered ok without a drop.
+    - T14 tells cursors apart by their image, not their order. Chrome's drag-loop cursor and its no-drop cursor are the same image, so the order alone would read a no-drop as the accept on a drag whose first status accepts.
+    - A single false release reverts (2), not (1).
+  - **Ruling (3): there is no never-take signal; the hold stays (press + 250 ms), and #263 stays a declared gap.** Every start-role rule has false negatives:
+    - a draggable span in a paragraph, 30 of 30;
+    - a link's text, 20 of 20. The link/image rule was measured on hit-test results only, because AT-SPI's `GetAccessibleAtPoint` skips ancestors;
+    - a draggable child of an ARIA slider, 30 of 30;
+    - a nested span with a 150 ms `dragstart`, 30 of 30, every one taking after the path's end. This was measured idle only; at the other two loads the claim rests on the three above;
+    - a draggable canvas, which took 30 of 30 under the canvas role (idle), so the canvas rule is no candidate.
+    `XdndAware` is set on every Chrome window. The hold also caught 5 natural takes after the path's end at the gate's window load.
+  - **Ruling (4): #264 is reproduced without the fault hook**, by stopping and continuing the run's own browser. That gave 47 real late takes, 1.1–8.6 ms after the release, all answered ok, none landed. A busy renderer alone cannot cause one: Chrome refuses a renderer's mouse drag once the browser has seen the button go up (`StartDragging`, `IsLeftMouseButtonDown`), and that gave 0 takes in 180 drags. T14's failing-first late-take test uses this reproduction.
+  - **(5) For T15.** On this display, no part of a covered Chromium path decides: 1,000 drags under both kinds of cover, 20 of 20 per cell. M3.1's covered failures did not reproduce. T15 narrowed, then closed (above).
+  - **A stated limit for the M4 pull request.** The gate's window load did not bring back task 22's take tail: 2 of 480 drops took 53 ms or later, against task 22's 27 of 90. Task 22 used the person's Chrome profile, before task 43. #264's watch is what keeps such drops honest.
+  - **Measurement only.** The engine flags (`--drag-dnd-release-at-accept`, `--drag-ignore-cover`, `--stats` `wall`) are off by default, and `accept.rs` is its own module. T14 promotes what the rulings allow.
+  Evidence: `m4/drop-signals/` (README, `tables/`, `tables/fix-wave.md`); the task-68 report (local); `ci-gate` GREEN on 9ecfedab (with a rerun of `test`) and on b72324f3 and f7e793f7 (with a rerun of `sandbox-denials`).
+  Date/Author: 2026-11-10, the plan-executor (session linux171), from task 68's report, its review and fix wave (reviewer-medium), and the design session's rulings.
 
 ## Outcomes & Retrospective
 

@@ -274,6 +274,49 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(plainRecord["checkpoints"] as? Int, 1)
   }
 
+  /// The review of af1860ef..a8e55870, P2, and ruling 1ea561bc:593: a secret's own keys make no checkpoint, so how its
+  /// text is segmented sets no number of confirmation waits; it is read back once, after its last unit.
+  func testASecretsKeysMakeNoCheckpointSoItsSegmentsSetNoWaits() {
+    func waits(_ text: String) -> (confirms: Int, sleeps: Int, record: NSDictionary) {
+      let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+      field.role = "AXTextField"
+      field.returnInserts = false
+      let app = FakeApp(field)
+      let (error, meta) = type(text, into: app, concealed: true)
+      XCTAssertNil(error, text.debugDescription)
+      // The snapshot reads focus once; every confirmation wait ends with one more focus read.
+      return (field.calls.filter { $0 == "focused" }.count - 1, app.sleeps, record(meta) as NSDictionary)
+    }
+    let segmented = waits("a\nb\nc"), joined = waits("abc\n\n")
+    XCTAssertEqual(segmented.confirms, 1)
+    XCTAssertEqual(joined.confirms, 1)
+    XCTAssertEqual(segmented.sleeps, joined.sleeps)
+    XCTAssertEqual(segmented.record, joined.record)
+    XCTAssertEqual(segmented.record["keysUnconfirmed"] as? Bool, true)
+    // A secret that would submit wrong text is not stopped before its Return: the mismatch is answered after it.
+    let wrong = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    wrong.role = "AXTextField"
+    wrong.returnInserts = false
+    wrong.transform = { $0.uppercased() }
+    let (error, meta) = type("pa\nss", into: FakeApp(wrong), concealed: true)
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(meta)["reason"] as? String, "concealedMismatch")
+    XCTAssertNil(record(meta)["stoppedBeforeKey"])
+  }
+
+  /// The caller's own text still checkpoints its keys: a type_text after the secret's, its text the caller's.
+  func testALeavingKeyInTheCallersTextAfterASecretStillCheckpoints() {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.role = "AXTextField"
+    field.returnInserts = false
+    let app = FakeApp(field)
+    XCTAssertNil(type("s3cr3t", into: app, concealed: true).0)
+    let (error, meta) = type(" ok\n", into: app)
+    XCTAssertNil(error)
+    XCTAssertEqual(record(meta)["checkpoints"] as? Int, 1, "the caller's Return waits for its text to read back")
+    XCTAssertEqual(record(meta)["keysUnconfirmed"] as? Int, 1)
+  }
+
   func testAConcealedTextIntoASecureFieldIsNeverRead() {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     field.role = "AXSecureTextField"

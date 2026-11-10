@@ -334,11 +334,15 @@ final class TypeReadback<Element> {
     if case .refused(let reason) = plan { record.reason = reason }
   }
 
-  /// Before unit `index` is posted: a key after text not yet confirmed waits for that text to read back.
+  /// Before unit `index` is posted: a key after text not yet confirmed waits for that text to read back. Never inside a
+  /// `{{secret:…}}` substitution (the design session's ruling 1ea561bc:593, on the review of af1860ef..a8e55870, P2):
+  /// each checkpoint is a confirmation wait, and the reply's time would tell how the secret's text is segmented. The
+  /// wrapper expands a secret only as the whole text of a type_text, so a concealed request is all secret: its keys are
+  /// posted with the rest of it, unconfirmed (a flag), and it is read back once, after the last unit.
   func beforeUnit(_ index: Int) throws {
     guard case .expect = plan else { return }
     if leaves(units[index]) {
-      if unchecked {
+      if unchecked, !concealed {
         record.checkpoints += 1
         try confirm(through: index, beforeKey: true)
         unchecked = false
@@ -351,7 +355,8 @@ final class TypeReadback<Element> {
   /// After the last event: success, or `typeUnconfirmed`.
   func finish() throws {
     guard case .expect = plan else { throw typeUnconfirmed(record.reason ?? .valueUnreadable) }
-    if unchecked { try confirm(through: units.count, beforeKey: false) }
+    // A concealed request is always read back once, whatever its keys, so its number of waits is always one.
+    if unchecked || concealed { try confirm(through: units.count, beforeKey: false) }
     record.keysUnconfirmed = units.filter(leaves).count
     record.confirmed = true
     record.reason = nil

@@ -4679,8 +4679,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   description; a lower-priority unreadable attribute changing nothing, and an unreadable description or value ahead
   of a text's value keeping the point; what counts as a failed slot and a failed single read, and the record keeping
   it through the walk (`VisibleFirstTests` for the record-only reads). 1,127 engine tests pass after the merge of main (#330, #310, #341), 1 skipped as before. Of
-  77 parts and bounds of the rule, the exemption and the failed-read handling changed in turn
-  (`~/.local/share/187/mutate-298.py`), 70 fail a test. Seven survive by design. One is equivalent: the number's
+  74 parts and bounds of the rule, the exemption and the failed-read handling changed in turn
+  (`~/.local/share/187/mutate-298.py`), 67 fail a test (after ruling 1ea561bc:565 dropped the batch's mutants and added the derived region's). Seven survive by design. One is equivalent: the number's
   internal separators, whose removal changes no output (a separator followed by a digit starts another number, which
   sets the following words aside just the same). Six are reached only by a live click: the live seam's value, editable
   ancestor, actions (none, or a failed read taken for none) and label-error reads, and the batched read's keeping of

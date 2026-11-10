@@ -2297,6 +2297,16 @@ final class RelabelledEditableTests: XCTestCase {
       editor.text.value = "Goodbye"
       XCTAssertEqual(judged(nodes, hit: editor.text), .relabelled, "a contenteditable group")
     }
+    do {  // The text answers nothing at the click; its paragraph names another region than the record's.
+      let editor = Editor()
+      let other = Node("AXTextArea", CGRect(x: 40, y: 450, width: 600, height: 100))
+      editor.page.add(other)
+      let nodes = recorded(editor.window)
+      editor.text.editableAncestor = nil
+      editor.paragraph.editableAncestor = other
+      editor.text.value = "Delete"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .relabelled, "a parent naming another region")
+    }
     do {
       let editor = Editor()
       let other = Node("AXTextArea", CGRect(x: 40, y: 450, width: 600, height: 100))

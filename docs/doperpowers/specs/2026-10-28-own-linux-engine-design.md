@@ -1681,6 +1681,33 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: task 73's proposal and probe tables (local, to `m4/drag-handle/`); the task-73 report (local).
   Date/Author: 2026-11-10, the plan-executor (session linux171), from task 73's proposal and the design session's rulings.
 
+- Decision (2026-11-10, M4, T19 (#353): Gecko's pointer route by the real pointer): task 71, on `feat/171-m4-t19`: be009c24..e47fc1e3; fix ca126e80..2acc8054; merged into `feat/171-m4` at 3e6ed163; evidence `m4/pointer-route/`. The design session ruled each step (2026-11-10).
+  - **The `:0` sitting, before the build.** It reconciled with M0.4 under task 50's guards, with the pointer parked only over the run's own windows or the bare root, then restored. The cells crossed the pointer (in the window's visible part, under a cover inside its geometry, outside) with the window's cover (none, half, full), for click, scroll, move and select-drag.
+    - Firefox, through cua and through the pinned build: 10/10 for every kind with the pointer in the window, and 0/10, every run answered ok, with it under a cover or outside. So M0.4's "Firefox ignores covered clicks" reproduces only as a function of the pointer, and a pointer under a cover counts as outside.
+    - Chrome and Electron: click, scroll and move 10/10 in every cell. Their select-drag is honest through the press watch.
+    - gedit: 10/10 everywhere except one hover cell, which is #356.
+    - Two of task 50's guard stops were false positives on the step's own session bus. A narrower rule (`wrap71.py`: a peer counted, not flagged, only when its path is the connecting run process's own `DBUS_SESSION_BUS_ADDRESS` socket inside the step's TMPDIR) was approved for the later steps, and it counted nothing.
+  - **The rule.**
+    - Gecko's click, scroll, move and drag are `unless_pointer_within`. They take the background route only while X's `QueryPointer` child chain puts the real pointer in the target window. Otherwise shared mode refuses with the Device mode sentence and sends nothing, and dedicated mode takes the foreground route.
+    - `unless_unobscured`, whose only users were Gecko's click and scroll, is removed.
+    - Every such request is watched. The crossings are selected on the press watch's connection, and the pointer is read again before sending; found outside there, the request is judged outside with no third read (the review, the design session). After a round trip following the events, the watch and `QueryPointer` are read again. If the pointer left, the answer is "<app> may not have taken the <kind>: the desktop pointer left its window during the <request>…", never ok.
+    - `--ignore-pointer` and `--ignore-cover` are measurement flags only.
+  - **Decisions accepted by the design session.**
+    - The gate's Firefox cells park the pointer inside the window. This touched `drag.mjs` and `action-settle.mjs`, which are outside the row's list.
+    - The predicates manifest (`predicates.mjs`, `--experiment predicates`) is T19's. It has 28 Firefox cases plus 4 leave cases, run through the sitting's runner. Allowed cases run 30 times and refused ones 10, beside the pinned and pointer-unjudged lanes.
+    - The judge counts a trial only when its park held and its effect was read. A case short of its valid trials fails. A refusal that took effect fails every refused and leave case.
+  - **Proof on the final bytes.** On private displays, all 32 cases pass, with every outcome's effect read.
+    - Refused: cua 10/10, 0 took. The pinned build answered ok and took 0.
+    - Leave runs had 0 ok with no effect: click "left" 20 (19 took), scroll "left" 20 (20 took), move 3 ok and took, 5 "left" (2 took), 12 refused (0 took), select "left" 20 (0 took).
+    - The device cases pass, with the witness and audit clean.
+  - **On `:0`,** the manifest ran 32 of 32 under task 50's guards with `wrap71.py`, before the fix wave. Its README separates what it observed from what it did not. cua's refused and leave effects for click, scroll and move were not read there, never zero, and the design session ruled that no rerun is needed. Observed there: every allowed effect; the pinned and pointer-unjudged lanes' 0/10 on refused cases, which is what shows Gecko drops the input; and every ok answer's effect, so "0 ok with no effect" stands.
+  - **Limits and costs.**
+    - The second check ends one round trip after the events, so a pointer that leaves before a later Gecko re-read is not caught (#362, P3).
+    - The leave answer is mostly a false alarm for clicks and scrolls, which Gecko had already taken. It is honest, but it costs the caller a re-read, and narrowing it needs #362's measurement.
+    - Firefox experiments outside the gate don't park the pointer, so their cua lanes refuse whenever it is elsewhere (tech debt).
+  Evidence: `m4/pointer-route/` (README; the dry run; the `:0` sitting and its gedit step; the private proofs; the `:0` manifest); the task-71 report (local); `ci-gate` GREEN on 258f52b0, ddee5fd5, 102abe84, e47fc1e3 and 2acc8054 (with a rerun of a racy clipboard test).
+  Date/Author: 2026-11-10, the plan-executor (session linux171), from task 71's report, its review and fix wave (reviewer-medium), and the design session's rulings.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

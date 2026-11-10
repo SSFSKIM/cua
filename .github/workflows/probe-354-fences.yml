@@ -18,7 +18,7 @@ permissions:
   contents: read
 env:
   MAIN_REF: '9020bb18acb9091f817a4b648f7c332174b11153'
-  BRANCH_REF: 'PENDING_BRANCH_HEAD'
+  BRANCH_REF: 'bd63a0ccbfc557ed6cdbe04e1a666b3df124d094'
 jobs:
   plan:
     runs-on: ubuntu-latest

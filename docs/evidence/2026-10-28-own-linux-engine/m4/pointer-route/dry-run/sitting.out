@@ -1,0 +1,6 @@
+cua-engine 0.3.0 (aff8c0328186)
+0c5b82a3bd92f78152fe088017204df28471958804dbdef52fc621d8a6d7ecea  <task71>/build/aff8c0328186b6d16d6df5f4379fdccabf030f0b/src/native/linux-engine/target/x86_64-unknown-linux-musl/release/cua-engine
+start dry1 2026-11-10T02:25:46Z loadavg 0.95 1.03 1.18
+run exit 0; watchdog clean
+private run dry1 exit 0 04:03:38
+end dry1 2026-11-10T04:03:38Z loadavg 0.28 0.40 0.46 status 0

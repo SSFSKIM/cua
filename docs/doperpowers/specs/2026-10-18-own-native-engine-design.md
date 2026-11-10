@@ -491,6 +491,14 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     with nothing posted; its sentence gives the image's size and asks for a point inside it); scrollUnconfirmed (#328: a
     scroll whose container under the point was not seen to move, the bar's fallback included, or that has no readable
     container; its sentence asks the model to observe before scrolling again)
+  typeUnconfirmed, engine-only and admitted by the wrapper by name, its sentence withheld (every concealed type_text
+    that keyed ends with it, since concealed text is never read back): #354, a keyed type_text whose focused field did
+    not read, within 1 s, its value from before the first event with the selected range replaced by the text, or whose
+    text before a key did not, the key and the rest then unsent; or whose field cannot be read back: concealed, secure,
+    not a text-entry role, unreadable, at Chromium's AXValue cap, or no longer the focused field; its sentence says
+    some text may have gone in and asks the model to observe, then use setValue, and only a mismatch on a field that
+    stayed readable carries an excerpt, at most 200 UTF-16 units of each of expected and actual around the first
+    difference, with both lengths
   activationGuardMs: route 3's guard time, present only when a guard ran; activationClick: what the inert-point rule
     decided at the window's AXActivationPoint when an activation ran, "posted" there or the reason it was not ("noPoint",
     "outsideFrame", "spared", "control", "actionsUnknown", "hitTestFailed"); activationClickKind: the click that
@@ -550,6 +558,14 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
   note: on a paste or type_text result that pasted a line with no channel to see it, read after ⌘V (#187), and on a
     scroll whose content was already at its end in that direction (#328): the sentence the service adds to the tool
     result's content
+  typeReadback (#354, on a keyed type_text's result and its errors once the field was snapshotted): {confirmed,
+    reason?: "concealed" | "noFocusedElement" | "roleUnreadable" | "secure" | "notTextField" | "valueUnreadable" |
+    "rangeUnreadable" | "possiblyTruncated" | "valueMismatch" | "becameSecure" | "fieldUnreadable" | "fieldChanged",
+    snapshotMs, pollMs, reads, checkpoints? (keys whose preceding text was confirmed before they were posted),
+    keysUnconfirmed? (the keys ending the text, posted after its confirmation, their effect unconfirmed),
+    expectedLength?, actualLength? (a mismatch's only), stoppedBeforeKey?: true}; value-free
+  keyEffect (#354, on a press_key's result and errors once a press was posted): "unconfirmed", since press_key answers
+    once its keys are posted
   scroll (#328, on a scroll's result and its scrollUnconfirmed): {container: "scrollArea" | "pageScroller" | "webArea" |
     null, outcome: "moved" | "atEnd" | "unconfirmed", atEnd?: true, endBefore?: true, moved?: points the asked way,
     by?: "content" | "tracked" | "hit" | "bar", barBefore?, barAfter?, firstMoveMs?, polls, barWrite?, barWriteError?,
@@ -4714,6 +4730,141 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     browser measured exposes one; the case is covered by unit tests only.
   Date/Author: 2026-11-09, cursor235's lane-1 implementer for the design session's ruling 31a62775 on #298; the live
   results 2026-11-10.
+- Decision (#354, 2026-11-10, `fix/354-type-readback`; the design session's rulings 1ea561bc:567 (measure both halves
+  first) and 1ea561bc:585 (build the read-back as scoped), findings
+  https://github.com/SSFSKIM/cua/issues/354#issuecomment-6771144651, ruling
+  https://github.com/SSFSKIM/cua/issues/354#issuecomment-6771210096; kit `probe/354-measure` eb28ae3f, `scripts/probe-354/`
+  and `scripts/probe-354-fences/`, runs 42758470642, 42776542139, 42797770753, 42810035238, 42810419737, 42815192390 and
+  the period-off diagnostic 42814306485): **a keyed `type_text` answers success only once the focused field reads its
+  value from before the first event with the selected range replaced by the text; anything else is `typeUnconfirmed`,
+  never retried. `press_key` still answers once posted, and says so.** This departs from the vendor, which answers once
+  its events are posted, as cua did: `entered` counted posted units, not consumed ones.
+  1. **What the measurement found.** An edit key followed by `type_text` left the wrong final text: Cmd+A, Cmd+Z and
+     Cmd+V before typing went wrong in Safari 161 of 640 and Chrome 88 of 640 (20 per cell, behind a cover), in the
+     foreground too (Cmd+A then type in two calls: Safari 39/80, Chrome 36/80) and inside one call; Firefox 0. The page
+     receives the key's keydown before the text, but the key's effect lands after the typed input has begun, and the
+     later input overwrites it. No fence tested holds generally: a synchronous AX read, an effect predicate (falsified
+     by Cmd+A over a selection already made), an F20 marker (Chrome's select-all landed after its acknowledgement 69 of
+     80 times; Safari inserts U+0010 for it) and the AX selected-text notification (Safari acknowledged a negative
+     control 151 of 160, Chrome's Cmd+A over a selection never answered). Right after `type_text` returned the DOM or AX
+     was still partial in 520 of 720 trials, complete within p95 20 to 45 ms; the model's own observations saw the full
+     text in all but one (#357). macOS's "Add period with double-space" rewrote "word is" in 2 Chrome trials of 500
+     characters, and TextEdit's completion expanded "delivere" in all 60 of its 500-character trials. **The exact
+     read-back** (snapshot, expected, equality poll) confirmed 719 of 720 trials with the key settled and accepted 0
+     wrong values; 120 password or concealed and 60 canvas trials all answered unconfirmed with no value read.
+  2. **The rule as built** (`TypeReadback.swift`, the spike's `Fence354Readback` and `logic.swift` ported):
+     - **The snapshot**, the last thing before the first event (after a forced activation): a concealed request reads
+       nothing, not even focus; otherwise the app's focused element, its role, its subrole (only when the role read),
+       then its value and selected range only when the role is a text-entry role (`typeReadbackTextRoles`: AXTextField,
+       its search subrole included, AXTextArea, which Chromium, WebKit and Gecko give a contenteditable region, and
+       AXComboBox) and neither role nor subrole is AXSecureTextField nor the subrole unreadable. A non-text role is
+       refused whatever its value (Chrome's canvas reads AXImage with an empty string value, the spike's 20 cells).
+     - **Expected:** the before-value with the selected UTF-16 range replaced (NSString), the typed text as the units
+       insert it: a newline (LF, CR or CR LF, one Return) as "\n".
+     - **The poll:** after the last event, the snapshotted field every `typeReadbackPollIntervalMs` (5) for at most
+       `typeReadbackBudgetMs` (1,000), each read with a `typeReadbackMessagingTimeout` (0.1 s) messaging timeout, the
+       spike's three numbers. Role and subrole are read again before every value read; a field whose role no longer
+       reads, whose subrole read fails, that turned secure, or whose role is no longer the snapshot's is read no
+       further. Equality only, never containment.
+     - **The answers.** Equal, and the app's focused element still the snapshotted one (CFEqual, as the spike's
+       `focusRetained` was in all 2,393 confirmed trials of run 42815192390): success, `typeReadback.confirmed`. A mismatch on a field
+       that stayed readable: `typeUnconfirmed` with the excerpt. Concealed, secure, non-text, unreadable, a field that
+       turned secure or unreadable or changed identity, and a value that may be cut: `typeUnconfirmed` with no values.
+  3. **What the build settled** (gaps the ruling left):
+     - **A key in the text is a checkpoint.** A Return or a Tab (any keyed control character) can do something other
+       than insert itself (submit a form, move focus), so one expected value cannot cover it: either every
+       `type_text("query\n")` into a search field would answer unconfirmed, or a wrong query would be submitted before
+       anything was checked. So the text typed since the last checkpoint must read back before the key is posted (the
+       same poll and answers); a mismatch there stops the text, the key and the rest unsent (`stoppedBeforeKey`, its
+       sentence says so). The keys that end the text are posted after that confirmation and reported as
+       `keysUnconfirmed`, as press_key's are; text after a key is expected with the key's character in it, as a text
+       area holds it, so a single-line field that took a Return as a submission answers unconfirmed there. The check runs
+       before the in-flight intervention guard, so the guard is read after its wait.
+     - **"May be truncated"** (#350): Blink cuts a string attribute to at most 10,000 UTF-8 bytes at a character
+       boundary, and #290's 20,499-character ASCII field read 10,000 long. A read whose length sits at the cap in UTF-8
+       bytes (9,997 to 10,000) or UTF-16 units (9,999 or 10,000) may be cut (`readbackMayBeTruncated`): the snapshot's
+       before-value, the expected value (which a whole and a cut field would read alike) and the final actual each answer
+       `possiblyTruncated`. A value past the cap was not cut there and compares, so TextEdit's 20,000-character document
+       is read back.
+     - **The excerpt** (`readbackExcerpt`): 100 UTF-16 units either side of the first unit where expected and actual
+       differ (`typeReadbackExcerptRadius`), the same span of each, never splitting a surrogate pair, quoted with its
+       control characters escaped, with its start and both full lengths: at most about 400 units of the field in the
+       answer. Anchored at the difference rather than the selection so a substitution far into a 500-character text is
+       shown; the difference lies in the edited span unless the app changed text outside it.
+     - **The meta stays value-free:** `typeReadback` carries the reason, the snapshot's and the polls' time, the reads,
+       the checkpoints, `keysUnconfirmed`, and only on a mismatch the two lengths. The excerpt is in the sentence alone.
+     - **Not ported:** the spike's range read after the poll and its expected caret (evidence only, never the
+       predicate), and the observer fences, falsified.
+     - **Empty text** posts nothing and reads nothing, as before. A text of keys alone confirms nothing typed: success
+       with `keysUnconfirmed` when the snapshot was readable.
+     - **The wrapper admits `typeUnconfirmed` by name** (src/services/sky.mjs): every concealed `type_text` that keyed
+       now ends with it, and without the name the model read `failed (failed)`. Its sentence stays withheld, as every
+       substituted request's is: `type_text with secret "<label>" failed (typeUnconfirmed) after the secret was read; it
+       may have been partly entered.`
+     - **The paste route** (a non-Latin input source, Paste.swift) keeps #187's effect check and is not read back: the
+       ruling measured the keyed route only, and the paste route's unreadable-field answer is #187's success with a
+       note. The documents say the read-back does not apply there.
+  4. **The sentences.** A mismatch: `The text was typed, but the field does not read as expected, so it is not confirmed
+     and some or all of it may have gone in. Observe the field with getAXState() before going on, then use setValue to
+     put it right; do not type the text again. From character <n>, expected "<…>"; the field reads "<…>". The expected
+     text is <n> characters long, the field's <n>.` The other reasons replace the clause after "but" (a password field,
+     which is never read back; concealed text, which is never read back; the focused element is not a text field; the
+     field's text could not be read back; the field holds more text than accessibility reports in full; the focused
+     field changed while the text was typed; no focused field could be found) and carry no excerpt. A checkpoint's
+     opens `The text before a Return or Tab was typed, but …, so the key and the text after it were not sent.`
+  5. **press_key** is unchanged in behaviour; its meta says `keyEffect: "unconfirmed"` once a press was posted, and the
+     documents say that an editing key's effect is not confirmed and that text typed right after one can race it.
+  6. **The cost.** The spike's snapshot and poll, p50/p95: Safari 26.0/57.2 ms, Chrome 28.4/47.8 ms, Firefox 33.4/53.4
+     ms; 1 to 6 polls when confirmed. Each poll is three reads (role, subrole, value), plus one focus read at the end. A
+     mismatch, and an unreadable value, cost the whole second. A field that cannot be read back costs the snapshot only.
+     Each checkpoint costs one confirmed poll before its key.
+  7. **Limits.**
+     1. What `typeUnconfirmed` will now answer, where main answered success: every password field (typed concealed or
+        not), every `{{secret:…}}` typed with `type_text` (concealed, so never read back; the wrapper names it,
+        item 3), typing into a list to select a row (Finder's type-select) or into a canvas or other non-text element, a
+        field whose app reformats what was typed (a phone mask, a substitution, completion: TextEdit's 60 of 60), a
+        single-line field given text after a Return, and a Chromium field at its AXValue cap. Each is honest, and each
+        asks the model to observe.
+     2. The read-back confirms the field's text, not where its caret ended nor anything a key did.
+     3. A field that keeps changing on its own (a live counter in the field) never reads equal and answers unconfirmed.
+     4. Cut detection rests on the cap's units as stated above; a Chromium cut in another unit would show as a mismatch,
+        never as a false equal, unless the cut text happened to equal the expected one.
+     5. A contenteditable whose AXValue does not show a Return as "\n" answers text after a Return unconfirmed; the
+        measured cells typed no newline.
+     6. The paste route is outside the read-back (item 3).
+  8. **The documents.** `docs/cua-api/agent-cursor.md` gains a sixth paragraph: what `typeText` confirms, that
+     `typeUnconfirmed` may mean some text went in and the remedy is to observe, then `setValue`; the fields it cannot
+     read; the OS's substitutions answering unconfirmed, never a silent success; keys in the text; and `setValue`, or
+     `selectText` then `typeText`, to replace a field's text instead of a select-all key, since `pressKey` does not
+     confirm an editing key's effect. The surface inventory's Table 3 addition of 2026-11-10 (#354), the docs test,
+     parity's docs oracle and PROVENANCE.md carry it. The plugin version is set at the merge turn.
+  9. **Parity.** repl-parity drives no `type_text`; its docs oracle carries the paragraph. The native matrix's Finder
+     type-select rows (the method matrix's `typeText.typeSelect` and concurrent use's Finder side) now see cua answer
+     `typeUnconfirmed` for an element that is not a text field once the keys landed, where the vendor answers success:
+     they judge the outcome and keep that one answer as cua's expected difference (`typeIntoList`, scripts/native-matrix/
+     plan.mjs). The text scenes' rows (TextEdit's document, Chrome's and the fixture's fields) are expected to confirm.
+  Proven offline: `TypeReadbackTests` (25) drive the real keyText through `keyTextReadBack` over a fake app whose field
+  takes the posted text: equal, a caret insertion, a late equal inside the window and one past it; a mismatch's
+  sentence, excerpt and lengths, a 20,000-character field's answer holding two 200-unit windows at the difference, the
+  excerpt's surrogate pairs and quoting; secure by role, subrole or an unreadable subrole with no value or range read,
+  concealed reading nothing, a field turning secure read no further; non-text roles with a string value refused and the
+  three text roles read; no focus, an unreadable role, value or range; a value and an expected value at the cap, a read
+  cut at it, the UTF-8 window; focus moving, a role changing or no longer reading; UTF-16 replacement with emoji and
+  combining marks; a trailing Return confirmed before it is posted, a wrong text never submitted, text-area lines
+  checked at each Return, text after a Return a single-line field dropped, keys alone, empty text, the guard before a
+  key read after the checkpoint's wait; the snapshot's read order; an intervention's stop keeping the record;
+  press_key's `keyEffect`. 1,152 engine tests pass, 1 skipped as before. Of 52 parts and bounds of the rule changed in
+  turn (`~/.local/share/187/mutate-354.py`), 48 fail a test. Four survive by design, reached only by a live type_text:
+  the engine's call into the read-back, and the live seam's value read, subrole error and identity. The service (`cua/typeReadback`, `cua/keyEffect`, the sentence reaching
+  the model) and the matrix's expected difference have node tests.
+  **The merge gate** (the ruling): a hosted A/B against main on the spike's cells, the real engine's answers, with the
+  cost stated: the race cells (Cmd+A, Cmd+Z, Cmd+V then `type_text`, three browsers, four editors, 20 each) with 0 wrong
+  values answering success and the branch's `typeUnconfirmed` rate against main's success; the clean cells at 30, 120
+  and 500 characters confirmed; password, concealed and canvas unconfirmed with no values and no secure value read; a
+  Chrome field past 10,000 characters unconfirmed; the 500-character contenteditable under "Add period with
+  double-space" unconfirmed, never success; and `type_text`'s time per browser and length (p50, p95) and the mismatch
+  path's, branch against main.
+  Date/Author: 2026-11-10, cursor235's lane-1 implementer for the design session's ruling 1ea561bc:585 on #354.
 
 ## Outcomes & Retrospective
 

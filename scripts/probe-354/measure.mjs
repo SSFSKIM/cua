@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {createInterface} from 'node:readline';
 import {launch,placePid,version} from '../probe-316/browser.mjs';
 import {page,expectation,SEED,CLIP} from './page.mjs';
+import {FixtureTransport,FixtureError} from './transport.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
 const OUT=arg('out'),ENGINE=arg('engine'),TOOL=arg('tool'),OCR=arg('ocr'),KIND=arg('browser'),PHASE=arg('phase')??'all',REPS=+(arg('reps')??20),SMOKE=arg('smoke')==='true';
@@ -36,14 +37,26 @@ const side=spawn(TOOL,[],{stdio:['pipe','pipe','inherit']}),waiters=[];
 createInterface({input:side.stdout}).on('line',l=>{let r;try{r=JSON.parse(l)}catch{r={error:l}}waiters.shift()?.(r)});
 const ask=q=>new Promise(ok=>{waiters.push(ok);side.stdin.write(JSON.stringify(q)+'\n')});
 async function front(target,activate=true){const r=await ask({op:'front',pid:target,activate});if(r.error||r.frontmostPid!==target)throw Error('foreground verification '+JSON.stringify(r));return {requestedPid:target,...r}}
-let cmdNo=0,poll=null,queue=[],answers=[];
-const server=createServer(async(req,res)=>{if(req.url==='/'){res.end(page());return}if(req.url==='/cmd'){if(queue.length)res.end(JSON.stringify(queue.shift()));else{poll=res;res.on('close',()=>{if(poll===res)poll=null})}return}if(req.url==='/answer'){let b='';for await(const c of req)b+=c;try{answers.push({...JSON.parse(b),receivedAt:Date.now()})}catch{}res.end('ok');return}res.statusCode=404;res.end()});
+const transport=new FixtureTransport({onEvent:e=>appendFileSync(join(OUT,'transport.jsonl'),JSON.stringify(e)+'\n')});
+const server=createServer(async(req,res)=>{
+ res.setHeader('Cache-Control','no-store');const u=new globalThis.URL(req.url,'http://fixture');
+ if(u.pathname==='/'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(page());return}
+ res.setHeader('Content-Type','application/json');
+ if(u.pathname==='/cmd'){transport.poll({pageId:u.searchParams.get('pageId'),timeOrigin:Number(u.searchParams.get('timeOrigin'))},res);return}
+ if(u.pathname==='/answer'){let b='';for await(const c of req)b+=c;try{const a=JSON.parse(b);const ok=a.op==='ready'?transport.register(a):transport.accept(a);res.statusCode=ok?200:409}catch{res.statusCode=400}res.end('{}');return}
+ res.statusCode=404;res.end('{}');
+});
 await new Promise(ok=>server.listen(0,'127.0.0.1',ok));const URL=`http://127.0.0.1:${server.address().port}/`;
-function send(q){const c={n:++cmdNo,...q};if(poll){poll.end(JSON.stringify(c));poll=null}else queue.push(c);return c.n}
+const send=q=>transport.send(q);
 async function until(fn,ms=10000){const deadline=Date.now()+ms;for(;;){let v=fn();if(v)return v;if(Date.now()>=deadline)throw Error('condition timeout');await sleep(5)}}
-async function command(q){const rpcStartedAt=Date.now(),n=send(q),r=await until(()=>answers.find(a=>a.cmd===n));answers=answers.filter(a=>a!==r);if(r.error)throw Error('fixture '+JSON.stringify(r));return {...r,rpcStartedAt,rpcReturnedAt:Date.now()}}
-const meta={browser:KIND,phase:PHASE,editors,reps:REPS,smoke:SMOKE,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,image:process.env.ImageVersion,startedAt:start,
- resume:{skipCompletedFile:skipCompletedFile??null,completedIdCount:skipIds.size,sourceRun:skipInput.sourceRun??null},setupProtocol:'fixture-only-v2: no browser engine click; real deactivation settles 250ms, intended DOM state checked before key',calibrationRetries:'at most 3 separately logged key-only controls per context; semantic background failures remain failures, then a semantic foreground reference supplies only the intended oracle; never retry measured keys or requested typed text',
+async function command(q){
+ const rpcStartedAt=Date.now(),n=send(q);let completed=false;
+ try{const r=await until(()=>transport.getAnswers(n)[0]);if(r.error)throw new FixtureError('fixture '+JSON.stringify(r));completed=true;return {...r,rpcStartedAt,rpcReturnedAt:Date.now()}}
+ catch(e){throw e.fixtureFailure?e:new FixtureError('fixture '+q.op+': '+String(e))}
+ finally{transport.cancel(n,completed?'completed':'command-failed')}
+}
+const meta={fixtureOwnershipVersion:3,browser:KIND,phase:PHASE,editors,reps:REPS,smoke:SMOKE,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,image:process.env.ImageVersion,startedAt:start,
+ resume:{skipCompletedFile:skipCompletedFile??null,completedIdCount:skipIds.size,sourceRun:skipInput.sourceRun??null},setupProtocol:'owner-v3: AX visible-window nonce binds pageId/timeOrigin; owned expiring no-store transport; fixture-only DOM setup; deactivation settles250ms and intended state is checked before key',calibrationRetries:'at most 3 separately logged key-only controls per context; semantic background failures remain failures, then a semantic foreground reference supplies only the intended oracle; never retry measured keys or requested typed text',
  rateSampling:'requested 0 and 500ms; mismatches re-read at 3000ms; actual timestamps recorded',partialSampling:'requested 0/250/1000/3000ms; prior cmd+a settled and confirmed independently',
  candidateBudgetMs:1000,candidateBudgetKind:'soft1000ms plus in-flight AX requests (100ms timeout each); overruns logged',candidatePollMs:5,
  oracle:'separately logged key-only per-browser/editor/key calibration after 500ms; browser final uses DOM replacement, native final uses AX replacement; key candidate uses focused AX, including editor-specific newlines',
@@ -53,17 +66,17 @@ const meta={browser:KIND,phase:PHASE,editors,reps:REPS,smoke:SMOKE,kit:process.e
  clickOrder:'separate part:click-order, textarea/all browser shard only,10 reps; foreground click -> selection-only script -> baseline type; expected replacement is script intent; 0/250/1000/3000ms samples',
  observations:'first and second get_app_state both includeScreenshot:true; screenshotAXContains describes AX, never pixels; OCR is visibility-only after all timed samples; Safari may be blank; long inputs can be offscreen',
  preparation:'every browser is truly foreground for fixture reset/focus/selection/undo setup; no engine click or deferred caret; cover is brought forward, deactivation settles250ms, intended state is verified, then actual frontmost PID is checked without activation immediately before key',
- originalSmokeEvidence:'run-42750046305 and run-42758470642 preserved separately; fixture-only-v2 removes both background-click refusal and deferred-click caret contamination from key-ordering coverage'};
+ originalSmokeEvidence:'prior unowned Firefox runs remain diagnostic, not owner-v3 primary rates; owner-v3 keeps click-free key setup and isolates page realms without suppressing browser behavior'};
 // Persist evidence, not full trace-bearing rows in memory; this mitigates potential controller memory pressure.
-let rowCount=0,validRows=0,skippedCompletedCells=0,first20SetupFailures=0;
-function save(row){rowCount++;if(row.valid)validRows++;if(rowCount<=20&&row.setupFailure)first20SetupFailures++;appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');writeFileSync(join(OUT,'progress.json'),JSON.stringify({meta,rows:rowCount,validRows,skippedCompletedCells,first20SetupFailures,processMemoryBytes:process.memoryUsage(),elapsedMs:Date.now()-start,last:row.id},null,2));console.log('354',row.id,row.problem??'ok','final',row.correct,'state',row.stateContains,'keywait',row.key?.probe?.ms,'typewait',row.type?.probe?.ms)}
+let rowCount=0,validRows=0,skippedCompletedCells=0,first20SetupFailures=0,consecutiveSetupFailures=0;
+function save(row){rowCount++;if(row.valid)validRows++;consecutiveSetupFailures=row.setupFailure?consecutiveSetupFailures+1:0;if(rowCount<=20&&row.setupFailure)first20SetupFailures++;appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');writeFileSync(join(OUT,'progress.json'),JSON.stringify({meta,rows:rowCount,validRows,skippedCompletedCells,first20SetupFailures,consecutiveSetupFailures,fixtureOwner:transport.owner,processMemoryBytes:process.memoryUsage(),elapsedMs:Date.now()-start,last:row.id},null,2));console.log('354',row.id,row.problem??'ok','final',row.correct,'state',row.stateContains,'keywait',row.key?.probe?.ms,'typewait',row.type?.probe?.ms)}
 let browser,coverPid,pid,native=KIND==='native';
 const nativeDocument=join(OUT,'control.txt');
 const modes=['baseline','ax-noop','key-effect','typed','combined'];
 const keys=['cmd+a','cmd+z','cmd+x','cmd+v','cmd+Left','alt+Left','cmd+shift+Left','Left'];
 const sentence=n=>('New typed sentence goes here. Every word is delivered in order. ').repeat(Math.ceil(n/62)).slice(0,n);
 function brief(raw,startedAt,endedAt){return {startedAt,endedAt,durationMs:endedAt-startedAt,error:raw.error??null,meta:raw.result?.meta??raw.error?.meta??raw.error?.data?.meta,timings:raw.result?.timings??null,probe:raw.result?.probe354??null}}
-async function rpc(w,method,args){if(args.outputDirectory)mkdirSync(args.outputDirectory,{recursive:true});let t=Date.now(),r=await w.execute(method,{pid,...args});return {...brief(r,t,Date.now()),raw:r}}
+async function rpc(w,method,args){if(args.outputDirectory)mkdirSync(args.outputDirectory,{recursive:true});const fixtureOwner=native?null:transport.owner;let t=Date.now(),r=await w.execute(method,{pid,...args});return {...brief(r,t,Date.now()),fixtureOwner,raw:r}}
 function clean(r){if(!r)return r;let {raw,...v}=r;return v}
 function values(raw){return (raw?.result?.nodes??[]).filter(n=>['AXTextArea','AXTextField','AXStaticText'].includes(n.role)).map(n=>({role:n.role,value:n.value,title:n.title,description:n.description,frame:n.frame}))}
 function readable(s){return typeof s?.text==='string'&&Array.isArray(s.selection)&&s.selection.length===2&&s.selection.every(n=>Number.isInteger(n)&&n>=0)&&s.selection[0]+s.selection[1]<=s.text.length}
@@ -80,11 +93,45 @@ async function setupNative(w,key,row,scene){
  if(key==='cmd+z'){row.undoSetup=clean(await rpc(w,'type_text',{text:intended.text.slice(SEED.length)}));if(row.undoSetup.error)throw Error('native undo insertion '+JSON.stringify(row.undoSetup.error));await sleep(500)}
  return nativeState();
 }
-async function prepare(w,{id,editor,key,scene='normal'},row){
+async function bindVisibleFixture(row,excludedPageId){
+ const deadline=Date.now()+3000;let last;
+ while(Date.now()<deadline){
+  last=await ask({op:'window-title',pid});
+  if(!last.error&&last.frontmostPid===pid){
+   const match=/probe354:([a-f0-9]{32})/i.exec(last.windowTitle??'');
+   if(match&&match[1]!==excludedPageId){try{
+    const owner=transport.bindVisible(last.windowTitle);await until(()=>transport.hasPoll(),1000);
+    row.fixtureOwner={...owner,axWindow:last};row.ownerPageId=owner.pageId;row.ownerTimeOrigin=owner.timeOrigin;return;
+   }catch(e){last={...last,bindingError:String(e)}}}
+  }
+  await sleep(50);
+ }
+ throw new FixtureError('visible-window fixture handshake unavailable '+JSON.stringify(last));
+}
+async function restoreFixtureURL(w,row){
+ const before=await ask({op:'window-title',pid}),excludedPageId=/probe354:([a-f0-9]{32})/i.exec(before.windowTitle??'')?.[1];
+ const recovery={kind:'setup-only-url-restore',startedAt:Date.now(),before,url:URL+'?ownerRecovery='+Date.now(),actions:[]};(row.setupRecoveries??=[]).push(recovery);
+ await front(pid);
+ for(const [method,args]of [['press_key',{key:'cmd+l'}],['type_text',{text:recovery.url}],['press_key',{key:'Return'}]]){
+  const action=clean(await rpc(w,method,args));recovery.actions.push({method,...action});if(action.error)throw new FixtureError('setup URL restore '+JSON.stringify(action.error));await sleep(250);
+ }
+ recovery.endedAt=Date.now();return excludedPageId;
+}
+async function prepareTrial(w,args,row){
+ if(native){await prepare(w,args,row);await settleSetup(args,row);return}
+ row.setupAttempts=[];let excludedPageId;
+ for(let attempt=1;attempt<=2;attempt++){
+  const trial={setupAttempt:attempt,setupStartedAt:Date.now()};row.setupAttempts.push(trial);
+  try{await prepare(w,{...args,excludedPageId},trial);await settleSetup(args,trial);trial.setupEndedAt=Date.now();Object.assign(row,trial);return}
+  catch(e){trial.setupProblem=String(e);trial.setupEndedAt=Date.now();Object.assign(row,trial);transport.retire('setup-failure');if(attempt===2)throw e;excludedPageId=await restoreFixtureURL(w,row)}
+ }
+}
+async function prepare(w,{id,editor,key,scene='normal',excludedPageId},row){
  row.prepareForeground=await front(pid);
  if(native)row.setup=await setupNative(w,key,row,scene);
  else{
-  row.browserSetupMechanism='foreground fixture DOM focus/selection; no engine click';
+  await bindVisibleFixture(row,excludedPageId);
+  row.browserSetupMechanism='owner-v3 visible-window-bound foreground DOM focus/selection; no engine click';
   row.fixtureReset=await command({op:'reset',id,editor,key});
   row.setup=await command({op:'prepare',id,editor,key,scene});
  }
@@ -115,12 +162,12 @@ function calibrationFailure(key,before,effect){
 }
 async function calibrate(editor,key,foreground=false){
  const cached=calibrations.get(calibrationKey(editor,key,foreground));if(cached?.valid)return cached;
- budget();const id='calibration/'+KIND+'/'+calibrationKey(editor,key,foreground),row={recordKind:'key-only-control',id,browser:KIND,phase:PHASE,editor,keyName:key,foreground,backgroundEffectConfirmed:foreground?null:false,provenance:{kind:'same-context-key-only-control',sourceControlId:id,sourceForeground:foreground},startedAt:Date.now(),settleMs:500,attempts:[]};let w;
+ budget();const id='calibration/'+KIND+'/'+calibrationKey(editor,key,foreground),row={fixtureOwnershipVersion:3,recordKind:'key-only-control',id,browser:KIND,phase:PHASE,editor,keyName:key,foreground,backgroundEffectConfirmed:foreground?null:false,provenance:{kind:'same-context-key-only-control',sourceControlId:id,sourceForeground:foreground},startedAt:Date.now(),settleMs:500,attempts:[]};let w;
  try{
   w=await connect();
   for(let attempt=1;attempt<=3;attempt++){
    const trial={attempt,attemptStartedAt:Date.now()};row.attempts.push(trial);
-   await prepare(w,{id,editor,key},trial);await settleSetup({key,foreground},trial);
+   await prepareTrial(w,{id,editor,key,foreground},trial);
    trial.beforeKeyForeground=await front(foreground?pid:coverPid,false);
    trial.key=clean(await rpc(w,'press_key',{key,spike354Mode:'baseline'}));
    if(trial.key.error)throw Error('calibration key '+JSON.stringify(trial.key.error));
@@ -142,7 +189,7 @@ async function calibrate(editor,key,foreground=false){
  // Failed background delivery is evidence, not an oracle. Keep its failed controls and obtain the intended effect
  // independently in the foreground. Measured background trials still use their default route, once, without retries.
  const reference=await calibrate(editor,key,true);
- const oracle={recordKind:'intended-oracle',id:'oracle/'+KIND+'/'+calibrationKey(editor,key,false),browser:KIND,phase:PHASE,editor,keyName:key,foreground:false,valid:true,backgroundEffectConfirmed:false,
+ const oracle={fixtureOwnershipVersion:3,recordKind:'intended-oracle',id:'oracle/'+KIND+'/'+calibrationKey(editor,key,false),browser:KIND,phase:PHASE,editor,keyName:key,foreground:false,valid:true,backgroundEffectConfirmed:false,
   provenance:{kind:'foreground-reference-after-background-failure',sourceControlId:reference.id,sourceForeground:true,failedBackgroundControlId:row.id},
   effect:reference.effect,ax:reference.ax,axOracleAvailable:reference.axOracleAvailable,axValue:reference.axValue,axRange:reference.axRange,createdAt:Date.now()};
  calibrations.set(calibrationKey(editor,key,false),oracle);appendFileSync(join(OUT,'calibrations.jsonl'),JSON.stringify(oracle)+'\n');
@@ -152,7 +199,7 @@ function screenshotPath(descriptor){const url=typeof descriptor==='string'?descr
 async function observe(w,row,label,directory){
  const r=await rpc(w,'get_app_state',{includeScreenshot:true,outputDirectory:directory});
  const ax=values(r.raw),available=!r.error&&ax.some(n=>typeof n.value==='string');
- row[label]=clean(r);row[label+'Values']=ax;row[label+'Timings']=r.raw.result?.timings??null;
+ row[label]=clean(r);row[label+'Values']=ax;row[label+'Window']=r.raw.result?.window??null;row[label+'Timings']=r.raw.result?.timings??null;
  row[label+'Screenshot']=r.raw.result?.screenshot??null;row[label+'ScreenshotPath']=screenshotPath(row[label+'Screenshot']);
  if(label==='state')row.stateContains=available?ax.some(n=>n.value?.includes(row.text)):null;
  else{row.screenshotAXContains=available?ax.some(n=>n.value?.includes(row.text)):null;row.screenshotPath=row[label+'ScreenshotPath']}
@@ -181,7 +228,7 @@ async function clickThenSelect(w,row){
 async function cell({part,editor,key,mode,rep,length=30,sameRPC=false,foreground=false,scene='normal'}){
  const clickOrder=part==='click-order',text=sentence(length),id=[part,editor,scene,clickOrder?'no-key':key,mode,length,sameRPC?'one':'two',foreground?'front':'behind',rep].join('/');
  if(skipIds.has(id)){skippedCompletedCells++;return}
- budget();const row={id,part,editor,scene,keyName:clickOrder?null:key,mode,rep,length,sameRPC,foreground,text,effectPredicatePreSatisfied:scene==='already-selected',startedAt:Date.now()};let w,stage='setup',sampling;
+ budget();const row={fixtureOwnershipVersion:3,id,part,editor,scene,keyName:clickOrder?null:key,mode,rep,length,sameRPC,foreground,text,effectPredicatePreSatisfied:scene==='already-selected',startedAt:Date.now()};let w,stage='setup',sampling;
  try{
   const calibration=clickOrder?null:calibrations.get(calibrationKey(editor,key,foreground));
   if(!clickOrder&&!calibration?.valid)throw Error('required calibration unavailable');
@@ -189,7 +236,7 @@ async function cell({part,editor,key,mode,rep,length=30,sameRPC=false,foreground
   row.calibrationProvenance=calibration?.provenance??null;row.backgroundEffectConfirmed=calibration?.backgroundEffectConfirmed??null;
   row.expected=expectation(clickOrder?{text:SEED,selection:[0,SEED.length]}:calibration.effect,text);row.axOracleAvailable=calibration?.axOracleAvailable??null;
   const options={spike354Mode:mode,spike354Value:calibration?.axValue??null,spike354Range:calibration?.axRange??null};
-  w=await connect();await prepare(w,{id,editor,key,scene},row);await settleSetup({key,scene,foreground},row);
+  w=await connect();await prepareTrial(w,{id,editor,key,scene,foreground},row);
   if(scene==='already-selected'){
    row.preSatisfiedAX=await focusedAX();
    row.effectPredicatePreSatisfied=calibration.axOracleAvailable&&row.preSatisfiedAX.oracleAvailable?sameEffect(row.preSatisfiedAX.state,{text:calibration.axValue,selection:calibration.axRange}):null;
@@ -225,12 +272,16 @@ async function cell({part,editor,key,mode,rep,length=30,sameRPC=false,foreground
    sampling=(async()=>{for(const delay of delays.slice(1))row.samples.push(await nativeSample(delay,row.returnedAt));return row.samples})().then(samples=>({samples}),error=>({error}));
   }else{
    const sampleNo=send({op:'sample',returnedAt:row.returnedAt,delays});
-   sampling=until(()=>{const ss=answers.filter(a=>a.cmd===sampleNo);return ss.length===delays.length?ss:false},10000).then(samples=>{answers=answers.filter(a=>a.cmd!==sampleNo);return {samples:samples.sort((a,b)=>a.delay-b.delay)}},error=>({error}));
+   sampling=until(()=>{const ss=transport.getAnswers(sampleNo);row.samples=ss;return ss.length===delays.length?ss:false},10000)
+    .then(samples=>({samples:samples.sort((a,b)=>a.delay-b.delay)}),error=>({error:error.fixtureFailure?error:new FixtureError('fixture samples: '+String(error))}))
+    .finally(()=>transport.cancel(sampleNo,'sampling-finished'));
   }
   await observe(w,row,'state',join(OUT,'state-shots'));
   await observe(w,row,'screenshot',join(OUT,'shots',id.replace(/[^a-z0-9]+/gi,'_')));
+  if(!native){row.ownerAfterObservation=await ask({op:'window-title',pid});if(row.ownerAfterObservation.error||!row.ownerAfterObservation.windowTitle?.includes('probe354:'+row.ownerPageId))throw new FixtureError('visible fixture owner lost during measurement '+JSON.stringify(row.ownerAfterObservation))}
   const result=await sampling;if(result.error)throw result.error;row.samples=result.samples;
-  if(!row.samples.every(readable))throw Error('unreadable timed sample');
+  if(!row.samples.every(readable))throw new FixtureError('unreadable timed sample');
+  if(!native&&row.samples.some(s=>s.pageId!==row.ownerPageId||s.timeOrigin!==row.ownerTimeOrigin||s.visibility!=='visible'))throw new FixtureError('sample is not from the selected visible fixture');
   let last=row.samples.at(-1);
   if(!extendedSamples&&last.text!==row.expected.final){await sleep(row.returnedAt+3000-Date.now());last=native?await nativeSample(3000,row.returnedAt):await command({op:'read'});last={...last,delay:3000,returnedAt:row.returnedAt,actualDelayMs:last.at-row.returnedAt};row.samples.push(last)}
   if(!readable(last))throw Error('unreadable final sample');
@@ -249,15 +300,15 @@ async function cell({part,editor,key,mode,rep,length=30,sameRPC=false,foreground
    // OCR runs only AFTER all timed (including 3000ms) samples. It measures visible pixels, not delivery.
    row.pixelEvidence={classification:'visibility-only',offscreenTextPossible:length===500,safariMayBeBlank:KIND==='safari',state:ocr(row.stateScreenshotPath),screenshot:ocr(row.screenshotPath)};
   }
- }catch(e){row.valid=false;row.setupFailure=stage==='setup'||(part==='partial'&&stage==='key');row.failureStage=stage;row.problem=String(e.stack??e).slice(0,3000)}
+ }catch(e){row.valid=false;row.setupFailure=stage==='setup'||(part==='partial'&&stage==='key');row.failureStage=stage;row.problem=String(e.stack??e).slice(0,3000);if(!native&&e.fixtureFailure){row.contextLoss={stage,measuredActionPosted:!!(row.key||row.type||row.click),...transport.snapshot()};transport.retire('cell-context-loss')}}
  finally{if(sampling)await sampling;w?.close();row.endedAt=Date.now();save(row)}
- if(rowCount<=20&&first20SetupFailures>=3)throw Error('aborting invalid coverage: at least 3 setup failures within first 20 measurement cells');
+ if(consecutiveSetupFailures>=3||(rowCount<=20&&first20SetupFailures>=3))throw Error('aborting invalid coverage: 3 consecutive setup/recovery failures or 3 setup failures within first20 cells');
 }
 try{
  if(native){writeFileSync(nativeDocument,SEED);sh('open',['-a','TextEdit',nativeDocument]);await sleep(1500);pid=+(sh('pgrep',['-x','TextEdit']).stdout.trim().split('\n')[0]);coverPid=+(sh('pgrep',['-x','Finder']).stdout.trim().split('\n')[0]);placePid(pid,WIN);await front(pid)}
  else{
   meta.version=version(KIND);browser=await launch(KIND,URL,join(OUT,'profile'),WIN);pid=browser.pid;
-  await until(()=>answers.some(a=>a.op==='ready'),30000);await sleep(KIND==='cft'?Math.max(0,browser.launchedAt+22000-Date.now()):1500);placePid(pid,WIN);
+  await until(()=>transport.clients.size>0,30000);await sleep(KIND==='cft'?Math.max(0,browser.launchedAt+22000-Date.now()):1500);placePid(pid,WIN);
   const doc=join(OUT,'cover.txt');writeFileSync(doc,'The probe cover.');sh('open',['-a','TextEdit',doc]);await sleep(1000);coverPid=+(sh('pgrep',['-x','TextEdit']).stdout.trim().split('\n')[0]);placePid(coverPid,{x:0,y:40,w:380,h:300});
   const w=await connect();for(let i=0;i<2;i++){await rpc(w,'get_app_state',{includeScreenshot:false});await sleep(1200)}w.close();
  }
@@ -275,4 +326,4 @@ try{
  }
  if(!native&&PHASE==='all'&&editors.includes('textarea'))for(let rep=1;rep<=10;rep++)await cell({part:'click-order',editor:'textarea',key:'cmd+a',mode:'baseline',rep,foreground:true,scene:'click-then-script-select'});
 }catch(e){meta.failure=String(e.stack??e);console.error(meta.failure);process.exitCode=1}
-finally{meta.finishedAt=Date.now();meta.measuredCells=rowCount;meta.validRows=validRows;meta.skippedCompletedCells=skippedCompletedCells;writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));engine.kill('SIGTERM');side.kill('SIGTERM');if(browser){try{process.kill(browser.pid,'SIGTERM')}catch{}}server.closeAllConnections();server.close();}
+finally{meta.finishedAt=Date.now();meta.measuredCells=rowCount;meta.validRows=validRows;meta.skippedCompletedCells=skippedCompletedCells;writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));transport.retire('shutdown');engine.kill('SIGTERM');side.kill('SIGTERM');if(browser){try{process.kill(browser.pid,'SIGTERM')}catch{}}server.closeAllConnections();server.close();}

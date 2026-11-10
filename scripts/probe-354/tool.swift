@@ -59,6 +59,12 @@ while let line=readLine(){do{
   answer["frontmostPid"]=actual as Any? ?? NSNull();answer["ok"]=actual==pid
   if actual != pid {answer["error"]="target did not become foreground"}
  }
+ else if op=="window-title" {
+  let app=AXUIElementCreateApplication(pid);AXUIElementSetMessagingTimeout(app,0.5)
+  if let window=el(attr(app,kAXFocusedWindowAttribute)),let title=attr(window,kAXTitleAttribute) as? String {answer["windowTitle"]=title}
+  else{answer["error"]="no focused AX window title"}
+  answer["frontmostPid"]=NSWorkspace.shared.frontmostApplication?.processIdentifier as Any? ?? NSNull()
+ }
  else if let (f,source)=field(pid,focusedOnly:op=="focused",allowTextEditFallback:q["allowTextEditFallback"] as? Bool ?? false,documentPath:q["documentPath"] as? String) {
   if op=="reset" {let text=q["text"] as! String;answer["setValue"]=AXUIElementSetAttributeValue(f,kAXValueAttribute as CFString,text as CFString).rawValue;answer["focus"]=AXUIElementSetAttributeValue(f,kAXFocusedAttribute as CFString,kCFBooleanTrue).rawValue}
   if let s=q["range"] as? [Int],s.count==2 {var r=CFRange(location:s[0],length:s[1]);answer["setRange"]=AXUIElementSetAttributeValue(f,kAXSelectedTextRangeAttribute as CFString,AXValueCreate(.cfRange,&r)!).rawValue}

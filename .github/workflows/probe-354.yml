@@ -24,7 +24,10 @@ jobs:
       max-parallel: 6
       matrix:
         include:
-          - {id: native-rate, browser: native, phase: rate, editors: TextEdit}
+          - {id: firefox-textarea-all, browser: firefox, phase: all, editors: textarea}
+          - {id: firefox-input-all, browser: firefox, phase: all, editors: input}
+          - {id: firefox-contenteditable-all, browser: firefox, phase: all, editors: contenteditable}
+          - {id: firefox-compose-all, browser: firefox, phase: all, editors: compose}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -80,6 +83,7 @@ jobs:
             ${{ runner.temp }}/probe-354/**/progress.json
             ${{ runner.temp }}/probe-354/**/resume-input.json
             ${{ runner.temp }}/probe-354/**/engine-stderr.txt
+            ${{ runner.temp }}/probe-354/**/transport.jsonl
             ${{ runner.temp }}/probe-354/**/state-shots/**
             ${{ runner.temp }}/probe-354/**/click-order-setup/**
             ${{ runner.temp }}/probe-354/**/shots/**

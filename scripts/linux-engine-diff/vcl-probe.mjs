@@ -72,8 +72,11 @@ async function openPointScene(desktop, label) {
   return scene;
 }
 
-/** The element each family's right click aims at: VCL content in LibreOffice, the point scene's button. */
-const TARGET_ROLES = { writer: ['paragraph'], calc: ['table cell'], impress: ['paragraph', 'text', 'shape'], 'gtk3-frame': ['push button'] };
+/**
+ * The element each family's right click aims at: VCL content in LibreOffice (Calc's sheet as a whole, since its cells'
+ * objects are made on demand and an engine cannot resolve them again), the point scene's button.
+ */
+const TARGET_ROLES = { writer: ['paragraph'], calc: ['table'], impress: ['paragraph', 'text', 'shape'], 'gtk3-frame': ['push button'] };
 
 /** The centre of a rectangle `{x, y, w, h}` clipped to the window, floored, as the engine takes it (`visible_point`). */
 export function clippedCentre(e, win) {
@@ -116,7 +119,8 @@ async function elementProbe(ctx, family, n, spec) {
         const inWindow = (id) => {
           try {
             const e = oracle.extents(id);
-            return e.w > 0 && e.h > 0 && e.x >= win.x && e.x + e.w <= win.x + win.width && e.y >= win.y - 40 && e.y + e.h <= win.y + win.height;
+            // on the window at all (the sheet runs past it), VCL's extents being up to the menu bar's height high
+            return e.w > 0 && e.h > 0 && e.x < win.x + win.width && e.x + e.w > win.x && e.y < win.y + win.height && e.y + e.h > win.y - 40;
           } catch {
             return false;
           }
@@ -280,7 +284,7 @@ export async function runElementPlan(args, { desktop, emit }) {
   const failed = [];
   try {
     for (const spec of lanes) {
-      for (const family of ['writer', 'calc', 'impress', 'gtk3-frame']) {
+      for (const family of args.families?.length ? args.families : ['writer', 'calc', 'impress', 'gtk3-frame']) {
         try {
           const rows = await elementProbe(ctx, family, n, spec);
           for (const pass of ['fresh', 'after a pointer event']) {

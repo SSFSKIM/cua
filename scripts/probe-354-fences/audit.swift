@@ -1,4 +1,4 @@
-// Hosted scratch-build audit only. Counts attempted text-bearing AX reads during an explicitly tagged type_text.
+// Hosted scratch-build audit only. Counts attempted text-bearing and selection-range AX reads during a tagged type_text.
 // Makes no AX reads of its own, keeps no values, does not alter any return or error, and never implements a reader.
 import ApplicationServices
 import Foundation
@@ -8,6 +8,8 @@ final class Probe354Audit: @unchecked Sendable {
   private let lock = NSLock()
   private var id: String?
   private var counts: [String: Int] = [:]
+  private let textAttributes = ["AXValue", "AXSelectedText", "AXAttributedValue", "AXStringForRange", "AXAttributedStringForRange"]
+  private let rangeAttributes = ["AXSelectedTextRange", "AXSelectedTextRanges"]
 
   func begin(_ args: [String: Any]) -> String? {
     guard let tag = args["probe354Audit"] as? String else { return nil }
@@ -19,14 +21,16 @@ final class Probe354Audit: @unchecked Sendable {
   func read(_ names: [String]) {
     lock.lock(); defer { lock.unlock() }
     guard id != nil else { return }
-    for name in names where ["AXValue", "AXSelectedText", "AXAttributedValue", "AXStringForRange", "AXAttributedStringForRange"].contains(name) {
+    for name in names where textAttributes.contains(name) || rangeAttributes.contains(name) {
       counts[name, default: 0] += 1
     }
   }
   func finish(_ tag: String?) {
     guard let tag else { return }
     lock.lock()
-    let result: [String: Any] = ["id": tag, "textReadAttempts": counts.values.reduce(0, +), "byAttribute": counts]
+    let result: [String: Any] = ["id": tag,
+      "textReadAttempts": textAttributes.reduce(0) { $0 + counts[$1, default: 0] },
+      "rangeReadAttempts": rangeAttributes.reduce(0) { $0 + counts[$1, default: 0] }, "byAttribute": counts]
     id = nil; counts = [:]
     lock.unlock()
     if let data = try? JSONSerialization.data(withJSONObject: ["probe354Audit": result], options: [.sortedKeys]) {

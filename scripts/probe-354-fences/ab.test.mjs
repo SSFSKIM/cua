@@ -56,13 +56,25 @@ test('clean false refusals and cost are reported separately from wrong race valu
  assert.equal(s.cost.find(c=>c.arm==='branch'&&c.path==='clean-success').p50,130);
 });
 
+const noReads={textReadAttempts:0,rangeReadAttempts:0,byAttribute:{}};
 test('secure, concealed and canvas error payloads never carry values; length metadata is allowed',()=>{
- assert.deepEqual(privacyFindings(refused,{privateField:true}),[]);
- assert.deepEqual(privacyFindings({...refused,error:{...refused.error,expectedLength:30,actualLength:29}},{privateField:true}),[]);
- assert.ok(privacyFindings({...refused,error:{...refused.error,readback:{actual:'fixture text'}}},{privateField:true}).some(p=>p.includes('actual')));
- assert.ok(privacyFindings({...refused,error:{...refused.error,expectedExcerpt:'fixture text'}},{privateField:true}).length);
+ assert.deepEqual(privacyFindings(refused,{privateField:true,audit:noReads}),[]);
+ assert.deepEqual(privacyFindings({...refused,error:{...refused.error,expectedLength:30,actualLength:29}},{privateField:true,audit:noReads}),[]);
+ assert.ok(privacyFindings({...refused,error:{...refused.error,readback:{actual:'fixture text'}}},{privateField:true,audit:noReads}).some(p=>p.includes('actual')));
+ assert.ok(privacyFindings({...refused,error:{...refused.error,expectedExcerpt:'fixture text'}},{privateField:true,audit:noReads}).length);
  assert.deepEqual(privacyFindings({...refused,error:{...refused.error,actual:'x'}},{privateField:false}),[]);
- assert.ok(privacyFindings({...refused,error:{...refused.error,message:'Mismatch: Old draft sentence goes here.'}},{privateField:true,knownValues:['Old draft sentence goes here.']}).includes('error.message'));
+ assert.ok(privacyFindings({...refused,error:{...refused.error,message:'Mismatch: Old draft sentence goes here.'}},{privateField:true,audit:noReads,knownValues:['Old draft sentence goes here.']}).includes('error.message'));
+});
+
+test('privacy audit rejects range-only reads even when the response is value-free and text reads are zero',()=>{
+ // Negative control: an internal range read is a violation even if no value or range escapes in the answer.
+ const rangeOnly={textReadAttempts:0,rangeReadAttempts:1,byAttribute:{AXSelectedTextRange:1}};
+ assert.ok(privacyFindings(refused,{privateField:true,audit:rangeOnly}).some(p=>p.includes('range-read')));
+ assert.ok(privacyFindings(refused,{privateField:true,audit:{...noReads,textReadAttempts:1,byAttribute:{AXValue:1}}}).some(p=>p.includes('text-read')));
+ for(const audit of [undefined,{textReadAttempts:0,byAttribute:{}},{...noReads,rangeReadAttempts:null},{...noReads,rangeReadAttempts:-1}]){
+  assert.ok(privacyFindings(refused,{privateField:true,audit}).length,'missing or invalid range accounting cannot certify zero reads');
+ }
+ assert.deepEqual(privacyFindings(refused,{privateField:true,audit:noReads}),[]);
 });
 
 test('pending or mutable heads cannot reach a hosted measurement; pair order is counterbalanced',()=>{

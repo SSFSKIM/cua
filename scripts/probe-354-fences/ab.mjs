@@ -51,7 +51,7 @@ async function rpc(w,method,args){const startedAt=Date.now(),raw=await w.execute
 const fixture=await createFixture(page());
 const meta={kit:process.env.GITHUB_SHA??null,engine:HEAD,arm:ARM,image:process.env.ImageVersion??null,browser:KIND,shard:SHARD,reps:REPS,smoke:SMOKE,startedAt:start,planned:cells.length,
  answers:'unaltered real engine result/error; typeUnconfirmed is a scored answer, not an invalid cell; no shadow reader or text retry',
- audit:'scratch source wrappers count attempted AXValue/selected-text/attributed-text reads only during tagged privacy calls; no new AX requests; no values logged',
+ audit:'scratch source wrappers count attempted AXValue/selected-text/attributed-text and selection-range reads only during tagged privacy calls; no new AX requests; no values logged',
  setup:'same visible-owner long-poll transport and Firefox preferences as spike; foreground DOM preparation without a click, cover activation, 250ms settle, DOM check, last frontmost-pid check; passwords stay foreground',
  race:'Cmd+A/Z/V then type_text, no awaited action between key response and type request; expected result from separate key-only control at 500ms',
  clean:'Cmd+A independently settled and its DOM value/range checked at 500ms before type_text; 30/120/500 characters',
@@ -121,8 +121,7 @@ async function cell(c,{warmup=false}={}){
   // The privacy audit wait is outside type_text's measured time and adds no AX requests.
   if(auditPromise){row.audit=await auditPromise;if(row.audit.error)throw Error(row.audit.error)}
   if(c.auditPositiveControl&&ARM==='branch'&&!(row.audit.textReadAttempts>0))throw Error('audit positive control: branch plaintext read was not counted');
-  row.privacyFindings=privacyFindings(row.typeRPC.raw,{...c,knownValues:[seedFor(c),c.text,expected.final]});
-  if(c.privateField&&row.audit?.textReadAttempts!==0)row.privacyFindings.push('audited text-read attempts: '+row.audit?.textReadAttempts);
+  row.privacyFindings=privacyFindings(row.typeRPC.raw,{...c,audit:row.audit,knownValues:[seedFor(c),c.text,expected.final]});
   row.privacyViolation=row.privacyFindings.length>0;
   if(row.privacyViolation){
    // Preserve paths/counts, not any accidentally returned private values.

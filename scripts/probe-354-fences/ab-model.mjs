@@ -31,9 +31,14 @@ export function answer(raw){
  if((!!err)===hasResult)throw Error('malformed engine response');
  return {success:hasResult,unconfirmed:err?.errorName==='typeUnconfirmed',errorName:err?.errorName??null};
 }
-export function privacyFindings(raw,{privateField=false,knownValues=[]}={}){
+export function privacyFindings(raw,{privateField=false,knownValues=[],audit}={}){
  if(!privateField)return [];
  const found=[];
+ for(const [key,label] of [['textReadAttempts','text-read'],['rangeReadAttempts','selection-range-read']]){
+  const n=audit?.[key];
+  if(!Number.isSafeInteger(n)||n<0)found.push('missing or invalid audit count: '+key);
+  else if(n!==0)found.push('audited '+label+' attempts: '+n);
+ }
  function walk(v,path=[]){if(v==null||typeof v!=='object')return;for(const [k,x]of Object.entries(v)){
   const p=[...path,k];
   // Lengths, reasons and route metadata are harmless; excerpts, values and ranges are not.

@@ -4845,6 +4845,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      6. The paste route is outside the read-back (item 3): #361.
      7. A concealed comparison zeroes the buffers the read-back owns; the CFString the app's reply was decoded into, and
         the request's own text, are immutable and released, not overwritten.
+     8. A concealed request's reply time grows with the secret's length, as on main (item 10.9), and a secret whose
+        text equals the selection it replaced takes the caret's extra read. A Return or Tab in a secret is not checked
+        before it is posted, so a secret that went in wrong can still be submitted by its own Return.
   8. **The documents.** `docs/cua-api/agent-cursor.md` gains a sixth paragraph: what `typeText` confirms, that
      `typeUnconfirmed` may mean some text went in and the remedy is to observe, then `setValue`; the fields it cannot
      read; the OS's substitutions answering unconfirmed, never a silent success; keys in the text; and `setValue`, or
@@ -4894,7 +4897,18 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          poll time of each checkpoint's poll tell the segments too. A concealed record carries `confirmed`,
          `concealed: true`, `snapshotMs` (taken before any input), the reason, and `keysUnconfirmed` and
          `stoppedBeforeKey` as flags only.
-  Proven offline: `TypeReadbackTests` (36) drive the real keyText through `keyTextReadBack` over a fake app whose field
+      9. **A secret's keys make no checkpoint** (the review of af1860ef..a8e55870, P2; the design session's ruling
+         1ea561bc:593). Each checkpoint is a confirmation wait, so a concealed `abc\n\n` took one and `a\nb\nc` three,
+         with identical meta, and the reply's time (`cua/serviceMs`, `cua/engineMs`, its latency) showed how the
+         secret's text is segmented. Checkpoints now come only from keys in the caller's own text, whose structure the
+         caller already knows. The wrapper expands a secret only as the whole text of a `type_text`, so a concealed
+         request is all secret: a Return or Tab in it is posted with the rest, `keysUnconfirmed: true` is set, and the
+         field is read back once, after the last unit, even for a secret of keys alone. The aim is that the read-back
+         adds no channel of its own; as cua's secret documents say, substitution makes no promise against
+         exfiltration. **The limit, as on main:** the reply's time still grows with the secret's length, by the
+         per-character posting time (the vendor's 250 µs between events) and by how long the app takes to show the
+         text.
+  Proven offline: `TypeReadbackTests` (38) drive the real keyText through `keyTextReadBack` over a fake app whose field
   takes the posted text: equal, a caret insertion, a late equal inside the window and one past it; a mismatch's
   sentence, excerpt and lengths, a 20,000-character field's answer holding two 200-unit windows at the difference, the
   excerpt's surrogate pairs and quoting; secure by role, subrole or an unreadable subrole with no value or range read,
@@ -4904,14 +4918,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   role, value or range; a value and an expected value at the cap, a read cut at it, the UTF-8 window, canonically
   equivalent text unequal, a read at the cap never accepted though Swift's `==` would call it equal; typing over the
   same text unconfirmed until the caret moves, at a checkpoint too, and a stale value read before the caret never
-  confirming, plain or concealed; a concealed record giving one Return and three identical meta; focus moving, a role changing or no longer
+  confirming, plain or concealed; a concealed record giving one Return and three identical meta, and a secret's keys
+  making no checkpoint (one wait for `a\nb\nc`, `abc\n\n` and keys alone) while the caller's own still do; focus
+  moving, a role changing or no longer
   reading; UTF-16 replacement with emoji and combining marks; a text area's Returns read back as text and a dropped
   one a mismatch, a single-line field's and a combo box's trailing Return confirmed before it is posted, a wrong text
   never submitted, text after it expected without it, a Tab checked in a text area and moving focus answered
   `fieldChanged`, the exclusion set, keys alone, empty text, the guard before a key read after the checkpoint's wait;
-  the snapshot's read order; an intervention's stop keeping the record; press_key's `keyEffect`. 1,163 engine tests
-  pass, 1 skipped as before. Of 76 parts and bounds of the rule changed in turn (`~/.local/share/187/mutate-354.py`),
-  69 fail a test. Seven survive by design: the zeroing of the read and the expected buffers, which no answer shows
+  the snapshot's read order; an intervention's stop keeping the record; press_key's `keyEffect`. 1,165 engine tests
+  pass, 1 skipped as before. Of 78 parts and bounds of the rule changed in turn (`~/.local/share/187/mutate-354.py`),
+  71 fail a test. Seven survive by design: the zeroing of the read and the expected buffers, which no answer shows
   (`readbackZero` itself is tested), and five reached only by a live type_text: the engine's call into the read-back,
   and the live seam's value, units, subrole-error and identity reads. The service (`cua/typeReadback`,
   `cua/keyEffect`, the sentence reaching the model), the wrapper's admission and the matrix's expected difference have

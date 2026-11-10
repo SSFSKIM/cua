@@ -350,6 +350,33 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(meta)["reason"] as? String, "possiblyTruncated")
   }
 
+  /// The review of 9020bb18..dad56362, P2: equality is of UTF-16 code units, never Swift's canonical ==.
+  func testACanonicallyEquivalentValueIsNotEqual() {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.transform = { $0.decomposedStringWithCanonicalMapping }  // é typed, e + U+0301 stored
+    let (error, meta) = type("caf\u{E9}", into: FakeApp(field))
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(meta)["reason"] as? String, "valueMismatch")
+    XCTAssertEqual(record(meta)["expectedLength"] as? Int, 4)
+    XCTAssertEqual(record(meta)["actualLength"] as? Int, 5)
+    let concealed = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    concealed.transform = { $0.decomposedStringWithCanonicalMapping }
+    XCTAssertEqual(record(type("caf\u{E9}", into: FakeApp(concealed), concealed: true).1)["reason"] as? String, "concealedMismatch")
+  }
+
+  /// The review's probe: 4,999 composed é and two 中 typed (5,001 units, 10,004 bytes: past the cap), stored decomposed
+  /// (10,000 units: at it). Swift's == calls them equal; the read may be cut, so it is never accepted.
+  func testAReadAtTheCapIsNeverAcceptedEvenWhenItWouldCompareEqual() {
+    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.transform = { $0.decomposedStringWithCanonicalMapping }
+    let typed = String(repeating: "\u{E9}", count: 4_999) + "中中"
+    XCTAssertFalse(readbackMayBeTruncated(typed))
+    let (error, meta) = type(typed, into: FakeApp(field))
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(meta)["reason"] as? String, "possiblyTruncated")
+    XCTAssertNil(record(meta)["expectedLength"])
+  }
+
   // MARK: Identity
 
   func testTheFieldChangingIdentityIsUnconfirmed() {

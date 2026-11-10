@@ -342,7 +342,8 @@ final class TypeReadback<Element> {
       poll = readbackPoll(field, role: role, reads: reads) { element in
         guard var read = valueUnits(element) else { return .unreadable }
         defer { readbackZero(&read) }
-        return read == expected ? .equal : .differs(cut: readbackMayBeTruncated(units: read), actual: nil)
+        if readbackMayBeTruncated(units: read) { return .differs(cut: true, actual: nil) }  // a cut read never counts as equal
+        return read == expected ? .equal : .differs(cut: false, actual: nil)
       }
     } else {
       let typed = units[0..<end].map(readbackInsertion).joined()
@@ -351,7 +352,9 @@ final class TypeReadback<Element> {
       let value = reads.value
       poll = readbackPoll(field, role: role, reads: reads) { element in
         guard let read = value(element) else { return .unreadable }
-        return read == expected ? .equal : .differs(cut: readbackMayBeTruncated(read), actual: read)
+        if readbackMayBeTruncated(read) { return .differs(cut: true, actual: read) }  // a cut read never counts as equal
+        // Code units, never Swift's ==, which takes canonically equivalent strings of different lengths for equal.
+        return read.utf16.elementsEqual(expected.utf16) ? .equal : .differs(cut: false, actual: read)
       }
       if case .differs(_, let actual?) = poll.last { excerpt = { readbackExcerpt(expected: expected, actual: actual) } }
     }

@@ -67,6 +67,19 @@ impl Engine {
         })
     }
 
+    /// Refuses, before any session opens or any window is activated, a LibreOffice element whose VCL point cannot be
+    /// corrected (`vcl::UNTRUSTED`); the point itself is taken again, corrected, where the action sends its input.
+    pub(super) fn trusted_point(&mut self, element: &Element) -> Result<()> {
+        if !element.libreoffice {
+            return Ok(());
+        }
+        let bus = self
+            .bus
+            .as_mut()
+            .ok_or_else(|| anyhow!("AT-SPI accessibility bus is unavailable"))?;
+        vcl_shift(bus, element).map(|_| ())
+    }
+
     /// The parts an element action works with once the element is resolved.
     fn parts(&mut self) -> Result<(&mut X11, &mut Bus, &mut Inputs)> {
         let Engine { x, bus, inputs, .. } = self;
@@ -83,6 +96,8 @@ impl Engine {
         let element = self.resolve_element(window, element)?;
         let target = match button {
             MouseButton::Right => {
+                // a LibreOffice point that cannot be corrected is refused before the session or an activation
+                self.trusted_point(&element)?;
                 let way = self.route_for(Some(window), Kind::Clicks)?;
                 if way == Way::Foreground {
                     self.enter(window)?;
@@ -164,6 +179,7 @@ impl Engine {
     /// extents within the window (no ancestor clipping, no state check), then the wheel.
     pub(super) fn element_scroll(&mut self, window: u32, element: &str, input: &ScrollInput) -> Result<Value> {
         let element = self.resolve_element(window, element)?;
+        self.trusted_point(&element)?;
         let way = self.route_for(Some(window), Kind::Scroll)?;
         // the foreground route activates only once the amount and the chord are known good
         self.enter_checked(way, Some(window), |x| check_wheel(x, input))?;

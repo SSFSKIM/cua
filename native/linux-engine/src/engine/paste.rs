@@ -265,6 +265,19 @@ impl Engine {
                 .with_bus(|bus, x| atspi::associated(bus, x, &info))?
                 .map_err(anyhow::Error::msg)?),
         };
+        // a named LibreOffice element without focus is clicked at its VCL point (step 2): one that cannot be corrected
+        // is refused before the session or an activation (`vcl.rs`)
+        if let Ok(element) = &named
+            && element.libreoffice
+        {
+            let bus = self
+                .bus
+                .as_mut()
+                .ok_or_else(|| anyhow!("AT-SPI accessibility bus is unavailable"))?;
+            if !observe(bus, &element.target)?.focused {
+                self.trusted_point(element)?;
+            }
+        }
         // on the foreground route the named element must be editable before the window is activated; the observation
         // inside the route (step 1) still decides, as on the background route
         if way == Way::Foreground

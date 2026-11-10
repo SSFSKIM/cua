@@ -19,6 +19,7 @@ import {
   SHEET_PRE_MS, SHEET_TYPE_CELL, sheetCheckCell, sheetFollowCell, sheetOpenCell, STILL_INTERACTING, USER_CHANGED,
 } from './probe-plan.mjs';
 import {requeryCell} from './matrix-cells.mjs';
+import {typeIntoList} from './plan.mjs';
 import {activate, alertCheck, device, focusOf, js, mark, push, quiet, read, sendKeys, Stop, userFront, waitQuiet} from './steps.mjs';
 
 const j = JSON.stringify;
@@ -122,7 +123,9 @@ async function concurrentAttempt(ctx, driven, {lead, id, key}) {
   const probe = await withKeystroke(ctx, {window: userWindow, scene: user}, async scheduled => {
     before = await userFront(ctx, user, userWindow);
     if (!before) return null;
-    const act = scheduledActCell(driven, {at: scheduled - preMs, act: `await __app.typeText(${j(CONCURRENT_TYPING[driven])});`, tag: 'concurrent.act'});
+    // Finder type-selects in its list, which cua's read-back answers typeUnconfirmed (./plan.mjs typeIntoList, #354).
+    const typing = driven === 'finder' ? typeIntoList(CONCURRENT_TYPING[driven]) : `await __app.typeText(${j(CONCURRENT_TYPING[driven])});`;
+    const act = scheduledActCell(driven, {at: scheduled - preMs, act: typing, tag: 'concurrent.act'});
     return span.add(await sendKeys(ctx, act, ['typeText'], {scene: driven, front: before, userWindow, kind: 'row', key}));
   });
   const act = probe.result;

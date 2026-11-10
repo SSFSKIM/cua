@@ -39,7 +39,7 @@ jobs:
         run: node --test scripts/probe-354-fences/kit.test.mjs
       - id: matrix
         env:
-          ONLY: ${{ github.event.inputs.only || 'safari-textarea,cft-textarea,firefox-textarea' }}
+          ONLY: ${{ github.event.inputs.only || 'all' }}
         run: node scripts/probe-354-fences/matrix.mjs "$ONLY" >> "$GITHUB_OUTPUT"
   measure:
     needs: plan
@@ -85,8 +85,8 @@ jobs:
           BROWSER: ${{ matrix.browser }}
           SHARD: ${{ matrix.shard }}
           JOB_ID: ${{ matrix.id }}
-          REPS: ${{ github.event.inputs.reps || '1' }}
-          SMOKE: ${{ github.event.inputs.smoke || 'true' }}
+          REPS: ${{ github.event.inputs.reps || '20' }}
+          SMOKE: ${{ github.event.inputs.smoke || 'false' }}
           LANES: ${{ github.event.inputs.lanes || 'fence,readback,unreadable' }}
         run: |
           node scripts/probe-354-fences/fences.mjs --browser "$BROWSER" --shard "$SHARD" --lanes "$LANES" --engine "$RUNNER_TEMP/build/release/cua-engine" --side "$RUNNER_TEMP/side354" --out "$RUNNER_TEMP/probe-354-fences/$JOB_ID" --reps "$REPS" --smoke "$SMOKE"

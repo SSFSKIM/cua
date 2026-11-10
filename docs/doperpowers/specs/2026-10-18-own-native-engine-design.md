@@ -541,7 +541,7 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
   stalePoint: #296's stale-point guard at a coordinate click's point or a drag's start, on its result and its errors once the
     point is placed: {verdict ("kept" | "refused"), reason ("unrecorded" | "sameElement" | "noHit" | "nonInteractiveHit" |
     "hitAboveNode" | "unrecordedDescendant" | "recordedHit" | "nodeGone" | "frameMoved" | "interactiveHit" | "pressedOther" |
-    "newWindow" | "otherWebArea" (#316) | "newElementOverPoint" (#330)), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
+    "newWindow" | "otherWebArea" (#316) | "newElementOverPoint" (#330) | "relabelled" (#298)), identity? ("handle" | "recreated"), recordedRole?, hitRole?, recordedHitBy? ("hit" | "ancestor", #305: the frame that carried a
     `recordedHit`), windowsMs? (#316's rule W's window-list read), webAreaReads? (#316's rule G's parent reads),
     newWindow? (#316: the new window's number), newElementReads? (#330's rule dL's reads, when it read any), ms,
     rechecked? (true: #282's or #283's
@@ -2327,7 +2327,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      container itself (a coarse AXWebArea answer), or nothing. The condition is applied before every other exit, so no
      path into an incomplete container skips it (the re-review of 7f79ca34..4630b687 found the container-level and the
      empty hit leaving as `sameElement` and `noHit`). A truncated region inside a container that moved or was swapped is
-     refused; a live container relabelled in place passes, as #298's blind spot keeps any live node. The meta's reason
+     refused; a live container relabelled in place passes, as #298's blind spot keeps any live node (since #298's
+     entry below, one whose label's words changed is refused as `relabelled`). The meta's reason
      then names `unrecordedDescendant` (or `unrecorded`), so every post or press that went through unguarded inside says
      so.
   6. **The error** `screenChangedSinceScreenshot` (-10005), an input error with the meta, startedAt/endedAt null: `The
@@ -2356,12 +2357,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   9. **Limits.** (i) A control re-created with a changed label (a React re-render of 'Like (12)' as 'Like (13)') is
      refused: the safe direction, and the sentence asks for a new screenshot. (ii) A surviving handle relabelled in place
      (Save to Delete on one element) passes: its identity and its frame are unchanged, and refusing a label change on a
-     live handle would refuse every control whose label ticks (#298). (iii) A hit in another window over the point (a
+     live handle would refuse every control whose label ticks (#298; closed by #298's entry below, which compares the
+     label's words with numbers set aside, so a ticking label passes). (iii) A hit in another window over the point (a
      menu, a popover) reads as no hit, and passes while the node is in place. (iv) cua refuses where the vendor posts.
      (v) The guarantee does not cover a point the observation could not record: inside a budget-, width-, depth- or
      deadline-cut subtree only the container is checked (`unrecordedDescendant`), and a point in no recorded node is
      not checked at all (`unrecorded`); a live container relabelled in place keeps its interior, as (ii) keeps any live
-     node. How often either arises is #299's to measure.
+     node (until #298, as (ii)). How often either arises is #299's to measure.
   Proven offline (`StalePointTests`, 18, and `StalePointDeliveryTests`, 4; #294's test fails with the frame check removed,
   the delivery's with the early refusal removed, and the A/B round's with the re-hit or the pressed-element rule removed): the frame re-read with the same handle
   refusing (#294); the non-interactive child hit passing; the bounded re-created search (the 299th descendant found, the
@@ -4535,6 +4537,183 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     just after and 0.8 s after every Chrome click, on both engines.
   - Safari: both engines answered alike in all 72 cells each, caret and marker at the point.
   Date/Author: 2026-11-08, cursor235's implementer for #341.
+
+- Decision (#298, 2026-11-09, `fix/298-relabelled`, built on #330's branch; the design session's ruling 31a62775 on the
+  spike's findings, https://github.com/SSFSKIM/cua/issues/298#issuecomment-6732058816, ruling
+  https://github.com/SSFSKIM/cua/issues/298#issuecomment-6732086920; kit `probe/298-measure`, `scripts/probe-298/`, runs
+  42557315991, 42558915827 and 42559900886; amends #296's limits (ii) and (v), item 4's re-created match and item 6's
+  sentence): **a coordinate click or drag start whose recorded node is found on its own handle, its frame still holding
+  the point, is refused, with nothing posted, as `screenChangedSinceScreenshot` with reason `relabelled`, when the
+  node's label now has other words than the screenshot's, numbers and the words after them set aside.**
+  1. **What the spike found.** In Chrome for Testing, Safari and AppKit a control relabelled in place keeps its AX
+     handle in every cell measured (82 cells, 12 to 18 repetitions each on 6 hosted runners). No structural attribute
+     moves with the label: AXDOMIdentifier, the class list, AXIdentifier, the role, role description and actions, and
+     AXHelp each had zero false positives but caught only the cell built to change it, and none moved on Save -> Delete.
+     The signal is the label's words. Comparing them with every number and the words after it (to the next punctuation
+     mark) set aside refused all 33 meaning cells, a dialog container and the text inside links and clickable divs
+     among them, and every label-changing flip; it passed every content change measured (#296's ticking labels, counts,
+     plurals, relative times, "Inbox (3)", "Notifications, 3 new", titles gaining "(3)"); replayed over #296's own
+     false-positive spike it refused 0 of the 132 cells #296 passed on a kept handle. For a link or a clickable div the
+     deepest node at the point is the `AXStaticText` inside the control, whose words are only in `AXValue`: a
+     `nodeValue` update keeps its handle with new words, and a same-width `textContent` replacement re-creates it, which
+     #296's match accepted. Both passed Save -> Delete before this rule.
+  2. **The rule** (`relabelledLabel`, `stalePointLabelWords`, StalePoint.swift). A node's label is its title if
+     non-empty, else its description, else its value when it is an `AXStaticText`. A label's words are its lowercased
+     letter runs (Unicode letters), after taking out every number (an ASCII digit run with internal `.`, `,` or `:`)
+     together with the letter words that follow it up to the next punctuation mark (anything neither letter, digit nor
+     white space), ported from the spike's `besideNumbers` in mode `run`. When the recorded node is found by its own
+     handle and its frame read now holds the point, the guard refuses `relabelled` when the recorded role is none of
+     `AXWindow` and `AXWebArea` and its recorded subrole is not `AXTabButton` (ruling (b)), both labels are non-empty, and
+     the recorded label's words differ from those of the label read now. **The re-created path:** `stalePointLabelsAgree`
+     also requires, when neither side has a title or description and both have an `AXStaticText` value, values with the
+     same words; titles and descriptions keep amendment 0c0b70f0's exact equality. **The record** keeps each node's
+     subrole and an `AXStaticText`'s value only (`screenshotLabelValue`, cut by `bounded` as labels are), both of which
+     the walk already reads; `StalePointReads` gains `value`.
+  3. **What the build settled** (gaps the ruling left; none changes a measured cell):
+     - **The subrole is recorded** for ruling (b)'s exemption, which names a subrole the record did not hold. Reading it
+       at click time would add a read to every click; the walk already has it.
+     - **Where it runs:** right after the frame check, before rule G, the hit and rule dL, as #296 judges the node's
+       identity and frame before the hit. So a node the record holds incompletely is judged by it too, before its
+       interior is kept as `unrecordedDescendant` (the design session's 2db3ba75: the blind spot covered containers),
+       and a relabelled node that also moved is refused as `frameMoved`.
+     - **Only on a read frame:** a node kept because the hit reaches its handle while its frame read failed is not
+       compared, as the ruling's "its frame still holds the point" reads; a re-created node's label was already compared
+       by #296's match.
+     - **The reads:** the title, then the description only when the title is empty, then the value only for an
+       `AXStaticText` with both empty: 1 to 3 reads of one element, each cut by `bounded` as the record's labels were.
+     - **#305's re-created identity of a recorded hit** (`recordedHitAtPoint`) shares `stalePointLabelsAgree`, so it
+       compares an `AXStaticText`'s value by words too. #305's hit on its own handle is not judged by the rule, which
+       the ruling scopes to the node at the point.
+     - **The sentence names a text's value:** the recorded element is named by its label as defined here, so an
+       `AXStaticText` with no title or description is now named by its value in every refusal's sentence, not by its
+       role alone.
+  4. **The refusal.** `screenChangedSinceScreenshot`, the reason `relabelled`, the meta unchanged otherwise
+     (value-free). Its sentence: `The screen changed since the screenshot: the <role "old label"> it showed at this point
+     now reads "<new label>". Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its
+     pixels.` (after an element route's activation, "The app was activated in the background, but nothing was
+     pressed."), each label at most 60 characters. What the hit is there now is not named: the element is the same one.
+  5. **The cost.** The record: a subrole reference per node and a string per `AXStaticText`, memory only. A click: 1 to
+     3 attribute reads on the node's own handle, only where it is found by its handle with its frame holding the point;
+     the spike timed a batched read of 17 attributes on one element at 0.18 ms median, 1.4 ms p99 and 5.2 ms max over
+     1,368 reads. The words are pure string logic. The hosted check measures `stalePoint.ms` on the branch against main.
+  6. **Limits** (the findings' limits 1–5, limit 4 as ruling (b) changed it):
+     1. A label that differs only by a number passes: an index-keyed list recycling a row ("Order #1234" -> "Order
+        #1235", "Item 9" -> "Item 10", "Nov 8" -> "Nov 9"), or a count of what the action applies to ("Delete 1 file"
+        -> "Delete 3 files"). Any rule that passes counters passes these.
+     2. Content whose words roll without a number refuses: "just now" -> "1 minute ago", "Today" -> "Yesterday", "No
+        items" -> "1 item". Such a label rolls at most once a minute, so this is rare within one screenshot-to-click gap.
+     3. A translation in place refuses ("Save" -> "Guardar").
+     4. Document titles are not compared: the window's, the web area's, and Chrome's tab button's (subrole
+        `AXTabButton`, exempt by ruling (b)), since they flash and gain tab-state suffixes. A page's own tab-like control
+        of another subrole is compared.
+     5. A toggle whose label stays the same passes: AppKit's alternateTitle isn't exposed, and Chrome's aria-pressed has
+        no AXValue. Comparing a checkbox's AXValue would catch the AppKit and Safari cases; it is left out because a
+        checkbox's value can legitimately be the thing that changed.
+     The findings' limit 6 is #296's own (a link whose text is replaced with a width change refused as `nodeGone`, even
+     for content), untouched by this rule and left for its own ticket.
+     `docs/cua-api/agent-cursor.md`'s stale-point paragraph names the relabel refusal and limits 1 and 5, the ones a
+     model can act on; the surface inventory's Table 3 addition of 2026-11-09 (#298), the docs test, parity's docs oracle
+     and PROVENANCE.md carry it. Plugin 0.27.24, since the document the server serves changed.
+  7. **The edited-text exemption** (the design session's ruling 1ea561bc:553, on the build's concern that the model's
+     own typing would be refused; the review of 7f6eb3dc..b2f00ad5, P2 1, found the same). An `AXStaticText`, or a
+     text run inside one, whose nearest editable ancestor is the one recorded for it is not compared: a click there only
+     places a caret, and the text changing is the model's own typing. **The record** (the design session's ruling
+     1ea561bc:565, on the walk's cost: with `AXEditableAncestor` in the batched read, the hosted gate measured walk p50
+     174 -> 385 ms in Firefox and 177 -> 313 ms in Finder) derives the region from what the walk already reads: an
+     `AXStaticText` node keeps its nearest recorded ancestor of an editable text role, `AXTextArea` or `AXTextField`
+     (`ScreenshotNode.editableAncestor`, `stalePointEditableTextRoles`). Chromium, WebKit and Gecko expose a
+     contenteditable region as an `AXTextArea`, which #283's focus route already reaches. The batch no longer requests
+     `AXEditableAncestor`, so a contenteditable group the browsers expose as a plain group cannot be told from any
+     group, and its text stays judged. The ruling's fallback, a lazy per-record read, was not needed. **At the click**,
+     and only where the value comparison would refuse, the text's `AXEditableAncestor` is read live and must name that
+     region. Where that read answers nothing, failed or absent, the region its nearest parent names must: that parent's
+     `AXEditableAncestor`, or the parent itself by its role (`stalePointRegion`). That is never the parent answering
+     the attribute. The review of b2f00ad5..25b23fbb (P2 1) found that taking the answering parent made a link that
+     answers the editor the region, exempting its relabelled text, and made a text whose own read failed on one side
+     resolve to its paragraph and refuse typed text. **What stays judged:** anything actionable inside the region. Every
+     element strictly between the text and the region is read, and one of the interactive roles (a link, a button) or
+     one whose actions include AXPress (a mention, a chip) keeps the text judged (`editedInPlace`). So does one whose
+     role or action names cannot be read (the review of b2f00ad5..25b23fbb, P2 2: `actionNames` answered an empty list
+     for a failed read; the seam now reads `establishedActionNames`, nil on failure, an empty list for none), as does a text whose
+     editable ancestor now is another one or none, or a text recorded with none. **Both paths:** on the same handle the
+     exemption is read only once the words differ; on the re-created path a text re-created in its recorded region (one
+     character typed over at the same width) is matched without its value, its title and description still compared.
+     **The cost:** the observation reads nothing more. A click reads nothing more unless the rule would refuse; then it
+     reads the text's `AXEditableAncestor` (and its parents' until one names a region, where the text's answers
+     nothing), and the role and actions of each element up to the region.
+  9. **linkmono on the branch** (the hosted gate, b9236c78 against 494857c8). Save -> Send at the same width, re-created
+     by a `textContent` replacement, refuses as `nodeGone` on the branch, where main keeps it as re-created. The
+     extended re-created match (item 2) rejects the new text, whose words differ, so no re-created handle is found.
+     That is the safe side, and the findings' expected "refuse (re-created path)".
+  8. **A failed read is not an absent label** (the review of 7f6eb3dc..b2f00ad5, P2 2). The live seam's `attribute`
+     answers nil both for an attribute the element lacks and for a read that failed, and the label took either as leave
+     to fall to the next source: a button with the title "Save" and the description "Save changes" whose title read
+     failed at the click compared its description with the recorded title and refused, and the inverse when the title
+     read had failed at the observation. Now the walk's batched read keeps which attributes failed with an error other
+     than their absence (kAXErrorNoValue, kAXErrorAttributeUnsupported; `failedSlot`, `ElementData.unreadable`), the
+     record keeps that for the label's attributes (`ScreenshotNode.labelsUnread`; the value an `AXStaticText`'s only),
+     and the click reads each label attribute with its error (`StalePointReads.readLabel`, `stalePointLabelRead`). The
+     label falls past an absent or empty attribute only; where it would depend on an unreadable higher-priority one, on
+     either side, the rule keeps the point. #296's re-created match is unchanged: there an unreadable label already
+     never counts against a match.
+  Proven offline: `RelabelledGuardTests` (11) in `StalePointTests.swift`: the words over the rule's parts; the spike's
+  live pairs on a live handle by title and by description (Save -> Delete, Delete -> Delete all, Follow -> Following,
+  Play -> Pause refuse; Like (12) -> Like (13), 1 item -> 2 items, Inbox -> Inbox (3), "Notifications" ->
+  "Notifications, 3 new", "Elapsed 11.6 s" -> "Elapsed 17.2 s" pass; Order #1234 -> #1235 passes and Save -> Guardar
+  refuses, as stated); the window, the web area and Chrome's tab exempt, another radio button and a container not; an
+  empty label either side; an `AXStaticText`'s value on its handle (linksavenv refused, linknv and divtick kept, another
+  role's value never compared) and on the re-created path (linkmono refused, linklike kept, and #305's recorded hit);
+  titles and descriptions keeping exact equality; the frame condition; the reason, the sentence, the meta, a recheck
+  after a route's wait, and a truncated container; the record keeping the value and subrole, through both of the walk's
+  emitters (`VisibleFirstTests` for the record-only one). #296's `testASurvivingHandleRelabelledInPlacePasses` now
+  refuses (`testASurvivingHandleRelabelledInPlaceRefuses`). The exemption: `RelabelledEditableTests` (7): typed text
+  in a contenteditable passing by its `AXEditableAncestor`, by an `AXTextArea` or an `AXTextField` where nothing
+  answers it, as a text run, and re-created at the same width; a relabelled link, button or AXPress chip inside the
+  region refusing; a text whose editable ancestor differs (another region, none now, none recorded, a contenteditable
+  plain group) still judged; the record deriving the region from its roles and the batch no longer requesting
+  `AXEditableAncestor` (`VisibleFirstTests` for the record-only reads); and, after the review of b2f00ad5..25b23fbb,
+  partial exposure (a link answering the editor around text answering nothing refused, a paragraph's text and a text
+  answering alone passing), the text's own read failing on one side only still passing, and a wrapper whose role or
+  action names cannot be read withholding the exemption while an empty action list does not. The failed reads: `UnreadableLabelTests` (4): a
+  title unreadable now and one unreadable at the observation not refusing, while an absent title still falls to the
+  description; a lower-priority unreadable attribute changing nothing, and an unreadable description or value ahead
+  of a text's value keeping the point; what counts as a failed slot and a failed single read, and the record keeping
+  it through the walk (`VisibleFirstTests` for the record-only reads). 1,127 engine tests pass after the merge of main (#330, #310, #341), 1 skipped as before. Of
+  74 parts and bounds of the rule, the exemption and the failed-read handling changed in turn
+  (`~/.local/share/187/mutate-298.py`), 67 fail a test (after ruling 1ea561bc:565 dropped the batch's mutants and added the derived region's). Seven survive by design. One is equivalent: the number's
+  internal separators, whose removal changes no output (a separator followed by a digit starts another number, which
+  sets the following words aside just the same). Six are reached only by a live click: the live seam's value, editable
+  ancestor, actions (none, or a failed read taken for none) and label-error reads, and the batched read's keeping of
+  failed slots.
+  **The merge gate** (the ruling; #305's lesson: a replay of #296's spike isn't enough on its own): the branch's real
+  engine clicks live, with 0 `relabelled` refusals, across unchanged real pages and apps, including pages whose labels
+  change on their own: Hacker News, a GitHub pull request page, a page with a live clock or relative times, Finder and
+  Mail-like lists, and #305's still-page cells (the shared sweep #330's gate built for this). Any refusal there is
+  reported with its labels before any limit wording. Beside it, the spike's A/B cells: must refuse save, btnnv,
+  linksavenv, divbtn, linkmono, savearia, deleteall, dialog (Chrome, Safari), relabel, alabel, noid (AppKit), follow
+  and play (all three); must pass #296's ticking label at 1, 5 and 20 s, counter, like, items, notif, linknv, divtick,
+  linklike, Chrome's tab gaining "(3)", region, labelledby, and the window and web-area titles gaining "(3)"; #296's
+  final A/B set unchanged; and `stalePoint.ms` against main. For the exemption: a click into a contenteditable's text
+  after typing into it, with no new screenshot, passing in Chrome for Testing and Safari (Gmail-style compose; Chromium
+  may give a paragraph inside a clickable page AXPress, which would keep the text judged), a relabelled link inside it
+  refusing, and the walk's cost back at main's now that `AXEditableAncestor` is out of the batch (the paired timing
+  run the ruling named).
+  Proven live (`docs/evidence/2026-11-10-relabelled/`; the gates accepted by the design session, 1ea561bc:569):
+  - **The refusals gate** (run 42732128619, main 3c669314 against 56227475): 36 `relabelled` refusals, every one an
+    expected cell (Save -> Delete 21, Delete -> Delete all 4, Follow -> Following 4, Play -> Pause 4, "Save changes?"
+    -> "Delete file?" 3), and 0 on the kept and shared cells of the full sweep, the fixed live clock included.
+  - **The editor gate** (run 42749519072, main 3c669314 against f8a35001): the Save -> Delete link inside the edited
+    region refuses in 3 of 3 browsers (its chain AXLink -> AXTextArea -> AXWebArea), with 0 `relabelled` refusals on
+    the 9 typed-editor cells. Every editor, the plain contenteditable included, reads as AXTextArea in all three
+    browsers. Firefox's Gmail-like cell refuses `nodeGone` on both heads, before this rule (#340's family).
+  - **The paired cost** (run 42749562318, warmed, fixed windows, the head order rotated): walk p50, control ->
+    candidate, Firefox 56.8 -> 55.3 ms (−2.6%), Finder 245.4 -> 244.6 ms (−0.3%), TextEdit 17.4 -> 17.6 ms (+1.2%). The
+    mixed sweep's earlier rise did not reproduce.
+  - **A limit, as the design session asked:** a contenteditable editor exposed as a plain AXGroup, not an AXTextArea,
+    gets no exemption, so its typed text stays judged and a click there can refuse. That is the safe direction. No
+    browser measured exposes one; the case is covered by unit tests only.
+  Date/Author: 2026-11-09, cursor235's lane-1 implementer for the design session's ruling 31a62775 on #298; the live
+  results 2026-11-10.
 
 ## Outcomes & Retrospective
 

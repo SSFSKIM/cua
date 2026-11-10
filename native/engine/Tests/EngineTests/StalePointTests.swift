@@ -13,18 +13,34 @@ private final class Node {
   let role: String
   var title: String?
   var description: String?
+  /// Its AXValue and AXSubrole (#298: an AXStaticText's words are its value; Chrome's tab is a radio button whose
+  /// subrole is AXTabButton).
+  var value: String?
+  let subrole: String?
   var frame: CGRect?
   var actions: [String] = []
+  /// What its AXEditableAncestor answers (#298's edited-text exemption, ruling 1ea561bc:553): the contenteditable region
+  /// it lies in, where the app exposes one.
+  weak var editableAncestor: Node?
+  /// Label attributes whose read fails, at the observation (for the walk's record) and now (the review of
+  /// 7f6eb3dc..b2f00ad5, P2 2): an error, not an attribute the element lacks.
+  var unreadable: Set<StalePointLabelPart> = []
+  /// Its role or its action names fail to read now (the review of b2f00ad5..25b23fbb, P2 2).
+  var roleUnread = false
+  var actionsUnread = false
   /// Its AXChildren read fails (at the observation, for the walk's record).
   var childrenUnread = false
   weak var parent: Node?
   var children: [Node] = []
 
-  init(_ role: String, _ frame: CGRect?, title: String? = nil, description: String? = nil, _ children: [Node] = []) {
+  init(_ role: String, _ frame: CGRect?, title: String? = nil, description: String? = nil, value: String? = nil, subrole: String? = nil,
+       _ children: [Node] = []) {
     self.role = role
     self.frame = frame
     self.title = title
     self.description = description
+    self.value = value
+    self.subrole = subrole
     self.children = children
     for child in children { child.parent = self }
   }
@@ -39,13 +55,26 @@ private final class Node {
     frame = nil
     title = nil
     description = nil
+    value = nil
     parent?.children.removeAll { $0 === self }
   }
 }
 
 private var reads: StalePointReads<Node> {
-  StalePointReads<Node>(role: { $0.role }, frame: { $0.frame }, parent: { $0.parent }, children: { $0.children },
-                                          title: { $0.title }, description: { $0.description }, same: { $0 === $1 })
+  StalePointReads<Node>(role: { $0.roleUnread ? nil : $0.role }, frame: { $0.frame }, parent: { $0.parent }, children: { $0.children },
+                                          // A failed read answers none, as the live seam's `attribute` does.
+                                          title: { $0.unreadable.contains(.title) ? nil : $0.title },
+                                          description: { $0.unreadable.contains(.description) ? nil : $0.description },
+                                          value: { $0.unreadable.contains(.value) ? nil : $0.value },
+                                          editableAncestor: { $0.editableAncestor }, actions: { $0.frame == nil || $0.actionsUnread ? nil : $0.actions },
+                                          label: { node, part in
+                                            if node.unreadable.contains(part) { return .unreadable }
+                                            switch part {
+                                            case .title: return .text(node.title)
+                                            case .description: return .text(node.description)
+                                            case .value: return .text(node.value)
+                                            }
+                                          }, same: { $0 === $1 })
 }
 
 /// The reads an observation with a screenshot emits for `root`'s tree, every node walked but `skipped` ones (as `TreeWalk`
@@ -57,9 +86,13 @@ private func walked(_ root: Node, skipping skipped: Set<ObjectIdentifier> = []) 
     let number = next
     next += 1
     let children = node.childrenUnread ? [] : node.children  // a failed AXChildren read decodes as none
-    reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.role, title: node.title.map(bounded),
-                                    description: node.description.map(bounded), frame: node.frame, actions: node.actions, childCount: children.count,
-                                    childrenRead: !node.childrenUnread))
+    func read<T>(_ part: StalePointLabelPart, _ value: T?) -> T? { node.unreadable.contains(part) ? nil : value }  // a failed read decodes as none
+    reads.append(ScreenshotNodeRead(element: node, number: number, parent: parent, depth: depth, role: node.role,
+                                    title: read(.title, node.title).map(bounded), description: read(.description, node.description).map(bounded),
+                                    frame: node.frame, actions: node.actions, childCount: children.count,
+                                    childrenRead: !node.childrenUnread, subrole: node.subrole,
+                                    value: screenshotLabelValue(role: node.role, read(.value, node.value).map { $0 as CFString }),
+                                    labelsUnread: screenshotLabelsUnread(role: node.role, Set(node.unreadable.map(\.attribute)))))
     for child in children where !skipped.contains(ObjectIdentifier(child)) { walk(child, parent: number, depth: depth + 1) }
   }
   walk(root, parent: nil, depth: 0)
@@ -218,17 +251,16 @@ final class StalePointTests: XCTestCase {
     XCTAssertEqual(recreate(was: ("Like", "a"), now: (nil, "b")).reason, .sameElement, "a title on one side only: nothing to compare")
   }
 
-  /// A stated limit (#298): a handle that survives and is relabelled in place (Save to Delete on one element) passes,
-  /// since its identity and its frame are unchanged, and refusing a label change on a live handle would refuse every
-  /// button whose label ticks.
-  func testASurvivingHandleRelabelledInPlacePasses() {
+  /// #296's limit (ii), closed by #298's rule `relabelled` (RelabelledGuardTests): a handle that survives and is
+  /// relabelled in place (Save to Delete on one element) is refused, its identity and frame unchanged.
+  func testASurvivingHandleRelabelledInPlaceRefuses() {
     let chrome = Chrome()
     let nodes = recorded(chrome.window)
     chrome.button.title = "Delete"
-    let kept = verdict(nodes, at: CGPoint(x: 160, y: 315), hit: chrome.button)
-    XCTAssertEqual(kept.reason, .sameElement)
-    XCTAssertEqual(kept.identity, .handle)
-    XCTAssertFalse(kept.refused)
+    let refused = verdict(nodes, at: CGPoint(x: 160, y: 315), hit: chrome.button)
+    XCTAssertEqual(refused.reason, .relabelled)
+    XCTAssertEqual(refused.identity, .handle)
+    XCTAssertTrue(refused.refused)
   }
 
   // MARK: The rest of the rule
@@ -1767,5 +1799,648 @@ final class NewElementGuardTests: XCTestCase {
       XCTAssertTrue(kept.current === newText)
       XCTAssertEqual(kept.reason, .hitAboveNode)
     }
+  }
+}
+
+/// #298's rule `relabelled` (the design session's ruling 31a62775 on the spike's findings, issue comment 6732058816): a
+/// node found by its own handle, its frame still holding the point, is refused when its label's words changed since the
+/// screenshot; and #296's re-created match compares an AXStaticText's value by the same words.
+final class RelabelledGuardTests: XCTestCase {
+  private let point = CGPoint(x: 60, y: 120)
+
+  /// A window whose one control lies at `point`.
+  private func windowHolding(_ control: Node) -> Node {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400), title: "probe298 page")
+    control.frame = CGRect(x: 20, y: 100, width: 120, height: 40)
+    window.add(control)
+    return window
+  }
+
+  /// The verdict on a control recorded with `was` as its title (or description) and read now with `now`, hit itself.
+  private func relabelled(_ was: String?, _ now: String?, role: String = "AXButton", description: Bool = false) -> StalePointVerdict<Node> {
+    let control = description ? Node(role, nil, description: was) : Node(role, nil, title: was)
+    let nodes = recorded(windowHolding(control))
+    if description { control.description = now } else { control.title = now }
+    return verdict(nodes, at: point, hit: control)
+  }
+
+  /// The word rule as the spike measured it (`scripts/probe-298/analyze.mjs`'s `besideNumbers`, mode `run`): the
+  /// lowercased letter runs, less every number and the letter words after it up to the next punctuation mark.
+  func testALabelsWords() {
+    XCTAssertEqual(stalePointLabelWords("Delete all"), ["delete", "all"])
+    XCTAssertEqual(stalePointLabelWords("SAVE"), ["save"], "lowercased")
+    XCTAssertEqual(stalePointLabelWords("Elapsed 11.6 s"), ["elapsed"], "a decimal and its unit")
+    XCTAssertEqual(stalePointLabelWords("Show 3 more replies"), ["show"], "every word after the number, to the end")
+    XCTAssertEqual(stalePointLabelWords("Notifications, 3 new"), ["notifications"])
+    XCTAssertEqual(stalePointLabelWords("3 new, Inbox"), ["inbox"], "punctuation ends a number's words")
+    XCTAssertEqual(stalePointLabelWords("Delete 3. Then save"), ["delete", "then", "save"], "a period after a number is punctuation")
+    XCTAssertEqual(stalePointLabelWords("3:21 PM"), [], "a time")
+    XCTAssertEqual(stalePointLabelWords("1,234.5 files left"), [])
+    XCTAssertEqual(stalePointLabelWords("Order #1234"), ["order"])
+    XCTAssertEqual(stalePointLabelWords("(3) probe298 page"), ["probe"], "a number inside a word ends it and takes what follows")
+    XCTAssertEqual(stalePointLabelWords("Don't Allow"), ["don", "t", "allow"])
+    XCTAssertEqual(stalePointLabelWords("Straße Ünïcode"), ["straße", "ünïcode"], "letters beyond ASCII")
+    XCTAssertEqual(stalePointLabelWords("2 комментария"), [])
+    XCTAssertEqual(stalePointLabelWords("3件"), [])
+    XCTAssertEqual(stalePointLabelWords("٣ items"), ["items"], "only ASCII digits make a number, as the spike's \\d")
+    XCTAssertEqual(stalePointLabelWords("Uploading 45%"), ["uploading"])
+    XCTAssertEqual(stalePointLabelWords(""), [])
+  }
+
+  /// The spike's live pairs, read on a live handle: every relabel and every label-changing flip refuses, every count,
+  /// plural, tick and suffix passes; and the stated limits hold as stated.
+  func testTheWordRuleOverTheMeasuredPairs() {
+    let refuses = [("Save", "Delete"), ("Delete", "Delete all"), ("Follow", "Following"), ("Play", "Pause"), ("Show more", "Show less"),
+                   ("Save", "Saved"), ("Save changes?", "Delete file?"), ("3 new, Inbox", "4 new, Outbox")]
+    let passes = [("Like (12)", "Like (13)"), ("1 item", "2 items"), ("Inbox", "Inbox (3)"), ("Notifications", "Notifications, 3 new"),
+                  ("Elapsed 11.6 s", "Elapsed 17.2 s"), ("1 minute ago", "2 minutes ago"), ("Next to", "Next to"), ("Save", "SAVE")]
+    for (was, now) in refuses {
+      XCTAssertEqual(relabelled(was, now).reason, .relabelled, "\(was) -> \(now)")
+      XCTAssertEqual(relabelled(was, now, description: true).reason, .relabelled, "\(was) -> \(now), as the description")
+    }
+    for (was, now) in passes {
+      XCTAssertEqual(relabelled(was, now).reason, .sameElement, "\(was) -> \(now)")
+      XCTAssertEqual(relabelled(was, now, description: true).reason, .sameElement, "\(was) -> \(now), as the description")
+    }
+    // The stated limits: a label that differs only by a number passes (limit 1); a translation refuses (limit 3).
+    XCTAssertEqual(relabelled("Order #1234", "Order #1235").reason, .sameElement)
+    XCTAssertEqual(relabelled("Delete 1 file", "Delete 3 files").reason, .sameElement)
+    XCTAssertEqual(relabelled("Save", "Guardar").reason, .relabelled)
+    // Words rolling without a number refuse (limit 2).
+    XCTAssertEqual(relabelled("just now", "1 minute ago").reason, .relabelled)
+  }
+
+  /// Document titles are not compared: the window, the web area, and Chrome's tab (a radio button whose subrole is
+  /// AXTabButton), which flash ("Gmail" -> "Ann messaged you"). A radio button of another subrole, and a container, are.
+  func testTheWindowTheWebAreaAndChromesTabAreNotCompared() {
+    do {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400), title: "Gmail")
+      let nodes = recorded(window)
+      window.title = "Ann messaged you"
+      XCTAssertEqual(verdict(nodes, at: point, hit: window).reason, .sameElement, "the window")
+    }
+    do {
+      let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+      let page = Node("AXWebArea", CGRect(x: 0, y: 50, width: 600, height: 350), title: "Gmail")
+      window.add(page)
+      let nodes = recorded(window)
+      page.title = "Ann messaged you"
+      XCTAssertEqual(verdict(nodes, at: point, hit: page).reason, .sameElement, "the web area")
+    }
+    XCTAssertEqual(stalePointNode(Node("AXRadioButton", nil, title: "Gmail", subrole: "AXTabButton"), now: "Ann messaged you").reason,
+                   .sameElement, "Chrome's tab")
+    XCTAssertEqual(stalePointNode(Node("AXRadioButton", nil, title: "Gmail"), now: "Ann messaged you").reason, .relabelled,
+                   "a radio button")
+    XCTAssertEqual(stalePointNode(Node("AXRadioButton", nil, title: "Gmail", subrole: "AXSortButton"), now: "Ann messaged you").reason,
+                   .relabelled, "another subrole")
+    XCTAssertEqual(stalePointNode(Node("AXGroup", nil, title: "Save changes?"), now: "Delete file?").reason, .relabelled, "a dialog's group")
+    XCTAssertEqual(stalePointNode(Node("AXGroup", nil, title: "Inbox"), now: "Inbox (3)").reason, .sameElement, "a group gaining a count")
+  }
+
+  /// The rule judges a node found by its own handle whose frame, read now, holds the point (the ruling's words): a handle
+  /// whose frame read fails, kept because the hit reaches it, is not compared; nor is a re-created one, whose label
+  /// #296's match already compared.
+  func testOnlyAHandleWhoseFrameHoldsThePointIsCompared() {
+    let button = Node("AXButton", nil, title: "Save")
+    let nodes = recorded(windowHolding(button))
+    button.title = "Delete"
+    let frame = button.frame
+    button.frame = nil  // a read that failed, the element still there
+    XCTAssertEqual(verdict(nodes, at: point, hit: button).reason, .sameElement)
+    button.frame = frame
+    XCTAssertEqual(verdict(nodes, at: point, hit: button).reason, .relabelled)
+  }
+
+  private func stalePointNode(_ control: Node, now: String) -> StalePointVerdict<Node> {
+    let nodes = recorded(windowHolding(control))
+    control.title = now
+    return verdict(nodes, at: point, hit: control)
+  }
+
+  /// Both labels must be non-empty: a label gained, lost or unreadable now never refuses. The label is the title if
+  /// non-empty, else the description.
+  func testAnEmptyLabelEitherSideNeverRefuses() {
+    XCTAssertEqual(relabelled(nil, "Delete").reason, .sameElement, "no label recorded")
+    XCTAssertEqual(relabelled("", "Delete").reason, .sameElement, "an empty label recorded")
+    XCTAssertEqual(relabelled("Save", nil).reason, .sameElement, "no label read now")
+    XCTAssertEqual(relabelled("Save", "").reason, .sameElement, "an empty label read now")
+    // An empty title gives way to the description, on either side.
+    let control = Node("AXButton", nil, title: "", description: "Save")
+    let nodes = recorded(windowHolding(control))
+    control.title = "Save"
+    control.description = "Other"
+    XCTAssertEqual(verdict(nodes, at: point, hit: control).reason, .sameElement, "\"Save\" both times")
+    control.title = ""
+    control.description = "Delete"
+    XCTAssertEqual(verdict(nodes, at: point, hit: control).reason, .relabelled)
+  }
+
+  /// A link's or a clickable div's text is its own AXStaticText, whose words are in its value: on its own handle, a
+  /// framework's text update (`nodeValue`) that changes its words refuses, a count passes. Another role's value (a
+  /// field's typed text, a checkbox's state) is never its label.
+  func testAnAXStaticTextsValueIsItsLabelOnItsHandle() {
+    func link(_ was: String, _ now: String, hit: (Node, Node) -> Node) -> StalePointVerdict<Node> {
+      let link = Node("AXLink", nil)
+      let window = windowHolding(link)
+      let text = Node("AXStaticText", CGRect(x: 30, y: 110, width: 80, height: 20), value: was)
+      link.add(text)
+      let nodes = recorded(window)
+      text.value = now
+      return verdict(nodes, at: point, hit: hit(link, text))
+    }
+    XCTAssertEqual(link("Save", "Delete") { $1 }.reason, .relabelled, "linksavenv, the hit its text")
+    XCTAssertEqual(link("Save", "Delete") { link, _ in link }.reason, .relabelled, "the hit the link")
+    XCTAssertEqual(link("Inbox", "Inbox (3)") { $1 }.reason, .sameElement, "linknv")
+    XCTAssertEqual(link("Elapsed 10.7 s", "Elapsed 16.3 s") { $1 }.reason, .sameElement, "divtick")
+    // A title or description comes first.
+    let status = Node("AXStaticText", nil, title: "Status", value: "Save")
+    let nodes = recorded(windowHolding(status))
+    status.value = "Delete"
+    XCTAssertEqual(verdict(nodes, at: point, hit: status).reason, .sameElement)
+    // Another role's value is not compared, and not recorded.
+    for role in ["AXTextField", "AXCheckBox"] {
+      let field = Node(role, nil, value: "Save")
+      let fieldNodes = recorded(windowHolding(field))
+      XCTAssertNil(fieldNodes.last?.value, role)
+      field.value = "Delete"
+      XCTAssertEqual(verdict(fieldNodes, at: point, hit: field).reason, .sameElement, role)
+    }
+  }
+
+  /// A same-width replacement (`textContent`) re-creates the text: #296's match now requires its words to agree when
+  /// neither side has a title or description (linkmono refused, linklike kept); an unreadable value never counts against it.
+  func testAnAXStaticTextsValueOnTheReCreatedPath() {
+    func recreate(_ was: String, _ now: String?) -> StalePointVerdict<Node> {
+      let link = Node("AXLink", nil)
+      let window = windowHolding(link)
+      let text = Node("AXStaticText", CGRect(x: 30, y: 110, width: 80, height: 20), value: was)
+      link.add(text)
+      let nodes = recorded(window)
+      text.destroy()
+      link.add(Node("AXStaticText", CGRect(x: 30, y: 110, width: 80, height: 20), value: now))
+      return verdict(nodes, at: point, hit: link)
+    }
+    XCTAssertEqual(recreate("Save", "Send").reason, .nodeGone, "linkmono")
+    let kept = recreate("Like (12)", "Like (13)")
+    XCTAssertEqual(kept.identity, .recreated, "linklike")
+    XCTAssertEqual(kept.reason, .hitAboveNode)
+    XCTAssertEqual(recreate("Save", nil).identity, .recreated, "the value unread now")
+    // #305's re-created identity of a recorded hit compares the same way.
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 40), value: "Save")
+    window.add(text)
+    let nodes = recorded(window)
+    text.destroy()
+    for (now, carried) in [("Send", nil), ("Save", RecordedHitFrame.hit)] as [(String, RecordedHitFrame?)] {
+      let again = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 40), value: now)
+      window.add(again)
+      XCTAssertEqual(recordedHitAtPoint(again, at: point, windowShift: .zero, nodes: nodes, reads), carried, now)
+      again.destroy()
+    }
+  }
+
+  /// Titles and descriptions keep amendment 0c0b70f0's exact equality on the re-created path: the word rule is for the
+  /// live handle and for a text's value only.
+  func testTitlesAndDescriptionsKeepExactEqualityOnTheReCreatedPath() {
+    func recreate(_ was: String, _ now: String, description: Bool = false) -> StalePointReason {
+      let button = description ? Node("AXButton", nil, description: was) : Node("AXButton", nil, title: was)
+      let window = windowHolding(button)
+      let nodes = recorded(window)
+      button.destroy()
+      let frame = CGRect(x: 20, y: 100, width: 120, height: 40)
+      let again = description ? Node("AXButton", frame, description: now) : Node("AXButton", frame, title: now)
+      window.add(again)
+      return verdict(nodes, at: point, hit: again).reason
+    }
+    XCTAssertEqual(recreate("Save", "SAVE"), .nodeGone, "the same words, another title")
+    XCTAssertEqual(recreate("Like (12)", "Like (13)"), .nodeGone)
+    XCTAssertEqual(recreate("Save", "SAVE", description: true), .nodeGone)
+    XCTAssertEqual(recreate("Save", "Save"), .sameElement)
+    XCTAssertTrue(stalePointLabelsAgree(recordedTitle: nil, recordedDescription: nil, recordedValue: "Like (12)", title: nil, description: nil,
+                                        value: "Like (13)"))
+    XCTAssertFalse(stalePointLabelsAgree(recordedTitle: nil, recordedDescription: nil, recordedValue: "Save", title: nil, description: nil,
+                                         value: "Send"))
+    XCTAssertTrue(stalePointLabelsAgree(recordedTitle: "Go", recordedDescription: nil, recordedValue: "Save", title: "Go", description: nil,
+                                        value: "Send"), "the title decides")
+    XCTAssertTrue(stalePointLabelsAgree(recordedTitle: nil, recordedDescription: "Go", recordedValue: "Save", title: nil, description: nil,
+                                        value: "Send"), "a description on one side: values not compared")
+    XCTAssertTrue(stalePointLabelsAgree(recordedTitle: nil, recordedDescription: nil, recordedValue: "Save", title: nil, description: "Go",
+                                        value: "Send"), "a description now: values not compared")
+  }
+
+  /// The refusal: `screenChangedSinceScreenshot`, reason `relabelled`, a sentence naming the old label and the new and
+  /// asking for a new screenshot; a value-free meta. A truncated container relabelled in place refuses too (the design
+  /// session's 2db3ba75: the blind spot covered containers), while one gaining a count keeps its unguarded interior.
+  func testTheReasonAndTheSentence() {
+    XCTAssertTrue(StalePointReason.relabelled.refuses)
+    let button = Node("AXButton", nil, title: "Save")
+    let nodes = recorded(windowHolding(button))
+    button.title = "Delete"
+    let outcome = stalePointOutcome(verdict(nodes, at: point, hit: button), ms: 0.4, reads: reads)
+    XCTAssertEqual(outcome.refusal?.errorName, "screenChangedSinceScreenshot")
+    XCTAssertEqual(outcome.refusal?.message,
+                   "The screen changed since the screenshot: the AXButton \"Save\" it showed at this point now reads \"Delete\". Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    XCTAssertEqual(outcome.record.wire as NSDictionary, ["verdict": "refused", "reason": "relabelled", "identity": "handle",
+                                                         "recordedRole": "AXButton", "hitRole": "AXButton", "ms": 0.4] as NSDictionary)
+    // A text names its value; a long label is cut at 60 characters, as the recorded one is.
+    let text = Node("AXStaticText", nil, value: "Save")
+    let textNodes = recorded(windowHolding(text))
+    text.value = String(repeating: "Delete ", count: 12)
+    XCTAssertEqual(stalePointOutcome(verdict(textNodes, at: point, hit: text), ms: 0, reads: reads).refusal?.message,
+                   "The screen changed since the screenshot: the AXStaticText \"Save\" it showed at this point now reads \"\(String(repeating: "Delete ", count: 9).prefix(60))…\". Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    // After an element route's wait, the recheck refuses with the label read then.
+    let item = Node("AXButton", nil, title: "Follow")
+    let itemNodes = recorded(windowHolding(item))
+    let gate = StalePointGate(first: verdict(itemNodes, at: point, hit: item), firstMs: 1) { [point] in verdict(itemNodes, at: point, hit: item) }
+    item.title = "Following"
+    let checked = gate.check(item, waited: true, now: { 0 }, reads: reads)
+    XCTAssertEqual(checked.record.reason, .relabelled)
+    XCTAssertEqual(checked.record.rechecked, true)
+    XCTAssertEqual(checked.refusal?.message,
+                   "The screen changed since the screenshot: the AXButton \"Follow\" it showed at this point now reads \"Following\". Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    let activated = gate.check(item, waited: true, afterActivation: true, now: { 0 }, reads: reads)
+    XCTAssertEqual(activated.refusal?.message,
+                   "The screen changed since the screenshot: the AXButton \"Follow\" it showed at this point now reads \"Following\". The app was activated in the background, but nothing was pressed. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    // A truncated container (its row left out of the record) relabelled in place.
+    for (now, reason) in [("Ads", StalePointReason.relabelled), ("(3) Results", .unrecordedDescendant)] {
+      let list = Node("AXList", nil, title: "Results")
+      let window = windowHolding(list)
+      let row = Node("AXButton", CGRect(x: 20, y: 100, width: 120, height: 40), title: "Row")
+      list.add(row)
+      let cut = recorded(window, skipping: [ObjectIdentifier(row)])
+      list.title = now
+      XCTAssertEqual(verdict(cut, at: point, hit: row).reason, reason, now)
+    }
+    // The frame is judged first: a relabelled node that moved is refused as moved.
+    let moved = Node("AXButton", nil, title: "Save")
+    let movedNodes = recorded(windowHolding(moved))
+    moved.title = "Delete"
+    moved.frame = CGRect(x: 300, y: 100, width: 120, height: 40)
+    XCTAssertEqual(verdict(movedNodes, at: point, hit: moved).reason, .frameMoved)
+  }
+
+  /// The record keeps an AXStaticText's value (a string or an attributed string's text, cut as the walk cuts labels) and
+  /// every node's subrole; no other role's value.
+  func testTheRecordKeepsAStaticTextsValueAndTheSubrole() {
+    XCTAssertEqual(screenshotLabelValue(role: "AXStaticText", "Save" as CFString), "Save")
+    XCTAssertEqual(screenshotLabelValue(role: "AXStaticText", NSAttributedString(string: "Save") as CFAttributedString), "Save")
+    XCTAssertNil(screenshotLabelValue(role: "AXStaticText", 3 as CFNumber))
+    XCTAssertNil(screenshotLabelValue(role: "AXStaticText", nil))
+    XCTAssertNil(screenshotLabelValue(role: "AXTextField", "Save" as CFString))
+    let long = String(repeating: "Terms. ", count: 2000)
+    XCTAssertEqual(screenshotLabelValue(role: "AXStaticText", long as CFString), bounded(long))
+    // Through the walk.
+    let tree = FakeTree()
+    tree.children = [0: [1, 2, 3]]
+    tree.extra[1] = ["AXRole": "AXStaticText" as CFString, "AXTitle": "" as CFString, "AXValue": "Save" as CFString]
+    tree.extra[2] = ["AXRole": "AXTextField" as CFString, "AXValue": "typed" as CFString]
+    tree.extra[3] = ["AXRole": "AXRadioButton" as CFString, "AXSubrole": "AXTabButton" as CFString]
+    let recording = walk(tree, Lineage(), recordsScreenshot: true)
+    func read(_ id: Int) -> ScreenshotNodeRead<AXUIElement>? { recording.screenshotReads.first { tree.id($0.element) == id } }
+    XCTAssertEqual(read(1)?.value, "Save")
+    XCTAssertNil(read(2)?.value)
+    XCTAssertEqual(read(3)?.subrole, "AXTabButton")
+    // And into the record's nodes.
+    let text = Node("AXStaticText", nil, value: "Save", subrole: "AXSomething")
+    let node = recorded(windowHolding(text)).last
+    XCTAssertEqual(node?.value, "Save")
+    XCTAssertEqual(node?.subrole, "AXSomething")
+  }
+}
+
+/// #298's edited-text exemption (the design session's ruling 1ea561bc:553): a click on text in an editable region only
+/// places a caret, and that text changing is the model's own typing. So an AXStaticText (or a text run inside one) whose
+/// nearest editable ancestor is the one recorded for it is not compared, while anything actionable inside the region
+/// (a link, a button, a mention or chip with AXPress) still is.
+final class RelabelledEditableTests: XCTestCase {
+  /// A page with a message body as Chrome exposes a contenteditable region: an AXTextArea whose every node, itself
+  /// included, answers it as AXEditableAncestor; a paragraph group holds the typed text.
+  private struct Editor {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 800, height: 600))
+    let page = Node("AXWebArea", CGRect(x: 0, y: 50, width: 800, height: 550))
+    let region: Node
+    let paragraph = Node("AXGroup", CGRect(x: 40, y: 100, width: 600, height: 40))
+    let text = Node("AXStaticText", CGRect(x: 40, y: 105, width: 200, height: 20), value: "Hello")
+    /// `exposed`: the app answers AXEditableAncestor (Chrome, Safari); else only the region's role says it is editable.
+    init(role: String = "AXTextArea", exposed: Bool = true) {
+      region = Node(role, CGRect(x: 40, y: 100, width: 600, height: 300), description: "Message Body")
+      window.add(page)
+      page.add(region)
+      region.add(paragraph)
+      paragraph.add(text)
+      if exposed { for node in [region, paragraph, text] { node.editableAncestor = region } }
+    }
+  }
+  private let point = CGPoint(x: 60, y: 115)
+
+  private func judged(_ nodes: [ScreenshotNode<Node>], hit: Node) -> StalePointReason {
+    stalePointVerdict(at: point, nodes: nodes, hit: hit, reads: reads).reason
+  }
+
+  /// Typed text in a contenteditable passes: the record's nearest text-entry ancestor (an AXTextArea, an AXTextField)
+  /// named again at the click by the text's AXEditableAncestor, or by the region's role where nothing exposes it; a
+  /// text run inside the text; and a text re-created in place as it is typed over.
+  func testTypedTextInAnEditableRegionPasses() {
+    do {
+      let editor = Editor()
+      let nodes = recorded(editor.window)
+      editor.text.value = "Hello world, see you at 3"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement, "AXEditableAncestor")
+      XCTAssertEqual(judged(nodes, hit: editor.region), .hitAboveNode, "the hit the region, above the text: kept")
+    }
+    for role in ["AXTextArea", "AXTextField"] {
+      let editor = Editor(role: role, exposed: false)
+      let nodes = recorded(editor.window)
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement, "the nearest \(role)")
+    }
+    do {
+      let editor = Editor()
+      let run = Node("AXStaticText", CGRect(x: 45, y: 106, width: 60, height: 18), value: "Hello")
+      run.editableAncestor = editor.region
+      editor.text.add(run)
+      let nodes = recorded(editor.window)
+      run.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: run), .sameElement, "a text run")
+    }
+    do {  // Overtyping one character at the same width re-creates the text node.
+      let editor = Editor()
+      let nodes = recorded(editor.window)
+      editor.text.destroy()
+      let again = Node("AXStaticText", CGRect(x: 40, y: 105, width: 200, height: 20), value: "Jello")
+      again.editableAncestor = editor.region
+      editor.paragraph.add(again)
+      let verdict = stalePointVerdict(at: point, nodes: nodes, hit: again, reads: reads)
+      XCTAssertEqual(verdict.identity, .recreated)
+      XCTAssertEqual(verdict.reason, .sameElement)
+    }
+    do {  // Re-created in the region with another description: the exemption spares its value only.
+      let editor = Editor()
+      editor.text.description = "Greeting"
+      let nodes = recorded(editor.window)
+      editor.text.destroy()
+      let again = Node("AXStaticText", CGRect(x: 40, y: 105, width: 200, height: 20), description: "Farewell", value: "Jello")
+      again.editableAncestor = editor.region
+      editor.paragraph.add(again)
+      XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: again, reads: reads).reason, .nodeGone)
+    }
+  }
+
+  /// The review of b2f00ad5..25b23fbb (P2 1): where the text answers no AXEditableAncestor, its editable ancestor is the
+  /// region its nearest answering ancestor names, not that ancestor. So a link that answers the editor, around text that
+  /// answers nothing, is a wrapper the exemption checks (refused), while a plain paragraph's text passes.
+  func testPartialExposureResolvesToTheRegionNamed() {
+    do {
+      let editor = Editor()
+      let link = Node("AXLink", CGRect(x: 40, y: 105, width: 200, height: 20))
+      link.actions = ["AXPress"]
+      link.editableAncestor = editor.region
+      editor.paragraph.add(link)
+      let label = Node("AXStaticText", CGRect(x: 40, y: 105, width: 200, height: 20), value: "Save")
+      link.add(label)
+      let nodes = recorded(editor.window)
+      XCTAssertTrue(nodes.first { $0.element === label }?.editableAncestor === editor.region)
+      label.value = "Delete"
+      XCTAssertEqual(judged(nodes, hit: label), .relabelled)
+    }
+    do {
+      let editor = Editor()
+      editor.text.editableAncestor = nil
+      let nodes = recorded(editor.window)
+      XCTAssertTrue(nodes.first { $0.element === editor.text }?.editableAncestor === editor.region)
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
+    }
+    do {  // Only the text answers, at the click: the region the record derived from its role.
+      let editor = Editor(exposed: false)
+      editor.text.editableAncestor = editor.region
+      let nodes = recorded(editor.window)
+      XCTAssertTrue(nodes.first { $0.element === editor.text }?.editableAncestor === editor.region)
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
+    }
+  }
+
+  /// The review of b2f00ad5..25b23fbb (P2 2): an element between the text and the region whose role or action names
+  /// cannot be read is not known to be inert, so the exemption is withheld; one whose actions read as an empty list is
+  /// inert.
+  func testAWrapperWhoseRoleOrActionsCannotBeReadWithholdsTheExemption() {
+    for (name, fail) in [("actions", { (node: Node) in node.actionsUnread = true }), ("role", { (node: Node) in node.roleUnread = true })] {
+      let editor = Editor()
+      let nodes = recorded(editor.window)
+      fail(editor.paragraph)
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .relabelled, name)
+    }
+    let editor = Editor()
+    editor.paragraph.actions = []
+    let nodes = recorded(editor.window)
+    editor.text.value = "Goodbye"
+    XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement, "an empty list read")
+  }
+
+  /// The text's own AXEditableAncestor read failing at the click (it decodes as none) still names the same region,
+  /// through its paragraph; the observation never reads it (ruling 1ea561bc:565), so a text that answered nothing then
+  /// passes as well.
+  func testATextsOwnAncestorReadFailingOnOneSideStillPasses() {
+    do {  // Answering nothing at the observation.
+      let editor = Editor()
+      editor.text.editableAncestor = nil
+      let nodes = recorded(editor.window)
+      editor.text.editableAncestor = editor.region
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
+    }
+    do {  // Failed now.
+      let editor = Editor()
+      let nodes = recorded(editor.window)
+      editor.text.editableAncestor = nil
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
+    }
+  }
+
+  /// A relabelled link, button or chip inside the edited region is still refused: its text is the node at the point, but
+  /// an actionable element lies between it and the region.
+  func testARelabelledActionableElementInsideTheRegionStillRefuses() {
+    for (role, actions) in [("AXLink", ["AXPress"]), ("AXButton", []), ("AXGroup", ["AXPress", "AXShowMenu"])] {
+      let editor = Editor()
+      let control = Node(role, CGRect(x: 40, y: 105, width: 200, height: 20))
+      control.actions = actions
+      control.editableAncestor = editor.region
+      editor.paragraph.add(control)
+      let label = Node("AXStaticText", CGRect(x: 40, y: 105, width: 200, height: 20), value: "Save")
+      label.editableAncestor = editor.region
+      control.add(label)
+      let nodes = recorded(editor.window)
+      label.value = "Delete"
+      XCTAssertEqual(judged(nodes, hit: label), .relabelled, role)
+      label.value = "Save"
+      XCTAssertEqual(judged(nodes, hit: label), .sameElement, role)
+    }
+    // A plain group without AXPress between the text and the region does not stand in the way.
+    let editor = Editor()
+    editor.paragraph.actions = ["AXShowMenu", "AXScrollToVisible"]
+    let nodes = recorded(editor.window)
+    editor.text.value = "Goodbye"
+    XCTAssertEqual(judged(nodes, hit: editor.text), .sameElement)
+  }
+
+  /// A static text whose editable ancestor now is not the one recorded for it is still judged: moved into another
+  /// region, left with none (the region no longer editable), or recorded with none (text outside any editor, or in a
+  /// contenteditable group the record's roles cannot tell from any group).
+  func testATextWhoseEditableAncestorDiffersIsStillJudged() {
+    do {
+      let editor = Editor(role: "AXGroup")
+      let nodes = recorded(editor.window)
+      XCTAssertNil(nodes.first { $0.element === editor.text }?.editableAncestor)
+      editor.text.value = "Goodbye"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .relabelled, "a contenteditable group")
+    }
+    do {  // The text answers nothing at the click; its paragraph names another region than the record's.
+      let editor = Editor()
+      let other = Node("AXTextArea", CGRect(x: 40, y: 450, width: 600, height: 100))
+      editor.page.add(other)
+      let nodes = recorded(editor.window)
+      editor.text.editableAncestor = nil
+      editor.paragraph.editableAncestor = other
+      editor.text.value = "Delete"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .relabelled, "a parent naming another region")
+    }
+    do {
+      let editor = Editor()
+      let other = Node("AXTextArea", CGRect(x: 40, y: 450, width: 600, height: 100))
+      editor.page.add(other)
+      let nodes = recorded(editor.window)
+      editor.text.editableAncestor = other
+      editor.text.value = "Delete"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .relabelled, "another region")
+    }
+    do {
+      let editor = Editor(role: "AXGroup")
+      let nodes = recorded(editor.window)
+      for node in [editor.region, editor.paragraph, editor.text] { node.editableAncestor = nil }
+      editor.text.value = "Delete"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .relabelled, "no longer editable")
+    }
+    do {
+      let editor = Editor(role: "AXGroup", exposed: false)
+      let nodes = recorded(editor.window)
+      editor.region.editableAncestor = editor.region  // made editable after the screenshot
+      editor.text.value = "Delete"
+      XCTAssertEqual(judged(nodes, hit: editor.text), .relabelled, "none recorded")
+    }
+  }
+
+  /// The record derives, for an AXStaticText only, its region from what the walk already read (the design session's
+  /// ruling 1ea561bc:565): its nearest recorded ancestor of an editable text role (AXTextArea, AXTextField). Nothing the
+  /// app answers as AXEditableAncestor counts there, and the walk's batch does not request it.
+  func testTheRecordDerivesATextsRegionFromItsReads() {
+    func recordedAncestor(_ editor: Editor, _ node: Node) -> Node? {
+      recorded(editor.window).first { $0.element === node }?.editableAncestor
+    }
+    let exposed = Editor()
+    XCTAssertTrue(recordedAncestor(exposed, exposed.text) === exposed.region)
+    XCTAssertNil(recordedAncestor(exposed, exposed.paragraph), "not a static text")
+    let textArea = Editor(exposed: false)
+    XCTAssertTrue(recordedAncestor(textArea, textArea.text) === textArea.region)
+    let textField = Editor(role: "AXTextField", exposed: false)
+    XCTAssertTrue(recordedAncestor(textField, textField.text) === textField.region)
+    let group = Editor(role: "AXGroup")
+    XCTAssertNil(recordedAncestor(group, group.text), "a group answering AXEditableAncestor: not among the reads")
+    // Through the walk, whose batch no longer asks for AXEditableAncestor.
+    XCTAssertFalse(observedAttributes.contains("AXEditableAncestor"))
+    let tree = FakeTree()
+    tree.children = [0: [1], 1: [2]]
+    tree.frames = [0: CGRect(x: 0, y: 0, width: 800, height: 600), 1: CGRect(x: 40, y: 100, width: 600, height: 300),
+                   2: CGRect(x: 40, y: 105, width: 200, height: 20)]
+    tree.extra[1] = ["AXRole": "AXTextArea" as CFString]
+    tree.extra[2] = ["AXRole": "AXStaticText" as CFString, "AXValue": "Hello" as CFString]
+    let recording = walk(tree, Lineage(), recordsScreenshot: true)
+    let text = screenshotNodes(recording.screenshotReads).first { tree.id($0.element) == 2 }
+    XCTAssertEqual(text?.editableAncestor.map { tree.id($0) }, 1)
+  }
+}
+
+/// The review of 7f6eb3dc..b2f00ad5 (P2 2): a label attribute whose read failed is not one the element lacks. The label
+/// falls through to the next source only past an absent or empty one; where it would depend on an unreadable
+/// higher-priority attribute, at the observation or now, rule `relabelled` does not refuse.
+final class UnreadableLabelTests: XCTestCase {
+  private let point = CGPoint(x: 60, y: 120)
+
+  /// A button "Save" whose description is "Save changes", recorded with `atRecord` unreadable, read now with `now`.
+  private func judged(atRecord: Set<StalePointLabelPart> = [], now: Set<StalePointLabelPart> = [],
+                      title: String? = "Save", description: String? = "Save changes", change: (Node) -> Void = { _ in }) -> StalePointReason {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let button = Node("AXButton", CGRect(x: 20, y: 100, width: 120, height: 40), title: title, description: description)
+    window.add(button)
+    button.unreadable = atRecord
+    let nodes = recorded(window)
+    button.unreadable = now
+    change(button)
+    return stalePointVerdict(at: point, nodes: nodes, hit: button, reads: reads).reason
+  }
+
+  /// The title read fails at the click: the description is not compared with the recorded title.
+  func testATitleUnreadableNowDoesNotRefuse() {
+    XCTAssertEqual(judged(now: [.title]), .sameElement)
+    XCTAssertEqual(judged(now: [.title], change: { $0.description = "Delete" }), .sameElement)
+    // A title absent now (not failed) is no label, and the description is: it refuses, as before.
+    XCTAssertEqual(judged(change: { $0.title = nil }), .relabelled)
+  }
+
+  /// The title read failed at the observation: the recorded description is not taken for the label.
+  func testATitleUnreadableAtTheObservationDoesNotRefuse() {
+    XCTAssertEqual(judged(atRecord: [.title]), .sameElement)
+    XCTAssertEqual(judged(atRecord: [.title], change: { $0.title = "Delete" }), .sameElement)
+    // Absent at the observation: the description was the label, and a title "Save" now has other words.
+    XCTAssertEqual(judged(title: nil, change: { $0.title = "Save" }), .relabelled)
+  }
+
+  /// Only a higher-priority attribute counts: a description or a value unreadable behind a title that reads changes
+  /// nothing, and the title relabelled refuses.
+  func testALowerPriorityUnreadableAttributeChangesNothing() {
+    XCTAssertEqual(judged(atRecord: [.description], now: [.description], change: { $0.title = "Delete" }), .relabelled)
+    XCTAssertEqual(judged(now: [.description], title: nil, change: { $0.description = "Delete" }), .sameElement,
+                   "the description, now the label, unreadable")
+    // A text's value, below an empty title and description.
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 600, height: 400))
+    let text = Node("AXStaticText", CGRect(x: 20, y: 100, width: 120, height: 40), value: "Save")
+    window.add(text)
+    let nodes = recorded(window)
+    text.value = "Delete"
+    text.unreadable = [.value]
+    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .sameElement)
+    text.unreadable = [.description]
+    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .sameElement)
+    text.unreadable = []
+    XCTAssertEqual(stalePointVerdict(at: point, nodes: nodes, hit: text, reads: reads).reason, .relabelled)
+  }
+
+  /// What counts as unreadable: an error other than the attribute's absence (kAXErrorNoValue,
+  /// kAXErrorAttributeUnsupported), in the walk's batched read and in a single read now; and the record keeps it for the
+  /// label's attributes, the value an AXStaticText's only.
+  func testAnUnreadableAttributeIsAnErrorOtherThanAbsence() {
+    func errorSlot(_ code: AXError) -> Any { var code = code; return AXValueCreate(.axError, &code)! }
+    XCTAssertTrue(failedSlot(errorSlot(.cannotComplete)))
+    XCTAssertTrue(failedSlot(errorSlot(.failure)))
+    XCTAssertFalse(failedSlot(errorSlot(.noValue)))
+    XCTAssertFalse(failedSlot(errorSlot(.attributeUnsupported)))
+    XCTAssertFalse(failedSlot("Save" as CFString))
+    XCTAssertFalse(failedSlot(nil))
+    XCTAssertEqual(stalePointLabelRead("Save" as CFString, .success), .text("Save"))
+    XCTAssertEqual(stalePointLabelRead(nil, .noValue), .text(nil))
+    XCTAssertEqual(stalePointLabelRead(nil, .attributeUnsupported), .text(nil))
+    XCTAssertEqual(stalePointLabelRead(3 as CFNumber, .success), .text(nil))
+    XCTAssertEqual(stalePointLabelRead(nil, .cannotComplete), .unreadable)
+    XCTAssertEqual(screenshotLabelsUnread(role: "AXButton", ["AXTitle", "AXValue", "AXHelp"]), [.title])
+    XCTAssertEqual(screenshotLabelsUnread(role: "AXStaticText", ["AXDescription", "AXValue"]), [.description, .value])
+    XCTAssertEqual(ElementData(values: [:], unreadable: ["AXTitle"]).unreadable, ["AXTitle"])
+    // Through the walk.
+    let tree = FakeTree()
+    tree.children = [0: [1]]
+    tree.unreadableAttributes[1] = ["AXTitle"]
+    let recording = walk(tree, Lineage(), recordsScreenshot: true)
+    XCTAssertEqual(recording.screenshotReads.first { tree.id($0.element) == 1 }?.labelsUnread, [.title])
   }
 }

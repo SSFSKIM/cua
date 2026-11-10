@@ -6,8 +6,9 @@ import Foundation
 // screenshot of the app (Screenshot.swift), and an app may re-lay out after it: #294's spike measured Chrome for
 // Testing's toolbar moving Reload 36 pt right 18-20 s after launch, so a click at the screenshot's Reload point landed on
 // the disabled Forward button and answered success. So every observation that returns a screenshot records, with it, each
-// tree node's frame, role, title and description (`ScreenshotNode`), and a coordinate pointer action, before anything is
-// posted, takes the deepest recorded node whose shown frame holds the point and checks that it is still there: the same
+// tree node's frame, role, subrole, title and description, and an AXStaticText's value (`ScreenshotNode`), and a
+// coordinate pointer action, before anything is posted, takes the deepest recorded node whose shown frame holds the
+// point and checks that it is still there: the same
 // handle, or a handle re-created in place (the same role, a frame within 2 pt, and the same title, or description where
 // neither has a title, whenever both sides can be read). It refuses, with nothing posted, when that node is gone, when
 // its frame read now no longer holds the point, or when the hit-test at the point now answers another interactive
@@ -22,8 +23,12 @@ import Foundation
 // same web area (`otherWebArea`: Chrome keeps answering the page a tab has left, and Firefox's urlbar list lies over the
 // page). #330 adds rule dL (the design session's ruling 11bec0ed): in a web area, a point the rest keeps refuses when the
 // hit lies in an element the record lacks, under a parent the record holds with every child and that lists it now
-// (`newElementOverPoint`: a page's own suggestion list over the control). Everything here reads through closures, so the
-// rule is unit-tested over a fake tree.
+// (`newElementOverPoint`: a page's own suggestion list over the control). #298 adds rule `relabelled` (the design
+// session's ruling 31a62775): a node found by its own handle, its frame still holding the point, refuses when its label's
+// words changed (`relabelledLabel`, `stalePointLabelWords`: Save to Delete on one element, while a count or a ticking
+// time passes), and the re-created match compares an AXStaticText's value by the same words; the text of an editable
+// region the model types into is exempt (`editedInPlace`, ruling 1ea561bc:553). Everything here reads
+// through closures, so the rule is unit-tested over a fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
 struct ScreenshotNode<Element> {
@@ -31,6 +36,18 @@ struct ScreenshotNode<Element> {
   let role: String
   let title: String?
   let description: String?
+  /// Its subrole, which #298's rule `relabelled` reads to leave Chrome's tab (AXTabButton) uncompared.
+  let subrole: String?
+  /// An AXStaticText's value (`screenshotLabelValue`): its label when it has no title or description (#298); nil for
+  /// every other role.
+  let value: String?
+  /// For an AXStaticText, the editable region it lay in at the observation (`screenshotNodes`), derived from what the
+  /// walk already read (the design session's ruling 1ea561bc:565): its nearest recorded ancestor of an editable text
+  /// role (`stalePointEditableTextRoles`). #298's edited-text exemption (ruling 1ea561bc:553) checks at the click that
+  /// the text's AXEditableAncestor, read then, names it. Nil otherwise.
+  let editableAncestor: Element?
+  /// Its label's attributes whose read failed at the observation, so the label read then is unknown past them (#298).
+  let labelsUnread: Set<StalePointLabelPart>
   /// Its AX frame at the observation, in global screen points (top-left origin), as coordinate clicks are posted.
   let frame: CGRect
   /// The part of the frame its clipping ancestors left showing (`visibleFrame`'s rule over the recorded tree): what the
@@ -74,6 +91,53 @@ struct ScreenshotNodeRead<Element> {
   /// Whether the walk read its AXChildren (`ElementData.childrenRead`): a failed read counts no children, so with it
   /// unread the record cannot say whether it holds them all (#330's rule dL).
   var childrenRead = true
+  /// Its AXSubrole, and an AXStaticText's value (`screenshotLabelValue`), for #298's rule `relabelled`.
+  var subrole: String? = nil
+  var value: String? = nil
+  /// The label's attributes whose read failed at the observation (`screenshotLabelsUnread`): an error, not their absence.
+  var labelsUnread: Set<StalePointLabelPart> = []
+}
+
+/// The attributes a node's label (#298's `stalePointLabel`) is taken from, in priority order: the title, the
+/// description, and an AXStaticText's value.
+enum StalePointLabelPart: CaseIterable, Hashable {
+  case title, description, value
+  var attribute: String {
+    switch self {
+    case .title: return kAXTitleAttribute
+    case .description: return kAXDescriptionAttribute
+    case .value: return kAXValueAttribute
+    }
+  }
+}
+
+/// One label attribute read now (the review of 7f6eb3dc..b2f00ad5, P2 2): its text, nil when the element lacks it (an
+/// absent attribute, or a value that is no text), or unreadable (any other error), which the label must not fall past.
+enum StalePointLabelRead: Equatable { case text(String?), unreadable }
+
+/// The label attributes the record keeps as unreadable, from the walk's failed reads (`ElementData.unreadable`): the
+/// title and the description, and the value of an AXStaticText only (no other role's value is its label).
+func screenshotLabelsUnread(role: String, _ unreadable: Set<String>) -> Set<StalePointLabelPart> {
+  Set(StalePointLabelPart.allCases.filter { unreadable.contains($0.attribute) && ($0 != .value || role == "AXStaticText") })
+}
+
+/// A label attribute's single read now (`copyAttribute`'s value and error) as `StalePointLabelRead`: a string or an
+/// attributed string's text; nothing for kAXErrorNoValue, kAXErrorAttributeUnsupported or a value that is no text;
+/// unreadable for any other error.
+func stalePointLabelRead(_ value: CFTypeRef?, _ error: AXError) -> StalePointLabelRead {
+  switch error {
+  case .success: return .text(value.flatMap(labelText))
+  case .noValue, .attributeUnsupported: return .text(nil)
+  default: return .unreadable
+  }
+}
+
+/// The value the record keeps of an element (#298): an AXStaticText's, as the walk read it (a string, or an attributed
+/// string's text), cut by `bounded` as its labels are; nil for every other role, whose value (a field's text, a
+/// checkbox's state) is not its label.
+func screenshotLabelValue(role: String, _ value: CFTypeRef?) -> String? {
+  guard role == "AXStaticText", let value else { return nil }
+  return labelText(value).map(bounded)
 }
 
 /// The record of a walk's window tree (`reads` in the walk's preorder, parents before their children): each node with a
@@ -101,11 +165,16 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
   var framed: [Int: Int] = [:]
   /// Each read's nearest AXWebArea at or above it (#316).
   var webAreas: [Int: Element] = [:]
+  /// The editable region each read lies in (#298): itself when its role is an editable text role, else its parent's.
+  var regions: [Int: Element] = [:]
   var nodes: [ScreenshotNode<Element>] = []
   nodes.reserveCapacity(reads.count)
   for read in reads {
     let webArea = read.role == "AXWebArea" ? read.element : read.parent.flatMap { webAreas[$0] }
     if let webArea { webAreas[read.number] = webArea }
+    if let region = stalePointRegion(read.element, role: read.role, editableAncestor: nil) ?? read.parent.flatMap({ regions[$0] }) {
+      regions[read.number] = region
+    }
     let boundary = clipBoundaryRoles.contains(read.role)
     let inherited: CGRect? = boundary ? nil : read.parent.flatMap { bounds[$0] ?? nil }
     let own = read.frame
@@ -130,8 +199,12 @@ func screenshotNodes<Element>(_ reads: [ScreenshotNodeRead<Element>]) -> [Screen
     }
     framed[read.number] = nodes.count
     let shown = cut(frame).flatMap { $0.isNull || $0.width <= 0 || $0.height <= 0 ? nil : $0 }
-    nodes.append(ScreenshotNode(element: read.element, role: read.role, title: read.title, description: read.description, frame: frame,
-                                shown: shown, depth: read.depth, subtreeRecorded: !incomplete.contains(read.number),
+    nodes.append(ScreenshotNode(element: read.element, role: read.role, title: read.title, description: read.description,
+                                subrole: read.subrole, value: read.value,
+                                editableAncestor: read.role == "AXStaticText" ? regions[read.number] : nil,
+                                labelsUnread: read.labelsUnread,
+                                frame: frame, shown: shown, depth: read.depth,
+                                subtreeRecorded: !incomplete.contains(read.number),
                                 thinGap: thin(frame) && incomplete.contains(read.number), gapsBelow: gapsBelow[read.number] ?? [],
                                 ancestor: ancestor, webArea: webArea))
   }
@@ -204,8 +277,9 @@ enum StalePointReason: String, Equatable {
   case hitAboveNode
   /// Kept, unguarded inside (a stated limit, the design session's ruling 0a14b51f): the hit (or the element a route acts
   /// on) lies inside the node, whose children the record does not all hold, so the screenshot may have shown it; only the
-  /// node itself is guarded, as every node is (its own handle with its frame read now holding the point, no label
-  /// compared; or one re-created by role, frame and label): the hit inside it, the node itself or no hit at all.
+  /// node itself is guarded, as every node is (its own handle with its frame read now holding the point and its label's
+  /// words unchanged, #298; or one re-created by role, frame and label): the hit inside it, the node itself or no hit
+  /// at all.
   case unrecordedDescendant
   /// Refused: no handle of the node answers, and none re-created in place was found.
   case nodeGone
@@ -231,10 +305,13 @@ enum StalePointReason: String, Equatable {
   /// Refused (#330's rule dL, `newElementOverPoint`): the recorded node lies in an AXWebArea and the hit lies in an element
   /// the page added over the point since the screenshot (a suggestion list, a popup).
   case newElementOverPoint
+  /// Refused (#298, `relabelledLabel`): the node, found by its own handle with its frame still holding the point, reads a
+  /// label whose words differ from the recorded one's (Save to Delete on one element).
+  case relabelled
 
   var refuses: Bool {
     self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther || self == .newWindow || self == .otherWebArea
-      || self == .newElementOverPoint
+      || self == .newElementOverPoint || self == .relabelled
   }
 }
 
@@ -270,6 +347,8 @@ struct StalePointVerdict<Element> {
   var newElementReads: Int?
   /// #316's rule W: the new window over the screenshot's, for `newWindow`.
   var newWindow: ListedWindow?
+  /// #298: the node's label read now, for `relabelled`'s sentence.
+  var labelNow: String?
   var refused: Bool { reason.refuses }
 }
 
@@ -281,7 +360,27 @@ struct StalePointReads<Element> {
   var children: (Element) -> [Element]?
   var title: (Element) -> String?
   var description: (Element) -> String?
+  /// The element's AXValue as text (#298), read only where the recorded node is an AXStaticText; a seam without one
+  /// reads none, so a value never counts.
+  var value: (Element) -> String? = { _ in nil }
+  /// The element's AXEditableAncestor and its action names (#298's edited-text exemption), the names nil when their read
+  /// failed and an empty list when it has none (`establishedActionNames`); a seam without them reads none, so no text
+  /// counts as edited.
+  var editableAncestor: (Element) -> Element? = { _ in nil }
+  var actions: (Element) -> [String]? = { _ in nil }
+  /// A label attribute read so that a failed read is told from an absent one (#298's rule, the review of
+  /// 7f6eb3dc..b2f00ad5, P2 2). A seam without it reads through `title`, `description` and `value`, whose nil is absence.
+  var label: ((Element, StalePointLabelPart) -> StalePointLabelRead)? = nil
   var same: (Element, Element) -> Bool
+
+  func readLabel(_ element: Element, _ part: StalePointLabelPart) -> StalePointLabelRead {
+    if let label { return label(element, part) }
+    switch part {
+    case .title: return .text(title(element))
+    case .description: return .text(description(element))
+    case .value: return .text(value(element))
+    }
+  }
 }
 
 extension StalePointReads where Element == AXUIElement {
@@ -289,15 +388,24 @@ extension StalePointReads where Element == AXUIElement {
     StalePointReads(role: { attribute($0, kAXRoleAttribute) as? String }, frame: liveFrameRead,
                     parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead,
                     title: { liveLabel($0, kAXTitleAttribute) }, description: { liveLabel($0, kAXDescriptionAttribute) },
-                    same: { CFEqual($0, $1) })
+                    value: { liveLabel($0, kAXValueAttribute) }, editableAncestor: { elementAttribute($0, "AXEditableAncestor") },
+                    actions: { establishedActionNames(of: $0) },
+                    label: { element, part in
+                      let read = copyAttribute(element, part.attribute)
+                      return stalePointLabelRead(read.value, read.error)
+                    }, same: { CFEqual($0, $1) })
   }
 }
 
 private func liveFrameRead(_ element: AXUIElement) -> CGRect? { frame(of: element) }
 
-/// A title or description read now as the walk records it (ElementData): a string or an attributed string's text.
+/// A title, description or value read now as the walk records it (ElementData): a string or an attributed string's text.
 private func liveLabel(_ element: AXUIElement, _ name: String) -> String? {
-  guard let value = attribute(element, name) else { return nil }
+  attribute(element, name).flatMap(labelText)
+}
+
+/// A label's text as the walk takes it: a string, or an attributed string's text; nil for any other value.
+private func labelText(_ value: CFTypeRef) -> String? {
   let type = CFGetTypeID(value)
   if type == CFStringGetTypeID() { return value as? String }
   if type == CFAttributedStringGetTypeID() { return (value as! NSAttributedString).string }
@@ -307,16 +415,169 @@ private func liveLabel(_ element: AXUIElement, _ name: String) -> String? {
 private func nonEmpty(_ text: String?) -> String? { text.flatMap { $0.isEmpty ? nil : $0 } }
 
 /// Whether a re-created handle's label agrees with the recorded node's (the design session's amendment, 0c0b70f0): the
-/// same title when both have one, else the same description when neither has a title and both have one. A label either
+/// same title when both have one, else the same description when neither has a title and both have one, else, when
+/// neither side has a title or description and both have an AXStaticText's value (#298: a link's or a clickable div's
+/// text, re-created by a same-width replacement), values with the same words (`stalePointLabelWords`). A label either
 /// side cannot read (or does not carry) never counts against the match. The record holds labels as the walk keeps them,
-/// cut by `bounded` (10,000 UTF-16 units); the label read now (`title`, `description`) is cut the same way first, so a
-/// long label compares like for like.
-func stalePointLabelsAgree(recordedTitle: String?, recordedDescription: String?, title: String?, description: String?) -> Bool {
+/// cut by `bounded` (10,000 UTF-16 units); the label read now (`title`, `description`, `value`) is cut the same way
+/// first, so a long label compares like for like. `value` is passed only for an AXStaticText.
+func stalePointLabelsAgree(recordedTitle: String?, recordedDescription: String?, recordedValue: String? = nil, title: String?,
+                           description: String?, value: String? = nil) -> Bool {
   let title = title.map(bounded), description = description.map(bounded)
   let (oldTitle, newTitle) = (nonEmpty(recordedTitle), nonEmpty(title))
   if let oldTitle, let newTitle { return oldTitle == newTitle }
-  if oldTitle == nil, newTitle == nil, let old = nonEmpty(recordedDescription), let new = nonEmpty(description) { return old == new }
+  guard oldTitle == nil, newTitle == nil else { return true }
+  let (oldDescription, newDescription) = (nonEmpty(recordedDescription), nonEmpty(description))
+  if let oldDescription, let newDescription { return oldDescription == newDescription }
+  if oldDescription == nil, newDescription == nil, let old = nonEmpty(recordedValue), let new = nonEmpty(value.map(bounded)) {
+    return stalePointLabelWords(old) == stalePointLabelWords(new)
+  }
   return true
+}
+
+/// A node's label (#298): its title if non-empty, else its description, else its value (which the record keeps, and
+/// the guard reads, for an AXStaticText only).
+func stalePointLabel(title: String?, description: String?, value: String?) -> String? {
+  nonEmpty(title) ?? nonEmpty(description) ?? nonEmpty(value)
+}
+
+/// A label's words (#298; the spike's rule as measured, `scripts/probe-298/analyze.mjs`'s `besideNumbers`, mode `run`):
+/// its lowercased letter runs, after taking out every number (an ASCII digit run with internal `.`, `,` or `:`) together
+/// with the letter words that follow it up to the next punctuation mark (any character neither a letter, a digit nor
+/// white space). So a count's or a time's unit and its inflection go with it ("1 item", "Elapsed 11.6 s", "3 new").
+func stalePointLabelWords(_ label: String) -> [String] {
+  let scalars = Array(label.lowercased().unicodeScalars)
+  func isDigit(_ s: Unicode.Scalar) -> Bool { s.value >= 0x30 && s.value <= 0x39 }
+  func isLetter(_ s: Unicode.Scalar) -> Bool {
+    switch s.properties.generalCategory {
+    case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter: return true
+    default: return false
+    }
+  }
+  /// JavaScript's `\s`, as the spike's tokenizer skipped it: neither a word nor punctuation.
+  func isSpace(_ s: Unicode.Scalar) -> Bool {
+    s.properties.generalCategory == .spaceSeparator || ["\t", "\n", "\u{0B}", "\u{0C}", "\r", "\u{FEFF}", "\u{2028}", "\u{2029}"].contains(s)
+  }
+  var words: [String] = []
+  var afterNumber = false
+  var index = 0
+  while index < scalars.count {
+    let scalar = scalars[index]
+    if isDigit(scalar) {
+      index += 1
+      while index < scalars.count {
+        if isDigit(scalars[index]) {
+          index += 1
+        } else if [".", ",", ":"].contains(scalars[index]), index + 1 < scalars.count, isDigit(scalars[index + 1]) {
+          index += 2
+        } else {
+          break
+        }
+      }
+      afterNumber = true
+    } else if isLetter(scalar) {
+      var word = String.UnicodeScalarView()
+      while index < scalars.count, isLetter(scalars[index]) {
+        word.append(scalars[index])
+        index += 1
+      }
+      if !afterNumber { words.append(String(word)) }
+    } else {
+      if !isSpace(scalar) { afterNumber = false }  // punctuation ends a number's words
+      index += 1
+    }
+  }
+  return words
+}
+
+/// The nodes whose label #298's rule does not compare: document titles, which flash and gain tab-state suffixes ("Ann
+/// messaged you", "- Audio playing"; #316's rule G already guards the document's identity), on the window, the web area
+/// and Chrome's tab (the design session's ruling 31a62775 (b)).
+let relabelUncomparedRoles: Set<String> = ["AXWindow", "AXWebArea"]
+let relabelUncomparedSubroles: Set<String> = ["AXTabButton"]
+
+/// #298's rule `relabelled` (the design session's ruling 31a62775), on a node found by its own handle whose frame still
+/// holds the point: the label it reads now when that label's words differ from the recorded label's, both labels
+/// non-empty, the node not one of the uncompared (`relabelUncomparedRoles`, `relabelUncomparedSubroles`); else nil. It
+/// reads the title, then the description only when the title is empty or absent, then (for an AXStaticText) the value
+/// only when both are, each cut as the record's was. A label never falls past an attribute whose read failed, at the
+/// observation (`ScreenshotNode.labelsUnread`) or now (`StalePointReads.readLabel`): the label is then unknown, and the
+/// rule keeps the point (the review of 7f6eb3dc..b2f00ad5, P2 2: a button "Save" described "Save changes", its title
+/// read failing on one side, would otherwise compare its description with its title).
+func relabelledLabel<Element>(_ node: ScreenshotNode<Element>, _ reads: StalePointReads<Element>) -> String? {
+  guard !relabelUncomparedRoles.contains(node.role), !relabelUncomparedSubroles.contains(node.subrole ?? "") else { return nil }
+  let parts: [StalePointLabelPart] = node.role == "AXStaticText" ? [.title, .description, .value] : [.title, .description]
+  var was: String?
+  for part in parts {
+    if node.labelsUnread.contains(part) { return nil }
+    let recorded = part == .title ? node.title : part == .description ? node.description : node.value
+    if let text = nonEmpty(recorded) {
+      was = text
+      break
+    }
+  }
+  guard let was else { return nil }
+  let element = node.element
+  var now: String?
+  for part in parts {
+    guard case .text(let text) = reads.readLabel(element, part) else { return nil }
+    if let text = nonEmpty(text.map(bounded)) {
+      now = text
+      break
+    }
+  }
+  guard let now, stalePointLabelWords(was) != stalePointLabelWords(now) else { return nil }
+  // The edited-text exemption (ruling 1ea561bc:553): the text of an editable region, changed by the model's own typing.
+  if let region = node.editableAncestor, editedInPlace(element, region: region, reads) { return nil }
+  return now
+}
+
+/// The roles of an editable text region for #298's edited-text exemption: a text area or a text field, and a
+/// contenteditable region, which Chromium, WebKit and Gecko expose as an AXTextArea (#283's focus route reaches one
+/// there). The record derives a text's region from these alone (the design session's ruling 1ea561bc:565), since the
+/// walk reads no AXEditableAncestor: a contenteditable group the browsers expose as a plain group is not told apart
+/// from any group, and its text stays judged.
+let stalePointEditableTextRoles: Set<String> = ["AXTextArea", "AXTextField"]
+
+/// The editable region an element names for #298's edited-text exemption: the one its AXEditableAncestor names (read
+/// at the click only; the record passes none), else the element itself when its role is an editable text role; nil
+/// otherwise. Never the element answering the attribute, which may be a link or a chip inside the region (the review
+/// of b2f00ad5..25b23fbb, P2 1).
+func stalePointRegion<Element>(_ element: Element, role: String?, editableAncestor: Element?) -> Element? {
+  editableAncestor ?? (role.map(stalePointEditableTextRoles.contains) == true ? element : nil)
+}
+
+/// #298's edited-text exemption (the design session's ruling 1ea561bc:553): whether `text`, read now, lies in `region`,
+/// the region the record derived for it, with nothing actionable between them. At the click (ruling 1ea561bc:565) the
+/// text's AXEditableAncestor is read live and must name `region`; where that read answers nothing (failed or absent),
+/// the region its nearest parent names (`stalePointRegion`: that parent's AXEditableAncestor, or the parent itself by
+/// its role), up to its web area, window, sheet or application, must. Then every element strictly between the text and the region is read: one of
+/// `stalePointInteractiveRoles` (a link, a button), or one whose actions include AXPress (a mention or a chip), keeps
+/// the text judged. A click there only places a caret, and the text changing is the model's own typing; a control's text
+/// is not. Read only where the rule would otherwise refuse, or a re-created text's words disagree.
+func editedInPlace<Element>(_ text: Element, region: Element, _ reads: StalePointReads<Element>) -> Bool {
+  func regionAbove() -> Element? {
+    var current = text
+    for _ in 0..<stalePointAncestorLevels {
+      guard let next = reads.parent(current), let role = reads.role(next) else { return nil }
+      if let named = stalePointRegion(next, role: role, editableAncestor: reads.editableAncestor(next)) { return named }
+      if role == "AXWebArea" || stalePointWalkStops.contains(role) { return nil }
+      current = next
+    }
+    return nil
+  }
+  guard let now = reads.editableAncestor(text) ?? regionAbove(), reads.same(now, region) else { return false }
+  var current = text
+  for _ in 0..<stalePointAncestorLevels {
+    guard let next = reads.parent(current) else { return false }
+    if reads.same(next, region) { return true }
+    // A role or action names that cannot be read leave the element not known to be inert (the review of
+    // b2f00ad5..25b23fbb, P2 2): the text stays judged.
+    guard let role = reads.role(next), let actions = reads.actions(next) else { return false }
+    if stalePointInteractiveRoles.contains(role) || actions.contains("AXPress") { return false }
+    current = next
+  }
+  return false
 }
 
 /// The largest distance between two frames' corresponding edges.
@@ -450,8 +711,15 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
     guard reads.role(candidate) == node.role, let frame = reads.frame(candidate) else { continue }
     let distance = frameDistance(frame, expected)
     guard distance <= stalePointFrameTolerance, best.map({ distance < $0.distance }) ?? true else { continue }
-    guard stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description,
-                                title: reads.title(candidate), description: reads.description(candidate)) else { continue }
+    let (title, description) = (reads.title(candidate), reads.description(candidate))
+    func agrees(value: String?) -> Bool {
+      stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value, title: title,
+                            description: description, value: value)
+    }
+    // #298's edited-text exemption: a text re-created in its recorded editable region (typed over) is matched without
+    // its value, its title and description still compared.
+    guard agrees(value: node.value == nil ? nil : reads.value(candidate))
+            || (node.editableAncestor.map { editedInPlace(candidate, region: $0, reads) } == true && agrees(value: nil)) else { continue }
     best = (candidate, frame, distance)
   }
   return best.map { ($0.element, $0.frame) }
@@ -511,6 +779,13 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   // ruling 2db3ba75), and whatever the point reaches inside it (no hit, the node itself, anything under it) is its
   // unrecorded interior, kept unguarded and said so.
   if let currentFrame, !holdsPoint(currentFrame, point) { return judged(.frameMoved) }
+  // #298's rule `relabelled`: the node on its own handle, its frame read now holding the point, relabelled in place. A
+  // node the record holds incompletely is judged too (the design session's 2db3ba75), before its interior is kept.
+  if nodeFrame != nil, let now = relabelledLabel(node, reads) {
+    var refused = judged(.relabelled)
+    refused.labelNow = now
+    return refused
+  }
   // #316's rule G: a node the screenshot showed in a web area is judged only by a hit in that same web area, its nearest
   // one in the record (so an iframe's hit passes inside the page's, and a page's inside its iframe's own). The hit that is
   // the node's own handle is in it by the record; an empty hit is judged as before.
@@ -607,8 +882,10 @@ func recordedHitAtPoint<Element>(_ element: Element, at point: CGPoint, windowSh
   if !handles.isEmpty { return handles.lazy.filter { inPlace(live, $0) }.compactMap(carried).first }
   guard let role = reads.role(element) else { return nil }
   let (title, description) = (reads.title(element), reads.description(element))
+  let value = role == "AXStaticText" ? reads.value(element) : nil
   for node in nodes where node.role == role && inPlace(live, node)
-    && stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, title: title, description: description)
+    && stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, recordedValue: node.value, title: title,
+                             description: description, value: value)
     && reads.frame(node.element) == nil {
     if let by = carried(node) { return by }
   }
@@ -801,20 +1078,31 @@ struct StalePointGate<Element> {
   }
 }
 
-/// An element as a refusal's sentence names it: its role and its title, else its description, in quotes (at most 60
-/// characters).
-func stalePointName(role: String?, title: String?, description: String?) -> String {
+/// An element as a refusal's sentence names it: its role and its label (`stalePointLabel`: the title, else the
+/// description, else an AXStaticText's value), in quotes (`stalePointShownLabel`).
+func stalePointName(role: String?, title: String?, description: String?, value: String? = nil) -> String {
   let role = role ?? "element"
-  guard let label = nonEmpty(title) ?? nonEmpty(description) else { return role }
-  let shown = label.count > 60 ? String(label.prefix(60)) + "…" : label
-  return "\(role) \"\(shown)\""
+  guard let label = stalePointLabel(title: title, description: description, value: value) else { return role }
+  return "\(role) \"\(stalePointShownLabel(label))\""
+}
+
+/// A label as a refusal's sentence quotes it: at most 60 characters.
+func stalePointShownLabel(_ label: String) -> String {
+  label.count > 60 ? String(label.prefix(60)) + "…" : label
 }
 
 /// The guard's refusal (#296): the screenshot's element at the point and what became of it, what the point reaches now,
-/// and the re-observation that lets the model aim again. Nothing was posted.
-func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: String?, afterActivation: Bool = false) -> EngineError {
+/// and the re-observation that lets the model aim again. Nothing was posted. For `relabelled` (#298), `label` is the
+/// label the element reads now.
+func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: String?, label: String? = nil,
+                                  afterActivation: Bool = false) -> EngineError {
   let there = now.map { "; \($0) is there now" } ?? ""
   let sent = afterActivation ? "The app was activated in the background, but nothing was pressed." : "Nothing was sent."
+  // #298: the element is still there, its own handle, but reads another label.
+  if reason == .relabelled, let label {
+    return EngineError(name: "screenChangedSinceScreenshot",
+      "The screen changed since the screenshot: the \(was) it showed at this point now reads \"\(stalePointShownLabel(label))\". \(sent) Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+  }
   // #330's rule dL: the recorded element is still there, under something the page added; dismissing that is a way on too.
   if reason == .newElementOverPoint {
     return EngineError(name: "screenChangedSinceScreenshot",
@@ -847,12 +1135,13 @@ func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Doubl
   let record = StalePointRecord(verdict, ms: ms)
   if verdict.reason == .newWindow { return (record, newWindowOverScreenshot(app: app)) }
   guard verdict.refused, let node = verdict.node else { return (record, nil) }
-  let was = stalePointName(role: node.role, title: node.title, description: node.description)
+  let was = stalePointName(role: node.role, title: node.title, description: node.description, value: node.value)
   var now: String?
-  if let hit = verdict.hit, let role = verdict.hitRole, !(verdict.current.map { reads.same(hit, $0) } ?? false) {
+  if verdict.reason != .relabelled, let hit = verdict.hit, let role = verdict.hitRole, !(verdict.current.map { reads.same(hit, $0) } ?? false) {
     now = stalePointName(role: role, title: reads.title(hit), description: reads.description(hit))
   }
-  return (record, screenChangedSinceScreenshot(was: was, reason: verdict.reason, now: now, afterActivation: afterActivation))
+  return (record, screenChangedSinceScreenshot(was: was, reason: verdict.reason, now: now, label: verdict.labelNow,
+                                               afterActivation: afterActivation))
 }
 
 extension ConnectionState {

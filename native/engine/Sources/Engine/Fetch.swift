@@ -7,7 +7,8 @@ import Foundation
 
 /// The attributes read per element: the vendor's 20 in its order (F §1.2), then what the Interfaces' Node adds
 /// (AXDOMClassList), the settle's busy signs (AXElementBusy, AXLoaded; F §8.4), the text's context, position, size and
-/// children. One list for the settle's busy walk and the observation's walk, so the observation can read the tree the
+/// children. Not AXEditableAncestor: #298's walk cost (the design session's ruling 1ea561bc:565) keeps it to the click.
+/// One list for the settle's busy walk and the observation's walk, so the observation can read the tree the
 /// settle fetched. The scroll bars are not on it: they are read only for an element with a page scroll (scrollBars).
 let observedAttributes: [String] = [
   "AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXValueDescription",
@@ -50,9 +51,13 @@ struct ElementData {
   /// Whether AXChildren was read: false when its slot held an error or nothing, which decodes as no children (#330's
   /// rule dL then cannot tell a child the page added from one this read missed).
   var childrenRead: Bool
+  /// The attributes whose read failed with an error other than their absence (`failedSlot`): each decodes as none, as
+  /// an absent one does, and #298's stale-point record tells the two apart for the label's attributes.
+  var unreadable: Set<String> = []
 
-  /// Decodes one element's attribute values, keyed by attribute name.
-  init(values: [String: CFTypeRef]) {
+  /// Decodes one element's attribute values, keyed by attribute name, and the names whose read failed.
+  init(values: [String: CFTypeRef], unreadable: Set<String> = []) {
+    self.unreadable = unreadable
     func string(_ name: String) -> String? { values[name].flatMap(stringValue) }
     func flag(_ name: String) -> Bool? { bool(values[name]) }
     role = string("AXRole") ?? "AXUnknown"
@@ -173,8 +178,11 @@ class ElementSource: @unchecked Sendable {
       let error = AXUIElementCopyMultipleAttributeValues(prepare(element), attributes as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
       guard error == .success, let slots = values as? [Any], slots.count == attributes.count else { return nil }
       var decoded: [String: CFTypeRef] = [:]
-      for (name, slot) in zip(attributes, slots) { if let value = present(slot) { decoded[name] = value } }
-      return ElementData(values: decoded)
+      var unreadable: Set<String> = []
+      for (name, slot) in zip(attributes, slots) {
+        if let value = present(slot) { decoded[name] = value } else if failedSlot(slot) { unreadable.insert(name) }
+      }
+      return ElementData(values: decoded, unreadable: unreadable)
     }
   }
 

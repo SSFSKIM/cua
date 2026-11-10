@@ -626,6 +626,8 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m4/drag-predicates/` (`feat/171-m4-t15`, be009c24).
 - Observation (M4, T13): when an HTML drop lands, Chrome asks the window manager to activate its window (`_NET_ACTIVE_WINDOW`) within about 53 ms of the release, and it never does after a leave. Electron does not. Chrome's drag loop shows its own cursor, and its no-drop cursor is the same image. A renderer that is busy cannot start a drag after the release, because the browser checks the button is still down; a lagging browser can, and such a late take answered ok on every run.
   Evidence: `m4/drop-signals/`.
+- Observation (M4, T14): Chrome completes, and confirms with its activation request, a drop that it released on a stale accept outside the drop zone, though the page takes nothing. So the activation request proves that the browser dropped, not that the page took the drop. Behind the floor no such drop was seen. An activation can also come during the drag, before the release, so only one read after the release counts.
+  Evidence: `m4/drops/`.
 
 ## Decision Log
 
@@ -1641,6 +1643,24 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **Measurement only.** The engine flags (`--drag-dnd-release-at-accept`, `--drag-ignore-cover`, `--stats` `wall`) are off by default, and `accept.rs` is its own module. T14 promotes what the rulings allow.
   Evidence: `m4/drop-signals/` (README, `tables/`, `tables/fix-wave.md`); the task-68 report (local); `ci-gate` GREEN on 9ecfedab (with a rerun of `test`) and on b72324f3 and f7e793f7 (with a rerun of `sandbox-denials`).
   Date/Author: 2026-11-10, the plan-executor (session linux171), from task 68's report, its review and fix wave (reviewer-medium), and the design session's rulings.
+
+- Decision (2026-11-10, M4, T14 (#263, #264, #269): Chromium drops, built): task 69, 3f9cab4e..b553c5c1; fix bba04159..8ecf2777, with a9e0d562 and 209ae2ce (evidence wording); evidence `m4/drops/`. The design session ruled each step (2026-11-09 and 2026-11-10).
+  - **#264 first.** M3's late-take watch now covers every Chromium drop the engine lets land: in front, in `dedicated` mode, and on the desktop route over Chromium. It runs from the actual release, for 300 ms or until the next acting request.
+    - Real late takes come from T13's reproduction, the run's own browser stopped and continued. On 405aa773, 25 went unreported (RED). On the final engine, 9 of 9 are reported, with the Escape within 3.2 ms.
+    - They run in the drop-signals plan `t14-late`, because the gate's device scene cannot produce them.
+  - **Ruling (1), built: Chrome's activation request confirms a drop.**
+    - The window is `DROP_CONFIRM` = 150 ms, about three times T13's 52.9 ms maximum. Only the first activation read after the release stamp and inside the window counts. A read before the stamp is ignored, and one after the window confirms nothing (the review; the design session, 2026-11-10).
+    - It counts only for the drop target's own top-level window, only where the window manager lists `_NET_ACTIVE_WINDOW` in `_NET_SUPPORTED` (read at runtime), and only for Chrome; Electron keeps the floor. A drop with no confirmation answers with the unconfirmed notice, never ok.
+    - The release is stamped before it goes out: with the stamp after its round trip, 1 landed drop in 300 was left unconfirmed.
+  - **Ruling (2), reverted by its own condition.** In the press-inside control (a press inside the drop zone, then a path out of it), 1 of 30 drags at idle released on an accept Chrome had not yet withdrawn. Chrome dropped and confirmed it, the page took nothing, and the drag answered ok. The early release is again the measurement flag `--drag-dnd-release-at-accept`, and every drop keeps the floor. Its counts at the gate's window load and at twice the load were not run.
+  - **(1) confirms Chrome's drop, not the page's** (the design session's words for the PR's limits). Its basis is 0 requests on the 179 non-landing drags behind the floor. The press-inside control stays in the gate at floor timing (`chrome_dnd_inzone_out_in_front_shared`).
+  - **A long path past the floor: measured, not built.** A drag of about 940 px that crosses the zone and leaves it releases 457–460 ms after the take: past the floor, right after its last step. In 230 qualifying drags (100 idle, 30 at the gate's window load, 100 at twice the load), none landed and none answered ok; all answered unconfirmed. So it is a stated limit, not observed in 230. No end rest was added, and the control is in the gate (`chrome_dnd_long_left_in_front_shared`).
+  - **The gate rule** (the design session, 2026-11-10). "Unconfirmed, and it landed" is honest: the judge counts it per load beside landed, ok and false ok, and it is a finding only above 5% of landed drops at any load. In cases that expect a landing, a drop that did not land fails whatever its answer. Honesty excuses a slow or unconfirmed answer, not a missing effect.
+  - **The row's facade exception** (the design session, 2026-11-10). `describe` in `bind-linux-app.mjs` prepends a non-empty `state.notice` as the observation's first line, before `Accessibility source:`, and a state without it renders byte-identical to before. getScreenshot, listWindows/listApps and the release methods do not render it, a stated limit. The next acting request is refused once, with a text naming the pending request and its kind: late take, failed watch, or unconfirmed drop.
+  - **Speed: the floor and the hold stay.** The short drop takes 365.9 ms against the newest build's 251.5 (#269). The long drag and drop takes 368.8 against 339, failing the speed rule by about 30 ms (#358, P3). The 40 px selection takes 254 ms, level with the vendor builds. #263, #269 and #358 go to the owner with these numbers.
+  - **On the fixed build,** the gate's Chrome scene passes 14 of 14: 45 landed, 0 false ok, 0 landed but unconfirmed.
+  Evidence: `m4/drops/`; the task-69 report (local); `ci-gate` GREEN on b553c5c1 (run 42809469145) and 8ecf2777 (run 42864500224).
+  Date/Author: 2026-11-10, the plan-executor (session linux171), from task 69's report, its review and fix wave (reviewer-medium), and the design session's rulings.
 
 ## Outcomes & Retrospective
 

@@ -65,7 +65,7 @@ front window (29360140), inside gedit's geometry.
 | 1, 3, 5, 7, 9 | (450, 210), off it to the window's middle | 0 | no |
 
 With the pointer in the window or outside it, and fully covered, both moves took 10 of 10. Only the move off the
-button misses, and only with the pointer under the half cover. It was not reached on `:0` (below).
+button misses, and only with the pointer under the half cover. It reproduced on `:0` (below).
 
 ## The `:0` sitting (`sitting-0/`, `sitting-0-rerun/`)
 
@@ -80,13 +80,16 @@ harness export, candidate and arguments as the dry run, no whole-run RECORD, und
   Electron's first window (below).
 - **`sitting-0-rerun/`** (`--family electron,gedit`, the guards unchanged on the design session's word), 05:53:04Z to
   06:10:39Z: Electron's 28 cells, 280 runs, every cell identical to the dry run, witness and parks as above. The guard
-  stopped it at gedit's first window on the same pattern, and as ruled the sitting stopped there. gedit was not reached
-  on `:0`.
-- **The person's side, both steps:**
+  stopped it at gedit's first window on the same pattern, and as ruled the sitting stopped there.
+- **`sitting-0-gedit/`** (`--family gedit`, `WRAP=wrap71.py`: the narrow rule below, approved by the design session for
+  this step; its window 06:50Z to 07:20Z), 06:52:36Z to 07:12:05Z, status 0: gedit's 28 cells, 280 runs, every cell
+  identical to the dry run, witness and parks as above. The rule counted no peer (no `counted.jsonl` was written):
+  the race did not recur, so the step's guard behaved as wrap50.py.
+- **The person's side, every step:**
   - The owner's Chrome kept its pid (2546101) and its start time.
-  - owner-watch saw no change in 361 and 104 checks.
-  - The only difference between before and after is the mtime of `~/.config/google-chrome`, which the owner's Chrome
-    writes on its own (task 50).
+  - owner-watch saw no change in 361, 104 and 115 checks.
+  - The only difference between before and after, in the first two steps, is the mtime of `~/.config/google-chrome`,
+    which the owner's Chrome writes on its own (task 50); the gedit step's showed none.
   - Each step's TMPDIR was empty afterwards, and nothing of the run was left.
   - The real pointer started at (142, 130), over the owner's Chrome. The first park moved it off there onto a window of
     the run's. After each step it was put back, and it read (142, 130) again.
@@ -101,6 +104,7 @@ harness export, candidate and arguments as the dry run, no whole-run RECORD, und
 |---|---|---|
 | `sitting-0/` | 2026-11-10T04:46:30Z, load 0.37 | 2026-11-10T05:48:05Z, status 1 (the guard's stop), load 1.25 |
 | `sitting-0-rerun/` | 2026-11-10T05:53:03Z, load 0.45 | 2026-11-10T06:11:05Z, status 1 (the guard's stop), load 0.54 |
+| `sitting-0-gedit/` | 2026-11-10T06:52:34Z, load 0.26 | 2026-11-10T07:12:06Z, status 0, load 0.56 |
 
 The load at `sitting-0/`'s release is the sitting's own. It rose with the run from 0.37 at the start, and was below
 0.6 again five minutes later.
@@ -126,5 +130,8 @@ The load at `sitting-0/`'s release is the sitting's own. It rose with the run fr
   - Chromium's selection drag does depend on it, as task 20 found. With the pointer under a cover or outside, the
     press watch answers that the drag may not have started, and nothing is selected, so cua already answers it
     honestly.
-  - gedit (measured on the private display only) takes everything wherever the pointer is, except the one move cell
-    above.
+  - gedit (GTK 3) does not share Gecko's dependence: its clicks, scrolls, moves and selections take 10 of 10 wherever
+    the pointer is, on `:0` and on the private display. The one exception reproduced on `:0`: with the window half
+    covered and the pointer under the cover, the move off the toolbar button leaves its hover (5 of 10, the odd runs,
+    0 pixels changed; the pointer at (630, 595) on root child 6001260, the front window 35651598, at every request).
+    The design session takes it as a ticket of its own.

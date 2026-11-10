@@ -76,6 +76,7 @@ test('the lanes: cua as it ships and the pinned build; the pointer-unjudged lane
   assert.equal(predicatePlan({}).length, PREDICATE_CASES.length, 'the gate runs every case');
   assert.ok(predicatePlan({ ops: ['move'] }).every((c) => c.kind === 'move'));
   assert.throws(() => predicatePlan({ plan: 'pointer' }), /pointer-route/);
+  assert.deepEqual(predicatePlan({ plan: 'leave', ops: ['click', 'scroll'] }).map(caseKey), ['firefox click visible pointer-leave', 'firefox scroll visible pointer-leave'], 'the leave cases alone');
 });
 
 test('a leave case passes while no run answers ok with no effect: each took, was refused, or says the pointer left', () => {

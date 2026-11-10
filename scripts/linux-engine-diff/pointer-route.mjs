@@ -214,12 +214,22 @@ async function parkFor(desktop, state) {
 }
 
 /**
+ * A cell's window put in its occlusion (scenes.mjs `arrange`), the front window first back in its corner for a visible
+ * cell: `arrange` only raises the scene window there, and activating the front window after a partial or covered cell
+ * would otherwise leave it over the scene (the manifest runs its visible leave cells after its covered ones).
+ */
+export function arrangeCell(desktop, scene, occlusion) {
+  if (occlusion === 'visible') desktop.arrangeFront('visible');
+  desktop.arrange(scene, occlusion);
+}
+
+/**
  * The desktop and the witness the series see: `arrange` puts the window in its occlusion, then parks the pointer, and
  * clears gedit's selection before a selection run; each witness span first records where the pointer is.
  */
 function instrumented(desktop, witness, oracle, state) {
   const arrange = async (scene, occlusion) => {
-    desktop.arrange(scene, occlusion);
+    arrangeCell(desktop, scene, occlusion);
     await parkFor(desktop, state);
     if (state.clearSelection) oracle.setCaret(state.clearSelection, 0);
   };

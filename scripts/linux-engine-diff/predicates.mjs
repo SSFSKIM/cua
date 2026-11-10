@@ -140,9 +140,9 @@ export function predicatesMarkdown(rows) {
 
 /** The cases a run measures: the manifest, narrowed by `--ops` (kinds) where asked; the gate runs them all. */
 export function predicatePlan(args, cases = PREDICATE_CASES) {
-  if (args.plan && args.plan !== 'manifest') throw new Error(`--plan ${args.plan}: the predicates plan is manifest (the gate's); T15's pointer probes are pointer-route.mjs's sitting now`);
+  if (args.plan && !['manifest', 'leave'].includes(args.plan)) throw new Error(`--plan ${args.plan}: the predicates plans are manifest (the gate's) and leave (its leave cases alone); T15's pointer probes are pointer-route.mjs's sitting now`);
   const kinds = args.ops && args.ops !== 'all' ? args.ops : null;
-  return cases.filter((c) => !kinds || kinds.includes(c.kind));
+  return cases.filter((c) => (!kinds || kinds.includes(c.kind)) && (args.plan !== 'leave' || c.expect === 'honest'));
 }
 
 export async function runPredicates(args, { desktop, emit }) {

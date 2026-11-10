@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { caretMoved } from '../../scripts/linux-engine-diff/kinds.mjs';
-import { LEAVE_AFTER_S, OCCLUSION_PARKS, OUT_POINT, ROUTE_FAMILIES, leavePlan, cellCounts, cellKey, parkHeld, parkPoint, placeOf, routeLanes, routeMarkdown, routePlan, selectTook } from '../../scripts/linux-engine-diff/pointer-route.mjs';
+import { LEAVE_AFTER_S, OCCLUSION_PARKS, OUT_POINT, ROUTE_FAMILIES, arrangeCell, leavePlan, cellCounts, cellKey, parkHeld, parkPoint, placeOf, routeLanes, routeMarkdown, routePlan, selectTook } from '../../scripts/linux-engine-diff/pointer-route.mjs';
 
 const window = { x: 0, y: 30, width: 1050, height: 760 };
 
@@ -106,4 +106,13 @@ test('a leave cell parks the pointer as in, finds it in the window at the reques
   assert.deepEqual(leavePlan().map(cellKey), ['firefox click visible pointer-leave', 'firefox scroll visible pointer-leave', 'firefox move visible pointer-leave', 'firefox select visible pointer-leave']);
   for (const c of leavePlan()) assert.equal(typeof LEAVE_AFTER_S[c.kind], 'number', c.kind);
   assert.ok(!routePlan().some((c) => c.park === 'leave'), "the sitting's plan is unchanged");
+});
+
+test('a visible cell puts the front window back in its corner before raising the scene, whatever cell came before', () => {
+  const calls = [];
+  const desktop = { arrangeFront: (o) => calls.push(['front', o]), arrange: (scene, o) => calls.push(['arrange', scene.id, o]) };
+  arrangeCell(desktop, { id: 5 }, 'covered');
+  arrangeCell(desktop, { id: 5 }, 'visible');
+  arrangeCell(desktop, { id: 5 }, 'partial');
+  assert.deepEqual(calls, [['arrange', 5, 'covered'], ['front', 'visible'], ['arrange', 5, 'visible'], ['arrange', 5, 'partial']]);
 });

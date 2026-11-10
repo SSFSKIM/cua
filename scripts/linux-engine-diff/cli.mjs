@@ -18,7 +18,7 @@ export const USAGE = `usage:
       [--control-root <cua checkout> [--paths idle,eof,signal,remote,held-back] [--cases hold,burst,pairs,handle] [--browsers chrome,electron] [--sandbox scoped|disabled] [--require-burst-cut]] (engine-stop)
       [--family <list>] [--kinds <list>] [--routes background,desktop,dedicated] [--lanes shipped,settle-<ms>...] [--no-audit] (settle)
       [--plan main|cover|pilot] [--family chrome|electron] [--ballast gate] [--load-factor 2] [--lanes <labels>] [--trials <cap>] (drop-signals)
-      --vendor <bin> [--ops <kinds>] (predicates: T15's adopted cases, predicates.mjs; the gate runs every case)
+      --vendor <bin> [--ops <kinds>] [--plan manifest|leave] (predicates: T19's adopted cases, predicates.mjs; the gate runs every case)
       --vendor <bin> [--family firefox,chrome,electron,gedit] [--ops click,scroll,move,select] [--trials 10] (pointer-route: T19's sitting, pointer-route.mjs)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;

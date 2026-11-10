@@ -44,7 +44,7 @@ export function changedFields(a, b) {
 }
 
 /** A running `xprobe selection-watch XdndSelection`: `stop()` answers its owner changes. */
-async function watchXdnd() {
+export async function watchXdnd() {
   const child = xSpawn(XPROBE, ['selection-watch', 'XdndSelection'], { stdio: ['pipe', 'pipe', 'inherit'] });
   const exited = new Promise((resolve) => {
     child.once('exit', resolve);
@@ -121,7 +121,7 @@ export function dndLanes(args) {
   ];
   const lanes = args.lanes ? all.filter((l) => args.lanes.includes(l.label)) : all.filter((l) => l.label !== 'cua:active');
   // the short drop, and every cold drag, is measured in front for every lane, the vendor builds' included (tasks 18, 20)
-  return args.dndShort || args.dndCold ? lanes.map((l) => ({ ...l, activate: true })) : lanes;
+  return args.dndShort || args.dndSelect || args.dndCold ? lanes.map((l) => ({ ...l, activate: true })) : lanes;
 }
 
 /** The cold run's drags in order: round `i` makes one drag a lane, the lanes' order rotating from round to round. */
@@ -351,7 +351,7 @@ export async function runDnd(args, { desktop, emit }) {
   const stubScene = await desktop.openChrome('stub', 'scene.html');
   await desktop.openFront(args.occlusion === 'covered' ? 'covered' : 'visible');
   const witness = await startWitness(XPROBE);
-  const ctx = { desktop, oracle, witness, emit, occlusion: args.occlusion, grabs: args.grabs !== false, path: args.dndShort ? 'dnd-short' : 'dnd', stray: args.stray, parkPointer: args.parkPointer };
+  const ctx = { desktop, oracle, witness, emit, occlusion: args.occlusion, grabs: args.grabs !== false, path: args.dndShort ? 'dnd-short' : args.dndSelect ? 'select-short' : 'dnd', stray: args.stray, parkPointer: args.parkPointer };
   const md = [
     `HTML5 drag and drop (pages/drag.html's \`${ctx.path}\` path), ${n} drags a lane, each window ${args.dndCold ? `in front, every drag a fresh engine's first request${args.coverMs ? ` after ${args.coverMs} ms under a full cover` : ''}` : args.occlusion} (dnd.mjs). Columns: drops that landed; answers that refused the drop as declared (deviations.mjs) / that said the drop may have happened; runs whose witness changed, by field; runs that took XdndSelection; runs where the server granted a grab during the drag; runs with a grab left after the answer; runs whose active window, focus or stacking differed from before right after the answer, and 1 s later.`,
     '',

@@ -6,12 +6,28 @@ import { DEVIATIONS, declaredDeviation, fixtureTruncationMismatch, lineAsReporte
 test('every declared deviation names its operation, field, reason and the spec section', () => {
   assert.ok(DEVIATIONS.length >= 6);
   for (const d of DEVIATIONS) {
-    // the truncated declaration alone names no operation: it covers every read that was cut
-    if (d.field !== 'truncated') assert.equal(typeof d.op, 'string');
+    // the truncated declaration names no operation: it covers every read that was cut; nor does the pending refusal,
+    // which answers whatever acts first after the drag that left it
+    if (d.field !== 'truncated' && !(d.field === 'error' && d.answer({ ok: false, error: PENDING }))) assert.equal(typeof d.op, 'string');
     assert.equal(typeof d.field, 'string');
     assert.ok(d.reason.length > 10, d.op);
     assert.match(d.section, /Decision Log|Design|Plan of Work/);
   }
+});
+
+const PENDING =
+  'Pending from your last drag, an unconfirmed drop: your drag into Google-chrome began a drag and drop, and Google-chrome did not confirm a drop after the release, so the drop may not have landed as the drag answered; this click request was not run, so read the window before sending it again';
+
+test("the refusal of the request after a drag that left something pending is declared, by its own sentence, for whatever acts (M4's T14)", () => {
+  for (const op of ['click', 'drag', 'press_key', 'preflight']) {
+    const error = PENDING.replace('this click request', `this ${op} request`);
+    assert.ok(declaredDeviation({ op, scene: 'device-chrome-dnd', field: 'error', candidate: { ok: false, error } }), op);
+  }
+  for (const cause of ['a late drag and drop: Google-chrome started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop', 'a failed watch: the drag-and-drop watch after your drag into Google-chrome failed (no reply), so a drop may have happened unseen and changed the desktop'])
+    assert.ok(declaredDeviation({ op: 'click', field: 'error', candidate: { ok: false, error: `Pending from your last drag, ${cause}; this click request was not run, so read the window before sending it again` } }), cause);
+  assert.equal(declaredDeviation({ op: 'click', field: 'error', candidate: { ok: false, error: 'Pending from your last drag, something else; this click request was not run, so read the window before sending it again' } }), null, 'another cause');
+  assert.equal(declaredDeviation({ op: 'click', field: 'error', candidate: { ok: true, output: null } }), null, 'a success is not the refusal');
+  assert.equal(declaredDeviation({ op: 'click', field: 'output', candidate: { ok: false, error: PENDING } }), null, 'the error field alone');
 });
 
 test("M1a's text and clipboard refusals are gone: M2's paste route answers those commands", () => {

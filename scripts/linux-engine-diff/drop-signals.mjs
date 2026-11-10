@@ -1,7 +1,9 @@
 // The drop-signals experiment (#171 M4, T13: Chromium drop signals, measured only; the design session's M4 pre-flight,
 // "The Chrome drop"): what the engine could observe of a Chromium drag and drop, measured against what landed, so the
 // design session can rule on T14. It adopts nothing and changes no default: its lanes are the head's engine as it ships
-// and its measurement flags (`--drag-dnd-release-at-accept`, `--drag-dnd-after-take-ms`, `--drag-ignore-cover`).
+// and its measurement flags (`--drag-dnd-after-take-ms`, `--drag-ignore-cover`; T14 shipped the release at the accept
+// that `--drag-dnd-release-at-accept` measured). T14 reuses it for its live counts (plan `t14`): each row also carries
+// what the drag left pending, read on the same engine after its watch's lifetime (`notice`).
 //
 // Every drag goes into the drop-signals page (pages/drop-signals.html) in a window of the run's own Chrome (or Electron,
 // `--family electron`), and around it:
@@ -69,7 +71,24 @@ export const CELLS = {
   scroller: () => [[313, 160], [313, 200]],
   canvas: () => [[60, 400], [100, 400]],
   inert: () => [[452, 418], [492, 418]],
+  // T14's controls of the release at the accept (the design session, 2026-11-09 and 2026-11-10): a path that enters
+  // the zone, 80 px in, and leaves it before its end, so its accept is withdrawn; and a press on a source inside the
+  // zone, whose first status already accepts, then a path out of the zone below it
+  left: () => [[530, 128], [640, 128], [500, 128]],
+  'inzone-out': () => [[725, 578], [725, 632]],
 };
+
+/** T14's cells' sources, beside the judge's (drop-signals-judge.mjs `CELL_SOURCE`): each a drop the zone never counts. */
+export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone' };
+
+/** A T14 cell's outcome from the page's status before and after: its source's drag and drop started, and dropped. */
+export function t14Outcome(cell, before, after) {
+  const src = T14_SOURCE[cell];
+  const b = before?.dnd?.[src];
+  const a = after?.dnd?.[src];
+  if (!a || !b) return { started: false, landed: false, effect: null };
+  return { started: a.starts > b.starts, landed: a.drops > b.drops, effect: null };
+}
 
 /**
  * A freeze cell's browser stop, in ms after the drag is sent: Chrome refuses a renderer's mouse drag once the browser
@@ -116,11 +135,13 @@ export const COVER_PARTS = ['none', 'start', 'middle', 'end', 'all'];
 /** The lanes: the engine's flags for each, and how its drags are made. */
 export const LANES = {
   cua: { args: [] },
-  'cua:accept': { args: ['--drag-dnd-release-at-accept'] },
+  // task 68's measurement flag, `--drag-dnd-release-at-accept`, is gone: T14 ships the release at the accept on every
+  // drag Chrome's drop confirmation covers, so this lane is the shipped engine, named as task 68's records name it
+  'cua:accept': { args: [] },
   'cua:floor0': { args: ['--drag-dnd-after-take-ms', '0'] },
   // the gate's own sequence (`--ballast gate`): a fresh engine a drag, after the gate's preceding dedicated drop
   'cua:gate': { args: [], gate: true },
-  'cua:accept-gate': { args: ['--drag-dnd-release-at-accept'], gate: true },
+  'cua:accept-gate': { args: [], gate: true },
   // background drags along a covered path (measurement only), Chrome not in front
   'cua:cover': { args: ['--drag-ignore-cover'], cover: true },
   // the same under the harness's managed front window (frame and title bar included) in place of the override-redirect
@@ -156,6 +177,10 @@ export const PLANS = {
   ],
   // the freeze sweep: where a lagging browser's thaw falls against the release
   freeze: FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]),
+  // T14's live counts for the release at the accept (the design session, 2026-11-10), each at idle, at the gate's
+  // window load and at twice the load: a second source, the long drag and drop, 300 drops; the accepted-then-left
+  // control and the press inside the zone, 30 each
+  t14: [['cua', 'plain-long', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],
@@ -311,7 +336,7 @@ export function runBrowser(profile, { proc = '/proc', read = (path) => readFileS
 }
 
 /** The run's browser process stopped over `span` (ms from now), and always continued: what was done, with times. */
-async function freezeBrowser(pid, span) {
+export async function freezeBrowser(pid, span) {
   if (!pid) throw new Error('the freeze cell needs the run\'s browser process');
   const t0 = Date.now();
   await sleep(span.from);
@@ -346,6 +371,11 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
   await sleep(1000);
+  // what the drag left pending, past its watch's lifetime (M4's T14): the notice on a read's reply on the same engine,
+  // then an acting request that sends nothing, which it refuses, so the next drag is not the one refused
+  const read = await engine.request('list_windows', {});
+  const notice = read.response.notice ?? null;
+  if (notice !== null) await engine.request('preflight', {});
   let after = await readStatus(desktop, scene);
   const stats = value.stats ?? {};
   const wall = stats.wall ?? null;
@@ -386,7 +416,9 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     before,
     after,
     signals,
-    outcome: dragOutcome(base, before, after, { i, rangeEnd }),
+    outcome: T14_SOURCE[base] ? t14Outcome(base, before, after) : dragOutcome(base, before, after, { i, rangeEnd }),
+    notice,
+    after_release: stats.after_release,
     escaped,
     freeze,
     // the watch's own lines for the drag, the crossings left out (their count kept)

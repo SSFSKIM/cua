@@ -38,6 +38,12 @@ const previousUnconfirmed = (op) => ({
   section: 'Decision Log, M2.1 (serving generations across pastes); M2 whole-branch review (the display-wide window)',
 });
 
+/**
+ * The refusal of the first acting request while a drag's after-release watch left something pending (dnd.rs
+ * `pending_refusal`, M4's T14): a late drag and drop, an unconfirmed drop or a failed watch, and the request not run.
+ */
+export const PENDING_REFUSAL = /^Pending from your last drag, (a late drag and drop|an unconfirmed drop|a failed watch): .*; this \S+ request was not run, so read the window before sending it again$/s;
+
 /** cua's answer for a window whose frame cannot be told apart from its duplicates' (identity.rs). */
 export const DUPLICATES = /^Window \d+ matches several accessibility windows; close or retitle the duplicates$/;
 
@@ -169,6 +175,15 @@ export const DEVIATIONS = [
     reason:
       "kate titles its window `<file>  — Kate` and names its frame `<file> `, which no engine's title match finds, so every vendor build answers kate's X11 tree; cua reads the frame whose trimmed Name is the title's caption (the text before its last ` — `), when it is the only such frame of the process and its extents put it at the window",
     section: 'Plan of Work, M4 (an association rule for kate\'s frame Name); Decision Log, M4 pre-flight (F5); M4 T5',
+  },
+  {
+    // no operation and no scene: whatever acts first after a Chromium drag whose after-release watch left something
+    // pending (M4's T14)
+    field: 'error',
+    answer: (c) => c.ok === false && PENDING_REFUSAL.test(String(c.error)),
+    reason:
+      "after a Chromium drag the engine let drop, cua watches the release off the request path: a drag and drop that started only after the release (cancelled at once with an Escape on the drag's route), a Chrome drop that Chrome did not confirm with its own activation request within 150 ms of the release, or the watch's own failure is pending; every reply then carries it as `notice` beside the vendor's keys, and the first acting request is refused with it, not run, naming what is pending and the request. The vendor answers the drag ok and runs the next request",
+    section: 'Plan of Work, M4 T14; Decision Log, M4 pre-flight (the Chrome drop), the design session\'s rulings on task 68 (2026-11-09, 2026-11-10)',
   },
   {
     op: 'interrupted_hold',

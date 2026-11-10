@@ -166,6 +166,9 @@ export function pagePath(kind, i) {
     case 'dnd-short':
       // the near source to 10 px inside the target: a short drag and drop, 40 px (task 18)
       return [[530, 185], [570, 185]];
+    case 'select-short':
+      // a 40 px text selection (M4's T14: a drag that never takes pays the hold, #263), the runs apart as `select`'s
+      return even ? [[50, 32], [90, 32]] : [[314, 32], [354, 32]];
     case 'canvas':
       return CORNERS.map(([x, y]) => [x + 20, y + 350]);
     default:

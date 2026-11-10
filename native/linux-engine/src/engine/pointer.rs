@@ -1,5 +1,6 @@
-//! Coordinate clicks, `move`, `move_relative`, `scroll`, `drag` and `drag_handle` (behaviour §10) on either route:
-//! the vendor's arithmetic, its order of placing, pressing the chord and pressing the button, and its holds.
+//! Coordinate clicks, `move`, `move_relative`, `scroll` and `drag` (behaviour §10) on either route: the vendor's
+//! arithmetic, its order of placing, pressing the chord and pressing the button, and its holds. `drag_handle` is
+//! `handle.rs`'s.
 
 use std::time::{Duration, Instant};
 
@@ -11,16 +12,14 @@ use x11rb::protocol::xproto::{ConnectionExt as _, Window};
 use super::way::{Way, target_of};
 use super::{DesktopMode, Engine};
 use crate::desktop::Desktop;
-use crate::dnd::{DndWatch, EscapeRoute, LateWatch, Outcome, Standing};
+use crate::dnd::{Confirm, DndWatch, EscapeRoute, LateWatch, Outcome, Standing};
 use crate::families::DragPacing;
 use crate::families::Kind;
 use crate::focus_ack::{PressAck, nothing_pressed, press_ack, refused_press};
 use crate::input::chord_keycodes;
 use crate::route::{Route, Target};
 use crate::stray::{StrayWatch, Strays, Watching};
-use crate::wire::{
-    ClickInput, DragHandleInput, DragInput, MouseButton, MoveInput, MoveRelativeInput, ScrollInput, parse_input,
-};
+use crate::wire::{ClickInput, DragInput, MouseButton, MoveInput, MoveRelativeInput, ScrollInput, parse_input};
 use crate::x11::X11;
 
 /// The click hold when `duration` is absent (behaviour §10.1).
@@ -29,26 +28,6 @@ pub(super) const CLICK_HOLD: Duration = Duration::from_millis(12);
 const WHEEL_HOLD: Duration = Duration::from_millis(36);
 /// `scroll`'s pixels when absent.
 const DEFAULT_PIXELS: u16 = 800;
-
-/// The pacing of the drag a `drag_handle` holds: found at its start from the window under the pointer (as a desktop
-/// `drag` finds it under its path's start), kept for its moves and its release, forgotten at its end.
-#[derive(Debug, Default)]
-pub(super) struct HandlePacing(Option<DragPacing>);
-
-impl HandlePacing {
-    pub(super) fn current(&self) -> Option<DragPacing> {
-        self.0
-    }
-
-    pub(super) fn start(&mut self, pacing: DragPacing) -> DragPacing {
-        self.0 = Some(pacing);
-        pacing
-    }
-
-    pub(super) fn end(&mut self) -> DragPacing {
-        self.0.take().unwrap_or(DragPacing::NONE)
-    }
-}
 
 /// Wheel steps for a pixel count: pixels / 100 rounded half away from zero, at least one (behaviour §10.3).
 pub fn scroll_steps(pixels: u16) -> u32 {
@@ -343,7 +322,7 @@ pub(super) struct DragMeasure<'a> {
 }
 
 /// The wall clock in milliseconds since the epoch (`--stats` only: the harness lines a drag up with its own watchers).
-fn wall_ms() -> f64 {
+pub(super) fn wall_ms() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0.0, |d| d.as_secs_f64() * 1000.0)
@@ -708,10 +687,12 @@ impl Engine {
         left.map_or(Ok(Value::Null), Err)
     }
 
-    /// `move_relative`: desktop only, one relative XTEST motion inside the chord.
+    /// `move_relative`: desktop only, one relative XTEST motion inside the chord; refused while a drag handle is held
+    /// (`handle.rs`), as all desktop pointer input is.
     pub(super) fn move_relative(&mut self, input: Option<Value>) -> Result<Value> {
         let input: MoveRelativeInput = parse_input(input)?;
         let keycodes = chord(&self.x, input.key.as_deref())?;
+        self.refuse_while_held(Way::Desktop)?;
         let Engine { x, inputs, .. } = self;
         inputs.with_route(x, Target::Desktop, |x, route, _| {
             let held = route.acquire(x, &keycodes)?;
@@ -923,7 +904,12 @@ impl Engine {
                     Target::Window(window) => EscapeRoute::Synthetic(window),
                     Target::Foreground(_) | Target::Desktop => EscapeRoute::Xtest,
                 };
-                Some(LateWatch::start(window, route, escape[0], confirm)?)
+                Some(LateWatch::start(
+                    window,
+                    route,
+                    escape[0],
+                    confirm.map_or(Confirm::Never, Confirm::Window),
+                )?)
             }
             None => None,
         };
@@ -1148,7 +1134,7 @@ impl Engine {
     }
 
     /// Whether a window is of a Chromium family (`families::blink`).
-    fn blink(&mut self, window: x11rb::protocol::xproto::Window) -> bool {
+    pub(super) fn blink(&mut self, window: x11rb::protocol::xproto::Window) -> bool {
         self.family_of(window).is_some_and(|f| crate::families::blink(f.name))
     }
 
@@ -1195,85 +1181,6 @@ impl Engine {
         self.stray_watch = watch.filter(StrayWatch::healthy);
         self.extra.insert("press".into(), record);
         refusal
-    }
-
-    /// `drag_handle`: desktop only; start, move and end are the JavaScript's to order (behaviour §10.5). The vendor's
-    /// events, with the drag's waits by family (`families.rs`: `held_step` in place of the vendor's 8 ms between a held
-    /// move's points, and `held_rest` at its end, the end then visited again): the window under the start decides them,
-    /// for the whole handle. The move to the start is the vendor's
-    /// own pointer move, as a desktop `drag`'s placing is.
-    pub(super) fn drag_handle(&mut self, input: Option<Value>) -> Result<Value> {
-        let input: DragHandleInput = parse_input(input)?;
-        match input {
-            DragHandleInput::Start { x: px, y: py } => {
-                let window = self.x.client_at(px, py);
-                let pacing = self.drag_pacing_for(window);
-                self.handle_pacing.start(pacing);
-                self.inputs.desktop.move_path(&self.x, px, py)?;
-                Desktop::motion(&self.x, px, py)?;
-                Desktop::button(&self.x, 1, true)?;
-                std::thread::sleep(pacing.press);
-            }
-            DragHandleInput::MoveTo { x: px, y: py } => {
-                // a move with no start in this engine (the wire allows it): the window under the pointer decides
-                let pacing = match self.handle_pacing.current() {
-                    Some(pacing) => pacing,
-                    None => {
-                        let pointer = self.x.conn.query_pointer(self.x.root)?.reply()?;
-                        let window = self.x.client_at(pointer.root_x, pointer.root_y);
-                        let pacing = self.drag_pacing_for(window);
-                        self.handle_pacing.start(pacing)
-                    }
-                };
-                Desktop::move_path_paced(
-                    &self.x,
-                    px,
-                    py,
-                    pacing.held_step,
-                    pacing.held_lead_pause,
-                    pacing.held_rest,
-                )?;
-            }
-            DragHandleInput::End => self.end_drag_handle()?,
-        }
-        Ok(Value::Null)
-    }
-
-    /// `drag_handle`'s end: for a family that rests at a held move's end (`held_rest`), a rest and the pointer's place
-    /// visited once more, so the last position before the release comes after the target answered the ones before it
-    /// (a drop target accepts only such a position, and a cold window's drag can start after the last move; evidence
-    /// `m4/drag-motion/`), unless the pointer is on another screen of the display, which the visit would carry it back
-    /// from; then the release dwell its start found, then button 1 up where the pointer is. The release is sent
-    /// whatever the visit did. It arms no after-release watch. The engine's exit ends a handle still held the
-    /// same way (`Engine::shutdown`).
-    pub(super) fn end_drag_handle(&mut self) -> Result<()> {
-        let pacing = self.handle_pacing.end();
-        let mut revisited = Ok(());
-        if !pacing.held_rest.is_zero() {
-            std::thread::sleep(pacing.held_rest);
-            revisited = self
-                .x
-                .conn
-                .query_pointer(self.x.root)
-                .map_err(anyhow::Error::from)
-                .and_then(|cookie| Ok(cookie.reply()?))
-                // with the pointer on another screen the reply's place is on that screen's root: a motion to it on the
-                // engine's own root would carry the held pointer back across before the release
-                .and_then(|p| {
-                    if p.same_screen {
-                        Desktop::motion(&self.x, p.root_x, p.root_y)
-                    } else {
-                        Ok(())
-                    }
-                });
-        }
-        std::thread::sleep(pacing.release);
-        Desktop::button(&self.x, 1, false).and(revisited)
-    }
-
-    /// Whether a `drag_handle` has begun and not ended.
-    pub(super) fn drag_handle_held(&self) -> bool {
-        self.handle_pacing.current().is_some()
     }
 }
 
@@ -1339,32 +1246,6 @@ mod tests {
         ] {
             assert_eq!(scroll_steps(pixels), steps, "{pixels} px");
         }
-    }
-
-    #[test]
-    fn a_drag_handle_keeps_the_pacing_its_start_found_until_its_end() {
-        let gecko = DragPacing {
-            step: Duration::from_micros(300),
-            held_step: Duration::from_micros(300),
-            release: Duration::from_millis(30),
-            held_lead_pause: true,
-            ..DragPacing::NONE
-        };
-        let mut handle = HandlePacing::default();
-        assert_eq!(handle.current(), None, "no handle yet: the move looks its window up");
-        assert_eq!(handle.start(gecko), gecko);
-        assert_eq!(
-            handle.current(),
-            Some(gecko),
-            "every move of the handle keeps the start's family"
-        );
-        assert_eq!(handle.end(), gecko, "the release waits as the family asks");
-        assert_eq!(handle.current(), None, "the end forgets it");
-        assert_eq!(
-            handle.end(),
-            DragPacing::NONE,
-            "an end without a start waits for nothing"
-        );
     }
 
     /// T9's review kept Gecko's pause after a held move's leading motion until Firefox's held moves were measured; T11

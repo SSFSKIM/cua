@@ -30,6 +30,26 @@ test("the refusal of the request after a drag that left something pending is dec
   assert.equal(declaredDeviation({ op: 'click', field: 'output', candidate: { ok: false, error: PENDING } }), null, 'the error field alone');
 });
 
+test("drag_handle's lifecycle answers are declared by their own sentences, each on its own requests (M4's T17)", () => {
+  const error = (e) => ({ ok: false, error: e });
+  const held = 'a drag handle is held; end it before sending desktop pointer input';
+  for (const op of ['click', 'move', 'scroll', 'drag', 'move_relative', 'drag_handle']) assert.ok(declaredDeviation({ op, field: 'error', candidate: error(held) }), op);
+  assert.equal(declaredDeviation({ op: 'press_key', field: 'error', candidate: error(held) }), null, 'keys run while a handle is held');
+  const elsewhere = 'another application holds the pointer (an open menu, or a drag in progress); nothing was pressed. Close it or wait, then start the handle again';
+  assert.ok(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error(elsewhere) }));
+  const cut = 'Google-chrome may not have received your drag: another application took the pointer while the handle was held. Read the window to see what happened before dragging again';
+  assert.ok(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error(cut) }));
+  const failed = 'the pointer watch on your drag handle into Google-chrome failed (lost), so whether Google-chrome received the drag cannot be told. Read the window to see what happened before dragging again';
+  assert.ok(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error(failed) }));
+  for (const at of ['at (10, 20)', 'on another screen']) {
+    const moved = `Electron may not have received your drag where you asked: the desktop pointer was moved while the handle was held, so it was released ${at} instead of at (300, 260). Read the window to see what happened before dragging again`;
+    assert.ok(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error(moved) }), at);
+  }
+  for (const sentence of [elsewhere, cut, failed]) assert.equal(declaredDeviation({ op: 'drag', field: 'error', candidate: error(sentence) }), null, `a drag's error is not a handle's: ${sentence.slice(0, 30)}`);
+  assert.equal(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error('Google-chrome may not have received your drag: something else') }), null, 'another sentence');
+  assert.equal(declaredDeviation({ op: 'drag_handle', field: 'answer', candidate: error(cut) }), null, 'the error field alone');
+});
+
 test("M1a's text and clipboard refusals are gone: M2's paste route answers those commands", () => {
   for (const op of ['type_text', 'clipboard_read', 'clipboard_write', 'clipboard_release']) {
     const error = `${op} is not available in this engine build`;

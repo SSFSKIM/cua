@@ -1,9 +1,10 @@
 //! The request dispatcher: one request at a time, in arrival order (Design, Process model). Observation lives here;
-//! input is in the child modules: keys (`keyboard`), the pointer (`pointer`), element actions (`elements`), the
-//! window and application requests (`windows`) and the clipboard's (`clipboard`).
+//! input is in the child modules: keys (`keyboard`), the pointer (`pointer`, and `handle` for `drag_handle`), element
+//! actions (`elements`), the window and application requests (`windows`) and the clipboard's (`clipboard`).
 
 mod clipboard;
 mod elements;
+mod handle;
 #[cfg(test)]
 mod identity_faults;
 mod keyboard;
@@ -116,8 +117,10 @@ pub struct Engine {
     /// Whether each window of no listed family is a Qt application's, and by which mark (`families::qt_mark`), looked
     /// up once (`Engine::qt_without_toolkit`).
     qt_marks: HashMap<x11rb::protocol::xproto::Window, Option<families::QtMark>>,
-    /// The pacing of the drag a `drag_handle` holds, from its start to its end.
-    handle_pacing: pointer::HandlePacing,
+    /// The `drag_handle` between its start and its end (`handle.rs`).
+    handle: Option<handle::Handle>,
+    /// The drag handles' hold watch (`stray::HoldWatch`), its connection opened by the first handle with a target.
+    hold_watch: Option<crate::stray::HoldWatch>,
     /// The clipboard's own connections, opened on first use.
     clipboard: Option<crate::clipboard::Clipboard>,
     /// `clipboard_read`'s snapshots, until released or the engine exits.
@@ -286,7 +289,8 @@ impl Engine {
             pending_stats: None,
             families: HashMap::new(),
             qt_marks: HashMap::new(),
-            handle_pacing: pointer::HandlePacing::default(),
+            handle: None,
+            hold_watch: None,
             launched: apps::Launched::default(),
             clipboard: None,
             handles: crate::clipboard::Handles::new(),
@@ -795,9 +799,9 @@ impl Engine {
     pub fn shutdown(&mut self) {
         // first, every key and button still held released, so no wait below keeps one down (the design session's
         // rulings, M4 T7b): a drag_handle between its start and its end ends as its own end would, its drop where the
-        // pointer is, with no after-release watch since its end arms none; then the holds; then whatever the ledger
-        // still has down (pressed.rs; normally nothing)
-        if self.drag_handle_held() {
+        // pointer is, a Chromium handle's after-release watch armed and run out below; then the holds; then whatever
+        // the ledger still has down (pressed.rs; normally nothing)
+        if self.handle.is_some() {
             let _ = self.end_drag_handle();
         }
         self.inputs.release_held(&mut self.x);

@@ -341,6 +341,19 @@ pub fn active_window_supported(x: &X11) -> Result<bool> {
         .is_some_and(|mut atoms| atoms.any(|atom| atom == active)))
 }
 
+/// Which window's activation request confirms a drop the after-release watch finds under way at its release (the
+/// design session's ruling on task 68: only the drop target's own top-level window's request counts).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Confirm {
+    /// No drop is confirmed: the watch looks only for a late take.
+    Never,
+    /// This window's, known when the drag begins (a `drag`'s drop window).
+    Window(Window),
+    /// The window [`LateWatch::confirm_drop_of`] names before the release, or none: a `drag_handle`, whose drop window
+    /// is the one under the pointer at its end (T17).
+    AtRelease,
+}
+
 /// The route a late take's Escape goes on: the route the drag used (the design session's rulings, 2026-11-02).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EscapeRoute {
@@ -419,16 +432,24 @@ pub struct LateWatch {
     /// When the drag's button went up (`released`), and whether a take came before it: the watch ends by itself
     /// `SETTLE` after a release with no take, `DROP_CONFIRM` after one with a take.
     released_at: std::cell::Cell<Option<(Instant, bool)>>,
+    /// The window whose activation request confirms the drop (`NONE`: none yet), read by the watch's thread.
+    confirm: std::sync::Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl LateWatch {
     /// Started and subscribed, or the reason it could not be: a take by `target`'s client is watched for, a late one
-    /// cancelled by `escape` (a keycode) on `route`; with `confirm`, the drop window's activation request is watched
-    /// for too.
-    pub fn start(target: Window, route: EscapeRoute, escape: u8, confirm: Option<Window>) -> Result<LateWatch> {
+    /// cancelled by `escape` (a keycode) on `route`; unless `confirm` is [`Confirm::Never`], the drop window's
+    /// activation request is watched for too.
+    pub fn start(target: Window, route: EscapeRoute, escape: u8, confirm: Confirm) -> Result<LateWatch> {
         let (notes, inbox) = std::sync::mpsc::channel();
         let (ready, subscribed) = std::sync::mpsc::channel();
-        let thread = std::thread::spawn(move || watch_after_release(target, route, escape, confirm, inbox, ready));
+        let window = match confirm {
+            Confirm::Window(window) => window,
+            Confirm::Never | Confirm::AtRelease => x11rb::NONE,
+        };
+        let cell = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(window));
+        let confirming = (confirm != Confirm::Never).then(|| cell.clone());
+        let thread = std::thread::spawn(move || watch_after_release(target, route, escape, confirming, inbox, ready));
         match subscribed.recv_timeout(Duration::from_secs(2)) {
             Ok(Ok(())) => Ok(LateWatch {
                 notes,
@@ -439,10 +460,19 @@ impl LateWatch {
                     EscapeRoute::Xtest => None,
                 },
                 released_at: std::cell::Cell::new(None),
+                confirm: cell,
             }),
             Ok(Err(error)) => Err(anyhow::anyhow!("the drag-and-drop watch could not start: {error}")),
             Err(_) => Err(anyhow::anyhow!("the drag-and-drop watch did not start")),
         }
+    }
+
+    /// The window whose activation request confirms the drop, for a watch started with [`Confirm::AtRelease`]: named
+    /// before the release, so every request read after it is judged against it; None confirms nothing (and the watch
+    /// is then not handed over after a take: there is nothing to confirm by).
+    pub fn confirm_drop_of(&self, window: Option<Window>) {
+        self.confirm
+            .store(window.unwrap_or(x11rb::NONE), std::sync::atomic::Ordering::SeqCst);
     }
 
     /// The drag's button went up at `at`, after a take (`taken`) or with none.
@@ -517,6 +547,7 @@ impl LateWatch {
             app: "app".into(),
             target: Some(0),
             released_at: std::cell::Cell::new(None),
+            confirm: Default::default(),
         }
     }
 }
@@ -616,7 +647,7 @@ fn watch_after_release(
     target: Window,
     route: EscapeRoute,
     escape: u8,
-    confirm: Option<Window>,
+    confirm: Option<std::sync::Arc<std::sync::atomic::AtomicU32>>,
     inbox: std::sync::mpsc::Receiver<Note>,
     ready: std::sync::mpsc::Sender<std::result::Result<(), String>>,
 ) -> WatchEnd {
@@ -659,6 +690,13 @@ fn watch_after_release(
         }
     };
     let mask = conn.setup().resource_id_mask;
+    // the drop window as it stands now: a handle names its own just before its release (`LateWatch::confirm_drop_of`)
+    let drop_window = || {
+        confirm
+            .as_ref()
+            .map(|cell| cell.load(std::sync::atomic::Ordering::SeqCst))
+            .filter(|&window| window != x11rb::NONE)
+    };
     let look = || -> Result<Seen> {
         let mut seen = Seen::default();
         while let Some(event) = conn.poll_for_event()? {
@@ -668,7 +706,7 @@ fn watch_after_release(
                 {
                     seen.take.get_or_insert(e.timestamp);
                 }
-                Event::ClientMessage(e) if confirms_drop(&e, active, confirm) => seen.activated = true,
+                Event::ClientMessage(e) if confirms_drop(&e, active, drop_window()) => seen.activated = true,
                 _ => {}
             }
         }

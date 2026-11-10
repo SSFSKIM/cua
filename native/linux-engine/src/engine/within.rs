@@ -58,6 +58,8 @@ impl Engine {
         kind: Kind,
         way: Way,
     ) -> Result<(Way, Option<WithinWatch>)> {
+        // every pointer request's route passes here: through XTEST it would end a held drag handle (`handle.rs`)
+        self.refuse_while_held(way)?;
         let Some(window) = window.filter(|_| way == Way::Background && !self.cfg.ignore_pointer) else {
             return Ok((way, None));
         };
@@ -83,7 +85,9 @@ impl Engine {
         self.stray_watch = Some(watch).filter(StrayWatch::healthy);
         // judged outside on this read, never read a third time: a pointer back by then would take the background
         // route with no watch, and a leave during the request would answer success
-        Ok((self.route_judged(window, true)?, None))
+        let way = self.route_judged(window, true)?;
+        self.refuse_while_held(way)?;
+        Ok((way, None))
     }
 
     /// The watch's word once the request's events went out (`what` names the request): None when the pointer stayed

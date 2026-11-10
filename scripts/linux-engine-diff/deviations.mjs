@@ -118,7 +118,45 @@ export const GECKO_POINTER_LEFT = /^\S.* may not have taken the (click|scroll|mo
 /** device.mjs's Firefox cases refused by the real pointer's place (T19), each declared against the vendor. */
 export const GECKO_POINTER_REFUSALS = ['firefox_click_pointer_out_shared', 'firefox_click_pointer_under_shared', 'firefox_right_click_pointer_out_shared', 'firefox_scroll_pointer_out_shared', 'firefox_move_pointer_out_shared', 'firefox_drag_pointer_out_shared'];
 
+/**
+ * `drag_handle`'s lifecycle answers (M4's T17, engine/handle.rs and stray.rs): the refusal of desktop pointer input
+ * while a handle is held, of a start while another client holds the pointer, and the end's answers when another
+ * client's grab cut the hold, when its watch failed, or when the person moved the pointer from the last move.
+ */
+export const HANDLE_HELD = /^a drag handle is held; end it before sending desktop pointer input$/;
+export const HANDLE_POINTER_ELSEWHERE = /^another application holds the pointer \(an open menu, or a drag in progress\); nothing was pressed\. Close it or wait, then start the handle again$/;
+export const HANDLE_END = new RegExp(
+  [
+    String.raw`\S.* may not have received your drag: another application took the pointer while the handle was held\. Read the window to see what happened before dragging again`,
+    String.raw`the pointer watch on your drag handle into \S.* failed \(.*\), so whether \S.* received the drag cannot be told\. Read the window to see what happened before dragging again`,
+    String.raw`\S.* may not have received your drag where you asked: the desktop pointer was moved while the handle was held, so it was released (at \(-?\d+, -?\d+\)|on another screen) instead of at \(-?\d+, -?\d+\)\. Read the window to see what happened before dragging again`,
+  ]
+    .map((s) => `^${s}$`)
+    .join('|'),
+  's',
+);
+const HANDLE_SECTION = 'Plan of Work, M4, T17; Decision Log, 2026-11-10 (T17: drag_handle\'s lifecycle, ruled before any code)';
+
 export const DEVIATIONS = [
+  // M4's T17 (#250): drag_handle's lifecycle. The vendor presses into another client's grab and answers ok (the page
+  // never sees the press: task 73's probe, 60 of 60 for the newest build and for cua 0.3.0), answers ok for a hold
+  // another client's grab cut or a pointer the person moved, and lets desktop pointer input end a held handle
+  ...['click', 'move', 'scroll', 'drag', 'move_relative', 'drag_handle'].map((op) => ({
+    op,
+    field: 'error',
+    answer: (c) => c.ok === false && HANDLE_HELD.test(String(c.error)),
+    reason:
+      "while a drag_handle holds button 1, pointer input through XTEST (the desktop route, and the foreground route after its activation) would end the hold with its own button or move the held pointer, so cua refuses it, a second start included; keys and the background route run. The vendor sends it",
+    section: HANDLE_SECTION,
+  })),
+  {
+    op: 'drag_handle',
+    field: 'error',
+    answer: (c) => c.ok === false && (HANDLE_POINTER_ELSEWHERE.test(String(c.error)) || HANDLE_END.test(String(c.error))),
+    reason:
+      "a handle's start tries a pointer grab, under a server grab and given up in the same request batch, and is refused with nothing pressed while another client holds the pointer, whose grab would take the press; its end, after its release, answers an error when another client's grab crossed the target before the release with no drag and drop begun, when its watch failed, or when the real pointer was not where the last request put it. The vendor presses into the grab and answers ok every time",
+    section: HANDLE_SECTION,
+  },
   // M4's T19 (#353): Gecko's pointer kinds by the real pointer. The vendor answers ok for a Gecko window's background
   // click, scroll, move and drag wherever the person's pointer is, and Gecko ignores them while it is outside the
   // window or under another window over it (0 of 10 in every such cell, the pinned build's included, on `:0` and on a
@@ -214,8 +252,8 @@ export const DEVIATIONS = [
     field: 'error',
     answer: (c) => c.ok === false && PENDING_REFUSAL.test(String(c.error)),
     reason:
-      "after a Chromium drag the engine let drop, cua watches the release off the request path: a drag and drop that started only after the release (cancelled at once with an Escape on the drag's route), a Chrome drop that Chrome did not confirm with its own activation request within 150 ms of the release, or the watch's own failure is pending; every reply then carries it as `notice` beside the vendor's keys, and the first acting request is refused with it, not run, naming what is pending and the request. The vendor answers the drag ok and runs the next request",
-    section: 'Plan of Work, M4 T14; Decision Log, M4 pre-flight (the Chrome drop), the design session\'s rulings on task 68 (2026-11-09, 2026-11-10)',
+      "after a Chromium drag the engine let drop, or a Chromium drag_handle's end (M4's T17), cua watches the release off the request path: a drag and drop that started only after the release (cancelled at once with an Escape on the drag's route), a Chrome drop that Chrome did not confirm with its own activation request within 150 ms of the release, or the watch's own failure is pending; every reply then carries it as `notice` beside the vendor's keys, and the first acting request is refused with it, not run, naming what is pending and the request. The vendor answers the drag ok and runs the next request",
+    section: 'Plan of Work, M4 T14 and T17; Decision Log, M4 pre-flight (the Chrome drop), the design session\'s rulings on task 68 (2026-11-09, 2026-11-10)',
   },
   {
     op: 'interrupted_hold',

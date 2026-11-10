@@ -13,6 +13,10 @@
 //! those routes. A crossing that ends a grab (mode `Ungrab`) after the drag's release is the target's release of its own
 //! capture; one before the release is another client's grab ending, which crosses into the window with no button as
 //! any crossing does, so the watch reads what arrived up to just before the release apart from what came after it.
+//!
+//! A `drag_handle` has its own watch ([`HoldWatch`], T17): its press and motions are XTEST on the real pointer, whose
+//! button every event during the hold carries, so no stray resets it; what cuts a hold is another client's pointer grab,
+//! read from the target's crossings in mode `Grab` or `Ungrab` before the release.
 
 use anyhow::{Context, Result};
 use x11rb::connection::Connection;
@@ -289,6 +293,162 @@ impl StrayWatch {
     }
 }
 
+/// Whether a crossing of `event_window` in `mode` cuts a `drag_handle`'s hold on `target` (T17; the design session's
+/// ruling, 2026-11-10): a crossing of the target that a grab begins or ends. A handle's press and motions go through
+/// XTEST on the real pointer, so every crossing and motion that reaches the page during the hold carries the button and
+/// none resets the press (evidence `m4/drag-handle/`); what takes the hold is another client's pointer grab, whose
+/// start crosses the pointer out of the target (`Grab`) and whose end crosses it back (`Ungrab`).
+pub fn cuts_hold(target: Window, event_window: Window, mode: NotifyMode) -> bool {
+    event_window == target && (mode == NotifyMode::GRAB || mode == NotifyMode::UNGRAB)
+}
+
+/// The answer to a `drag_handle`'s end whose hold another client's grab cut before the release, with no drag and drop
+/// begun (T17): never success, since the button the page saw may have been the other client's.
+pub fn hold_cut(app: &str) -> String {
+    format!(
+        "{app} may not have received your drag: another application took the pointer while the handle was held. Read \
+         the window to see what happened before dragging again"
+    )
+}
+
+/// The answer to a `drag_handle`'s end whose hold watch failed before it could say whether the hold was cut.
+pub fn hold_watch_failed(app: &str, why: &str) -> String {
+    format!(
+        "the pointer watch on your drag handle into {app} failed ({why}), so whether {app} received the drag cannot be \
+         told. Read the window to see what happened before dragging again"
+    )
+}
+
+/// What a `drag_handle`'s hold watch saw from the press to just before the release.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Held {
+    /// A grab crossed the target ([`cuts_hold`]).
+    pub cut: bool,
+    /// The target's client took `XdndSelection`: a drag and drop began, which takes the pointer itself, so a grab's
+    /// crossing then is the drag and drop's own.
+    pub taken: bool,
+}
+
+impl Held {
+    /// The end's answer: None, or the sentence when the hold was cut and no drag and drop began.
+    pub fn answer(self, app: &str) -> Option<String> {
+        (self.cut && !self.taken).then(|| hold_cut(app))
+    }
+}
+
+/// The watch on a `drag_handle`'s hold (T17): a connection of its own, kept for the engine's life once a handle opened
+/// it, on which a handle selects its target's crossings and the root's `XdndSelection` owner changes from just before
+/// its press, and reads them once, with a round trip, just before its release. Nothing reads it between, so the agent's
+/// moves pay nothing for it, and only those events are selected, so nothing piles up across the agent's round trips.
+pub struct HoldWatch {
+    conn: RustConnection,
+    root: Window,
+    selection: u32,
+    /// One of its requests failed: the engine opens a new connection for the next handle.
+    broken: bool,
+}
+
+/// The watch during one handle: its target and what was seen so far.
+pub struct Holding {
+    target: Window,
+    held: Held,
+}
+
+impl HoldWatch {
+    /// Connected, with XFixes (the selection's owner changes) and `XdndSelection` interned.
+    pub fn connect() -> Result<HoldWatch> {
+        use x11rb::protocol::xfixes::ConnectionExt as _;
+        let (conn, screen) = x11rb::connect(None).context("the drag handle's pointer watch could not connect")?;
+        let root = conn.setup().roots[screen].root;
+        conn.xfixes_query_version(4, 0)?
+            .reply()
+            .context("the drag handle's pointer watch needs the XFixes extension")?;
+        let selection = conn.intern_atom(false, b"XdndSelection")?.reply()?.atom;
+        Ok(HoldWatch {
+            conn,
+            root,
+            selection,
+            broken: false,
+        })
+    }
+
+    /// Whether every request so far went through, so the connection can serve the next handle.
+    pub fn healthy(&self) -> bool {
+        !self.broken
+    }
+
+    /// Starts watching one handle on `target`, before its press: the target's crossings and the selection's owner
+    /// changes selected, then a round trip, and everything that arrived before it dropped.
+    pub fn begin(&mut self, target: Window) -> Result<Holding> {
+        let begun = (|| -> Result<()> {
+            self.select(target, true)?;
+            self.conn.get_input_focus()?.reply()?;
+            while self.conn.poll_for_event()?.is_some() {}
+            Ok(())
+        })();
+        self.broken |= begun.is_err();
+        begun.context("the drag handle's pointer watch could not start")?;
+        Ok(Holding {
+            target,
+            held: Held::default(),
+        })
+    }
+
+    /// What reached the watch up to now, just before the handle's release: a round trip, so every event the server sent
+    /// before it has arrived. A grab's crossing after the release is the target's release of its own capture, which is
+    /// why the read comes first.
+    pub fn before_release(&mut self, holding: &mut Holding) -> Result<Held> {
+        let read = (|| -> Result<()> {
+            self.conn.get_input_focus()?.reply()?;
+            let mask = self.conn.setup().resource_id_mask;
+            while let Some(event) = self.conn.poll_for_event()? {
+                match event {
+                    Event::EnterNotify(e) => holding.held.cut |= cuts_hold(holding.target, e.event, e.mode),
+                    Event::LeaveNotify(e) => holding.held.cut |= cuts_hold(holding.target, e.event, e.mode),
+                    Event::XfixesSelectionNotify(e) if e.selection == self.selection => {
+                        holding.held.taken |= crate::dnd::taken_by_target(e.owner, holding.target, mask)
+                    }
+                    _ => {}
+                }
+            }
+            Ok(())
+        })();
+        self.broken |= read.is_err();
+        read.map(|()| holding.held)
+    }
+
+    /// Ends one handle's watch: its selections dropped (no round trip waits for that; anything that arrives later is
+    /// dropped by the next handle's start).
+    pub fn finish(&mut self, holding: Holding) {
+        let finished = self.select(holding.target, false).and_then(|()| Ok(self.conn.flush()?));
+        self.broken |= finished.is_err();
+    }
+
+    fn select(&self, target: Window, on: bool) -> Result<()> {
+        use x11rb::protocol::xfixes::{ConnectionExt as _, SelectionEventMask};
+        let (events, owners) = if on {
+            (
+                EventMask::ENTER_WINDOW | EventMask::LEAVE_WINDOW,
+                SelectionEventMask::SET_SELECTION_OWNER,
+            )
+        } else {
+            (EventMask::NO_EVENT, SelectionEventMask::default())
+        };
+        self.conn
+            .xfixes_select_selection_input(self.root, self.selection, owners)?;
+        // the target may be gone by the handle's end: its error is the handle's to report, not the watch's
+        let changed = self
+            .conn
+            .change_window_attributes(target, &ChangeWindowAttributesAux::new().event_mask(events))?;
+        if on {
+            changed.check()?;
+        } else {
+            changed.ignore_error();
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,6 +581,52 @@ mod tests {
              desktop pointer was outside the window, or entered or moved in it during the press. Read the window to \
              see what happened before dragging again"
         );
+    }
+
+    #[test]
+    fn only_a_grab_s_crossing_of_the_target_cuts_a_handle_s_hold() {
+        assert!(
+            cuts_hold(TARGET, TARGET, NotifyMode::GRAB),
+            "another client's grab begins"
+        );
+        assert!(
+            cuts_hold(TARGET, TARGET, NotifyMode::UNGRAB),
+            "another client's grab ends"
+        );
+        assert!(
+            !cuts_hold(TARGET, TARGET, NotifyMode::NORMAL),
+            "the held pointer moving out of the window, or a popup under it: the button still held"
+        );
+        assert!(
+            !cuts_hold(TARGET, TARGET, NotifyMode::WHILE_GRABBED),
+            "a crossing under the target's own capture"
+        );
+        assert!(!cuts_hold(TARGET, TARGET + 1, NotifyMode::GRAB), "another window's");
+    }
+
+    #[test]
+    fn a_cut_hold_answers_unless_a_drag_and_drop_began() {
+        let app = "Google-chrome";
+        assert_eq!(Held::default().answer(app), None, "nothing seen");
+        assert_eq!(
+            Held {
+                cut: true,
+                taken: false
+            }
+            .answer(app),
+            Some(hold_cut(app))
+        );
+        assert_eq!(
+            Held { cut: true, taken: true }.answer(app),
+            None,
+            "the drag and drop's own grab"
+        );
+        assert_eq!(
+            hold_cut(app),
+            "Google-chrome may not have received your drag: another application took the pointer while the handle \
+             was held. Read the window to see what happened before dragging again"
+        );
+        assert!(hold_watch_failed(app, "lost").contains("whether Google-chrome received the drag cannot be told"));
     }
 
     #[test]

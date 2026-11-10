@@ -3025,8 +3025,12 @@ fn handle_ended_on_another_screen(ending: HandleEnd) {
     assert!(pointer.mask.contains(button1), "button 1 is held");
     reported(&conn);
     match ending {
+        // the person carried the pointer away from the last move, so the end says where it was released (T17)
         HandleEnd::End => {
-            engine.request("drag_handle", json!({"action": "end"})).unwrap();
+            assert_eq!(
+                engine.request("drag_handle", json!({"action": "end"})),
+                Err(pointer_moved("firefox", None, (330, 250)))
+            );
         }
         HandleEnd::Exit => {
             engine.close_stdin();
@@ -3047,4 +3051,407 @@ fn handle_ended_on_another_screen(ending: HandleEnd) {
         pointer.root == other && (pointer.root_x, pointer.root_y) == (200, 120) && !pointer.mask.contains(button1),
         "{ending:?}: released on the other screen: {pointer:?}"
     );
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// T17 (#250): `drag_handle`'s lifecycle (handle.rs; the design session's ruling, 2026-11-10)
+
+/// The refusal of desktop pointer input while a handle is held (handle.rs `HANDLE_HELD`).
+const HANDLE_HELD: &str = "a drag handle is held; end it before sending desktop pointer input";
+
+/// The refusal of a handle's start while another client holds the pointer (handle.rs `POINTER_HELD_ELSEWHERE`).
+const POINTER_HELD_ELSEWHERE: &str = "another application holds the pointer (an open menu, or a drag in progress); \
+     nothing was pressed. Close it or wait, then start the handle again";
+
+/// The end of a handle whose hold another client's grab cut (stray.rs `hold_cut`).
+fn hold_cut(app: &str) -> String {
+    format!(
+        "{app} may not have received your drag: another application took the pointer while the handle was held. Read \
+         the window to see what happened before dragging again"
+    )
+}
+
+/// The end of a handle whose pointer the person moved from where the last request put it (handle.rs `pointer_moved`).
+fn pointer_moved(app: &str, at: Option<(i16, i16)>, asked: (i16, i16)) -> String {
+    let at = at.map_or_else(|| "on another screen".to_string(), |(x, y)| format!("at ({x}, {y})"));
+    format!(
+        "{app} may not have received your drag where you asked: the desktop pointer was moved while the handle was \
+         held, so it was released {at} instead of at ({}, {}). Read the window to see what happened before dragging \
+         again",
+        asked.0, asked.1
+    )
+}
+
+/// Another client's active pointer grab on the root, as an open menu or a person's drag holds one, taken now and held
+/// until `release`.
+struct ForeignGrab {
+    release: mpsc::Sender<()>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+impl ForeignGrab {
+    fn take() -> (ForeignGrab, x11rb::protocol::xproto::GrabStatus) {
+        use x11rb::protocol::xproto::GrabMode;
+        let (release, released) = mpsc::channel::<()>();
+        let (grabbed, held) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            let (conn, screen) = x11rb::connect(None).expect("an X connection");
+            let root = conn.setup().roots[screen].root;
+            let (none, now, mode) = (x11rb::NONE, x11rb::CURRENT_TIME, GrabMode::ASYNC);
+            let status = conn
+                .grab_pointer(false, root, EventMask::BUTTON_PRESS, mode, mode, none, none, now)
+                .unwrap()
+                .reply()
+                .unwrap()
+                .status;
+            grabbed.send(status).unwrap();
+            let _ = released.recv_timeout(Duration::from_secs(10));
+            conn.ungrab_pointer(x11rb::CURRENT_TIME).unwrap();
+            conn.sync().unwrap();
+        });
+        let status = held.recv().unwrap();
+        (ForeignGrab { release, thread }, status)
+    }
+
+    fn release(self) {
+        self.release.send(()).unwrap();
+        self.thread.join().unwrap();
+    }
+}
+
+/// Whether the server holds button 1 down.
+fn button1_down() -> bool {
+    let (conn, screen) = x11rb::connect(None).expect("an X connection");
+    let root = conn.setup().roots[screen].root;
+    let pointer = conn.query_pointer(root).unwrap().reply().unwrap();
+    pointer.mask.contains(x11rb::protocol::xproto::KeyButMask::BUTTON1)
+}
+
+/// A probe window of `class`, managed, at the screen's top left, that selects no button events: no client takes the
+/// implicit grab of a press in it, so another client's grab can be taken during a handle's hold, as an application that
+/// takes the pointer mid-drag does.
+fn ungrabbed_window(class: &str) -> Probe {
+    let probe = Probe::open(class, (0, 0, 400, 300));
+    probe
+        .conn
+        .change_window_attributes(
+            probe.id,
+            &x11rb::protocol::xproto::ChangeWindowAttributesAux::new().event_mask(EventMask::STRUCTURE_NOTIFY),
+        )
+        .unwrap();
+    probe.conn.sync().unwrap();
+    managed(probe.id);
+    probe
+}
+
+/// A handle started while another client's grab holds the pointer would press into that grab: the page never sees the
+/// press, and the vendor and cua answered ok (task 73's probe, 60 of 60 each). The pre-press try sees the grab, and
+/// `start` is refused with nothing pressed, in either device mode; with the grab gone, a handle starts and ends.
+#[test]
+fn a_drag_handle_started_while_another_client_holds_the_pointer_is_refused_with_nothing_pressed() {
+    for args in [&[][..], &["--desktop", "dedicated"][..]] {
+        let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
+        managed(probe.id);
+        let mut engine = Engine::start_with(args);
+        let (grab, status) = ForeignGrab::take();
+        assert_eq!(
+            status,
+            x11rb::protocol::xproto::GrabStatus::SUCCESS,
+            "the foreign grab is held"
+        );
+        assert_eq!(
+            engine.request("drag_handle", json!({"action": "start", "x": 150, "y": 150})),
+            Err(POINTER_HELD_ELSEWHERE.to_string()),
+            "{args:?}"
+        );
+        assert!(!button1_down(), "{args:?}: nothing pressed");
+        grab.release();
+        assert_eq!(probe.inputs(), vec![], "{args:?}: nothing reached the window");
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+            .unwrap();
+        assert_eq!(
+            engine.request("drag_handle", json!({"action": "end"})),
+            Ok(Value::Null),
+            "{args:?}"
+        );
+        assert_eq!(
+            probe.inputs(),
+            vec![
+                Input::ButtonPress { button: 1, sent: false },
+                Input::ButtonRelease { button: 1, sent: false },
+            ],
+            "{args:?}: with the grab gone, the handle's press and release"
+        );
+    }
+}
+
+/// The pre-press try holds the pointer only inside a server grab, given up in the same request batch: a person's click
+/// sent at that moment (a second X client's, from the live build's hook) waits for the server and lands in the window
+/// under the pointer, and the handle presses and releases as asked.
+#[test]
+fn a_click_sent_during_the_pre_press_try_still_lands() {
+    let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start_with_fault(&[], "handle-try-click");
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine.request("drag_handle", json!({"action": "end"})).unwrap();
+    let seen = probe.inputs();
+    for input in [
+        Input::ButtonPress { button: 3, sent: false },
+        Input::ButtonRelease { button: 3, sent: false },
+        Input::ButtonPress { button: 1, sent: false },
+        Input::ButtonRelease { button: 1, sent: false },
+    ] {
+        assert!(seen.contains(&input), "{input:?} landed: {seen:?}");
+    }
+    assert!(!button1_down());
+}
+
+/// Another client's grab taken during the hold (where no client holds the press's implicit grab) crosses the target in
+/// mode `Grab`, and its end crosses back in mode `Ungrab`: the end releases and answers that the drag may not have been
+/// received, never success; never a `move_to`, which would leave the button down. Undisturbed, the same handle answers
+/// ok. A drag and drop begun by the target's client (its take of `XdndSelection`) takes the pointer itself, and silences
+/// the answer.
+#[test]
+fn a_grab_taken_during_a_drag_handle_s_hold_makes_its_end_answer_that_the_drag_may_not_have_been_received() {
+    let probe = ungrabbed_window("probe-handle");
+    let mut engine = Engine::start();
+    let app = app_of(&mut engine, probe.id);
+    let handle = |engine: &mut Engine, during: &dyn Fn()| {
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+            .unwrap();
+        during();
+        let moved = engine.request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}));
+        (moved, engine.request("drag_handle", json!({"action": "end"})))
+    };
+    assert_eq!(
+        handle(&mut engine, &|| {}),
+        (Ok(Value::Null), Ok(Value::Null)),
+        "undisturbed"
+    );
+    let cut = handle(&mut engine, &|| {
+        let (grab, status) = ForeignGrab::take();
+        assert_eq!(
+            status,
+            x11rb::protocol::xproto::GrabStatus::SUCCESS,
+            "taken during the hold"
+        );
+        grab.release();
+    });
+    assert_eq!(
+        cut,
+        (Ok(Value::Null), Err(hold_cut(&app))),
+        "the move answers, the end reports"
+    );
+    assert!(!button1_down(), "released");
+    // a grab still held at the end: the same answer, the button up
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    let (grab, _) = ForeignGrab::take();
+    let moved = engine.request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}));
+    let ended = engine.request("drag_handle", json!({"action": "end"}));
+    grab.release();
+    assert_eq!((moved, ended), (Ok(Value::Null), Err(hold_cut(&app))));
+    assert!(!button1_down(), "released");
+    // the target's client took XdndSelection: a drag and drop, whose own grab is not a cut
+    let selection = probe
+        .conn
+        .intern_atom(false, b"XdndSelection")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    let taken = handle(&mut engine, &|| {
+        probe
+            .conn
+            .set_selection_owner(probe.id, selection, x11rb::CURRENT_TIME)
+            .unwrap();
+        probe.conn.sync().unwrap();
+        let (grab, _) = ForeignGrab::take();
+        grab.release();
+    });
+    assert_eq!(taken, (Ok(Value::Null), Ok(Value::Null)), "a drag and drop began");
+}
+
+/// The real pointer moved away from the last move while the handle was held (a second client's motion, as the person's
+/// mouse): the release goes where the pointer is, and the end says so. Motion that a later `move_to` corrected raises
+/// nothing, and a start then an end is a press and a release in place.
+#[test]
+fn a_drag_handle_whose_pointer_the_person_moved_reports_it_at_its_end() {
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start();
+    let app = app_of(&mut engine, probe.id);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 330, "y": 250}))
+        .unwrap();
+    pointer_to(200, 200);
+    assert_eq!(
+        engine.request("drag_handle", json!({"action": "end"})),
+        Err(pointer_moved(&app, Some((200, 200)), (330, 250)))
+    );
+    assert!(!button1_down(), "released where the pointer was");
+    // corrected by the next move: nothing to report
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    pointer_to(200, 200);
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 330, "y": 250}))
+        .unwrap();
+    assert_eq!(engine.request("drag_handle", json!({"action": "end"})), Ok(Value::Null));
+    // a start then an end: a press and a release in place
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    assert_eq!(engine.request("drag_handle", json!({"action": "end"})), Ok(Value::Null));
+    probe.inputs();
+}
+
+/// While a handle is held, pointer input through XTEST would end the hold (its button) or move the held pointer: the
+/// desktop route's, and the foreground route's (dedicated mode), are refused, a second start included; keys and the
+/// background route run. After the end, desktop pointer input runs again.
+#[test]
+fn desktop_pointer_input_is_refused_while_a_drag_handle_is_held() {
+    let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
+    managed(probe.id);
+    // a Gecko window away from the pointer: its pointer input takes the foreground route in dedicated mode (T19)
+    let gecko = Probe::open("firefox", (600, 400, 300, 200));
+    let mut engine = Engine::start_with(&["--desktop", "dedicated"]);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    for (command, input) in [
+        ("click", json!({"x": 100, "y": 100})),
+        ("move", json!({"x": 100, "y": 100})),
+        ("scroll", json!({"x": 100, "y": 100, "direction": "down"})),
+        ("drag", json!({"path": [{"x": 100, "y": 100}, {"x": 200, "y": 100}]})),
+        ("move_relative", json!({"dx": 5, "dy": 0})),
+        ("drag_handle", json!({"action": "start", "x": 100, "y": 100})),
+        ("click", json!({"window": gecko.target(), "x": 50, "y": 50})),
+    ] {
+        assert_eq!(
+            engine.request(command, input.clone()),
+            Err(HANDLE_HELD.to_string()),
+            "{command} {input}"
+        );
+    }
+    assert!(button1_down(), "the hold stands");
+    assert_eq!(
+        engine.request("press_key", json!({"key": "a"})),
+        Ok(Value::Null),
+        "keys run"
+    );
+    assert_eq!(
+        engine.request("click", json!({"window": probe.target(), "x": 50, "y": 50})),
+        Ok(Value::Null),
+        "the background route runs"
+    );
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+        .unwrap();
+    assert_eq!(engine.request("drag_handle", json!({"action": "end"})), Ok(Value::Null));
+    assert_eq!(
+        engine.request("move", json!({"x": 20, "y": 20})),
+        Ok(Value::Null),
+        "ended: it runs"
+    );
+    assert_eq!(gecko.inputs(), vec![], "nothing reached the refused window");
+    probe.inputs();
+}
+
+/// A Chromium handle's end arms T14's after-release watch: a take after its release (a real one, the source taking
+/// `XdndSelection` after the button went up) is cancelled by an Escape through XTEST at once and reported by the next
+/// replies, the next acting request refused once; a Chrome drop under way at the release is confirmed by its activation
+/// request for the window under the release, where the window manager lists `_NET_ACTIVE_WINDOW`, and otherwise
+/// reported unconfirmed, never left at ok. A confirmed drop leaves nothing pending.
+#[test]
+fn a_chromium_drag_handle_s_end_arms_the_after_release_watch() {
+    let handle = |engine: &mut Engine| {
+        engine
+            .request("drag_handle", json!({"action": "start", "x": 20, "y": 20}))
+            .unwrap();
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": 200, "y": 120}))
+            .unwrap();
+        engine.request("drag_handle", json!({"action": "end"}))
+    };
+    // a late take
+    let (window, stop, recorder) = drag_source(OnRelease::TakesLate);
+    managed(window);
+    // the focus on the source, where the Escape through XTEST goes
+    in_front(window);
+    let mut engine = Engine::start();
+    let app = app_of(&mut engine, window);
+    *TAKE_TO_ESCAPE.lock().unwrap() = None;
+    assert_eq!(handle(&mut engine), Ok(Value::Null), "answered at the release");
+    sleep(SETTLE);
+    let waited = TAKE_TO_ESCAPE
+        .lock()
+        .unwrap()
+        .expect("the watch's Escape reached the source");
+    assert!(
+        waited < Duration::from_millis(50),
+        "the Escape {waited:?} after the take"
+    );
+    assert_eq!(
+        engine.exchange("list_windows", json!({}))["notice"],
+        json!(late_notice(&app))
+    );
+    assert_eq!(
+        engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        Err(late_refusal(&app, "click"))
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+            Input::KeyPress { sent: false },
+            Input::KeyRelease { sent: false },
+        ],
+        "the handle, the watch's Escape through XTEST, nothing of the refused click"
+    );
+    drop(engine);
+    // a drop under way at the release, confirmed or not
+    let listed = ActiveWindowSupported::listed();
+    for activates in [true, false] {
+        let (window, stop, recorder) = drag_source(OnRelease::Drops {
+            activates,
+            cursors: &[],
+        });
+        managed(window);
+        let mut engine = Engine::start();
+        let app = app_of(&mut engine, window);
+        assert_eq!(handle(&mut engine), Ok(Value::Null), "activates: {activates}");
+        sleep(SETTLE);
+        let notice = engine.exchange("list_windows", json!({}))["notice"].clone();
+        let next = engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50}));
+        if activates {
+            assert_eq!((notice, next), (Value::Null, Ok(Value::Null)), "a confirmed drop");
+        } else {
+            assert_eq!(
+                (notice, next),
+                (json!(unconfirmed_notice(&app)), Err(unconfirmed_refusal(&app, "click"))),
+                "an unconfirmed drop"
+            );
+        }
+        set_active_window(None);
+        stop.send(()).unwrap();
+        let _ = recorder.join();
+    }
+    drop(listed);
 }

@@ -25,8 +25,10 @@ import { FAMILIES, openFamily } from './families.mjs';
 import { hoverTarget, series as kindSeries } from './kinds.mjs';
 import { Oracle } from './oracle.mjs';
 import { negativeCheck } from './run.mjs';
+import { allowPointer } from './safety.mjs';
 import { XPROBE, xdotool } from './scenes.mjs';
 import { startWitness } from './witness.mjs';
+import { spawnXdotool } from './xtools.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -75,6 +77,16 @@ export function routePlan(families = Object.keys(ROUTE_FAMILIES), kindsAsked = n
 export const cellKey = (c) => `${c.family} ${c.kind} ${c.occlusion} pointer-${c.park}`;
 
 /**
+ * The leave cells (T19's build; the design session, 2026-11-10): the real pointer in the visible window at the request,
+ * moved out to the front window while it runs (`LEAVE_AFTER_S` after the request starts, so it lands inside each kind's
+ * request), so a request the pointer leaves is seen. Each kind in the group pointer-route.mjs measures it in.
+ */
+export const LEAVE_AFTER_S = { click: 0.004, scroll: 0.03, move: 0, select: 0.05 };
+export function leavePlan(families = ['firefox']) {
+  return families.flatMap((family) => ROUTE_GROUPS.flatMap(({ group, kinds }) => kinds.map((kind) => ({ family, group, kind, occlusion: 'visible', park: 'leave' }))));
+}
+
+/**
  * The lanes of a family: cua with no rule of its own in the way (no cover condition, and from T19's build no pointer
  * condition either; the sitting itself ran 7ada8597's lanes, `--ignore-cover` alone, on an engine before the
  * pointer rule), and the pinned build where the family has it.
@@ -93,7 +105,7 @@ export const OUT_POINT = { x: 1170, y: 715 };
  * the window's geometry in every occlusion.
  */
 export function parkPoint(window, park) {
-  if (park === 'in') return { x: window.x + Math.round(window.width * 0.7), y: window.y + 110 };
+  if (park === 'in' || park === 'leave') return { x: window.x + Math.round(window.width * 0.7), y: window.y + 110 };
   if (park === 'under') return { x: window.x + Math.round(window.width * 0.7), y: window.y + Math.round(window.height * 0.85) };
   if (park === 'out') return { ...OUT_POINT };
   throw new Error(`no park ${park}`);
@@ -116,7 +128,7 @@ export function placeOf(point, { scene, front, ours }, { top, holds }) {
 
 /** The place a park must find under its point at the request: `in` the scene, `under` the cover, `out` not the scene. */
 export function parkHeld(park, where, point, window) {
-  if (park === 'in') return where === 'scene';
+  if (park === 'in' || park === 'leave') return where === 'scene';
   if (park === 'under') return where === 'cover' && inside(point, window);
   return !inside(point, window) && ['harness', 'root'].includes(where);
 }
@@ -220,9 +232,20 @@ function instrumented(desktop, witness, oracle, state) {
   });
   const seenWitness = {
     ...witness,
-    span: (tag, fn) => {
+    span: async (tag, fn) => {
       state.requests.push(pointerRecord(desktop, state));
-      return witness.span(tag, fn);
+      if (state.park !== 'leave') return witness.span(tag, fn);
+      // a leave cell: the pointer moved out to the front window while the request runs, the move the harness's own,
+      // allowed to the witness (that field alone, safety.mjs `allowPointer`)
+      if (!desktop.pointerSafeAt(OUT_POINT)) throw new Error(`the leave point (${OUT_POINT.x}, ${OUT_POINT.y}) is over a window the run did not open: the sitting stops unmoved`);
+      const mover = spawnXdotool(['sleep', String(LEAVE_AFTER_S[state.kind] ?? 0), 'mousemove', String(OUT_POINT.x), String(OUT_POINT.y)], { stdio: 'ignore' });
+      const moved = new Promise((resolve) => {
+        mover.once('exit', resolve);
+        mover.once('error', resolve);
+      });
+      const result = await witness.span(tag, fn);
+      await moved;
+      return { ...result, witness: allowPointer(result.witness, true) };
     },
   };
   return { seenDesktop, seenWitness };
@@ -303,7 +326,7 @@ export async function measureRoute(args, { desktop, emit }, plan, { lanesOf, run
             const runs = [];
             for (const spec of lanesOf(c)) {
               const scene = scenes[spec.label];
-              Object.assign(state, { scene, park: c.park, requests: [], clearSelection: group === 'drag' && scene.kindOf === 'editor' ? at[spec.label].text.id : null });
+              Object.assign(state, { scene, park: c.park, kind: c.kind, requests: [], clearSelection: group === 'drag' && scene.kindOf === 'editor' ? at[spec.label].text.id : null });
               const ctx = { desktop: seenDesktop, oracle, witness: seenWitness, emit, family, occlusion: c.occlusion, cua: args.cua, dir: desktop.dir, pointFor };
               const own = group === 'drag' ? await dragSeries(ctx, spec, scene, at[spec.label], 'select', n, { start: next[spec.label], readFailed: true }) : await kindSeries(ctx, spec, scene, c.kind, n);
               next[spec.label] += n;

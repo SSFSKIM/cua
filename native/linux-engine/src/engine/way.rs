@@ -65,18 +65,9 @@ pub(super) fn no_background_input(app: &str) -> String {
 
 impl Engine {
     /// The route `kind` takes into `window` (None: the desktop route), refusing it in shared mode where the family
-    /// ignores it; on the foreground route the window is activated and holds the X input focus before this returns.
-    /// The route is recorded as the `--stats` line's `route`.
-    pub(super) fn way_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Way> {
-        let way = self.route_for(window, kind)?;
-        if let (Way::Foreground, Some(window)) = (way, window) {
-            self.enter(window)?;
-        }
-        Ok(way)
-    }
-
-    /// [`Engine::way_for`]'s choice alone, with nothing activated yet: for a request that checks its own input
-    /// before the foreground route activates the window, so that one refused for its input changes nothing.
+    /// ignores it, with nothing activated yet (`Engine::enter` and `enter_checked` activate the foreground route's
+    /// window), so a request refused for its input changes nothing. The route is recorded as the `--stats` line's
+    /// `route`.
     pub(super) fn route_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Way> {
         self.route_along(window, kind, &[])
     }
@@ -116,13 +107,6 @@ impl Engine {
             .parent(window)
             .and_then(|parent| self.x.pointer_in(window, parent))
             .unwrap_or(false)
-    }
-
-    /// The input target `kind` takes into `window` (None: the desktop), refused in shared mode where the family ignores
-    /// it, the window entered on the foreground route: for a request whose input needs no check before the route.
-    pub(super) fn target_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Target> {
-        let way = self.way_for(window, kind)?;
-        Ok(window.map_or(Target::Desktop, |window| way.target(window)))
     }
 
     /// The foreground route's start for a request that checks its own input first (`check`: its chord, its path, its
@@ -212,26 +196,6 @@ impl Engine {
         }
         Ok(())
     }
-}
-
-/// The answer to a background drag into a family that takes pointer input only while the real pointer is in its
-/// window (Gecko), when the pointer left the window while the drag ran (T19): never success, since the family stopped
-/// taking the drag's events once the pointer was out.
-pub(super) fn pointer_left(app: &str) -> String {
-    format!(
-        "{app} may not have taken the drag: the desktop pointer left its window while the drag ran, and {app} takes \
-         background pointer input only while the pointer is in its window. Read the window to see what happened before \
-         dragging again"
-    )
-}
-
-/// The answer to such a drag whose pointer watch failed before it could say whether the pointer stayed in the window.
-pub(super) fn pointer_watch_failed(app: &str, why: &str) -> String {
-    format!(
-        "the pointer watch on your drag into {app} failed ({why}), so whether {app} took the drag cannot be told: it \
-         takes background pointer input only while the desktop pointer is in its window. Read the window to see what \
-         happened before dragging again"
-    )
 }
 
 #[cfg(test)]

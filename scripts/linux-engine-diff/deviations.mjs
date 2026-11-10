@@ -104,9 +104,10 @@ function cutShownByTree(truncated, state) {
 const FIXTURE_CUTS = { 'over-budget': { causes: 'the element limit and the depth limit', holds: (t) => t.nodes > 0 && t.depth > 0 } };
 
 /**
- * The answer to a background Gecko drag the real pointer left the window during (T19, engine/way.rs `pointer_left`).
+ * The answer to a background Gecko click, scroll, move or drag the real pointer left the window during (T19,
+ * engine/within.rs `pointer_left`).
  */
-export const GECKO_POINTER_LEFT = /^\S.* may not have taken the drag: the desktop pointer left its window while the drag ran, and \S.* takes background pointer input only while the pointer is in its window\. Read the window to see what happened before dragging again$/;
+export const GECKO_POINTER_LEFT = /^\S.* may not have taken the (click|scroll|move|drag): the desktop pointer left its window during the \1, and \S.* takes background pointer input only while the pointer is in its window\. Read the window to see what happened before trying again$/;
 
 /** device.mjs's Firefox cases refused by the real pointer's place (T19), each declared against the vendor. */
 export const GECKO_POINTER_REFUSALS = ['firefox_click_pointer_out_shared', 'firefox_click_pointer_under_shared', 'firefox_right_click_pointer_out_shared', 'firefox_scroll_pointer_out_shared', 'firefox_move_pointer_out_shared', 'firefox_drag_pointer_out_shared'];
@@ -132,7 +133,7 @@ export const DEVIATIONS = [
     field: 'error',
     answer: (c) => c.ok === false && GECKO_POINTER_LEFT.test(String(c.error)),
     reason:
-      "a background drag into Firefox the real pointer leaves the window during is answered with an error naming the pointer, since Gecko stops taking the drag's events once the pointer is out; the vendor answers ok",
+      "a background click, scroll, move or drag into Firefox the real pointer leaves the window during is answered with an error naming the pointer, since Gecko stops taking the request's events once the pointer is out; the vendor answers ok",
     section: 'Plan of Work, M4, T19',
   },
   appliedWhereNoVendorDoes('type_text', 'gnome-text-editor', 'GTK 4 ignores the background route, where both builds send their text, and cua takes the foreground route in dedicated mode (M0.4 matrix; Decision Log, M2 pre-flight)'),

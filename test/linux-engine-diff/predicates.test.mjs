@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { OCCLUSION_PARKS } from '../../scripts/linux-engine-diff/pointer-route.mjs';
-import { ALLOWED_RUNS, PREDICATE_CASES, REFUSED_RUNS, caseKey, caseLanes, judgeCase, judgePredicates, predicatePlan, predicatesMarkdown } from '../../scripts/linux-engine-diff/predicates.mjs';
+import { ALLOWED_RUNS, LEAVE_RUNS, PREDICATE_CASES, REFUSED_RUNS, caseKey, caseLanes, judgeCase, judgePredicates, predicatePlan, predicatesMarkdown } from '../../scripts/linux-engine-diff/predicates.mjs';
 
 const SENTENCE = 'firefox does not accept background input; use a dedicated desktop or activate the window first';
 const took = (engine, n, extra = {}) => Array.from({ length: n }, (_, i) => ({ engine, i, ok: true, took: true, witness: true, ...extra }));
@@ -27,8 +27,8 @@ test('a counterexample passes only while every run answers the Device mode sente
   const runs = [...refusedRuns('cua', 10), ...took('pinned', 10, { took: false }), ...took('cua:any-pointer', 10, { took: false })];
   const row = judgeCase(refusedCase, runs);
   assert.equal(row.pass, true);
-  assert.deepEqual(row.counts.cua, { took: 0, n: 10, refused: 10 });
-  assert.deepEqual(row.counts.pinned, { took: 0, n: 10, refused: 0 }, "the vendor's ok with no effect, beside it");
+  assert.deepEqual(row.counts.cua, { took: 0, n: 10, refused: 10, left: 0, ok_no_effect: 0 });
+  assert.deepEqual(row.counts.pinned, { took: 0, n: 10, refused: 0, left: 0, ok_no_effect: 10 }, "the vendor's ok with no effect, beside it");
   assert.deepEqual(judgeCase(refusedCase, [...refusedRuns('cua', 9), ...took('cua', 1)]).failed, ['1 were not refused', '1 took effect']);
   const other = [...refusedRuns('cua', 9), { engine: 'cua', i: 9, ok: false, error: 'window 5 is unavailable.', took: false, witness: true }];
   assert.deepEqual(judgeCase(refusedCase, other).failed, ['1 were not refused'], 'another error is not the refusal');
@@ -51,12 +51,13 @@ test("the manifest: Gecko's four pointer kinds at every pointer place, allowed o
   const keys = PREDICATE_CASES.map(caseKey);
   assert.equal(new Set(keys).size, keys.length, 'each case once');
   const places = Object.values(OCCLUSION_PARKS).flat().length;
-  assert.equal(PREDICATE_CASES.length, places * 4);
+  assert.equal(PREDICATE_CASES.length, places * 4 + 4, 'every place, and the four leave cases');
   for (const c of PREDICATE_CASES) {
     assert.equal(c.family, 'firefox');
-    assert.equal(c.expect, c.park === 'in' ? 'allowed' : 'refused', caseKey(c));
+    assert.equal(c.expect, c.park === 'in' ? 'allowed' : c.park === 'leave' ? 'honest' : 'refused', caseKey(c));
     assert.ok(c.why);
   }
+  assert.deepEqual(PREDICATE_CASES.filter((c) => c.expect === 'honest').map(caseKey), ['firefox click visible pointer-leave', 'firefox scroll visible pointer-leave', 'firefox move visible pointer-leave', 'firefox select visible pointer-leave']);
   // the newly allowed case the window rule refused: a half-covered window with the pointer in its visible part
   for (const kind of ['click', 'scroll', 'move', 'select']) {
     assert.ok(keys.includes(`firefox ${kind} partial pointer-in`), `${kind}: newly allowed`);
@@ -75,4 +76,17 @@ test('the lanes: cua as it ships and the pinned build; the pointer-unjudged lane
   assert.equal(predicatePlan({}).length, PREDICATE_CASES.length, 'the gate runs every case');
   assert.ok(predicatePlan({ ops: ['move'] }).every((c) => c.kind === 'move'));
   assert.throws(() => predicatePlan({ plan: 'pointer' }), /pointer-route/);
+});
+
+test('a leave case passes while no run answers ok with no effect: each took, was refused, or says the pointer left', () => {
+  const leave = PREDICATE_CASES.find((c) => c.expect === 'honest' && c.kind === 'click');
+  const left = 'firefox may not have taken the click: the desktop pointer left its window during the click, and firefox takes background pointer input only while the pointer is in its window. Read the window to see what happened before trying again';
+  const mixed = [...took('cua', 10), ...refusedRuns('cua', 5), ...Array.from({ length: 5 }, (_, i) => ({ engine: 'cua', i, ok: false, error: left, took: false, witness: true }))];
+  const row = judgeCase(leave, mixed);
+  assert.equal(row.pass, true, row.failed.join());
+  assert.deepEqual(row.counts.cua, { took: 10, n: 20, refused: 5, left: 5, ok_no_effect: 0 });
+  assert.deepEqual(judgeCase(leave, [...took('cua', 19), { engine: 'cua', i: 19, ok: true, took: false, witness: true }]).failed, ['1 answered ok with no effect'], 'the false success T19 is for');
+  assert.deepEqual(judgeCase(leave, [...took('cua', 19), { engine: 'cua', i: 19, ok: false, error: 'boom', took: false, witness: true }]).failed, ['1 answered another error']);
+  assert.deepEqual(judgeCase(leave, took('cua', LEAVE_RUNS - 1)).failed, [`cua ran ${LEAVE_RUNS - 1} of ${LEAVE_RUNS}`]);
+  assert.deepEqual(caseLanes(leave, { vendor: 'v', cua: 'c' }).map((l) => l.label), ['cua', 'pinned'], "the vendor's answer beside it");
 });

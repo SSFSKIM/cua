@@ -8,12 +8,12 @@ use serde_json::{Value, json};
 use x11rb::connection::Connection as _;
 use x11rb::protocol::xproto::{ConnectionExt as _, Window};
 
-use super::way::{Way, pointer_left, pointer_watch_failed, target_of};
+use super::way::{Way, target_of};
 use super::{DesktopMode, Engine};
 use crate::desktop::Desktop;
 use crate::dnd::{DndWatch, LateWatch, Outcome, Standing};
 use crate::families::DragPacing;
-use crate::families::{Kind, When};
+use crate::families::Kind;
 use crate::focus_ack::{PressAck, nothing_pressed, press_ack, refused_press};
 use crate::input::chord_keycodes;
 use crate::route::{Route, Target};
@@ -617,8 +617,14 @@ impl Engine {
         let count = input.click_count.unwrap_or(1);
         let hold = input.duration.map(Duration::from_millis).unwrap_or(CLICK_HOLD);
         // a family that ignores synthetic clicks (families.rs): refused in shared mode, the foreground route in
-        // dedicated mode
-        let target = self.target_for(input.window.map(|w| w.id), Kind::Clicks)?;
+        // dedicated mode; one that takes them only with the real pointer in its window, watched for it leaving
+        let window = input.window.map(|w| w.id);
+        let way = self.route_for(window, Kind::Clicks)?;
+        let (way, within) = self.watch_within(window, Kind::Clicks, way)?;
+        if let (Way::Foreground, Some(window)) = (way, window) {
+            self.enter(window)?;
+        }
+        let target = target_of(way, window);
         // a family whose press activates a window it has not focused: the session's focus reported taken first
         let mut ack = self.focus_ack_for(target, None)?;
         let Engine { x, inputs, bus, .. } = self;
@@ -651,7 +657,9 @@ impl Engine {
             Ok(())
         });
         self.record_focus_ack(ack.as_ref());
-        clicked.map(|()| Value::Null)
+        let left = self.within_answer(within, "click");
+        clicked?;
+        left.map_or(Ok(Value::Null), Err)
     }
 
     /// `move`: the chord pressed, the pointer placed (the background `move_to`, or the desktop's path), the chord
@@ -662,11 +670,12 @@ impl Engine {
         let input: MoveInput = parse_input(input)?;
         let window = input.window.map(|w| w.id);
         let way = self.route_for(window, Kind::Move)?;
+        let (way, within) = self.watch_within(window, Kind::Move, way)?;
         // the foreground route activates only once the chord is known good
         self.enter_checked(way, window, |x| chord(x, input.key.as_deref()).map(drop))?;
         let target = target_of(way, window);
         let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, target, |x, route, _| {
+        let moved = inputs.with_route(x, target, |x, route, _| {
             let (rx, ry) = route.root_point(x, input.x, input.y)?;
             let keycodes = chord(x, input.key.as_deref())?;
             route
@@ -675,8 +684,10 @@ impl Engine {
             let held = route.acquire(x, &keycodes)?;
             let moved = route.place(x, rx, ry);
             moved.and(route.release(x, &held))
-        })?;
-        Ok(Value::Null)
+        });
+        let left = self.within_answer(within, "move");
+        moved?;
+        left.map_or(Ok(Value::Null), Err)
     }
 
     /// `move_relative`: desktop only, one relative XTEST motion inside the chord.
@@ -708,6 +719,7 @@ impl Engine {
         }
         let window = input.window.map(|w| w.id);
         let way = self.route_for(window, Kind::Scroll)?;
+        let (way, within) = self.watch_within(window, Kind::Scroll, way)?;
         self.enter_checked(way, window, |x| {
             if input.x.is_some() != input.y.is_some() {
                 bail!("x and y must be provided together");
@@ -716,7 +728,7 @@ impl Engine {
         })?;
         let target = target_of(way, window);
         let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, target, |x, route, _| {
+        let scrolled = inputs.with_route(x, target, |x, route, _| {
             let at = match (input.x, input.y, input.window) {
                 (Some(px), Some(py), _) => Some(route.root_point(x, px, py)?),
                 (None, None, Some(window)) => {
@@ -730,8 +742,10 @@ impl Engine {
                 _ => bail!("x and y must be provided together"),
             };
             wheel(x, route, at, &input)
-        })?;
-        Ok(Value::Null)
+        });
+        let left = self.within_answer(within, "scroll");
+        scrolled?;
+        left.map_or(Ok(Value::Null), Err)
     }
 
     /// `drag`: the path translated to the root (inside the window's session, which is opened first), checked, the
@@ -776,6 +790,9 @@ impl Engine {
             self.record_route(way);
             self.extra.insert("pointer_outside".into(), json!(true));
         }
+        // a family that takes pointer input only while the real pointer is in its window (Gecko): watched for the pointer
+        // leaving it, from a second read of the pointer to the drag's end (`within.rs`)
+        let (way, within) = self.watch_within(named, Kind::Drag, way)?;
         self.enter_checked(way, named, |x| {
             if input.path.len() < 2 {
                 bail!("drag path must contain at least two points");
@@ -868,24 +885,6 @@ impl Engine {
         // a watched drag's session is kept focused past its answer while its late-take watch is armed, so the watch's
         // Escape lands inside it (the design session's ruling on task 60); a drag that arms no watch ends it below
         let may_arm_watch = guard.is_some();
-        // a background drag into a family that takes pointer input only while the real pointer is in its window
-        // (Gecko): the route found the pointer in it, and a watch on the window's crossings sees it leave while the drag
-        // runs, so such a drag never answers success (T19)
-        let mut leave = match target {
-            Target::Window(window)
-                if !self.cfg.ignore_pointer
-                    && self.family_of(window).and_then(|f| f.ignores(Kind::Drag))
-                        == Some(When::UnlessPointerWithin) =>
-            {
-                let mut watch = match self.stray_watch.take() {
-                    Some(watch) => watch,
-                    None => StrayWatch::connect()?,
-                };
-                let watching = watch.begin_leaves(window)?;
-                Some((watch, watching, window))
-            }
-            _ => None,
-        };
         let Engine { x, inputs, bus, .. } = self;
         let dragged = inputs.with_route_kept(x, target, may_arm_watch, |x, route, _| {
             let points = input
@@ -932,32 +931,8 @@ impl Engine {
             dragged
         });
         self.record_focus_ack(ack.as_ref());
-        // the pointer watch's word on a drag that otherwise succeeded: it left the window while the drag ran, or the
-        // drag ended with the pointer outside, or the watch failed and cannot tell
-        let left = leave.take().and_then(|(mut watch, watching, window)| {
-            let seen = watch.finish(watching);
-            let inside_at_end = self.pointer_within(window);
-            self.stray_watch = Some(watch).filter(StrayWatch::healthy);
-            let app = self
-                .x
-                .get_window(window)
-                .map_or_else(|_| format!("window {window}"), |w| w.app);
-            let (leaves, answer) = match seen {
-                Ok(leaves) => (
-                    json!(leaves.count()),
-                    (leaves.count() > 0 || !inside_at_end).then(|| anyhow!(pointer_left(&app))),
-                ),
-                Err(error) => (
-                    json!(format!("{error:#}")),
-                    Some(anyhow!(pointer_watch_failed(&app, &format!("{error:#}")))),
-                ),
-            };
-            self.extra.insert(
-                "pointer_watch".into(),
-                json!({ "leaves": leaves, "inside_at_end": inside_at_end }),
-            );
-            answer
-        });
+        // the pointer watch's word on a drag that otherwise succeeded (`within.rs`)
+        let left = self.within_answer(within, "drag");
         if let Some((event, server)) = times {
             self.extra.insert(
                 "event_time".into(),

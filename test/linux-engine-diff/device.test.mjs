@@ -52,7 +52,7 @@ test("Acceptance 8's cases: each kind and condition, refused in shared mode, for
   const refusals = SCENE_OPS['device-firefox'].filter((op) => OPS[op].device === 'refusal');
   assert.deepEqual([...refusals].sort(), [...GECKO_POINTER_REFUSALS].sort());
   for (const op of refusals) assert.ok(DEVIATIONS.some((d) => d.op === op && d.scene === 'device-firefox' && d.answer({ ok: false, error: 'firefox does not accept background input; use a dedicated desktop or activate the window first' })), op);
-  assert.ok(GECKO_POINTER_LEFT.test('firefox may not have taken the drag: the desktop pointer left its window while the drag ran, and firefox takes background pointer input only while the pointer is in its window. Read the window to see what happened before dragging again'));
+  for (const what of ['click', 'scroll', 'move', 'drag']) assert.ok(GECKO_POINTER_LEFT.test(`firefox may not have taken the ${what}: the desktop pointer left its window during the ${what}, and firefox takes background pointer input only while the pointer is in its window. Read the window to see what happened before trying again`), what);
   assert.equal(routeOf('chrome_drag_visible_path_shared', 'device-chrome'), 'background', 'a visible path in a partly covered window');
   assert.equal(routeOf('gtk4_element_click', 'device-gtk4'), null, 'an element action records no route');
   assert.equal(routeOf('chrome_dnd_in_front_shared', 'device-chrome-dnd'), 'background', 'Chrome already in front');

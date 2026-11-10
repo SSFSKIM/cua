@@ -201,12 +201,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   the deepest window the server finds under the pointer is the window or below it, so a pointer over a window that
   covers it is outside; T19, evidence `m4/pointer-route/`); Chromium its drags unless every point and segment of the
   drag's path is unobscured (`cover.rs`' `points_unobscured`); Qt its scrolls; xterm its keys (and has no verified
-  paste route). A Gecko drag on the background route is watched for the real pointer leaving the window while it runs
-  (a `LeaveNotify` of the window to no window inside it, on the press watch's connection, `stray.rs`) and checked at
-  its end: a drag the pointer left, or ended outside, is answered `<app> may not have taken the drag: the desktop
-  pointer left its window while the drag ran, and <app> takes background pointer input only while the pointer is in
-  its window. Read the window to see what happened before dragging again`, never success (`--stats` `pointer_watch`).
-  A click, a scroll and a move are judged by the pointer once, at the route's choice. Element actions through AT-SPI are never listed. For a listed kind and condition, `--desktop shared`
+  paste route). A Gecko click, scroll, move or drag on the background route is watched for the real pointer leaving
+  the window (a `LeaveNotify` of the window to no window inside it, on the press watch's connection, `stray.rs`),
+  from a second read of the pointer to a round trip after its events went out, and the pointer is read again at its
+  end (`engine/within.rs`): a request the pointer left during, or ended outside, is answered `<app> may not have
+  taken the <request>: the desktop pointer left its window during the <request>, and <app> takes background pointer
+  input only while the pointer is in its window. Read the window to see what happened before trying again`, never
+  success (`--stats` `pointer_watch`). Element actions through AT-SPI are never listed. For a listed kind and condition, `--desktop shared`
   refuses with `<app> does not accept background input; use a dedicated desktop or activate the window first`
   before anything is sent; `--desktop dedicated` activates the window (`_NET_ACTIVE_WINDOW`, a raise, the input
   focus), waits for it to hold the focus, and sends the input through XTEST at the same window-relative points (the
@@ -418,7 +419,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
 | `--drag-ignore-cover` | off | a drag into a family listed `unless_path_unobscured` (Chromium) goes out on the background route along a covered path (measurement only: T13's covered paths) |
 | `--ignore-cover` | off | no cover condition (`unless_path_unobscured`) refuses or reroutes a request, so a covered window's listed kinds go out on the background route; a kind listed `always` is still refused (measurement only: what the application does with them, T19's sitting) |
-| `--ignore-pointer` | off | the pointer condition (`unless_pointer_within`) never refuses or reroutes a request, and no Gecko drag is answered for the pointer leaving (measurement only: what Gecko does with input sent while the pointer is elsewhere, the predicates manifest's `cua:any-pointer` lane) |
+| `--ignore-pointer` | off | the pointer condition (`unless_pointer_within`) never refuses or reroutes a request, and no Gecko request is watched for the pointer leaving (measurement only: what Gecko does with input sent while the pointer is elsewhere, the predicates manifest's `cua:any-pointer` lane) |
 | `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, how a desktop screenshot was read (`shm` or `get_image`), each `FocusOut` (`focus_out`, above), the exit's on a line of its own, a paste's settle (`paste.settle`), and a press's wait for Qt's focus (`focus_ack`) |
 
 ## Dependencies

@@ -76,9 +76,13 @@ impl Engine {
     /// and sent through the foreground route in dedicated mode, once the element resolved.
     pub(super) fn element_click(&mut self, window: u32, element: &str, button: MouseButton) -> Result<Value> {
         let element = self.resolve_element(window, element)?;
+        // a right click into a family that takes it only with the real pointer in its window: watched (`within.rs`)
+        let mut within = None;
         let target = match button {
             MouseButton::Right => {
                 let way = self.route_for(Some(window), Kind::Clicks)?;
+                let (way, watch) = self.watch_within(Some(window), Kind::Clicks, way)?;
+                within = watch;
                 if way == Way::Foreground {
                     self.enter(window)?;
                 }
@@ -94,7 +98,11 @@ impl Engine {
         };
         let clicked = self.click_resolved(&element, button, target, ack.as_mut());
         self.record_focus_ack(ack.as_ref());
+        let left = self.within_answer(within, "click");
         clicked?;
+        if let Some(left) = left {
+            return Err(left);
+        }
         // the primary click ran the element's action 0: its answer names a family that animates it
         Ok(match button {
             MouseButton::Right => Value::Null,
@@ -160,17 +168,20 @@ impl Engine {
     pub(super) fn element_scroll(&mut self, window: u32, element: &str, input: &ScrollInput) -> Result<Value> {
         let element = self.resolve_element(window, element)?;
         let way = self.route_for(Some(window), Kind::Scroll)?;
+        let (way, within) = self.watch_within(Some(window), Kind::Scroll, way)?;
         // the foreground route activates only once the amount and the chord are known good
         self.enter_checked(way, Some(window), |x| check_wheel(x, input))?;
         let target = way.target(window);
         let (x, bus, inputs) = self.parts()?;
-        inputs.with_route(x, target, |x, route, _| {
+        let scrolled = inputs.with_route(x, target, |x, route, _| {
             let bounds = atspi::extents(bus, &element.target)?.map_err(anyhow::Error::msg)?;
             let at = centre(clip_to_window(bounds, &element.info))?;
             element.associated.confirm_before_acting(bus, x)?;
             wheel(x, route, Some(at), input)
-        })?;
-        Ok(Value::Null)
+        });
+        let left = self.within_answer(within, "scroll");
+        scrolled?;
+        left.map_or(Ok(Value::Null), Err)
     }
 }
 

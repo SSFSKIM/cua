@@ -19,13 +19,15 @@
 // - `cua:any-pointer` (`--ignore-pointer`, measurement only) on a refused case: cua's own events sent with the pointer
 //   unjudged, the count of what the refusal keeps from being sent (Gecko ignores it: the refusal is no loss).
 
-import { DEVICE_REFUSAL } from './deviations.mjs';
-import { OCCLUSION_PARKS, ROUTE_GROUPS, cellKey, measureRoute } from './pointer-route.mjs';
+import { DEVICE_REFUSAL, GECKO_POINTER_LEFT } from './deviations.mjs';
+import { OCCLUSION_PARKS, ROUTE_GROUPS, cellKey, leavePlan, measureRoute } from './pointer-route.mjs';
 
 /** The runs of an allowed case, every one of which must take effect (the row's proof: 30 of 30). */
 export const ALLOWED_RUNS = 30;
 /** The runs of a still-refused counterexample: each answers the refusal, whatever the lanes beside it did. */
 export const REFUSED_RUNS = 10;
+/** The runs of a leave case (the pointer moved out during the request): each answers honestly. */
+export const LEAVE_RUNS = 20;
 
 /** The kinds, each with the scene group pointer-route.mjs measures it in. */
 export const PREDICATE_KINDS = ROUTE_GROUPS.flatMap(({ group, kinds }) => kinds.map((kind) => ({ kind, group })));
@@ -34,12 +36,17 @@ const why = {
   in: 'the real pointer in the window (unless_pointer_within), whatever covers the rest of it',
   under: 'the real pointer under a window over it: outside it, by the server',
   out: 'the real pointer outside the window',
+  leave: 'the real pointer in the window at the request, moved out while it runs',
 };
 
 /** The manifest: every pointer place each occlusion has (pointer-route.mjs), allowed with the pointer in, else refused. */
-export const PREDICATE_CASES = Object.entries(OCCLUSION_PARKS).flatMap(([occlusion, parks]) =>
-  parks.flatMap((park) => PREDICATE_KINDS.map(({ kind, group }) => ({ family: 'firefox', group, kind, occlusion, park, expect: park === 'in' ? 'allowed' : 'refused', why: why[park] }))),
-);
+export const PREDICATE_CASES = [
+  ...Object.entries(OCCLUSION_PARKS).flatMap(([occlusion, parks]) =>
+    parks.flatMap((park) => PREDICATE_KINDS.map(({ kind, group }) => ({ family: 'firefox', group, kind, occlusion, park, expect: park === 'in' ? 'allowed' : 'refused', why: why[park] }))),
+  ),
+  // the pointer leaving during the request (T19's watch, engine/within.rs): never ok with no effect
+  ...leavePlan(['firefox']).map((c) => ({ ...c, expect: 'honest', why: why.leave })),
+];
 
 export const caseKey = cellKey;
 
@@ -57,6 +64,7 @@ export function caseLanes(c, args) {
 // the judge (pure)
 
 const refusal = (r) => r.ok !== true && DEVICE_REFUSAL.test(String(r.error ?? ''));
+const leftAnswer = (r) => r.ok !== true && GECKO_POINTER_LEFT.test(String(r.error ?? ''));
 
 /**
  * One case judged from its runs (each `{engine, ok, error, took, witness}`): an allowed case passes when cua ran
@@ -64,16 +72,18 @@ const refusal = (r) => r.ok !== true && DEVICE_REFUSAL.test(String(r.error ?? ''
  * `REFUSED_RUNS` or more, every one the Device mode sentence with the witness unchanged and no effect. The other lanes'
  * counts stand beside it, never judged.
  */
-export function judgeCase(c, runs, { allowedRuns = ALLOWED_RUNS, refusedRuns = REFUSED_RUNS } = {}) {
+export function judgeCase(c, runs, { allowedRuns = ALLOWED_RUNS, refusedRuns = REFUSED_RUNS, leaveRuns = LEAVE_RUNS } = {}) {
   const mine = runs.filter((r) => r.engine === 'cua');
   const counts = {};
   for (const r of runs) {
-    counts[r.engine] ??= { took: 0, n: 0, refused: 0 };
+    counts[r.engine] ??= { took: 0, n: 0, refused: 0, left: 0, ok_no_effect: 0 };
     counts[r.engine].n++;
     if (r.took === true) counts[r.engine].took++;
     if (refusal(r)) counts[r.engine].refused++;
+    if (leftAnswer(r)) counts[r.engine].left++;
+    if (r.ok === true && r.took !== true) counts[r.engine].ok_no_effect++;
   }
-  const need = c.expect === 'allowed' ? allowedRuns : refusedRuns;
+  const need = c.expect === 'allowed' ? allowedRuns : c.expect === 'honest' ? leaveRuns : refusedRuns;
   const failed = [];
   if (mine.length < need) failed.push(`cua ran ${mine.length} of ${need}`);
   const unclean = mine.filter((r) => r.witness !== true).length;
@@ -81,6 +91,14 @@ export function judgeCase(c, runs, { allowedRuns = ALLOWED_RUNS, refusedRuns = R
   if (c.expect === 'allowed') {
     const missed = mine.filter((r) => r.ok !== true || r.took !== true).length;
     if (missed) failed.push(`${missed} did not take effect`);
+  } else if (c.expect === 'honest') {
+    // each run took effect answered ok, or was refused before anything was sent, or answers that the pointer left
+    const falseOk = mine.filter((r) => r.ok === true && r.took !== true).length;
+    if (falseOk) failed.push(`${falseOk} answered ok with no effect`);
+    const other = mine.filter((r) => r.ok !== true && !refusal(r) && !leftAnswer(r)).length;
+    if (other) failed.push(`${other} answered another error`);
+    const refusedTook = mine.filter((r) => r.ok !== true && refusal(r) && r.took === true).length;
+    if (refusedTook) failed.push(`${refusedTook} were refused and took effect`);
   } else {
     const answered = mine.filter((r) => !refusal(r)).length;
     if (answered) failed.push(`${answered} were not refused`);
@@ -107,6 +125,7 @@ export function predicatesMarkdown(rows) {
   const cua = (row) => {
     const c = row.counts.cua;
     if (!c) return '–';
+    if (row.expect === 'honest') return `took ${c.took}, left ${c.left}, refused ${c.refused}, ok with no effect ${c.ok_no_effect} (of ${c.n})`;
     return row.expect === 'allowed' ? `took ${c.took}/${c.n}` : `refused ${c.refused}/${c.n}`;
   };
   return [
@@ -133,7 +152,7 @@ export async function runPredicates(args, { desktop, emit }) {
   const runs = [];
   const { errors } = await measureRoute(args, { desktop, emit }, plan, {
     lanesOf: (c) => caseLanes(c, args),
-    runsOf: (c) => (c.expect === 'allowed' ? ALLOWED_RUNS : REFUSED_RUNS),
+    runsOf: (c) => (c.expect === 'allowed' ? ALLOWED_RUNS : c.expect === 'honest' ? LEAVE_RUNS : REFUSED_RUNS),
     cellRow: (c, own) => {
       runs.push(...own);
       const row = judgeCase(c, own);
@@ -144,7 +163,7 @@ export async function runPredicates(args, { desktop, emit }) {
   const verdict = judgePredicates(plan, runs);
   for (const row of verdict.rows) emit({ ...row, kind: 'predicate-verdict' });
   const md = [
-    `T19's adopted cases (predicates.mjs): Gecko's pointer kinds by the real pointer. Each allowed case ${ALLOWED_RUNS} runs of cua as it ships, every one taking effect with the witness unchanged; each still-refused counterexample ${REFUSED_RUNS}, every one the Device mode sentence with the witness unchanged. Beside them the pinned build's counts and, on a refused case, cua's own events with the pointer unjudged (\`cua:any-pointer\`, \`--ignore-pointer\`).`,
+    `T19's adopted cases (predicates.mjs): Gecko's pointer kinds by the real pointer. Each allowed case ${ALLOWED_RUNS} runs of cua as it ships, every one taking effect with the witness unchanged; each still-refused counterexample ${REFUSED_RUNS}, every one the Device mode sentence with the witness unchanged; each leave case (the pointer moved out during the request) ${LEAVE_RUNS}, none answered ok with no effect. Beside them the pinned build's counts and, on a refused case, cua's own events with the pointer unjudged (\`cua:any-pointer\`, \`--ignore-pointer\`).`,
     '',
     ...predicatesMarkdown(verdict.rows),
     '',

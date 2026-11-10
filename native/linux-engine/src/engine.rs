@@ -17,6 +17,9 @@ mod refusal_faults;
 mod targets_faults;
 mod way;
 mod windows;
+mod within;
+#[cfg(test)]
+mod within_faults;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -87,7 +90,7 @@ pub struct Config {
     /// application does with them; a kind listed `always` is still refused.
     pub ignore_cover: bool,
     /// Measurement only (T19, `--ignore-pointer`): the pointer condition (`unless_pointer_within`) never refuses or
-    /// reroutes a request, and a drag is not answered for the pointer leaving, so the harness can count what the
+    /// reroutes a request, and no request is watched for the pointer leaving, so the harness can count what the
     /// application does with input sent while the pointer is elsewhere.
     pub ignore_pointer: bool,
 }

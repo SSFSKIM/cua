@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { caretMoved } from '../../scripts/linux-engine-diff/kinds.mjs';
-import { OCCLUSION_PARKS, OUT_POINT, ROUTE_FAMILIES, cellCounts, cellKey, parkHeld, parkPoint, placeOf, routeLanes, routeMarkdown, routePlan, selectTook } from '../../scripts/linux-engine-diff/pointer-route.mjs';
+import { LEAVE_AFTER_S, OCCLUSION_PARKS, OUT_POINT, ROUTE_FAMILIES, leavePlan, cellCounts, cellKey, parkHeld, parkPoint, placeOf, routeLanes, routeMarkdown, routePlan, selectTook } from '../../scripts/linux-engine-diff/pointer-route.mjs';
 
 const window = { x: 0, y: 30, width: 1050, height: 760 };
 
@@ -97,4 +97,13 @@ test('the command line runs the sitting as an experiment beside the pinned build
   assert.deepEqual(a.families, ['firefox', 'gedit']);
   assert.equal(a.samplesTrials, 3);
   assert.throws(() => parseArgs(['--experiment', 'pointer-route', '--cua', '/c', '--out', '/o']), /vendor/);
+});
+
+test('a leave cell parks the pointer as in, finds it in the window at the request, and moves it out while the request runs', () => {
+  assert.deepEqual(parkPoint(window, 'leave'), parkPoint(window, 'in'));
+  assert.equal(parkHeld('leave', 'scene', { x: 10, y: 50 }, window), true);
+  assert.equal(parkHeld('leave', 'cover', { x: 10, y: 600 }, window), false);
+  assert.deepEqual(leavePlan().map(cellKey), ['firefox click visible pointer-leave', 'firefox scroll visible pointer-leave', 'firefox move visible pointer-leave', 'firefox select visible pointer-leave']);
+  for (const c of leavePlan()) assert.equal(typeof LEAVE_AFTER_S[c.kind], 'number', c.kind);
+  assert.ok(!routePlan().some((c) => c.park === 'leave'), "the sitting's plan is unchanged");
 });

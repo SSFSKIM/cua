@@ -122,6 +122,8 @@ pub enum Identity {
     TargetsWait,
     /// The Copy's context menu asked to open, just before the menu is looked for (`copy.rs`).
     MenuLookup,
+    /// A watched pointer request's events sent, just before its pointer watch is read (`engine/within.rs`).
+    PointerSent,
 }
 
 /// A hook armed for the `nth` time (from 1) its point is reached since arming.

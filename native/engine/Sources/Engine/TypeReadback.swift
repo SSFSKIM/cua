@@ -22,7 +22,8 @@ import Foundation
 // - Equality proves nothing when the expected value is the snapshot's own (the selection already held the typed text:
 //   the review of 9020bb18..dad56362, P1, #354's race itself, since a late select-all could still rewrite the field). Then
 //   the selected range must also read the caret past the insertion, {location + typed length, 0}, which differs from the
-//   snapshot's non-empty selection; without it within the budget, `typeUnconfirmed` (`unchanged`). The same holds at a
+//   snapshot's non-empty selection, and only an equal value read taken after that caret read counts (the review of
+//   dad56362..af1860ef, P1); without both within the budget, `typeUnconfirmed` (`unchanged`). The same holds at a
 //   checkpoint before a key.
 // - A value at Chromium's AXValue cap (`typeReadbackValueCap`, #350) may be cut, so it never compares: unconfirmed, with
 //   no values. So is an expected value at the cap, which a whole field and a cut one would read alike.
@@ -372,10 +373,16 @@ final class TypeReadback<Element> {
     var excerpt: (() -> ReadbackExcerpt)?  // a plain mismatch's, made only once the field is known to be the same
     let started = reads.now()
     defer { record.pollMs += reads.now() - started }
-    // Where the expected value is the snapshot's own, equality needs the caret past the insertion as well (`consumed`).
+    // Where the expected value is the snapshot's own, equality needs the caret past the insertion as well, and then a
+    // value read taken after that caret read (the review of dad56362..af1860ef, P1: a stale value read before a newer
+    // caret confirmed what the app had already changed). `equalAfterCaret` judges an equal read: the first one to see the
+    // caret only sets `caretSeen`, and only a later equal read counts.
     let range16 = range, readRange = reads.range
-    func consumed(_ element: Element, inserted: Int) -> Bool {
-      readRange(element) == NSRange(location: range16.location + inserted, length: 0)
+    var caretSeen = false
+    func equalAfterCaret(_ element: Element, unchanged: Bool, inserted: Int) -> ReadbackRead {
+      guard unchanged, !caretSeen else { return .equal }
+      if readRange(element) == NSRange(location: range16.location + inserted, length: 0) { caretSeen = true }
+      return .equalUnconsumed
     }
     if concealed {
       // Equality only, in buffers the read-back owns: the expected value's units and each read's, zeroed after use.
@@ -393,7 +400,7 @@ final class TypeReadback<Element> {
         defer { readbackZero(&read) }
         if readbackMayBeTruncated(units: read) { return .differs(cut: true, actual: nil) }  // a cut read never counts as equal
         guard read == expected else { return .differs(cut: false, actual: nil) }
-        return unchanged && !consumed(element, inserted: inserted) ? .equalUnconsumed : .equal
+        return equalAfterCaret(element, unchanged: unchanged, inserted: inserted)
       }
     } else {
       let typed = typedUnits.map(readbackInsertion).joined()
@@ -407,7 +414,7 @@ final class TypeReadback<Element> {
         if readbackMayBeTruncated(read) { return .differs(cut: true, actual: read) }  // a cut read never counts as equal
         // Code units, never Swift's ==, which takes canonically equivalent strings of different lengths for equal.
         guard read.utf16.elementsEqual(expected.utf16) else { return .differs(cut: false, actual: read) }
-        return unchanged && !consumed(element, inserted: inserted) ? .equalUnconsumed : .equal
+        return equalAfterCaret(element, unchanged: unchanged, inserted: inserted)
       }
       if case .differs(_, let actual?) = poll.last { excerpt = { readbackExcerpt(expected: expected, actual: actual) } }
     }

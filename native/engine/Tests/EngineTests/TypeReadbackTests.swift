@@ -409,6 +409,43 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(type("abc", into: FakeApp(concealed), concealed: true).1)["reason"] as? String, "unchanged")
   }
 
+  /// The review of dad56362..af1860ef, P1 (its repro): the field takes "a" over a selected "a" as "A" and moves the
+  /// caret, but the first value read is still the old "a". A stale value read before the caret never confirms; only a
+  /// value read after it counts, and that one reads "A".
+  func testAStaleValueReadBeforeTheCaretNeverConfirms() {
+    for concealed in [false, true] {
+      let field = FakeField(value: "a", range: NSRange(location: 0, length: 1))
+      field.transform = { $0.uppercased() }
+      field.lagReads = 1
+      let (error, meta) = type("a", into: FakeApp(field), concealed: concealed)
+      XCTAssertEqual(field.value, "A")
+      XCTAssertEqual(field.range, NSRange(location: 1, length: 0))
+      XCTAssertEqual(error?.errorName, "typeUnconfirmed", "concealed: \(concealed)")
+      XCTAssertEqual(record(meta)["reason"] as? String, concealed ? "concealedMismatch" : "valueMismatch", "concealed: \(concealed)")
+    }
+    // The same field when the app keeps the text: the read after the caret is equal, and confirms.
+    let kept = FakeField(value: "a", range: NSRange(location: 0, length: 1))
+    kept.lagReads = 1
+    let (none, keptMeta) = type("a", into: FakeApp(kept))
+    XCTAssertNil(none)
+    XCTAssertEqual(record(keptMeta)["reads"] as? Int, 2, "the stale read, then the one after the caret")
+    // At a checkpoint: the Return is held until a read after the caret, which shows the change.
+    let field = FakeField(value: "a", range: NSRange(location: 0, length: 1))
+    field.role = "AXTextField"
+    field.transform = { $0.uppercased() }
+    field.lagReads = 1
+    var returns = 0
+    var meta = meta()
+    XCTAssertThrowsError(try keyTextReadBack(units("a\n"), concealed: false, reads: FakeApp(field).reads, checkSource: { _, _ in },
+                                             checkIntervention: {}, post: { event in
+                                               guard event.kind == .down, let text = event.text else { return true }
+                                               if text == [0x0D] { returns += 1 } else { field.deliver(text) }
+                                               return true
+                                             }, pause: {}, meta: &meta))
+    XCTAssertEqual(returns, 0, "the Return is never posted")
+    XCTAssertEqual(record(meta)["stoppedBeforeKey"] as? Bool, true)
+  }
+
   /// The same at a checkpoint: a Return is never released by the old value reading equal.
   func testACheckpointOverTheSameTextNeedsTheCaretToMove() {
     let field = FakeField(value: "abc", range: NSRange(location: 0, length: 3))

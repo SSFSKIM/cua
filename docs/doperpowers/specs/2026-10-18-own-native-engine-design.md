@@ -4698,7 +4698,22 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   may give a paragraph inside a clickable page AXPress, which would keep the text judged), a relabelled link inside it
   refusing, and the walk's cost back at main's now that `AXEditableAncestor` is out of the batch (the paired timing
   run the ruling named).
-  Date/Author: 2026-11-09, cursor235's lane-1 implementer for the design session's ruling 31a62775 on #298.
+  Proven live (`docs/evidence/2026-11-10-relabelled/`; the gates accepted by the design session, 1ea561bc:569):
+  - **The refusals gate** (run 42732128619, main 3c669314 against 56227475): 36 `relabelled` refusals, every one an
+    expected cell (Save -> Delete 21, Delete -> Delete all 4, Follow -> Following 4, Play -> Pause 4, "Save changes?"
+    -> "Delete file?" 3), and 0 on the kept and shared cells of the full sweep, the fixed live clock included.
+  - **The editor gate** (run 42749519072, main 3c669314 against f8a35001): the Save -> Delete link inside the edited
+    region refuses in 3 of 3 browsers (its chain AXLink -> AXTextArea -> AXWebArea), with 0 `relabelled` refusals on
+    the 9 typed-editor cells. Every editor, the plain contenteditable included, reads as AXTextArea in all three
+    browsers. Firefox's Gmail-like cell refuses `nodeGone` on both heads, before this rule (#340's family).
+  - **The paired cost** (run 42749562318, warmed, fixed windows, the head order rotated): walk p50, control ->
+    candidate, Firefox 56.8 -> 55.3 ms (−2.6%), Finder 245.4 -> 244.6 ms (−0.3%), TextEdit 17.4 -> 17.6 ms (+1.2%). The
+    mixed sweep's earlier rise did not reproduce.
+  - **A limit, as the design session asked:** a contenteditable editor exposed as a plain AXGroup, not an AXTextArea,
+    gets no exemption, so its typed text stays judged and a click there can refuse. That is the safe direction. No
+    browser measured exposes one; the case is covered by unit tests only.
+  Date/Author: 2026-11-09, cursor235's lane-1 implementer for the design session's ruling 31a62775 on #298; the live
+  results 2026-11-10.
 
 ## Outcomes & Retrospective
 

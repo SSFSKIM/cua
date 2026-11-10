@@ -30,8 +30,8 @@ test('a complete 20-rep pair is a successful final collection with explicit cove
  assert.equal(r.status,0,r.stderr);
  assert.equal(r.summary.collection.complete,true);
  assert.equal(r.summary.collection.arms.length,2);
- assert.ok(r.summary.collection.arms.every(a=>a.planned===120&&a.valid===120&&a.complete));
- assert.equal(r.summary.groups.reduce((n,g)=>n+g.attempted,0),240);
+ assert.ok(r.summary.collection.arms.every(a=>a.planned===200&&a.valid===200&&a.complete));
+ assert.equal(r.summary.groups.reduce((n,g)=>n+g.attempted,0),400);
  assert.match(readFileSync(join(root,'cost-ab.tsv'),'utf8'),/cft\t30\tclean-all/);
 });
 
@@ -46,12 +46,12 @@ test('an absent arm is conspicuous and non-successful, without hiding the collec
 });
 
 test('a calibration-only arm config with no row file cannot disappear from the denominator',t=>{
- const root=fixture(t);arm(root,'main');arm(root,'branch',{rows:[],coverage:{planned:120,valid:0,missing:120,complete:false,invalid:0,setupFailures:1,aborted:'calibration failed'}});
+ const root=fixture(t);arm(root,'main');arm(root,'branch',{rows:[],coverage:{planned:200,valid:0,missing:200,complete:false,invalid:0,setupFailures:1,aborted:'calibration failed'}});
  const r=run(root);
  assert.equal(r.status,1,r.stdout+r.stderr);
  assert.equal(r.summary.collection.complete,false);
  const b=r.summary.collection.arms.find(a=>a.arm==='branch');
- assert.equal(b.planned,120);assert.equal(b.valid,0);assert.equal(b.complete,false);
+ assert.equal(b.planned,200);assert.equal(b.valid,0);assert.equal(b.complete,false);
  assert.match(r.stdout+r.stderr,/INCOMPLETE/i);
 });
 
@@ -60,12 +60,12 @@ test('missing cells fail even if the arm config claims complete coverage',t=>{
  const r=run(root);
  assert.equal(r.status,1,r.stdout+r.stderr);
  const b=r.summary.collection.arms.find(a=>a.arm==='branch');
- assert.equal(b.valid,119);assert.equal(b.complete,false);
+ assert.equal(b.valid,199);assert.equal(b.complete,false);
  assert.ok(b.missing.includes('race/input/cmd+a/spike/30/1'));
 });
 
 test('a complete set of rows does not override an aborted or unfinished per-arm config',t=>{
- for(const coverage of [{planned:120,valid:120,missing:0,complete:false,invalid:0,aborted:'stopped'},null]){
+ for(const coverage of [{planned:200,valid:200,missing:0,complete:false,invalid:0,aborted:'stopped'},null]){
   const root=fixture(t);arm(root,'main');arm(root,'branch');
   const path=join(root,'cft-input/branch/config.json'),config=JSON.parse(readFileSync(path,'utf8'));config.coverage=coverage;writeFileSync(path,JSON.stringify(config));
   const r=run(root);assert.equal(r.status,1,r.stdout+r.stderr);assert.equal(r.summary.collection.complete,false);
@@ -91,7 +91,7 @@ test('a valid selective smoke shard is complete without requiring the other elev
  const r=run(root,'--only','safari-textarea');
  assert.equal(r.status,0,r.stderr);assert.equal(r.summary.collection.complete,true);
  assert.deepEqual(r.summary.collection.shards,['safari-textarea']);
- assert.ok(r.summary.collection.arms.every(a=>a.planned===10&&a.valid===10));
+ assert.ok(r.summary.collection.arms.every(a=>a.planned===13&&a.valid===13));
 });
 
 test('an explicitly expected shard missing both arms is incomplete',t=>{

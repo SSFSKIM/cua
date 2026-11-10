@@ -14,10 +14,10 @@ test('every race/clean cell has twenty trials; unsupported cells cannot silently
   for(const length of [30,120,500])assert.equal(cells.filter(c=>c.part==='clean'&&c.length===length).length,20);
   assert.ok(cells.filter(c=>c.part==='race').every(c=>c.length===30));
   assert.equal(cells.filter(c=>c.part==='unsupported').length,editor==='textarea'?80:0);
-  assert.equal(cells.filter(c=>c.part==='truncation').length,browser==='cft'&&editor==='textarea'?20:0);
+  assert.equal(cells.filter(c=>c.part==='truncation'&&c.variant==='spike').length,browser==='cft'&&editor==='textarea'?20:0);
   assert.equal(cells.filter(c=>c.part==='substitution').length,browser==='cft'&&editor==='contenteditable'?40:0);
  }
- assert.equal(total,3480);
+ assert.equal(total,4840);
  assert.deepEqual(abPlan({browser:'cft',editor:'textarea',reps:1}).slice(-2).map(c=>c.editor),['password','password']);
  assert.throws(()=>abPlan({browser:'cft',editor:'input',reps:0}));
  assert.throws(()=>abPlan({browser:'native',editor:'input',reps:20}));
@@ -41,8 +41,15 @@ test('a later wrong value dominates success; an honest refusal stays in the rate
  const s=summarize(rows);
  assert.deepEqual(s.wrongSuccesses.map(r=>r.id),['bad']);
  assert.equal(s.groups.length,1);
- assert.deepEqual(s.groups[0],{arm:'branch',browser:'cft',editor:'textarea',part:'race',key:'cmd+a',length:30,variant:'spike',attempted:4,valid:3,invalid:1,success:2,unconfirmed:1,otherErrors:0,wrong:2,wrongSuccess:1,falseUnconfirmed:0,privacyViolations:0});
+ assert.deepEqual(s.groups[0],{arm:'branch',browser:'cft',editor:'textarea',part:'race',key:'cmd+a',length:30,variant:'spike',attempted:4,valid:3,invalid:1,success:2,unconfirmed:1,keysUnconfirmed:0,otherErrors:0,wrong:2,wrongSuccess:1,falseUnconfirmed:0,privacyViolations:0});
  assert.equal(s.cost.find(c=>c.path==='unconfirmed-race-or-substitution').p95,1000);
+});
+
+test('an unconfirmed-ending-key qualifier cannot hide wrong success in an ordinary race cell',()=>{
+ const raw={result:{meta:{typeReadback:{confirmed:true,keysUnconfirmed:1}}}},base={recordKind:'cell',arm:'branch',browser:'cft',editor:'input',key:'cmd+a',length:30,variant:'spike',valid:true,correct:false,typeRPC:{raw,durationMs:10}};
+ const s=summarize([{...base,id:'ordinary',part:'race'},{...base,id:'ending',part:'ending-tab',expectedAnswer:'keysUnconfirmed'}]);
+ assert.deepEqual(s.wrongSuccesses.map(r=>r.id),['ordinary']);
+ assert.equal(s.groups.find(g=>g.part==='ending-tab').keysUnconfirmed,1);
 });
 
 test('clean false refusals and cost are reported separately from wrong race values',()=>{

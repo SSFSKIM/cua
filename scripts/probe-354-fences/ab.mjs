@@ -12,12 +12,16 @@ import {abortReason,coverage} from './classify.mjs';
 import {abPlan,answer,privacyFindings} from './ab-model.mjs';
 import {writeTables} from './offline/ab-table.mjs';
 import {snapshot} from '../probe-354-substitutions/diagnostic.mjs';
+import {readbackStatus,qualifiedKeyAnswer} from './ab-extra.mjs';
+import {createSyntheticSecretProbe} from './ab-secret.mjs';
 
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only; never run GUI steps on a Mac');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
 const OUT=arg('out'),ENGINE=arg('engine'),SIDE=arg('side'),KIND=arg('browser'),SHARD=arg('shard'),ARM=arg('arm'),HEAD=arg('head'),REPS=+(arg('reps')??20),SMOKE=arg('smoke')==='true';
 if(!OUT||!ENGINE||!SIDE||!['main','branch'].includes(ARM)||!/^[a-f0-9]{40}$/.test(HEAD??''))throw Error('invalid A/B arguments');
 const cells=abPlan({browser:KIND,editor:SHARD,reps:REPS});
+if(cells.some(c=>c.secret)&&!arg('source'))throw Error('secret diagnostics require the pinned --source tree');
+const secretProbe=cells.some(c=>c.secret)?await createSyntheticSecretProbe({sourceRoot:arg('source'),parent:process.env.RUNNER_TEMP}):null;
 mkdirSync(OUT,{recursive:true});
 const sleep=ms=>new Promise(ok=>setTimeout(ok,Math.max(0,ms))),start=Date.now();
 const sh=(c,a)=>spawnSync(c,a,{encoding:'utf8',timeout:20000});
@@ -37,10 +41,10 @@ if(Buffer.byteLength(socket)>=103)throw Error('engine socket path too long');
 rmSync(socket,{force:true});
 const auditWaiters=new Map();
 const engine=spawn(ENGINE,[],{env:{...process.env,CUA_ENGINE_SOCKET:socket},stdio:['ignore','ignore','pipe']});
-engine.stderr.on('data',d=>appendFileSync(join(OUT,'engine-stderr.txt'),d));
-createInterface({input:engine.stderr}).on('line',l=>{try{const a=JSON.parse(l).probe354Audit;if(a){auditWaiters.get(a.id)?.(a);auditWaiters.delete(a.id)}}catch{}});
-function waitAudit(id){return new Promise(ok=>{const t=setTimeout(()=>{auditWaiters.delete(id);ok({id,error:'audit record missing'})},2500);auditWaiters.set(id,a=>{clearTimeout(t);ok(a)})})}
-async function connect(){for(let i=0;i<200;i++){if(engine.exitCode!==null||engine.signalCode!==null)throw Error('engine exited before socket readiness');try{const w=await Wire.connect(socket),r=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(r.error){w.close();throw Error(JSON.stringify(r.error))}return w}catch{await sleep(50)}}throw Error('engine unavailable')}
+const engineLogLines=createInterface({input:engine.stderr}),engineLogsClosed=new Promise(ok=>engineLogLines.once('close',ok));
+engineLogLines.on('line',l=>{appendFileSync(join(OUT,'engine-stderr.txt'),(secretProbe?secretProbe.log(l):l)+'\n');try{const a=JSON.parse(l).probe354Audit;if(a){auditWaiters.get(a.id)?.(a);auditWaiters.delete(a.id)}}catch{}});
+function waitAudit(id){return new Promise(ok=>{const t=setTimeout(()=>{auditWaiters.delete(id);ok({id,error:'audit record missing'})},7000);auditWaiters.set(id,a=>{clearTimeout(t);ok(a)})})}
+async function connect(){for(let i=0;i<200;i++){if(engine.exitCode!==null||engine.signalCode!==null)throw Error('engine exited before socket readiness');try{const w=await Wire.connect(socket),r=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(r.error){w.close();throw Error(JSON.stringify(r.error))}w.identity=r.result;return w}catch{await sleep(50)}}throw Error('engine unavailable')}
 const side=spawn(SIDE,[],{stdio:['pipe','pipe','inherit']}),waiters=[];
 createInterface({input:side.stdout}).on('line',l=>{let r;try{r=JSON.parse(l)}catch{r={error:l}}waiters.shift()?.(r)});
 const ask=q=>new Promise(ok=>{waiters.push(ok);side.stdin.write(JSON.stringify(q)+'\n')});
@@ -57,6 +61,8 @@ const meta={kit:process.env.GITHUB_SHA??null,engine:HEAD,arm:ARM,image:process.e
  clean:'Cmd+A independently settled and its DOM value/range checked at 500ms before type_text; 30/120/500 characters',
  sampling:'DOM at 0/250/1000/3000ms after real type_text response, including refusals; final is last sample',
  substitutions:'runner defaults unchanged: original spike CE500 plus separately labelled deliberate double-space CE500 diagnostic, CFT only; no period-off preference writes',
+ extraCells:'ending Return in input: keysUnconfirmed; ending Return in textarea/contenteditable: text confirmed; Tab: keysUnconfirmed in all editors; multiline text; CFT 10001-character non-ASCII field; separate diagnostic denominators',
+ secrets:'real trusted wrapper and native service from each pinned source; synthetic random value in a temporary HOME only; normal input, equality and forced mismatch; replies/meta and complete engine/service log lines scanned for the value and every 8-byte fragment, private values/lengths withheld and violations counted',
  abort:'3 consecutive invalid cells or 6 setup failures; incomplete coverage and branch contract failures exit nonzero'};
 let done=0,valid=0,invalid=0,setupFailures=0,consecutiveInvalid=0,aborted=null;
 const compact=[],calibrations=new Map();
@@ -67,13 +73,13 @@ function save(row){
 }
 const seedFor=c=>c.seed??SEED;
 function initial(c){const seed=seedFor(c),undo=c.key==='cmd+z';return {text:seed+(undo?' undo':''),selection:[c.key==='cmd+v'?0:undo?seed.length+5:3,0]}}
-function check(s,c,label){const intended=initial(c),text=c.privateField?s.matchesExpected===true&&s.length===intended.text.length:s.text===intended.text;
+function check(s,c,label){const intended=initial(c),text=c.privateField||c.secret?s.matchesExpected===true&&s.length===intended.text.length:s.text===intended.text;
  if(!text||!s.focused||s.cell!==c.id||!sameSel(s.selection,intended.selection))throw new SetupError(label+' not established '+JSON.stringify({length:s.length,selection:s.selection,focused:s.focused,cell:s.cell}));
 }
 async function setup(c,row){
  row.prepareForeground=await front(pid);
- const expected=c.privateField?initial(c).text:undefined;
- row.reset=await fixture.command({op:'reset',cell:c.id,editor:c.editor,seed:c.seed,privateField:c.privateField,expected});
+ const expected=c.privateField||c.secret?initial(c).text:undefined;
+ row.reset=await fixture.command({op:'reset',cell:c.id,editor:c.editor,seed:c.seed,privateField:c.privateField||c.secret,renderedText:c.renderedText,dropInput:c.secret&&c.variant==='mismatch',expected});
  const selection=c.key==='cmd+z'?[seedFor(c).length,0]:initial(c).selection;
  row.setup=await fixture.command({op:'prepare',cell:c.id,editor:c.editor,key:c.key,selection,expected});check(row.setup,c,'prepared state');
  if(c.key==='cmd+v'){row.clip=await ask({op:'clip',text:CLIP});if(!row.clip.ok)throw new SetupError('known clipboard not established')}
@@ -101,40 +107,50 @@ async function calibrate(key){
 }
 async function cell(c,{warmup=false}={}){
  if(Date.now()-start>45*60000)throw new Abort('45 minute per-arm budget exceeded');
- const calibration=c.key?calibrations.get(c.key):null,expected=expectation(calibration?.effect??{text:seedFor(c),selection:initial(c).selection},c.text);
- const row={...c,recordKind:warmup?'warmup':'cell',arm:ARM,browser:KIND,shard:SHARD,kit:meta.kit,engine:HEAD,expectedFinal:expected.final,calibrationKey:calibration?.key??null,startedAt:Date.now()};
+ const calibration=c.key?calibrations.get(c.key):null,expected=expectation(calibration?.effect??{text:seedFor(c),selection:initial(c).selection},c.text),requestedFinal=expected.final;
+ if(c.expectedText!==undefined)expected.final=c.expectedText;
+ if(c.secret)expected.final=secretProbe.expected(seedFor(c),initial(c).selection);
+ const row={...c,recordKind:warmup?'warmup':'cell',arm:ARM,browser:KIND,shard:SHARD,kit:meta.kit,engine:HEAD,expectedFinal:c.secret?null:expected.final,requestedFinal:c.expectedText!==undefined?requestedFinal:undefined,calibrationKey:calibration?.key??null,startedAt:Date.now()};
  let w,stage='setup',lost=false;
  try{
   w=await connect();await setup(c,row);
   if(c.key){
    stage='key';row.keyRPC=await rpc(w,'press_key',{key:c.key});if(!answer(row.keyRPC.raw).success)throw Error('measured key refused');
-   if(c.part==='clean'||c.part==='substitution'){
+   if(c.part!=='race'){
     await sleep(500);row.priorKeyEffect=await fixture.command({op:'read',cell:c.id});
     if(row.priorKeyEffect.text!==calibration.effect.text||!sameSel(row.priorKeyEffect.selection,calibration.effect.selection))throw new SetupError('clean prior key not settled at 500ms');
    }
   }
   stage='type';
-  const auditRequested=c.privateField||c.auditPositiveControl;
+  const auditRequested=c.privateField||c.secret||c.auditPositiveControl;
   const auditPromise=auditRequested?waitAudit(c.id):null;
-  row.typeRPC=await rpc(w,'type_text',{text:c.text,...(c.concealed?{concealed:true}:{}),...(auditRequested?{probe354Audit:c.id}:{})});
+  if(c.secret){
+   const app={safari:'/Applications/Safari.app',cft:'/Applications/Google Chrome for Testing.app',firefox:'/Applications/Firefox.app'}[KIND],bundle={safari:'com.apple.Safari',cft:'com.google.chrome.for.testing',firefox:'org.mozilla.firefox'}[KIND];
+   const startedAt=Date.now(),reply=await secretProbe.run({app,bundle,pid,id:c.id,identity:w.identity,execute:(method,args)=>w.execute(method,args)}),endedAt=Date.now();
+   row.typeRPC={startedAt,endedAt,durationMs:endedAt-startedAt,raw:reply.engineRaw,meta:reply.engineRaw.result?.meta??reply.engineRaw.error?.meta??null};row.secretService=reply.service;row.secretFindings=reply.findings;
+  }else row.typeRPC=await rpc(w,'type_text',{text:c.text,...(c.concealed?{concealed:true}:{}),...(auditRequested?{probe354Audit:c.id}:{})});
+  row.readbackStatus=readbackStatus(row.typeRPC.raw);
   row.returnedAt=row.typeRPC.endedAt;row.answer=answer(row.typeRPC.raw);row.keyToTypeGapMs=row.keyRPC?row.typeRPC.startedAt-row.keyRPC.endedAt:null;
   // The privacy audit wait is outside type_text's measured time and adds no AX requests.
   if(auditPromise){row.audit=await auditPromise;if(row.audit.error)throw Error(row.audit.error)}
   if(c.auditPositiveControl&&ARM==='branch'&&!(row.audit.textReadAttempts>0))throw Error('audit positive control: branch plaintext read was not counted');
-  row.privacyFindings=privacyFindings(row.typeRPC.raw,{...c,audit:row.audit,knownValues:[seedFor(c),c.text,expected.final]});
+  row.privacyFindings=c.secret?row.secretFindings:privacyFindings(row.typeRPC.raw,{...c,audit:row.audit,knownValues:[seedFor(c),c.text,expected.final]});
   row.privacyViolation=row.privacyFindings.length>0;
   if(row.privacyViolation){
    // Preserve paths/counts, not any accidentally returned private values.
    for(const path of row.privacyFindings){const parts=path.split('.');let target=row.typeRPC.raw;for(const p of parts.slice(0,-1))target=target?.[p];if(target&&Object.hasOwn(target,parts.at(-1)))target[parts.at(-1)]='[redacted-by-harness]'}
   }
-  stage='sampling';const delays=[0,250,1000,3000],n=fixture.send({op:'sample',cell:c.id,returnedAt:row.returnedAt,delays,expected:c.privateField?expected.final:undefined},8500);
+  stage='sampling';const delays=[0,250,1000,3000],n=fixture.send({op:'sample',cell:c.id,returnedAt:row.returnedAt,delays,expected:c.privateField||c.secret?expected.final:undefined},8500);
   row.samples=(await fixture.collect(n,delays.length,8500)).sort((a,b)=>a.delay-b.delay);
-  const last=row.samples.at(-1);row.final=c.privateField?null:last.text;row.correct=c.privateField?last.matchesExpected===true:last.text===expected.final;
+  const last=row.samples.at(-1);row.final=c.privateField||c.secret?null:last.text;row.correct=c.privateField||c.secret?last.matchesExpected===true:last.text===expected.final;
+  row.requestedExact=c.expectedText!==undefined?last.text===requestedFinal:row.correct;
   row.finalLength=last.length;row.firstSampleDelayMs=row.samples[0].at-row.returnedAt;
   row.trace=[row.settledSetup,row.priorKeyEffect,...row.samples].flatMap(s=>s?.trace??[]).sort((a,b)=>a.seq-b.seq);
   for(const s of [row.reset,row.setup,row.settledSetup,row.priorKeyEffect,...row.samples])if(s)delete s.trace;
+  if(c.secret){row.finalLength=null;row.trace=[];for(const s of [row.reset,row.setup,row.settledSetup,...row.samples])if(s){delete s.length;delete s.selection;delete s.trace}}
+  row.contractFailure=ARM==='branch'&&!!c.expectedAnswer&&(c.expectedAnswer==='keysUnconfirmed'?!row.readbackStatus.keysUnconfirmed:c.expectedAnswer==='typeUnconfirmed'?!row.answer.unconfirmed:!row.answer.success||!row.correct||!row.readbackStatus.confirmed);
   row.valid=true;
-  if(ARM==='branch'&&row.answer.success&&!row.correct)console.error('BRANCH SUCCESS WITH WRONG FINAL VALUE',KIND,SHARD,c.id);
+  if(ARM==='branch'&&row.answer.success&&!row.correct&&!qualifiedKeyAnswer(row,row.typeRPC.raw))console.error('BRANCH SUCCESS WITH WRONG FINAL VALUE',KIND,SHARD,c.id);
  }catch(e){
   lost=e instanceof FixtureLost;row.valid=false;row.setupFailure=stage==='setup'||e instanceof SetupError||lost;row.fixtureLost=lost;row.failureStage=stage;row.problem=String(e.stack??e).slice(0,3000);
  }finally{
@@ -168,12 +184,15 @@ finally{
  meta.fixture={bound:fixture.fx.bound,bindings:fixture.fx.bindings,ready:fixture.fx.ready,foreignPolls:fixture.fx.foreignPolls,foreignAnswers:fixture.fx.foreignAnswers,expired:fixture.fx.expired};
  meta.defaultsAfter=snapshot('after',spawnSync);
  const summary=writeTables(OUT,compact);meta.branchWrongSuccesses=summary.wrongSuccesses.filter(r=>r.arm==='branch').length;
- meta.contractFailures=compact.filter(r=>r.recordKind==='cell'&&(r.privacyViolation||(ARM==='branch'&&r.valid&&((['unsupported','truncation'].includes(r.part)&&!r.answer.unconfirmed)||(r.part==='clean'&&(!r.correct||!r.answer.success))||(r.part==='substitution'&&!r.correct&&!r.answer.unconfirmed))))).map(r=>r.id);
+ meta.contractFailures=compact.filter(r=>r.recordKind==='cell'&&(r.privacyViolation||r.contractFailure||(ARM==='branch'&&r.valid&&((['unsupported','truncation'].includes(r.part)&&!r.answer.unconfirmed)||(r.part==='clean'&&(!r.correct||!r.answer.success))||(r.part==='substitution'&&!r.correct&&!r.answer.unconfirmed))))).map(r=>r.id);
  writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));progress(null);console.log('354ab coverage',JSON.stringify(meta.coverage));
  if(!meta.coverage.complete||meta.branchWrongSuccesses||meta.contractFailures.length)process.exitCode=1;
  fixture.close();
  try{
-  await stopChild(engine);await stopChild(side);if(browser){if(KIND==='safari')browser.kill();else await stopChild(browser)}
+  await stopChild(engine);await engineLogsClosed;await stopChild(side);if(browser){if(KIND==='safari')browser.kill();else await stopChild(browser)}
+  meta.secretLogLeaks=secretProbe?.logLeaks??0;if(meta.secretLogLeaks)process.exitCode=1;
+  writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));
   writeFileSync(join(OUT,'engine-stopped.json'),JSON.stringify({pid:engine.pid,exitCode:engine.exitCode,signalCode:engine.signalCode,at:Date.now()}));
  }catch(e){console.error(String(e));process.exitCode=1}
+ secretProbe?.close();
 }

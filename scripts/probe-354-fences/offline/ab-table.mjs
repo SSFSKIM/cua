@@ -8,16 +8,18 @@ import {abPlan,summarize} from '../ab-model.mjs';
 import {matrix} from '../matrix.mjs';
 function tsv(rows,columns){return [columns.join('\t'),...rows.map(r=>columns.map(k=>r[k]==null?'':typeof r[k]==='object'?JSON.stringify(r[k]):r[k]).join('\t'))].join('\n')+'\n'}
 export function writeTables(out,rows,collection={status:'incremental',complete:false}){
- mkdirSync(out,{recursive:true});const s=summarize(rows),privacy=rows.filter(r=>r.recordKind==='cell'&&r.part==='unsupported').map(r=>({id:r.id,arm:r.arm,browser:r.browser,editor:r.editor,variant:r.variant,valid:r.valid,unconfirmed:r.answer?.unconfirmed??false,textReadAttempts:r.audit?.textReadAttempts??null,rangeReadAttempts:r.audit?.rangeReadAttempts??null,privacyViolation:!!r.privacyViolation,findings:r.privacyFindings??[]}));
+ mkdirSync(out,{recursive:true});const s=summarize(rows),privacy=rows.filter(r=>r.recordKind==='cell'&&['unsupported','secret'].includes(r.part)).map(r=>({id:r.id,arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,variant:r.variant,valid:r.valid,unconfirmed:r.answer?.unconfirmed??false,textReadAttempts:r.audit?.textReadAttempts??null,rangeReadAttempts:r.audit?.rangeReadAttempts??null,privacyViolation:!!r.privacyViolation,findings:r.privacyFindings??[]}));
  writeFileSync(join(out,'summary.json'),JSON.stringify({...s,privacy,collection},null,2));
- writeFileSync(join(out,'rates.tsv'),tsv(s.groups,['arm','browser','editor','part','key','length','variant','attempted','valid','invalid','success','unconfirmed','otherErrors','wrong','wrongSuccess','falseUnconfirmed','privacyViolations']));
+ writeFileSync(join(out,'rates.tsv'),tsv(s.groups,['arm','browser','editor','part','key','length','variant','attempted','valid','invalid','success','unconfirmed','keysUnconfirmed','otherErrors','wrong','wrongSuccess','falseUnconfirmed','privacyViolations']));
  writeFileSync(join(out,'cost.tsv'),tsv(s.cost,['arm','browser','length','path','n','p50','p95','max']));
- writeFileSync(join(out,'privacy.tsv'),tsv(privacy,['id','arm','browser','editor','variant','valid','unconfirmed','textReadAttempts','rangeReadAttempts','privacyViolation','findings']));
- if(collection.arms)writeFileSync(join(out,'coverage.tsv'),tsv(collection.arms,['arm','browser','shard','reps','planned','attempted','valid','complete','missing','invalid','unexpected','problems']));
+ writeFileSync(join(out,'privacy.tsv'),tsv(privacy,['id','arm','browser','editor','part','variant','valid','unconfirmed','textReadAttempts','rangeReadAttempts','privacyViolation','findings']));
+ if(collection.arms)writeFileSync(join(out,'coverage.tsv'),tsv(collection.arms,['arm','browser','shard','reps','planned','attempted','valid','complete','missing','invalid','unexpected','secretLogLeaks','contractFailures','problems']));
  writeFileSync(join(out,'wrong-successes.jsonl'),s.wrongSuccesses.map(r=>JSON.stringify(r)).join('\n')+(s.wrongSuccesses.length?'\n':''));
  const paired=[];
  for(const m of s.cost.filter(c=>c.arm==='main')){const b=s.cost.find(c=>c.arm==='branch'&&c.browser===m.browser&&c.length===m.length&&c.path===m.path);if(b)paired.push({browser:m.browser,length:m.length,path:m.path,mainN:m.n,branchN:b.n,mainP50:m.p50,branchP50:b.p50,deltaP50:+(b.p50-m.p50).toFixed(2),mainP95:m.p95,branchP95:b.p95,deltaP95:+(b.p95-m.p95).toFixed(2)})}
  writeFileSync(join(out,'cost-ab.tsv'),tsv(paired,['browser','length','path','mainN','branchN','mainP50','branchP50','deltaP50','mainP95','branchP95','deltaP95']));
+ const diagnostics=rows.filter(r=>r.recordKind==='cell'&&r.expectedAnswer).map(r=>({arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,variant:r.variant,rep:r.rep,expectedAnswer:r.expectedAnswer,errorName:r.answer?.errorName??null,confirmed:r.readbackStatus?.confirmed??false,keysUnconfirmed:r.readbackStatus?.keysUnconfirmed??0,checkpoints:r.readbackStatus?.checkpoints??0,correct:r.correct,requestedExact:r.requestedExact,contractFailure:!!r.contractFailure,privacyViolation:!!r.privacyViolation,serviceError:r.secretService?.error?.code??null}));
+ writeFileSync(join(out,'diagnostics.tsv'),tsv(diagnostics,['arm','browser','editor','part','variant','rep','expectedAnswer','errorName','confirmed','keysUnconfirmed','checkpoints','correct','requestedExact','contractFailure','privacyViolation','serviceError']));
  return s;
 }
 function collectionCoverage(sets,only){
@@ -57,7 +59,7 @@ function collectionCoverage(sets,only){
    if(unexpected.length)issues.push('unexpected cells: '+unexpected.length);
    const coverage=config?.coverage;
    if(!coverage?.complete||coverage.aborted||coverage.invalid!==0||coverage.planned!==planned||coverage.valid!==valid||coverage.missing!==planned-valid||config?.planned!==planned)issues.push('per-arm config coverage incomplete or inconsistent');
-   arms.push({arm,browser,shard,reps,planned,attempted:rows.length,valid,missing,invalid,unexpected,complete:issues.length===0,problems:issues});
+   arms.push({arm,browser,shard,reps,planned,attempted:rows.length,valid,missing,invalid,unexpected,secretLogLeaks:config?.secretLogLeaks??null,contractFailures:config?.contractFailures??[],complete:issues.length===0,problems:issues});
   }
  }
  const complete=!problems.length&&arms.length>0&&arms.every(a=>a.complete);

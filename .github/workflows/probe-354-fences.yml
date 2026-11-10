@@ -34,7 +34,7 @@ jobs:
           SMOKE: ${{ github.event.inputs.smoke }}
         run: |
           node --input-type=module -e 'import {assertPins} from "./scripts/probe-354-fences/ab-model.mjs"; assertPins(process.env.MAIN_REF, process.env.BRANCH_REF); const n=Number(process.env.REPS); if(![1,20].includes(n)||!(["true","false"].includes(process.env.SMOKE))||((process.env.SMOKE==="true")!==(n===1)))throw Error("use 20/full or 1/smoke");'
-          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs
+          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/ab-extra.test.mjs scripts/probe-354-fences/ab-secret.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs
       - id: matrix
         env:
           ONLY: ${{ github.event.inputs.only }}
@@ -96,7 +96,7 @@ jobs:
             if [ "$arm" = main ]; then ref="$MAIN_REF"; else ref="$BRANCH_REF"; fi
             out="$RUNNER_TEMP/probe-354-ab/$JOB_ID/$arm"
             code=0
-            node scripts/probe-354-fences/ab.mjs --browser "$BROWSER" --shard "$SHARD" --arm "$arm" --head "$ref" --engine "$RUNNER_TEMP/$arm-build/release/cua-engine" --side "$RUNNER_TEMP/side354" --out "$out" --reps "$REPS" --smoke "$SMOKE" || code=$?
+            node scripts/probe-354-fences/ab.mjs --browser "$BROWSER" --shard "$SHARD" --arm "$arm" --head "$ref" --source "$RUNNER_TEMP/$arm-src" --engine "$RUNNER_TEMP/$arm-build/release/cua-engine" --side "$RUNNER_TEMP/side354" --out "$out" --reps "$REPS" --smoke "$SMOKE" || code=$?
             # A scored contract failure must not suppress the other head. An un-stopped engine must.
             if [ ! -f "$out/engine-stopped.json" ]; then exit 1; fi
             if [ "$code" != 0 ]; then result=1; fi

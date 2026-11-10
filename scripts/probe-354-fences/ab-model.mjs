@@ -1,5 +1,6 @@
 // Pure parts of the hosted A/B extension to the existing #354 kit. No shadow reader.
 import {sentence,quantiles} from './classify.mjs';
+import {extraPlan,readbackStatus,qualifiedKeyAnswer} from './ab-extra.mjs';
 export const BROWSERS=['safari','cft','firefox'],EDITORS=['textarea','input','contenteditable','compose'];
 export const KEYS=['cmd+a','cmd+z','cmd+v'];
 export const LONG_SEED='q'.repeat(10040)+' end marker';
@@ -20,11 +21,12 @@ export function abPlan({browser,editor,reps}){
   if(browser==='cft'&&editor==='contenteditable')for(const variant of ['spike','double-space'])add({part:'substitution',editor,key:'cmd+a',length:500,variant,rep});
   if(browser==='cft'&&editor==='textarea')add({part:'truncation',editor,key:null,length:30,seed:LONG_SEED,rep});
  }
+ out.push(...extraPlan({browser,editor,reps}));
  // Canvas, then concealed ordinary input, then passwords: secure event input can resist a foreground cover.
  if(editor==='textarea'){
   for(const [field,concealed] of [['canvas',false],['input',true],['password',false],['password',true]])for(let rep=1;rep<=reps;rep++)add({part:'unsupported',editor:field,key:null,length:30,rep,concealed,privateField:true,variant:concealed?'concealed':'spike'});
  }
- return out.map(c=>({...c,variant:c.variant??'spike',text:c.variant==='double-space'?sentence(c.length).replace('word is','word  is').slice(0,c.length):sentence(c.length)}));
+ return out.map(c=>({...c,variant:c.variant??'spike',text:c.text??(c.variant==='double-space'?sentence(c.length).replace('word is','word  is').slice(0,c.length):sentence(c.length))}));
 }
 export function answer(raw){
  const err=raw?.error,hasResult=raw!=null&&Object.hasOwn(raw,'result')&&raw.result!=null;
@@ -55,11 +57,11 @@ export function summarize(rows){
  for(const r of rows){
   if(r.recordKind!=='cell')continue;
   const d=dimensions(r),key=JSON.stringify(d);
-  if(!groups.has(key))groups.set(key,{...d,attempted:0,valid:0,invalid:0,success:0,unconfirmed:0,otherErrors:0,wrong:0,wrongSuccess:0,falseUnconfirmed:0,privacyViolations:0});
+  if(!groups.has(key))groups.set(key,{...d,attempted:0,valid:0,invalid:0,success:0,unconfirmed:0,keysUnconfirmed:0,otherErrors:0,wrong:0,wrongSuccess:0,falseUnconfirmed:0,privacyViolations:0});
   const g=groups.get(key);g.attempted++;if(r.privacyViolation)g.privacyViolations++;
   if(!r.valid){g.invalid++;continue}g.valid++;
-  const a=answer(r.typeRPC.raw);g.success+=+a.success;g.unconfirmed+=+a.unconfirmed;g.otherErrors+=+(!a.success&&!a.unconfirmed);g.wrong+=+(r.correct===false);
-  const bad=a.success&&r.correct===false;g.wrongSuccess+=+bad;
+  const a=answer(r.typeRPC.raw);g.keysUnconfirmed+=+(readbackStatus(r.typeRPC.raw).keysUnconfirmed>0);g.success+=+a.success;g.unconfirmed+=+a.unconfirmed;g.otherErrors+=+(!a.success&&!a.unconfirmed);g.wrong+=+(r.correct===false);
+  const bad=a.success&&r.correct===false&&!qualifiedKeyAnswer(r,r.typeRPC.raw);g.wrongSuccess+=+bad;
   if(bad)wrongSuccesses.push({id:r.id,arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,key:r.key,length:r.length,variant:r.variant??'spike',expected:r.expectedFinal,actual:r.final,typeRPC:r.typeRPC,engine:r.engine,kit:r.kit});
   if(r.part==='clean'){
    g.falseUnconfirmed+=+(a.unconfirmed&&r.correct===true);addCost(r,'clean-all');if(a.success)addCost(r,'clean-success');

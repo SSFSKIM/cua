@@ -196,9 +196,8 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   the background route always or unless its window is fully unobscured (`cover.rs`): the paste chord, keys
   (`press_key`, `key_down`, `key_up`, `type_characters`), clicks (a coordinate `click` into a window and an element's
   right click), scroll (at a point, the window's centre or an element), `drag` and `move`. GTK 4 ignores all of these
-  always; Gecko its clicks and scrolls unless unobscured, and its moves and drags unless every point they send is
-  unobscured; Chromium its drags unless every point and segment of the drag's path is unobscured (`cover.rs`'
-  `points_unobscured`); Qt its scrolls; xterm its keys (and has
+  always; Gecko its clicks, scrolls, moves and drags unless unobscured; Chromium its drags unless every point and
+  segment of the drag's path is unobscured (`cover.rs`' `points_unobscured`); Qt its scrolls; xterm its keys (and has
   no verified paste route). Element actions through AT-SPI are never listed. For a listed kind and condition, `--desktop shared`
   refuses with `<app> does not accept background input; use a dedicated desktop or activate the window first`
   before anything is sent; `--desktop dedicated` activates the window (`_NET_ACTIVE_WINDOW`, a raise, the input

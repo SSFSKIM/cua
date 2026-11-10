@@ -1,9 +1,8 @@
 //! Whether a window is fully unobscured (Design, Retention and the fixed waits): the whole window is on the screen
 //! and inside every ancestor, and no window above it (or above any of its ancestors) in `QueryTree`'s stacking
 //! order overlaps it. Overlap is judged by each window's outer rectangle, so a shaped or translucent window above
-//! counts as covering whatever its shape; any doubt counts as obscured. A drag's path and a move's point are judged
-//! the same way, point by point (M3.1, Chromium's drags; T15, Gecko's moves and drags): every point the request
-//! visits must be visible in the window.
+//! counts as covering whatever its shape; any doubt counts as obscured. A drag's path is judged the same way, point by
+//! point (M3.1, Chromium's drags): every point the drag visits must be visible in the window.
 
 /// A rectangle in root coordinates; `x2`, `y2` exclusive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,7 +109,7 @@ pub fn complete_offscreen(window: Rect, depth: u8, levels: &[Level]) -> bool {
 }
 
 /// Whether every point of `points` (root coordinates; a drag's every sample, so its vertices and the segments between
-/// them, `pointer.rs`' `drag_samples`, or a move's one point) lies in the window, inside every ancestor, and under no window above it or above
+/// them, `pointer.rs`' `drag_samples`) lies in the window, inside every ancestor, and under no window above it or above
 /// an ancestor, judged by outer rectangles as `fully_unobscured` judges the window. No levels or no points is doubt.
 pub fn points_unobscured(window: Rect, levels: &[Level], points: &[(i32, i32)]) -> bool {
     !levels.is_empty()

@@ -31,9 +31,8 @@
 // - `answer`: `capabilities`, its answer checked.
 //
 // Scenes: `device-gtk4` (the harness's GTK 4 scene, pages/gtk4-input.py: GTK 4 ignores synthetic input always),
-// `device-firefox` (Firefox on pages/input.html: Gecko ignores synthetic coordinate clicks and scrolls unless its window
-// is fully unobscured, and moves and drags unless their points are visible, T15; the cases put a window over its
-// bottom half or its top, or part of it off the screen, or leave it fully visible),
+// `device-firefox` (Firefox on pages/input.html: Gecko ignores synthetic coordinate clicks unless its window is fully
+// unobscured; the cases put a window over its bottom half, or part of it off the screen, or leave it fully visible),
 // `device-xterm` (xterm running the recorder: it ignores synthetic keys and takes clicks), `device-qt` (kate on a long
 // document: Qt ignores synthetic wheel events), `device-chrome` (Chrome on pages/input.html: Chromium takes a drag only
 // along a visible path), `device-chrome-dnd` (Chrome on pages/drag.html: its HTML5 drag and drop, cancelled in shared
@@ -412,12 +411,9 @@ export const DEVICE_OPS = {
     ...device({ device: 'foreground', condition: covered, read: page, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...PAD }], effect: grew('scroll') }),
     reset: pageHome,
   },
-  // its moves and drags judged at their points (T15): background where every point is visible, refused under the cover
-  firefox_move_overlap_shared: device({ device: 'background', route: 'background', condition: overlapped, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2), effect: grew('moves') }),
-  firefox_move_covered_point_shared: device({ device: 'refusal', condition: topCovered, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2) }),
+  firefox_move_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2) }),
   firefox_move_covered_dedicated: device({ device: 'foreground', condition: covered, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2), effect: grew('moves') }),
-  firefox_drag_overlap_shared: device({ device: 'background', route: 'background', condition: overlapped, read: page, request: padDrag, effect: rose('drags') }),
-  firefox_drag_covered_path_shared: device({ device: 'refusal', condition: topCovered, read: page, request: padDrag }),
+  firefox_drag_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: padDrag }),
   firefox_drag_covered_dedicated: device({ device: 'foreground', condition: covered, read: page, request: padDrag, effect: rose('drags') }),
   firefox_element_click_covered: device({ device: 'background', condition: covered, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.elements.press }], effect: rose('clicks') }),
   // xterm (`device-xterm`): keys refused or foreground; a click on the background route (a mouse report arrives)
@@ -488,7 +484,7 @@ for (const op of Object.values(DEVICE_OPS)) {
 export const DEVICE_SCENE_OPS = {
   'device-gtk4': ['gtk4_click_shared', 'gtk4_click_dedicated', 'gtk4_key_shared', 'gtk4_key_dedicated', 'gtk4_key_down_shared', 'gtk4_right_click_shared', 'gtk4_element_click', 'gtk4_scroll_shared', 'gtk4_scroll_dedicated', 'gtk4_move_shared', 'gtk4_move_dedicated', 'gtk4_drag_shared', 'gtk4_drag_dedicated'],
   // the scroll last: its series ends with the page put back at its top (`reset`)
-  'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered', 'firefox_move_overlap_shared', 'firefox_move_covered_point_shared', 'firefox_move_covered_dedicated', 'firefox_drag_overlap_shared', 'firefox_drag_covered_path_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_overlap_shared', 'firefox_scroll_covered_dedicated'],
+  'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered', 'firefox_move_overlap_shared', 'firefox_move_covered_dedicated', 'firefox_drag_overlap_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_overlap_shared', 'firefox_scroll_covered_dedicated'],
   'device-chrome': ['chrome_drag_visible_path_shared', 'chrome_drag_covered_path_shared', 'chrome_drag_covered_dedicated'],
   'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_short_covered_dedicated', 'chrome_dnd_obscured_in_front_shared', 'chrome_dnd_obscured_in_front_late_shared', 'chrome_dnd_late_take_shared', 'chrome_dnd_short_pointer_outside_shared', 'chrome_dnd_short_pointer_outside_dedicated', 'chrome_select_nudged_shared'],
   'device-qt': ['qt_scroll_shared', 'qt_scroll_dedicated'],

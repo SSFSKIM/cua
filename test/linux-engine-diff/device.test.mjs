@@ -25,7 +25,7 @@ test('a refused request is audited for nothing sent: a SendEvent of any kind, or
 
 test("Acceptance 8's cases: each kind and condition, refused in shared mode, foreground in dedicated, the rest background", () => {
   const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'device-chrome', 'device-chrome-dnd', 'gnome-text-editor'], Object.entries(DEVICE_SCENE_OPS).filter(([scene]) => !scene.startsWith('minimized') && !scene.startsWith('identity')).flatMap(([, ops]) => ops).filter((op) => op !== 'capabilities'));
-  assert.equal(plan.length, 48);
+  assert.equal(plan.length, 46);
   for (const { op, scene } of plan) {
     const def = OPS[op];
     assert.ok(SCENE_OPS[scene].includes(op));
@@ -41,12 +41,6 @@ test("Acceptance 8's cases: each kind and condition, refused in shared mode, for
   }
   assert.equal(routeOf('firefox_click_visible_shared', 'device-firefox'), 'background');
   assert.equal(routeOf('chrome_drag_visible_path_shared', 'device-chrome'), 'background', 'a visible path in a partly covered window');
-  // Gecko's moves and drags at their points (T15): background where visible in a partly covered window, refused under the cover
-  for (const op of ['firefox_move_overlap_shared', 'firefox_drag_overlap_shared']) {
-    assert.equal(OPS[op].device, 'background', op);
-    assert.equal(routeOf(op, 'device-firefox'), 'background', op);
-  }
-  for (const op of ['firefox_move_covered_point_shared', 'firefox_drag_covered_path_shared', 'firefox_scroll_overlap_shared', 'firefox_click_overlap_shared']) assert.equal(OPS[op].device, 'refusal', op);
   assert.equal(routeOf('gtk4_element_click', 'device-gtk4'), null, 'an element action records no route');
   assert.equal(routeOf('chrome_dnd_in_front_shared', 'device-chrome-dnd'), 'background', 'Chrome already in front');
   assert.equal(routeOf('chrome_dnd_short_in_front_shared', 'device-chrome-dnd'), 'background', 'the short drop, in front');

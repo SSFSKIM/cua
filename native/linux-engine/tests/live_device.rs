@@ -95,15 +95,8 @@ impl Probe {
 
     /// The input events received since the last call, waiting `SETTLE` for any still on their way.
     fn inputs(&self) -> Vec<Input> {
-        self.received().0
-    }
-
-    /// [`Probe::inputs`], and how many pointer motions came through `SendEvent` (the background route sends them to
-    /// the window whatever it selects).
-    fn received(&self) -> (Vec<Input>, usize) {
         sleep(SETTLE);
         let mut seen = Vec::new();
-        let mut motions = 0;
         while let Some(event) = self.conn.poll_for_event().unwrap() {
             let sent = event.sent_event();
             seen.push(match event {
@@ -111,14 +104,10 @@ impl Probe {
                 Event::KeyRelease(_) => Input::KeyRelease { sent },
                 Event::ButtonPress(e) => Input::ButtonPress { button: e.detail, sent },
                 Event::ButtonRelease(e) => Input::ButtonRelease { button: e.detail, sent },
-                Event::MotionNotify(_) if sent => {
-                    motions += 1;
-                    continue;
-                }
                 _ => continue,
             });
         }
-        (seen, motions)
+        seen
     }
 
     /// Whether the X input focus is this window.
@@ -327,14 +316,16 @@ fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_an
     let keyed = firefox.inputs();
     assert_eq!(keyed.len(), 2, "keys are not listed for Gecko: {keyed:?}");
     assert!(sent(&keyed));
-    // its scrolls follow the clicks' rule (its moves and drags are judged at their points: the next test)
-    assert_eq!(
-        shared.request(
+    // its scrolls and pointer moves follow the clicks' rule
+    for (command, input) in [
+        (
             "scroll",
             json!({"window": firefox.target(), "x": 40, "y": 40, "direction": "down", "pixels": 100}),
         ),
-        Err(refusal.clone()),
-    );
+        ("move", json!({"window": firefox.target(), "x": 60, "y": 60})),
+    ] {
+        assert_eq!(shared.request(command, input), Err(refusal.clone()), "{command}");
+    }
     assert_eq!(firefox.inputs(), vec![], "nothing was sent");
     drop(shared);
 
@@ -373,55 +364,6 @@ fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_an
             Input::ButtonRelease { button: 5, sent: false }
         ]
     );
-}
-
-/// Gecko (class `firefox`) takes a background move or drag at points visible in its window (T15): with another window
-/// over part of it, a move to a visible point and a drag along a visible path take the background route in shared
-/// mode, while a move to a covered point and a drag whose path runs under the cover are refused with nothing sent, as
-/// its scroll and its click still are wherever the point is.
-#[test]
-fn gecko_takes_a_background_move_or_drag_only_at_visible_points() {
-    let firefox = Probe::open("firefox", (0, 0, 320, 200));
-    let _cover = Probe::open("Cover", (200, 120, 200, 200));
-    let mut shared = Engine::start();
-    let refusal = format!("{}{SENTENCE}", app_of(&mut shared, firefox.id));
-    shared
-        .request("move", json!({"window": firefox.target(), "x": 60, "y": 60}))
-        .unwrap();
-    let (inputs, motions) = firefox.received();
-    assert_eq!((inputs, motions > 0), (vec![], true), "a visible point: a motion, sent");
-    shared
-        .request(
-            "drag",
-            json!({"window": firefox.target(), "path": [{"x": 20, "y": 20}, {"x": 180, "y": 100}]}),
-        )
-        .unwrap();
-    let dragged = firefox.inputs();
-    assert_eq!(dragged.len(), 2, "a press and a release: {dragged:?}");
-    assert!(sent(&dragged), "the background route: {dragged:?}");
-    for (command, input) in [
-        ("move", json!({"window": firefox.target(), "x": 300, "y": 180})),
-        (
-            "drag",
-            json!({"window": firefox.target(), "path": [{"x": 20, "y": 20}, {"x": 300, "y": 180}]}),
-        ),
-        (
-            "drag",
-            json!({"window": firefox.target(), "path": [{"x": 180, "y": 100}, {"x": 250, "y": 150}, {"x": 20, "y": 100}]}),
-        ),
-        (
-            "scroll",
-            json!({"window": firefox.target(), "x": 40, "y": 40, "direction": "down", "pixels": 100}),
-        ),
-        ("click", json!({"window": firefox.target(), "x": 40, "y": 40})),
-    ] {
-        assert_eq!(
-            shared.request(command, input.clone()),
-            Err(refusal.clone()),
-            "{command} {input}"
-        );
-    }
-    assert_eq!(firefox.received(), (vec![], 0), "nothing was sent");
 }
 
 /// Chromium (class `Google-chrome`) takes a background drag only along a path that is visible in its window: with

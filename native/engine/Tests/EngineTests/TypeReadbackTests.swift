@@ -463,22 +463,44 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(meta)["confirmed"] as? Bool, true)
   }
 
-  // MARK: Keys in the text
+  // MARK: Keys in the text (ruling 1ea561bc:589, call 2)
 
-  func testATrailingReturnIsPostedOnceTheTextBeforeItReadsBack() {
+  /// In a multi-line field a Return is text: "\n" in the expected value, read back like any character, no checkpoint.
+  func testAReturnInAMultiLineFieldIsReadBackAsText() {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
-    field.role = "AXTextField"
-    field.returnInserts = false  // a search field: Return submits
-    let (error, meta) = type("query\n", into: FakeApp(field))
+    let (error, meta) = type("one\r\ntwo\nthree\n", into: FakeApp(field))
     XCTAssertNil(error)
+    XCTAssertEqual(field.value, "one\ntwo\nthree\n", "a CR LF is one Return, one newline")
+    XCTAssertNil(record(meta)["checkpoints"])
+    XCTAssertNil(record(meta)["keysUnconfirmed"], "a Return that is text is confirmed with it")
     XCTAssertEqual(record(meta)["confirmed"] as? Bool, true)
-    XCTAssertEqual(record(meta)["checkpoints"] as? Int, 1)
-    XCTAssertEqual(record(meta)["keysUnconfirmed"] as? Int, 1, "what the Return did is not confirmed")
-    XCTAssertEqual(meta.entered, 6)
+
+    // A text area whose Return did nothing: the newline is missing, so it is a mismatch, not a success.
+    let dropped = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    dropped.returnInserts = false
+    let (missing, missingMeta) = type("line\n", into: FakeApp(dropped))
+    XCTAssertEqual(missing?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(missingMeta)["reason"] as? String, "valueMismatch")
+  }
+
+  /// A Return in a single-line field can submit it: the text before it is confirmed first, the Return not.
+  func testATrailingReturnInASingleLineFieldIsPostedOnceTheTextBeforeItReadsBack() {
+    for role in ["AXTextField", "AXComboBox"] {
+      let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+      field.role = role
+      field.returnInserts = false  // a search field: Return submits
+      let (error, meta) = type("query\n", into: FakeApp(field))
+      XCTAssertNil(error, role)
+      XCTAssertEqual(record(meta)["confirmed"] as? Bool, true, role)
+      XCTAssertEqual(record(meta)["checkpoints"] as? Int, 1, role)
+      XCTAssertEqual(record(meta)["keysUnconfirmed"] as? Int, 1, "\(role): what the Return did is not confirmed")
+      XCTAssertEqual(meta.entered, 6, role)
+    }
   }
 
   func testAWrongTextIsNeverSubmitted() {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.role = "AXTextField"
     field.transform = { $0 == "q" ? "Q" : $0 }  // autocapitalisation
     var returns = 0
     var meta = meta()
@@ -494,32 +516,66 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(meta)["stoppedBeforeKey"] as? Bool, true)
   }
 
-  func testLinesInATextAreaAreCheckedAtEachReturnAndAtTheEnd() {
-    let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
-    let (error, meta) = type("one\r\ntwo\nthree", into: FakeApp(field))
-    XCTAssertNil(error)
-    XCTAssertEqual(field.value, "one\ntwo\nthree", "a CR LF is one Return, one newline")
-    XCTAssertEqual(record(meta)["checkpoints"] as? Int, 2)
-    XCTAssertNil(record(meta)["keysUnconfirmed"])
-    XCTAssertEqual(record(meta)["confirmed"] as? Bool, true)
-  }
-
-  func testTextAfterAReturnASingleLineFieldDroppedIsUnconfirmed() {
+  /// Text after a Return in a single-line field is expected in the same field without it.
+  func testTextAfterAReturnInASingleLineFieldIsExpectedWithoutIt() {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     field.role = "AXTextField"
     field.returnInserts = false
     let (error, meta) = type("a\nb", into: FakeApp(field))
-    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
-    XCTAssertEqual(record(meta)["reason"] as? String, "valueMismatch")
-    XCTAssertNil(record(meta)["stoppedBeforeKey"], "the final poll's mismatch, after every unit")
+    XCTAssertNil(error)
+    XCTAssertEqual(record(meta)["checkpoints"] as? Int, 1)
+    XCTAssertEqual(record(meta)["keysUnconfirmed"] as? Int, 1)
+  }
+
+  /// A Tab can leave any field: checked before, not confirmed itself, and focus that moved with it answers fieldChanged.
+  func testATabIsAKeyThatCanLeaveAnyField() {
+    let area = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    let (error, meta) = type("name\t", into: FakeApp(area))
+    XCTAssertNil(error)
+    XCTAssertEqual(record(meta)["checkpoints"] as? Int, 1, "a Tab is a checkpoint even in a text area")
+    XCTAssertEqual(record(meta)["keysUnconfirmed"] as? Int, 1)
+
+    let first = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    first.role = "AXTextField"
+    let next = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    next.role = "AXTextField"
+    let app = FakeApp(first)
+    var moved = self.meta()
+    XCTAssertThrowsError(try keyTextReadBack(units("ann\tlee"), concealed: false, reads: app.reads, checkSource: { _, _ in },
+                                             checkIntervention: {}, post: { event in
+                                               guard event.kind == .down, let text = event.text else { return true }
+                                               if text == [0x09] { app.focused = next } else { app.focused?.deliver(text) }
+                                               return true
+                                             }, pause: {}, meta: &moved))
+    XCTAssertEqual(first.value, "ann")
+    XCTAssertEqual(next.value, "lee")
+    XCTAssertEqual(record(moved)["reason"] as? String, "fieldChanged", "the text after the Tab went to another field")
+    XCTAssertNil(record(moved)["expectedLength"])
+  }
+
+  /// A Return where the cells show it is not read back counts as a key that can leave; none is listed yet.
+  func testAReturnIsTextOnlyInAMultiLineFieldTheCellsHaveNotExcluded() {
+    XCTAssertTrue(readbackReturnIsText(role: "AXTextArea", subrole: .absent))
+    XCTAssertTrue(readbackReturnIsText(role: "AXTextArea", subrole: .value("AXApplicationGroup")), "Firefox's contenteditable")
+    XCTAssertFalse(readbackReturnIsText(role: "AXTextArea", subrole: .value("AXApplicationGroup"), unread: ["AXApplicationGroup"]))
+    XCTAssertFalse(readbackReturnIsText(role: "AXTextField", subrole: .absent))
+    XCTAssertFalse(readbackReturnIsText(role: "AXTextField", subrole: .value("AXSearchField")))
+    XCTAssertFalse(readbackReturnIsText(role: "AXComboBox", subrole: .absent))
+    XCTAssertTrue(typeReadbackReturnUnreadSubroles.isEmpty)
   }
 
   func testOnlyKeysAndEmptyText() {
     let field = FakeField(value: "x", range: NSRange(location: 1, length: 0))
-    let (error, meta) = type("\n", into: FakeApp(field))
+    let (error, meta) = type("\t", into: FakeApp(field))
     XCTAssertNil(error, "nothing typed to confirm; the key is not confirmed")
     XCTAssertEqual(record(meta)["keysUnconfirmed"] as? Int, 1)
     XCTAssertEqual(field.calls.filter { $0 == "value" }.count, 1, "only the snapshot's read")
+
+    let area = FakeField(value: "x", range: NSRange(location: 1, length: 0))
+    let (newline, newlineMeta) = type("\n", into: FakeApp(area))
+    XCTAssertNil(newline)
+    XCTAssertEqual(area.value, "x\n")
+    XCTAssertEqual(record(newlineMeta)["reads"] as? Int, 1, "a lone Return in a text area is read back")
 
     let empty = FakeField(value: "x", range: NSRange(location: 1, length: 0))
     let (none, emptyMeta) = type("", into: FakeApp(empty))
@@ -538,6 +594,7 @@ final class TypeReadbackTests: XCTestCase {
   /// The checkpoint's wait comes before the intervention guard, so a user event during it stops the key.
   func testTheGuardBeforeAKeyRunsAfterTheCheckpointsWait() throws {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    field.role = "AXTextField"
     field.lagReads = 10
     let app = FakeApp(field)
     var guardedAt: [Double] = []

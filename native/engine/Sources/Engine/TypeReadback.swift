@@ -26,11 +26,16 @@ import Foundation
 //   checkpoint before a key.
 // - A value at Chromium's AXValue cap (`typeReadbackValueCap`, #350) may be cut, so it never compares: unconfirmed, with
 //   no values. So is an expected value at the cap, which a whole field and a cut one would read alike.
-// - A Return or Tab in the text (any keyed control character) is a checkpoint, cua's own: the text typed since the last
-//   checkpoint must read back before the key is posted, so a Return never submits text that went in wrong, and a key
-//   that ends the text is not confirmed (its effect, such as a form's submission, is not text; `keysUnconfirmed`). Text
-//   after a key is expected with the key's character in it ("\n" for a Return), as a text area holds it.
-// The paste route (Paste.swift) keeps #187's effect check and is not read back here.
+// - Keys in the text (the design session's ruling 1ea561bc:589, call 2). In a multi-line field (an AXTextArea, which is
+//   how a text area and a contenteditable read, unless its subrole is one the cells show does not read a Return back,
+//   `typeReadbackReturnUnreadSubroles`) a Return is text: "\n" in the expected value, read back like any character. A
+//   key that can leave the field or submit it (a Return in a single-line field, a Tab anywhere, any other keyed control
+//   character) is a checkpoint: the text typed since the last one must read back before the key is posted, so it never
+//   submits text that went in wrong; the key adds nothing to the expected value, and every one posted is counted
+//   `keysUnconfirmed`, its effect not confirmed. Text after it is expected in the same field, so focus that moved with a
+//   Tab answers `fieldChanged`.
+// The paste route (Paste.swift, a non-Latin input source) keeps #187's effect check and is not read back here; its
+// read-back is #361.
 
 /// The poll's budget after the last event (or before a checkpoint's key), its interval, and the messaging timeout of
 /// every read: the spike's soft 1000 ms, 5 ms polls and 100 ms AX timeout, whose confirmed reads took p50 26 to 34 ms.
@@ -110,7 +115,18 @@ func readbackZero(_ buffer: inout [UInt16]) {
   }
 }
 
-/// A typed unit whose key is a control character (a Return, a Tab): its effect may not be text, so it is a checkpoint.
+/// The subroles of an AXTextArea whose Return the hosted cells show is not read back as "\n": there a Return counts as a
+/// key that can leave or submit. None measured so far.
+let typeReadbackReturnUnreadSubroles: Set<String> = []
+
+/// Whether a field takes a Return as text: an AXTextArea whose subrole is not one the cells exclude.
+func readbackReturnIsText(role: String, subrole: ReadbackSubrole, unread: Set<String> = typeReadbackReturnUnreadSubroles) -> Bool {
+  guard role == kAXTextAreaRole else { return false }
+  if case .value(let found) = subrole { return !unread.contains(found) }
+  return true
+}
+
+/// A typed unit whose key is a control character (a Return, a Tab): its effect may not be text.
 func readbackKey(_ unit: TypedUnit) -> Bool {
   unit.press != nil && unit.text.count == 1 && (unit.text[0] < 0x20 || unit.text[0] == 0x7F)
 }
@@ -178,18 +194,19 @@ func liveReadbackSubrole(_ field: AXUIElement) -> ReadbackSubrole {
 /// The snapshot before the first event: the field and what may be expected of it, or why nothing can be.
 enum ReadbackPlan<Element> {
   case refused(TypeReadbackReason)
-  case expect(field: Element, role: String, before: String, range: NSRange)
+  case expect(field: Element, role: String, before: String, range: NSRange, returnIsText: Bool)
 }
 
 func readbackSnapshot<Element>(reads: ReadbackReads<Element>) -> ReadbackPlan<Element> {
   guard let field = reads.focused() else { return .refused(.noFocusedElement) }
   guard let role = reads.role(field) else { return .refused(.roleUnreadable) }
-  if readbackSecure(role: role, subrole: reads.subrole(field)) { return .refused(.secure) }
+  let subrole = reads.subrole(field)
+  if readbackSecure(role: role, subrole: subrole) { return .refused(.secure) }
   guard typeReadbackTextRoles.contains(role) else { return .refused(.notTextField) }
   guard let before = reads.value(field) else { return .refused(.valueUnreadable) }
   if readbackMayBeTruncated(before) { return .refused(.possiblyTruncated) }
   guard let range = reads.range(field), readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
-  return .expect(field: field, role: role, before: before, range: range)
+  return .expect(field: field, role: role, before: before, range: range, returnIsText: readbackReturnIsText(role: role, subrole: subrole))
 }
 
 /// What one value read answered against the expected value: unreadable, equal, or different (possibly cut at the
@@ -307,7 +324,7 @@ final class TypeReadback<Element> {
   /// Before unit `index` is posted: a key after text not yet confirmed waits for that text to read back.
   func beforeUnit(_ index: Int) throws {
     guard case .expect = plan else { return }
-    if readbackKey(units[index]) {
+    if leaves(units[index]) {
       if unchecked {
         record.checkpoints += 1
         try confirm(through: index, beforeKey: true)
@@ -321,18 +338,24 @@ final class TypeReadback<Element> {
   /// After the last event: success, or `typeUnconfirmed`.
   func finish() throws {
     guard case .expect = plan else { throw typeUnconfirmed(record.reason ?? .valueUnreadable) }
-    if unchecked {
-      try confirm(through: units.count, beforeKey: false)
-    } else {
-      record.keysUnconfirmed = units.reversed().prefix(while: readbackKey).count
-    }
+    if unchecked { try confirm(through: units.count, beforeKey: false) }
+    record.keysUnconfirmed = units.filter(leaves).count
     record.confirmed = true
     record.reason = nil
   }
 
+  /// Whether a unit's key can leave the field or submit it: any keyed control character but a Return in a field that
+  /// takes it as text.
+  private func leaves(_ unit: TypedUnit) -> Bool {
+    guard readbackKey(unit) else { return false }
+    if unit.text == [0x0D], case .expect(_, _, _, _, true) = plan { return false }
+    return true
+  }
+
   /// Polls for the snapshot with its selection replaced by units `0..<end`, then checks the field is still the focus.
   private func confirm(through end: Int, beforeKey: Bool) throws {
-    guard case .expect(let field, let role, let before, let range) = plan else { return }
+    guard case .expect(let field, let role, let before, let range, _) = plan else { return }
+    let typedUnits = units[0..<end].filter { !leaves($0) }  // a key that can leave adds nothing to the field
     let poll: ReadbackPoll
     var excerpt: (() -> ReadbackExcerpt)?  // a plain mismatch's, made only once the field is known to be the same
     let started = reads.now()
@@ -347,7 +370,7 @@ final class TypeReadback<Element> {
       let value = Array(before.utf16)
       guard range.location >= 0, range.length >= 0, range.location + range.length <= value.count else { throw unconfirmed(.rangeUnreadable, beforeKey) }
       var expected = Array(value[0..<range.location])
-      for unit in units[0..<end] { expected += unit.text == [0x0D] ? [0x0A] : unit.text }
+      for unit in typedUnits { expected += unit.text == [0x0D] ? [0x0A] : unit.text }
       expected += value[(range.location + range.length)...]
       defer { readbackZero(&expected) }
       if readbackMayBeTruncated(units: expected) { throw unconfirmed(.possiblyTruncated, beforeKey) }
@@ -361,7 +384,7 @@ final class TypeReadback<Element> {
         return unchanged && !consumed(element, inserted: inserted) ? .equalUnconsumed : .equal
       }
     } else {
-      let typed = units[0..<end].map(readbackInsertion).joined()
+      let typed = typedUnits.map(readbackInsertion).joined()
       guard let expected = readbackExpected(before: before, range: range, typed: typed) else { throw unconfirmed(.rangeUnreadable, beforeKey) }
       if readbackMayBeTruncated(expected) { throw unconfirmed(.possiblyTruncated, beforeKey) }
       let unchanged = expected.utf16.elementsEqual(before.utf16)

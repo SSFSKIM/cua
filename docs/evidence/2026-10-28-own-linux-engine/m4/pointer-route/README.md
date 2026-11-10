@@ -135,3 +135,83 @@ The load at `sitting-0/`'s release is the sitting's own. It rose with the run fr
     covered and the pointer under the cover, the move off the toolbar button leaves its hover (5 of 10, the odd runs,
     0 pixels changed; the pointer at (630, 595) on root child 6001260, the front window 35651598, at every request).
     The design session takes it as a ticket of its own.
+
+## The build (258f52b0, ddee5fd5) and its proof (`build-proof/`, private displays)
+
+The engine:
+
+- Gecko's clicks, scrolls, moves and drags are listed `unless_pointer_within` (families.rs).
+  - They take the background route only while QueryPointer finds the real pointer in the window (the server's child
+    chain from the window's parent), so a pointer under a window over it counts as outside.
+  - Otherwise shared mode refuses them with the Device mode sentence and sends nothing, and dedicated mode takes the
+    foreground route.
+  - The window rule they replace (`unless_unobscured`) is gone: no family keeps it.
+- Every such request on the background route is watched (`engine/within.rs`, on the press watch's connection).
+  - The watch begins, then the pointer is read a second time; a pointer already gone routes the request afresh.
+  - The watch is read a round trip after the request's events went out, and the pointer is read again.
+  - A request the pointer left during (a `LeaveNotify` of the window to no inferior), or ended outside, answers
+    `<app> may not have taken the <request>: the desktop pointer left its window during the <request>, …`, never
+    success.
+- `--ignore-pointer` (measurement only) leaves the pointer unjudged, for the manifest's `cua:any-pointer` lane.
+
+Each step below ran under the host lock, at most about 45 minutes (manifest-b ran 53), on its own private display.
+The harness was 55e66b78's export (manifest-a's first run used ddee5fd5's). The candidate is the musl build of
+ddee5fd5 made the release workflow's way: `cua-engine 0.3.0 (ddee5fd5ae5a)`. 55e66b78 changes only the harness.
+
+- **The manifest** (`--experiment predicates`, T19's), 28 + 4 cases, every one PASS:
+  - Allowed with the pointer in, visible or half covered: cua took 30 of 30 of every kind (the pinned build 30 of 30).
+  - Refused with the pointer under the cover or outside, in every occlusion: cua refused 10 of 10. The pinned build
+    took 0 of 10, all answered ok. cua's own events with the pointer unjudged (`cua:any-pointer`) took 0 of 10, so
+    the refusal keeps nothing Gecko would take.
+  - Leave (the pointer moved out while the request runs), 20 runs each. None answered ok with no effect; the pinned
+    build answered ok every time and took 0 of 20.
+
+    | kind | took (ok) | answered that the pointer left | refused before sending |
+    |---|---:|---:|---:|
+    | click | 0 | 20 | 0 |
+    | scroll | 0 | 20 | 0 |
+    | move | 8 | 2 | 10 |
+    | select | 0 | 20 | 0 |
+
+  - Every other run's park held and the witness stayed unchanged; the leave runs' witness allowed only the harness's
+    own pointer move.
+- **Superseded:** `manifest-a/`'s first run's leave cases measured nothing. scenes.mjs's visible arrangement only raises
+  the scene window, and after its covered cases the front window stayed over the whole screen, so the park missed (80
+  of 80; the requests were refused honestly). 55e66b78 puts the front window back first, and `leave-a/` is the click
+  and scroll leave cases rerun on it. `manifest-a/` itself is rerun because its lock's acquire load (1.48) was more
+  than 1.0 above the idle; see `manifest-a-rerun/`.
+- **The device cases** (`device/`, device-firefox's 16 and device-chrome's 3, three blocks, cua alone): every case PASS
+  with the witness and the audit clean.
+  - Refused in shared mode with the pointer out or under the cover: click, right click, scroll, move and drag.
+  - The background route with the pointer in, half covered: click, scroll, move and drag, with their effects.
+  - The foreground route in dedicated mode.
+  - The element click on a covered window.
+- **The controls** (`controls/`, the sitting's Chrome and Electron cells on the build): every cell identical to the
+  dry run and to the `:0` sitting.
+- **The engine's tests:**
+  - Fails on 258f52b0: `src/engine/within_faults.rs` moves the real pointer out (and once back in) at one exact step,
+    after a click's, scroll's and move's events went out. Built on 258f52b0 with only its hook's variant
+    (`scripts/red-on.sh`), the hook never runs there, since nothing reads the pointer after sending.
+  - `tests/live_device.rs` covers:
+    - the pointer in, under, out, and in with a cover;
+    - keys still going;
+    - `--ignore-pointer`;
+    - the dedicated foreground route;
+    - a drag the pointer leaves, staying out or coming back.
+
+| run | lock acquire | lock release |
+|---|---|---|
+| `build-proof/manifest-a/` (first run) | 2026-11-10T08:22:48Z, load 1.48 | 2026-11-10T09:01:12Z, status 0, load 0.46 |
+| `build-proof/leave-a/` | 2026-11-10T09:30:00Z, load 0.35 | 2026-11-10T09:37:06Z, status 0, load 0.29 |
+| `build-proof/manifest-b/` | 2026-11-10T09:49:15Z, load 0.58 | 2026-11-10T10:42:42Z, status 0, load 0.14 |
+| `build-proof/device/` | 2026-11-10T10:51:12Z, load 0.62 | 2026-11-10T11:07:11Z, status 0, load 0.46 |
+| `build-proof/controls/` | 2026-11-10T11:19:43Z, load 0.95 | 2026-11-10T12:03:33Z, status 0, load 0.69 |
+| `build-proof/manifest-a-rerun/` | 2026-11-10T12:11:07Z, load 0.17 | 2026-11-10T13:02:26Z, status 0, load 0.40 |
+
+`manifest-a-rerun/` (55e66b78's harness, the click and scroll cases with their leave cases) matched the first run in
+every non-leave case. Its leave cases matched `leave-a/`: 20 of 20 answered that the pointer left. Every one of its 620
+runs found the park held and the witness unchanged.
+
+The first proof, on 258f52b0, was stopped at 08:03:56Z, 15 minutes into its manifest. The design session had asked for
+the watch on every pointer kind, which changes every Gecko request's path, so its bytes were no longer the final ones.
+It is not kept.

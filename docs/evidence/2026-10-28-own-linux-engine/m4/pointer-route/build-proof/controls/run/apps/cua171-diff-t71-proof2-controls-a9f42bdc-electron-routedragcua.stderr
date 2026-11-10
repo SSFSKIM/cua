@@ -1,0 +1,7 @@
+[1123709:1110/040324.158714:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+[1123709:1110/040324.163842:ERROR:content/browser/network_service_instance_impl.cc:650] Network service crashed or was terminated, restarting service.
+[1123709:1110/040324.170865:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+[1123709:1110/040324.172719:ERROR:content/browser/gpu/gpu_process_host.cc:1029] GPU process launch failed: error_code=1002
+[1123709:1110/040324.173785:ERROR:content/browser/gpu/gpu_process_host.cc:1029] GPU process launch failed: error_code=1002
+[1123709:1110/040324.174575:ERROR:content/browser/gpu/gpu_process_host.cc:1029] GPU process launch failed: error_code=1002
+[1123709:1110/040324.174600:FATAL:content/browser/gpu/gpu_data_manager_impl_private.cc:417] GPU process isn't usable. Goodbye.

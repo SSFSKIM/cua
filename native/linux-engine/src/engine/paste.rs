@@ -309,11 +309,13 @@ impl Engine {
                         let focused = copy::focused(bus, &associated.frame)?.ok_or_else(|| {
                             anyhow!("window {window} has no focused element to paste into; nothing was sent")
                         })?;
+                        // the focused element is never clicked (step 2), so it needs no point and no VCL correction
                         let element = Element {
                             info: info.clone(),
                             target: focused,
                             ancestors: Vec::new(),
                             associated: associated.clone(),
+                            libreoffice: false,
                         };
                         (element, false)
                     }

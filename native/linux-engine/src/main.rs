@@ -37,6 +37,7 @@ mod shm;
 mod stray;
 mod table;
 mod tree;
+mod vcl;
 mod wire;
 mod x11;
 

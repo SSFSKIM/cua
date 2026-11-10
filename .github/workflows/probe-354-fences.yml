@@ -1,0 +1,104 @@
+name: probe-354-fences
+# #354's fence follow-up spike: hosted only, one engine per runner, runner-owned apps only. The pinned engine is
+# instrumented in a scratch worktree on the runner (scripts/probe-354-fences/patch.mjs); the checkout is never patched.
+on:
+  push:
+    branches: ['probe/354-measure']
+    paths:
+      - 'scripts/probe-354-fences/**'
+      - '!scripts/probe-354-fences/offline/**'
+      - '.github/workflows/probe-354-fences.yml'
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: 'Repetitions per cell (20 for measurement; 1 for smoke)'
+        default: '20'
+      smoke:
+        description: 'Label this as smoke evidence (also set reps to 1)'
+        default: 'false'
+      only:
+        description: 'Comma-separated shard ids (safari-textarea, cft-compose, firefox-input, ...) or all'
+        default: 'all'
+      lanes:
+        description: 'Comma-separated lanes: fence, readback, unreadable (unreadable runs in textarea shards)'
+        default: 'fence,readback,unreadable'
+permissions:
+  contents: read
+env:
+  ENGINE_REF: '3c669314e0a5f35aedf20f9b792604fc09628c45'
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Pure checks
+        run: node --test scripts/probe-354-fences/kit.test.mjs
+      - id: matrix
+        env:
+          ONLY: ${{ github.event.inputs.only || 'safari-textarea,cft-textarea,firefox-textarea' }}
+        run: node scripts/probe-354-fences/matrix.mjs "$ONLY" >> "$GITHUB_OUTPUT"
+  measure:
+    needs: plan
+    runs-on: macos-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Pure Swift checks
+        run: |
+          swiftc -parse-as-library -O -o "$RUNNER_TEMP/fence354-logic" scripts/probe-354-fences/logic.swift scripts/probe-354-fences/logic-check.swift
+          "$RUNNER_TEMP/fence354-logic"
+      - name: Apps
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          case "$BROWSER" in
+            cft) bash scripts/probe-316/install.sh chrome ;;
+            firefox)
+              bash scripts/probe-316/install.sh firefox
+              mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+              printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json ;;
+            *) bash scripts/probe-316/install.sh ;;
+          esac
+          # The runner's disposable TextEdit cover only: never the owner's preferences.
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+      - name: Build instrumented engine, only on runner
+        run: |
+          git log -1 --format='kit %H %s'
+          git worktree add --detach "$RUNNER_TEMP/src" "$ENGINE_REF"
+          node scripts/probe-354-fences/patch.mjs "$RUNNER_TEMP/src"
+          swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/build"
+          swiftc -O -o "$RUNNER_TEMP/side354" scripts/probe-354-fences/side.swift
+      - name: Measure
+        env:
+          BROWSER: ${{ matrix.browser }}
+          SHARD: ${{ matrix.shard }}
+          JOB_ID: ${{ matrix.id }}
+          REPS: ${{ github.event.inputs.reps || '1' }}
+          SMOKE: ${{ github.event.inputs.smoke || 'true' }}
+          LANES: ${{ github.event.inputs.lanes || 'fence,readback,unreadable' }}
+        run: |
+          node scripts/probe-354-fences/fences.mjs --browser "$BROWSER" --shard "$SHARD" --lanes "$LANES" --engine "$RUNNER_TEMP/build/release/cua-engine" --side "$RUNNER_TEMP/side354" --out "$RUNNER_TEMP/probe-354-fences/$JOB_ID" --reps "$REPS" --smoke "$SMOKE"
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-354-fences-${{ matrix.id }}
+          path: |
+            ${{ runner.temp }}/probe-354-fences/**/rows.jsonl
+            ${{ runner.temp }}/probe-354-fences/**/config.json
+            ${{ runner.temp }}/probe-354-fences/**/progress.json
+            ${{ runner.temp }}/probe-354-fences/**/engine-stderr.txt
+            ${{ runner.temp }}/probe-316/install.txt
+          if-no-files-found: warn

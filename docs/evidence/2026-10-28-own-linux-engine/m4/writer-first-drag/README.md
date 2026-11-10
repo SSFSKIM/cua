@@ -3,8 +3,9 @@
 Task 72, on `feat/171-m4-t16` (from `feat/171-m4` at 328a3bb5). All runs here are on private displays (Xvfb with
 Openbox, `scripts/private-run.mjs`). None are on `:0`. The candidates are dev runs, not a release gate: musl builds
 made the release workflow's way (`scripts/build-musl.sh`), `cua-engine 0.3.0 (328a3bb55f38)`, sha256 `916a7577…`,
-for the pilots, and `cua-engine 0.3.0 (eadbbc8a92a1)`, sha256 `abf8cc6c…`, for `first/`, `element/`,
-`element-calc/` and `drag-writer/`.
+for the pilots, `cua-engine 0.3.0 (eadbbc8a92a1)`, sha256 `abf8cc6c…`, for `first/`, `element/`,
+`element-calc/` and `drag-writer/`, and `cua-engine 0.3.0 (accdc6c5601b)`, sha256 `373b6d0b…`, the final head's engine
+(its refusal moved before any session), for `element-final/`.
 
 ## What was found
 
@@ -106,6 +107,11 @@ above it, ending at the press. So the probe's own judge reads 0/3 in every cell,
 
 cua's fresh press is therefore at the truth. The same offset is in Calc's levels (`pilots/hierarchy`).
 
+**The final head** (`element-final/`, accdc6c5, which refuses an uncorrectable point before any session or
+activation): the same table as `element/`, row for row. cua lands on the element 3/3 on fresh Writer, Impress and
+GTK 3 windows and 3/3 after a pointer event; the pinned build lands 0/3 on fresh Writer and Impress windows (27 px
+high) and 3/3 elsewhere.
+
 ## The harness's aim, and the Writer cell without priming
 
 `scripts/linux-engine-diff/vcl-aim.mjs` reads VCL's offset as the host panel's origin less the root pane's, and
@@ -144,6 +150,7 @@ Each line pair is from `host-lock.log` (holder task72, load at acquire and at re
 | `first/` (the build, then the proof) | 21:59:43Z, 0.11 | 22:21:46Z, 0.63 |
 | `element/`, `drag-writer/`, `hint-probe.txt` | 22:22:35Z, 1.59 | 22:39:06Z, 0.43 |
 | `element-calc/` | 22:39:36Z, 1.18 | 22:41:22Z, 0.90 |
+| the engine's suites, the build of accdc6c5, `element-final/` | 23:29:50Z, 0.33 | 23:42:14Z, 0.34 |
 
 `pilots/press` acquired at 1.62, about 1.1 above the others' idle; it is a pilot, measured and never judged, and its
 result (nothing selected) is the same as every other pilot's on that aim. `element/` and `element-calc/` acquired at 1.59
@@ -152,7 +159,7 @@ its Calc cell failed to resolve a cell, which `element-calc/` replaced.)
 
 The pilot plans ran on intermediate, uncommitted versions of the probe at 328a3bb5's harness. They are kept as they
 ran (`writer-drag.mjs` `PLANS`, with the aim `raw`). `first/`, `element/`, `drag-writer/` and `element-calc/` ran on
-the committed code: eadbbc8a, and 7ef4b280 for Calc's target.
+the committed code: eadbbc8a, 7ef4b280 for Calc's target, and accdc6c5 for `element-final/`.
 
 ## Rerunning it
 

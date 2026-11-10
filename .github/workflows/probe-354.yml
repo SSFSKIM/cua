@@ -6,8 +6,10 @@ on:
   workflow_dispatch:
     inputs:
       reps:
+        description: 'Repetitions per cell (20 for full measurement; set 1 for smoke)'
         default: '20'
       smoke:
+        description: 'Label this as smoke evidence (also set reps to 1)'
         default: 'false'
 permissions:
   contents: read
@@ -19,9 +21,10 @@ jobs:
     timeout-minutes: 150
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 6
       matrix:
         browser: ['safari', 'cft', 'firefox', 'native']
+        phase: ['rate', 'partial']
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -41,6 +44,11 @@ jobs:
           esac
           defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
           defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+          # These apply to the runner's disposable TextEdit control, never the owner's preferences.
+          for key in NSAutomaticSpellingCorrectionEnabled NSAutomaticTextReplacementEnabled NSAutomaticQuoteSubstitutionEnabled NSAutomaticDashSubstitutionEnabled NSAutomaticCapitalizationEnabled NSAutomaticPeriodSubstitutionEnabled; do
+            defaults write com.apple.TextEdit "$key" -bool NO
+            test "$(defaults read com.apple.TextEdit "$key")" = 0
+          done
       - name: Build instrumented main, only on runner
         run: |
           git log -1 --format='kit %H %s'
@@ -48,22 +56,26 @@ jobs:
           node scripts/probe-354/patch.mjs "$RUNNER_TEMP/src"
           swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/build"
           swiftc -O -o "$RUNNER_TEMP/tool354" scripts/probe-354/tool.swift
+          swiftc -O -o "$RUNNER_TEMP/ocr354" scripts/probe-354/ocr.swift
       - name: Measure
         env:
           BROWSER: ${{ matrix.browser }}
-          REPS: ${{ github.event.inputs.reps || '1' }}
-          SMOKE: ${{ github.event.inputs.smoke || 'true' }}
+          PHASE: ${{ matrix.phase }}
+          REPS: ${{ github.event.inputs.reps || '20' }}
+          SMOKE: ${{ github.event.inputs.smoke || 'false' }}
         run: |
-          node scripts/probe-354/measure.mjs --browser "$BROWSER" --engine "$RUNNER_TEMP/build/release/cua-engine" --tool "$RUNNER_TEMP/tool354" --out "$RUNNER_TEMP/probe-354/$BROWSER" --reps "$REPS" --smoke "$SMOKE"
+          node scripts/probe-354/measure.mjs --browser "$BROWSER" --phase "$PHASE" --engine "$RUNNER_TEMP/build/release/cua-engine" --tool "$RUNNER_TEMP/tool354" --ocr "$RUNNER_TEMP/ocr354" --out "$RUNNER_TEMP/probe-354/$BROWSER-$PHASE" --reps "$REPS" --smoke "$SMOKE"
       - name: Upload measurements
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: probe-354-${{ matrix.browser }}
+          name: probe-354-${{ matrix.browser }}-${{ matrix.phase }}
           path: |
             ${{ runner.temp }}/probe-354/**/rows.jsonl
+            ${{ runner.temp }}/probe-354/**/calibrations.jsonl
             ${{ runner.temp }}/probe-354/**/config.json
             ${{ runner.temp }}/probe-354/**/progress.json
             ${{ runner.temp }}/probe-354/**/engine-stderr.txt
+            ${{ runner.temp }}/probe-354/**/state-shots/**
             ${{ runner.temp }}/probe-354/**/shots/**
           if-no-files-found: warn

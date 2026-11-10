@@ -117,24 +117,29 @@ export function parkHeld(park, where, point, window) {
 }
 
 /**
- * Whether a selection drag took: the selection, read after it, is the stretch of the line its path spans (drag.mjs
+ * Whether a selection drag took, whatever the engine answered (the sitting reads a refused drag's effect too): the
+ * selection, read after it, is the stretch of the line its path spans (drag.mjs
  * `selectionCovers`), and on a page the press reached the page (`received`, the drag's own motion record). A page
  * shows the selection with its spaces as `_`. gedit's selection is cleared before each run, so an old one cannot count.
  */
 export function selectTook(run, page) {
-  if (!run.ok || typeof run.after !== 'string') return false;
+  if (typeof run.after !== 'string') return false;
   if (page && !run.received) return false;
   return selectionCovers(page ? run.after.replaceAll('_', ' ') : run.after, run.i);
 }
 
-/** One cell's counts per lane, from its runs: taken, ok, refused and witness changes, and how often the park held. */
+/**
+ * One cell's counts per lane, from its runs: taken, answered ok, answered ok with no effect (the false success T19 is
+ * for), witness changes, and how often the park held.
+ */
 export function cellCounts(runs) {
   const lanes = {};
   for (const r of runs) {
-    const c = (lanes[r.engine] ??= { n: 0, took: 0, ok: 0, witness_changed: 0, park_held: 0 });
+    const c = (lanes[r.engine] ??= { n: 0, took: 0, ok: 0, ok_no_effect: 0, witness_changed: 0, park_held: 0 });
     c.n++;
     if (r.took === true) c.took++;
     if (r.ok === true) c.ok++;
+    if (r.ok === true && r.took !== true) c.ok_no_effect++;
     if (r.witness === false) c.witness_changed++;
     if (r.pointer?.held === true) c.park_held++;
   }
@@ -146,7 +151,7 @@ export function routeMarkdown(rows) {
   const lane = (row, label) => {
     const c = row.lanes[label];
     if (!c) return '–';
-    const notes = [c.ok < c.n ? `${c.n - c.ok} not ok` : null, c.witness_changed ? `witness ${c.witness_changed}` : null, c.park_held < c.n ? `park missed ${c.n - c.park_held}` : null].filter(Boolean);
+    const notes = [c.ok < c.n ? `${c.n - c.ok} not ok` : null, c.ok_no_effect ? `${c.ok_no_effect} ok with no effect` : null, c.witness_changed ? `witness ${c.witness_changed}` : null, c.park_held < c.n ? `park missed ${c.n - c.park_held}` : null].filter(Boolean);
     return `${c.took}/${c.n}${notes.length ? ` (${notes.join(', ')})` : ''}`;
   };
   return [
@@ -293,7 +298,7 @@ export async function runPointerRoute(args, { desktop, emit }) {
               const scene = scenes[spec.label];
               Object.assign(state, { scene, park: c.park, requests: [], clearSelection: group === 'drag' && scene.kindOf === 'editor' ? at[spec.label].text.id : null });
               const ctx = { desktop: seenDesktop, oracle, witness: seenWitness, emit, family, occlusion: c.occlusion, cua: args.cua, dir: desktop.dir, pointFor };
-              const own = group === 'drag' ? await dragSeries(ctx, spec, scene, at[spec.label], 'select', n, { start: next[spec.label] }) : await kindSeries(ctx, spec, scene, c.kind, n);
+              const own = group === 'drag' ? await dragSeries(ctx, spec, scene, at[spec.label], 'select', n, { start: next[spec.label], readFailed: true }) : await kindSeries(ctx, spec, scene, c.kind, n);
               next[spec.label] += n;
               own.forEach((r, k) => {
                 r.pointer = state.requests[k] ?? null;

@@ -68,20 +68,20 @@ test("a selection took only when it is the stretch its path spans, and on a page
   assert.equal(selectTook({ ok: true, i: 0, after: even }, false), true);
   assert.equal(selectTook({ ok: true, i: 1, after: even }, false), false, 'the other stretch is an old selection');
   assert.equal(selectTook({ ok: true, i: 0, after: '' }, false), false);
-  assert.equal(selectTook({ ok: false, i: 0, after: even }, false), false);
+  assert.equal(selectTook({ ok: false, i: 0, after: even }, false), true, 'the effect, whatever the engine answered');
   const page = { ok: true, i: 0, after: even.replaceAll(' ', '_') };
   assert.equal(selectTook({ ...page, received: { seq: 3 } }, true), true);
   assert.equal(selectTook({ ...page, received: null }, true), false, 'no press of its own reached the page');
   assert.equal(selectTook({ ok: true, i: 0, after: 'none', received: { seq: 3 } }, true), false);
 });
 
-test("a cell's counts say per lane how many took, answered ok, changed the witness and found the park held", () => {
+test("a cell's counts say per lane how many took, answered ok, answered ok with no effect, changed the witness and found the park held", () => {
   const run = (engine, took, extra = {}) => ({ engine, took, ok: true, witness: true, pointer: { held: true }, ...extra });
   const counts = cellCounts([run('cua', true), run('cua', false, { pointer: { held: false } }), run('pinned', false, { ok: false, witness: false })]);
-  assert.deepEqual(counts.cua, { n: 2, took: 1, ok: 2, witness_changed: 0, park_held: 1 });
-  assert.deepEqual(counts.pinned, { n: 1, took: 0, ok: 0, witness_changed: 1, park_held: 1 });
-  const md = routeMarkdown([{ family: 'firefox', kind: 'move', occlusion: 'partial', park: 'under', lanes: counts }, { family: 'chrome', kind: 'click', occlusion: 'visible', park: 'in', lanes: { cua: { n: 10, took: 10, ok: 10, witness_changed: 0, park_held: 10 } } }]);
-  assert.equal(md[2], '| Firefox | move | partial | under | 1/2 (park missed 1) | 0/1 (1 not ok, witness 1) |');
+  assert.deepEqual(counts.cua, { n: 2, took: 1, ok: 2, ok_no_effect: 1, witness_changed: 0, park_held: 1 });
+  assert.deepEqual(counts.pinned, { n: 1, took: 0, ok: 0, ok_no_effect: 0, witness_changed: 1, park_held: 1 });
+  const md = routeMarkdown([{ family: 'firefox', kind: 'move', occlusion: 'partial', park: 'under', lanes: counts }, { family: 'chrome', kind: 'click', occlusion: 'visible', park: 'in', lanes: { cua: { n: 10, took: 10, ok: 10, ok_no_effect: 0, witness_changed: 0, park_held: 10 } } }]);
+  assert.equal(md[2], '| Firefox | move | partial | under | 1/2 (1 ok with no effect, park missed 1) | 0/1 (1 not ok, witness 1) |');
   assert.equal(md[3], '| Chrome | click | visible | in | 10/10 | – |');
 });
 

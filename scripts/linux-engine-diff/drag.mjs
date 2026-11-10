@@ -603,7 +603,11 @@ async function readReceived(ctx, scene) {
   return parseDragStatus(nodes.flatMap((n) => [n.name, n.value, n.text].filter((s) => typeof s === 'string'))).received;
 }
 
-export async function series(ctx, spec, scene, at, kind, n, { prime = false, start = 0 } = {}) {
+/**
+ * One lane's runs of a cell. `readFailed` reads the effect of a drag the engine answered with an error too (T19's
+ * sitting: what the application did, whatever the answer).
+ */
+export async function series(ctx, spec, scene, at, kind, n, { prime = false, start = 0, readFailed = false } = {}) {
   const { witness, emit, family } = ctx;
   const engine = new Engine(spec).start();
   const runs = [];
@@ -646,12 +650,12 @@ export async function series(ctx, spec, scene, at, kind, n, { prime = false, sta
       const { value, witness: w } = sent;
       const ok = value.response.ok === true;
       // the no-press control is answered success, and its effect is read like any other: it must show none
-      const after = ok ? (at.text?.pixels ? await read() : await settled(read, before)) : null;
+      const after = ok || readFailed ? (at.text?.pixels ? await read() : await settled(read, before)) : null;
       // an engine's first request is cold: the long paths' speed is judged warm (dragSpeed)
       const run = { family, drag: kind, occlusion: ctx.occlusion, engine: spec.label, i, first_request: i === start && !prime, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before, after, path };
       if (inFront(family, kind)) run.in_front = true;
       if (at.text?.pixels) run.pixels_changed = ok ? pixelsChanged(before.capture, after.capture) : false;
-      if (at.page && ok) {
+      if (at.page && (ok || readFailed)) {
         // the record is published when the press ends: a drag's own is looked for a little, then counted missing
         let received = freshReceived(receivedBefore, await readReceived(ctx, scene));
         for (let tries = 0; !received && !spec.handleControl && tries < 5; tries++) {

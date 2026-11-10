@@ -292,11 +292,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     later than 250 ms after the press: the drag answers success;
   - a speed gap: a Chromium drag that never takes (a text selection, a range, a short thumb drag) holds its button
     until 250 ms after the press, paying 250 ms less its path's time: a 40 px Chrome selection goes from about 134 ms
-    to about 355, a 40 px range from about 130 to about 350; a drag whose path lasts 250 ms or more pays nothing;
-  - a speed gap: the short Chrome drop (40 px, in front) takes 469 ms, against the newest vendor build's 258 and the
-    pinned build's 280 (which lands 11 of 12). A lead: release when Chrome's accept cursor shows, with the take plus
-    350 ms as the ceiling, which helps only if reading the accept cursor has no false positives (task 18's replay of it
-    matched Chrome's accept in 85 to 100% of drags by condition, without saying which way the rest failed).
+    to about 254, a 40 px range from about 130 to about 350; a drag whose path lasts 250 ms or more pays nothing. On
+    the selection the vendor builds take as long (task 69, every lane in front: cua 254.4 ms, the newest build 251.9,
+    the pinned 254.1), so the speed rule passes;
+  - a speed gap: the short Chrome drop (40 px, in front) takes 365.9 ms and lands 40 of 40, against the newest vendor
+    build's 251.5 (25 of 40 landed) and the pinned build's 252.9 (22 of 40; task 69). The release at Chrome's accept
+    cursor closes it (task 68: medians of 54 to 66 ms) but does not ship: a stale accept released one drop Chrome
+    confirmed and the page never took (above).
 
   Every drag into a Chromium-family window (Chrome by its classes, the Chromium toolkit) presses atomically and is
   watched (`stray.rs`; task 20, evidence `m3/drop-misses/task20/`). Blink resets its press on any mouse move that

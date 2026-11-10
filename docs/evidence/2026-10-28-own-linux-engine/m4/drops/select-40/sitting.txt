@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (3fcf2a88ad0d)
+start select-40 2026-11-10T09:37:06Z loadavg 0.29 0.29 0.36
+run exit 0; watchdog clean
+private run select-40 exit 0 09:49:15
+end select-40 2026-11-10T09:49:15Z loadavg 0.58 0.33 0.32 status 0

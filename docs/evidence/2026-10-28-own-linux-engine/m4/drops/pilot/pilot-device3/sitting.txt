@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (c1859f5a34ca)
+start pilot-device3 2026-11-10T06:16:52Z loadavg 0.84 0.52 0.66
+run exit 1; watchdog clean
+private run pilot-device3 exit 1 06:21:31
+end pilot-device3 2026-11-10T06:21:31Z loadavg 0.90 0.73 0.71 status 1

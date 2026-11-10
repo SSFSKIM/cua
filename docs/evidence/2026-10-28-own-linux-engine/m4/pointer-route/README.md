@@ -215,3 +215,43 @@ runs found the park held and the witness unchanged.
 The first proof, on 258f52b0, was stopped at 08:03:56Z, 15 minutes into its manifest. The design session had asked for
 the watch on every pointer kind, which changes every Gecko request's path, so its bytes were no longer the final ones.
 It is not kept.
+
+## The manifest on `:0` (`manifest-0/a/`, `manifest-0/b/`), the build's proof on the person's display
+
+On the design session's "GO :0" (holds 13:40Z to 15:40Z, no conflict), T19's manifest (`--experiment predicates`) ran on
+`:0` on the final bytes: the ddee5fd5 musl build (`cua-engine 0.3.0 (ddee5fd5ae5a)`, sha256 `c51164ac…46b3`) and
+55e66b78's harness. It ran in two halves under the host lock (`scripts/manifest0.sh a|b`: click and scroll, then move and
+selection), each through `scripts/run71.sh` under task 50's guards, with `WRAP` naming `scripts/wrap71.py` (the narrow
+session-bus rule). The hold file was absent and no stress-ng ran. No whole-run RECORD was taken: the harness refuses it
+on a display without the private mark.
+
+- **Every case PASS, 32 of 32** ("Every case holds" in both halves' `run/summary.md`):
+  - Allowed with the pointer in, visible or half covered: cua took 30 of 30 of every kind, and so did the pinned build.
+  - Refused with the pointer under the cover or outside, in every occlusion: cua refused 10 of 10. The pinned build
+    took 0 of 10, all answered ok, and `cua:any-pointer` took 0 of 10.
+  - Leave, 20 runs each. None answered ok with no effect, and the pinned build took 0 of 20:
+
+    | kind | took (ok) | answered that the pointer left | refused before sending |
+    |---|---:|---:|---:|
+    | click | 0 | 20 | 0 |
+    | scroll | 0 | 20 | 0 |
+    | move | 6 | 7 | 7 |
+    | select | 0 | 20 | 0 |
+
+  - Every case matches the private proof. The leave move's split differs from the private one (8, 2 and 10). That
+    split is the race between the request and the mover, which starts at 0 s for a move. The case is judged on
+    honesty, and that held.
+- **The guards, both halves:**
+  - The pointer was restored to its start (142, 130) and read back there.
+  - The owner side showed no difference beyond the owner Chrome's own directory mtime (`owner-diff.txt`).
+  - The step's TMPDIR was left empty. wrap71 recorded 0 flags, nothing counted, 0 decoy connections and no leftovers.
+  - The foreign active window was active at the start and at the end and was never acted on. Every window change in
+    the harness's trace was its own.
+  - The three `/tmp/cua171-run-*` directories the check lists date from Nov 8 and 9 and are not this run's.
+
+| run | lock acquire | lock release |
+|---|---|---|
+| `manifest-0/a/` | 2026-11-10T13:47:23Z, load 0.12 | 2026-11-10T14:38:57Z, status 0, load 0.98 |
+| `manifest-0/b/` | 2026-11-10T14:39:18Z, load 0.72 | 2026-11-10T15:32:53Z, status 0, load 1.12 |
+
+The release loads are the run's own load. Neither is more than 1.0 above the idle.

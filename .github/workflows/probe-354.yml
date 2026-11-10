@@ -23,8 +23,20 @@ jobs:
       fail-fast: false
       max-parallel: 6
       matrix:
-        browser: ['safari', 'cft', 'firefox', 'native']
-        phase: ['rate', 'partial']
+        include:
+          - {id: firefox-textarea-all, browser: firefox, phase: all, editors: textarea}
+          - {id: firefox-input-all, browser: firefox, phase: all, editors: input}
+          - {id: firefox-contenteditable-all, browser: firefox, phase: all, editors: contenteditable}
+          - {id: firefox-compose-all, browser: firefox, phase: all, editors: compose}
+          - {id: safari-textarea-all, browser: safari, phase: all, editors: textarea}
+          - {id: safari-input-all, browser: safari, phase: all, editors: input}
+          - {id: safari-contenteditable-all, browser: safari, phase: all, editors: contenteditable}
+          - {id: safari-compose-all, browser: safari, phase: all, editors: compose}
+          - {id: cft-textarea-all, browser: cft, phase: all, editors: textarea, skip: scripts/probe-354/resume/cft-partial.json}
+          - {id: cft-input-all, browser: cft, phase: all, editors: input, skip: scripts/probe-354/resume/cft-partial.json}
+          - {id: cft-contenteditable-all, browser: cft, phase: all, editors: contenteditable, skip: scripts/probe-354/resume/cft-partial.json}
+          - {id: cft-compose-all, browser: cft, phase: all, editors: compose, skip: scripts/probe-354/resume/cft-partial.json}
+          - {id: native-rate, browser: native, phase: rate, editors: TextEdit}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -61,21 +73,26 @@ jobs:
         env:
           BROWSER: ${{ matrix.browser }}
           PHASE: ${{ matrix.phase }}
+          EDITORS: ${{ matrix.editors }}
+          SKIP_COMPLETED: ${{ matrix.skip || '' }}
+          JOB_ID: ${{ matrix.id }}
           REPS: ${{ github.event.inputs.reps || '20' }}
           SMOKE: ${{ github.event.inputs.smoke || 'false' }}
         run: |
-          node scripts/probe-354/measure.mjs --browser "$BROWSER" --phase "$PHASE" --engine "$RUNNER_TEMP/build/release/cua-engine" --tool "$RUNNER_TEMP/tool354" --ocr "$RUNNER_TEMP/ocr354" --out "$RUNNER_TEMP/probe-354/$BROWSER-$PHASE" --reps "$REPS" --smoke "$SMOKE"
+          node scripts/probe-354/measure.mjs --browser "$BROWSER" --phase "$PHASE" --editors "$EDITORS" --skip-completed "$SKIP_COMPLETED" --engine "$RUNNER_TEMP/build/release/cua-engine" --tool "$RUNNER_TEMP/tool354" --ocr "$RUNNER_TEMP/ocr354" --out "$RUNNER_TEMP/probe-354/$JOB_ID" --reps "$REPS" --smoke "$SMOKE"
       - name: Upload measurements
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: probe-354-${{ matrix.browser }}-${{ matrix.phase }}
+          name: probe-354-${{ matrix.id }}
           path: |
             ${{ runner.temp }}/probe-354/**/rows.jsonl
             ${{ runner.temp }}/probe-354/**/calibrations.jsonl
             ${{ runner.temp }}/probe-354/**/config.json
             ${{ runner.temp }}/probe-354/**/progress.json
+            ${{ runner.temp }}/probe-354/**/resume-input.json
             ${{ runner.temp }}/probe-354/**/engine-stderr.txt
             ${{ runner.temp }}/probe-354/**/state-shots/**
+            ${{ runner.temp }}/probe-354/**/click-order-setup/**
             ${{ runner.temp }}/probe-354/**/shots/**
           if-no-files-found: warn

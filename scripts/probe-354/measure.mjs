@@ -43,11 +43,11 @@ function send(q){const c={n:++cmdNo,...q};if(poll){poll.end(JSON.stringify(c));p
 async function until(fn,ms=10000){const deadline=Date.now()+ms;for(;;){let v=fn();if(v)return v;if(Date.now()>=deadline)throw Error('condition timeout');await sleep(5)}}
 async function command(q){const rpcStartedAt=Date.now(),n=send(q),r=await until(()=>answers.find(a=>a.cmd===n));answers=answers.filter(a=>a!==r);if(r.error)throw Error('fixture '+JSON.stringify(r));return {...r,rpcStartedAt,rpcReturnedAt:Date.now()}}
 const meta={browser:KIND,phase:PHASE,editors,reps:REPS,smoke:SMOKE,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,image:process.env.ImageVersion,startedAt:start,
- resume:{skipCompletedFile:skipCompletedFile??null,completedIdCount:skipIds.size,sourceRun:skipInput.sourceRun??null},setupProtocol:'fixture-only-v2: no browser engine click; real deactivation settles 250ms, intended DOM state checked before key',calibrationRetries:'at most 3 separately logged key-only controls; require semantic transition; never retry measured keys or requested typed text',
+ resume:{skipCompletedFile:skipCompletedFile??null,completedIdCount:skipIds.size,sourceRun:skipInput.sourceRun??null},setupProtocol:'fixture-only-v2: no browser engine click; real deactivation settles 250ms, intended DOM state checked before key',calibrationRetries:'at most 3 separately logged key-only controls per context; semantic background failures remain failures, then a semantic foreground reference supplies only the intended oracle; never retry measured keys or requested typed text',
  rateSampling:'requested 0 and 500ms; mismatches re-read at 3000ms; actual timestamps recorded',partialSampling:'requested 0/250/1000/3000ms; prior cmd+a settled and confirmed independently',
  candidateBudgetMs:1000,candidateBudgetKind:'soft1000ms plus in-flight AX requests (100ms timeout each); overruns logged',candidatePollMs:5,
  oracle:'separately logged key-only per-browser/editor/key calibration after 500ms; browser final uses DOM replacement, native final uses AX replacement; key candidate uses focused AX, including editor-specific newlines',
- calibrationLimitation:'experiment-only known key effect, not a general undo-confirmation implementation; missing AX oracle is unconfirmable, not success',
+ calibrationLimitation:'experiment-only intended key effect, not a general undo-confirmation implementation; foreground fallback is explicitly labelled and never proves background delivery; missing AX oracle is unconfirmable, not success',
  deliveryPolicy:'no automatic typed-text retry; candidate refusals are counterfactual and typing continues for scoring',
  nativeGroundTruth:'named TextEdit document AXTextArea is retained across empty/unfocused states; focused AX candidate oracle never uses retained/tree fallback',
  clickOrder:'separate part:click-order, textarea/all browser shard only,10 reps; foreground click -> selection-only script -> baseline type; expected replacement is script intent; 0/250/1000/3000ms samples',
@@ -114,7 +114,8 @@ function calibrationFailure(key,before,effect){
  return 'unsupported calibration key';
 }
 async function calibrate(editor,key,foreground=false){
- budget();const id='calibration/'+KIND+'/'+calibrationKey(editor,key,foreground),row={id,browser:KIND,phase:PHASE,editor,keyName:key,foreground,startedAt:Date.now(),settleMs:500,attempts:[]};let w;
+ const cached=calibrations.get(calibrationKey(editor,key,foreground));if(cached?.valid)return cached;
+ budget();const id='calibration/'+KIND+'/'+calibrationKey(editor,key,foreground),row={recordKind:'key-only-control',id,browser:KIND,phase:PHASE,editor,keyName:key,foreground,backgroundEffectConfirmed:foreground?null:false,provenance:{kind:'same-context-key-only-control',sourceControlId:id,sourceForeground:foreground},startedAt:Date.now(),settleMs:500,attempts:[]};let w;
  try{
   w=await connect();
   for(let attempt=1;attempt<=3;attempt++){
@@ -129,13 +130,23 @@ async function calibrate(editor,key,foreground=false){
    // Missing focused AX is unconfirmable; DOM ground truth is never substituted into the AX candidate.
    trial.axValue=trial.axOracleAvailable?trial.ax.state.text:null;trial.axRange=trial.axOracleAvailable?trial.ax.state.selection:null;
    trial.attemptEndedAt=Date.now();Object.assign(row,trial);
-   if(!trial.semanticFailure){row.valid=true;calibrations.set(calibrationKey(editor,key,foreground),row);break}
+   if(!trial.semanticFailure){row.valid=true;row.backgroundEffectConfirmed=foreground?null:true;calibrations.set(calibrationKey(editor,key,foreground),row);break}
    console.error('354 invalid key-only control',id,attempt,trial.semanticFailure);
-   if(attempt===3)throw Error('calibration semantic effect unavailable after 3 key-only controls: '+trial.semanticFailure);
+   if(attempt===3){row.valid=false;row.problem='calibration semantic effect unavailable after 3 key-only controls: '+trial.semanticFailure;break}
    // Reset the entire control before retrying. No measured key or requested typed text is retried.
   }
  }catch(e){row.problem=String(e.stack??e);row.valid=false;throw e}
  finally{w?.close();row.endedAt=Date.now();appendFileSync(join(OUT,'calibrations.jsonl'),JSON.stringify(row)+'\n');console.log('354 calibration',id,row.valid?'ok':'INVALID','AX oracle',row.axOracleAvailable??false)}
+ if(row.valid)return row;
+ if(foreground)throw Error(row.problem);
+ // Failed background delivery is evidence, not an oracle. Keep its failed controls and obtain the intended effect
+ // independently in the foreground. Measured background trials still use their default route, once, without retries.
+ const reference=await calibrate(editor,key,true);
+ const oracle={recordKind:'intended-oracle',id:'oracle/'+KIND+'/'+calibrationKey(editor,key,false),browser:KIND,phase:PHASE,editor,keyName:key,foreground:false,valid:true,backgroundEffectConfirmed:false,
+  provenance:{kind:'foreground-reference-after-background-failure',sourceControlId:reference.id,sourceForeground:true,failedBackgroundControlId:row.id},
+  effect:reference.effect,ax:reference.ax,axOracleAvailable:reference.axOracleAvailable,axValue:reference.axValue,axRange:reference.axRange,createdAt:Date.now()};
+ calibrations.set(calibrationKey(editor,key,false),oracle);appendFileSync(join(OUT,'calibrations.jsonl'),JSON.stringify(oracle)+'\n');
+ console.log('354 intended oracle',oracle.id,'foreground reference',reference.id,'backgroundEffectConfirmed',false);return oracle;
 }
 function screenshotPath(descriptor){const url=typeof descriptor==='string'?descriptor:descriptor?.url;if(!url)return null;return url.startsWith('file:')?fileURLToPath(url):url}
 async function observe(w,row,label,directory){
@@ -174,7 +185,8 @@ async function cell({part,editor,key,mode,rep,length=30,sameRPC=false,foreground
  try{
   const calibration=clickOrder?null:calibrations.get(calibrationKey(editor,key,foreground));
   if(!clickOrder&&!calibration?.valid)throw Error('required calibration unavailable');
-  row.calibrationId=calibration?.id??null;row.expectedSource=clickOrder?'script-intent':'calibrated-key-effect';
+  row.calibrationId=calibration?.id??null;row.expectedSource=clickOrder?'script-intent':calibration.backgroundEffectConfirmed===false?'foreground-reference-key-effect':'calibrated-key-effect';
+  row.calibrationProvenance=calibration?.provenance??null;row.backgroundEffectConfirmed=calibration?.backgroundEffectConfirmed??null;
   row.expected=expectation(clickOrder?{text:SEED,selection:[0,SEED.length]}:calibration.effect,text);row.axOracleAvailable=calibration?.axOracleAvailable??null;
   const options={spike354Mode:mode,spike354Value:calibration?.axValue??null,spike354Range:calibration?.axRange??null};
   w=await connect();await prepare(w,{id,editor,key,scene},row);await settleSetup({key,scene,foreground},row);

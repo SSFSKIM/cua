@@ -23,6 +23,9 @@ for await(const {row:r,config,source,lineNumber} of records(root)){
  const firstRequestedPresent=typeof first?.text==='string'&&first.text.includes(r.text);
  const requestedFull=r.samples?.find(s=>typeof s.text==='string'&&s.text.includes(r.text));
  const properPrefix=typeof first?.text==='string'&&typeof expected==='string'&&first.text.length<expected.length&&expected.startsWith(first.text);
+ const keyProofNeeded=r.part==='rate'&&['key-effect','combined'].includes(r.mode);
+ const typeProofNeeded=['typed','combined'].includes(r.mode);
+ const admitted=valid&&(!keyProofNeeded||r.key?.probe?.confirmed===true)&&(!typeProofNeeded||r.type?.probe?.confirmed===true);
  const f={browser:config.browser,phase:config.phase??'all',part:r.part,editor:r.editor,key:r.keyName,mode:r.mode,length:r.length,
    variant:r.variant??r.scene??(r.alreadySelected?'already-selected':'normal'),sameRPC:r.sameRPC??false,foreground:r.foreground??false,
    rep:r.rep,id:r.id,source,lineNumber,valid,problem:r.problem??r.key?.error??r.type?.error??null,correct,
@@ -35,6 +38,7 @@ for await(const {row:r,config,source,lineNumber} of records(root)){
    keyUnconfirmed:r.key?.probe?.confirmed===false,typeUnconfirmed:r.type?.probe?.confirmed===false,
    keyConfirmed:r.key?.probe?.confirmed===true,typeConfirmed:r.type?.probe?.confirmed===true,
    confirmedWrong:valid&&r.type?.probe?.confirmed===true&&r.correct===false,
+   admitted,candidateRefused:valid&&!admitted,admittedWrong:admitted&&r.correct===false,admittedMissingTyped:admitted&&!requestedPresent,
    keyCostMs:r.key?.probe?.ms,typeCostMs:r.type?.probe?.ms,keyRpcMs:r.key?.durationMs,typeRpcMs:r.type?.durationMs,stateRpcMs:r.state?.durationMs,
    keyOverrunMs:r.key?.probe?.overrunMs,typeOverrunMs:r.type?.probe?.overrunMs,
    firstSampleAfterReturnMs:first?.at-r.returnedAt,firstCompleteSampleMs:correct&&full?Math.max(0,full.at-r.returnedAt):null,
@@ -50,7 +54,7 @@ for await(const {row:r,config,source,lineNumber} of records(root)){
    examples.push({...f,trace:r.trace?.slice(0,30),keyRPC:r.key,typeRPC:r.type});
 }
 function group(xs,keys){const m=new Map();for(const r of xs){const k=keys.map(k=>r[k]).join('|');if(!m.has(k))m.set(k,[]);m.get(k).push(r)}return [...m.values()]}
-const countFields=['wrong','missingTyped','requestedPresent','dom0Incomplete','dom0RequestedIncomplete','dom0Prefix','latePrefix','lateRequested','stateReadable','stateUnavailable','statePartial','screenshotN','screenshotReadable','screenshotUnavailable','screenshotAXPartial','keyUnconfirmed','typeUnconfirmed','keyConfirmed','typeConfirmed','confirmedWrong'];
+const countFields=['wrong','missingTyped','requestedPresent','dom0Incomplete','dom0RequestedIncomplete','dom0Prefix','latePrefix','lateRequested','stateReadable','stateUnavailable','statePartial','screenshotN','screenshotReadable','screenshotUnavailable','screenshotAXPartial','keyUnconfirmed','typeUnconfirmed','keyConfirmed','typeConfirmed','confirmedWrong','admitted','candidateRefused','admittedWrong','admittedMissingTyped'];
 const metrics=['keyCostMs','typeCostMs','keyRpcMs','typeRpcMs','stateRpcMs','settleAfterReturnMs','firstSampleAfterReturnMs','firstCompleteSampleMs','firstRequestedCompleteSampleMs','keyOverrunMs','typeOverrunMs'];
 const dims=['browser','part','editor','key','mode','length','variant','sameRPC','foreground'];
 function summarize(a){const s=Object.fromEntries(dims.map(k=>[k,a[0][k]]));s.n=a.length;s.valid=a.filter(r=>r.valid).length;s.invalid=s.n-s.valid;for(const k of countFields)s[k]=a.filter(r=>r.valid&&r[k]).length;for(const k of metrics)s[k]=stats(a.filter(r=>r.valid).map(r=>r[k]));return s}

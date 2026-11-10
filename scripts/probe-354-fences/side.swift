@@ -24,10 +24,35 @@ func focusAttributeString(_ element: AXUIElement, _ attribute: String) -> String
   return raw as? String
 }
 
+// Diagnostic-only late observations. CFIndex/CFNumber replies are decimal strings, never field text.
+func caretSideRange(_ raw: CFTypeRef?, _ code: AXError) -> [String: Any] {
+  var result: [String: Any] = ["axError": code.rawValue, "shape": "missing", "range": NSNull()]
+  guard let raw else { return result }
+  guard CFGetTypeID(raw) == AXValueGetTypeID() else { result["shape"] = "wrongType"; return result }
+  let value = raw as! AXValue
+  if AXValueGetType(value) == .cfRange {
+    var range = CFRange(location: 0, length: 0)
+    if AXValueGetValue(value, .cfRange, &range) { result["shape"] = "range"; result["range"] = ["location": String(range.location), "length": String(range.length)]; return result }
+  } else if AXValueGetType(value) == .axError {
+    var embedded = AXError.success
+    if AXValueGetValue(value, .axError, &embedded) { result["shape"] = "axError"; result["embeddedAXError"] = embedded.rawValue; return result }
+  }
+  result["shape"] = "wrongType"; return result
+}
+func caretSideCount(_ raw: CFTypeRef?, _ code: AXError) -> [String: Any] {
+  var result: [String: Any] = ["axError": code.rawValue, "shape": "missing", "count": NSNull()]
+  guard let raw else { return result }
+  guard CFGetTypeID(raw) == CFNumberGetTypeID() else { result["shape"] = "wrongType"; return result }
+  var count: Int64 = 0
+  if CFNumberGetValue(raw as! CFNumber, .sInt64Type, &count) { result["shape"] = "number"; result["count"] = String(count) }
+  else { result["shape"] = "wrongType" }
+  return result
+}
 func focusEvidence(_ q: [String: Any]) -> [String: Any] {
   let mode = q["mode"] as? String
   let lane = q["lane"] as? String
   let labelsOnly = mode == "labelsOnly"
+  let caretOnly = mode == "caretRangeCount"
   // readable means a string AXValue was obtained, not that labels were available.
   // secure is null until classification, or true if either known identifier is secure.
   var evidence: [String: Any] = [
@@ -45,7 +70,8 @@ func focusEvidence(_ q: [String: Any]) -> [String: Any] {
     return result
   }
   guard (mode == "publicValue" && lane == "public-rendered") ||
-        (labelsOnly && lane == "terminal-tab") else { return failure("invalid-mode-lane") }
+        (labelsOnly && lane == "terminal-tab") ||
+        (caretOnly && lane == "firefox-caret") else { return failure("invalid-mode-lane") }
   guard let number = q["pid"] as? NSNumber,
         CFGetTypeID(number as CFTypeRef) != CFBooleanGetTypeID(),
         number.int32Value > 0, number.doubleValue == Double(number.int32Value) else {
@@ -89,6 +115,20 @@ func focusEvidence(_ q: [String: Any]) -> [String: Any] {
     return evidence
   }
   guard role == kAXTextFieldRole || role == kAXTextAreaRole else { return failure("non-text-entry-role") }
+  if caretOnly {
+    let rangeStarted = now(); var rawRange: CFTypeRef?
+    let rangeCode = AXUIElementCopyAttributeValue(focus, kAXSelectedTextRangeAttribute as CFString, &rawRange)
+    var range = caretSideRange(rawRange, rangeCode)
+    range["source"] = "diagnostic-added-late"; range["api"] = "single"; range["attribute"] = "AXSelectedTextRange"; range["pollIndex"] = NSNull()
+    range["startedAt"] = rangeStarted; range["endedAt"] = now()
+    let countStarted = now(); var rawCount: CFTypeRef?
+    let countCode = AXUIElementCopyAttributeValue(focus, kAXNumberOfCharactersAttribute as CFString, &rawCount)
+    var count = caretSideCount(rawCount, countCode)
+    count["source"] = "diagnostic-added-late"; count["attribute"] = "AXNumberOfCharacters"; count["queried"] = true
+    count["startedAt"] = countStarted; count["endedAt"] = now()
+    evidence["range"] = range; evidence["characterCount"] = count; evidence["ok"] = true
+    return evidence
+  }
   evidence["valueRead"] = true
   guard let value = focusAttributeString(focus, kAXValueAttribute) else { return failure("value-unreadable") }
   evidence["value"] = value

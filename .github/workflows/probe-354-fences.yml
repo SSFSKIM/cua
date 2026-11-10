@@ -14,6 +14,9 @@ on:
       only:
         description: 'Comma-separated browser-editor shard ids, or all'
         default: 'all'
+      diagnostic:
+        description: 'primary, or isolated firefox-caret observer-effect cohort'
+        default: 'primary'
 permissions:
   contents: read
 env:
@@ -34,11 +37,12 @@ jobs:
           SMOKE: ${{ github.event.inputs.smoke }}
         run: |
           node --input-type=module -e 'import {assertPins} from "./scripts/probe-354-fences/ab-model.mjs"; assertPins(process.env.MAIN_REF, process.env.BRANCH_REF); const n=Number(process.env.REPS); if(![1,20].includes(n)||!(["true","false"].includes(process.env.SMOKE))||((process.env.SMOKE==="true")!==(n===1)))throw Error("use 20/full or 1/smoke");'
-          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/ab-extra.test.mjs scripts/probe-354-fences/ab-secret.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs
+          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/ab-extra.test.mjs scripts/probe-354-fences/ab-secret.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs scripts/probe-354-fences/caret.test.mjs scripts/probe-354-fences/caret-patch.test.mjs scripts/probe-354-fences/offline/caret-table.test.mjs
       - id: matrix
         env:
           ONLY: ${{ github.event.inputs.only }}
-        run: node scripts/probe-354-fences/matrix.mjs "$ONLY" >> "$GITHUB_OUTPUT"
+          DIAGNOSTIC: ${{ github.event.inputs.diagnostic || 'primary' }}
+        run: node scripts/probe-354-fences/caret.mjs matrix "$ONLY" "$DIAGNOSTIC" >> "$GITHUB_OUTPUT"
   measure:
     needs: plan
     runs-on: macos-latest
@@ -66,7 +70,9 @@ jobs:
           esac
           defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
           defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
-      - name: Build both pinned engines with read-count auditing only
+      - name: Build pinned engines with primary audit or isolated caret tracing
+        env:
+          DIAGNOSTIC: ${{ github.event.inputs.diagnostic || 'primary' }}
         run: |
           git log -1 --format='kit %H %s'
           mkdir -p "$RUNNER_TEMP/probe-354-ab"
@@ -79,6 +85,9 @@ jobs:
             git worktree add --detach "$RUNNER_TEMP/$arm-src" "$ref"
             git -C "$RUNNER_TEMP/$arm-src" rev-parse HEAD
             node scripts/probe-354-fences/audit-patch.mjs "$RUNNER_TEMP/$arm-src" > "$RUNNER_TEMP/probe-354-ab/$arm-audit-patch.json"
+            if [ "$DIAGNOSTIC" = firefox-caret ]; then
+              node scripts/probe-354-fences/caret-patch.mjs "$RUNNER_TEMP/$arm-src" > "$RUNNER_TEMP/probe-354-ab/$arm-caret-patch.json"
+            fi
             swift build -c release --package-path "$RUNNER_TEMP/$arm-src/native/engine" --scratch-path "$RUNNER_TEMP/$arm-build"
           done
           swiftc -O -o "$RUNNER_TEMP/side354" scripts/probe-354-fences/side.swift
@@ -87,6 +96,7 @@ jobs:
           BROWSER: ${{ matrix.browser }}
           SHARD: ${{ matrix.shard }}
           JOB_ID: ${{ matrix.id }}
+          DIAGNOSTIC: ${{ github.event.inputs.diagnostic || 'primary' }}
           REPS: ${{ github.event.inputs.reps }}
           SMOKE: ${{ github.event.inputs.smoke }}
         run: |
@@ -96,26 +106,32 @@ jobs:
             if [ "$arm" = main ]; then ref="$MAIN_REF"; else ref="$BRANCH_REF"; fi
             out="$RUNNER_TEMP/probe-354-ab/$JOB_ID/$arm"
             code=0
-            node scripts/probe-354-fences/ab.mjs --browser "$BROWSER" --shard "$SHARD" --arm "$arm" --head "$ref" --source "$RUNNER_TEMP/$arm-src" --engine "$RUNNER_TEMP/$arm-build/release/cua-engine" --side "$RUNNER_TEMP/side354" --out "$out" --reps "$REPS" --smoke "$SMOKE" || code=$?
+            node scripts/probe-354-fences/ab.mjs --browser "$BROWSER" --shard "$SHARD" --arm "$arm" --head "$ref" --source "$RUNNER_TEMP/$arm-src" --engine "$RUNNER_TEMP/$arm-build/release/cua-engine" --side "$RUNNER_TEMP/side354" --out "$out" --reps "$REPS" --smoke "$SMOKE" --diagnostic "$DIAGNOSTIC" || code=$?
             # A scored contract failure must not suppress the other head. An un-stopped engine must.
             if [ ! -f "$out/engine-stopped.json" ]; then exit 1; fi
             if [ "$code" != 0 ]; then result=1; fi
           done
-          node scripts/probe-354-fences/offline/ab-table.mjs "$RUNNER_TEMP/probe-354-ab/$JOB_ID" --only "$JOB_ID"
+          if [ "$DIAGNOSTIC" = firefox-caret ]; then
+            node scripts/probe-354-fences/offline/caret-table.mjs "$RUNNER_TEMP/probe-354-ab/$JOB_ID"
+          else
+            node scripts/probe-354-fences/offline/ab-table.mjs "$RUNNER_TEMP/probe-354-ab/$JOB_ID" --only "$JOB_ID"
+          fi
           exit "$result"
       - name: Upload rows, incremental tables and provenance
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: probe-354-ab-${{ matrix.id }}
+          name: ${{ github.event.inputs.diagnostic == 'firefox-caret' && 'probe-354-caret' || 'probe-354-ab' }}-${{ matrix.id }}
           path: |
             ${{ runner.temp }}/probe-354-ab/*-audit-patch.json
+            ${{ runner.temp }}/probe-354-ab/*-caret-patch.json
             ${{ runner.temp }}/probe-354-ab/audit-controls.jsonl
             ${{ runner.temp }}/probe-354-ab/**/config.json
             ${{ runner.temp }}/probe-354-ab/**/progress.json
             ${{ runner.temp }}/probe-354-ab/**/engine-stopped.json
             ${{ runner.temp }}/probe-354-ab/**/summary.json
             ${{ runner.temp }}/probe-354-ab/**/rows.jsonl
+            ${{ runner.temp }}/probe-354-ab/**/caret-rows.jsonl
             ${{ runner.temp }}/probe-354-ab/**/calibrations.jsonl
             ${{ runner.temp }}/probe-354-ab/**/foreground-references.jsonl
             ${{ runner.temp }}/probe-354-ab/**/wrong-successes.jsonl

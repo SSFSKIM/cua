@@ -68,7 +68,7 @@ function clean(r){if(!r)return r;let {raw,...v}=r;return v}
 function values(raw){return (raw?.result?.nodes??[]).filter(n=>['AXTextArea','AXTextField','AXStaticText'].includes(n.role)).map(n=>({role:n.role,value:n.value,title:n.title,description:n.description,frame:n.frame}))}
 function readable(s){return typeof s?.text==='string'&&Array.isArray(s.selection)&&s.selection.length===2&&s.selection.every(n=>Number.isInteger(n)&&n>=0)&&s.selection[0]+s.selection[1]<=s.text.length}
 function sameEffect(a,b){return a?.text===b?.text&&JSON.stringify(a?.selection)===JSON.stringify(b?.selection)}
-function initial(key,scene='normal'){let pos=3,len=0;if(['cmd+Left','alt+Left','cmd+shift+Left','Left','cmd+z'].includes(key))pos=SEED.length;if(key==='cmd+x'||scene==='already-selected'){pos=0;len=SEED.length}if(key==='cmd+v')pos=0;return {text:key==='cmd+z'?SEED+' undo':SEED,selection:[pos+(key==='cmd+z'?5:0),len]}}
+function initial(key,scene='normal'){let pos=3,len=0;const undoMarker=native?'7':' undo';if(['cmd+Left','alt+Left','cmd+shift+Left','Left','cmd+z'].includes(key))pos=SEED.length;if(key==='cmd+x'||scene==='already-selected'){pos=0;len=SEED.length}if(key==='cmd+v')pos=0;return {text:key==='cmd+z'?SEED+undoMarker:SEED,selection:[pos+(key==='cmd+z'?undoMarker.length:0),len]}}
 async function nativeState(){const r=await ask({op:'read',pid,documentPath:nativeDocument,allowTextEditFallback:true});if(r.error||!readable(r.state))throw Error('native AX read '+JSON.stringify(r));return r.state}
 async function focusedAX(){const r=await ask({op:'focused',pid});return {...r,oracleAvailable:!r.error&&readable(r.state)}}
 async function setupNative(w,key,row,scene){
@@ -77,7 +77,7 @@ async function setupNative(w,key,row,scene){
  const intended=initial(key,scene),range=key==='cmd+z'?[SEED.length,0]:intended.selection;
  const set=await ask({op:'range',pid,range,documentPath:nativeDocument,allowTextEditFallback:true});row.nativeRange=set;
  if(set.error||set.setRange!==0)throw Error('native range '+JSON.stringify(set));
- if(key==='cmd+z'){row.undoSetup=clean(await rpc(w,'type_text',{text:' undo'}));if(row.undoSetup.error)throw Error('native undo insertion '+JSON.stringify(row.undoSetup.error));await sleep(500)}
+ if(key==='cmd+z'){row.undoSetup=clean(await rpc(w,'type_text',{text:intended.text.slice(SEED.length)}));if(row.undoSetup.error)throw Error('native undo insertion '+JSON.stringify(row.undoSetup.error));await sleep(500)}
  return nativeState();
 }
 async function prepare(w,{id,editor,key,scene='normal'},row){

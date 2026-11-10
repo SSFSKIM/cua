@@ -24,8 +24,7 @@ jobs:
       max-parallel: 6
       matrix:
         include:
-          - {id: firefox-contenteditable-all, browser: firefox, phase: all, editors: contenteditable}
-          - {id: firefox-compose-all, browser: firefox, phase: all, editors: compose}
+          - {id: native-rate, browser: native, phase: rate, editors: TextEdit}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:

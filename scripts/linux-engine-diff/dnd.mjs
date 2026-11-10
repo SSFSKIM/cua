@@ -44,7 +44,7 @@ export function changedFields(a, b) {
 }
 
 /** A running `xprobe selection-watch XdndSelection`: `stop()` answers its owner changes. */
-export async function watchXdnd() {
+async function watchXdnd() {
   const child = xSpawn(XPROBE, ['selection-watch', 'XdndSelection'], { stdio: ['pipe', 'pipe', 'inherit'] });
   const exited = new Promise((resolve) => {
     child.once('exit', resolve);

@@ -181,6 +181,10 @@ export const PLANS = {
   // window load and at twice the load: a second source, the long drag and drop, 300 drops; the accepted-then-left
   // control and the press inside the zone, 30 each
   t14: [['cua', 'plain-long', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
+  // #264's real late takes (the design session's ruling 4, 2026-11-10): task 68's reproduction, the run's own browser
+  // stopped from 60 ms after the request to 250 ms (its late takes came there), on a drag the engine lets drop; run on
+  // the engine before T14 too, its failing first
+  't14-late': [['cua', 'freeze-250', 40]],
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],
@@ -336,7 +340,7 @@ export function runBrowser(profile, { proc = '/proc', read = (path) => readFileS
 }
 
 /** The run's browser process stopped over `span` (ms from now), and always continued: what was done, with times. */
-export async function freezeBrowser(pid, span) {
+async function freezeBrowser(pid, span) {
   if (!pid) throw new Error('the freeze cell needs the run\'s browser process');
   const t0 = Date.now();
   await sleep(span.from);
@@ -372,10 +376,12 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const answered = Date.now();
   await sleep(1000);
   // what the drag left pending, past its watch's lifetime (M4's T14): the notice on a read's reply on the same engine,
-  // then an acting request that sends nothing, which it refuses, so the next drag is not the one refused
+  // then an acting request that sends nothing, refused while anything is pending (so the next drag is not the one
+  // refused), its answer and the late drag and drop it reports kept: an engine before T14 runs it
   const read = await engine.request('list_windows', {});
   const notice = read.response.notice ?? null;
-  if (notice !== null) await engine.request('preflight', {});
+  const preflight = await engine.request('preflight', {});
+  const next = { ok: preflight.response.ok === true, error: preflight.response.ok ? null : String(preflight.response.error), late_dnd: preflight.stats?.late_dnd ?? null };
   let after = await readStatus(desktop, scene);
   const stats = value.stats ?? {};
   const wall = stats.wall ?? null;
@@ -418,6 +424,7 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     signals,
     outcome: T14_SOURCE[base] ? t14Outcome(base, before, after) : dragOutcome(base, before, after, { i, rangeEnd }),
     notice,
+    next,
     after_release: stats.after_release,
     escaped,
     freeze,

@@ -355,6 +355,26 @@ export const FAMILIES = {
       };
     },
   },
+  // T16 (M4): LibreOffice Impress on its gtk3 plugin, a new presentation (an empty .odp opens as one), for the VCL
+  // coordinate probe (writer-drag.mjs `--plan hierarchy`)
+  impress: {
+    title: 'LibreOffice Impress (gtk3)',
+    kind: 'slides',
+    geometry: [1100, 700],
+    launch: (ctx) => {
+      const profile = join(ctx.dir, 'lo');
+      mkdirSync(join(profile, 'user'), { recursive: true });
+      writeFileSync(join(profile, 'user', 'registrymodifications.xcu'), WRITER_PROFILE);
+      const file = join(ctx.dir, `${ctx.label}.odp`);
+      writeFileSync(file, '');
+      return {
+        cmd: 'soffice',
+        args: ['--impress', '--norestore', '--nologo', `-env:UserInstallation=${pathToFileURL(profile).href}`, file],
+        env: { SAL_USE_VCLPLUGIN: 'gtk3' },
+        match: byTitle(ctx.label),
+      };
+    },
+  },
   xterm: {
     title: 'xterm',
     kind: 'terminal',

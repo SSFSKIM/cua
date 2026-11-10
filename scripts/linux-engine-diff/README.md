@@ -553,7 +553,7 @@ variants included; their evidence is written either way. The run's `end` row kee
   - *Blocks*: a cell's drags run in rotating blocks of 10, every lane's block on a fresh engine, the lanes' order
     rotating from block to block and the top-ups continuing it (`blockPlan`); each block's first request is cold.
   - *Named only* (`OPTIONAL_KINDS`, by `--ops`): `select-unprimed` on Writer, every run a fresh window's first drag,
-    judged absolutely by the text its path spans (`selectionCovers`), beside the primed `select` cell, whose even runs
+    judged absolutely by the text its path spans (`selectionCovers`), beside the `select` cell, whose even runs
     that took the judge must take too (REFERENCE MISMATCH otherwise); and `handle-canvas`, `handle-dnd` on Firefox (and
     on Chrome and Electron, whose held moves T11 reran as the controls of Gecko's),
     `drag_handle`'s start, a held move to each point and its end, its requests spaced by cua's service's own
@@ -1091,6 +1091,32 @@ node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out 
   (`methodConstants`); a cell that held at no step keeps it at the vendor's 100, unless its input is lost on a complete
   and valid measurement (`lostInput`) and the loss is established on its own (`SET_ASIDE`, empty).
 
+## M4 T16's addition: LibreOffice's positions (`--experiment writer-drag`)
+
+LibreOffice on its gtk3 VCL plugin (24.2) reports what VCL draws (a document's paragraphs, a sheet's cells, a slide's
+shapes) too high by its native menu bar's height after a ConfigureNotify (the harness's raise) and until the next
+pointer event. The drag experiment's Writer cell aimed there, into the page's header margin, so on a private display
+no drag of any engine, a real XTEST drag included, selected anything, and the cell primed each window to hide a miss
+that was its own aim. `vcl-aim.mjs` reads VCL's offset itself, as the GTK panel hosting VCL's root pane less the root
+pane (they agree after a pointer event), and `drag.mjs`'s `locate` moves LibreOffice's character extents by it; the
+cell primes nothing. The engine corrects its element points the same way (`native/linux-engine/src/vcl.rs`) or refuses
+them; the harness's reading stays its own, so a proof aimed by it shows the engine's points independently.
+
+- **The Writer probe** (`writer-drag.mjs`, measured, never judged but by `--plan first`): Writer windows, fresh for each
+  run or one for a case, each run a drag (or a selection made otherwise) read by AT-SPI's selections of the first
+  paragraphs and by PRIMARY (the harness's marker claimed first), the real pointer parked where the case says
+  (`out`, `text`, `blank`), the window's geometry recorded before and after. Lanes: an engine by its drag lane label,
+  `xtest` (cua's windowless drag through XTEST, the window active), `xdotool`, `xclick`, `xhold` (real input through
+  xdotool at a person's pace), `atspi` (`Text.AddSelection`), `keys` (a background click, then Shift+Right). Aims:
+  `locate` (the drag cell's), `raw` (the drag cell's before T16), `frame`. `--plan first` is T16's proof: fresh windows,
+  every run the window's first drag, cua 30, the pointer in three places, the vendor builds, an audited case through
+  `xtrace`, and the pre-T16 aim as the control that must miss. The pilot plans (`observe`, `press`, `pacing`,
+  `mechanism`, `geometry`) are the investigation's, kept as they ran.
+- **The point probes** (`vcl-probe.mjs`): `--plan hierarchy`, each LibreOffice application's AT-SPI levels by state;
+  `--plan element`, an engine's element right click on fresh Writer, Calc and Impress windows and after that first
+  pointer event, located by the context menu VCL opens at the press, against the element's true centre from the host
+  panel, with a plain GTK 3 window the window manager frames (`pages/point-gtk3.py`) as the control.
+
 ## Files
 
 | File | What it is |
@@ -1127,4 +1153,5 @@ node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out 
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
+| `vcl-aim.mjs`, `writer-drag.mjs`, `vcl-probe.mjs`, `pages/point-gtk3.py` | M4 T16's LibreOffice offset as the harness reads it, the Writer drag probe, the point probes and their GTK 3 control scene |
 | `atspi-probe.mjs`, `atspi-cache.mjs`, `pages/atspi-gtk4.py`, `pages/atspi-qt.py` | M4 T6's AT-SPI probe on its own private display: `Cache.GetItems` over the matrix and GTK 4's `EditableText`, the answers' reading and comparison, and its GTK 4 and Qt scenes |

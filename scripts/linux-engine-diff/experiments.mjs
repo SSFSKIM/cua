@@ -31,6 +31,7 @@ import { runQtActivation } from './qt-activation.mjs';
 import { runSettle } from './action-settle.mjs';
 import { runDnd } from './dnd.mjs';
 import { runDropSignals } from './drop-signals.mjs';
+import { runWriterDrag } from './writer-drag.mjs';
 import { runKinds } from './kinds.mjs';
 import { familyNames, openFamily, readText } from './families.mjs';
 import { matrixOutcome } from './matrix-judge.mjs';
@@ -357,7 +358,7 @@ export async function runExperiment(args) {
     writeSummary(args.out);
     return complete;
   }
-  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), ...(args.experiment === 'drop-signals' ? { plan: args.plan ?? 'main', ballast: args.ballast ?? null, load_factor: args.load ? (args.loadFactor ?? 1) : null, lanes: args.lanes ?? null, trials: args.samplesTrials ?? null } : {}), ...(args.experiment === 'drag' ? { load_factor: args.load ? (args.loadFactor ?? 1) : null, ops: args.ops, trials: args.samplesTrials ?? null } : {}), started: new Date().toISOString() });
+  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), ...(args.experiment === 'drop-signals' ? { plan: args.plan ?? 'main', ballast: args.ballast ?? null, load_factor: args.load ? (args.loadFactor ?? 1) : null, lanes: args.lanes ?? null, trials: args.samplesTrials ?? null } : {}), ...(args.experiment === 'writer-drag' ? { plan: args.plan ?? 'observe', trials: args.samplesTrials ?? null, variants: args.variants.map((v) => v.label) } : {}), ...(args.experiment === 'drag' ? { load_factor: args.load ? (args.loadFactor ?? 1) : null, ops: args.ops, trials: args.samplesTrials ?? null } : {}), started: new Date().toISOString() });
   if (args.experiment === 'events') {
     // on a private X server of its own, watched as a Desktop's display is (events.mjs): no scene windows, no desktop
     const { md, pass } = await runEvents(args, emit);
@@ -386,8 +387,8 @@ export async function runExperiment(args) {
       md = result.md;
       outcome = { complete: result.pass, failed: result.pass ? [] : [`${result.label} (FAIL: a first capture of cua's wrong or unjudged; REFERENCE MISMATCH: the pinned build's capture did not confirm a truth; CONTROL NON-DISCRIMINATING: a control lane captured every first frame right)`] };
     }
-    else if (['drag', 'kinds', 'dnd', 'drop-signals'].includes(args.experiment)) {
-      const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd, 'drop-signals': runDropSignals }[args.experiment];
+    else if (['drag', 'kinds', 'dnd', 'drop-signals', 'writer-drag'].includes(args.experiment)) {
+      const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd, 'drop-signals': runDropSignals, 'writer-drag': runWriterDrag }[args.experiment];
       const result = await measure(args, { desktop, emit });
       md = result.md;
       // the drag experiment's judges (T10) fail the run as an incomplete one does; the others report completeness only

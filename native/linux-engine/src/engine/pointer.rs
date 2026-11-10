@@ -661,7 +661,13 @@ impl Engine {
     pub(super) fn move_pointer(&mut self, input: Option<Value>) -> Result<Value> {
         let input: MoveInput = parse_input(input)?;
         let window = input.window.map(|w| w.id);
-        let way = self.route_for(window, Kind::Move)?;
+        // the point in root coordinates, for a family that takes a move only at a visible point; a point that cannot
+        // be translated is judged as none (doubt), and its own error comes inside the route
+        let point: Vec<_> = window
+            .and_then(|window| self.x.desktop_position(window, input.x, input.y).ok())
+            .into_iter()
+            .collect();
+        let way = self.route_along(window, Kind::Move, &point)?;
         // the foreground route activates only once the chord is known good
         self.enter_checked(way, window, |x| chord(x, input.key.as_deref()).map(drop))?;
         let target = target_of(way, window);

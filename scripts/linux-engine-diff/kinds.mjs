@@ -238,7 +238,7 @@ function request(scene, kind, i, point) {
 // ---------------------------------------------------------------------------------------------------------------
 // the run
 
-async function series(ctx, spec, scene, kind, n) {
+export async function series(ctx, spec, scene, kind, n) {
   const { witness, emit, family, desktop } = ctx;
   const engine = new Engine(spec).start();
   const runs = [];

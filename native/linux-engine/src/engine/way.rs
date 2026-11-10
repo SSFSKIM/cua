@@ -81,8 +81,8 @@ impl Engine {
         self.route_along(window, kind, &[])
     }
 
-    /// [`Engine::route_for`] for input along a path of root points (a drag's every sample): a family's
-    /// `unless_path_unobscured` judges the path.
+    /// [`Engine::route_for`] for input at root points (a drag's every sample, a move's one point): a family's
+    /// `unless_path_unobscured` judges them.
     pub(super) fn route_along(&mut self, window: Option<Window>, kind: Kind, path: &[(i16, i16)]) -> Result<Way> {
         let way = match window {
             None => Way::Desktop,
@@ -91,7 +91,7 @@ impl Engine {
                 let ignored = match family.and_then(|f| f.ignores(kind)) {
                     Some(When::Always) => true,
                     Some(When::UnlessUnobscured) => !self.x.unobscured(window),
-                    // measurement only (T13): the path's cover left unjudged
+                    // measurement only (T13): the points' cover left unjudged
                     Some(When::UnlessPathUnobscured) => {
                         !self.cfg.drag_ignore_cover && !self.x.points_unobscured(window, path)
                     }

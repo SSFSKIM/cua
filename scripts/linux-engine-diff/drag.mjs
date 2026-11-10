@@ -603,7 +603,7 @@ async function readReceived(ctx, scene) {
   return parseDragStatus(nodes.flatMap((n) => [n.name, n.value, n.text].filter((s) => typeof s === 'string'))).received;
 }
 
-async function series(ctx, spec, scene, at, kind, n, { prime = false, start = 0 } = {}) {
+export async function series(ctx, spec, scene, at, kind, n, { prime = false, start = 0 } = {}) {
   const { witness, emit, family } = ctx;
   const engine = new Engine(spec).start();
   const runs = [];

@@ -87,8 +87,9 @@ pub enum When {
     Always,
     /// Unless the window is fully unobscured (`cover.rs`; any doubt counts as obscured).
     UnlessUnobscured,
-    /// For a drag: unless every point of its path, vertices and the segments between them, is unobscured in the window
-    /// (`cover.rs` `points_unobscured`; any doubt counts as obscured). Another kind, which has no path, is ignored.
+    /// For a drag or a move: unless every point it sends, a drag's vertices and the segments between them or a move's
+    /// one point, is unobscured in the window (`cover.rs` `points_unobscured`; any doubt counts as obscured). Another
+    /// kind, which has no points, is ignored.
     UnlessPathUnobscured,
 }
 
@@ -275,9 +276,14 @@ pub const FAMILIES: &[Family] = &[
     // Gecko's Text answers a U+FEFF after each character beyond the BMP (M0.4), which the paste's confirmation strips
     // there and only there, so a real U+FEFF still counts. Gecko ignores synthetic coordinate clicks while any of its
     // window is covered or off the screen, by a rule that is neither the click point nor the visible area (M0.4 at
-    // 1280×781; M1a.3 at 800×600), and takes them while it is fully unobscured; its scrolls and pointer moves likewise
-    // (M3.1: ignored fully covered, taken with half the window covered, so the clicks' predicate covers them), and its
-    // drags.
+    // 1280×781; M1a.3 at 800×600), and takes them while it is fully unobscured; its scrolls likewise (M3.1: ignored
+    // with the window's bottom 70% covered, the point visible). Its pointer moves and drags are decided by their points
+    // (T15, evidence `m4/drag-predicates/`): a move to a covered point and a drag whose path runs under the cover are
+    // ignored however much of the window shows (the top 55% covered: moves 0 of 10, the selection, the range, the
+    // scrollbar thumb and the drop 0 of 10, the visible canvas stroke 40 of 40), and every point visible they are taken
+    // (half covered: moves and every drag along a visible path 10 of 10, the canvas stroke under the cover 0 of 40; 70%
+    // covered: moves and the range 10 of 10). So they are judged at their points, as Chromium's drags are, the
+    // pinned build's background requests measured on a private display.
     Family {
         name: "Gecko",
         toolkit: Some("Gecko"),
@@ -305,11 +311,11 @@ pub const FAMILIES: &[Family] = &[
             },
             Ignored {
                 kind: Kind::Move,
-                when: When::UnlessUnobscured,
+                when: When::UnlessPathUnobscured,
             },
             Ignored {
                 kind: Kind::Drag,
-                when: When::UnlessUnobscured,
+                when: When::UnlessPathUnobscured,
             },
         ],
         feff_after_astral: true,
@@ -322,7 +328,7 @@ pub const FAMILIES: &[Family] = &[
         evidence: "m4/drag-motion/; m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
                    m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600; m3/kinds/ \
                    runs m31-kinds-covered, m31-kinds-partial, m31-kinds-partial-deep, m31-move-covered, \
-                   m31-drag-covered, m31-drag-partial, m31-drag-partial-deep, m31-dnd-covered",
+                   m31-drag-covered, m31-drag-partial, m31-drag-partial-deep, m31-dnd-covered; m4/drag-predicates/",
     },
     // GTK 4 reads input only as XInput 2 events: a synthetic key, click, scroll, drag or pointer move never arrives,
     // covered or visible, in every engine (M0.4; M3.1), so these take the foreground route in dedicated mode and are
@@ -725,8 +731,11 @@ mod tests {
     }
 
     #[test]
-    fn scroll_and_move_are_ignored_by_gtk_4_always_and_by_gecko_unless_unobscured() {
-        for kind in [Kind::Scroll, Kind::Move] {
+    fn scroll_and_move_are_ignored_by_gtk_4_always_and_by_gecko_unless_the_window_or_the_point_is_unobscured() {
+        for (kind, gecko) in [
+            (Kind::Scroll, When::UnlessUnobscured),
+            (Kind::Move, When::UnlessPathUnobscured),
+        ] {
             let ignores = |class, toolkit: Option<Toolkit>| {
                 family(FAMILIES, Some(class), toolkit.as_ref()).and_then(|f| f.ignores(kind))
             };
@@ -735,7 +744,11 @@ mod tests {
                 Some(When::Always),
                 "{kind:?}"
             );
-            assert_eq!(ignores("firefox", None), Some(When::UnlessUnobscured), "{kind:?}");
+            assert_eq!(
+                ignores("firefox", None),
+                Some(gecko),
+                "Gecko's scroll keeps the window's rule, its move is judged at its point: {kind:?}"
+            );
             for class in ["Google-chrome", "XTerm", "Gnome-terminal"] {
                 assert_eq!(ignores(class, None), None, "{class} takes background {kind:?}");
             }
@@ -744,7 +757,7 @@ mod tests {
     }
 
     #[test]
-    fn drags_are_ignored_by_gtk_4_always_by_gecko_unless_unobscured_and_by_chromium_unless_their_path_is() {
+    fn drags_are_ignored_by_gtk_4_always_and_by_gecko_and_chromium_unless_their_path_is_unobscured() {
         let drag = |class, toolkit: Option<Toolkit>| {
             family(FAMILIES, Some(class), toolkit.as_ref()).and_then(|f| f.ignores(Kind::Drag))
         };
@@ -754,8 +767,8 @@ mod tests {
         );
         assert_eq!(
             drag("firefox", None),
-            Some(When::UnlessUnobscured),
-            "Gecko's flip is the window's"
+            Some(When::UnlessPathUnobscured),
+            "Gecko takes a drag along a visible path (T15)"
         );
         assert_eq!(drag("Google-chrome", None), Some(When::UnlessPathUnobscured));
         assert_eq!(

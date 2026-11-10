@@ -32,6 +32,7 @@ import { runSettle } from './action-settle.mjs';
 import { runDnd } from './dnd.mjs';
 import { runDropSignals } from './drop-signals.mjs';
 import { runKinds } from './kinds.mjs';
+import { runPredicates } from './predicates.mjs';
 import { familyNames, openFamily, readText } from './families.mjs';
 import { matrixOutcome } from './matrix-judge.mjs';
 import { matrixMarkdown, runMatrix } from './matrix.mjs';
@@ -386,11 +387,12 @@ export async function runExperiment(args) {
       md = result.md;
       outcome = { complete: result.pass, failed: result.pass ? [] : [`${result.label} (FAIL: a first capture of cua's wrong or unjudged; REFERENCE MISMATCH: the pinned build's capture did not confirm a truth; CONTROL NON-DISCRIMINATING: a control lane captured every first frame right)`] };
     }
-    else if (['drag', 'kinds', 'dnd', 'drop-signals'].includes(args.experiment)) {
-      const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd, 'drop-signals': runDropSignals }[args.experiment];
+    else if (['drag', 'kinds', 'dnd', 'drop-signals', 'predicates'].includes(args.experiment)) {
+      const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd, 'drop-signals': runDropSignals, predicates: runPredicates }[args.experiment];
       const result = await measure(args, { desktop, emit });
       md = result.md;
-      // the drag experiment's judges (T10) fail the run as an incomplete one does; the others report completeness only
+      // the drag experiment's judges (T10) and the predicate cases' (T15) fail the run as an incomplete one does; the others
+      // report completeness only
       outcome = { complete: result.complete && result.pass !== false, failed: result.failed };
     } else if (args.experiment === 'matrix') {
       const { names } = await runMatrix(args, { desktop, emit, run });

@@ -351,8 +351,8 @@ export const REFUSALS = [
     op: 'drag',
     scene: 'chrome-input',
     reason:
-      "the scene's Chrome window is fully covered, where Chromium ignores background text-selection, scrollbar-thumb and drag-and-drop drags in every engine (m31-drag-covered: 0/10 in the pinned build and cua); cua refuses a drag into Chromium unless every point of its path is visible in the window, because it cannot tell before sending a drag that would land from one that would not. So a covered drag that lands in the vendor is refused: this pad's, and a range's (9/10 in the pinned build) and a canvas's (10/10). An M4 candidate decides by the AT-SPI role at the path's start",
-    section: 'Decision Log, M3.1 (Chromium Drag unless_path_unobscured); m3/kinds/ runs m31-drag-covered, m31-drag-partial, m31-drag-partial-top',
+      "the scene's Chrome window is fully covered, where Chromium ignores background text-selection, scrollbar-thumb and drag-and-drop drags in every engine (m31-drag-covered: 0/10 in the pinned build and cua); cua refuses a drag into Chromium unless every point of its path is visible in the window, because it cannot tell before sending a drag that would land from one that would not. So a covered drag that lands in the vendor is refused: this pad's, and a range's (9/10 in the pinned build) and a canvas's (10/10). On a private display M4's T13 saw every covered path survive (M3.1's covered misses did not reproduce there), so no part of a path decided and no start role predicted anything: nothing was adopted and the rule stands (T15)",
+    section: 'Decision Log, M3.1 (Chromium Drag unless_path_unobscured); m3/kinds/ runs m31-drag-covered, m31-drag-partial, m31-drag-partial-top; m4/drop-signals/ (T13), m4/drag-predicates/ (T15)',
   },
   {
     // the drag-and-drop experiment's Chrome cell (dnd.mjs), whose cua lane answers the cancel

@@ -321,9 +321,10 @@ const selectDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.s
 function device({ device: expect, condition = covered, park, read, request, effect, route, args, inFront = false, heldAtStart = false, settleMs = 300, alongside, pointerMoves = false, confirm = false, freezeEnds = null }) {
   const dedicated = expect === 'foreground';
   const lateReal = expect === 'late-take-real';
-  // a real late take (#264, M4's T14): the run's own browser stopped from 60 ms after the request until one of
-  // `freezeEnds` (by the sample's index), so that it takes after the release (task 68's reproduction)
-  if (lateReal) alongside = (ctx) => (ctx.freezing = ctx.freezeBrowser(ctx.browserPid, { from: 60, to: freezeEnds[ctx.i % freezeEnds.length] }));
+  // a real late take (#264, M4's T14): the run's own browser stopped from just after the request, before its take,
+  // until one of `freezeEnds` (by the sample's index, ms after the request) around the hold's release, so that it
+  // takes after the release (task 68's reproduction, stopped sooner: the drag page's source takes within 50 ms)
+  if (lateReal) alongside = (ctx) => (ctx.freezing = ctx.freezeBrowser(ctx.browserPid, { from: 3, to: freezeEnds[ctx.i % freezeEnds.length] }));
   return {
     // a drop the engine confirms or reports: its notice read on the same engine after the drop's window (`confirm`)
     confirm,
@@ -518,8 +519,8 @@ export const DEVICE_OPS = {
   // once. In front (the background route, a synthetic Escape) and on a dedicated desktop (the foreground route, an
   // XTEST Escape). The thaw is swept across the window where task 68 saw late takes (240-250 ms after the request in
   // front); the foreground route's activation comes first, so its sweep starts later
-  chrome_dnd_late_take_real_in_front_shared: device({ device: 'late-take-real', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndShortDrag, inFront: true, settleMs: DND_SETTLE_MS, freezeEnds: [240, 245, 250] }),
-  chrome_dnd_late_take_real_covered_dedicated: device({ device: 'late-take-real', condition: covered, read: dropStatus, request: dndShortDrag, route: 'foreground', args: DEDICATED, settleMs: DND_SETTLE_MS, freezeEnds: [270, 290, 310] }),
+  chrome_dnd_late_take_real_in_front_shared: device({ device: 'late-take-real', condition: alreadyInFront, park: INSIDE, read: dropStatus, request: dndShortDrag, inFront: true, settleMs: DND_SETTLE_MS, freezeEnds: [245, 252, 260] }),
+  chrome_dnd_late_take_real_covered_dedicated: device({ device: 'late-take-real', condition: covered, read: dropStatus, request: dndShortDrag, route: 'foreground', args: DEDICATED, settleMs: DND_SETTLE_MS, freezeEnds: [315, 325, 335] }),
   // the same with the drop's signature already held (Chrome active, focused, on top) and a corner covered, so the drag
   // is watched: cancelled in time and said so; with the cancel forced late, every answer says the drop may have happened
   chrome_dnd_obscured_in_front_shared: device({ device: 'cancel', condition: obscuredInFront, park: INSIDE, read: dropStatus, request: dndDrag, heldAtStart: true, settleMs: DND_SETTLE_MS }),
@@ -641,9 +642,12 @@ export function judgeDevice(op, rows, audit) {
     bad('the get_window_state after the drag did not run', (r) => r.state_ok === true);
     bad('a late take whose read did not carry the notice or whose click was not refused', (r) =>
       !late(r) || (r.state_notice === r.expected.late_notice && r.next_ok === false && r.next_error === r.expected.late_refusal));
-    // the control: a drop under way at the release is confirmed when it landed, and reported unconfirmed when not
+    // the control: a drop under way at the release that did not land is reported unconfirmed, never ok; one that
+    // landed is confirmed, or, where the stopped browser's request came after the drop's window, unconfirmed too (an
+    // honest "may not have landed", counted in the row)
+    const unconfirmed = (r) => r.state_notice === r.expected.unconfirmed_notice && r.next_ok === false && r.next_error === r.expected.unconfirmed_refusal;
     bad('a drop under way at the release answered other than as it landed', (r) =>
-      !tookInTime(r) || (r.dropped ? r.state_notice === null && r.next_ok === true : r.state_notice === r.expected.unconfirmed_notice && r.next_error === r.expected.unconfirmed_refusal));
+      !tookInTime(r) || (r.dropped ? (r.state_notice === null && r.next_ok === true) || unconfirmed(r) : unconfirmed(r)));
     bad('a drag with no take left something pending', (r) => r.xdnd_takes > 0 || (r.state_notice === null && r.next_ok === true));
     if (!rows.some(late)) reasons.push('no late take came: nothing showed the notice');
     if (DEVICE_OPS[op].route() === 'foreground') bad('not the foreground route', (r) => r.route === 'foreground');
@@ -669,7 +673,9 @@ export function judgeDevice(op, rows, audit) {
     bad('the window was not left active', (r) => r.activated === true);
   }
   // a late cancel's drop changes the desktop: its answer is judged instead
-  if (!['answer', 'late', 'late-take'].includes(expect)) bad('the witness changed', (r) => r.witness === true);
+  // and so does the stopped browser's: its drag windows stay mapped until it runs again, after the span (the in-front
+  // case judges the desktop at its end instead)
+  if (!['answer', 'late', 'late-take', 'late-take-real'].includes(expect)) bad('the witness changed', (r) => r.witness === true);
   if (expect !== 'answer') {
     if (!audit) reasons.push('the audit did not run');
     else if (!audit.clean) reasons.push(`the ${audit.kind} audit found ${audit.forbidden?.join(', ') || 'no traced requests'}`);

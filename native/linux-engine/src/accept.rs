@@ -13,9 +13,10 @@
 //! accept's. The drag loop's cursor and the "no drop" status's are the same image (task 68's records: every drag), and
 //! the accept's is another, so the cursors are told apart by their image, not their order ([`accept_shown`]): the
 //! accept is the cursor shown now when its image is none of those shown up to the take (the drag loop's, the page's
-//! own, the one shown when the watch began) and not the first status's, which is never read as the accept. So a path
-//! that leaves the zone after its accept withdraws it, and a press inside the zone, whose first status already accepts,
-//! is left to the floor.
+//! own, the one shown when the watch began). So a path that leaves the zone after its accept withdraws it, and a press
+//! inside the zone, whose first status already accepts, reads as accepted only while that status is shown: the no-drop
+//! status of a path that then leaves withdraws it. A release on an accept Chrome is about to withdraw is still a drop
+//! the confirmation reports when it does not land.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -50,11 +51,12 @@ fn after(t: u32, since: u32) -> bool {
 }
 
 /// The index in `changes` (in arrival order) of the change read as Chrome's accept, while it is the cursor shown, for a
-/// take at server time `take`: the last change to an unnamed cursor, strictly after the take and not its first status,
-/// whose image is none of those excluded. Excluded are the image shown when the watch began (`initial`), every unnamed
-/// cursor's at or before the take (the drag loop's, which is also "no drop"'s, and any the page showed), and the first
-/// status's after it. None when any of those images, or the last change's, is unknown (`images`, by serial), when no
-/// change came at or before the take, or when the last change is the first status: the floor then decides.
+/// take at server time `take`: the last change to an unnamed cursor, strictly after the take, whose image is none of
+/// those excluded. Excluded are the image shown when the watch began (`initial`) and every unnamed cursor's at or before
+/// the take: the drag loop's, which is also "no drop"'s, and any the page showed. None when any of those images, or the
+/// last change's, is unknown (`images`, by serial), or when no change came at or before the take: the floor then
+/// decides. A first status that already accepts (a press inside the zone) is read as the accept while it is shown, and
+/// the no-drop status a path leaving the zone brings withdraws it, by its image.
 pub fn accept_shown(
     changes: &[CursorChange],
     images: &HashMap<u32, Image>,
@@ -64,19 +66,12 @@ pub fn accept_shown(
     let unnamed: Vec<(usize, &CursorChange)> = changes.iter().enumerate().filter(|(_, c)| !c.named).collect();
     let image = |c: &CursorChange| images.get(&c.serial).copied();
     let mut excluded = vec![initial];
-    let mut loop_seen = false;
-    let mut first_status: Option<usize> = None;
-    for &(i, c) in &unnamed {
-        if !after(c.time, take) {
-            excluded.push(image(c)?);
-            loop_seen = true;
-        } else if first_status.is_none() {
-            excluded.push(image(c)?);
-            first_status = Some(i);
-        }
+    for &(_, c) in unnamed.iter().filter(|(_, c)| !after(c.time, take)) {
+        excluded.push(image(c)?);
     }
     let &(last, change) = unnamed.last()?;
-    if !loop_seen || first_status.is_none_or(|first| last <= first) {
+    // the drag loop's own cursor, at or before the take, is what tells no drop's image
+    if excluded.len() < 2 || !after(change.time, take) {
         return None;
     }
     let shown = image(change)?;
@@ -244,28 +239,26 @@ mod tests {
     }
 
     #[test]
-    fn a_press_inside_the_zone_whose_first_status_accepts_is_never_released_early_even_after_it_leaves() {
+    fn a_press_inside_the_zone_reads_its_first_status_s_accept_only_while_shown_and_never_its_no_drop() {
         // the first status already accepts: by order, the second change (no drop, after the path left) would read as
-        // the accept (the fix wave's gap); by image it is no drop's, and the first status is never the accept
+        // the accept (the fix wave's gap); by image the accept is the accept while shown, and no drop is never one
         let inside = [change(81, 99), change(83, 102)];
-        assert_eq!(accept_shown(&inside, &chrome(), ARROW, 100), None, "the floor decides");
+        assert_eq!(accept_shown(&inside, &chrome(), ARROW, 100), Some(1), "accepted while it is shown");
         let inside_left = [change(81, 99), change(83, 102), change(82, 110)];
-        assert_eq!(accept_shown(&inside_left, &chrome(), ARROW, 100), None);
-        // left and back in: the accept's image stays excluded as the first status's, so the floor still decides
+        assert_eq!(accept_shown(&inside_left, &chrome(), ARROW, 100), None, "no drop, after the path left");
         let inside_back = [change(81, 99), change(83, 102), change(82, 110), change(83, 118)];
-        assert_eq!(
-            accept_shown(&inside_back, &chrome(), ARROW, 100),
-            None,
-            "the first status's image stays excluded"
-        );
+        assert_eq!(accept_shown(&inside_back, &chrome(), ARROW, 100), Some(3), "back in the zone");
     }
 
     #[test]
-    fn a_first_status_in_the_take_s_millisecond_leaves_the_drag_to_the_floor() {
-        // no drop in the take's millisecond: it counts as shown before the take, so the accept after it is the first
-        // status strictly after it, never read
+    fn a_status_in_the_take_s_millisecond_counts_as_shown_up_to_the_take() {
+        // no drop in the take's millisecond: its image is excluded either way, and the accept after it is read
         let same_ms = [change(81, 99), change(82, 100), change(83, 103)];
-        assert_eq!(accept_shown(&same_ms, &chrome(), ARROW, 100), None);
+        assert_eq!(accept_shown(&same_ms, &chrome(), ARROW, 100), Some(2));
+        // an accept in the take's millisecond (a press inside the zone): its image is excluded, so that drag waits for
+        // the floor
+        let accept_same_ms = [change(81, 99), change(83, 100), change(83, 103)];
+        assert_eq!(accept_shown(&accept_same_ms, &chrome(), ARROW, 100), None);
         // the loop's cursor in the take's millisecond, the first status after: as the plain drop
         let loop_same_ms = [change(81, 100), change(82, 115), change(83, 116)];
         assert_eq!(accept_shown(&loop_same_ms, &chrome(), ARROW, 100), Some(2));
@@ -298,9 +291,9 @@ mod tests {
         let seq = [change(81, take), change(82, u32::MAX), change(83, 3)];
         assert_eq!(accept_shown(&seq, &chrome(), ARROW, take), Some(2));
         assert_eq!(
-            accept_shown(&seq, &chrome(), ARROW, 2),
+            accept_shown(&seq, &chrome(), ARROW, 5),
             None,
-            "only the last is after a take at 2"
+            "nothing is after a take at 5, past the wrap"
         );
     }
 }

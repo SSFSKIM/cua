@@ -275,9 +275,9 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   path keeps its own pacing, and the floor's keepalives end at the first look that reads the accept. Chrome shows its
   target's answer as its drag grab's cursor (XFixes `DisplayCursorNotify` on the root); the cursors are told apart by
   their image: the accept is the cursor shown now when its image is none of those shown up to the take (the drag
-  loop's own, which is also the no-drop status's, and any the page showed) and not the first status's after it. So a
-  path that leaves the zone withdraws its accept, a press inside the zone (whose first status already accepts) waits
-  for the floor, and a false release would still be reported by the confirmation.
+  loop's own, which is also the no-drop status's, and any the page showed). So a path that leaves the zone withdraws
+  its accept by the no-drop image, a press inside the zone (whose first status already accepts) is accepted only while
+  that status is shown, and a false release would still be reported by the confirmation.
 
   A short path can end before the take (task 22, evidence `m3/drop-misses/task22/`): under a load of Chrome windows
   the renderer gets the drag's first moves a frame or a stall late and starts the drag and drop after a 40 px path has

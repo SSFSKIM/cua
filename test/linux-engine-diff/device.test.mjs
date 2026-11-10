@@ -239,7 +239,11 @@ test("a real late take passes only where the drag answered at its release, the r
   assert.equal(judgeDevice(op, [{ ...late, state_notice: null }], audit).pass, false, 'a late take the read did not report');
   assert.equal(judgeDevice(op, [{ ...late, next_ok: true, next_error: null }], audit).pass, false, 'the click after a late take ran');
   assert.equal(judgeDevice(op, [late, { ...left, state_notice: null, next_ok: true, next_error: null }], audit).pass, false, 'a drop that did not land answered ok');
-  assert.equal(judgeDevice(op, [late, { ...landed, state_notice: expected.unconfirmed_notice }], audit).pass, false, 'a landed drop called unconfirmed');
+  // a landed drop whose confirmation came after the window (a stopped browser) is honestly unconfirmed; only a notice
+  // the next request then ignores fails
+  const lateConfirm = { ...landed, state_notice: expected.unconfirmed_notice, next_ok: false, next_error: expected.unconfirmed_refusal };
+  assert.deepEqual(judgeDevice(op, [late, lateConfirm], audit), { pass: true, reasons: [] }, 'an honest unconfirmed on a landed drop');
+  assert.equal(judgeDevice(op, [late, { ...landed, state_notice: expected.unconfirmed_notice }], audit).pass, false, 'a notice the next request did not honour');
   assert.equal(judgeDevice(op, [late, { ...refused, state_notice: expected.late_notice }], audit).pass, false, 'a notice with no take');
   assert.equal(judgeDevice(op, [{ ...late, ok: false, error: 'x' }], audit).pass, false, 'the drag refused');
   // the dedicated case: the foreground route, its Escape through XTEST

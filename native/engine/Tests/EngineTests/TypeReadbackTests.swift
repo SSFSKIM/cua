@@ -19,10 +19,13 @@ private final class FakeField {
   var returnInserts = true
   /// An app that has not consumed the typing (yet): delivered text changes nothing.
   var ignoresInput = false
+  /// An app that takes the text but reports its selected range where it was before (`initialRange`).
+  var moveCaret = true
   /// A change after this many value reads (a field turning secure, unreadable, or re-created).
   var changeAfterReads: Int?
   var change: (FakeField) -> Void = { _ in }
   var calls: [String] = []
+  private(set) var initialRange: NSRange?
   private var shown: String?
   private var lagLeft = 0
   private var valueReads = 0
@@ -30,6 +33,7 @@ private final class FakeField {
   init(value: String?, range: NSRange?) {
     self.value = value
     self.range = range
+    initialRange = range
     shown = value
   }
 
@@ -69,7 +73,7 @@ private final class FakeApp {
                   subrole: { $0.calls.append("subrole"); return $0.subrole },
                   value: { $0.readValue() },
                   valueUnits: { field in field.readValue().map { Array($0.utf16) } },
-                  range: { $0.calls.append("range"); return $0.range },
+                  range: { $0.calls.append("range"); return $0.moveCaret ? $0.range : $0.initialRange },
                   same: { $0 === $1 },
                   now: { self.clock },
                   sleep: { self.clock += $0; self.sleeps += 1 })
@@ -316,6 +320,33 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertNil(error)
     XCTAssertEqual(record(meta)["checkpoints"] as? Int, 1, "the caller's Return waits for its text to read back")
     XCTAssertEqual(record(meta)["keysUnconfirmed"] as? Int, 1)
+  }
+
+  /// The review of a8e55870..8f465bf9, P2: a secret that equals the selection it replaces takes the same reads and
+  /// waits as one that does not, so the schedule is no equality oracle; and a secret whose caret never moves is not
+  /// confirmed.
+  func testEveryConcealedConfirmationTakesTheSameSchedule() {
+    func schedule(_ secret: String) -> (calls: [String], sleeps: Int, record: NSDictionary) {
+      let field = FakeField(value: "abc", range: NSRange(location: 0, length: 3))
+      let app = FakeApp(field)
+      let (error, meta) = type(secret, into: app, concealed: true)
+      XCTAssertNil(error, secret)
+      XCTAssertEqual(field.value, secret)
+      return (field.calls, app.sleeps, record(meta) as NSDictionary)
+    }
+    let same = schedule("abc"), other = schedule("xyz")
+    XCTAssertEqual(same.calls, other.calls, "the same reads, in the same order")
+    XCTAssertEqual(same.sleeps, other.sleeps)
+    XCTAssertEqual(same.record, other.record)
+    XCTAssertTrue(other.calls.contains("range") && other.calls.filter { $0 == "range" }.count == 2,
+                  "the snapshot's range and the caret's, for a secret that changed the field too: \(other.calls)")
+
+    let stuck = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    stuck.moveCaret = false  // the value takes the text, the caret reads where it was
+    let (error, meta) = type("s3cr3t", into: FakeApp(stuck), concealed: true)
+    XCTAssertEqual(stuck.value, "s3cr3t")
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(meta)["reason"] as? String, "unchanged")
   }
 
   func testAConcealedTextIntoASecureFieldIsNeverRead() {

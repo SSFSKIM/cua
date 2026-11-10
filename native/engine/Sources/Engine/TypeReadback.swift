@@ -398,14 +398,17 @@ final class TypeReadback<Element> {
       expected += value[(range.location + range.length)...]
       defer { readbackZero(&expected) }
       if readbackMayBeTruncated(units: expected) { throw unconfirmed(.possiblyTruncated, beforeKey) }
-      let unchanged = expected == value, inserted = expected.count - (value.count - range.length)
+      // One schedule for every concealed confirmation (the review of a8e55870..8f465bf9, P2): the caret evidence and a
+      // value read after it are always required, never only when the secret equals the text it replaced, so the reads
+      // and waits do not tell whether a secret matches a selection the caller chose.
+      let inserted = expected.count - (value.count - range.length)
       let valueUnits = reads.valueUnits
       poll = readbackPoll(field, role: role, reads: reads) { element in
         guard var read = valueUnits(element) else { return .unreadable }
         defer { readbackZero(&read) }
         if readbackMayBeTruncated(units: read) { return .differs(cut: true, actual: nil) }  // a cut read never counts as equal
         guard read == expected else { return .differs(cut: false, actual: nil) }
-        return equalAfterCaret(element, unchanged: unchanged, inserted: inserted)
+        return equalAfterCaret(element, unchanged: true, inserted: inserted)
       }
     } else {
       let typed = typedUnits.map(readbackInsertion).joined()
@@ -486,7 +489,7 @@ func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = n
   switch reason {
   case .valueMismatch: why = "the field does not read as expected"
   case .concealedMismatch: why = "the field does not match what was typed"
-  case .unchanged: why = "the field still reads as it did before (its selection held the same text) and its caret did not move past the text"
+  case .unchanged: why = "nothing shows the field took the text: it reads as expected, but its caret did not move past the text"
   case .secure, .becameSecure: why = "the field is a password field, which is never read back"
   case .noFocusedElement: why = "no focused field could be found to read back"
   case .notTextField: why = "the focused element is not a text field"

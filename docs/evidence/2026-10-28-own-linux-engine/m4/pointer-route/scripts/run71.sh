@@ -6,6 +6,7 @@
 # harness is the export named as an argument (as run58.sh takes it), and the real pointer's starting place is read
 # before the step and put back after it, outside the guarded tree, once every window of the run's is closed. No
 # whole-run RECORD: the harness refuses it on a display without the private mark, and :0 carries none.
+# WRAP names another wrapper in place of wrap50.py (wrap71.py, only on the design session's word).
 # usage: run71.sh <out> <harness dir> <linux-engine-diff.mjs arguments, without --out>
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -37,7 +38,7 @@ tw=$!
 sleep 1
 started=$(date -u +%FT%TZ)
 cd "$LIVE"
-python3 -I "$GUARDS/wrap50.py" "$out" "$tmproot" person node "$LIVE/scripts/linux-engine-diff.mjs" "$@" --out "$out/run" > "$out/wrap.out" 2>&1
+python3 -I "${WRAP:-$GUARDS/wrap50.py}" "$out" "$tmproot" person node "$LIVE/scripts/linux-engine-diff.mjs" "$@" --out "$out/run" > "$out/wrap.out" 2>&1
 code=$?
 echo "started $started finished $(date -u +%FT%TZ) wrap exit $code" >> "$out/owner-baseline.txt"
 touch "$out/session.done"

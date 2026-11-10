@@ -1,0 +1,2 @@
+{"t": 1047.481, "kind": "outside-peer-connection", "pids": [394729], "comm": "gedit", "peer_path": "/tmp/c71-i78v3s/cua171-run-p25gOV/session/bus/dbus-v52gEiGQo5", "peer_pids": [], "peer_comm": null, "peer_inode": "129020042"}
+{"t": 1047.481, "kind": "stop-sent", "pid": 345624, "why": "outside-peer-connection"}

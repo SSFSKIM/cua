@@ -1,0 +1,62 @@
+fatal: not a git repository (or any of the parent directories): .git
+negative check: the witness failed the activating stub (stacking, active, focus)
+family electron, input: 21 cells
+cell electron click visible pointer-in
+| Electron (cua fixture) | click | visible | in | 10/10 | – |
+cell electron scroll visible pointer-in
+| Electron (cua fixture) | scroll | visible | in | 10/10 | – |
+cell electron move visible pointer-in
+| Electron (cua fixture) | move | visible | in | 10/10 | – |
+cell electron click visible pointer-out
+| Electron (cua fixture) | click | visible | out | 10/10 | – |
+cell electron scroll visible pointer-out
+| Electron (cua fixture) | scroll | visible | out | 10/10 | – |
+cell electron move visible pointer-out
+| Electron (cua fixture) | move | visible | out | 10/10 | – |
+cell electron click partial pointer-in
+| Electron (cua fixture) | click | partial | in | 10/10 | – |
+cell electron scroll partial pointer-in
+| Electron (cua fixture) | scroll | partial | in | 10/10 | – |
+cell electron move partial pointer-in
+| Electron (cua fixture) | move | partial | in | 10/10 | – |
+cell electron click partial pointer-under
+| Electron (cua fixture) | click | partial | under | 10/10 | – |
+cell electron scroll partial pointer-under
+| Electron (cua fixture) | scroll | partial | under | 10/10 | – |
+cell electron move partial pointer-under
+| Electron (cua fixture) | move | partial | under | 10/10 | – |
+cell electron click partial pointer-out
+| Electron (cua fixture) | click | partial | out | 10/10 | – |
+cell electron scroll partial pointer-out
+| Electron (cua fixture) | scroll | partial | out | 10/10 | – |
+cell electron move partial pointer-out
+| Electron (cua fixture) | move | partial | out | 10/10 | – |
+cell electron click covered pointer-under
+| Electron (cua fixture) | click | covered | under | 10/10 | – |
+cell electron scroll covered pointer-under
+| Electron (cua fixture) | scroll | covered | under | 10/10 | – |
+cell electron move covered pointer-under
+| Electron (cua fixture) | move | covered | under | 10/10 | – |
+cell electron click covered pointer-out
+| Electron (cua fixture) | click | covered | out | 10/10 | – |
+cell electron scroll covered pointer-out
+| Electron (cua fixture) | scroll | covered | out | 10/10 | – |
+cell electron move covered pointer-out
+| Electron (cua fixture) | move | covered | out | 10/10 | – |
+family electron, drag: 7 cells
+cell electron select visible pointer-in
+| Electron (cua fixture) | select | visible | in | 10/10 | – |
+cell electron select visible pointer-out
+| Electron (cua fixture) | select | visible | out | 0/10 (10 not ok) | – |
+cell electron select partial pointer-in
+| Electron (cua fixture) | select | partial | in | 10/10 | – |
+cell electron select partial pointer-under
+| Electron (cua fixture) | select | partial | under | 0/10 (10 not ok) | – |
+cell electron select partial pointer-out
+| Electron (cua fixture) | select | partial | out | 0/10 (10 not ok) | – |
+cell electron select covered pointer-under
+| Electron (cua fixture) | select | covered | under | 0/10 (10 not ok) | – |
+cell electron select covered pointer-out
+| Electron (cua fixture) | select | covered | out | 0/10 (10 not ok) | – |
+family gedit, input: 21 cells
+{"exit": 143, "samples": 8039, "maps_samples": 2681, "flags": 1, "decoy_connections": 0, "leftovers": [{"pid": 346444, "comm": "xprobe", "argv": "<task71>/harness-7ada8597/scripts/linux-engine-diff/xprobe/target/release/xprobe witness"}], "processes": 3305, "browsers": 43}

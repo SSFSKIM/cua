@@ -50,3 +50,81 @@ engine sources are 7ada8597's). A development run, not a release gate.
 | run | lock acquire | lock release |
 |---|---|---|
 | `dry-run/` | 2026-11-10T02:25:26Z, load 1.32 | 2026-11-10T04:03:38Z, status 0, load 0.28 |
+
+The load at the dry run's acquire was my own builds' tail. The sitting itself started at 02:25:46Z at load 0.95, after
+sitting.sh's wait for a quiet machine.
+
+The gedit cell's misses, itemized (the design session asked, 2026-11-10): each run's request point (window-relative),
+its effect and the pointer record at its request. Every run found the pointer at (630, 595), under the cover:
+`xdotool getmouselocation` names window 4194976, and `xprobe top-at` finds the same root child, which holds the run's
+front window (29360140), inside gedit's geometry.
+
+| run | point | pixels changed | took |
+|---:|---|---:|---|
+| 0, 2, 4, 6, 8 | (788, 26), onto the toolbar button | 297 | yes |
+| 1, 3, 5, 7, 9 | (450, 210), off it to the window's middle | 0 | no |
+
+With the pointer in the window or outside it, and fully covered, both moves took 10 of 10. Only the move off the
+button misses, and only with the pointer under the half cover. It was not reached on `:0` (below).
+
+## The `:0` sitting (`sitting-0/`, `sitting-0-rerun/`)
+
+The design session's "GO :0" came at 04:45Z on 2026-11-10, after it cleared `:0` of the related sessions; the window ran
+04:45Z to 06:45Z. Each step ran as a declared live run under task 50's guards unchanged (`scripts/run71.sh`: run50.sh's
+body, the guards by path from `../person-display-live/scripts/`; the hold file absent, no stress-ng), with the same
+harness export, candidate and arguments as the dry run, no whole-run RECORD, under the host lock.
+
+- **`sitting-0/`**, 04:46:31Z to 05:47:45Z: Firefox's and Chrome's 56 cells, 840 runs. Every cell is identical to
+  the dry run, the witness was unchanged on every run, the park held at every request, and no park point lay over
+  another's window. The design session accepted these 840 runs as T19's evidence. wrap50.py then stopped the step at
+  Electron's first window (below).
+- **`sitting-0-rerun/`** (`--family electron,gedit`, the guards unchanged on the design session's word), 05:53:04Z to
+  06:10:39Z: Electron's 28 cells, 280 runs, every cell identical to the dry run, witness and parks as above. The guard
+  stopped it at gedit's first window on the same pattern, and as ruled the sitting stopped there. gedit was not reached
+  on `:0`.
+- **The person's side, both steps:**
+  - The owner's Chrome kept its pid (2546101) and its start time.
+  - owner-watch saw no change in 361 and 104 checks.
+  - The only difference between before and after is the mtime of `~/.config/google-chrome`, which the owner's Chrome
+    writes on its own (task 50).
+  - Each step's TMPDIR was empty afterwards, and nothing of the run was left.
+  - The real pointer started at (142, 130), over the owner's Chrome. The first park moved it off there onto a window of
+    the run's. After each step it was put back, and it read (142, 130) again.
+- **The stops** were wrap50.py's `outside-peer-connection` (`flags.jsonl`). A run process (`electron`, then `gedit`)
+  connected to `<tmproot>/cua171-run-*/session/bus/dbus-*`, the step's own session bus. ss showed no pid for the server
+  end (`peer_pids: []`; peer inodes 128560064 and 129020042). Most likely the run's dbus-daemon had not yet accepted the
+  connection when the socket table was read. The rule proposed to the design session for a later window
+  (`scripts/wrap71.py`, not run) counts such a peer only when its path is inside the step's TMPDIR and is the unix path
+  in the connecting process's own `DBUS_SESSION_BUS_ADDRESS`.
+
+| run | lock acquire | lock release |
+|---|---|---|
+| `sitting-0/` | 2026-11-10T04:46:30Z, load 0.37 | 2026-11-10T05:48:05Z, status 1 (the guard's stop), load 1.25 |
+| `sitting-0-rerun/` | 2026-11-10T05:53:03Z, load 0.45 | 2026-11-10T06:11:05Z, status 1 (the guard's stop), load 0.54 |
+
+The load at `sitting-0/`'s release is the sitting's own. It rose with the run from 0.37 at the start, and was below
+0.6 again five minutes later.
+
+## What the sittings show
+
+- **Gecko decides by the real pointer's chain, on `:0` as on the private display.** Firefox took every pointer kind
+  (click, scroll, move, text selection) 10 of 10 while the real pointer was in its window, through cua and the pinned
+  build alike. That held fully visible, and half covered with the pointer in the visible part.
+  - With the pointer under the cover, still inside the window's geometry, Firefox took 0 of 10 in every occlusion.
+  - With the pointer outside the window it also took 0 of 10, the window fully visible included.
+  - Every one of those requests answered ok.
+  - So a pointer under a cover counts as out. What decides is the window the server finds under the pointer (the child
+    chain of X `QueryPointer`), not the window's geometry.
+- **M0.4 reconciled.** M0.4's ":0 Firefox ignores clicks while fully covered and takes them visible" holds only as a
+  consequence of the pointer: a fully covered window can never have the pointer in it, and a visible one takes clicks
+  only while the pointer is in it. M0.4's partial-cover flip (taken at 55% visible or more, ignored at 52% or less, at
+  1280×781) fits a pointer near the screen's middle, which a cover over the window's bottom reaches at about half its
+  height.
+- **The controls.**
+  - Chromium's click, scroll and move do not depend on the pointer: Chrome and Electron took them 10 of 10 in every
+    cell, on `:0` and on the private display.
+  - Chromium's selection drag does depend on it, as task 20 found. With the pointer under a cover or outside, the
+    press watch answers that the drag may not have started, and nothing is selected, so cua already answers it
+    honestly.
+  - gedit (measured on the private display only) takes everything wherever the pointer is, except the one move cell
+    above.

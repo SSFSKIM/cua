@@ -2,7 +2,7 @@ name: probe-354
 on:
   push:
     branches: ['probe/354-measure']
-    paths-ignore: ['scripts/probe-354/offline/**', 'scripts/probe-354-fences/**', '.github/workflows/probe-354-fences.yml', '.github/workflows/probe-354.yml', 'docs/**']
+    paths-ignore: ['scripts/probe-354/offline/**', 'scripts/probe-354-fences/**', '.github/workflows/probe-354-fences.yml', '.github/workflows/probe-354.yml', 'scripts/probe-354-substitutions/**', '.github/workflows/probe-354-substitutions.yml', 'docs/**']
   workflow_dispatch:
     inputs:
       reps:

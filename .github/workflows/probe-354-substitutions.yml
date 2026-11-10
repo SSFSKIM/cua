@@ -1,0 +1,59 @@
+name: probe-354-substitutions
+# Diagnostic only: two selected historical CFT CE500 cells, one execution each. Never primary-rate evidence.
+on:
+  push:
+    branches: ['probe/354-measure']
+    paths:
+      - 'scripts/probe-354-substitutions/**'
+      - '.github/workflows/probe-354-substitutions.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  ENGINE_REF: '3c669314e0a5f35aedf20f9b792604fc09628c45'
+jobs:
+  cft-ce500-period-off:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact two-cell scope without GUI
+        run: node --test scripts/probe-354-substitutions/diagnostic.test.mjs
+      - name: Apps
+        run: |
+          bash scripts/probe-316/install.sh chrome
+          test -x '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+          test "$(defaults read '/Applications/Google Chrome for Testing.app/Contents/Info' CFBundleIdentifier)" = 'com.google.chrome.for.testing'
+      - name: Build the same instrumented engine and side tools
+        run: |
+          git log -1 --format='kit %H %s'
+          git worktree add --detach "$RUNNER_TEMP/substitution-src" "$ENGINE_REF"
+          node scripts/probe-354/patch.mjs "$RUNNER_TEMP/substitution-src"
+          swift build -c release --package-path "$RUNNER_TEMP/substitution-src/native/engine" --scratch-path "$RUNNER_TEMP/substitution-build"
+          swiftc -O -o "$RUNNER_TEMP/substitution-tool" scripts/probe-354/tool.swift
+          swiftc -O -o "$RUNNER_TEMP/substitution-ocr" scripts/probe-354/ocr.swift
+      - name: Read defaults, disable only period substitution, and run two diagnostic cells
+        run: |
+          node scripts/probe-354-substitutions/diagnostic.mjs --engine "$RUNNER_TEMP/substitution-build/release/cua-engine" --tool "$RUNNER_TEMP/substitution-tool" --ocr "$RUNNER_TEMP/substitution-ocr" --out "$RUNNER_TEMP/probe-354-substitutions/cft-ce500-period-off"
+      - name: Upload diagnostic evidence separately
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-354-substitutions-cft-ce500-period-off
+          path: |
+            ${{ runner.temp }}/probe-354-substitutions/**/defaults.jsonl
+            ${{ runner.temp }}/probe-354-substitutions/**/diagnostic.json
+            ${{ runner.temp }}/probe-354-substitutions/**/diagnostic-exclusions.json
+            ${{ runner.temp }}/probe-354-substitutions/**/resume-input.json
+            ${{ runner.temp }}/probe-354-substitutions/**/rows.jsonl
+            ${{ runner.temp }}/probe-354-substitutions/**/calibrations.jsonl
+            ${{ runner.temp }}/probe-354-substitutions/**/config.json
+            ${{ runner.temp }}/probe-354-substitutions/**/progress.json
+            ${{ runner.temp }}/probe-354-substitutions/**/transport.jsonl
+            ${{ runner.temp }}/probe-354-substitutions/**/engine-stderr.txt
+            ${{ runner.temp }}/probe-354-substitutions/**/state-shots/**
+            ${{ runner.temp }}/probe-354-substitutions/**/shots/**
+          if-no-files-found: warn

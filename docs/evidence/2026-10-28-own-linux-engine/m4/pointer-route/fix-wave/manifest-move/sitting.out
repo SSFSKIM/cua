@@ -1,0 +1,6 @@
+cua-engine 0.3.0 (77935e73bc5d)
+ef033ea5fbf05086ab2414d7baa97086b243bebb815aeef13c4db92f592b00b3  <task71>/build/77935e73bc5d6559022df851e566d50d10bb553d/src/native/linux-engine/target/x86_64-unknown-linux-musl/release/cua-engine
+start fix1-manifest-move 2026-11-10T18:07:55Z loadavg 0.62 0.53 0.56
+run exit 0; watchdog clean
+private run fix1-manifest-move exit 0 18:34:17
+end fix1-manifest-move 2026-11-10T18:34:17Z loadavg 1.12 0.84 0.69 status 0

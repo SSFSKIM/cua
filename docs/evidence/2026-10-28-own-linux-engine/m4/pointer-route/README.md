@@ -148,6 +148,7 @@ The engine:
   - The window rule they replace (`unless_unobscured`) is gone: no family keeps it.
 - Every such request on the background route is watched (`engine/within.rs`, on the press watch's connection).
   - The watch begins, then the pointer is read a second time; a pointer already gone routes the request afresh.
+    (Fix wave: judged outside on that read, with no third read; see the last section.)
   - The watch is read a round trip after the request's events went out, and the pointer is read again.
   - A request the pointer left during (a `LeaveNotify` of the window to no inferior), or ended outside, answers
     `<app> may not have taken the <request>: the desktop pointer left its window during the <request>, …`, never
@@ -158,7 +159,9 @@ Each step below ran under the host lock, at most about 45 minutes (manifest-b ra
 The harness was 55e66b78's export (manifest-a's first run used ddee5fd5's). The candidate is the musl build of
 ddee5fd5 made the release workflow's way: `cua-engine 0.3.0 (ddee5fd5ae5a)`. 55e66b78 changes only the harness.
 
-- **The manifest** (`--experiment predicates`, T19's), 28 + 4 cases, every one PASS:
+- **The manifest** (`--experiment predicates`, T19's), 28 + 4 cases, every one PASS by the judge before the fix wave.
+  cua's failed clicks, scrolls and moves had their effect unread here, so those zeros are not observations; the fix
+  wave's proof below replaces them:
   - Allowed with the pointer in, visible or half covered: cua took 30 of 30 of every kind (the pinned build 30 of 30).
   - Refused with the pointer under the cover or outside, in every occlusion: cua refused 10 of 10. The pinned build
     took 0 of 10, all answered ok. cua's own events with the pointer unjudged (`cua:any-pointer`) took 0 of 10, so
@@ -225,7 +228,8 @@ selection), each through `scripts/run71.sh` under task 50's guards, with `WRAP` 
 session-bus rule). The hold file was absent and no stress-ng ran. No whole-run RECORD was taken: the harness refuses it
 on a display without the private mark.
 
-- **Every case PASS, 32 of 32** ("Every case holds" in both halves' `run/summary.md`):
+- **Every case PASS, 32 of 32** ("Every case holds" in both halves' `run/summary.md`, by the judge before the fix wave;
+  which of these counts were observed is in the fix wave's section below):
   - Allowed with the pointer in, visible or half covered: cua took 30 of 30 of every kind, and so did the pinned build.
   - Refused with the pointer under the cover or outside, in every occlusion: cua refused 10 of 10. The pinned build
     took 0 of 10, all answered ok, and `cua:any-pointer` took 0 of 10.
@@ -255,3 +259,75 @@ on a display without the private mark.
 | `manifest-0/b/` | 2026-11-10T14:39:18Z, load 0.72 | 2026-11-10T15:32:53Z, status 0, load 1.12 |
 
 The release loads are the run's own load. Neither is more than 1.0 above the idle.
+
+## The fix wave (review of be009c24..e47fc1e3; `fix-wave/`, private displays)
+
+The review found three gaps, each a way to let the false success this task exists to prevent through.
+
+1. **A reroute escaped the watch** (ca126e80). Suppose the route's read found the pointer in, but the watch's read
+   (the second) found it out. `watch_within` then routed afresh, which meant a third read. A pointer back by that read
+   took the background route unwatched, so a leave during the request answered success. Now the second read's
+   "outside" is the judgement, with no third read (`route_judged`): refused in shared mode, the foreground route in
+   dedicated mode, nothing sent on the background route. This follows the design session's ruling: refuse, no restart
+   loop.
+   - `within_faults.rs` hooks every pointer read (`Identity::PointerRead`). The pointer is in at the route's read, out
+     at the watch's, back in at any later read, and out again after sending.
+   - On e47fc1e3, with only the read hook added (`scripts/red-read-on.sh`), it failed: `click: answered success: Null`.
+   - On the fix, click, scroll and move are each refused, and no press reaches the window.
+2. **The effects of failed clicks, scrolls and moves were never read** (77935e73). kinds.mjs's series read the effect
+   only of an ok answer, and wrote `took: false` otherwise. It now takes `readFailed`, as the drag's series does. The
+   manifest and the sitting read every outcome, and `took` is null when the effect could not be read.
+3. **Leave runs whose park missed were accepted** (77935e73). The judge now counts a run only when its park held at
+   the request and its effect was read. The rest are left out and counted (`park_missed`, `unread`), and a case short
+   of its valid runs fails. A refusal that took effect fails every refused and leave case.
+   - Judged again (`scripts/rejudge.mjs`), the first `build-proof/manifest-a/` run's leave cells now fail: 0 valid of
+     20, the park missed on 20 (`build-proof/manifest-a/rejudged.txt`).
+
+**The proof on the fixed build.** The engine is the musl build of 77935e73, `cua-engine 0.3.0 (77935e73bc5d)`, sha256
+`ef033ea5…00b3`. The harness is c184a3d4's export. The manifest ran one kind per locked step, since reading every
+outcome no longer fits half of it in 45 minutes; the device cases ran after it. Every case PASS. Judged again from
+the rows (`fix-wave/rejudged.txt`), every lane's runs found the park held and the effect read: 0 left out.
+
+- Allowed, pointer in, visible or half covered: cua took 30 of 30 of every kind, and so did the pinned build.
+- Refused, pointer under the cover or outside, in every occlusion and every kind: cua refused 10 of 10, and **0 of 10
+  took effect, observed**. The pinned build answered ok 10 of 10 with 0 taking effect. `cua:any-pointer` took 0 of 10.
+- Leave, 20 runs each, every effect observed. The pinned build answered ok 20 of 20 with 0 taking effect:
+
+  | kind | ok and took | answered that the pointer left (of which took) | refused before sending (of which took) | ok with no effect |
+  |---|---:|---:|---:|---:|
+  | click | 0 | 20 (19) | 0 (0) | 0 |
+  | scroll | 0 | 20 (20) | 0 (0) | 0 |
+  | move | 3 | 5 (2) | 12 (0) | 0 |
+  | select | 0 | 20 (0) | 0 (0) | 0 |
+
+  The "may not have taken" answer is honest, but for clicks and scrolls at these timings it is mostly a false alarm.
+  The mover lands within the watch's window but after Gecko took the events (19 of 20, 20 of 20). The selection drag,
+  longer than the mover's 50 ms, is lost every time.
+- The device cases (`fix-wave/device/`, device-firefox's 16 and device-chrome's 3, three blocks): every verdict PASS,
+  the witness and the audit clean. A refusal's case reads the window after a quiet wait and requires it unchanged.
+
+| run | lock acquire | lock release |
+|---|---|---|
+| `fix-wave/manifest-click/` | 2026-11-10T17:12:36Z, load 0.18 | 2026-11-10T17:40:49Z, status 0, load 0.47 |
+| `fix-wave/manifest-scroll/` | 2026-11-10T17:41:22Z, load 0.48 | 2026-11-10T18:07:53Z, status 0, load 0.59 |
+| `fix-wave/manifest-move/` | 2026-11-10T18:07:55Z, load 0.62 | 2026-11-10T18:34:17Z, status 0, load 1.12 |
+| `fix-wave/manifest-select/` | 2026-11-10T18:37:07Z, load 1.98 (run start 18:38:07Z, 0.93) | 2026-11-10T19:07:06Z, status 0, load 0.29 |
+| `fix-wave/device/` | 2026-11-10T19:12:05Z, load 0.70 | 2026-11-10T19:28:05Z, status 0, load 0.33 |
+| `fix-wave/manifest-select-rerun/` | 2026-11-10T20:42:07Z, load 0.48 | 2026-11-10T21:11:03Z, status 0, load 0.73 |
+
+`manifest-select/`'s lock was acquired at a load of 1.98 (another executor had just released it), more than 1.0 above
+the idle, though the run itself started at 0.93. So it was rerun (`manifest-select-rerun/`), and the rerun matches it
+in every case and count: 8 of 8 PASS, no park missed, no effect unread (`manifest-select-rerun/rejudged.txt`).
+
+**What the `:0` manifest observed and what it did not** (`manifest-0/rejudged.txt`, its rows judged again). That run
+was before the fix wave. The design session ruled that it is not rerun: a refusal's "nothing sent" is engine-side, and
+the audit shows it.
+
+- Observed: every allowed case's effect, for cua and pinned alike, 30 of 30 of every kind. The pinned lane's and
+  `cua:any-pointer`'s effects on every refused case: 0 of 10, observed. Every leave answer that was ok: the effect was
+  read, so "0 answered ok with no effect" holds. The selection drag's refused and leave effects, since the drag's
+  series read every outcome then too: refused 10 of 10 with 0 taking effect, and left 20 of 20 with 0 taking effect.
+- **Not read:** cua's refused and leave effects for click, scroll and move. These are the 150 refused runs, the 40
+  "left" answers of click and scroll, and the move leave's 7 "left" and 7 refused runs. On `:0` their effect is not
+  read, never zero.
+- Every one of its runs found the park held.

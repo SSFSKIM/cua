@@ -165,11 +165,11 @@ test('the never-take rules read the deepest accessible at the start point', () =
   assert.equal(NEVER_TAKE_RULES['role:any'](at('canvas')), true);
   assert.equal(NEVER_TAKE_RULES['role:any'](at('section')), false);
   assert.equal(NEVER_TAKE_RULES['role:any'](null), false, 'no probe: no prediction');
-  // a link's or an image's text inside the deepest's ancestors: draggable by default, so not predicted
+  // a link or an image on the hit-test chain above the deepest: draggable by default, so not predicted
   const inLink = { ...at('static'), chain: [{ role: 'document web' }, { role: 'link' }, { role: 'static' }] };
   assert.equal(NEVER_TAKE_RULES['role:any'](inLink), true);
-  assert.equal(NEVER_TAKE_RULES['role:any-chain'](inLink), false);
-  assert.equal(NEVER_TAKE_RULES['role:any-chain']({ ...at('static'), chain: [{ role: 'paragraph' }, { role: 'static' }] }), true);
+  assert.equal(NEVER_TAKE_RULES['role:any-hit-chain'](inLink), false);
+  assert.equal(NEVER_TAKE_RULES['role:any-hit-chain']({ ...at('static'), chain: [{ role: 'paragraph' }, { role: 'static' }] }), true);
   assert.equal(NEVER_TAKE_RULES['xdnd-aware']({ ...at('section'), xdnd_aware: true }), false);
   assert.equal(NEVER_TAKE_RULES['xdnd-aware']({ ...at('section'), xdnd_aware: false }), true);
 });

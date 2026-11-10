@@ -211,8 +211,11 @@ export const NEVER_TAKE_RULES = {
   'role:text': (p) => TEXT_ROLES.includes(roleOf(p)) && p?.in_selection !== true,
   'role:canvas': (p) => roleOf(p) === 'canvas',
   'role:any': (p) => NEVER_TAKE_RULES['role:range'](p) || NEVER_TAKE_RULES['role:text'](p) || NEVER_TAKE_RULES['role:canvas'](p),
-  // the same, unless an accessible above the deepest is draggable by default (a link's text, an image's)
-  'role:any-chain': (p) => NEVER_TAKE_RULES['role:any'](p) && !(p?.chain ?? []).some((n) => DRAGGABLE_ROLES.includes(n.role)),
+  // the same, unless an accessible on the hit-test chain above the deepest is draggable by default (a link's text, an
+  // image's). Measured on hit-test results only: `GetAccessibleAtPoint` can go from the frame straight to the deepest
+  // (a link's text read as one `static`), so the chain holds no ancestors and this is no measurement of an ancestor
+  // check (task 68's review; the rule was `role:any-chain`)
+  'role:any-hit-chain': (p) => NEVER_TAKE_RULES['role:any'](p) && !(p?.chain ?? []).some((n) => DRAGGABLE_ROLES.includes(n.role)),
   // a window that does not accept drops at all: Chrome's always does, so this rule predicts nothing there
   'xdnd-aware': (p) => p?.xdnd_aware === false,
 };

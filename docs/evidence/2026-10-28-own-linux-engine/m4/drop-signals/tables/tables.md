@@ -1,3 +1,5 @@
+> Fix wave (task 68's review): the `role:any-chain` rows are measured on hit-test results only (the probe's chain is `GetAccessibleAtPoint`'s steps, a single node in every drag here), not an ancestor check; the judge now calls the rule `role:any-hit-chain`. The "accept cursor at the release" rows are superseded by `fix-wave.md`, which orders the release as the records allow and counts indeterminate leaves against the bar. The leaves here exclude the 47 late takes, which are further non-landings (the late-take table).
+
 3930 drags over 8 runs.
 
 Never-take rules, read at the start point before the press: a rule predicts that the drag never takes, and a prediction whose drag took (`XdndSelection`) is a false negative; "after the path" are the false negatives whose take came after the path's end, the drags a skipped hold would lose. A load's counts stand for an adoption only from 300 drags.

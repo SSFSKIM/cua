@@ -88,8 +88,8 @@ const REQUEST_KEYS = ['type', 'method', 'args'];
 // errors.js); the five cua's engine raises that the vendor has no name for (the native engine spec's Interfaces); and
 // the names a concealed set_value can stop under in cua's engine: its element's resolution, the element not settable,
 // the value not of the element's type, the focus click finding nothing to click, refused in a background web page or
-// unconfirmed (#282), the write refused; and the one every concealed type_text that keyed ends with in cua's engine,
-// typeUnconfirmed, since concealed text is never read back (#354). All are fixed
+// unconfirmed (#282), the write refused; and typeUnconfirmed, which a concealed type_text that keyed ends with in cua's
+// engine when its field is a password field or does not match what was typed (#354; a match is success). All are fixed
 // names, never the value. invalidNumber and invalidDate do say the secret does not parse as the element's type, which
 // is what the model must know to stop retrying it there. Anything else from the service is withheld.
 const ADMITTED_ERROR_NAMES = new Set([

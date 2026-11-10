@@ -155,9 +155,9 @@ test('a concealed set_value stopped under one of cua\'s set_value names repeats 
   }
 });
 
-test('#354: a concealed type_text that keyed and was not read back repeats typeUnconfirmed, value-free, and says it may have been entered', async () => {
+test('#354: a concealed type_text that keyed and did not match repeats typeUnconfirmed, value-free, and says it may have been entered', async () => {
   const value = VALUES['WORK_PASSWORD'];
-  const unread = 'The text was typed, but concealed text is never read back, so it is not confirmed and some or all of it may have gone in.';
+  const unread = 'The text was typed, but the field does not match what was typed, so it is not confirmed and some or all of it may have gone in.';
   const {service} = harness({answer: () => { throw new EngineError('typeUnconfirmed', `${unread} ${value}`, {...NOTHING_POSTED, inputRoute: "2'", startedAt: 1000, endedAt: 1042}); }});
   const error = await rejection(service.handleRpc(typeText(REF('WORK_PASSWORD'))));
   assert.equal(error.code, 'secret_input_failed');

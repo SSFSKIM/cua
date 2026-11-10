@@ -368,9 +368,10 @@ value, so it is an interrupted write) or cannot be read (`secret_unreadable`), s
 (`CUA_SHIM_SECRETS=off`: `secrets_disabled`), or the command is not in its pinned shape (`unsupported_secret_shape`).
 Exactly one trailing newline is dropped from a file's contents, so a file written with `echo` works. If the native command fails after substitution, the error is a fixed diagnostic
 (`secret_input_failed`, with the runtime's error name when it is one of its fixed codes); the runtime's own message is
-withheld because it can contain the value, and the input may have been partly entered. On macOS cua's engine never
-reads a secret back, so a keyed `typeText` of one always ends `secret_input_failed` with `typeUnconfirmed` (#354): the
-keys were sent, and the field is observed, not retyped.
+withheld because it can contain the value, and the input may have been partly entered. On macOS cua's engine reads a
+keyed `typeText` of a secret back by equality alone (#354): a field that does not match ends `secret_input_failed` with
+`typeUnconfirmed`, and so does a password field, which is never read. The keys were sent, so the field is observed, not
+retyped.
 
 This is input substitution, not a vault around the value: once entered, a secret can be seen in screenshots, the
 app's accessibility text or the app itself, and `paste` uses the system clipboard as the runtime always does (it

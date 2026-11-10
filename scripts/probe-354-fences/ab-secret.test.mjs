@@ -5,12 +5,36 @@ import {mkdtempSync,rmSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createSyntheticSecretProbe} from './ab-secret.mjs';
+import * as secretModule from './ab-secret.mjs';
+const {createSyntheticSecretProbe}=secretModule;
 const sourceRoot=fileURLToPath(new URL('../../',import.meta.url));
 async function setup(t,options={}){const parent=mkdtempSync(join(tmpdir(),'probe354-secret-'));t.after(()=>rmSync(parent,{recursive:true,force:true}));const p=await createSyntheticSecretProbe({sourceRoot,parent,...options});t.after(()=>p.close());return p}
 const identity={engineVersion:'test',build:'fixture'};
 const app='/Applications/Fixture.app',bundle='fixture.probe354',pid=123;
 const execute=type=>async(method,args)=>method==='resolve_app'?{result:{pid,appPath:app,bundleIdentifier:bundle,displayName:'Fixture'}}:type(args);
+
+test('owned-PID canonical resolution reaches the real trusted service when a readable alias is not running',async t=>{
+ const p=await setup(t),alias='/Applications/Safari.app',canonical='/System/Applications/Safari.app',expectedBundle='com.apple.Safari';let typed=0;
+ const engine=async(method,args)=>{
+  if(method==='resolve_app')return {result:{pid:args.pid===pid||args.app===canonical?pid:null,appPath:canonical,bundleIdentifier:expectedBundle,displayName:'Safari',unrelated:'not identity'}};
+  typed++;assert.equal(args.app,canonical);return {result:{meta:{typeReadback:{confirmed:true}}}};
+ };
+ await assert.rejects(p.run({app:alias,bundle:expectedBundle,pid,identity,id:'alias',execute:engine}),/did not reach type_text/);
+ assert.equal(typed,0);
+ const preflight=await secretModule.resolveBrowserTarget?.({execute:engine,pid,bundle:expectedBundle});
+ assert.equal(preflight?.ok,true);assert.deepEqual(preflight.target,{pid,appPath:canonical,bundleIdentifier:expectedBundle});
+ const out=await p.run({app:preflight.target.appPath,bundle:preflight.target.bundleIdentifier,pid,identity,id:'canonical',execute:engine});
+ assert.equal(typed,1);assert.deepEqual(out.findings,[]);assert.equal(out.service.error,null);
+});
+
+test('canonical-target preflight rejects identity mismatch and withholds resolver exception details',async()=>{
+ const good={pid,appPath:app,bundleIdentifier:bundle},marker='private resolver exception detail';
+ for(const raw of [{result:{...good,pid:null}},{result:{...good,bundleIdentifier:'other'}},{result:{...good,appPath:null}},{error:{message:marker}}]){
+  const out=await secretModule.resolveBrowserTarget?.({execute:async()=>raw,pid,bundle});assert.equal(out?.ok,false);assert.equal(JSON.stringify(out).includes(marker),false);
+ }
+ const thrown=await secretModule.resolveBrowserTarget?.({execute:async()=>{throw Error(marker)},pid,bundle});
+ assert.deepEqual(thrown,{ok:false,reason:'resolve-app-request-failed'});
+});
 
 test('a handle reads only the isolated store and reaches the real trusted service as concealed input',async t=>{
  const p=await setup(t);let typed=false;

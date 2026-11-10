@@ -14,7 +14,7 @@ test('every race/clean cell has twenty trials; unsupported cells cannot silently
   for(const length of [30,120,500])assert.equal(cells.filter(c=>c.part==='clean'&&c.length===length).length,20);
   assert.ok(cells.filter(c=>c.part==='race').every(c=>c.length===30));
   assert.equal(cells.filter(c=>c.part==='unsupported').length,editor==='textarea'?60:0);
-  assert.ok(cells.filter(c=>c.part==='unsupported').every(c=>c.editor==='canvas'||c.editor==='password'));
+  assert.ok(cells.filter(c=>c.part==='unsupported').every(c=>(c.editor==='canvas'||c.editor==='password')&&!Object.hasOwn(c,'expectedReason')));
   assert.equal(cells.filter(c=>c.part==='unchanged').length,editor==='input'?40:0);
   assert.equal(cells.filter(c=>c.part==='truncation'&&c.variant==='spike').length,browser==='cft'&&editor==='textarea'?20:0);
   assert.equal(cells.filter(c=>c.part==='substitution').length,browser==='cft'&&editor==='contenteditable'?40:0);

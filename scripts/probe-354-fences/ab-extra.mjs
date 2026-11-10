@@ -66,7 +66,7 @@ export function diagnosticContractFailure(cell,raw){
  if(cell.expectedAnswer==='confirmed'){
   if(!success(raw)||!status.confirmed||cell.correct!==true)return true;
  }else if(cell.expectedAnswer==='typeUnconfirmed'){
-  if(raw?.result!=null||raw?.error?.errorName!=='typeUnconfirmed'||status.confirmed||status.reason!==cell.expectedReason)return true;
+  if(raw?.result!=null||raw?.error?.errorName!=='typeUnconfirmed'||status.confirmed||(cell.expectedReason!==undefined&&status.reason!==cell.expectedReason))return true;
   if(cell.part==='truncation'&&hasFieldValuesOrLengths(raw,cell))return true;
  }else return true;
  if(cell.part==='unchanged'){

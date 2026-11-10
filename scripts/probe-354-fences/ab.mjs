@@ -13,7 +13,7 @@ import {abPlan,answer,privacyFindings} from './ab-model.mjs';
 import {writeTables} from './offline/ab-table.mjs';
 import {snapshot} from '../probe-354-substitutions/diagnostic.mjs';
 import {readbackStatus,qualifiedKeyAnswer,diagnosticContractFailure,needsForegroundReference,referenceKey,publicDOM,renderedVerdict} from './ab-extra.mjs';
-import {createSyntheticSecretProbe} from './ab-secret.mjs';
+import {createSyntheticSecretProbe,resolveBrowserTarget} from './ab-secret.mjs';
 
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only; never run GUI steps on a Mac');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
@@ -50,7 +50,7 @@ createInterface({input:side.stdout}).on('line',l=>{let r;try{r=JSON.parse(l)}cat
 const ask=q=>new Promise(ok=>{waiters.push(ok);side.stdin.write(JSON.stringify(q)+'\n')});
 async function front(target,activate=true){const r=await ask({op:'front',pid:target,activate});if(r.error||r.frontmostPid!==target)throw new SetupError('foreground verification '+JSON.stringify(r));return {requestedPid:target,...r}}
 const titles=async target=>(await ask({op:'titles',pid:target})).titles??[];
-let browser,pid,coverPid;
+let browser,pid,coverPid,secretTarget;
 async function rpc(w,method,args){const startedAt=Date.now(),raw=await w.execute(method,{pid,...args}),endedAt=Date.now();return {startedAt,endedAt,durationMs:endedAt-startedAt,raw,meta:raw.result?.meta??raw.error?.meta??null}}
 const fixture=await createFixture(page());
 const meta={kit:process.env.GITHUB_SHA??null,engine:HEAD,arm:ARM,image:process.env.ImageVersion??null,browser:KIND,shard:SHARD,reps:REPS,smoke:SMOKE,startedAt:start,planned:cells.length,
@@ -154,8 +154,7 @@ async function cell(c,{warmup=false}={}){
   const auditRequested=c.privateField||c.secret||c.auditPositiveControl;
   const auditPromise=auditRequested?waitAudit(c.id):null;
   if(c.secret){
-   const app={safari:'/Applications/Safari.app',cft:'/Applications/Google Chrome for Testing.app',firefox:'/Applications/Firefox.app'}[KIND],bundle={safari:'com.apple.Safari',cft:'com.google.chrome.for.testing',firefox:'org.mozilla.firefox'}[KIND];
-   const startedAt=Date.now(),reply=await secretProbe.run({app,bundle,pid,id:c.id,returnUnits:c.returnUnits,selectionVariant:c.part==='secret-selection'?c.variant:undefined,pair:c.part+'/'+c.rep,identity:w.identity,execute:(method,args)=>w.execute(method,args)}),endedAt=Date.now();
+   const startedAt=Date.now(),reply=await secretProbe.run({app:secretTarget.appPath,bundle:secretTarget.bundleIdentifier,pid,id:c.id,returnUnits:c.returnUnits,selectionVariant:c.part==='secret-selection'?c.variant:undefined,pair:c.part+'/'+c.rep,identity:w.identity,execute:(method,args)=>w.execute(method,args)}),endedAt=Date.now();
    row.typeRPC={startedAt,endedAt,durationMs:endedAt-startedAt,engineTiming:reply.timing.engine,trustedTiming:reply.timing.trusted,raw:reply.engineRaw,meta:reply.engineRaw.result?.meta??reply.engineRaw.error?.meta??null};row.secretService=reply.service;row.secretFindings=reply.findings;row.secretReadbackEqual=reply.returnMetadataEqual;row.secretSelectionEqual=reply.selectionMetadataEqual;
   }else row.typeRPC=await rpc(w,'type_text',{text:c.text,...(c.concealed?{concealed:true}:{}),...(auditRequested?{probe354Audit:c.id}:{})});
   row.readbackStatus=readbackStatus(row.typeRPC.raw);
@@ -213,7 +212,16 @@ try{
  const cover=join(OUT,'cover.txt');writeFileSync(cover,'The probe cover.');sh('open',['-a','TextEdit',cover]);await sleep(1000);
  coverPid=+(sh('pgrep',['-x','TextEdit']).stdout.trim().split('\n')[0]);if(!coverPid)throw Error('cover process unavailable');placePid(coverPid,{x:0,y:40,w:380,h:300});
  await front(pid);meta.binding=await fixture.bindVisible(()=>titles(pid),15000);meta.bindingEvidence=fixture.fx.bindings[0];meta.pid=pid;meta.coverPid=coverPid;
- const w=await connect();try{for(let i=0;i<2;i++){await rpc(w,'get_app_state',{includeScreenshot:false});await sleep(1200)}}finally{w.close()}
+ const w=await connect();try{
+  if(secretProbe){
+   const bundle={safari:'com.apple.Safari',cft:'com.google.chrome.for.testing',firefox:'org.mozilla.firefox'}[KIND];
+   const preflight=await resolveBrowserTarget({execute:(method,args)=>w.execute(method,args),pid,bundle});
+   meta.secretTargetPreflight=preflight;
+   if(!preflight.ok)throw Error('Secret target preflight failed: '+preflight.reason);
+   secretTarget=preflight.target;
+  }
+  for(let i=0;i<2;i++){await rpc(w,'get_app_state',{includeScreenshot:false});await sleep(1200)}
+ }finally{w.close()}
  writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));progress(null);
  for(const key of ['cmd+a','cmd+z','cmd+v'])await calibrate(key);
  await cell({...cells.find(c=>c.part==='clean'&&c.length===30),id:'warmup/clean30',auditPositiveControl:true},{warmup:true});

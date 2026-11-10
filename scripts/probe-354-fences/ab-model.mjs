@@ -24,7 +24,7 @@ export function abPlan({browser,editor,reps}){
  const extras=extraPlan({browser,editor,reps});out.push(...extras.filter(c=>c.part!=='ending-tab'));
  // Concealed ordinary fields use equality readback in the secret lane. Only canvas and passwords forbid reads.
  if(editor==='textarea'){
-  for(const [field,concealed] of [['canvas',false],['password',false],['password',true]])for(let rep=1;rep<=reps;rep++)add({part:'unsupported',editor:field,key:null,length:30,rep,concealed,privateField:true,variant:concealed?'concealed':'spike',expectedAnswer:'typeUnconfirmed',expectedReason:field==='canvas'?'notTextField':'secure'});
+  for(const [field,concealed] of [['canvas',false],['password',false],['password',true]])for(let rep=1;rep<=reps;rep++)add({part:'unsupported',editor:field,key:null,length:30,rep,concealed,privateField:true,variant:concealed?'concealed':'spike',expectedAnswer:'typeUnconfirmed'});
  }
  out.push(...extras.filter(c=>c.part==='ending-tab'));
  return out.map(c=>({...c,variant:c.variant??'spike',text:c.text??(c.variant==='double-space'?sentence(c.length).replace('word is','word  is').slice(0,c.length):sentence(c.length))}));

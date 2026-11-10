@@ -5,6 +5,15 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {randomBytes} from 'node:crypto';
 import {format,isDeepStrictEqual} from 'node:util';
+export async function resolveBrowserTarget({execute,pid,bundle}){
+ let raw;try{raw=await execute('resolve_app',{pid})}catch{return {ok:false,reason:'resolve-app-request-failed'}}
+ if(raw?.error||!raw?.result)return {ok:false,reason:'resolve-app-refused'};
+ const target=raw.result;
+ if(target.pid!==pid)return {ok:false,reason:'owned-pid-mismatch'};
+ if(target.bundleIdentifier!==bundle)return {ok:false,reason:'browser-bundle-mismatch'};
+ if(typeof target.appPath!=='string'||!target.appPath.startsWith('/'))return {ok:false,reason:'canonical-app-path-unavailable'};
+ return {ok:true,target:{pid:target.pid,appPath:target.appPath,bundleIdentifier:target.bundleIdentifier}};
+}
 export async function createSyntheticSecretProbe({sourceRoot,parent,clock=()=>performance.now()}){
  const load=p=>import(pathToFileURL(join(sourceRoot,p)).href);
  const [{createSkyService},{createService},{fileStore,storeDir},{serverError}]=await Promise.all([load('src/services/sky.mjs'),load('src/services/engine/service.mjs'),load('src/secrets/store.mjs'),load('src/services/engine/protocol.mjs')]);
@@ -61,7 +70,7 @@ export async function createSyntheticSecretProbe({sourceRoot,parent,clock=()=>pe
    }};
    const client={identity,async execute(method,args){
     const startedAt=Date.now(),started=clock(),raw=await execute(method,{...args,...(method==='type_text'?{probe354Audit:id}:{})}),endedAt=Date.now(),durationMs=clock()-started;
-    if(method==='resolve_app'&&raw.result?.pid!==pid)throw Error('secret probe resolved an unexpected process');
+    if(method==='resolve_app'&&(raw.result?.pid!==pid||raw.result?.bundleIdentifier!==bundle))throw Error('secret probe resolved an unexpected application');
     if(method==='type_text'){engineRaw=raw;engineTiming={startedAt,endedAt,durationMs}}
     if(raw.error)throw serverError(raw.error);return {result:raw.result,engineMs:durationMs};
    }};

@@ -65,6 +65,12 @@ test('a cap cell requires possiblyTruncated and a response without field values 
  assert.equal(fail(refusal('possiblyTruncated')),false);
 });
 
+test('generic unsupported cells accept safe closed-unreadable refusals without prescribing a reason',()=>{
+ for(const reason of ['roleUnreadable','secure','notTextField'])assert.equal(extra.diagnosticContractFailure({part:'unsupported',expectedAnswer:'typeUnconfirmed'},refusal(reason)),false);
+ assert.equal(extra.diagnosticContractFailure({part:'unsupported',expectedAnswer:'typeUnconfirmed'},keyed()),true);
+ assert.equal(extra.diagnosticContractFailure({part:'truncation',expectedAnswer:'typeUnconfirmed',expectedReason:'possiblyTruncated'},refusal('roleUnreadable')),true);
+});
+
 test('secret mismatches require concealedMismatch rather than any typeUnconfirmed',()=>{
  const cell={part:'secret',variant:'mismatch',expectedAnswer:'typeUnconfirmed',expectedReason:'concealedMismatch'};
  assert.equal(extra.diagnosticContractFailure(cell,refusal('valueMismatch')),true);

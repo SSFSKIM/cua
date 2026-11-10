@@ -7,7 +7,7 @@
 export const FREEZE_ENDS = [230, 240, 250, 255, 260, 280, 330];
 
 /** The page's drag sources (`data-src`), in its status line's order. */
-export const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext'];
+export const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext', 'canvas-drag'];
 
 /** The drags a load needs before any count of it can stand for an adoption (the design session's 300, M4 pre-flight). */
 export const MIN_DRAGS = 300;
@@ -15,8 +15,15 @@ export const MIN_DRAGS = 300;
 /** How long after the release a drop's signal may come and still count: the late-take watch's lifetime (`dnd::SETTLE`). */
 export const AFTER_RELEASE_WINDOW_MS = 300;
 
-/** How far a change may read before the engine's release stamp and still be the release's own (load2: 2.7 ms). */
-export const RELEASE_STAMP_MARGIN_MS = 5;
+/**
+ * How long before the engine's release stamp the release itself may have gone. The engine stamps after sending it, and
+ * on the server's clock Chrome's return to its drag loop's cursor at the release came up to 4.8 ms before the stamp, and
+ * the release event's own time (Chrome's activation request carries it) up to 6.5 ms before it (task 68's load2).
+ */
+export const RELEASE_STAMP_MARGIN_MS = 10;
+
+/** The server's clock counts whole milliseconds: a change's server time reads up to this much early. */
+const SERVER_TICK_MS = 1;
 
 /** The X server's resource-id mask on the harness's servers (Xvfb and Xorg): a client's windows share the bits above. */
 export const RESOURCE_ID_MASK = 0x1fffff;
@@ -59,8 +66,8 @@ export function parseDropStatus(texts) {
  * The page cells (drop-signals.mjs `CELLS`): a cell either drags from a source (`src`, a drop counted when `zone`) or
  * is a kind with an effect of its own.
  */
-export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain' };
-export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'plain-long'];
+export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain', 'canvas-drag': 'canvas-drag' };
+export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'plain-long', 'canvas-drag'];
 
 /** The range runs' end values: even runs drag up to about 10, odd runs back to 0 (drop-signals.mjs `CELLS.range`). */
 export const RANGE_END = (i) => (i % 2 === 0 ? 10 : 0);
@@ -93,18 +100,63 @@ export function dragOutcome(cell, before, after, { i = 0, rangeEnd = RANGE_END(i
 /**
  * The index of the accept rule's change (accept.rs `accept_index`) in a sequence of cursor changes (in order), or -1:
  * the second change to an unnamed cursor strictly after the take's server time `take`, a serial repeated back to back
- * counted once (the drag loop's own cursor comes in the take's millisecond or before it).
+ * counted once (the drag loop's own cursor comes in the take's millisecond or before it), and only while it is the
+ * cursor shown: a later change to another unnamed cursor withdraws it, and it counts again, at its last showing, when
+ * shown again.
  */
 function acceptIndex(cursors, take) {
   let counted = 0;
   let last = null;
+  let accept = null;
+  let shown = -1;
   for (const [k, c] of cursors.entries()) {
     if (c.named || !(((c.server_time - take) >>> 0) > 0 && ((c.server_time - take) >>> 0) < 2 ** 31) || c.serial === last) continue;
     last = c.serial;
     counted += 1;
-    if (counted === 2) return k;
+    if (counted === 2) accept = c.serial;
+    if (counted >= 2) shown = c.serial === accept ? k : -1;
   }
-  return -1;
+  return shown;
+}
+
+/**
+ * The least offset from the server's clock to the watch's wall clock over lines that carry a server time, or null: the
+ * read with the least lag. Over a run's lines it maps a change's server time to the wall clock the engine stamps with,
+ * free of the watch's read lag (up to 17 ms at twice the load, task 68).
+ */
+export function serverOffset(lines) {
+  let least = null;
+  for (const l of lines) if (typeof l.server_time === 'number' && l.server_time > 0 && typeof l.wall_ms === 'number') least = least === null ? l.wall_ms - l.server_time : Math.min(least, l.wall_ms - l.server_time);
+  return least;
+}
+
+/**
+ * The engine's server-time probe after the release, the one boundary of the release the X server orders in the watch's
+ * lines: the engine creates a 1×1 window at (0, 0) to read the server's time (input.rs `server_time`) once before the
+ * press (the route's anchor) and once after the drag (pointer.rs, the event-time check), so the CreateNotify read at or
+ * after the release stamp follows the release in the server's order. Its index in `lines`, or -1.
+ */
+export function releaseProbeIndex(lines, releaseMs) {
+  return lines.findIndex((l) => l.kind === 'create' && l.x === 0 && l.y === 0 && l.w === 1 && l.h === 1 && l.override_redirect === false && l.wall_ms >= releaseMs);
+}
+
+/**
+ * Whether the accept rule's cursor was shown at the release, from the watch's lines (in the server's order) and the
+ * engine's release stamp: `{shown, indeterminate}`. A cursor change is after the release when it follows the engine's
+ * probe after the release (`releaseProbeIndex`), or when the server's clock (mapped by `offset`) puts it after the
+ * stamp, which the engine took after sending the release. It is before the release when the server's clock puts it more than
+ * `RELEASE_STAMP_MARGIN_MS` before the stamp. The release falls somewhere among the changes between, so the reading is
+ * indeterminate when any split of them would read otherwise.
+ */
+function acceptAtRelease(lines, cursors, take, releaseMs, offset) {
+  const at = (c) => c.server_time + offset;
+  const probe = releaseProbeIndex(lines, releaseMs);
+  const after = (c) => at(c) > releaseMs || (probe >= 0 && lines.indexOf(c) > probe);
+  const before = cursors.filter((c) => !after(c) && at(c) + SERVER_TICK_MS <= releaseMs - RELEASE_STAMP_MARGIN_MS);
+  const open = cursors.filter((c) => !after(c) && !before.includes(c));
+  const readings = open.map((_, k) => acceptIndex([...before, ...open.slice(0, k + 1)], take) >= 0);
+  const shown = acceptIndex(before, take) >= 0;
+  return { shown, indeterminate: readings.some((r) => r !== shown) };
 }
 
 /**
@@ -112,10 +164,12 @@ function acceptIndex(cursors, take) {
  * and release wall clock (`--stats` `wall`): the target's client's take of `XdndSelection` (after the press), whether it
  * came only after the release (with `engineTook`, the engine's own record of a take by its release decides), Chrome's
  * `_NET_ACTIVE_WINDOW` request for its window after the take (source 1, an application's; its latency from the engine's
- * release stamp, which can be slightly negative), every cursor change from
- * the press on, and whether the accept rule's change was shown before the release.
+ * release stamp, which can be slightly negative), every cursor change from the press on, and whether the accept rule's
+ * cursor was shown at the release (`accept_shown`), or the records cannot say (`accept_indeterminate`). The server's
+ * clock is mapped to the wall clock by `serverOffsetMs`, the run's least offset (`serverOffset`) where the caller has
+ * the run's lines, by default the drag's own.
  */
-export function signalsOf(lines, { target, pressMs, releaseMs, engineTook = null, mask = RESOURCE_ID_MASK }) {
+export function signalsOf(lines, { target, pressMs, releaseMs, engineTook = null, mask = RESOURCE_ID_MASK, serverOffsetMs = null }) {
   const takeLine = lines.find((l) => l.kind === 'take' && sameClient(l.owner, target, mask) && l.wall_ms >= pressMs - 5) ?? null;
   const take = takeLine ? takeLine.wall_ms : null;
   const lateByWall = take !== null && typeof releaseMs === 'number' && take > releaseMs;
@@ -123,16 +177,16 @@ export function signalsOf(lines, { target, pressMs, releaseMs, engineTook = null
   // the request can read up to a few ms before the stamp; no activation precedes a release in the server's order)
   const act = typeof releaseMs === 'number' && take !== null ? lines.find((l) => l.kind === 'activate' && l.source === 1 && sameClient(l.window, target, mask) && l.wall_ms >= take) : null;
   const cursors = lines.filter((l) => l.kind === 'cursor' && l.wall_ms >= pressMs);
-  // shown before the release: the engine stamps its release after sending it (up to 2.7 ms later at twice the load), so
-  // the release's own cursor reset can read before the stamp; a change within the margin is left out
-  const beforeRelease = typeof releaseMs === 'number' ? cursors.filter((c) => c.wall_ms <= releaseMs - RELEASE_STAMP_MARGIN_MS) : cursors;
+  const offset = serverOffsetMs ?? serverOffset(lines);
+  const accept = takeLine !== null && typeof releaseMs === 'number' && offset !== null ? acceptAtRelease(lines, cursors, takeLine.server_time, releaseMs, offset) : { shown: false, indeterminate: false };
   return {
     take_after_press_ms: take === null ? null : round1(take - pressMs),
     take_after_release_ms: take === null || typeof releaseMs !== 'number' ? null : round1(take - releaseMs),
     late_take: take !== null && (typeof engineTook === 'boolean' ? !engineTook : lateByWall),
     activation_after_release_ms: act ? round1(act.wall_ms - releaseMs) : null,
     cursors: cursors.map((c) => ({ serial: c.serial, image: c.image, named: c.named, t_ms: round1(c.wall_ms - pressMs) })),
-    accept_shown: takeLine !== null && acceptIndex(beforeRelease, takeLine.server_time) >= 0,
+    accept_shown: accept.shown,
+    accept_indeterminate: accept.indeterminate,
   };
 }
 
@@ -214,24 +268,29 @@ export function afterReleaseTable(rows, { windowMs = AFTER_RELEASE_WINDOW_MS } =
   const judged = rows.filter((r) => r.kind === 'drop-signal' && !r.cover && r.signals?.take_after_press_ms != null && r.signals.late_take !== true && CELL_SOURCE[r.cell]);
   const counts = [];
   const md = [
-    `After the release, for drags whose source took by the release: a signal says the drop landed (positive) or not. Activation: Chrome's own \`_NET_ACTIVE_WINDOW\` request for its window within ${windowMs} ms of the release. Accept cursor: the accept rule's cursor change (accept.rs) shown before the release. A false negative calls a landed drop lost; a false positive calls a lost drop landed, the one that would let a drag answer success wrongly.`,
+    `After the release, for drags whose source took by the release: a signal says the drop landed (positive) or not. Activation: Chrome's own \`_NET_ACTIVE_WINDOW\` request for its window within ${windowMs} ms of the release. Accept cursor: the accept rule's cursor (accept.rs) shown at the release, indeterminate where a change the records cannot order against the release would decide it (\`acceptAtRelease\`). A false negative calls a landed drop lost; a false positive calls a lost drop landed, the one that would let a drag answer success wrongly. The counts of true and false are of the determinate drags; "false positives, indeterminates counted" counts every indeterminate leave as a false positive, which is the count that stands against a bar.`,
     '',
-    '| load | signal | drags | drops | leaves | true positives | false negatives | false positives | true negatives | drop latency p50 / p95 / max (ms) |',
-    '|---|---|---:|---:|---:|---:|---:|---:|---:|---|',
+    '| load | signal | drags | drops | leaves | true positives | false negatives | false positives | true negatives | indeterminate drops / leaves | false positives, indeterminates counted | drop latency p50 / p95 / max (ms) |',
+    '|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|',
   ];
   const signals = {
-    activation: (r) => typeof r.signals.activation_after_release_ms === 'number' && r.signals.activation_after_release_ms <= windowMs,
-    'accept cursor at the release': (r) => r.signals.accept_shown === true,
+    activation: { says: (r) => typeof r.signals.activation_after_release_ms === 'number' && r.signals.activation_after_release_ms <= windowMs, open: () => false },
+    'accept cursor at the release': { says: (r) => r.signals.accept_shown === true, open: (r) => r.signals.accept_indeterminate === true },
   };
   for (const load of loads(judged)) {
     const at = judged.filter((r) => r.load === load);
-    for (const [signal, says] of Object.entries(signals)) {
+    for (const [signal, { says, open }] of Object.entries(signals)) {
       const landed = (r) => r.outcome?.landed === true;
-      const c = { load, signal, n: at.length, drops: at.filter(landed).length, leaves: at.filter((r) => !landed(r)).length, tp: at.filter((r) => landed(r) && says(r)).length, fn: at.filter((r) => landed(r) && !says(r)).length, fp: at.filter((r) => !landed(r) && says(r)).length, tn: at.filter((r) => !landed(r) && !says(r)).length };
-      c.latency_ms = signal === 'activation' ? percentiles(at.filter((r) => landed(r) && says(r)).map((r) => r.signals.activation_after_release_ms)) : null;
+      const drops = at.filter(landed);
+      const leaves = at.filter((r) => !landed(r));
+      const shut = (rs) => rs.filter((r) => !open(r));
+      const c = { load, signal, n: at.length, drops: drops.length, leaves: leaves.length, tp: shut(drops).filter(says).length, fn: shut(drops).filter((r) => !says(r)).length, fp: shut(leaves).filter(says).length, tn: shut(leaves).filter((r) => !says(r)).length, indeterminate_drops: drops.filter(open).length, indeterminate_leaves: leaves.filter(open).length };
+      c.fp_counting_indeterminate = c.fp + c.indeterminate_leaves;
+      c.clean_leaves = c.leaves - c.indeterminate_leaves;
+      c.latency_ms = signal === 'activation' ? percentiles(drops.filter(says).map((r) => r.signals.activation_after_release_ms)) : null;
       counts.push(c);
       const lat = c.latency_ms ? `${c.latency_ms.p50} / ${c.latency_ms.p95} / ${c.latency_ms.max}` : '–';
-      md.push(`| ${load} | ${signal} | ${c.n} | ${c.drops} | ${c.leaves} | ${c.tp} | ${c.fn} | ${c.fp} | ${c.tn} | ${lat} |`);
+      md.push(`| ${load} | ${signal} | ${c.n} | ${c.drops} | ${c.leaves} | ${c.tp} | ${c.fn} | ${c.fp} | ${c.tn} | ${c.indeterminate_drops} / ${c.indeterminate_leaves} | ${c.fp_counting_indeterminate} | ${lat} |`);
     }
   }
   return { counts, md };

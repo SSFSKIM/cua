@@ -61,6 +61,8 @@ export const CELLS = {
   'press-400': () => [[530, 404], [570, 404]],
   link: () => [[530, 450], [570, 450]],
   image: () => [[530, 496], [570, 496]],
+  // a draggable canvas: a drop source under the role the canvas rule predicts never takes (the review of task 68)
+  'canvas-drag': () => [[530, 588], [570, 588]],
   seltext: () => [[60, 612], [100, 612]],
   select: () => [[50, 32], [90, 32]],
   range: (i) => (i % 2 === 0 ? [[28, 82], [68, 82]] : [[68, 82], [28, 82]]),
@@ -142,6 +144,8 @@ export const PLANS = {
   'cover-managed': Object.keys(COVER_CELLS).flatMap((cell) => COVER_PARTS.map((part) => ['cua:cover-managed', `${cell}@${part}`, 20])),
   // the false-negative control that joins two: a draggable under a text role whose take comes after the path
   extra: [['cua', 'nested-late', 30]],
+  // the canvas rule's taking control: one take disproves a never-take rule, so idle is enough
+  'canvas-drag': [['cua', 'canvas-drag', 30]],
   // the after-release signals and the accept in Electron (`--family electron`), which has no freeze cell: whether
   // Chrome's signals hold for the Chromium toolkit the floor and the hold also cover
   electron: [

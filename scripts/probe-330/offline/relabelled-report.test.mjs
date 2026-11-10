@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {relabelledLabels,walkStats} from './relabelled-report.mjs';
+import * as report from './relabelled-report.mjs';
+
+test('must-refuse permits the introduced recreated-label rejection, but edited links require relabelled',()=>{
+  const row={caseName:'linkmono',click:{error:'screenChangedSinceScreenshot',stalePoint:{reason:'nodeGone'}}};
+  const control={click:{error:null}};
+  assert.equal(report.requiredRefusal(row,control),true);
+  assert.equal(report.requiredRefusal(row,{click:{error:'screenChangedSinceScreenshot'}}),false);
+  row.caseName='typed-link';assert.equal(report.requiredRefusal(row,control),false);
+  row.click.stalePoint.reason='relabelled';assert.equal(report.requiredRefusal(row,control),true);
+});
 
 test('refusal labels come from the engine sentence, including quoted label text',()=>{
   const message='The screen changed since the screenshot: the AXButton "Save" it showed at this point now reads "Delete". Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.';

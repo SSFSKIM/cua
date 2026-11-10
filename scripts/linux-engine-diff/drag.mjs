@@ -169,6 +169,10 @@ export function pagePath(kind, i) {
     case 'dnd-inzone':
       // the in-zone source, pressed inside the target, out of its bottom edge by 30 px (M4's T14's press-inside control)
       return [[720, 195], [720, 250]];
+    case 'dnd-long-left':
+      // the source across the target and out of it below, then left, about 750 px: its steps after the take outlast the
+      // floor (M4's T14's long-path control), clear of the in-zone source
+      return [[410, 155], [680, 170], [680, 320], [450, 320], [450, 260]];
     case 'select-short':
       // a 40 px text selection (M4's T14: a drag that never takes pays the hold, #263), the runs apart as `select`'s
       return even ? [[50, 32], [90, 32]] : [[314, 32], [354, 32]];

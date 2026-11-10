@@ -117,6 +117,7 @@ jobs:
             ${{ runner.temp }}/probe-354-ab/**/summary.json
             ${{ runner.temp }}/probe-354-ab/**/rows.jsonl
             ${{ runner.temp }}/probe-354-ab/**/calibrations.jsonl
+            ${{ runner.temp }}/probe-354-ab/**/foreground-references.jsonl
             ${{ runner.temp }}/probe-354-ab/**/wrong-successes.jsonl
             ${{ runner.temp }}/probe-354-ab/**/*.tsv
             ${{ runner.temp }}/probe-354-ab/**/engine-stderr.txt

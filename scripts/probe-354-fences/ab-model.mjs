@@ -21,11 +21,12 @@ export function abPlan({browser,editor,reps}){
   if(browser==='cft'&&editor==='contenteditable')for(const variant of ['spike','double-space'])add({part:'substitution',editor,key:'cmd+a',length:500,variant,rep});
   if(browser==='cft'&&editor==='textarea')add({part:'truncation',editor,key:null,length:30,seed:LONG_SEED,rep,expectedAnswer:'typeUnconfirmed',expectedReason:'possiblyTruncated'});
  }
- out.push(...extraPlan({browser,editor,reps}));
+ const extras=extraPlan({browser,editor,reps});out.push(...extras.filter(c=>c.part!=='ending-tab'));
  // Concealed ordinary fields use equality readback in the secret lane. Only canvas and passwords forbid reads.
  if(editor==='textarea'){
   for(const [field,concealed] of [['canvas',false],['password',false],['password',true]])for(let rep=1;rep<=reps;rep++)add({part:'unsupported',editor:field,key:null,length:30,rep,concealed,privateField:true,variant:concealed?'concealed':'spike',expectedAnswer:'typeUnconfirmed',expectedReason:field==='canvas'?'notTextField':'secure'});
  }
+ out.push(...extras.filter(c=>c.part==='ending-tab'));
  return out.map(c=>({...c,variant:c.variant??'spike',text:c.text??(c.variant==='double-space'?sentence(c.length).replace('word is','word  is').slice(0,c.length):sentence(c.length))}));
 }
 export function answer(raw){
@@ -62,7 +63,7 @@ export function summarize(rows){
   if(!r.valid){g.invalid++;continue}g.valid++;
   const a=answer(r.typeRPC.raw);g.keysUnconfirmed+=+(readbackStatus(r.typeRPC.raw).keysUnconfirmed>0);g.success+=+a.success;g.unconfirmed+=+a.unconfirmed;g.otherErrors+=+(!a.success&&!a.unconfirmed);g.wrong+=+(r.correct===false);
   const bad=a.success&&r.correct===false&&!qualifiedKeyAnswer(r,r.typeRPC.raw);g.wrongSuccess+=+bad;
-  if(bad)wrongSuccesses.push({id:r.id,arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,key:r.key,length:r.length,variant:r.variant??'spike',expected:r.expectedFinal,actual:r.final,typeRPC:r.typeRPC,engine:r.engine,kit:r.kit});
+  if(bad)wrongSuccesses.push({id:r.id,arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,key:r.key,length:r.length,variant:r.variant??'spike',expected:r.expectedFinal,actual:r.final,typeRPC:r.typeRPC,renderedEvidence:r.renderedEvidence,renderedVerdict:r.renderedVerdict,engine:r.engine,kit:r.kit});
   if(r.part==='clean'){
    g.falseUnconfirmed+=+(a.unconfirmed&&r.correct===true);addCost(r,'clean-all');if(a.success)addCost(r,'clean-success');
   }else if(['race','substitution'].includes(r.part)&&a.unconfirmed&&r.correct===false)addCost(r,'unconfirmed-race-or-substitution');

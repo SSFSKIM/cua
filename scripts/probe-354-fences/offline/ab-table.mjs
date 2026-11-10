@@ -4,13 +4,52 @@
 import {readFileSync,writeFileSync,mkdirSync,readdirSync,realpathSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {abPlan,summarize} from '../ab-model.mjs';
+import {abPlan,summarize,answer} from '../ab-model.mjs';
+import {quantiles} from '../classify.mjs';
 import {matrix} from '../matrix.mjs';
-import {readbackStatus} from '../ab-extra.mjs';
+import {readbackStatus,needsForegroundReference,renderedVerdict} from '../ab-extra.mjs';
 function tsv(rows,columns){return [columns.join('\t'),...rows.map(r=>columns.map(k=>r[k]==null?'':typeof r[k]==='object'?JSON.stringify(r[k]):r[k]).join('\t'))].join('\n')+'\n'}
+function rescoreRendered(rows){return rows.map(r=>{
+ if(r.recordKind!=='cell'||!needsForegroundReference(r))return r;
+ const verdict=renderedVerdict(r,r.renderedEvidence?.reference,r.renderedEvidence?.measured);
+ return verdict.scorable?{...r,correct:verdict.correct,renderedVerdict:verdict}:{...r,valid:false,correct:null,renderedVerdict:verdict,oracleWarning:verdict.reason};
+})}
+function secretReports(rows){
+ const pairGroups=new Map(),latencyGroups=new Map(),confirmation=new Map();
+ for(const r of rows.filter(r=>r.recordKind==='cell')){
+  const comparison=r.part==='secret-selection'?'selection':r.part==='secret'&&['one-return','three-returns'].includes(r.variant)?'returns':null;
+  if(comparison){
+   const d={arm:r.arm,browser:r.browser,comparison},key=JSON.stringify(d),variants=comparison==='selection'?['equal','different']:['one-return','three-returns'];
+   if(!latencyGroups.has(key))latencyGroups.set(key,{...d,variants,rows:[]});latencyGroups.get(key).rows.push(r);
+   const pairKey=key+'/'+r.rep;if(!pairGroups.has(pairKey))pairGroups.set(pairKey,{...d,rep:r.rep,variants});
+   pairGroups.get(pairKey)[r.variant===variants[0]?'left':'right']=r;
+  }
+  if(r.part!=='secret'||r.variant!=='equality')continue;
+  const key=JSON.stringify([r.arm,r.browser]);
+  if(!confirmation.has(key))confirmation.set(key,{arm:r.arm,browser:r.browser,attempted:0,valid:0,success:0,confirmed:0,successConfirmed:0,typeUnconfirmed:0,finalMatch:0,otherErrors:0,invalid:0,refusalReasons:{}});
+  const g=confirmation.get(key);g.attempted++;
+  if(!r.valid){g.invalid++;continue}g.valid++;
+  const a=answer(r.typeRPC.raw),status=readbackStatus(r.typeRPC.raw);
+  g.success+=+a.success;g.confirmed+=+status.confirmed;g.successConfirmed+=+(a.success&&status.confirmed);g.typeUnconfirmed+=+a.unconfirmed;g.finalMatch+=+(r.correct===true);g.otherErrors+=+(!a.success&&!a.unconfirmed);
+  if(!a.success){const reason=status.reason??a.errorName??'(not reported)';g.refusalReasons[reason]=(g.refusalReasons[reason]??0)+1}
+ }
+ const pairs=[...pairGroups.values()].map(({left,right,variants,...d})=>({...d,leftVariant:variants[0],rightVariant:variants[1],leftId:left?.id??null,rightId:right?.id??null,leftValid:left?.valid??false,rightValid:right?.valid??false,metadataEqual:(d.comparison==='selection'?right?.secretSelectionEqual:right?.secretReadbackEqual)??null}));
+ const paths={engineSocket:r=>r.typeRPC?.engineTiming?.durationMs,trusted:r=>r.typeRPC?.durationMs,snapshot:r=>(r.typeRPC?.raw?.result?.meta??r.typeRPC?.raw?.error?.meta)?.typeReadback?.snapshotMs},latency=[];
+ for(const {rows,variants,...d} of latencyGroups.values())for(const [path,value] of Object.entries(paths)){
+  const stats=variant=>quantiles(rows.filter(r=>r.valid&&r.variant===variant).map(value)),left=stats(variants[0]),right=stats(variants[1]);
+  latency.push({...d,path,leftVariant:variants[0],rightVariant:variants[1],leftN:left.n,leftP50:left.p50,leftP95:left.p95,rightN:right.n,rightP50:right.p50,rightP95:right.p95});
+ }
+ return {secretComparisons:{required:true,excludedFields:['snapshotMs'],latencyInformational:true,pairs,latency},secretConfirmation:[...confirmation.values()]};
+}
 export function writeTables(out,rows,collection={status:'incremental',complete:false}){
- mkdirSync(out,{recursive:true});const s=summarize(rows),privacy=rows.filter(r=>r.recordKind==='cell'&&['unsupported','secret'].includes(r.part)).map(r=>({id:r.id,arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,variant:r.variant,valid:r.valid,unconfirmed:r.answer?.unconfirmed??false,textReadAttempts:r.audit?.textReadAttempts??null,rangeReadAttempts:r.audit?.rangeReadAttempts??null,privacyViolation:!!r.privacyViolation,findings:r.privacyFindings??[]}));
- writeFileSync(join(out,'summary.json'),JSON.stringify({...s,privacy,collection},null,2));
+ rows=rescoreRendered(rows);
+ const oracleWarnings=rows.filter(r=>r.oracleWarning).map(r=>({id:r.id,arm:r.arm,browser:r.browser,editor:r.editor,reason:r.oracleWarning}));
+ mkdirSync(out,{recursive:true});const s=summarize(rows),reports=secretReports(rows),privacy=rows.filter(r=>r.recordKind==='cell'&&['unsupported','secret','secret-selection'].includes(r.part)).map(r=>({id:r.id,arm:r.arm,browser:r.browser,editor:r.editor,part:r.part,variant:r.variant,valid:r.valid,unconfirmed:r.answer?.unconfirmed??false,textReadAttempts:r.audit?.textReadAttempts??null,rangeReadAttempts:r.audit?.rangeReadAttempts??null,privacyViolation:!!r.privacyViolation,findings:r.privacyFindings??[]}));
+ writeFileSync(join(out,'summary.json'),JSON.stringify({...s,privacy,collection,oracleWarnings,...reports},null,2));
+ writeFileSync(join(out,'oracle-warnings.tsv'),tsv(oracleWarnings,['arm','browser','editor','id','reason']));
+ writeFileSync(join(out,'secret-pairs.tsv'),tsv(reports.secretComparisons.pairs,['arm','browser','comparison','rep','leftVariant','rightVariant','leftId','rightId','leftValid','rightValid','metadataEqual']));
+ writeFileSync(join(out,'secret-pair-latency.tsv'),tsv(reports.secretComparisons.latency,['arm','browser','comparison','path','leftVariant','rightVariant','leftN','leftP50','leftP95','rightN','rightP50','rightP95']));
+ writeFileSync(join(out,'secret-confirmation.tsv'),tsv(reports.secretConfirmation,['arm','browser','attempted','valid','success','confirmed','successConfirmed','typeUnconfirmed','finalMatch','otherErrors','invalid','refusalReasons']));
  writeFileSync(join(out,'rates.tsv'),tsv(s.groups,['arm','browser','editor','part','key','length','variant','attempted','valid','invalid','success','unconfirmed','keysUnconfirmed','otherErrors','wrong','wrongSuccess','falseUnconfirmed','privacyViolations']));
  writeFileSync(join(out,'cost.tsv'),tsv(s.cost,['arm','browser','length','path','n','p50','p95','max']));
  writeFileSync(join(out,'privacy.tsv'),tsv(privacy,['id','arm','browser','editor','part','variant','valid','unconfirmed','textReadAttempts','rangeReadAttempts','privacyViolation','findings']));
@@ -83,7 +122,7 @@ export function collect(root,{only}={}){
   if(set.config||set.rows.length)sets.push(set);
  }
  walk(root);
- return {paths:paths.sort(),rows,collection:collectionCoverage(sets,only)};
+ return {paths:paths.sort(),rows:rescoreRendered(rows),collection:collectionCoverage(sets.map(s=>({...s,rows:rescoreRendered(s.rows)})),only)};
 }
 if(process.argv[1]&&realpathSync(process.argv[1])===fileURLToPath(import.meta.url)){
  const [root,flag,only,...extra]=process.argv.slice(2);

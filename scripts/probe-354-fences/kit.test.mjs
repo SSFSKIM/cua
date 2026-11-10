@@ -3,7 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createContext,runInContext} from 'node:vm';
-import {SEED,page} from './page.mjs';
+import * as pageModule from './page.mjs';
+const {SEED,page}=pageModule;
 import {measuredFrontPid,setupForeground,plan,modeSpec,expectedFinal,analyzeTrace,readbackVerdict,privacyViolation,abortReason,coverage,sentence,FENCE_MODES} from './classify.mjs';
 import {matrix} from './matrix.mjs';
 import {createFixture,FixtureLost} from './fixture.mjs';
@@ -104,6 +105,22 @@ test('matrix', () => {
  assert.throws(()=>matrix('safari-special'));assert.throws(()=>matrix(' , '));
 });
 
+test('editing text removes only the terminal empty-block placeholder layout newline',()=>{
+ const node=(tagName,...childNodes)=>({nodeType:1,tagName,childNodes}),text=nodeValue=>({nodeType:3,nodeValue}),placeholder=node('DIV',node('SPAN',node('BR')));
+ const captured=Object.freeze({innerText:'First line\n\n',textContent:'First line',innerHTML:'<span>First line</span><div><span><br></span></div>',lastChild:placeholder,focus(){throw Error('read must not focus')},setSelectionRange(){throw Error('read must not change selection')}});
+ assert.equal(pageModule.editingText?.(captured),'First line\n');
+ assert.equal(captured.innerText,'First line\n\n');assert.equal(captured.innerHTML,'<span>First line</span><div><span><br></span></div>');
+ const cases=[
+  ['First line\n\n\n',placeholder,'First line\n\n'], // Two real paragraph breaks plus the terminal placeholder.
+  ['First line\n\n',node('SPAN',text('First line'),node('BR'),node('BR')),'First line\n\n'],
+  ['First line\n\n',node('DIV',node('BR'),node('BR')),'First line\n\n'],
+  ['First line\nSecond line\n\n',node('DIV',text('Second line'),node('BR'),node('BR')),'First line\nSecond line\n\n'],
+  ['First line\n',placeholder,'First line\n'],
+  ['First line\n\n',node('DIV',node('IMG')),'First line\n\n']
+ ];
+ for(const [innerText,lastChild,want] of cases)assert.equal(pageModule.editingText?.({innerText,lastChild}),want);
+});
+
 test('page script parses', () => {
  const html=page(),src=html.slice(html.indexOf('<script>')+8,html.lastIndexOf('</script>'));
  assert.doesNotThrow(()=>new Function(src));
@@ -111,13 +128,14 @@ test('page script parses', () => {
 
 // Run the real fixture script against a small DOM boundary, without launching a browser.
 function fixtureScript(){
- const listeners=new Map(),answers=[],host={},document={activeElement:null,title:'',addEventListener(event,fn){if(!listeners.has(event))listeners.set(event,[]);listeners.get(event).push(fn)},querySelector:s=>s==='#host'?host:element};
- const element={value:'',selectionStart:0,selectionEnd:0,focus(){document.activeElement=this},setSelectionRange(start,end){this.selectionStart=start;this.selectionEnd=end},getBoundingClientRect:()=>({x:0,y:0,width:500,height:44})};
+ const listeners=new Map(),answers=[],host={},document={activeElement:null,title:'',hasFocus:()=>true,addEventListener(event,fn){if(!listeners.has(event))listeners.set(event,[]);listeners.get(event).push(fn)},querySelector:s=>s==='#host'?host:element};
+ const element={value:'',selectionStart:0,selectionEnd:0,focus(){document.activeElement=this;for(const fn of listeners.get('focusin')??[])fn({target:this})},setSelectionRange(start,end){this.selectionStart=start;this.selectionEnd=end},getBoundingClientRect:()=>({x:0,y:0,width:500,height:44})};
+ Object.defineProperty(host,'innerHTML',{set(){for(const fn of listeners.get('focusout')??[])fn({target:element})}});
  const context=createContext({document,self:{},performance:{getEntriesByType:()=>[]},location:{href:'http://fixture/'},setTimeout,fetch:(url,options)=>{
   if(url.startsWith('/cmd'))return new Promise(()=>{});answers.push(JSON.parse(options.body));return Promise.resolve({});
  }}),html=page();
  runInContext(html.slice(html.indexOf('<script>')+8,html.lastIndexOf('</script>')),context);
- return {element,answers,run:c=>context.run(c),dispatch:(event,properties={})=>{
+ return {element,document,answers,run:c=>context.run(c),dispatch:(event,properties={})=>{
   const x={target:element,defaultPrevented:false,preventDefault(){this.defaultPrevented=true},...properties};
   for(const fn of listeners.get(event)??[])fn(x);return x;
  }};
@@ -134,6 +152,30 @@ test('ending keydown text survives the ordinary trace bound, but private field t
   assert.equal(last.targetEditor,true);
   assert.equal(Object.hasOwn(trace[65],'text'),false,'ordinary events remain bounded');
  }
+});
+
+test('private fixture hides a seeded value before the first focus event',async()=>{
+ const seed='private seeded fixture';
+ for(const privateField of [false,true]){
+  const f=fixtureScript();await f.run({op:'reset',cell:'private-seed',editor:'input',privateField,seed});
+  const state=f.answers.at(-1),focus=state.trace.find(t=>t.event==='focusin');assert.ok(focus);
+  assert.equal(focus.text===seed,!privateField);assert.equal(state.text,privateField?null:seed);
+ }
+});
+
+test('resetting a private fixture to a public cell cannot expose the outgoing seed on focusout',async()=>{
+ const f=fixtureScript(),seed='private outgoing fixture';
+ await f.run({op:'reset',cell:'private',editor:'input',privateField:true,seed});
+ await f.run({op:'reset',cell:'public',editor:'input'});
+ assert.equal(JSON.stringify(f.answers.at(-1)).includes(seed),false);
+});
+
+test('terminal Tab focus evidence reports labels and identity without reading or moving field values',async()=>{
+ const f=fixtureScript();await f.run({op:'reset',cell:'tab',editor:'input'});
+ const active={tagName:'BUTTON',id:'next',getAttribute:k=>k==='aria-label'?'Next control':null};
+ Object.defineProperty(active,'value',{get(){throw Error('focus evidence must not read values')}});f.document.activeElement=active;
+ await f.run({op:'focus',cell:'tab'});const result=f.answers.at(-1);
+ assert.deepEqual(result.activeElement,{tag:'BUTTON',id:'next',role:null,label:'Next control',type:null,isEditor:false});assert.equal(f.document.activeElement,active);
 });
 
 test('unchanged negative control cancels text input without resetting the selected seed',async()=>{

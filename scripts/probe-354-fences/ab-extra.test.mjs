@@ -7,13 +7,16 @@ const {extraPlan,readbackStatus,qualifiedKeyAnswer}=extra;
 test('Return is text in multiline fields, but ending single-line Return and every Tab remain unconfirmed keys',()=>{
  for(const browser of ['safari','cft','firefox'])for(const editor of ['textarea','input','contenteditable','compose']){
   const cells=extraPlan({browser,editor,reps:20});
-  assert.equal(cells.filter(c=>c.part==='ending-tab').length,20);
+  assert.equal(cells.filter(c=>c.part==='ending-tab').length,1);
+  assert.equal(cells.at(-1).part,'ending-tab');
   for(const c of cells.filter(c=>c.part==='ending-tab'))assert.equal(c.expectedAnswer,'keysUnconfirmed');
   const returns=cells.filter(c=>c.part==='ending-return');
   assert.equal(returns.length,editor==='compose'?0:20);
   assert.ok(returns.every(c=>c.expectedAnswer===(editor==='input'?'keysUnconfirmed':'confirmed')));
   assert.equal(cells.filter(c=>c.part==='multiline').length,['textarea','contenteditable'].includes(editor)?20:0);
   assert.equal(cells.filter(c=>c.part==='secret').length,editor==='input'?80:0);
+  const selection=cells.filter(c=>c.part==='secret-selection');assert.equal(selection.length,editor==='input'?40:0);
+  assert.ok(selection.every(c=>c.secret&&c.key===null&&c.seed===undefined&&c.selection===undefined&&c.length===null));
   for(const c of cells.filter(c=>c.part==='secret'&&c.returnUnits))assert.equal(c.returnUnits,c.variant==='one-return'?1:3);
   const unchanged=cells.filter(c=>c.part==='unchanged');
   assert.equal(unchanged.length,editor==='input'?40:0);
@@ -78,6 +81,41 @@ test('unchanged controls distinguish a consumed identical replacement from the o
  assert.equal(extra.diagnosticContractFailure(blocked,refusal('valueMismatch')),true);
  assert.equal(extra.diagnosticContractFailure({...blocked,finalSelection:[SEED.length,0]},refusal('unchanged')),true);
  assert.equal(extra.diagnosticContractFailure({...blocked,trace:[]},refusal('unchanged')),true,'the cancellation must be witnessed, not inferred from missing input');
+});
+
+test('selection-pair comparison is required while latency values never determine its verdict',()=>{
+ const cell={part:'secret-selection',variant:'different',secret:true,correct:true};
+ for(const secretSelectionEqual of [undefined,null,false])assert.equal(extra.diagnosticContractFailure({...cell,secretSelectionEqual},refusal('unchanged')),true);
+ assert.equal(extra.diagnosticContractFailure({...cell,secretSelectionEqual:true,typeRPC:{durationMs:100000,engineTiming:{durationMs:1}}},refusal('unchanged')),false,'an honest refusal is not recast as a wrong success or a timing gate');
+ assert.equal(extra.diagnosticContractFailure({...cell,variant:'equal'},refusal('unchanged')),false);
+});
+
+test('rendered text is scored against independent foreground DOM and AX evidence, never its acknowledgement',()=>{
+ const cell={part:'ending-return',editor:'contenteditable',browser:'cft',arm:'branch',engine:'b'.repeat(40),renderedText:true,text:'First line\n',expectedText:'First line\n'};
+ const dom={text:'First line\n',innerText:'First line\n\n',domText:'First line',html:'<span>First line</span><div><span><br></span></div>'};
+ const reference={...cell,foregroundVerified:true,route:"2'",dom,ax:{readable:true,secure:false,valueRead:true,value:'First line\n'}};
+ const measured={route:"2'",dom,ax:{...reference.ax}};
+ assert.equal(extra.needsForegroundReference?.(cell),true);
+ for(const excluded of [{...cell,secret:true},{...cell,privateField:true},{...cell,editor:'password'},{...cell,editor:'canvas'}])assert.equal(extra.needsForegroundReference?.(excluded),false);
+ const score=(ref=reference,got=measured)=>extra.renderedVerdict?.(cell,ref,got);
+ assert.equal(score()?.correct,true);assert.equal(score()?.scorable,true);
+ assert.equal(score(reference,{...measured,ax:{...measured.ax,value:'First line\n\n'},engineConfirmed:true})?.correct,false,'confirmed success with AX different from reference remains wrong');
+ assert.equal(score(reference,{...measured,dom:{...dom,html:'<span>First line<br></span>'}})?.scorable,false,'DOM-only layout disagreement must not invent a false success when AX matches');
+ assert.equal(score({...reference,ax:{...reference.ax,readable:false}})?.scorable,false);
+ assert.equal(score({...reference,dom:{...dom,text:'Wrong reference'}})?.scorable,false);
+ assert.equal(score(reference,{...measured,route:'paste'})?.scorable,false);
+ assert.equal(score({...reference,foregroundVerified:false})?.scorable,false);
+});
+
+test('a stable foreground AX terminal marker is the AX oracle, not the literal DOM editing string',()=>{
+ const cell={part:'ending-return',editor:'contenteditable',browser:'cft',arm:'branch',engine:'b'.repeat(40),renderedText:true,text:'First line\n'};
+ const dom={text:'First line\n',innerText:'First line\n\n',domText:'First line',html:'<span>First line</span><div><span><br></span></div>'};
+ const reference={...cell,foregroundVerified:true,route:"2'",dom,ax:{readable:true,secure:false,valueRead:true,value:'First line\n\n'}};
+ const measured={route:"2'",dom,ax:{...reference.ax}};
+ const matches=extra.renderedVerdict(cell,reference,measured);
+ assert.equal(matches.scorable,true);assert.equal(matches.correct,true);assert.equal(matches.axMatches,true);
+ const diverges=extra.renderedVerdict(cell,reference,{...measured,ax:{...measured.ax,value:'First line\n'}});
+ assert.equal(diverges.scorable,true);assert.equal(diverges.correct,false);assert.equal(diverges.axMatches,false);
 });
 
 test('the three-Return diagnostic fails a missing or unequal complete readback comparison',()=>{

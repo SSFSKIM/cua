@@ -1,6 +1,6 @@
-// Runner-only side tool for the #354 fence spike: activate an owned runner app and verify the actual frontmost pid,
-// or list an owned runner browser's AX window titles (the fixture's visible-owner nonce). One JSON request per stdin
-// line, one JSON answer per stdout line. Reads no field text, values or secrets.
+// Runner-only side tool for the #354 fence spike: foreground checks, clipboard writes, window titles and focused AX evidence.
+// One JSON request per stdin line, one JSON answer per stdout line. focusEvidence never activates or moves focus;
+// only publicValue/public-rendered may read a public fixture's text-entry value. labelsOnly/terminal-tab never reads values.
 import AppKit
 import ApplicationServices
 import Foundation
@@ -16,6 +16,85 @@ func windowTitles(_ pid: pid_t) -> [String] {
     guard AXUIElementCopyAttributeValue(item as! AXUIElement, kAXTitleAttribute as CFString, &title) == .success else { return nil }
     return title as? String
   }
+}
+
+func focusAttributeString(_ element: AXUIElement, _ attribute: String) -> String? {
+  var raw: CFTypeRef?
+  guard AXUIElementCopyAttributeValue(element, attribute as CFString, &raw) == .success else { return nil }
+  return raw as? String
+}
+
+func focusEvidence(_ q: [String: Any]) -> [String: Any] {
+  let mode = q["mode"] as? String
+  let lane = q["lane"] as? String
+  let labelsOnly = mode == "labelsOnly"
+  // readable means a string AXValue was obtained, not that labels were available.
+  // secure is null until classification, or true if either known identifier is secure.
+  var evidence: [String: Any] = [
+    "ok": false, "role": NSNull(), "subrole": NSNull(), "secure": NSNull(),
+    "readable": false, "valueRead": false
+  ]
+  var labels: [String: Any] = [
+    "role": NSNull(), "subrole": NSNull(), "title": NSNull(), "description": NSNull()
+  ]
+  func failure(_ reason: String) -> [String: Any] {
+    var result = evidence
+    result["error"] = "focus evidence unavailable"
+    result["reason"] = reason
+    if labelsOnly { result["labels"] = labels }
+    return result
+  }
+  guard (mode == "publicValue" && lane == "public-rendered") ||
+        (labelsOnly && lane == "terminal-tab") else { return failure("invalid-mode-lane") }
+  guard let number = q["pid"] as? NSNumber,
+        CFGetTypeID(number as CFTypeRef) != CFBooleanGetTypeID(),
+        number.int32Value > 0, number.doubleValue == Double(number.int32Value) else {
+    return failure("invalid-pid")
+  }
+
+  let app = AXUIElementCreateApplication(number.int32Value)
+  AXUIElementSetMessagingTimeout(app, 0.5)
+  var rawFocus: CFTypeRef?
+  guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &rawFocus) == .success,
+        let rawFocus = rawFocus, CFGetTypeID(rawFocus) == AXUIElementGetTypeID() else {
+    return failure("focused-element-unreadable")
+  }
+  let focus = rawFocus as! AXUIElement
+  AXUIElementSetMessagingTimeout(focus, 0.5)
+  // Read both identifiers before requesting any labels or value. Only explicit AX absence permits a missing subrole.
+  let role = focusAttributeString(focus, kAXRoleAttribute)
+  var rawSubrole: CFTypeRef?
+  let subroleStatus = AXUIElementCopyAttributeValue(focus, kAXSubroleAttribute as CFString, &rawSubrole)
+  let subrole = subroleStatus == .success ? rawSubrole as? String : nil
+  let subroleAbsent = subroleStatus == .noValue || subroleStatus == .attributeUnsupported
+  if let role = role { evidence["role"] = role; labels["role"] = role }
+  if let subrole = subrole { evidence["subrole"] = subrole; labels["subrole"] = subrole }
+  let secure = [role, subrole].compactMap { $0 }.contains { identifier in
+    let name = identifier.lowercased()
+    return name.contains("secure") || name.contains("password")
+  }
+  if secure { evidence["secure"] = true }
+  guard let role = role, !role.isEmpty else { return failure("role-unreadable") }
+  guard subroleAbsent || (subroleStatus == .success && subrole != nil) else {
+    return failure("subrole-unreadable")
+  }
+  evidence["secure"] = secure
+  guard !secure else { return failure("secure-focus") }
+
+  if labelsOnly {
+    if let title = focusAttributeString(focus, kAXTitleAttribute) { labels["title"] = title }
+    if let description = focusAttributeString(focus, kAXDescriptionAttribute) { labels["description"] = description }
+    evidence["labels"] = labels
+    evidence["ok"] = true
+    return evidence
+  }
+  guard role == kAXTextFieldRole || role == kAXTextAreaRole else { return failure("non-text-entry-role") }
+  evidence["valueRead"] = true
+  guard let value = focusAttributeString(focus, kAXValueAttribute) else { return failure("value-unreadable") }
+  evidence["value"] = value
+  evidence["readable"] = true
+  evidence["ok"] = true
+  return evidence
 }
 
 func now() -> Double { Date().timeIntervalSince1970 * 1000 }
@@ -37,6 +116,8 @@ while let line = readLine() {
     answer["ok"] = NSPasteboard.general.setString(text, forType: .string)
   } else if let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], q["op"] as? String == "titles" {
     answer["titles"] = windowTitles((q["pid"] as? NSNumber)?.int32Value ?? 0)
+  } else if let data = line.data(using: .utf8), let q = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], q["op"] as? String == "focusEvidence" {
+    answer.merge(focusEvidence(q)) { _, new in new }
   } else {
     answer["error"] = "bad request"
   }

@@ -12,7 +12,7 @@ import {abortReason,coverage} from './classify.mjs';
 import {abPlan,answer,privacyFindings} from './ab-model.mjs';
 import {writeTables} from './offline/ab-table.mjs';
 import {snapshot} from '../probe-354-substitutions/diagnostic.mjs';
-import {readbackStatus,qualifiedKeyAnswer,diagnosticContractFailure} from './ab-extra.mjs';
+import {readbackStatus,qualifiedKeyAnswer,diagnosticContractFailure,needsForegroundReference,referenceKey,publicDOM,renderedVerdict} from './ab-extra.mjs';
 import {createSyntheticSecretProbe} from './ab-secret.mjs';
 
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only; never run GUI steps on a Mac');
@@ -61,11 +61,12 @@ const meta={kit:process.env.GITHUB_SHA??null,engine:HEAD,arm:ARM,image:process.e
  clean:'Cmd+A independently settled and its DOM value/range checked at 500ms before type_text; 30/120/500 characters',
  sampling:'DOM at 0/250/1000/3000ms after real type_text response, including refusals; final is last sample',
  substitutions:'runner defaults unchanged: original spike CE500 plus separately labelled deliberate double-space CE500 diagnostic, CFT only; no period-off preference writes',
- extraCells:'ending Return in input and Tab everywhere: success with confirmed nonempty prefix and checkpoint/keysUnconfirmed metadata; a changed final state qualifies only with the complete prefix witnessed at keydown; multiline Return is text; identical-seed input with consumed-caret and cancelled-beforeinput unchanged controls; CFT 10001-character non-ASCII cap must say possiblyTruncated without field values/lengths; separate diagnostic denominators',
- secrets:'real trusted wrapper/native service from each pinned source; isolated synthetic HOME; normal-input equality, forced concealedMismatch, and same-prefix one/three trailing CR controls; compare complete typeReadback objects exactly, retain real action/service timings separately; reject values, lengths, entered, keysUnconfirmed and checkpoints in replies/meta/structured logs; scan every 8-byte secret fragment before saving',
+ extraCells:'ending Return in input: confirmed prefix/checkpoint and keysUnconfirmed; Tab is ONE terminal semantic diagnostic per browser/editor/head (n=1), after every other cell, never a 20-rep rate cell; changed finals require a complete prefix keydown witness; multiline Return is text; unchanged caret controls and cap diagnostics stay separate from 20-rep race/clean rates',
+ renderedOracle:'public rendered-text diagnostics require a per-head foreground reference through the same actual type_text route, matching intended editing text and readable post-type AX; measured raw DOM structure/text and post-type AX value are compared to it independently of engine acknowledgements; missing evidence is unscorable; raw innerText/textContent/HTML retained; no secret/password/canvas value evidence',
+ secrets:'real trusted wrapper/native service and isolated synthetic HOME; normal-input equality/mismatch, one/three trailing CR, and equal/different same-length private selections; both metadata pairs required to match exactly except snapshotMs, which stays in raw records and timing tables; socket RTT is measured inside the native client separately from trusted-call duration; all latency distributions are informational; Boolean keysUnconfirmed allowed, numeric counts/checkpoints/values/lengths withheld; private fixture states and errors scrubbed in finally before any save or log',
  abort:'3 consecutive invalid cells or 6 setup failures; incomplete coverage and branch contract failures exit nonzero'};
 let done=0,valid=0,invalid=0,setupFailures=0,consecutiveInvalid=0,aborted=null;
-const compact=[],calibrations=new Map();
+const compact=[],calibrations=new Map(),foregroundReferences=new Map();
 function progress(last){writeFileSync(join(OUT,'progress.json'),JSON.stringify({done,valid,invalid,planned:cells.length,setupFailures,consecutiveInvalid,aborted,last,elapsedMs:Date.now()-start,fixture:{bound:fixture.fx.bound,foreignPolls:fixture.fx.foreignPolls,expired:fixture.fx.expired,bindings:fixture.fx.bindings.length}},null,2))}
 function save(row){
  appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');
@@ -76,19 +77,21 @@ function save(row){
 }
 const seedFor=c=>c.seed??SEED;
 function initial(c){const seed=seedFor(c),undo=c.key==='cmd+z';return {text:seed+(undo?' undo':''),selection:[c.key==='cmd+v'?0:undo?seed.length+5:3,0]}}
-function check(s,c,label){const intended=initial(c),text=c.privateField||c.secret?s.matchesExpected===true&&s.length===intended.text.length:s.text===intended.text;
- if(!text||!s.focused||s.cell!==c.id||!sameSel(s.selection,intended.selection))throw new SetupError(label+' not established '+JSON.stringify({length:s.length,selection:s.selection,focused:s.focused,cell:s.cell}));
+function check(s,c,label,intended=initial(c)){
+ if(c.secret){secretProbe.checkFixture(s,intended,c.id);return}
+ const text=c.privateField?s.matchesExpected===true&&s.length===intended.text.length:s.text===intended.text;
+ if(!text||!s.focused||s.cell!==c.id||!sameSel(s.selection,intended.selection))throw new SetupError(c.privateField?'Private fixture state not established.':label+' not established '+JSON.stringify({length:s.length,selection:s.selection,focused:s.focused,cell:s.cell}));
 }
-async function setup(c,row){
+async function setup(c,row,privateInitial,{foreground=false}={}){
  row.prepareForeground=await front(pid);
- const expected=c.privateField||c.secret?initial(c).text:undefined;
- row.reset=await fixture.command({op:'reset',cell:c.id,editor:c.editor,seed:c.seed,privateField:c.privateField||c.secret,renderedText:c.renderedText,dropInput:c.secret&&c.variant==='mismatch',preventInput:c.preventInput,expected});
- const selection=c.key==='cmd+z'?[seedFor(c).length,0]:initial(c).selection;
- row.setup=await fixture.command({op:'prepare',cell:c.id,editor:c.editor,key:c.key,selection,expected});check(row.setup,c,'prepared state');
+ const intended=privateInitial??initial(c),expected=c.privateField||c.secret?intended.text:undefined;
+ row.reset=await fixture.command({op:'reset',cell:c.id,editor:c.editor,seed:privateInitial?.text??c.seed,privateField:c.privateField||c.secret,renderedText:c.renderedText,dropInput:c.secret&&c.variant==='mismatch',preventInput:c.preventInput,expected});
+ const selection=c.key==='cmd+z'?[seedFor(c).length,0]:intended.selection;
+ row.setup=await fixture.command({op:'prepare',cell:c.id,editor:c.editor,key:c.key,selection,expected});check(row.setup,c,'prepared state',intended);
  if(c.key==='cmd+v'){row.clip=await ask({op:'clip',text:CLIP});if(!row.clip.ok)throw new SetupError('known clipboard not established')}
- row.foregroundSetup=c.editor==='password';const target=row.foregroundSetup?pid:coverPid;
+ row.foregroundSetup=c.editor==='password'||foreground;const target=row.foregroundSetup?pid:coverPid;
  row.foregroundTransition=await front(target);row.setupSettleMs=250;await sleep(250);
- row.settledSetup=await fixture.command({op:'read',cell:c.id,expected});check(row.settledSetup,c,'settled state');
+ row.settledSetup=await fixture.command({op:'read',cell:c.id,expected});check(row.settledSetup,c,'settled state',intended);
  row.beforeMeasuredForeground=await front(target,false);
 }
 function semantic(key,s){
@@ -108,15 +111,38 @@ async function calibrate(key){
  if(!row.valid)throw new SetupError('key-only effect unavailable for '+key);
  }finally{w?.close();appendFileSync(join(OUT,'calibrations.jsonl'),JSON.stringify(row)+'\n')}
 }
+async function captureForegroundReference(c){
+ if(!needsForegroundReference(c))throw Error('foreground value evidence is restricted to public rendered-text cells');
+ const key=referenceKey(c),row={...c,id:'foreground/'+c.part+'/'+c.variant,recordKind:'foreground-reference',arm:ARM,browser:KIND,shard:SHARD,engine:HEAD,kit:meta.kit};
+ let w,reference=null;
+ try{
+  w=await connect();await setup(c,row,undefined,{foreground:true});
+  if(c.key){
+   row.keyRPC=await rpc(w,'press_key',{key:c.key});if(!answer(row.keyRPC.raw).success)throw Error('reference key refused');
+   await sleep(500);row.priorKeyEffect=await fixture.command({op:'read',cell:c.id});const calibration=calibrations.get(c.key);
+   if(row.priorKeyEffect.text!==calibration.effect.text||!sameSel(row.priorKeyEffect.selection,calibration.effect.selection))throw Error('reference prior key not settled');
+  }
+  row.foregroundBefore=await front(pid,false);
+  row.typeRPC=await rpc(w,'type_text',{text:c.text});
+  const delays=[0,250,1000,3000],n=fixture.send({op:'sample',cell:c.id,returnedAt:row.typeRPC.endedAt,delays},8500);
+  row.samples=(await fixture.collect(n,delays.length,8500)).sort((a,b)=>a.delay-b.delay);
+  row.ax=await ask({op:'focusEvidence',pid,mode:'publicValue',lane:'public-rendered'});
+  row.foregroundAfter=await front(pid,false);
+  reference={id:row.id,browser:KIND,editor:c.editor,arm:ARM,engine:HEAD,text:c.text,route:row.typeRPC.meta?.inputRoute,dom:publicDOM(row.samples.at(-1)),ax:row.ax,foregroundVerified:row.foregroundBefore.frontmostPid===pid&&row.foregroundAfter.frontmostPid===pid&&row.samples.at(-1).focused===true};
+  row.reference=reference;row.validation=renderedVerdict({...row},reference,{route:reference.route,dom:reference.dom,ax:reference.ax});
+ }catch(e){row.problem=String(e.stack??e).slice(0,3000)}
+ finally{w?.close();foregroundReferences.set(key,reference);appendFileSync(join(OUT,'foreground-references.jsonl'),JSON.stringify(row)+'\n')}
+}
 async function cell(c,{warmup=false}={}){
  if(Date.now()-start>45*60000)throw new Abort('45 minute per-arm budget exceeded');
+ const privateInitial=c.part==='secret-selection'?secretProbe.fixture(c.variant):null;
  const calibration=c.key?calibrations.get(c.key):null,expected=expectation(calibration?.effect??{text:seedFor(c),selection:initial(c).selection},c.text),requestedFinal=expected.final;
  if(c.expectedText!==undefined)expected.final=c.expectedText;
- if(c.secret)expected.final=secretProbe.expected(seedFor(c),initial(c).selection);
- const row={...c,recordKind:warmup?'warmup':'cell',arm:ARM,browser:KIND,shard:SHARD,kit:meta.kit,engine:HEAD,expectedFinal:c.secret?null:expected.final,requestedFinal:c.expectedText!==undefined?requestedFinal:undefined,calibrationKey:calibration?.key??null,startedAt:Date.now()};
+ if(c.secret)expected.final=secretProbe.expected(privateInitial?.text??seedFor(c),privateInitial?.selection??initial(c).selection);
+ let row={...c,recordKind:warmup?'warmup':'cell',arm:ARM,browser:KIND,shard:SHARD,kit:meta.kit,engine:HEAD,expectedFinal:c.secret?null:expected.final,requestedFinal:c.expectedText!==undefined?requestedFinal:undefined,calibrationKey:calibration?.key??null,startedAt:Date.now()};
  let w,stage='setup',lost=false;
  try{
-  w=await connect();await setup(c,row);
+  w=await connect();await setup(c,row,privateInitial);
   if(c.key){
    stage='key';row.keyRPC=await rpc(w,'press_key',{key:c.key});if(!answer(row.keyRPC.raw).success)throw Error('measured key refused');
    if(c.part!=='race'){
@@ -129,8 +155,8 @@ async function cell(c,{warmup=false}={}){
   const auditPromise=auditRequested?waitAudit(c.id):null;
   if(c.secret){
    const app={safari:'/Applications/Safari.app',cft:'/Applications/Google Chrome for Testing.app',firefox:'/Applications/Firefox.app'}[KIND],bundle={safari:'com.apple.Safari',cft:'com.google.chrome.for.testing',firefox:'org.mozilla.firefox'}[KIND];
-   const startedAt=Date.now(),reply=await secretProbe.run({app,bundle,pid,id:c.id,returnUnits:c.returnUnits,pair:'return-metadata/'+c.rep,identity:w.identity,execute:(method,args)=>w.execute(method,args)}),endedAt=Date.now();
-   row.typeRPC={startedAt,endedAt,durationMs:endedAt-startedAt,raw:reply.engineRaw,meta:reply.engineRaw.result?.meta??reply.engineRaw.error?.meta??null};row.secretService=reply.service;row.secretFindings=reply.findings;row.secretReadbackEqual=reply.returnMetadataEqual;
+   const startedAt=Date.now(),reply=await secretProbe.run({app,bundle,pid,id:c.id,returnUnits:c.returnUnits,selectionVariant:c.part==='secret-selection'?c.variant:undefined,pair:c.part+'/'+c.rep,identity:w.identity,execute:(method,args)=>w.execute(method,args)}),endedAt=Date.now();
+   row.typeRPC={startedAt,endedAt,durationMs:endedAt-startedAt,engineTiming:reply.timing.engine,trustedTiming:reply.timing.trusted,raw:reply.engineRaw,meta:reply.engineRaw.result?.meta??reply.engineRaw.error?.meta??null};row.secretService=reply.service;row.secretFindings=reply.findings;row.secretReadbackEqual=reply.returnMetadataEqual;row.secretSelectionEqual=reply.selectionMetadataEqual;
   }else row.typeRPC=await rpc(w,'type_text',{text:c.text,...(c.concealed?{concealed:true}:{}),...(auditRequested?{probe354Audit:c.id}:{})});
   row.readbackStatus=readbackStatus(row.typeRPC.raw);
   row.returnedAt=row.typeRPC.endedAt;row.answer=answer(row.typeRPC.raw);row.keyToTypeGapMs=row.keyRPC?row.typeRPC.startedAt-row.keyRPC.endedAt:null;
@@ -151,7 +177,15 @@ async function cell(c,{warmup=false}={}){
   row.finalLength=last.length;row.firstSampleDelayMs=row.samples[0].at-row.returnedAt;
   row.trace=[row.settledSetup,row.priorKeyEffect,...row.samples].flatMap(s=>s?.trace??[]).sort((a,b)=>a.seq-b.seq);
   for(const s of [row.reset,row.setup,row.settledSetup,row.priorKeyEffect,...row.samples])if(s)delete s.trace;
-  if(c.secret){row.finalLength=null;row.trace=[];for(const s of [row.reset,row.setup,row.settledSetup,...row.samples])if(s){delete s.length;delete s.selection;delete s.trace}}
+  if(needsForegroundReference(c)){
+   stage='oracle';
+   const ax=await ask({op:'focusEvidence',pid,mode:'publicValue',lane:'public-rendered'});
+   row.renderedEvidence={reference:foregroundReferences.get(referenceKey(c))??null,measured:{route:row.typeRPC.meta?.inputRoute,dom:publicDOM(last),ax}};
+   row.renderedVerdict=renderedVerdict(row,row.renderedEvidence.reference,row.renderedEvidence.measured);
+   if(!row.renderedVerdict.scorable)throw Error('Rendered-text oracle unavailable: '+row.renderedVerdict.reason);
+   row.correct=row.renderedVerdict.correct;
+  }
+  if(c.part==='ending-tab'&&!c.secret&&!c.privateField&&!['password','canvas'].includes(c.editor))row.afterTabFocus={dom:await fixture.command({op:'focus',cell:c.id}),ax:await ask({op:'focusEvidence',pid,mode:'labelsOnly',lane:'terminal-tab'})};
   row.contractFailure=ARM==='branch'&&diagnosticContractFailure(row,row.typeRPC.raw);
   row.valid=true;
   if(ARM==='branch'&&row.answer.success&&!row.correct&&!qualifiedKeyAnswer(row,row.typeRPC.raw))console.error('BRANCH SUCCESS WITH WRONG FINAL VALUE',KIND,SHARD,c.id);
@@ -160,6 +194,8 @@ async function cell(c,{warmup=false}={}){
  }finally{
   w?.close();row.endedAt=Date.now();
   if(lost){try{row.rebound=await fixture.bindVisible(()=>titles(pid),8000)}catch(e){row.rebindProblem=String(e).slice(0,500)}}
+  // Includes failed setup/sampling: no private fixture state or exception details reach artifacts or console.
+  if(c.secret)row=secretProbe.sanitizeFixture(row);
   save(row);console.log('354ab',ARM,KIND,SHARD,c.id,row.valid?'valid':row.problem?.split('\n')[0],row.answer?.errorName??(row.answer?.success?'success':'-'),'correct',row.correct,'typeMs',row.typeRPC?.durationMs);
  }
  if(warmup){if(!row.valid)throw new Abort('warmup invalid');return}
@@ -181,6 +217,7 @@ try{
  writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));progress(null);
  for(const key of ['cmd+a','cmd+z','cmd+v'])await calibrate(key);
  await cell({...cells.find(c=>c.part==='clean'&&c.length===30),id:'warmup/clean30',auditPositiveControl:true},{warmup:true});
+ for(const c of cells)if(needsForegroundReference(c)&&!foregroundReferences.has(referenceKey(c)))await captureForegroundReference(c);
  for(const c of cells)await cell(c);
 }catch(e){aborted=String(e.stack??e).slice(0,3000);console.error(aborted)}
 finally{

@@ -19,8 +19,11 @@ test('every race/clean cell has twenty trials; unsupported cells cannot silently
   assert.equal(cells.filter(c=>c.part==='truncation'&&c.variant==='spike').length,browser==='cft'&&editor==='textarea'?20:0);
   assert.equal(cells.filter(c=>c.part==='substitution').length,browser==='cft'&&editor==='contenteditable'?40:0);
  }
- assert.equal(total,5200);
- assert.deepEqual(abPlan({browser:'cft',editor:'textarea',reps:1}).slice(-2).map(c=>c.editor),['password','password']);
+ assert.equal(total,4984);
+ assert.deepEqual(abPlan({browser:'cft',editor:'textarea',reps:1}).slice(-3,-1).map(c=>c.editor),['password','password']);
+ for(const browser of ['safari','cft','firefox'])for(const editor of ['textarea','input','contenteditable','compose']){
+  const cells=abPlan({browser,editor,reps:20});assert.equal(cells.filter(c=>c.part==='ending-tab').length,1);assert.equal(cells.at(-1).part,'ending-tab');
+ }
  assert.throws(()=>abPlan({browser:'cft',editor:'input',reps:0}));
  assert.throws(()=>abPlan({browser:'native',editor:'input',reps:20}));
 });

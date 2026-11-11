@@ -64,7 +64,7 @@ const EGRESS: [(&str, &str); 25] = [
 /// Process spawning, a route to the bus through a child (`busctl`, `dbus-send`): allowed only where named.
 const SPAWN: &str = "Command";
 /// Explicit allowances: (file, identifier, why it cannot carry a call to the bus).
-const ALLOWED: [(&str, &str, &str); 9] = [
+const ALLOWED: [(&str, &str, &str); 10] = [
     (
         "held.rs",
         "from_raw_fd",
@@ -90,6 +90,12 @@ const ALLOWED: [(&str, &str, &str); 9] = [
         "engine/paste_faults.rs",
         SPAWN,
         "test-only fault injection: starts yad, a GTK 3 window, as its paste target",
+    ),
+    (
+        "engine/vcl_faults.rs",
+        SPAWN,
+        "test-only LibreOffice positions: starts python3 with the GTK 3 staging of LibreOffice's shape \
+         (tests/support/vcl-shape.py)",
     ),
     (
         "engine/targets_faults.rs",

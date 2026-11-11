@@ -583,8 +583,13 @@ impl Engine {
             _ => None,
         };
         let mut cursor_record = None;
-        let confirmed = judging.then(|| {
-            let destination = at.and_then(|(rx, ry)| self.activation_window_at(rx, ry));
+        // the managed top-level under the release, past the drag image: where the drop goes, if anywhere
+        let under = match (judging, at) {
+            (true, Some((rx, ry))) => self.x.managed_client_at(rx, ry),
+            _ => None,
+        };
+        let mut confirmed = judging.then(|| {
+            let destination = under.filter(|&window| self.confirms_by_activation(window));
             let cursor = handle.cursor.as_mut().map(|watch| match watch {
                 Ok(watch) => {
                     let read = watch.at_release(take_time);
@@ -612,6 +617,18 @@ impl Engine {
             && let Some(after) = &handle.after
         {
             after.released(released_at, taken);
+        }
+        // an Electron accept confirms only a release over a window that takes drag and drop: Chromium keeps its last
+        // status's accept when the path leaves for one that does not (the bare root, an xterm), and drops nowhere (the
+        // design session's ruling, 2026-11-11); read after the release, which it does not need to precede
+        if let Some(Confirming::Cursor(accepted)) = confirmed {
+            let aware = under.is_some_and(|window| self.x.xdnd_aware(window));
+            let over = crate::drop_cursor::over_drop_target(Some(accepted), aware);
+            confirmed = Some(Confirming::Cursor(over == Some(true)));
+            if let Some(Value::Object(record)) = cursor_record.as_mut() {
+                record.insert("over_xdnd_aware".into(), json!(aware));
+                record.insert("under".into(), json!(under));
+            }
         }
         let app = self.app_of_handle(handle.target);
         if let Some((mut watch, holding)) = handle.holding.take() {
@@ -682,13 +699,11 @@ impl Engine {
         Ok(self.x.conn.query_pointer(self.x.root)?.reply()?)
     }
 
-    /// The window whose activation request confirms a handle's drop released at a root point: the managed top-level
-    /// there (past the drag image the drag and drop holds under the pointer), when its family's drop sends one (Chrome).
-    fn activation_window_at(&mut self, rx: i16, ry: i16) -> Option<Window> {
-        let window = self.x.managed_client_at(rx, ry)?;
+    /// Whether a drop on `window` (the managed top-level under the release, past the drag image the drag and drop holds
+    /// under the pointer) is confirmed by its activation request: its family's drop sends one (Chrome).
+    fn confirms_by_activation(&mut self, window: Window) -> bool {
         self.family_of(window)
             .is_some_and(|f| crate::families::confirms_drop(f.name))
-            .then_some(window)
     }
 }
 

@@ -1097,10 +1097,24 @@ impl Engine {
                 let released = after.released_with_take();
                 // an Electron source's cursor at the release: the accept shown, or not (a watch that never started, a
                 // read that failed, or one that could not tell all confirm nothing)
-                let cursor = drop_cursor.as_ref().map(|watch| match (watch, &at_release) {
+                let mut cursor = drop_cursor.as_ref().map(|watch| match (watch, &at_release) {
                     (Ok(_), Some(read)) => read.accepted,
                     _ => None,
                 });
+                // and an accept only over a window that takes drag and drop: Chromium keeps its last status's accept
+                // when the path leaves for one that does not (the bare root, an xterm), and drops nowhere (the design
+                // session's ruling, 2026-11-11), as a handle's
+                let mut over_aware = None;
+                if cursor == Some(Some(true)) {
+                    let end_root = input.path.last().and_then(|p| match input.window {
+                        Some(target) => self.x.desktop_position(target.id, p.x, p.y).ok(),
+                        None => Some((p.x, p.y)),
+                    });
+                    let under = end_root.and_then(|(rx, ry)| self.x.managed_client_at(rx, ry));
+                    let aware = under.is_some_and(|window| self.x.xdnd_aware(window));
+                    over_aware = Some(json!({ "under": under, "xdnd_aware": aware }));
+                    cursor = Some(crate::drop_cursor::over_drop_target(Some(true), aware));
+                }
                 let confirming = super::handle::confirming(confirm, supported, cursor);
                 let by_cursor = cursor.map(|accepted| accepted == Some(true));
                 if let Some(watch) = &drop_cursor {
@@ -1121,6 +1135,7 @@ impl Engine {
                         "by_cursor": by_cursor,
                         "confirmed_by": format!("{confirming:?}"),
                         "drop_window": drop_window,
+                        "release_over": over_aware,
                     }),
                 );
                 let window = watched.expect("a watched drag has its window");

@@ -56,6 +56,7 @@ pub struct WindowInfo {
 }
 
 const ATOM_NAMES: &[&str] = &[
+    "XdndAware",
     "_NET_ACTIVE_WINDOW",
     "_NET_CLIENT_LIST_STACKING",
     "_NET_CLIENT_LIST",
@@ -649,6 +650,13 @@ impl X11 {
             }
         }
         self.client_in(found?, 0)
+    }
+
+    /// Whether a top-level client takes drag and drop: it carries `XdndAware`, which a drag's source looks for on the
+    /// top-level under the pointer before it sends that window anything. A window it cannot read takes none.
+    pub fn xdnd_aware(&self, window: Window) -> bool {
+        self.get_property(window, self.atom("XdndAware"))
+            .is_ok_and(|reply| !reply.value.is_empty())
     }
 
     /// The window's parent (the root, or a reparenting window manager's frame).

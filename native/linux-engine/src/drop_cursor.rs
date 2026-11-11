@@ -226,6 +226,19 @@ fn read_changes(conn: &RustConnection, seen: &Mutex<Seen>) -> Result<()> {
     Ok(())
 }
 
+/// What the cursor's judgment (`accepted`, [`judge`]'s) says of a drop released over a top-level that takes drag and
+/// drop (`aware`: the managed top-level under the release, past the drag image, carries `XdndAware`) or not. Chromium
+/// keeps its last status's accept when the path leaves for a window that takes none, the bare root or an xterm, and
+/// ends with that operation though nothing received the drop (the second fix wave's pilot: 3 of 3 desktop drags to the
+/// bare root showed the accept and answered ok). So an accept confirms only over such a window (the design session's
+/// ruling, 2026-11-11); this can turn a confirmation into unconfirmed, never the reverse.
+pub fn over_drop_target(accepted: Option<bool>, aware: bool) -> Option<bool> {
+    match accepted {
+        Some(true) => Some(aware),
+        other => other,
+    }
+}
+
 /// Whether the cursor shown at the release, `shown` (its image, and whether it carries an XFixes name), is the drag
 /// loop's accept, by its own image: one `images` knows as an accepting drag cursor (`drag_cursors.rs`), not the image
 /// shown when the watch began (`initial`), and unnamed, since a named cursor is another client's theme cursor. None when
@@ -296,6 +309,21 @@ mod tests {
         // breeze_cursors' dnd-move is its dnd-none: an accepting cursor's image, but a refusing one's too
         assert!(!breeze().accepts(NONE));
         assert_eq!(judge(&breeze(), ARROW, (NONE, false)), Some(false));
+    }
+
+    #[test]
+    fn an_accept_confirms_only_over_a_window_that_takes_drops() {
+        // the second fix wave's pilot: a drag that left for the bare root kept Chromium's last accept to the release
+        assert_eq!(over_drop_target(Some(true), true), Some(true));
+        assert_eq!(
+            over_drop_target(Some(true), false),
+            Some(false),
+            "no XdndAware top-level under the release: the bare root, an xterm"
+        );
+        assert_eq!(over_drop_target(Some(false), true), Some(false));
+        assert_eq!(over_drop_target(Some(false), false), Some(false));
+        assert_eq!(over_drop_target(None, true), None, "not told stays not told");
+        assert_eq!(over_drop_target(None, false), None);
     }
 
     #[test]

@@ -31,6 +31,7 @@ import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
 import { probeAt } from './role-probe.mjs';
+import { ParkRefused, ROOT, frontPoint, parkPointer } from './park.mjs';
 import { openScene } from './run.mjs';
 import { FIT_MARGIN, SCREEN, configure } from './scenes.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -83,6 +84,11 @@ export const CELLS = {
   // window to the bare root 30 px beside it, on whichever side the screen has room (`rootBeside`), where nothing can
   // drop; and a drop that only moves, from the move source above the zone, 8 px into it
   root: (i, geometry) => [[530, 128], [640, 128], [rootBeside(geometry), 128]],
+  // the design session's two cells beside it (2026-11-11): the release over a window that takes no drag and drop (the
+  // run's front xterm, at its middle), and over another of the run's browser windows, XdndAware, outside any drop zone
+  // (its page's scroller), where only its XdndStatus clears the accept (`ends`, in page pixels)
+  xterm: (i, geometry) => [[530, 128], [640, 128], geometry.ends.xterm],
+  other: (i, geometry) => [[530, 128], [640, 128], geometry.ends.other],
   move: () => [[725, 68], [725, 108]],
 };
 
@@ -99,7 +105,30 @@ export function rootBeside({ x, width, pageX }) {
 }
 
 /** T14's cells' sources, beside the judge's (drop-signals-judge.mjs `CELL_SOURCE`): each a drop the zone never counts. */
-export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain' };
+export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain', xterm: 'plain', other: 'plain' };
+
+/** Where the `other` cell's window goes: right of the scene's, below the root cell's end (x, y, width, height). */
+export const OTHER_PLACE = [920, 250, 340, 360];
+
+/** A window's client origin on the screen. */
+function clientOrigin(id) {
+  const g = Object.fromEntries(xdotool('getwindowgeometry', '--shell', id).split('\n').map((l) => l.split('=')).map(([k, v]) => [k, Number(v)]));
+  return { x: g.X, y: g.Y };
+}
+
+/** The cells that end off the source's window: where each ends, and what must be under that end (`OFF_WINDOW`). */
+export const OFF_WINDOW = ['root', 'xterm', 'other'];
+
+/**
+ * The screen ends of the off-window cells and the window each must find there: the bare root beside the window, the
+ * front xterm's middle, the other browser window's scroller (page (150, 150) from its client's origin).
+ */
+export function offWindowEnds({ front = null, other = null } = {}) {
+  return {
+    xterm: front && { x: front.x, y: front.y, over: front.id },
+    other: other && { x: other.x + 150, y: other.y + 150, over: other.id },
+  };
+}
 
 /** A T14 cell's outcome from the page's status before and after: its source's drag and drop started, and dropped. */
 export function t14Outcome(cell, before, after) {
@@ -249,14 +278,17 @@ export const PLANS = {
   't17-floor': [['cua', 'plain', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
   't17-handle': [['cua:handle', 'plain', 300], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30]],
   // its second fix wave (the second review; the design session, 2026-11-11), Electron, at each load: the two controls
-  // and a drag to the bare root (a desktop drag, and a handle), 30 each, as plain drags and as handles; 100 drops each;
-  // and 30 drops that only move, whose accept under breeze_cursors is drawn as no drop. `t17-root`: the desktop drag
-  // to the bare root alone, the review's P2 case, run on the engine before the fix first
+  // and the three releases off the window (the bare root, the xterm, another browser window outside its zone; a
+  // desktop drag, and a handle), 30 each, as plain drags and as handles; 100 drops each; and 30 drops that only move,
+  // whose accept under breeze_cursors is drawn as no drop. `t17-root`: the three off-window releases alone, the
+  // review's P2 case, run on the engine before the fix first
   't17-fix2': [
-    ['cua', 'plain', 100], ['cua', 'left', 30], ['cua', 'inzone-out', 30], ['cua:desktop', 'root', 30], ['cua', 'move', 30],
-    ['cua:handle', 'plain', 100], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30], ['cua:handle', 'root', 30], ['cua:handle', 'move', 30],
+    ['cua', 'plain', 100], ['cua', 'left', 30], ['cua', 'inzone-out', 30], ['cua', 'move', 30],
+    ...OFF_WINDOW.map((cell) => ['cua:desktop', cell, 30]),
+    ['cua:handle', 'plain', 100], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30], ['cua:handle', 'move', 30],
+    ...OFF_WINDOW.map((cell) => ['cua:handle', cell, 30]),
   ],
-  't17-root': [['cua:desktop', 'root', 30]],
+  't17-root': OFF_WINDOW.map((cell) => ['cua:desktop', cell, 30]),
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],
@@ -279,9 +311,11 @@ const splitCell = (cell) => {
 };
 
 /** A spec's path for run `i`, in window coordinates; `window` the window's geometry, for a cell that leaves it. */
-export function windowPath(at, cell, i, window = null) {
+export function windowPath(at, cell, i, window = null, screenEnds = {}) {
   const { base, cover } = splitCell(cell);
-  const geometry = window && { x: window.x, pageX: at.page.x, width: window.width - at.page.x, height: window.height - at.page.y };
+  const toPage = (p) => p && [p.x - window.x - at.page.x, p.y - window.y - at.page.y];
+  const ends = window ? Object.fromEntries(Object.entries(screenEnds).map(([k, p]) => [k, toPage(p)])) : {};
+  const geometry = window && { x: window.x, pageX: at.page.x, width: window.width - at.page.x, height: window.height - at.page.y, ends };
   const path = (cover ? COVER_CELLS : CELLS)[base](i, geometry);
   return path.map(([x, y]) => ({ x: x + at.page.x, y: y + at.page.y }));
 }
@@ -437,7 +471,7 @@ function inFront(scene) {
 async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const { desktop, scene, at, watch, oracle, emit } = ctx;
   const { base, cover } = splitCell(cell);
-  const path = windowPath(at, cell, i, scene.window);
+  const path = windowPath(at, cell, i, scene.window, ctx.ends ?? {});
   const start = { x: scene.window.x + path[0].x, y: scene.window.y + path[0].y };
   const probe = ctx.frame ? probeAt(oracle, ctx.frame, start.x, start.y) : null;
   const rect = cover ? coverRect(cover, (COVER_CELLS[base])(i)) : null;
@@ -446,10 +480,28 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const frozen = freezeOf(base) ? freezeBrowser(ctx.browser, freezeOf(base)) : null;
   const handled = LANES[lane].handle === true;
   const desktopLane = LANES[lane].desktop === true;
+  // an off-window cell's end read before the drag: the window it is for under it (the bare root, the xterm, the other
+  // browser window), or the row says what was there instead and the tables leave the drag out
+  const end = { x: scene.window.x + path.at(-1).x, y: scene.window.y + path.at(-1).y };
+  const offWindow = OFF_WINDOW.includes(base);
+  let endPark = null;
+  if (offWindow) {
+    const over = base === 'root' ? ROOT : ctx.ends[base].over;
+    try {
+      parkPointer(end, over);
+      endPark = { over, verified: true };
+    } catch (error) {
+      if (!(error instanceof ParkRefused)) throw error;
+      endPark = { over, verified: false, why: error.message };
+    }
+  }
   const value = await withCover(screenRect, () => (handled ? handleDrag(engine, scene, path) : desktopLane ? desktopDrag(engine, scene, path) : engine.request('drag', { window: { id: scene.id }, path })), { desktop, managed: LANES[lane].managed === true });
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
   await sleep(1000);
+  // a drag that ended off the window leaves the real pointer there, which a later background drag into the window would
+  // answer as a pointer outside it: put back at the drag's start, in the window
+  if (offWindow) parkPointer(start, scene.id);
   // what the drag left pending, past its watch's lifetime (M4's T14): the notice on a read's reply on the same engine,
   // then an acting request that sends nothing, refused while anything is pending (so the next drag is not the one
   // refused), its answer and the late drag and drop it reports kept: an engine before T14 runs it
@@ -481,8 +533,9 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     base,
     cover,
     i,
-    // where the path ended on the screen (the root cell's: beside the window)
-    end: { x: scene.window.x + path.at(-1).x, y: scene.window.y + path.at(-1).y },
+    // where the path ended on the screen, and for an off-window cell whether its window was there before the drag
+    end,
+    end_park: endPark,
     block: spec.block,
     cold,
     ok: value.response.ok === true,
@@ -529,6 +582,7 @@ export async function runDropSignals(args, { desktop, emit }) {
   const rows = [];
   let watch = null;
   let scene = null;
+  let other = null;
   try {
     if (args.ballast === 'gate') {
       for (const [name, n] of Object.entries(GATE_BALLAST)) {
@@ -537,6 +591,13 @@ export async function runDropSignals(args, { desktop, emit }) {
     }
     scene = await openFamily(desktop, oracle, family, 'dropsig', { page: PAGE });
     scene.kindOf = 'page';
+    // the `other` cell's window: another of the run's browser windows, the same page, right of the scene's, below the
+    // root cell's end
+    if (specs.some((s) => splitCell(s.cell).base === 'other')) {
+      other = await openFamily(desktop, oracle, family, 'dropsig-other', { page: PAGE });
+      configure(other.id, ...OTHER_PLACE);
+      await sleep(1000);
+    }
     desktop.arrangeFront('visible');
     inFront(scene);
     await sleep(1000);
@@ -544,8 +605,9 @@ export async function runDropSignals(args, { desktop, emit }) {
     watch = await startDropWatch(scene.id);
     // the run's own browser process (the freeze cell's), never one found by name
     const browser = family === 'chrome' && desktop.chrome ? runBrowser(desktop.chrome.profile) : null;
-    const ctx = { desktop, scene, at, watch, oracle, emit, load, family, cua: args.cua, browser, frame: await frameOf(desktop, scene), xdndAware: xdndAware(scene.id) };
-    emit({ kind: 'drop-signal-scene', family, load, browser, window: scene.id, page: at.page, frame: ctx.frame, xdnd_aware: ctx.xdndAware, ballast: ballast.length, plan: args.plan ?? 'main', specs });
+    const ends = offWindowEnds({ front: frontPoint(desktop), other: other && { id: other.id, ...clientOrigin(other.id) } });
+    const ctx = { desktop, scene, at, watch, oracle, emit, load, family, cua: args.cua, browser, frame: await frameOf(desktop, scene), xdndAware: xdndAware(scene.id), ends };
+    emit({ kind: 'drop-signal-scene', family, load, browser, window: scene.id, page: at.page, frame: ctx.frame, xdnd_aware: ctx.xdndAware, ballast: ballast.length, plan: args.plan ?? 'main', specs, ends, other: other ? { id: other.id, xdnd_aware: xdndAware(other.id) } : null });
     const plan = blockPlan(specs.map((s, k) => ({ ...s, spec: k })));
     for (const [b, block] of plan.entries()) {
       const lane = LANES[block.lane];
@@ -583,7 +645,7 @@ export async function runDropSignals(args, { desktop, emit }) {
     }
   } finally {
     if (watch) await watch.stop();
-    await desktop.close([...(scene ? [scene] : []), ...ballast]);
+    await desktop.close([...(scene ? [scene] : []), ...(other ? [other] : []), ...ballast]);
   }
   const md = [`Drop signals (drop-signals.mjs), ${family}, load ${load}, plan ${args.plan ?? 'main'}: ${rows.length} drags.`, ''];
   for (const table of [neverTakeTable(rows), afterReleaseTable(rows), acceptTable(rows), lateTakeTable(rows), coverTable(rows)]) md.push(...table.md, '');

@@ -367,7 +367,7 @@ test("a handle lane's drag: the path as drag_handle steps on the screen, the end
 });
 
 test("the second fix wave's cells: a desktop drag that leaves the window for the bare root, and a drop that only moves (M4's T17)", async () => {
-  const { CELLS, LANES, T14_SOURCE, desktopDrag, planSpecs, windowPath } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const { CELLS, LANES, OFF_WINDOW, T14_SOURCE, desktopDrag, offWindowEnds, planSpecs, windowPath } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
   const at = { page: { x: 4, y: 30 } };
   const window = { x: 100, y: 50, width: 1050, height: 780 };
   const root = windowPath(at, 'root', 0, window);
@@ -383,10 +383,16 @@ test("the second fix wave's cells: a desktop drag that leaves the window for the
   await desktopDrag(engine, { window }, root);
   assert.deepEqual(sent, [['drag', { path: [{ x: 634, y: 208 }, { x: 744, y: 208 }, { x: 1180, y: 208 }] }]], 'no window named, screen coordinates');
   assert.ok(LANES['cua:desktop'].desktop);
+  // the release over the xterm and over the other browser window, at their screen points
+  const ends = offWindowEnds({ front: { id: 7, x: 1170, y: 715 }, other: { id: 9, x: 920, y: 250 } });
+  assert.deepEqual(ends, { xterm: { x: 1170, y: 715, over: 7 }, other: { x: 1070, y: 400, over: 9 } });
+  assert.deepEqual(windowPath(at, 'xterm', 0, window, ends).at(-1), { x: 1070, y: 665 }, 'window coordinates of the xterm');
+  assert.deepEqual(windowPath(at, 'other', 0, window, ends).at(-1), { x: 970, y: 350 });
+  assert.deepEqual(OFF_WINDOW.map((c) => T14_SOURCE[c]), ['plain', 'plain', 'plain'], 'drops the zone never counts');
   const plan = planSpecs({ plan: 't17-fix2' });
-  assert.deepEqual(plan.filter((s) => s.cell === 'root').map((s) => s.lane), ['cua:desktop', 'cua:handle']);
+  for (const cell of OFF_WINDOW) assert.deepEqual(plan.filter((s) => s.cell === cell).map((s) => s.lane), ['cua:desktop', 'cua:handle'], cell);
   assert.ok(plan.every((s) => s.n === (s.cell === 'plain' ? 100 : 30)));
-  assert.deepEqual(planSpecs({ plan: 't17-root' }), [{ lane: 'cua:desktop', cell: 'root', n: 30 }]);
+  assert.deepEqual(planSpecs({ plan: 't17-root' }).map((s) => [s.lane, s.cell, s.n]), OFF_WINDOW.map((c) => ['cua:desktop', c, 30]));
 });
 
 test('the drop-signals experiment takes the gate ballast without a cold run; the dnd experiment still refuses it', async () => {

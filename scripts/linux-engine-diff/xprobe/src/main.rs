@@ -31,6 +31,8 @@
 //!   runs only on a private display marked `CUA171_PRIVATE_DISPLAY`, never on a person's.
 //! - `xprobe ancestry <window>`: the window's parents up to the root read, and their reparents and ends selected, on a
 //!   connection that stays until stdin closes, so a route audit's trace shows where its window lies (`ancestry.rs`).
+//! - `xprobe pointer-chain`: the real pointer's position and the windows it is over, from the root's child down
+//!   (`QueryPointer`'s child at each level; `pointer.rs`), which the harness's park verifies.
 //! - `xprobe toplevel <window>`, `restack-grabbed <window>...`, `popup …`, `overlay …`: a window's top-level, the coalesced
 //!   negative check's raises under one server grab, another client's popup, and a lasting overlay (`restack.rs`).
 //! - `xprobe focus-grabbed <window>...`: the focus and `_NET_ACTIVE_WINDOW` set to each window in turn under one
@@ -66,6 +68,7 @@ mod dropwatch;
 mod focus;
 mod motion;
 mod order;
+mod pointer;
 mod record;
 mod requests;
 mod restack;
@@ -108,6 +111,7 @@ fn main() {
         Some("within") => clip::within(&args[1..]),
         Some("toplevel") => restack::toplevel(&args[1..]),
         Some("ancestry") => ancestry::ancestry(&args[1..]),
+        Some("pointer-chain") => pointer::pointer_chain(&args[1..]),
         Some("top-at") => restack::top_at_cmd(&args[1..]),
         Some("restack-grabbed") => restack::restack_grabbed(&args[1..]),
         Some("popup") => restack::popup(&args[1..]),

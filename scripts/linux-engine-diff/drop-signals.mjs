@@ -31,7 +31,7 @@ import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
 import { probeAt } from './role-probe.mjs';
-import { ParkRefused, ROOT, frontPoint, parkPointer } from './park.mjs';
+import { ROOT, frontPoint, parkPointer, parkVerdict, readPointer } from './park.mjs';
 import { openScene } from './run.mjs';
 import { FIT_MARGIN, SCREEN, configure } from './scenes.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -480,24 +480,21 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const frozen = freezeOf(base) ? freezeBrowser(ctx.browser, freezeOf(base)) : null;
   const handled = LANES[lane].handle === true;
   const desktopLane = LANES[lane].desktop === true;
-  // an off-window cell's end read before the drag: the window it is for under it (the bare root, the xterm, the other
-  // browser window), or the row says what was there instead and the tables leave the drag out
   const end = { x: scene.window.x + path.at(-1).x, y: scene.window.y + path.at(-1).y };
   const offWindow = OFF_WINDOW.includes(base);
-  let endPark = null;
-  if (offWindow) {
-    const over = base === 'root' ? ROOT : ctx.ends[base].over;
-    try {
-      parkPointer(end, over);
-      endPark = { over, verified: true };
-    } catch (error) {
-      if (!(error instanceof ParkRefused)) throw error;
-      endPark = { over, verified: false, why: error.message };
-    }
-  }
   const value = await withCover(screenRect, () => (handled ? handleDrag(engine, scene, path) : desktopLane ? desktopDrag(engine, scene, path) : engine.request('drag', { window: { id: scene.id }, path })), { desktop, managed: LANES[lane].managed === true });
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
+  // an off-window cell's end read where the drag left the real pointer, once the drag image is gone: the window it is
+  // for under it (the bare root, the xterm, the other browser window), or the row says what was there instead and the
+  // tables leave the drag out. Read, not parked: a park on the bare root is a pointer warp on a window the run did not
+  // open, which the harness's audit fails (park.mjs)
+  let endPark = null;
+  if (offWindow) {
+    const over = base === 'root' ? ROOT : ctx.ends[base].over;
+    const verdict = parkVerdict(readPointer(), end, over);
+    endPark = { over, verified: verdict.ok, ...(verdict.ok ? {} : { why: verdict.why }) };
+  }
   await sleep(1000);
   // a drag that ended off the window leaves the real pointer there, which a later background drag into the window would
   // answer as a pointer outside it: put back at the drag's start, in the window

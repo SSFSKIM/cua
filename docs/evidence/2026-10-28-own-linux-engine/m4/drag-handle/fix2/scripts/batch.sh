@@ -8,10 +8,13 @@ set -u
 h=$1
 new=$2
 old=$HOME/.local/share/cua-171/task73fix/build/d70b9e8956ad3b2a92a7ac2919f468dccce151cd/src/native/linux-engine/target/x86_64-unknown-linux-musl/release/cua-engine
+# this wave's first engine, before the XdndAware condition (74aa0771)
+mid=$HOME/.local/share/cua-171/task73fix2/build/74aa0771b065373c8a6f7fe7100655e0cd2a3143/src/native/linux-engine/target/x86_64-unknown-linux-musl/release/cua-engine
 while read -r name plan which load rest; do
   [ -z "$name" ] && continue
   case $which in
     old) cand=$old ;;
+    mid) cand=$mid ;;
     new) cand=$new ;;
     *) echo "unknown engine $which" >&2; exit 2 ;;
   esac

@@ -103,27 +103,45 @@ async function openProbeScene(desktop, oracle, family, role, { verify = true } =
 }
 
 /**
- * Calc's active cell, read directly after a right click (a right click moves Calc's cell cursor to the cell it
- * presses): the name of the sheet's selected child through AT-SPI's Selection, beside the name of the cell at a screen
- * point, asked of the sheet in VCL's own coordinates (the point less the host's offset, since VCL answers in the
- * coordinates it reports). `{selected, at}`, each null where it does not read.
+ * The name of the Calc cell at a screen point, asked of the sheet in VCL's own coordinates (the point less the host's
+ * offset, since VCL answers in the coordinates it reports); null where it does not read.
  */
-export function calcCells(oracle, table, point, shift) {
-  const name = (ref) => {
-    const [bus, path] = ref ?? [];
+export function calcCellAt(oracle, table, point, shift) {
+  try {
+    const [[bus, path]] = oracle.on(table, 'org.a11y.atspi.Component', 'GetAccessibleAtPoint', 'iiu', point.x - shift.dx, point.y - shift.dy, 0);
     return bus && path && path !== '/org/a11y/atspi/null' ? oracle.name(`${bus}:${path}`) : null;
-  };
-  const read = (call) => {
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Calc's active cell as its Name Box shows it (the toolbar's field naming the cell cursor's cell, `J17`), read through
+ * AT-SPI: the text of the node named `Name Box` or of its text child. Null where none reads as a cell's name. The
+ * sheet's Selection named no child for a lone cell cursor in task 72's fix-wave pilot, so the Name Box is the read.
+ */
+export function calcNameBox(oracle, frame) {
+  const nodes = oracle.walk(frame, { prune: ['table', 'document spreadsheet', 'menu bar', 'menu', 'popup menu'], limit: 4000 });
+  const textOf = (id) => {
     try {
-      return name(call()[0]);
+      return String(oracle.text(id)).trim();
     } catch {
-      return null;
+      return '';
     }
   };
-  return {
-    selected: read(() => oracle.on(table, 'org.a11y.atspi.Selection', 'GetSelectedChild', 'i', 0)),
-    at: point ? read(() => oracle.on(table, 'org.a11y.atspi.Component', 'GetAccessibleAtPoint', 'iiu', point.x - shift.dx, point.y - shift.dy, 0)) : null,
-  };
+  for (const box of nodes.filter((n) => {
+    try {
+      return oracle.name(n.id) === 'Name Box';
+    } catch {
+      return false;
+    }
+  })) {
+    for (const id of [box.id, ...oracle.children(box.id)]) {
+      const text = textOf(id);
+      if (/^\$?[A-Z]{1,3}\$?\d+$/.test(text)) return text.replaceAll('$', '');
+    }
+  }
+  return null;
 }
 
 /** The centre of a rectangle `{x, y, w, h}` clipped to the window, floored, as the engine takes it (`visible_point`). */
@@ -141,7 +159,7 @@ export const onElement = (landed, truth) => Boolean(landed && truth) && Math.abs
 /**
  * Whether a right click landed on its element: within 2 px of the element's true centre, or for Calc's sheet (whose
  * menu opens above a press near the bottom, so its corner is no reading of the press) the active cell after the click
- * being the cell at the true centre, read directly (`calcCells`).
+ * being the cell at the true centre, both read directly (`calcNameBox`, `calcCellAt`).
  */
 export function landedOnElement(row) {
   if (row.family === 'calc') return Boolean(row.cell_expected) && row.cell_after === row.cell_expected;
@@ -200,16 +218,12 @@ async function elementProbe(ctx, family, n, spec) {
           const truth = clippedCentre(libreoffice ? vclDrawn(oracle, scene.frame, () => oracle.extents(target.id)) : extents, win);
           const reported = clippedCentre(extents, win);
           // Calc: the cell at the true centre, asked before the press (whose pointer event moves VCL's coordinates)
-          const cells = app === 'calc' ? calcCells(oracle, target.id, truth, shift) : null;
+          const cells = app === 'calc' ? { at: calcCellAt(oracle, target.id, truth, shift), name_box: calcNameBox(oracle, scene.frame) } : null;
           const before = popups();
           const { value, witness: w } = await witness.span(`${spec.label}:${family}:element-right-click`, () => engine.request('click', { window: { id: scene.id }, element_id: target.id, mouse_button: 'right' }));
           const ok = value.response.ok === true;
           let landed = null;
           let cellAfter = null;
-          if (ok && app === 'calc') {
-            await sleep(300);
-            cellAfter = calcCells(oracle, target.id, null, shift).selected;
-          }
           if (ok && family === 'gtk3-frame') {
             await sleep(300);
             const label = preorderNames((await desktop.state(scene)).ax_tree).find((t) => /^press \d+ at /.test(t));
@@ -224,8 +238,10 @@ async function elementProbe(ctx, family, n, spec) {
             }
           }
           await sleep(500);
+          // Calc: the cell the click made active, once its menu has closed (the Name Box, `calcNameBox`)
+          if (ok && app === 'calc') cellAfter = calcNameBox(oracle, scene.frame);
           const row = { kind: 'element-probe', engine: spec.label, family, i, pass, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), witness: w.clean, window: { x: win.x, y: win.y, w: win.width, h: win.height }, identity: scene.identity, extents, host_shift: shift, reported, truth, landed };
-          if (cells) Object.assign(row, { cell_before: cells.selected, cell_expected: cells.at, cell_after: cellAfter });
+          if (cells) Object.assign(row, { cell_before: cells.name_box, cell_expected: cells.at, cell_after: cellAfter });
           row.on_element = landedOnElement(row);
           emit(row);
           rows.push(row);

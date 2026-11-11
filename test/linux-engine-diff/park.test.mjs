@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { ParkRefused, ROOT, outsidePoint, parkPointer, parkVerdict } from '../../scripts/linux-engine-diff/park.mjs';
+import { ParkRefused, ROOT, parkOnFront, parkPointer, parkVerdict } from '../../scripts/linux-engine-diff/park.mjs';
 
 const WRITER = 0x2a00007;
 const FRAME = 0x400012;
@@ -49,18 +49,10 @@ test('a reading taken before the move has landed is taken again, and a pointer t
   );
 });
 
-test("an outside point is derived from the window's frame, beside it and clear of the front window, or there is none", () => {
-  const screen = [1280, 800];
-  const frame = [1, 1, 23, 1];
-  const front = { x: 1069, y: 617, width: 202, height: 174 };
-  // Writer at its family's size: the strip right of its frame, at the strip's middle height, off the front window
-  const p = outsidePoint({ x: 1, y: 23, width: 1100, height: 760 }, frame, screen, { avoid: [front] });
-  assert.ok(p.x > 1102 && p.x < 1280, `beside the frame: ${JSON.stringify(p)}`);
-  assert.ok(p.y < front.y - 8, `above the front window: ${JSON.stringify(p)}`);
-  // the maximized window of the review's finding: no bare root on its screen, so no point
-  assert.equal(outsidePoint({ x: 0, y: 21, width: 1280, height: 779 }, [0, 0, 21, 0], screen), null);
-  // the front window over the whole strip leaves another strip, or none
-  const below = outsidePoint({ x: 0, y: 21, width: 1280, height: 500 }, [0, 0, 21, 0], screen, { avoid: [] });
-  assert.ok(below.y > 521, `below the window: ${JSON.stringify(below)}`);
-  assert.equal(outsidePoint({ x: 0, y: 21, width: 1180, height: 779 }, [0, 0, 21, 0], screen, { avoid: [{ x: 1180, y: 0, width: 100, height: 800 }] }), null);
+test("the front window parks the pointer on the run's own window, verified, and a run without one parks nothing", () => {
+  const moves = [];
+  const reading = parkPointer({ x: 1170, y: 715 }, 0xe0000c, { move: (p) => moves.push(p), read: () => ({ x: 1170, y: 715, same_screen: true, chain: [0x40001f, 0xe0000c] }) });
+  assert.deepEqual(moves, [{ x: 1170, y: 715 }]);
+  assert.deepEqual(reading.chain, [0x40001f, 0xe0000c]);
+  assert.equal(parkOnFront({ front: null }), null);
 });

@@ -29,11 +29,11 @@ import { runElementPlan, runHierarchyPlan, runIdentityPlan } from './vcl-probe.m
 import { auditAnswered, parseXtrace, startProxy } from './audit.mjs';
 import { Engine } from './engine.mjs';
 import { captureWindow } from './pixels.mjs';
-import { FAMILIES, openFamily, readCaret } from './families.mjs';
+import { openFamily, readCaret } from './families.mjs';
 import { Oracle } from './oracle.mjs';
 import { negativeCheck } from './run.mjs';
-import { SCREEN, XPROBE, xdotool } from './scenes.mjs';
-import { ParkRefused, ROOT, frameOf, framedRect, outsidePoint, parkOnFront, parkPointer } from './park.mjs';
+import { XPROBE, xdotool } from './scenes.mjs';
+import { ParkRefused, frontPoint, parkOnFront, parkPointer } from './park.mjs';
 import { verifyIdentity } from './app-identity.mjs';
 import { startWitness } from './witness.mjs';
 
@@ -46,25 +46,22 @@ export const PRIMARY_MARKER = 'cua171-writer-none';
 
 /**
  * Where the real pointer is parked before a run, a screen point and the window it must then be over (park.mjs):
- * `text` at the path's start and `blank` in the document's empty lower part, both over the scene's window; `out` on the
- * bare root beside the window's frame (`frame`, `[left, right, top, bottom]`), clear of the front window (`avoid`),
- * derived from the window's real geometry (task 72's review, finding 2: a fixed point beside an assumed 1100 px window
- * was inside the maximized one); `none` left where it is. An `out` park with no bare root beside the window throws.
+ * `text` at the path's start and `blank` in the document's empty lower part, both over the scene's window; `out` on
+ * another window of the run's, off Writer: the front window's middle (`front`, `{id, x, y}`), as T19's sitting parked
+ * its own (the design session, 2026-11-10; task 72's review, finding 2: the old fixed point was inside the maximized
+ * Writer, and a park on the bare root changes a window the run did not open by the harness's own audit); `none` left
+ * where it is.
  */
-export function parkPoint(park, window, path, { id, frame = [0, 0, 0, 0], avoid = [], screen = SCREEN } = {}) {
+export function parkPoint(park, window, path, { id, front = null } = {}) {
   if (park === 'text') return { point: { x: window.x + path[0].x, y: window.y + path[0].y }, intended: id };
   if (park === 'blank') return { point: { x: window.x + Math.round(window.width / 2), y: window.y + window.height - 120 }, intended: id };
   if (park === 'out') {
-    const point = outsidePoint(window, frame, screen, { avoid });
-    if (!point) throw new ParkRefused(`no bare root beside the window at ${JSON.stringify(window)} for an outside park`);
-    return { point, intended: ROOT };
+    if (!front) throw new ParkRefused('no front window to park the pointer on, off Writer');
+    return { point: { x: front.x, y: front.y }, intended: front.id };
   }
   if (park === 'none') return null;
   throw new Error(`unknown pointer park ${park}`);
 }
-
-/** The front window's rectangle with its frame, for an outside park to keep clear of. */
-const frontRect = (desktop) => (desktop.front?.id ? [framedRect(desktop.front.id)] : []);
 
 /**
  * A case: a lane, a fresh window per run or one window for the case's runs, its priming, where the pointer is, how the
@@ -302,7 +299,7 @@ async function oneRun(ctx, k, scene, at, engine, i, path) {
     xdotool('windowactivate', '--sync', scene.id);
     await sleep(150);
   }
-  const parked = parkPoint(k.park, scene.window, path, { id: scene.id, frame: frameOf(scene.id), avoid: frontRect(ctx.desktop) });
+  const parked = parkPoint(k.park, scene.window, path, { id: scene.id, front: frontPoint(ctx.desktop) });
   const park = parked?.point ?? null;
   let parkedOver = null;
   if (parked) {
@@ -464,8 +461,7 @@ export async function runWriterDrag(args, { desktop, emit }) {
   const shots = join(args.out, 'shots');
   mkdirSync(shots, { recursive: true });
   const ctx = { desktop, oracle, witness, emit, family: 'writer', occlusion: 'visible', cua: args.cua, shots };
-  // at the family's own size, not maximized, so the screen keeps a bare root beside the window for the outside park
-  const open = (label) => openFamily(desktop, oracle, 'writer', label, { doc: DRAG_DOC, geometry: FAMILIES.writer.geometry });
+  const open = (label) => openFamily(desktop, oracle, 'writer', label, { doc: DRAG_DOC });
   const md = [
     `T16's probe (writer-drag.mjs, plan ${args.plan ?? 'observe'}): each case's runs (its own count, else ${n}) on LibreOffice Writer (gtk3), the path's text read by AT-SPI and by PRIMARY. The AT-SPI caret is not updated by a click alone in Writer, so "caret moved" says little for pointer input.`,
     '',

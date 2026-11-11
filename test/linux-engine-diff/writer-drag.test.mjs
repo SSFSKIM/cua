@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { PLANS, PRIMARY_MARKER, aimAt, caseRow, firstVerdict, observed, observedOnParity, parkPoint, writerPlan } from '../../scripts/linux-engine-diff/writer-drag.mjs';
 import { clippedCentre, landedOnElement, onElement } from '../../scripts/linux-engine-diff/vcl-probe.mjs';
-import { ParkRefused, ROOT } from '../../scripts/linux-engine-diff/park.mjs';
+import { ParkRefused } from '../../scripts/linux-engine-diff/park.mjs';
 
 const lanes = [{ label: 'pinned' }, { label: 'cua' }];
 const run = (over) => ({ ok: true, selection: [], primary: PRIMARY_MARKER, caret_moved: true, witness: true, ...over });
@@ -36,21 +36,18 @@ test("a case's row counts each observer apart, any selection at all, and the wit
   assert.equal(row.witness, false);
 });
 
-test('the pointer parks on the text, in the window off it, on the bare root beside its frame, or stays', () => {
-  const window = { x: 1, y: 30, width: 1100, height: 760 };
+test('the pointer parks on the text, in the window off it, on the front window off Writer, or stays', () => {
+  const window = { x: 0, y: 21, width: 1280, height: 779 };
   const path = [{ x: 300, y: 200 }, { x: 440, y: 200 }];
-  const where = { id: 77, frame: [1, 1, 23, 1], avoid: [{ x: 1069, y: 617, width: 202, height: 174 }] };
-  assert.deepEqual(parkPoint('text', window, path, where), { point: { x: 301, y: 230 }, intended: 77 });
-  assert.deepEqual(parkPoint('blank', window, path, where), { point: { x: 551, y: 670 }, intended: 77 });
-  const out = parkPoint('out', window, path, where);
-  assert.equal(out.intended, ROOT, 'verified on the bare root');
-  assert.ok(out.point.x > window.x + window.width + 1, `beside the frame: ${JSON.stringify(out.point)}`);
+  const where = { id: 77, front: { id: 0xe0000c, x: 1170, y: 715 } };
+  assert.deepEqual(parkPoint('text', window, path, where), { point: { x: 300, y: 221 }, intended: 77 });
+  assert.deepEqual(parkPoint('blank', window, path, where), { point: { x: 640, y: 680 }, intended: 77 });
+  // task 72's review, finding 2: the old fixed point (1275, 300) was inside the maximized Writer; the park is now the
+  // front window's middle, verified over the front window (the design session, 2026-11-10)
+  assert.deepEqual(parkPoint('out', window, path, where), { point: { x: 1170, y: 715 }, intended: 0xe0000c });
+  assert.throws(() => parkPoint('out', window, path, { id: 77 }), (e) => e instanceof ParkRefused && /no front window/.test(e.message));
   assert.equal(parkPoint('none', window, path, where), null);
   assert.throws(() => parkPoint('under', window, path, where), /unknown pointer park/);
-  // task 72's review, finding 2: the counted windows were maximized, so a fixed "outside" point was inside Writer;
-  // a window with no bare root beside it refuses the outside park rather than assume one
-  const maximized = { x: 0, y: 21, width: 1280, height: 779 };
-  assert.throws(() => parkPoint('out', maximized, path, { id: 77, frame: [0, 0, 21, 0] }), (e) => e instanceof ParkRefused && /no bare root/.test(e.message));
 });
 
 test("Calc's right click lands when the cell it made active is the true centre's, read directly", () => {

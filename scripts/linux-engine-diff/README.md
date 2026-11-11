@@ -1110,9 +1110,9 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 - **The park** (`park.mjs`): `parkPointer(point, intended)` moves the real pointer, then reads where it landed through
   `QueryPointer`'s child chain (`xprobe pointer-chain`) and throws `ParkRefused` unless it is at the point and over
   the intended window (anywhere in the chain), or on the bare root for `ROOT`; a refused park's trial never counts.
-  `outsidePoint` derives a bare-root point beside a window from its real geometry and frame (none beside a maximized
-  window), and `parkOnFront` parks on the run's front window, off every application under test, while a fresh window
-  opens. T16's runners (`writer-drag.mjs`, `vcl-probe.mjs`) use it.
+  `parkOnFront` parks on the run's front window, off every application under test (a park ending on the bare root
+  names a window the run did not open, by the harness's own audit). T16's runners (`writer-drag.mjs`,
+  `vcl-probe.mjs`) use it.
 - **The application's identity** (`app-identity.mjs`): `verifyIdentity(oracle, scene)` reads the scene's AT-SPI
   application name and toolkit and the role of its frame's first document, and throws `IdentityRefused` unless they
   are its family's (`APP_IDENTITY`), so Writer standing in for Impress fails. T16's runners, the drag experiment's
@@ -1121,8 +1121,8 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 - **The Writer probe** (`writer-drag.mjs`, measured, never judged but by `--plan first`): Writer windows, fresh for each
   run or one for a case, each run a drag (or a selection made otherwise) read by AT-SPI's selections of the first
   paragraphs and by PRIMARY (the harness's marker claimed first), the real pointer parked where the case says
-  (`out`, on the bare root beside the window's frame, which opens at the family's size so that there is one;
-  `text`; `blank`) and verified there (`park.mjs`), the window's geometry recorded before and after. Lanes: an engine by its drag lane label,
+  (`out`, the pointer on another window of the run's, off Writer: the front window; `text`; `blank`) and verified
+  there (`park.mjs`), the window's geometry recorded before and after. Lanes: an engine by its drag lane label,
   `xtest` (cua's windowless drag through XTEST, the window active), `xdotool`, `xclick`, `xhold` (real input through
   xdotool at a person's pace), `atspi` (`Text.AddSelection`), `keys` (a background click, then Shift+Right). Aims:
   `locate` (the drag cell's), `raw` (the drag cell's before T16), `frame`. `--plan first` is T16's proof: fresh windows,

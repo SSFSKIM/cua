@@ -1,0 +1,235 @@
+== runs/alone.jsonl: 100 runs, {'reads': 297, 'reads with an input after the read': 4}
+   drag test: bytes waiting on the probe's socket at the read: min 8896 max 8896
+   drags recorded: 100 (control 100), short at the read: 0, of them control: 0
+   MISS alone-6 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 3.006667999999081}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-11 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.6613439999991897}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-53 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.604656000000432}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-65 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 3.5579409999991185}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   late arrivals: 4, ms after the read: min 2.6 max 3.6
+   account control: sent=('ButtonPress', 'ButtonRelease') queued-to-probe=('ButtonPress', 'ButtonRelease') read at 400 ms=2: 100
+== runs/suite.jsonl: 94 runs, {'reads': 6485, 'reads with an input after the read': 4}
+   drag test: bytes waiting on the probe's socket at the read: min 8896 max 8896
+   drags recorded: 281 (control 94), short at the read: 4, of them control: 0
+   MISS suite-3 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.620275000004767}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS suite-24 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.6522509999995236}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS suite-75 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.6568869999973685}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS suite-97 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.663656999997329}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   SHORT leave left and came back suite-3 Err("firefox may not have taken the drag: the desktop pointe count 1 probe client 2097152
+      SendEvent ButtonPress server time 1235342331 client 4194304 rec_ms 27211.8
+      delivered ButtonPress server time 1235342331 client 2097152 rec_ms 27211.8
+      SendEvent ButtonRelease server time 1235343229 client 4194304 rec_ms 28109.2
+      delivered ButtonRelease server time 1235343229 client 2097152 rec_ms 28109.2
+   SHORT leave left and came back suite-24 Err("firefox may not have taken the drag: the desktop pointe count 1 probe client 2097152
+      SendEvent ButtonPress server time 1239098250 client 4194304 rec_ms 27156.8
+      delivered ButtonPress server time 1239098250 client 2097152 rec_ms 27156.8
+      SendEvent ButtonRelease server time 1239099148 client 4194304 rec_ms 28054.5
+      delivered ButtonRelease server time 1239099148 client 2097152 rec_ms 28054.5
+   SHORT leave left and came back suite-75 Err("firefox may not have taken the drag: the desktop pointe count 1 probe client 2097152
+      SendEvent ButtonPress server time 1249285875 client 4194304 rec_ms 27190.2
+      delivered ButtonPress server time 1249285875 client 2097152 rec_ms 27190.2
+      SendEvent ButtonRelease server time 1249286774 client 4194304 rec_ms 28088.8
+      delivered ButtonRelease server time 1249286774 client 2097152 rec_ms 28088.8
+   SHORT leave left and stayed out suite-97 Err("firefox may not have taken the drag: the desktop pointe count 1 probe client 2097152
+      SendEvent ButtonPress server time 1253930866 client 4194304 rec_ms 23885.5
+      delivered ButtonPress server time 1253930866 client 2097152 rec_ms 23885.5
+      SendEvent ButtonRelease server time 1253931763 client 4194304 rec_ms 24782.9
+      delivered ButtonRelease server time 1253931763 client 2097152 rec_ms 24782.9
+   late arrivals: 4, ms after the read: min 2.6 max 2.7
+   account control: sent=('ButtonPress', 'ButtonRelease') queued-to-probe=('ButtonPress', 'ButtonRelease') read at 400 ms=2: 94
+   account leave: sent=('ButtonPress', 'ButtonRelease') queued-to-probe=('ButtonPress', 'ButtonRelease') read at 400 ms=1: 4
+   account leave: sent=('ButtonPress', 'ButtonRelease') queued-to-probe=('ButtonPress', 'ButtonRelease') read at 400 ms=2: 183
+== runs-amp/alone.jsonl: 30 runs, {'reads': 30, 'reads with an input after the read': 30}
+   drag test: bytes waiting on the probe's socket at the read: min 8896 max 8896
+   drags recorded: 30 (control 30), short at the read: 30, of them control: 30
+   MISS alone-1 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.578542999999854}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-2 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.542073999999957}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-3 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 6.005544999999984}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-4 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.583503999999948}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-5 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.54783499999985}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-6 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.5078410000000986}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-7 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.5187610000000404}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-8 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.510955999999851}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-9 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 4.6003189999998995}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-10 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 3.342721999999867}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-11 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 4.64640600000007}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-12 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.5128899999999703}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-13 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.5141819999998916}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-14 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.5185100000001057}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-15 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.519993999999997}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-16 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.5763200000001234}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-17 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.507419999999911}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-18 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.5140930000000026}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-19 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.51328999999987}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-20 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.5142029999999522}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-21 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.546724999999924}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-22 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 3.5066989999997986}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-23 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.527066999999988}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-24 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.5104650000000674}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-25 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.5191209999998136}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-26 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 4.416422000000011}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-27 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.52470100000005}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-28 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.507327999999916}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-29 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 2.5341390000000956}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   MISS alone-30 a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported at read ['ButtonPress { button: 1, sent: true }'] late [{'input': 'ButtonRelease { button: 1, sent: true }', 'ms_after_read': 4.149599999999964}] after sync [] queued 8896 others at read 277 late others 1523 mask 0 window view down 1
+   SHORT control  alone-1 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237606229 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237606229 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237607132 client 4194304 rec_ms 905.1
+      delivered ButtonRelease server time 1237607132 client 2097152 rec_ms 905.1
+   SHORT control  alone-2 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237609995 client 4194304 rec_ms 8.1
+      delivered ButtonPress server time 1237609995 client 2097152 rec_ms 8.1
+      SendEvent ButtonRelease server time 1237610904 client 4194304 rec_ms 917.7
+      delivered ButtonRelease server time 1237610904 client 2097152 rec_ms 917.8
+   SHORT control  alone-3 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237613780 client 4194304 rec_ms 8.4
+      delivered ButtonPress server time 1237613780 client 2097152 rec_ms 8.4
+      SendEvent ButtonRelease server time 1237614681 client 4194304 rec_ms 909.9
+      delivered ButtonRelease server time 1237614681 client 2097152 rec_ms 909.9
+   SHORT control  alone-4 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237617577 client 4194304 rec_ms 2.5
+      delivered ButtonPress server time 1237617577 client 2097152 rec_ms 2.5
+      SendEvent ButtonRelease server time 1237618482 client 4194304 rec_ms 907.5
+      delivered ButtonRelease server time 1237618482 client 2097152 rec_ms 907.5
+   SHORT control  alone-5 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237621375 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237621375 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237622285 client 4194304 rec_ms 911.9
+      delivered ButtonRelease server time 1237622285 client 2097152 rec_ms 911.9
+   SHORT control  alone-6 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237625195 client 4194304 rec_ms 1.9
+      delivered ButtonPress server time 1237625195 client 2097152 rec_ms 1.9
+      SendEvent ButtonRelease server time 1237626094 client 4194304 rec_ms 901.4
+      delivered ButtonRelease server time 1237626094 client 2097152 rec_ms 901.4
+   SHORT control  alone-7 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237628972 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237628972 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237629876 client 4194304 rec_ms 905.9
+      delivered ButtonRelease server time 1237629876 client 2097152 rec_ms 905.9
+   SHORT control  alone-8 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237632736 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237632736 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237633639 client 4194304 rec_ms 904.6
+      delivered ButtonRelease server time 1237633639 client 2097152 rec_ms 904.6
+   SHORT control  alone-9 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237636492 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237636492 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237637406 client 4194304 rec_ms 915.7
+      delivered ButtonRelease server time 1237637406 client 2097152 rec_ms 915.7
+   SHORT control  alone-10 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237640293 client 4194304 rec_ms 2.1
+      delivered ButtonPress server time 1237640293 client 2097152 rec_ms 2.1
+      SendEvent ButtonRelease server time 1237641201 client 4194304 rec_ms 909.6
+      delivered ButtonRelease server time 1237641201 client 2097152 rec_ms 909.6
+   SHORT control  alone-11 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237644073 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237644073 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237644977 client 4194304 rec_ms 906.4
+      delivered ButtonRelease server time 1237644977 client 2097152 rec_ms 906.4
+   SHORT control  alone-12 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237647856 client 4194304 rec_ms 9.4
+      delivered ButtonPress server time 1237647856 client 2097152 rec_ms 9.4
+      SendEvent ButtonRelease server time 1237648761 client 4194304 rec_ms 914.6
+      delivered ButtonRelease server time 1237648761 client 2097152 rec_ms 914.6
+   SHORT control  alone-13 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237651626 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237651626 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237652524 client 4194304 rec_ms 900.2
+      delivered ButtonRelease server time 1237652524 client 2097152 rec_ms 900.2
+   SHORT control  alone-14 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237655376 client 4194304 rec_ms 2.2
+      delivered ButtonPress server time 1237655376 client 2097152 rec_ms 2.2
+      SendEvent ButtonRelease server time 1237656279 client 4194304 rec_ms 904.4
+      delivered ButtonRelease server time 1237656279 client 2097152 rec_ms 904.4
+   SHORT control  alone-15 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237659146 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237659146 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237660053 client 4194304 rec_ms 908.7
+      delivered ButtonRelease server time 1237660053 client 2097152 rec_ms 908.7
+   SHORT control  alone-16 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237662931 client 4194304 rec_ms 2.1
+      delivered ButtonPress server time 1237662931 client 2097152 rec_ms 2.1
+      SendEvent ButtonRelease server time 1237663834 client 4194304 rec_ms 905.1
+      delivered ButtonRelease server time 1237663834 client 2097152 rec_ms 905.1
+   SHORT control  alone-17 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237666712 client 4194304 rec_ms 8.6
+      delivered ButtonPress server time 1237666712 client 2097152 rec_ms 8.6
+      SendEvent ButtonRelease server time 1237667620 client 4194304 rec_ms 912.7
+      delivered ButtonRelease server time 1237667620 client 2097152 rec_ms 912.7
+   SHORT control  alone-18 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237670511 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237670511 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237671411 client 4194304 rec_ms 901.6
+      delivered ButtonRelease server time 1237671411 client 2097152 rec_ms 901.6
+   SHORT control  alone-19 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237674309 client 4194304 rec_ms 1.9
+      delivered ButtonPress server time 1237674309 client 2097152 rec_ms 1.9
+      SendEvent ButtonRelease server time 1237675209 client 4194304 rec_ms 901.6
+      delivered ButtonRelease server time 1237675209 client 2097152 rec_ms 901.6
+   SHORT control  alone-20 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237678069 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237678069 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237678969 client 4194304 rec_ms 902.2
+      delivered ButtonRelease server time 1237678969 client 2097152 rec_ms 902.2
+   SHORT control  alone-21 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237681839 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237681839 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237682745 client 4194304 rec_ms 907.5
+      delivered ButtonRelease server time 1237682745 client 2097152 rec_ms 907.5
+   SHORT control  alone-22 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237685628 client 4194304 rec_ms 4.9
+      delivered ButtonPress server time 1237685628 client 2097152 rec_ms 4.9
+      SendEvent ButtonRelease server time 1237686530 client 4194304 rec_ms 906.1
+      delivered ButtonRelease server time 1237686530 client 2097152 rec_ms 906.1
+   SHORT control  alone-23 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237689404 client 4194304 rec_ms 7.5
+      delivered ButtonPress server time 1237689404 client 2097152 rec_ms 7.5
+      SendEvent ButtonRelease server time 1237690301 client 4194304 rec_ms 902.4
+      delivered ButtonRelease server time 1237690301 client 2097152 rec_ms 902.4
+   SHORT control  alone-24 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237693186 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237693186 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237694096 client 4194304 rec_ms 912.1
+      delivered ButtonRelease server time 1237694096 client 2097152 rec_ms 912.1
+   SHORT control  alone-25 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237696989 client 4194304 rec_ms 8.6
+      delivered ButtonPress server time 1237696989 client 2097152 rec_ms 8.6
+      SendEvent ButtonRelease server time 1237697891 client 4194304 rec_ms 910.7
+      delivered ButtonRelease server time 1237697891 client 2097152 rec_ms 910.7
+   SHORT control  alone-26 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237700773 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237700773 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237701675 client 4194304 rec_ms 903.6
+      delivered ButtonRelease server time 1237701675 client 2097152 rec_ms 903.6
+   SHORT control  alone-27 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237704538 client 4194304 rec_ms 1.9
+      delivered ButtonPress server time 1237704538 client 2097152 rec_ms 1.9
+      SendEvent ButtonRelease server time 1237705436 client 4194304 rec_ms 899.8
+      delivered ButtonRelease server time 1237705436 client 2097152 rec_ms 899.8
+   SHORT control  alone-28 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237708329 client 4194304 rec_ms 5.1
+      delivered ButtonPress server time 1237708329 client 2097152 rec_ms 5.1
+      SendEvent ButtonRelease server time 1237709237 client 4194304 rec_ms 913.1
+      delivered ButtonRelease server time 1237709237 client 2097152 rec_ms 913.1
+   SHORT control  alone-29 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237712108 client 4194304 rec_ms 2.1
+      delivered ButtonPress server time 1237712108 client 2097152 rec_ms 2.1
+      SendEvent ButtonRelease server time 1237713006 client 4194304 rec_ms 900.2
+      delivered ButtonRelease server time 1237713006 client 2097152 rec_ms 900.2
+   SHORT control  alone-30 Ok(Null) count 1 probe client 2097152
+      SendEvent ButtonPress server time 1237715891 client 4194304 rec_ms 2.0
+      delivered ButtonPress server time 1237715891 client 2097152 rec_ms 2.0
+      SendEvent ButtonRelease server time 1237716794 client 4194304 rec_ms 905.2
+      delivered ButtonRelease server time 1237716794 client 2097152 rec_ms 905.2
+   late arrivals: 30, ms after the read: min 2.5 max 6.0
+   account control: sent=('ButtonPress', 'ButtonRelease') queued-to-probe=('ButtonPress', 'ButtonRelease') read at 400 ms=1: 30
+== runs-amp-fixed/alone.jsonl: 30 runs, {'reads': 90}
+   drag test: bytes waiting on the probe's socket at the read: min 8896 max 8896
+   drags recorded: 90 (control 30), short at the read: 0, of them control: 0
+   account control: sent=('ButtonPress', 'ButtonRelease') queued-to-probe=('ButtonPress', 'ButtonRelease') read at 400 ms=2: 30
+   account leave: sent=('ButtonPress', 'ButtonRelease') queued-to-probe=('ButtonPress', 'ButtonRelease') read at 400 ms=2: 60
+== runs-fixed/alone.jsonl: 100 runs, {'reads': 300}
+   drag test: bytes waiting on the probe's socket at the read: min 8896 max 8896
+   drags recorded: 300 (control 100), short at the read: 0, of them control: 0
+   account control: sent=('ButtonPress', 'ButtonRelease') queued-to-probe=('ButtonPress', 'ButtonRelease') read at 400 ms=2: 100
+   account leave: sent=('ButtonPress', 'ButtonRelease') queued-to-probe=('ButtonPress', 'ButtonRelease') read at 400 ms=2: 200

@@ -97,9 +97,9 @@ impl Probe {
     fn inputs(&self) -> Vec<Input> {
         sleep(SETTLE);
         // A round trip on the window's own connection, so every event the server queued to it before is read. A
-        // background drag sends the window some 1,800 synthetic motions, one socket write each, and the socket holds
-        // about 277 of them: the rest wait in the server until the window reads, and a drain alone stopped short of
-        // the release whenever it found the socket empty before the server refilled it (task 75, evidence
+        // background drag sends the window some 1,800 synthetic events, one socket write each, and the socket holds
+        // 278 of them: the rest wait in the server until the window reads, and a drain alone stopped short of the
+        // release whenever it found the socket empty before the server refilled it (task 75, evidence
         // `m4/drag-control-race/`).
         self.conn.sync().unwrap();
         let mut seen = Vec::new();

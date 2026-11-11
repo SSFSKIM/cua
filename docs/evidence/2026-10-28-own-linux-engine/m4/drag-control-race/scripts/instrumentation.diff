@@ -1,0 +1,147 @@
+--- Cargo.toml	2026-11-11 04:06:05.000000000 -0800
++++ /Users/new/.local/share/cua-171/task75/exp/native/linux-engine/Cargo.toml	2026-11-11 04:42:11.107752255 -0800
+@@ -32,7 +32,7 @@
+ # For the live tests alone, never in the binary: features of crates the engine already links, no new package. They
+ # find the after-release watch's connection from outside a shipped binary and cut it: x11rb's res (X-Resource) lists
+ # the engine's X clients by its process id; rustix's process and net take the socket (pidfd_getfd) and shut it down.
+-x11rb = { version = "0.13.2", features = ["res"] }
++x11rb = { version = "0.13.2", features = ["res", "record"] }
+ rustix = { version = "1.1.4", features = ["process", "net"] }
+ 
+ [features]
+--- tests/live_device.rs	2026-11-11 04:06:05.000000000 -0800
++++ /Users/new/.local/share/cua-171/task75/exp/native/linux-engine/tests/live_device.rs	2026-11-11 05:03:39.736884084 -0800
+@@ -10,6 +10,8 @@
+ #![cfg(feature = "live")]
+ 
+ mod support;
++#[path = "race_diag/mod.rs"]
++mod race;
+ 
+ use serde_json::{Value, json};
+ use std::sync::mpsc;
+@@ -95,8 +97,48 @@
+ 
+     /// The input events received since the last call, waiting `SETTLE` for any still on their way.
+     fn inputs(&self) -> Vec<Input> {
++        let called = race::ms();
+         sleep(SETTLE);
++        // task 75: the bytes waiting on the probe's socket at the read
++        let queued = rustix::io::ioctl_fionread(self.conn.stream()).unwrap_or(u64::MAX);
++        let (seen, others) = self.drain();
++        let read_ms = race::ms();
++        if race::enabled() {
++            // task 75: what comes after the test's read, by a further read (2 s for the drag control's test, 50 ms
++            // elsewhere), then after a round trip on this connection; the server's button state; the window's view
++            let window_ms = if race::long_read() { 2000.0 } else { 50.0 };
++            let mut late = Vec::new();
++            let mut late_others = 0;
++            while race::ms() - read_ms < window_ms {
++                sleep(Duration::from_millis(2));
++                let (more, o) = self.drain();
++                late_others += o;
++                let at = race::ms() - read_ms;
++                late.extend(more.into_iter().map(|i| json!({"ms_after_read": at, "input": format!("{i:?}")})));
++            }
++            self.conn.sync().unwrap();
++            let (synced, synced_others) = self.drain();
++            let mask = self.conn.query_pointer(self.root).unwrap().reply().unwrap().mask;
++            let presses = |v: &[Input]| v.iter().filter(|i| matches!(i, Input::ButtonPress { .. })).count() as i64;
++            let releases = |v: &[Input]| v.iter().filter(|i| matches!(i, Input::ButtonRelease { .. })).count() as i64;
++            race::log(json!({
++                "kind": "read", "window": self.id, "called_ms": called, "read_ms": read_ms,
++                "queued_bytes_at_read": queued, "other_events_at_read": others,
++                "at_read": seen.iter().map(|i| format!("{i:?}")).collect::<Vec<_>>(),
++                "late": late, "late_other_events": late_others,
++                "after_sync": synced.iter().map(|i| format!("{i:?}")).collect::<Vec<_>>(),
++                "after_sync_other_events": synced_others,
++                "server_button_mask": u16::from(mask),
++                "window_view_button_down_at_read": presses(&seen) - releases(&seen),
++            }));
++        }
++        seen
++    }
++
++    /// Everything the connection has now, without waiting: its input events, and how many others came with them.
++    fn drain(&self) -> (Vec<Input>, u64) {
+         let mut seen = Vec::new();
++        let mut others = 0;
+         while let Some(event) = self.conn.poll_for_event().unwrap() {
+             let sent = event.sent_event();
+             seen.push(match event {
+@@ -104,10 +146,13 @@
+                 Event::KeyRelease(_) => Input::KeyRelease { sent },
+                 Event::ButtonPress(e) => Input::ButtonPress { button: e.detail, sent },
+                 Event::ButtonRelease(e) => Input::ButtonRelease { button: e.detail, sent },
+-                _ => continue,
++                _ => {
++                    others += 1;
++                    continue;
++                }
+             });
+         }
+-        seen
++        (seen, others)
+     }
+ 
+     /// Whether the X input focus is this window.
+@@ -443,16 +488,27 @@
+ #[test]
+ fn a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported() {
+     let firefox = Probe::open("firefox", (0, 0, 400, 300));
+-    let mut shared = Engine::start();
++    let mut shared = Engine::start_with(&["--stats"]);
+     let app = app_of(&mut shared, firefox.id);
++    let recorder = race::enabled().then(|| race::Recorder::start(firefox.id));
++    let probe_client = firefox.conn.setup().resource_id_base;
+     // a zigzag, every corner a rest of the browsers' pacing: a drag of a few hundred milliseconds
+     let path: Vec<Value> = (0..12)
+         .map(|i| json!({"x": 20 + 30 * i, "y": if i % 2 == 0 { 40 } else { 200 }}))
+         .collect();
+     let drag = json!({"window": firefox.target(), "path": path});
+     pointer_to(350, 280);
+-    shared.request("drag", drag.clone()).unwrap();
+-    assert_eq!(firefox.inputs().len(), 2, "the pointer stayed in: a plain drag");
++    let asked = race::ms();
++    let answer = shared.request("drag", drag.clone());
++    let answered = race::ms();
++    let control = firefox.inputs();
++    let records = recorder.map(race::Recorder::stop);
++    race::log(json!({
++        "kind": "control", "asked_ms": asked, "answered_ms": answered, "answer": format!("{answer:?}"),
++        "count": control.len(), "probe_client": probe_client, "records": records,
++    }));
++    answer.unwrap();
++    assert_eq!(control.len(), 2, "the pointer stayed in: a plain drag");
+     for (what, back) in [("left and stayed out", false), ("left and came back", true)] {
+         pointer_to(350, 280);
+         let mover = std::thread::spawn(move || {
+@@ -463,18 +519,23 @@
+                 pointer_to(350, 280);
+             }
+         });
++        let recorder = race::enabled().then(|| race::Recorder::start(firefox.id));
++        let asked = race::ms();
+         let answer = shared.request("drag", drag.clone());
++        let answered = race::ms();
+         mover.join().unwrap();
++        let read = firefox.inputs();
++        let records = recorder.map(race::Recorder::stop);
++        race::log(json!({
++            "kind": "leave", "what": what, "asked_ms": asked, "answered_ms": answered,
++            "answer": format!("{answer:?}"), "count": read.len(), "probe_client": probe_client, "records": records,
++        }));
+         let error = answer.expect_err(what);
+         assert!(
+             error.starts_with(&format!("{app} may not have taken the drag")),
+             "{what}: {error}"
+         );
+-        assert_eq!(
+-            firefox.inputs().len(),
+-            2,
+-            "{what}: the drag was sent, a press and a release"
+-        );
++        assert_eq!(read.len(), 2, "{what}: the drag was sent, a press and a release");
+     }
+ }
+ 

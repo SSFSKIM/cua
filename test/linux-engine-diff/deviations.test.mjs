@@ -23,7 +23,12 @@ test("the refusal of the request after a drag that left something pending is dec
     const error = PENDING.replace('this click request', `this ${op} request`);
     assert.ok(declaredDeviation({ op, scene: 'device-chrome-dnd', field: 'error', candidate: { ok: false, error } }), op);
   }
-  for (const cause of ['a late drag and drop: Google-chrome started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop', 'a failed watch: the drag-and-drop watch after your drag into Google-chrome failed (no reply), so a drop may have happened unseen and changed the desktop'])
+  for (const cause of [
+    'a late drag and drop: Google-chrome started a drag and drop after your drag into it ended, so the drag did not end as it answered; it may have dropped and changed the desktop',
+    'a failed watch: the drag-and-drop watch after your drag into Google-chrome failed (no reply), so a drop may have happened unseen and changed the desktop',
+    // a handle the engine released for its idle bound (M4's T17 fix wave)
+    'a drag handle released by timeout: your drag handle in XTerm got no request for 30 s, so it was released where the pointer was, at (250, 200); the release may have dropped what it held and changed the desktop',
+  ])
     assert.ok(declaredDeviation({ op: 'click', field: 'error', candidate: { ok: false, error: `Pending from your last drag, ${cause}; this click request was not run, so read the window before sending it again` } }), cause);
   assert.equal(declaredDeviation({ op: 'click', field: 'error', candidate: { ok: false, error: 'Pending from your last drag, something else; this click request was not run, so read the window before sending it again' } }), null, 'another cause');
   assert.equal(declaredDeviation({ op: 'click', field: 'error', candidate: { ok: true, output: null } }), null, 'a success is not the refusal');
@@ -32,8 +37,9 @@ test("the refusal of the request after a drag that left something pending is dec
 
 test("drag_handle's lifecycle answers are declared by their own sentences, each on its own requests (M4's T17)", () => {
   const error = (e) => ({ ok: false, error: e });
-  const held = 'a drag handle is held; end it before sending desktop pointer input';
+  const held = 'a drag handle is held; end it before sending desktop pointer input (a handle that gets no request for 30 s is released where it is)';
   for (const op of ['click', 'move', 'scroll', 'drag', 'move_relative', 'drag_handle']) assert.ok(declaredDeviation({ op, field: 'error', candidate: error(held) }), op);
+  assert.equal(declaredDeviation({ op: 'click', field: 'error', candidate: error('a drag handle is held; end it before sending desktop pointer input') }), null, 'the sentence names the idle bound');
   assert.equal(declaredDeviation({ op: 'press_key', field: 'error', candidate: error(held) }), null, 'keys run while a handle is held');
   const elsewhere = 'another application holds the pointer (an open menu, or a drag in progress); nothing was pressed. Close it or wait, then start the handle again';
   assert.ok(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error(elsewhere) }));

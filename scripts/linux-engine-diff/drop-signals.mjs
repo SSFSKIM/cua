@@ -147,7 +147,31 @@ export const LANES = {
   'cua:cover': { args: ['--drag-ignore-cover'], cover: true },
   // the same under the harness's managed front window (frame and title bar included) in place of the override-redirect
   'cua:cover-managed': { args: ['--drag-ignore-cover'], cover: true, managed: true },
+  // each drag as a drag_handle on the desktop route: a start at the path's first point, a move to each later one, the
+  // end (M4's T17 fix wave: Electron's drop confirmed by its drag loop's accept cursor at the release)
+  'cua:handle': { args: [], handle: true },
 };
+
+/**
+ * One drag of a `handle` lane: the path as drag_handle steps in screen coordinates, the end sent whatever came before
+ * it (as an agent's cell would release its handle), answered as the end's request, the time the whole sequence's.
+ */
+export async function handleDrag(engine, scene, path) {
+  const screen = path.map((p) => ({ x: scene.window.x + p.x, y: scene.window.y + p.y }));
+  const t0 = performance.now();
+  const steps = [{ action: 'start', ...screen[0] }, ...screen.slice(1).map((p) => ({ action: 'move_to', ...p }))];
+  let failed = null;
+  for (const step of steps) {
+    const value = await engine.request('drag_handle', step);
+    if (value.response.ok !== true) {
+      failed = value;
+      break;
+    }
+  }
+  const end = await engine.request('drag_handle', { action: 'end' });
+  const value = failed ?? end;
+  return { ...value, ms: performance.now() - t0, end: failed ? end.response : undefined };
+}
 
 /** The plans: `[lane, cell, drags]`. The never-take survey reads every drag's start point, whatever its lane. */
 export const PLANS = {
@@ -192,6 +216,11 @@ export const PLANS = {
   // stopped from 60 ms after the request to 250 ms (its late takes came there), on a drag the engine lets drop; run on
   // the engine before T14 too, its failing first
   't14-late': [['cua', 'freeze-250', 40]],
+  // M4's T17 fix wave (the design session's ruling on task 73's review, 2026-11-11): Electron's drop confirmed by its
+  // drag loop's accept cursor at the release, for handles and for plain drops behind the floor (`t14-floor`, with
+  // `--family electron`): the same drags as drag_handle sequences, 300 drops, the accepted-then-left control and the
+  // press inside the zone, 30 each
+  't17-handle': [['cua:handle', 'plain-long', 300], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30]],
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],
@@ -378,7 +407,8 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const screenRect = rect && { ...rect, x: rect.x + at.page.x + scene.window.x, y: rect.y + at.page.y + scene.window.y };
   const sent = Date.now();
   const frozen = freezeOf(base) ? freezeBrowser(ctx.browser, freezeOf(base)) : null;
-  const value = await withCover(screenRect, () => engine.request('drag', { window: { id: scene.id }, path }), { desktop, managed: LANES[lane].managed === true });
+  const handled = LANES[lane].handle === true;
+  const value = await withCover(screenRect, () => (handled ? handleDrag(engine, scene, path) : engine.request('drag', { window: { id: scene.id }, path })), { desktop, managed: LANES[lane].managed === true });
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
   await sleep(1000);
@@ -391,7 +421,8 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const next = { ok: preflight.response.ok === true, error: preflight.response.ok ? null : String(preflight.response.error), late_dnd: preflight.stats?.late_dnd ?? null };
   let after = await readStatus(desktop, scene);
   const stats = value.stats ?? {};
-  const wall = stats.wall ?? null;
+  // a handle's end records its release's wall time; its press is the start's, sent first
+  const wall = stats.wall ?? (handled && stats.handle?.release_wall_ms ? { press_ms: sent, release_ms: stats.handle.release_wall_ms } : null);
   const lines = watch.between(sent - 2, Date.now());
   const signals = signalsOf(lines, { target: scene.id, pressMs: wall?.press_ms ?? sent, releaseMs: wall?.release_ms ?? answered, engineTook: typeof stats.hold?.taken === 'boolean' ? stats.hold.taken : null });
   // a drag and drop still open (its dragend not come): the harness ends it with an Escape to its own window
@@ -433,6 +464,9 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     notice,
     next,
     after_release: stats.after_release,
+    // Electron's drop: the drag loop's cursor read at the release (a drag's `drop_cursor`, a handle's in its record)
+    drop_cursor: stats.drop_cursor ?? stats.handle?.drop_cursor,
+    handle: handled ? { ...stats.handle, end: value.end } : undefined,
     escaped,
     freeze,
     // the watch's own lines for the drag, the crossings left out (their count kept)

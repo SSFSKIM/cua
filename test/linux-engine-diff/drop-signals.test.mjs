@@ -331,6 +331,40 @@ test("the plan's cells: every drop path 40 px into the zone, the covers placed o
   assert.throws(() => planSpecs({ plan: 'nope' }), /no plan nope/);
 });
 
+test("a handle lane's drag: the path as drag_handle steps on the screen, the end sent whatever came before, answered as the step that failed or the end (M4's T17 fix wave)", async () => {
+  const { LANES, handleDrag, planSpecs } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const fake = (failing) => {
+    const sent = [];
+    return {
+      sent,
+      request: async (command, input) => {
+        sent.push([command, input]);
+        const ok = input.action !== failing;
+        return { response: ok ? { ok: true, output: null } : { ok: false, error: `${input.action} refused` }, ms: 1, stats: { handle: { action: input.action } } };
+      },
+    };
+  };
+  const scene = { window: { x: 100, y: 50 } };
+  const path = [{ x: 10, y: 20 }, { x: 30, y: 40 }, { x: 50, y: 60 }];
+  const engine = fake(null);
+  const done = await handleDrag(engine, scene, path);
+  assert.deepEqual(engine.sent, [
+    ['drag_handle', { action: 'start', x: 110, y: 70 }],
+    ['drag_handle', { action: 'move_to', x: 130, y: 90 }],
+    ['drag_handle', { action: 'move_to', x: 150, y: 110 }],
+    ['drag_handle', { action: 'end' }],
+  ]);
+  assert.equal(done.response.ok, true);
+  assert.deepEqual(done.stats, { handle: { action: 'end' } }, "the end's record");
+  const refused = fake('move_to');
+  const failed = await handleDrag(refused, scene, path);
+  assert.deepEqual(refused.sent.map(([, input]) => input.action), ['start', 'move_to', 'end'], 'the end released it');
+  assert.equal(failed.response.error, 'move_to refused');
+  assert.deepEqual(failed.end, { ok: true, output: null });
+  assert.ok(LANES['cua:handle'].handle);
+  assert.deepEqual(planSpecs({ plan: 't17-handle' }).map((s) => [s.cell, s.n]), [['plain-long', 300], ['left', 30], ['inzone-out', 30]]);
+});
+
 test('the drop-signals experiment takes the gate ballast without a cold run; the dnd experiment still refuses it', async () => {
   const { parseArgs } = await import('../../scripts/linux-engine-diff/cli.mjs');
   const a = parseArgs(['--experiment', 'drop-signals', '--cua', '/c', '--out', '/o', '--plan', 'cover', '--ballast', 'gate']);

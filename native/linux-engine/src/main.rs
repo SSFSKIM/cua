@@ -15,6 +15,7 @@ mod cover;
 mod dbus;
 mod desktop;
 mod dnd;
+mod drop_cursor;
 mod engine;
 mod families;
 #[cfg(test)]
@@ -51,7 +52,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed|quiet]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--path-step-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
-       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
+       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--drag-handle-idle-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
        [--drag-dnd-release-at-accept] [--drag-ignore-cover] [--ignore-cover] [--ignore-pointer]
        [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
@@ -97,6 +98,7 @@ fn default_config() -> Config {
         drag_ignore_cover: false,
         ignore_cover: false,
         ignore_pointer: false,
+        handle_idle: engine::HANDLE_IDLE,
     }
 }
 
@@ -234,6 +236,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             "--drag-release-dwell-ms" => fixed_drag(&mut cfg).release = Duration::from_millis(number(value, arg)?),
             "--drag-dnd-hold-ms" => cfg.dnd_hold = Duration::from_millis(number(value, arg)?),
             "--drag-dnd-after-take-ms" => cfg.dnd_after_take = Duration::from_millis(number(value, arg)?),
+            "--drag-handle-idle-ms" => cfg.handle_idle = Duration::from_millis(number(value, arg)?),
             "--targets-wait-ms" => cfg.targets_wait = Some(Duration::from_millis(number(value, arg)?)),
             "--focus-ack-ms" => cfg.focus_ack = Duration::from_millis(number(value, arg)?),
             other => return Err(format!("unknown argument {other}")),

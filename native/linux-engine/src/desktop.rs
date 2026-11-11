@@ -198,15 +198,17 @@ impl Desktop {
     }
 }
 
-/// The live tests' hook in `drag_handle`'s pre-press try (`engine/handle.rs` `pointer_free`;
-/// `CUA_ENGINE_FAULT=handle-try-click`, only in a build with the `live` feature, never a release asset): a second X
-/// client's click of button 3, sent while the try holds the server, as a person's click arriving at that moment. Its
-/// requests wait for the server's release, which comes after the try has given its grab up, so the click must land
-/// where the pointer is. Here with the desktop route's other XTEST buttons.
+/// The live tests' hooks in `drag_handle` (`engine/handle.rs`), only in a build with the `live` feature, never a release
+/// asset, each a second X client's input as a person's arriving at that moment:
+/// - in the pre-press try (`pointer_free`; `CUA_ENGINE_FAULT=handle-try-click`): a click of button 3, sent while the try
+///   holds the server. Its requests wait for the server's release, which comes after the try has given its grab up, so
+///   the click must land where the pointer is. Here with the desktop route's other XTEST buttons;
+/// - in the release dwell (`release_handle`; `CUA_ENGINE_FAULT=handle-dwell-move`): a motion to (300, 250), handled
+///   before the dwell goes on, which the release must then find.
 #[cfg(feature = "live")]
-pub mod try_click {
+pub mod handle_hooks {
     use x11rb::connection::Connection as _;
-    use x11rb::protocol::xproto::{BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ConnectionExt as _};
+    use x11rb::protocol::xproto::{BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ConnectionExt as _, MOTION_NOTIFY_EVENT};
     use x11rb::protocol::xtest::ConnectionExt as _;
     use x11rb::rust_connection::RustConnection;
 
@@ -218,6 +220,23 @@ pub mod try_click {
         let (conn, _) = x11rb::connect(None).ok()?;
         conn.xtest_get_version(2, 2).ok()?.reply().ok()?;
         Some(conn)
+    }
+
+    /// The person's motion at the release dwell's start, waited for.
+    pub fn during_dwell() {
+        if std::env::var("CUA_ENGINE_FAULT").as_deref() != Ok("handle-dwell-move") {
+            return;
+        }
+        let moved = (|| -> Option<()> {
+            let (conn, screen) = x11rb::connect(None).ok()?;
+            let root = conn.setup().roots[screen].root;
+            conn.xtest_get_version(2, 2).ok()?.reply().ok()?;
+            conn.xtest_fake_input(MOTION_NOTIFY_EVENT, 0, x11rb::CURRENT_TIME, root, 300, 250, 0)
+                .ok()?;
+            conn.get_input_focus().ok()?.reply().ok()?;
+            Some(())
+        })();
+        assert!(moved.is_some(), "the dwell hook's motion went out");
     }
 
     /// Its click sent, not waited for: the server handles it once it is let go.
@@ -239,12 +258,13 @@ pub mod try_click {
 }
 
 #[cfg(not(feature = "live"))]
-pub mod try_click {
+pub mod handle_hooks {
     pub fn before_try() -> Option<()> {
         None
     }
     pub fn during_try(_: Option<&()>) {}
     pub fn after_try(_: Option<()>) {}
+    pub fn during_dwell() {}
 }
 
 #[cfg(test)]

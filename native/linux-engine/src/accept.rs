@@ -52,8 +52,15 @@ pub struct CursorChange {
     pub seen: Instant,
 }
 
+/// A cursor image's fingerprint from what XFixes answers for it: its size, hotspot and pixels.
+pub fn fingerprint(width: u16, height: u16, xhot: u16, yhot: u16, pixels: &[u32]) -> Image {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (width, height, xhot, yhot, pixels).hash(&mut hasher);
+    hasher.finish()
+}
+
 /// Whether server time `t` is strictly after `since`, across the 32-bit wrap.
-fn after(t: u32, since: u32) -> bool {
+pub fn after(t: u32, since: u32) -> bool {
     let d = t.wrapping_sub(since);
     d != 0 && d < 1 << 31
 }
@@ -115,9 +122,7 @@ impl CursorWatch {
     /// The image shown now, kept under its cursor's serial.
     fn fetch_image(&mut self) -> Result<Image> {
         let reply = self.conn.xfixes_get_cursor_image()?.reply()?;
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        (reply.width, reply.height, reply.xhot, reply.yhot, &reply.cursor_image).hash(&mut hasher);
-        let image = hasher.finish();
+        let image = fingerprint(reply.width, reply.height, reply.xhot, reply.yhot, &reply.cursor_image);
         self.images.insert(reply.cursor_serial, image);
         Ok(image)
     }

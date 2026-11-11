@@ -10,7 +10,7 @@
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 

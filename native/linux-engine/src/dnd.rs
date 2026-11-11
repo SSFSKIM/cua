@@ -291,6 +291,12 @@ fn pending_cause(app: &str, end: &WatchEnd) -> String {
             "a failed watch: the drag-and-drop watch after your drag into {app} failed ({why}), so a drop may have \
              happened unseen and changed the desktop"
         ),
+        WatchEnd::IdleHandle { idle, at } => format!(
+            "a drag handle released by timeout: your drag handle in {app} got no request for {} s, so it was released \
+             where the pointer was, {}; the release may have dropped what it held and changed the desktop",
+            idle.as_secs_f64(),
+            at.map_or_else(|| "on another screen".to_string(), |(x, y)| format!("at ({x}, {y})"))
+        ),
     }
 }
 
@@ -389,6 +395,10 @@ pub enum WatchEnd {
     /// The watch could not keep watching (its connection failed, a round trip failed, the thread panicked): whether a
     /// drag and drop began cannot be told.
     Failed(String),
+    /// Not a watch's end, reported the same way: a `drag_handle` that got no request for `idle` (`handle.rs`, the
+    /// design session's ruling on task 73's review) was released by the engine where the pointer was, `at` (None: on
+    /// another screen), which may have dropped what it held.
+    IdleHandle { idle: Duration, at: Option<(i16, i16)> },
 }
 
 enum Note {
@@ -1272,6 +1282,26 @@ mod tests {
             "Pending from your last drag, a failed watch: the drag-and-drop watch after your drag into Google-chrome \
              failed (connection lost), so a drop may have happened unseen and changed the desktop; this drag request \
              was not run, so read the window before sending it again"
+        );
+        let idle = WatchEnd::IdleHandle {
+            idle: Duration::from_secs(30),
+            at: Some((250, 200)),
+        };
+        assert_eq!(
+            pending_refusal("XTerm", &idle, "click"),
+            "Pending from your last drag, a drag handle released by timeout: your drag handle in XTerm got no request \
+             for 30 s, so it was released where the pointer was, at (250, 200); the release may have dropped what it \
+             held and changed the desktop; this click request was not run, so read the window before sending it again"
+        );
+        let elsewhere = WatchEnd::IdleHandle {
+            idle: Duration::from_millis(300),
+            at: None,
+        };
+        assert!(
+            pending_notice("XTerm", &elsewhere)
+                .contains("got no request for 0.3 s, so it was released where the pointer was, on another screen;"),
+            "{}",
+            pending_notice("XTerm", &elsewhere)
         );
     }
 

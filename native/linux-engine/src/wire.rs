@@ -320,8 +320,8 @@ pub struct LaunchAppInput {
     pub app: String,
 }
 
-/// The pinned helper's 20 commands, the newest build's `type_characters` and cua's `capabilities` and `preflight`
-/// (behaviour §2). Those this build does not answer yet answer [`not_available`].
+/// The pinned helper's 20 commands, the newest build's `type_characters` and cua's `capabilities`, `preflight` and
+/// `release_handle` (behaviour §2). Those this build does not answer yet answer [`not_available`].
 pub const COMMANDS: &[&str] = &[
     "perform_secondary_action",
     "click",
@@ -346,6 +346,7 @@ pub const COMMANDS: &[&str] = &[
     "type_characters",
     "capabilities",
     "preflight",
+    "release_handle",
 ];
 
 /// cua's bounded sentence for a known command this build does not answer (the M1a pattern,

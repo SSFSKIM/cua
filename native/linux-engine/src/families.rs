@@ -486,6 +486,14 @@ pub fn confirms_drop(family: &str) -> bool {
     family == "Chrome"
 }
 
+/// Whether a family's drop is confirmed by its drag loop's accept cursor at the release (`drop_cursor.rs`): Electron,
+/// and the Chromium browsers of other classes that take its entry, which send no activation request (the design
+/// session's ruling on task 73's review, 2026-11-11). Chrome's drop keeps its activation request: a stale accept cursor
+/// is what made task 69's press-inside control drop where the page took nothing.
+pub fn confirms_drop_by_cursor(family: &str) -> bool {
+    family == "Chromium"
+}
+
 /// Whether any entry is keyed by toolkit, so a lookup that found no class needs the application's `ToolkitName`.
 pub fn needs_toolkit() -> bool {
     FAMILIES.iter().any(|f| f.toolkit.is_some())
@@ -813,6 +821,15 @@ mod tests {
         // and only Chrome's drop asks for its window's activation, which confirms it (task 68)
         assert!(confirms_drop(chrome.name) && !confirms_drop(electron.name));
         assert!(FAMILIES.iter().filter(|f| confirms_drop(f.name)).all(|f| blink(f.name)));
+        // Electron's, by the drag loop's accept cursor at the release (the ruling on task 73's review), and Chrome's
+        // never so: its stale accept is task 69's false release
+        assert!(confirms_drop_by_cursor(electron.name) && !confirms_drop_by_cursor(chrome.name));
+        assert!(
+            FAMILIES
+                .iter()
+                .filter(|f| confirms_drop_by_cursor(f.name))
+                .all(|f| blink(f.name) && !confirms_drop(f.name))
+        );
     }
 
     #[test]

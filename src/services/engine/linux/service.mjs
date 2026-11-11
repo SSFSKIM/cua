@@ -4,7 +4,8 @@
 // delegates to it unchanged (approvals, secret substitution, launch_app through the supervisor stay there). It answers
 // the vendor service's messages as the vendor does (R/A §1.2), with cua-engine (./client.mjs) behind it:
 //
-//   {type: 'setup'}                                -> {target: 'linux', methods: the 20 names in the vendor's order}
+//   {type: 'setup'}                                -> {target: 'linux', methods: the 20 names in the vendor's order};
+//                                                     the handles a former kernel started are released and forgotten
 //   {type: 'execute', method, args}                -> what the method returns (./methods.mjs): window states with the
 //                                                     tree numbered and screenshots as {filepath, data_url}, lists as
 //                                                     the engine gives them, undefined for input
@@ -60,6 +61,7 @@ export function createService({env = process.env, settler = new ActionSettler()}
           client();
           await engine.capabilities();
         } catch { /* every method answers with the failure */ }
+        await releaseHandles();
         return {target: 'linux', methods: [...LINUX_METHODS]};
       case 'execute': {
         const method = Object.getOwnPropertyDescriptor(client(), message.method)?.value;
@@ -87,6 +89,20 @@ export function createService({env = process.env, settler = new ActionSettler()}
       default:
         throw new Error(`Unsupported sky request type: ${String(message.type)}`);
     }
+  }
+
+  // A setup comes from a new kernel's first cell, before its code (src/cua-api/bootstrap.mjs): the kernel that started
+  // the handles still stored here is gone (js_reset, a cell's timeout), and its handle objects with it, so nothing will
+  // end them. The engine releases a held handle at once (`release_handle`, a release: never refused, and what the
+  // release leaves pending is reported as an end's is), and the handles are forgotten, so desktop pointer input runs
+  // again from the new kernel's first call (the design session's ruling on task 73's review, 2026-11-11). Its answer
+  // is nobody's to read: an engine without the command, or one that cannot be driven, changes nothing here.
+  async function releaseHandles() {
+    if (handles.size === 0) return;
+    handles.clear();
+    try {
+      await engine.request('release_handle', {});
+    } catch { /* the release is the engine's; the idle bound ends a handle it did not get */ }
   }
 
   // Before the wrapper launches an application through the supervisor (src/services/sky.mjs), which changes the desktop

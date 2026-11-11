@@ -24,6 +24,8 @@ mod within;
 #[cfg(test)]
 mod within_faults;
 
+pub use handle::HANDLE_IDLE;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -98,6 +100,9 @@ pub struct Config {
     /// reroutes a request, and no request is watched for the pointer leaving, so the harness can count what the
     /// application does with input sent while the pointer is elsewhere.
     pub ignore_pointer: bool,
+    /// How long a held `drag_handle` may go with no request of its own before the engine releases it where it is
+    /// (`handle::HANDLE_IDLE`; `--drag-handle-idle-ms` sets another, for the live tests).
+    pub handle_idle: std::time::Duration,
 }
 
 pub struct Engine {
@@ -141,7 +146,8 @@ pub struct Engine {
 /// or a failed watch is unreported (the design session's rulings, 2026-10-31 and 2026-11-02). Reads run, their replies
 /// carrying the notice (`list_windows`, `list_apps`, `get_screenshot`,
 /// `get_window_state`, `clipboard_read`, `capabilities`), and so do releases of what is held (`key_up`,
-/// `clipboard_release`, `drag_handle`'s `end`), so a held key or button is never left down at the server; unknown
+/// `clipboard_release`, `drag_handle`'s `end`, cua's `release_handle`), so a held key or button is never left down at
+/// the server; unknown
 /// commands answer their own error. `preflight` sends nothing, but stands for an action its caller takes by another
 /// route (cua's wrapper launching an application through the supervisor), so it acts.
 pub fn acts(command: &str, input: Option<&Value>) -> bool {
@@ -160,9 +166,14 @@ pub fn acts(command: &str, input: Option<&Value>) -> bool {
         | "clipboard_write"
         | "type_text"
         | "type_characters" => true,
-        "drag_handle" => input.and_then(|i| i.get("action")).and_then(Value::as_str) != Some("end"),
+        "drag_handle" => !is_handle_end(command, input),
         _ => false,
     }
+}
+
+/// Whether a request is a `drag_handle`'s `end`.
+fn is_handle_end(command: &str, input: Option<&Value>) -> bool {
+    command == "drag_handle" && input.and_then(|i| i.get("action")).and_then(Value::as_str) == Some("end")
 }
 
 /// The window a request sends input to, when that input is refused while the window is minimized (Design, Minimized
@@ -260,6 +271,9 @@ fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
         }),
         crate::dnd::WatchEnd::Failed(why) => json!({ "app": app, "failed": why }),
         crate::dnd::WatchEnd::Unconfirmed => json!({ "app": app, "unconfirmed": true }),
+        crate::dnd::WatchEnd::IdleHandle { idle, at } => {
+            json!({ "app": app, "idle_handle": { "idle_ms": idle.as_secs_f64() * 1000.0, "at": at } })
+        }
         crate::dnd::WatchEnd::Quiet => json!({ "app": app }),
     }
 }
@@ -306,14 +320,25 @@ impl Engine {
         self.x.drain_events();
         self.launched.reap();
         let started = Instant::now();
+        // a held handle past its idle bound is released before anything else, so a request that came at its due time
+        // finds it as the loop's own release would have left it
+        self.release_idle_handle();
         // the last watched drag's after-release watch: an acting request stops it (a round trip first, so every take
         // before now counts); any other request only collects it once it has ended by itself
         let acting = acts(&request.command, request.input.as_ref());
         self.collect_late_watch(acting);
         self.inputs.request = request.id.clone();
         // a late drag and drop, an unconfirmed drop or a watch that failed is the first acting request's answer, the
-        // request not run; reads and releases run meanwhile, and each of their replies carries the notice
-        let refusal = if acting { self.late_pending.take() } else { None };
+        // request not run; reads and releases run meanwhile, and each of their replies carries the notice. The `end`
+        // of a handle the engine released for its idle bound has nothing left to release: the timeout is its answer
+        let ends_released_handle = self.handle.is_none()
+            && is_handle_end(&request.command, request.input.as_ref())
+            && matches!(self.late_pending, Some((_, crate::dnd::WatchEnd::IdleHandle { .. })));
+        let refusal = if acting || ends_released_handle {
+            self.late_pending.take()
+        } else {
+            None
+        };
         if let Some((app, end)) = &refusal {
             self.extra.insert("late_dnd".into(), late_stats(app, end));
         }
@@ -363,6 +388,7 @@ impl Engine {
             "capabilities" => self.capabilities(request.input),
             // reached only with nothing to report: the refusal above answered otherwise
             "preflight" => parse_input::<NoInput>(request.input).map(|_| Value::Null),
+            "release_handle" => parse_input::<NoInput>(request.input).map(|_| self.release_lost_handle()),
             "server" => Err(anyhow!("server command cannot be nested")),
             command if wire::COMMANDS.contains(&command) => Err(anyhow!(wire::not_available(command))),
             command => Err(anyhow!("unknown command `{command}`")),
@@ -441,15 +467,20 @@ impl Engine {
     }
 
     /// When the engine must act with no request (`serve.rs`): an armed late-take watch's end, `dnd::SETTLE` after its
-    /// drag's release, which its drag's `FocusOut` follows.
+    /// drag's release, which its drag's `FocusOut` follows; and a held `drag_handle`'s idle bound (`handle.rs`).
     pub fn next_due(&self) -> Option<Instant> {
-        self.late_watch.as_ref().and_then(crate::dnd::LateWatch::ends_at)
+        let watch = self.late_watch.as_ref().and_then(crate::dnd::LateWatch::ends_at);
+        match (watch, self.handle_due()) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 
     /// Once an armed late-take watch's time is up with no request come: the watch run out (it ends by itself a poll
     /// later at most) and collected, and its drag's session ended, its `FocusOut` reported on a `--stats` line of its
-    /// own. What the watch saw still waits for the first acting request.
+    /// own. What the watch saw still waits for the first acting request. A held handle past its idle bound is released.
     pub fn tick(&mut self) {
+        self.release_idle_handle();
         let Some(watch) = &self.late_watch else {
             return;
         };
@@ -1022,6 +1053,8 @@ mod tests {
             "capabilities",
             "key_up",
             "clipboard_release",
+            // the service's release of a handle whose REPL state is gone: a release, which always runs
+            "release_handle",
             "no_such_command",
         ] {
             assert!(!acts(command, None), "{command} runs");

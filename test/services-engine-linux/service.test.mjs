@@ -298,6 +298,36 @@ test('drag handles: start, move_to and end reach the engine as drag_handle actio
   assert.deepEqual(sent(engine), [['drag_handle', {action: 'start', x: 1, y: 2}], ['drag_handle', {action: 'move_to', x: 5, y: 6}], ['drag_handle', {action: 'end'}]]);
 });
 
+test('a new kernel\'s setup releases the drag handles the old kernel left started: the engine is told at once, the handles are forgotten, and desktop input runs', async t => {
+  // js_reset or a timeout ends the kernel whose cells held the handles; the next kernel's bootstrap asks for setup
+  // first, before any of its code runs (src/cua-api/bootstrap.mjs), and nothing could end those handles again
+  const engine = fakeLinuxEngine(t);
+  const svc = service(t, engine);
+  await svc.handleRpc({type: 'setup'});
+  await svc.handleRpc({type: 'drag_start', handle_id: 'h1', point: {x: 1, y: 2}});
+  await svc.handleRpc({type: 'drag_move', handle_id: 'h1', point: {x: 5, y: 6}});
+  assert.deepEqual(await svc.handleRpc({type: 'setup'}), {target: 'linux', methods: LINUX_METHODS});
+  await assert.rejects(svc.handleRpc({type: 'drag_end', handle_id: 'h1'}), {message: 'Sky drag handle has not been started'}, 'forgotten');
+  await execute(svc, 'click', {x: 3, y: 4});
+  assert.deepEqual(sent(engine), [
+    ['drag_handle', {action: 'start', x: 1, y: 2}],
+    ['drag_handle', {action: 'move_to', x: 5, y: 6}],
+    ['release_handle', {}],
+    ['click', {x: 3, y: 4}],
+  ]);
+  // with no handle left, a setup sends nothing
+  await svc.handleRpc({type: 'setup'});
+  assert.equal(sent(engine).length, 4);
+});
+
+test('a setup whose handle release fails still answers the methods and forgets the handles', async t => {
+  const engine = fakeLinuxEngine(t, {behaviour: 'export function answer(command) { if (command === \'release_handle\') return {error: \'unknown command `release_handle`\'}; }'});
+  const svc = service(t, engine);
+  await svc.handleRpc({type: 'drag_start', handle_id: 'h1', point: {x: 1, y: 2}});
+  assert.deepEqual(await svc.handleRpc({type: 'setup'}), {target: 'linux', methods: LINUX_METHODS});
+  await assert.rejects(svc.handleRpc({type: 'drag_move', handle_id: 'h1', point: {x: 0, y: 0}}), {message: 'Sky drag handle has not been started'});
+});
+
 test('execute refuses a name that is not one of its methods with the vendor\'s sentence', async t => {
   const svc = service(t, fakeLinuxEngine(t));
   for (const name of ['type_characters', 'capabilities', 'target', 'toString', 'constructor'])

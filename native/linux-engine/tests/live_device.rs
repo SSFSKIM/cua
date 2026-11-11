@@ -3056,8 +3056,9 @@ fn handle_ended_on_another_screen(ending: HandleEnd) {
 // ---------------------------------------------------------------------------------------------------------------
 // T17 (#250): `drag_handle`'s lifecycle (handle.rs; the design session's ruling, 2026-11-10)
 
-/// The refusal of desktop pointer input while a handle is held (handle.rs `HANDLE_HELD`).
-const HANDLE_HELD: &str = "a drag handle is held; end it before sending desktop pointer input";
+/// The refusal of desktop pointer input while a handle is held (handle.rs `handle_held`), at the shipped idle bound.
+const HANDLE_HELD: &str = "a drag handle is held; end it before sending desktop pointer input (a handle that gets no \
+     request for 30 s is released where it is)";
 
 /// The refusal of a handle's start while another client holds the pointer (handle.rs `POINTER_HELD_ELSEWHERE`).
 const POINTER_HELD_ELSEWHERE: &str = "another application holds the pointer (an open menu, or a drag in progress); \
@@ -3470,4 +3471,211 @@ fn a_chromium_drag_handle_s_end_arms_the_after_release_watch() {
         let _ = recorder.join();
     }
     drop(listed);
+}
+
+/// The cause a handle the engine released after its idle bound leaves pending (handle.rs `idle_released`, through
+/// dnd.rs `pending_cause`), after "Pending from your last drag, ".
+fn idle_cause(app: &str, seconds: &str, at: (i16, i16)) -> String {
+    format!(
+        "Pending from your last drag, a drag handle released by timeout: your drag handle in {app} got no request for \
+         {seconds} s, so it was released where the pointer was, at ({}, {}); the release may have dropped what it \
+         held and changed the desktop",
+        at.0, at.1
+    )
+}
+
+/// A handle whose cell lost it (an agent's cell that threw between `start` and `end`) gets no request again, and every
+/// desktop pointer request was refused for good with button 1 held (task 73's review, P1). A handle that gets no request
+/// for the idle bound (30 s; `--drag-handle-idle-ms` sets another, here 300 ms) is released by the engine where the
+/// pointer is, with no request come; the next reply carries the notice, and the next acting request, or an `end` of the
+/// released handle, is refused once with it, not run. A handle whose requests come inside the bound stays held, a
+/// refused desktop request does not extend it, and the refusal while held names the bound.
+#[test]
+fn a_drag_handle_that_gets_no_request_for_its_idle_bound_is_released_where_it_is_and_the_next_request_says_so() {
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start_with(&["--drag-handle-idle-ms", "300"]);
+    let app = app_of(&mut engine, probe.id);
+    // requests inside the bound keep the hold
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    for x in [200, 250] {
+        sleep(Duration::from_millis(200));
+        engine
+            .request("drag_handle", json!({"action": "move_to", "x": x, "y": 200}))
+            .unwrap();
+    }
+    sleep(Duration::from_millis(150));
+    assert!(button1_down(), "held: each request came inside the bound");
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Err(
+            "a drag handle is held; end it before sending desktop pointer input (a handle that gets no request for 0.3 \
+             s is released where it is)"
+                .to_string()
+        ),
+        "the refusal names the bound"
+    );
+    // a refused desktop request is no request of the handle's: the bound runs on
+    sleep(Duration::from_millis(300));
+    assert!(!button1_down(), "released by the engine, with no request come");
+    assert_eq!(
+        probe.inputs(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ],
+        "the press, and the release where the pointer was"
+    );
+    let notice = engine.exchange("list_windows", json!({}))["notice"].clone();
+    assert_eq!(
+        notice,
+        json!(format!(
+            "{}. Read the window before sending input again: your next input request will not be run",
+            idle_cause(&app, "0.3", (250, 200))
+        ))
+    );
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Err(format!(
+            "{}; this click request was not run, so read the window before sending it again",
+            idle_cause(&app, "0.3", (250, 200))
+        )),
+        "the next acting request answers the timeout, not run"
+    );
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Ok(Value::Null),
+        "then desktop pointer input runs"
+    );
+    // the released handle's own end, its first request after the bound: refused with the timeout, nothing sent
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    sleep(Duration::from_millis(500));
+    assert!(!button1_down(), "released by the engine");
+    assert_eq!(
+        engine.request("drag_handle", json!({"action": "end"})),
+        Err(format!(
+            "{}; this drag_handle request was not run, so read the window before sending it again",
+            idle_cause(&app, "0.3", (150, 150))
+        ))
+    );
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Ok(Value::Null),
+        "answered once"
+    );
+    probe.inputs();
+}
+
+/// A reset frees desktop pointer input at once: the REPL state that held a handle is gone (`js_reset`, a cell's
+/// timeout), and cua's service, at the next kernel's setup, sends `release_handle` (the design session's ruling on task
+/// 73's review). The held handle is released there and then, nothing is left pending, and the next desktop pointer
+/// request runs; with no handle held the release sends nothing.
+#[test]
+fn a_reset_s_release_frees_desktop_pointer_input_at_once() {
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start();
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+        .unwrap();
+    assert!(
+        engine
+            .request("click", json!({"x": 20, "y": 20}))
+            .is_err_and(|e| e.starts_with("a drag handle is held")),
+        "held"
+    );
+    assert_eq!(engine.request("release_handle", json!({})), Ok(Value::Null));
+    assert!(!button1_down(), "released at once");
+    assert_eq!(
+        engine.exchange("list_windows", json!({}))["notice"],
+        Value::Null,
+        "nothing pending"
+    );
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Ok(Value::Null),
+        "desktop pointer input runs at once"
+    );
+    assert_eq!(
+        probe.inputs(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ],
+        "the handle's press and release, then the click"
+    );
+    assert_eq!(engine.request("release_handle", json!({})), Ok(Value::Null));
+    assert_eq!(probe.inputs(), vec![], "nothing held: nothing sent");
+}
+
+/// A Chrome handle's drag and drop under way at its release over a window Chrome's activation request cannot confirm
+/// (the bare root here; any window not Chrome's) is unconfirmed, never ok, where the window manager supports the
+/// request (task 73's review, P2: such a drop answered ok with nothing pending).
+#[test]
+fn a_chrome_handle_s_drop_released_where_nothing_can_confirm_it_is_unconfirmed() {
+    let listed = ActiveWindowSupported::listed();
+    let (window, stop, recorder) = drag_source(OnRelease::Drops {
+        activates: true,
+        cursors: &[],
+    });
+    managed(window);
+    let mut engine = Engine::start();
+    let app = app_of(&mut engine, window);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 20, "y": 20}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 200, "y": 120}))
+        .unwrap();
+    // off the source, to the bare root: no top-level there to confirm the drop
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 800, "y": 600}))
+        .unwrap();
+    assert_eq!(engine.request("drag_handle", json!({"action": "end"})), Ok(Value::Null));
+    sleep(SETTLE);
+    let notice = engine.exchange("list_windows", json!({}))["notice"].clone();
+    let next = engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50}));
+    assert_eq!(
+        (notice, next),
+        (json!(unconfirmed_notice(&app)), Err(unconfirmed_refusal(&app, "click"))),
+        "a drop nothing could confirm"
+    );
+    set_active_window(None);
+    stop.send(()).unwrap();
+    let _ = recorder.join();
+    drop(listed);
+}
+
+/// The pointer at a handle's release is read after the release dwell and the hold watch's round trip, as close to the
+/// button-up as the drop window's lookup allows, and that reading decides both the pointer-moved answer and the drop
+/// window (task 73's review, P3: both used a reading from before the dwell). The person's motion during Gecko's 30 ms
+/// dwell (a second client's XTEST motion, the live build's hook) is reported.
+#[test]
+fn a_pointer_moved_during_the_release_dwell_is_the_one_the_end_reports() {
+    let probe = Probe::open("firefox", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start_with_fault(&[], "handle-dwell-move");
+    let app = app_of(&mut engine, probe.id);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+        .unwrap();
+    assert_eq!(
+        engine.request("drag_handle", json!({"action": "end"})),
+        Err(pointer_moved(&app, Some((300, 250)), (250, 200))),
+        "the hook's motion during the dwell, to (300, 250)"
+    );
+    assert!(!button1_down(), "released");
+    probe.inputs();
 }

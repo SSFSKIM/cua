@@ -22,13 +22,16 @@ pub fn is_libreoffice(class: Option<&str>) -> bool {
     })
 }
 
+/// The root pane's index in an element's chain and the offset its VCL extents take ([`shift`]).
+pub type Shift = (usize, (i32, i32));
+
 /// The shift to add to a LibreOffice element's VCL extents, from the element and then its ancestors nearest first (each
 /// role and extents, ending with the frame): none for an element outside VCL's root pane (GTK's own widgets, the host
 /// panel among them, report true extents), none where the host panel and the root pane agree (after a pointer event),
 /// the host's offset where the root pane sits at the client's origin with the host's size (after a configure), and
 /// `UNTRUSTED` for anything else. The root pane may be the element itself. Also answers the root pane's index in the
 /// chain, which is how many of the element's ancestors are VCL's and take the shift too (none for the root pane).
-pub fn shift(chain: &[(String, Option<Rect>)]) -> Result<Option<(usize, (i32, i32))>, &'static str> {
+pub fn shift(chain: &[(String, Option<Rect>)]) -> Result<Option<Shift>, &'static str> {
     let Some(k) = chain.iter().position(|(role, _)| role == "root pane") else {
         return Ok(None);
     };

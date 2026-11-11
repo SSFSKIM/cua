@@ -42,7 +42,7 @@ const previousUnconfirmed = (op) => ({
  * The refusal of the first acting request while a drag's after-release watch left something pending (dnd.rs
  * `pending_refusal`, M4's T14): a late drag and drop, an unconfirmed drop or a failed watch, and the request not run.
  */
-export const PENDING_REFUSAL = /^Pending from your last drag, (a late drag and drop|an unconfirmed drop|a failed watch): .*; this \S+ request was not run, so read the window before sending it again$/s;
+export const PENDING_REFUSAL = /^Pending from your last drag, (a late drag and drop|an unconfirmed drop|a failed watch|a drag handle released by timeout): .*; this \S+ request was not run, so read the window before sending it again$/s;
 
 /** cua's answer for a window whose frame cannot be told apart from its duplicates' (identity.rs). */
 export const DUPLICATES = /^Window \d+ matches several accessibility windows; close or retitle the duplicates$/;
@@ -126,7 +126,7 @@ export const GECKO_POINTER_REFUSALS = ['firefox_click_pointer_out_shared', 'fire
  * while a handle is held, of a start while another client holds the pointer, and the end's answers when another
  * client's grab cut the hold, when its watch failed, or when the person moved the pointer from the last move.
  */
-export const HANDLE_HELD = /^a drag handle is held; end it before sending desktop pointer input$/;
+export const HANDLE_HELD = /^a drag handle is held; end it before sending desktop pointer input \(a handle that gets no request for \d+(\.\d+)? s is released where it is\)$/;
 export const HANDLE_POINTER_ELSEWHERE = /^another application holds the pointer \(an open menu, or a drag in progress\); nothing was pressed\. Close it or wait, then start the handle again$/;
 export const HANDLE_END = new RegExp(
   [
@@ -138,7 +138,7 @@ export const HANDLE_END = new RegExp(
     .join('|'),
   's',
 );
-const HANDLE_SECTION = 'Plan of Work, M4, T17; Decision Log, 2026-11-10 (T17: drag_handle\'s lifecycle, ruled before any code)';
+const HANDLE_SECTION = 'Plan of Work, M4, T17; Decision Log, 2026-11-10 (T17: drag_handle\'s lifecycle, ruled before any code), and the design session\'s rulings on its review (2026-11-11)';
 
 export const DEVIATIONS = [
   // M4's T17 (#250): drag_handle's lifecycle. The vendor presses into another client's grab and answers ok (the page
@@ -149,7 +149,7 @@ export const DEVIATIONS = [
     field: 'error',
     answer: (c) => c.ok === false && HANDLE_HELD.test(String(c.error)),
     reason:
-      "while a drag_handle holds button 1, pointer input through XTEST (the desktop route, and the foreground route after its activation) would end the hold with its own button or move the held pointer, so cua refuses it, a second start included; keys and the background route run. The vendor sends it",
+      "while a drag_handle holds button 1, pointer input through XTEST (the desktop route, and the foreground route after its activation) would end the hold with its own button or move the held pointer, so cua refuses it, a second start included, naming the idle bound after which cua releases a handle that gets no request of its own (30 s); keys and the background route run. The vendor sends it",
     section: HANDLE_SECTION,
   })),
   {
@@ -255,7 +255,7 @@ export const DEVIATIONS = [
     field: 'error',
     answer: (c) => c.ok === false && PENDING_REFUSAL.test(String(c.error)),
     reason:
-      "after a Chromium drag the engine let drop, or a Chromium drag_handle's end (M4's T17), cua watches the release off the request path: a drag and drop that started only after the release (cancelled at once with an Escape on the drag's route), a Chrome drop that Chrome did not confirm with its own activation request within 150 ms of the release, or the watch's own failure is pending; every reply then carries it as `notice` beside the vendor's keys, and the first acting request is refused with it, not run, naming what is pending and the request. The vendor answers the drag ok and runs the next request",
+      "after a Chromium drag the engine let drop, or a Chromium drag_handle's end (M4's T17), cua watches the release off the request path: a drag and drop that started only after the release (cancelled at once with an Escape on the drag's route), a Chrome drop that Chrome did not confirm with its own activation request within 150 ms of the release, a Chrome handle's drop over a window Chrome's request cannot confirm, an Electron drop whose drag loop did not show its accept cursor at the release, the watch's own failure, or a drag_handle cua released after 30 s with no request of its own is pending; every reply then carries it as `notice` beside the vendor's keys, and the first acting request is refused with it, not run, naming what is pending and the request. The vendor answers the drag ok and runs the next request",
     section: 'Plan of Work, M4 T14 and T17; Decision Log, M4 pre-flight (the Chrome drop), the design session\'s rulings on task 68 (2026-11-09, 2026-11-10)',
   },
   // M4's T16: LibreOffice's VCL positions (engine vcl.rs; writer-drag.mjs `--plan element`)

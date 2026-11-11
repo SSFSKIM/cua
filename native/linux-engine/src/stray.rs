@@ -327,6 +327,9 @@ pub struct Held {
     /// The target's client took `XdndSelection`: a drag and drop began, which takes the pointer itself, so a grab's
     /// crossing then is the drag and drop's own.
     pub taken: bool,
+    /// The server's time of that take, the first seen: Electron's drop confirmation tells the drag loop's cursor by it
+    /// (`drop_cursor.rs`).
+    pub take_time: Option<u32>,
 }
 
 impl Held {
@@ -405,8 +408,12 @@ impl HoldWatch {
                 match event {
                     Event::EnterNotify(e) => holding.held.cut |= cuts_hold(holding.target, e.event, e.mode),
                     Event::LeaveNotify(e) => holding.held.cut |= cuts_hold(holding.target, e.event, e.mode),
-                    Event::XfixesSelectionNotify(e) if e.selection == self.selection => {
-                        holding.held.taken |= crate::dnd::taken_by_target(e.owner, holding.target, mask)
+                    Event::XfixesSelectionNotify(e)
+                        if e.selection == self.selection
+                            && crate::dnd::taken_by_target(e.owner, holding.target, mask) =>
+                    {
+                        holding.held.taken = true;
+                        holding.held.take_time.get_or_insert(e.timestamp);
                     }
                     _ => {}
                 }
@@ -611,13 +618,18 @@ mod tests {
         assert_eq!(
             Held {
                 cut: true,
-                taken: false
+                ..Held::default()
             }
             .answer(app),
             Some(hold_cut(app))
         );
         assert_eq!(
-            Held { cut: true, taken: true }.answer(app),
+            Held {
+                cut: true,
+                taken: true,
+                take_time: Some(7)
+            }
+            .answer(app),
             None,
             "the drag and drop's own grab"
         );

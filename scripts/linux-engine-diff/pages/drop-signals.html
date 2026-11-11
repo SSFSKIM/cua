@@ -42,6 +42,8 @@
        after it); link and image: draggable by default; canvas-drag: a draggable canvas (a drop source under the role
        the canvas rule predicts never takes).
      - inzone (T14): a draggable div inside the zone, whose drag's first status already accepts, dragged out of it.
+     - move (T17's second fix wave): a draggable div right of the zone whose drag allows only a move, so its drop is a
+       move, not the copy the other sources' drops negotiate, and Chromium shows its move cursor.
      - zone: the drop target (dragover accepted), counting drops by the source that started them.
      Status lines, each also its own accessible name, read back through the tree after each drag; every count only
      grows. `seq` is the page's count of left presses, so the harness ties a kind's line to its own press. -->
@@ -63,6 +65,7 @@
 <p id="nested-late" class="abs src" style="top: 524px"><span draggable="true" data-src="nested-late" data-dragstart-ms="150">MM</span></p>
 <canvas id="canvas-drag" class="abs src" style="top: 570px" width="50" height="36" draggable="true" data-src="canvas-drag" aria-label="Draggable canvas"></canvas>
 <div id="inzone" class="abs src" style="left: 700px; top: 560px" draggable="true" data-src="inzone" aria-label="In-zone source"></div>
+<div id="move" class="abs src" style="left: 962px; top: 110px; width: 36px" draggable="true" data-src="move" aria-label="Move source"></div>
 <img id="image" class="abs src" style="top: 478px" data-src="image" alt="Image source" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='50' height='36'%3E%3Crect width='50' height='36' fill='%236a8fd0'/%3E%3C/svg%3E">
 <div id="status" class="abs">
   <p id="s-dnd">dnd</p>
@@ -97,7 +100,7 @@
 
   // a drag and drop, by the source it started from: starts, drops on the zone, and the last dragend's dropEffect and
   // times (ms from the press to dragstart, and from dragstart to dragend)
-  const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext', 'canvas-drag', 'inzone'];
+  const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext', 'canvas-drag', 'inzone', 'move'];
   const dnd = Object.fromEntries(SOURCES.map((s) => [s, { starts: 0, drops: 0 }]));
   const last = { src: 'none', effect: -1, lat: -1, dur: -1 };
   let pressedAt = null;
@@ -116,6 +119,7 @@
     last.lat = pressedAt === null ? -1 : Math.round(e.timeStamp - pressedAt);
     last.dur = -1;
     e.dataTransfer.setData('application/x-cua171-src', src);
+    if (src === 'move') e.dataTransfer.effectAllowed = 'move';
     if (!e.dataTransfer.types.includes('text/plain')) e.dataTransfer.setData('text/plain', src);
     showDnd();
   }, true);

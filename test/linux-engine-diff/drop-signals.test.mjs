@@ -366,6 +366,26 @@ test("a handle lane's drag: the path as drag_handle steps on the screen, the end
   assert.deepEqual(planSpecs({ plan: 't17-floor' }).map((s) => [s.lane, s.cell, s.n]), [['cua', 'plain', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]]);
 });
 
+test("the second fix wave's cells: a desktop drag that leaves the window for the bare root, and a drop that only moves (M4's T17)", async () => {
+  const { CELLS, LANES, T14_SOURCE, desktopDrag, planSpecs, windowPath } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const at = { page: { x: 4, y: 30 } };
+  const window = { x: 100, y: 50, width: 1050, height: 780 };
+  const root = windowPath(at, 'root', 0, window);
+  assert.deepEqual(root[0], { x: 534, y: 158 }, 'from the plain source');
+  assert.equal(root.at(-1).x, window.width + 30, '30 px right of the window');
+  assert.equal(T14_SOURCE.root, 'plain', 'a drop the zone never counts');
+  assert.deepEqual(CELLS.move(0), [[980, 128], [940, 128]]);
+  const sent = [];
+  const engine = { request: async (command, input) => (sent.push([command, input]), { response: { ok: true } }) };
+  await desktopDrag(engine, { window }, root);
+  assert.deepEqual(sent, [['drag', { path: [{ x: 634, y: 208 }, { x: 744, y: 208 }, { x: 1180, y: 208 }] }]], 'no window named, screen coordinates');
+  assert.ok(LANES['cua:desktop'].desktop);
+  const plan = planSpecs({ plan: 't17-fix2' });
+  assert.deepEqual(plan.filter((s) => s.cell === 'root').map((s) => s.lane), ['cua:desktop', 'cua:handle']);
+  assert.ok(plan.every((s) => s.n === (s.cell === 'plain' ? 100 : 30)));
+  assert.deepEqual(planSpecs({ plan: 't17-root' }), [{ lane: 'cua:desktop', cell: 'root', n: 30 }]);
+});
+
 test('the drop-signals experiment takes the gate ballast without a cold run; the dnd experiment still refuses it', async () => {
   const { parseArgs } = await import('../../scripts/linux-engine-diff/cli.mjs');
   const a = parseArgs(['--experiment', 'drop-signals', '--cua', '/c', '--out', '/o', '--plan', 'cover', '--ballast', 'gate']);

@@ -79,10 +79,15 @@ export const CELLS = {
   // the long path that crosses the zone and ends outside it, long enough (about 940 px) that its steps after the take
   // outlast the floor, so the release follows its last step at once (the design session, 2026-11-10: measure first)
   'long-left': () => [[530, 128], [800, 128], [800, 500], [500, 500]],
+  // T17's second fix wave (the second review, P2; the design session, 2026-11-11): the plain source dragged out of the
+  // window, to the bare root 30 px right of it (`geometry`, the window's size), where nothing can drop; and a drop that
+  // only moves, from the move source right of the zone, 20 px into it
+  root: (i, geometry) => [[530, 128], [640, 128], [geometry.width + 30, 128]],
+  move: () => [[980, 128], [940, 128]],
 };
 
 /** T14's cells' sources, beside the judge's (drop-signals-judge.mjs `CELL_SOURCE`): each a drop the zone never counts. */
-export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain' };
+export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain' };
 
 /** A T14 cell's outcome from the page's status before and after: its source's drag and drop started, and dropped. */
 export function t14Outcome(cell, before, after) {
@@ -150,7 +155,15 @@ export const LANES = {
   // each drag as a drag_handle on the desktop route: a start at the path's first point, a move to each later one, the
   // end (M4's T17 fix wave: Electron's drop confirmed by its drag loop's accept cursor at the release)
   'cua:handle': { args: [], handle: true },
+  // each drag on the desktop route: no window named, the path in screen coordinates (T17's second fix wave: the drag
+  // loop's cursor watched by the source's family, wherever the path ends)
+  'cua:desktop': { args: [], desktop: true },
 };
+
+/** One drag of a `desktop` lane: `drag` with no window, the path in screen coordinates. */
+export async function desktopDrag(engine, scene, path) {
+  return engine.request('drag', { path: path.map((p) => ({ x: scene.window.x + p.x, y: scene.window.y + p.y })) });
+}
 
 /**
  * One drag of a `handle` lane: the path as drag_handle steps in screen coordinates, the end sent whatever came before
@@ -223,6 +236,15 @@ export const PLANS = {
   // drag is refused there, and a handle's drop lands on another of the page's elements)
   't17-floor': [['cua', 'plain', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
   't17-handle': [['cua:handle', 'plain', 300], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30]],
+  // its second fix wave (the second review; the design session, 2026-11-11), Electron, at each load: the two controls
+  // and a drag to the bare root (a desktop drag, and a handle), 30 each, as plain drags and as handles; 100 drops each;
+  // and 30 drops that only move, whose accept under breeze_cursors is drawn as no drop. `t17-root`: the desktop drag
+  // to the bare root alone, the review's P2 case, run on the engine before the fix first
+  't17-fix2': [
+    ['cua', 'plain', 100], ['cua', 'left', 30], ['cua', 'inzone-out', 30], ['cua:desktop', 'root', 30], ['cua', 'move', 30],
+    ['cua:handle', 'plain', 100], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30], ['cua:handle', 'root', 30], ['cua:handle', 'move', 30],
+  ],
+  't17-root': [['cua:desktop', 'root', 30]],
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],
@@ -244,10 +266,11 @@ const splitCell = (cell) => {
   return { base, cover };
 };
 
-/** A spec's path for run `i`, in window coordinates. */
-function windowPath(at, cell, i) {
+/** A spec's path for run `i`, in window coordinates; `window` the window's geometry, for a cell that leaves it. */
+export function windowPath(at, cell, i, window = null) {
   const { base, cover } = splitCell(cell);
-  const path = (cover ? COVER_CELLS : CELLS)[base](i);
+  const geometry = window && { width: window.width - at.page.x, height: window.height - at.page.y };
+  const path = (cover ? COVER_CELLS : CELLS)[base](i, geometry);
   return path.map(([x, y]) => ({ x: x + at.page.x, y: y + at.page.y }));
 }
 
@@ -402,7 +425,7 @@ function inFront(scene) {
 async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const { desktop, scene, at, watch, oracle, emit } = ctx;
   const { base, cover } = splitCell(cell);
-  const path = windowPath(at, cell, i);
+  const path = windowPath(at, cell, i, scene.window);
   const start = { x: scene.window.x + path[0].x, y: scene.window.y + path[0].y };
   const probe = ctx.frame ? probeAt(oracle, ctx.frame, start.x, start.y) : null;
   const rect = cover ? coverRect(cover, (COVER_CELLS[base])(i)) : null;
@@ -410,7 +433,8 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const sent = Date.now();
   const frozen = freezeOf(base) ? freezeBrowser(ctx.browser, freezeOf(base)) : null;
   const handled = LANES[lane].handle === true;
-  const value = await withCover(screenRect, () => (handled ? handleDrag(engine, scene, path) : engine.request('drag', { window: { id: scene.id }, path })), { desktop, managed: LANES[lane].managed === true });
+  const desktopLane = LANES[lane].desktop === true;
+  const value = await withCover(screenRect, () => (handled ? handleDrag(engine, scene, path) : desktopLane ? desktopDrag(engine, scene, path) : engine.request('drag', { window: { id: scene.id }, path })), { desktop, managed: LANES[lane].managed === true });
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
   await sleep(1000);

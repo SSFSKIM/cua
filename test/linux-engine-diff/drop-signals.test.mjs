@@ -362,7 +362,8 @@ test("a handle lane's drag: the path as drag_handle steps on the screen, the end
   assert.equal(failed.response.error, 'move_to refused');
   assert.deepEqual(failed.end, { ok: true, output: null });
   assert.ok(LANES['cua:handle'].handle);
-  assert.deepEqual(planSpecs({ plan: 't17-handle' }).map((s) => [s.cell, s.n]), [['plain-long', 300], ['left', 30], ['inzone-out', 30]]);
+  assert.deepEqual(planSpecs({ plan: 't17-handle' }).map((s) => [s.lane, s.cell, s.n]), [['cua:handle', 'plain', 300], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30]]);
+  assert.deepEqual(planSpecs({ plan: 't17-floor' }).map((s) => [s.lane, s.cell, s.n]), [['cua', 'plain', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]]);
 });
 
 test('the drop-signals experiment takes the gate ballast without a cold run; the dnd experiment still refuses it', async () => {

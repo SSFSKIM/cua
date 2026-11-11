@@ -217,10 +217,12 @@ export const PLANS = {
   // the engine before T14 too, its failing first
   't14-late': [['cua', 'freeze-250', 40]],
   // M4's T17 fix wave (the design session's ruling on task 73's review, 2026-11-11): Electron's drop confirmed by its
-  // drag loop's accept cursor at the release, for handles and for plain drops behind the floor (`t14-floor`, with
-  // `--family electron`): the same drags as drag_handle sequences, 300 drops, the accepted-then-left control and the
-  // press inside the zone, 30 each
-  't17-handle': [['cua:handle', 'plain-long', 300], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30]],
+  // drag loop's accept cursor at the release, for plain drops behind the floor and for handles (`--family electron`):
+  // 300 short drops, the accepted-then-left control and the press inside the zone, 30 each. The short drop, not
+  // `t14-floor`'s long one: in Electron's window the long path's end is not the zone (the fix wave's pilot: the plain
+  // drag is refused there, and a handle's drop lands on another of the page's elements)
+  't17-floor': [['cua', 'plain', 300], ['cua', 'left', 30], ['cua', 'inzone-out', 30]],
+  't17-handle': [['cua:handle', 'plain', 300], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30]],
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],

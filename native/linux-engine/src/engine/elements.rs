@@ -299,16 +299,16 @@ pub(super) fn visible_point(bus: &mut Bus, element: &Element, purpose: &str) -> 
         bail!("element is not visible; scroll it into view before {purpose}");
     }
     let bounds = atspi::extents(bus, &element.target)?.map_err(anyhow::Error::msg)?;
-    // LibreOffice's VCL extents, and those of its VCL ancestors below the root pane, moved where they are drawn
+    // LibreOffice's VCL extents, and those of its VCL ancestors up to the root pane, moved where they are drawn
     let shift = vcl_shift(bus, element)?;
-    let (vcl_levels, by) = shift.unwrap_or((0, (0, 0)));
+    let (vcl_ancestors, by) = shift.unwrap_or((0, (0, 0)));
     let (mut x0, mut y0, mut x1, mut y1) = clip_to_window(vcl::moved(bounds, by), &element.info);
     for (i, ancestor) in element.ancestors.iter().enumerate() {
         let role = atspi::role_name(bus, ancestor)?.ok_or_else(|| anyhow!("AT-SPI ancestor did not return a role"))?;
         if (role == "viewport" || role == "scroll pane")
             && let Ok(rect) = atspi::extents(bus, ancestor)?
         {
-            let (ax0, ay0, ax1, ay1) = if i < vcl_levels { vcl::moved(rect, by) } else { rect };
+            let (ax0, ay0, ax1, ay1) = if i < vcl_ancestors { vcl::moved(rect, by) } else { rect };
             x0 = x0.max(ax0);
             y0 = y0.max(ay0);
             x1 = x1.min(ax1);
@@ -318,20 +318,21 @@ pub(super) fn visible_point(bus: &mut Bus, element: &Element, purpose: &str) -> 
     centre((x0, y0, x1, y1))
 }
 
-/// The shift a LibreOffice element's VCL extents need (`vcl::shift`), with the number of its ancestors below the root
-/// pane, which take it too; None for any other window's element and for an element outside the root pane. A structure
-/// whose offset cannot be read refuses the point (`vcl::UNTRUSTED`), before anything is sent.
+/// The shift a LibreOffice element's VCL extents need (`vcl::shift`, read from the element and then its ancestors, so
+/// the root pane named itself is recognized too), with the number of its ancestors up to the root pane, which take it
+/// too; None for any other window's element and for an element outside the root pane. A structure whose offset cannot
+/// be read refuses the point (`vcl::UNTRUSTED`), before anything is sent.
 fn vcl_shift(bus: &mut Bus, element: &Element) -> Result<Option<(usize, (i32, i32))>> {
     if !element.libreoffice {
         return Ok(None);
     }
-    let mut levels = Vec::with_capacity(element.ancestors.len());
-    for ancestor in &element.ancestors {
-        let role = atspi::role_name(bus, ancestor)?.unwrap_or_default();
-        // the host and the client panel above the root pane are all the rule reads
+    let mut levels = Vec::with_capacity(element.ancestors.len() + 1);
+    for node in std::iter::once(&element.target).chain(&element.ancestors) {
+        let role = atspi::role_name(bus, node)?.unwrap_or_default();
+        // the root pane, and the host and the client panel above it, are all the rule reads
         let above_root = levels.iter().position(|(r, _): &(String, _)| r == "root pane");
         let extents = if role == "root pane" || above_root.is_some() {
-            atspi::extents(bus, ancestor)?.ok()
+            atspi::extents(bus, node)?.ok()
         } else {
             None
         };

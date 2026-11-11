@@ -196,7 +196,8 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   high by its native menu bar's height after a ConfigureNotify and until the next pointer event. A point taken from a
   LibreOffice element's extents (the right click's, a paste's focusing click's, the element scroll's) is moved by the
   GTK host panel's offset from VCL's root pane where the two disagree in that shape, and refused, nothing sent, where
-  the structure is another one. Left element clicks are `DoAction` and take no point.
+  the structure is another one. The structure is read from the element itself up, so an action naming the root pane
+  is corrected or refused too. Left element clicks are `DoAction` and take no point.
 - **The device mode** (`engine/way.rs`, `families.rs`, `route.rs`): a family lists, per input kind, whether it ignores
   the background route always or unless its window is fully unobscured (`cover.rs`): the paste chord, keys
   (`press_key`, `key_down`, `key_up`, `type_characters`), clicks (a coordinate `click` into a window and an element's

@@ -79,7 +79,7 @@ export const PLANS = {
   // T16's proof: a fresh window's first drag selects, in every engine, wherever the real pointer is, with the witness
   // clean and the audit clean; the pre-T16 aim as the control that misses
   first: [
-    first('cua-first', 'cua', { n: 30, why: 'cua as shipped, the pointer outside the window' }),
+    first('cua-first', 'cua', { n: 30, why: 'cua as shipped, the pointer on another window of the run's (the front window), off Writer' }),
     first('cua-first-text', 'cua', { n: 10, park: 'text', why: "the pointer on the path's start" }),
     first('cua-first-blank', 'cua', { n: 10, park: 'blank', why: 'the pointer in the window, off the text' }),
     first('pinned-first', 'pinned', { n: 10, why: 'the pinned build' }),

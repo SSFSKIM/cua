@@ -3426,28 +3426,44 @@ fn a_chromium_drag_handle_s_end_arms_the_after_release_watch() {
         "the handle, the watch's Escape through XTEST, nothing of the refused click"
     );
     drop(engine);
-    // a drop under way at the release, confirmed or not
+    // a drop under way at the release, confirmed or not; with and without Chrome's drag image, an override-redirect
+    // window of its own under the pointer, over the window the drop is for (task 73's sittings: every handle drop
+    // found that image under the release and confirmed nothing, answering ok)
     let listed = ActiveWindowSupported::listed();
-    for activates in [true, false] {
+    for (activates, image) in [(true, false), (false, false), (true, true), (false, true)] {
         let (window, stop, recorder) = drag_source(OnRelease::Drops {
             activates,
             cursors: &[],
         });
         managed(window);
+        let (conn, _) = x11rb::connect(None).expect("an X connection");
+        let image = image.then(|| override_redirect(&conn, (190, 110, 24, 24)));
         let mut engine = Engine::start();
         let app = app_of(&mut engine, window);
-        assert_eq!(handle(&mut engine), Ok(Value::Null), "activates: {activates}");
+        assert_eq!(
+            handle(&mut engine),
+            Ok(Value::Null),
+            "activates: {activates}, image: {image:?}"
+        );
         sleep(SETTLE);
         let notice = engine.exchange("list_windows", json!({}))["notice"].clone();
         let next = engine.request("click", json!({"window": {"id": window}, "x": 50, "y": 50}));
         if activates {
-            assert_eq!((notice, next), (Value::Null, Ok(Value::Null)), "a confirmed drop");
+            assert_eq!(
+                (notice, next),
+                (Value::Null, Ok(Value::Null)),
+                "a confirmed drop, image: {image:?}"
+            );
         } else {
             assert_eq!(
                 (notice, next),
                 (json!(unconfirmed_notice(&app)), Err(unconfirmed_refusal(&app, "click"))),
-                "an unconfirmed drop"
+                "an unconfirmed drop, image: {image:?}"
             );
+        }
+        if let Some(image) = image {
+            conn.destroy_window(image).unwrap();
+            conn.sync().unwrap();
         }
         set_active_window(None);
         stop.send(()).unwrap();

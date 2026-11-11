@@ -615,6 +615,42 @@ impl X11 {
         self.client_in(top, 0)
     }
 
+    /// The client window at a root point as [`X11::client_at`] finds it, with the override-redirect top-levels passed
+    /// over: the topmost viewable managed top-level whose rectangle holds the point, then the client in it. A browser's
+    /// drag and drop puts its drag image, an override-redirect window of its own, under the pointer, over the window the
+    /// drop is for (task 73's sittings, `m4/drag-handle/`). The top-levels' attributes and geometries are asked for at
+    /// once, so the lookup costs about one round trip.
+    pub fn managed_client_at(&self, rx: i16, ry: i16) -> Option<Window> {
+        let children = self.conn.query_tree(self.root).ok()?.reply().ok()?.children;
+        let pending: Vec<_> = children
+            .iter()
+            .map(|&w| {
+                Some((
+                    self.conn.get_window_attributes(w).ok()?,
+                    self.conn.get_geometry(w).ok()?,
+                ))
+            })
+            .collect::<Option<_>>()?;
+        let mut found = None;
+        for (&w, (attributes, geometry)) in children.iter().zip(pending) {
+            let (Ok(attributes), Ok(g)) = (attributes.reply(), geometry.reply()) else {
+                continue;
+            };
+            let (x, y) = (i32::from(rx), i32::from(ry));
+            let (left, top) = (i32::from(g.x), i32::from(g.y));
+            let border = 2 * i32::from(g.border_width);
+            let inside = x >= left
+                && y >= top
+                && x < left + i32::from(g.width) + border
+                && y < top + i32::from(g.height) + border;
+            // stacking order is bottom to top: the last that holds the point is the topmost
+            if inside && attributes.map_state == MapState::VIEWABLE && !attributes.override_redirect {
+                found = Some(w);
+            }
+        }
+        self.client_in(found?, 0)
+    }
+
     /// The window's parent (the root, or a reparenting window manager's frame).
     pub fn parent(&self, window: Window) -> Result<Window> {
         Ok(self.conn.query_tree(window)?.reply()?.parent)

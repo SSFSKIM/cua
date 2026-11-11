@@ -407,10 +407,11 @@ impl Engine {
         Ok(())
     }
 
-    /// The window whose activation request confirms a handle's drop released at a root point: the top-level there,
-    /// when its family's drop sends one (Chrome) and the window manager lists `_NET_ACTIVE_WINDOW` as supported.
+    /// The window whose activation request confirms a handle's drop released at a root point: the managed top-level
+    /// there (past the drag image the drag and drop holds under the pointer), when its family's drop sends one (Chrome)
+    /// and the window manager lists `_NET_ACTIVE_WINDOW` as supported.
     fn drop_confirmed_by(&mut self, rx: i16, ry: i16) -> Option<Window> {
-        let window = self.x.client_at(rx, ry)?;
+        let window = self.x.managed_client_at(rx, ry)?;
         if !self
             .family_of(window)
             .is_some_and(|f| crate::families::confirms_drop(f.name))

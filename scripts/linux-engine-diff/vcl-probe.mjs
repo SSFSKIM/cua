@@ -103,61 +103,18 @@ async function openProbeScene(desktop, oracle, family, role, { verify = true } =
 }
 
 /**
- * The name of the Calc cell at a screen point, asked of the sheet in VCL's own coordinates (the point less the host's
- * offset, since VCL answers in the coordinates it reports); null where it does not read.
+ * The Calc cell at a screen point, asked of the sheet in VCL's own coordinates (the point less the host's offset, since
+ * VCL answers in the coordinates it reports): `{id, name}`, or null where it does not read.
  */
 export function calcCellAt(oracle, table, point, shift) {
   try {
     const [[bus, path]] = oracle.on(table, 'org.a11y.atspi.Component', 'GetAccessibleAtPoint', 'iiu', point.x - shift.dx, point.y - shift.dy, 0);
-    return bus && path && path !== '/org/a11y/atspi/null' ? oracle.name(`${bus}:${path}`) : null;
+    if (!bus || !path || path === '/org/a11y/atspi/null') return null;
+    const id = `${bus}:${path}`;
+    return { id, name: oracle.name(id) };
   } catch {
     return null;
   }
-}
-
-/**
- * Calc's active cell as its Name Box shows it (the toolbar's field naming the cell cursor's cell, `J17`), read through
- * AT-SPI: the text of the node named `Name Box` or of its text child. Null where none reads as a cell's name. The
- * sheet's Selection named no child for a lone cell cursor in task 72's fix-wave pilot, so the Name Box is the read.
- */
-export function calcNameBox(oracle, frame) {
-  const nodes = oracle.walk(frame, { prune: ['table', 'document spreadsheet', 'menu bar', 'menu', 'popup menu'], limit: 4000 });
-  const textOf = (id) => {
-    try {
-      return String(oracle.text(id)).trim();
-    } catch {
-      return '';
-    }
-  };
-  for (const box of nodes.filter((n) => {
-    try {
-      return oracle.name(n.id) === 'Name Box';
-    } catch {
-      return false;
-    }
-  })) {
-    for (const id of [box.id, ...oracle.children(box.id)]) {
-      const text = textOf(id);
-      if (/^\$?[A-Z]{1,3}\$?\d+$/.test(text)) return text.replaceAll('$', '');
-    }
-  }
-  return null;
-}
-
-/** Calc's text fields outside its sheet, `{role, name, text}` each (at most 40), kept where the Name Box does not read. */
-export function calcFields(oracle, frame) {
-  const nodes = oracle.walk(frame, { prune: ['table', 'document spreadsheet', 'menu bar', 'menu', 'popup menu'], limit: 4000 });
-  const get = (read) => {
-    try {
-      return read();
-    } catch {
-      return null;
-    }
-  };
-  return nodes
-    .filter((n) => ['combo box', 'text', 'entry', 'editbar', 'paragraph', 'label'].includes(n.role))
-    .slice(0, 40)
-    .map((n) => ({ role: n.role, name: get(() => oracle.name(n.id)), text: get(() => String(oracle.text(n.id)).slice(0, 40)) }));
 }
 
 /** The centre of a rectangle `{x, y, w, h}` clipped to the window, floored, as the engine takes it (`visible_point`). */
@@ -173,19 +130,21 @@ export function clippedCentre(e, win) {
 export const onElement = (landed, truth) => Boolean(landed && truth) && Math.abs(landed.x - truth.x) <= 2 && Math.abs(landed.y - truth.y) <= 2;
 
 /**
- * Whether a right click landed on its element: within 2 px of the element's true centre, or for Calc's sheet (whose
- * menu opens above a press near the bottom, so its corner is no reading of the press) the active cell after the click
- * being the cell at the true centre, both read directly (`calcNameBox`, `calcCellAt`).
+ * Whether a right click landed on its element: within 2 px of the element's true centre. Calc's is not judged (null):
+ * its menu opens above a press near the bottom, so the menu's corner is no reading of the press, and no direct reading
+ * of the cell a background right click made active was found (task 72's fix-wave pilots: the sheet's Selection names
+ * no child, no Name Box is on the bus, and no cell is focused or selected while the window is in the background), so
+ * Calc's landing stays inferred from where the menu opens, beside the cells at the true and the stale centre.
  */
 export function landedOnElement(row) {
-  if (row.family === 'calc') return Boolean(row.cell_expected) && row.cell_after === row.cell_expected;
+  if (row.family === 'calc') return null;
   return onElement(row.landed, row.truth);
 }
 
 /**
  * One engine's element right click (`click {element_id, mouse_button: right}`) on `n` fresh windows of a family, then
  * again on each after that first pointer event. Where it landed: the corner of the context menu VCL opens at the press
- * (one pixel below it), the press the point scene's button records, or (Calc) the cell the click made active. The
+ * (one pixel below it), or the press the point scene's button records (Calc's only inferred, `landedOnElement`). The
  * truth: the element's centre as the harness reads it, its VCL extents moved by the host panel's offset (`vclDrawn`,
  * never the engine's correction).
  */
@@ -233,13 +192,13 @@ async function elementProbe(ctx, family, n, spec) {
           const shift = libreoffice ? vclShift(oracle, scene.frame) : { dx: 0, dy: 0 };
           const truth = clippedCentre(libreoffice ? vclDrawn(oracle, scene.frame, () => oracle.extents(target.id)) : extents, win);
           const reported = clippedCentre(extents, win);
-          // Calc: the cell at the true centre, asked before the press (whose pointer event moves VCL's coordinates)
-          const cells = app === 'calc' ? { at: calcCellAt(oracle, target.id, truth, shift), name_box: calcNameBox(oracle, scene.frame) } : null;
+          // Calc: the cells at the true and the stale centre, asked before the press (whose pointer event moves VCL's
+          // coordinates), for the record
+          const cells = app === 'calc' ? { at: calcCellAt(oracle, target.id, truth, shift)?.name ?? null, stale: calcCellAt(oracle, target.id, reported, shift)?.name ?? null } : null;
           const before = popups();
           const { value, witness: w } = await witness.span(`${spec.label}:${family}:element-right-click`, () => engine.request('click', { window: { id: scene.id }, element_id: target.id, mouse_button: 'right' }));
           const ok = value.response.ok === true;
           let landed = null;
-          let cellAfter = null;
           if (ok && family === 'gtk3-frame') {
             await sleep(300);
             const label = preorderNames((await desktop.state(scene)).ax_tree).find((t) => /^press \d+ at /.test(t));
@@ -254,11 +213,8 @@ async function elementProbe(ctx, family, n, spec) {
             }
           }
           await sleep(500);
-          // Calc: the cell the click made active, once its menu has closed (the Name Box, `calcNameBox`)
-          if (ok && app === 'calc') cellAfter = calcNameBox(oracle, scene.frame);
           const row = { kind: 'element-probe', engine: spec.label, family, i, pass, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), witness: w.clean, window: { x: win.x, y: win.y, w: win.width, h: win.height }, identity: scene.identity, extents, host_shift: shift, reported, truth, landed };
-          if (cells) Object.assign(row, { cell_before: cells.name_box, cell_expected: cells.at, cell_after: cellAfter });
-          if (cells && cellAfter === null) row.calc_fields = calcFields(oracle, scene.frame);
+          if (cells) Object.assign(row, { cell_true: cells.at, cell_stale: cells.stale });
           row.on_element = landedOnElement(row);
           emit(row);
           rows.push(row);
@@ -430,7 +386,7 @@ export async function runElementPlan(args, { desktop, emit }) {
             const mine = rows.filter((r) => r.pass === pass);
             const one = mine[0];
             const xy = (p) => (p ? `${p.x}, ${p.y}` : '–');
-            md.push(`| ${spec.label} | ${family} | ${pass} | ${mine.filter((r) => r.on_element).length}/${mine.length} | ${xy(one?.reported)} | ${one ? `${one.host_shift.dx}, ${one.host_shift.dy}` : '–'} | ${xy(one?.truth)} | ${one?.ok === false ? `**${one.error}**` : one?.cell_expected !== undefined ? `active cell ${one.cell_after ?? '–'} (the true centre's ${one.cell_expected ?? '–'}; menu corner ${xy(one.landed)})` : xy(one?.landed)} |`);
+            md.push(`| ${spec.label} | ${family} | ${pass} | ${mine.some((r) => r.on_element === null) ? 'inferred' : `${mine.filter((r) => r.on_element).length}/${mine.length}`} | ${xy(one?.reported)} | ${one ? `${one.host_shift.dx}, ${one.host_shift.dy}` : '–'} | ${xy(one?.truth)} | ${one?.ok === false ? `**${one.error}**` : one?.cell_true !== undefined ? `menu corner ${xy(one.landed)} (the true centre's cell ${one.cell_true ?? '–'}, the stale centre's ${one.cell_stale ?? '–'})` : xy(one?.landed)} |`);
           }
         } catch (error) {
           failed.push(`${spec.label} ${family}: ${String(error.message).split('\n')[0].slice(0, 200)}`);

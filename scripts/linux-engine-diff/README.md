@@ -1132,7 +1132,7 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 - **The point probes** (`vcl-probe.mjs`): `--plan hierarchy`, each LibreOffice application's AT-SPI levels by state;
   `--plan element`, an engine's element right click on fresh Writer, Calc and Impress windows and after that first
   pointer event, located by the context menu VCL opens at the press (for Calc, whose menu opens above a press near the
-  bottom, by the cell the click made active, read through AT-SPI's Selection, against the cell at the true centre),
+  bottom, only inferred from where it opens, beside the cells at the true and the stale centre),
   against the element's true centre from the host panel, with a plain GTK 3 window the window manager frames
   (`pages/point-gtk3.py`) as the control and `writer-root` (Writer's root pane itself) as the case whose own
   ancestors hold no root pane; `--plan identity`, what each family's application shows through AT-SPI.

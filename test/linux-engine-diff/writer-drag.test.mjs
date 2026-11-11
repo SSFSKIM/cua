@@ -50,12 +50,11 @@ test('the pointer parks on the text, in the window off it, on the front window o
   assert.throws(() => parkPoint('under', window, path, where), /unknown pointer park/);
 });
 
-test("Calc's right click lands when the cell it made active is the true centre's, read directly", () => {
-  const row = { family: 'calc', cell_expected: 'C14', cell_after: 'C14', landed: { x: 0, y: 0 }, truth: { x: 500, y: 400 } };
-  assert.equal(landedOnElement(row), true, "the menu's corner is no reading of the press in Calc");
-  assert.equal(landedOnElement({ ...row, cell_after: 'C12' }), false, 'two rows up: a press at the stale point');
-  assert.equal(landedOnElement({ ...row, cell_expected: null, cell_after: null }), false, 'nothing read is no landing');
+test("Calc's right click is not judged by a reading it does not have; the others land within 2 px of the truth", () => {
+  // Calc's menu opens above a press near the bottom, and no direct reading of its active cell was found: inferred
+  assert.equal(landedOnElement({ family: 'calc', cell_true: 'J17', cell_stale: 'J15', landed: { x: 620, y: 125 }, truth: { x: 620, y: 463 } }), null);
   assert.equal(landedOnElement({ family: 'writer', landed: { x: 500, y: 401 }, truth: { x: 500, y: 400 } }), true);
+  assert.equal(landedOnElement({ family: 'writer-root', landed: { x: 640, y: 397 }, truth: { x: 640, y: 424 } }), false, 'a stale press, 27 px high');
 });
 
 test('a plan names only lanes the run has, and an unknown plan is refused', () => {

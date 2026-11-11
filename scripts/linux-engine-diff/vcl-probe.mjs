@@ -144,6 +144,22 @@ export function calcNameBox(oracle, frame) {
   return null;
 }
 
+/** Calc's text fields outside its sheet, `{role, name, text}` each (at most 40), kept where the Name Box does not read. */
+export function calcFields(oracle, frame) {
+  const nodes = oracle.walk(frame, { prune: ['table', 'document spreadsheet', 'menu bar', 'menu', 'popup menu'], limit: 4000 });
+  const get = (read) => {
+    try {
+      return read();
+    } catch {
+      return null;
+    }
+  };
+  return nodes
+    .filter((n) => ['combo box', 'text', 'entry', 'editbar', 'paragraph', 'label'].includes(n.role))
+    .slice(0, 40)
+    .map((n) => ({ role: n.role, name: get(() => oracle.name(n.id)), text: get(() => String(oracle.text(n.id)).slice(0, 40)) }));
+}
+
 /** The centre of a rectangle `{x, y, w, h}` clipped to the window, floored, as the engine takes it (`visible_point`). */
 export function clippedCentre(e, win) {
   const x0 = Math.max(e.x, win.x);
@@ -242,6 +258,7 @@ async function elementProbe(ctx, family, n, spec) {
           if (ok && app === 'calc') cellAfter = calcNameBox(oracle, scene.frame);
           const row = { kind: 'element-probe', engine: spec.label, family, i, pass, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), witness: w.clean, window: { x: win.x, y: win.y, w: win.width, h: win.height }, identity: scene.identity, extents, host_shift: shift, reported, truth, landed };
           if (cells) Object.assign(row, { cell_before: cells.name_box, cell_expected: cells.at, cell_after: cellAfter });
+          if (cells && cellAfter === null) row.calc_fields = calcFields(oracle, scene.frame);
           row.on_element = landedOnElement(row);
           emit(row);
           rows.push(row);

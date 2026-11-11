@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Copies task 72's sittings into the evidence directory, every home path replaced by a label: the task's work
-directory by `<task72>`, the rest of the home by `<home>`. Text files only (results, summaries, watchdog rows, logs,
+directory by `<task72>` (its fix wave's by `<task72fix>`), the rest of the home by `<home>`. Text files only (results, summaries, watchdog rows, logs,
 the sitting's `xprobe order-watch` record), the sitting's stdout as `stdout.txt`, and the screenshots named with
 `--shot <sitting>/<file>`; a text file over 512 KiB is written gzipped (`<name>.gz`).
 usage: copy-evidence.py <runs dir> <evidence dir> <sitting>=<evidence name>... [--shot <sitting>/<file>]..."""
@@ -11,12 +11,13 @@ import sys
 
 home = os.path.expanduser('~')
 task = os.path.join(home, '.local/share/cua-171/task72')
+fix = os.path.join(home, '.local/share/cua-171/task72fix')
 KEEP = ('.jsonl', '.md', '.out', '.log', '.txt', '.stderr')
 BIG = 512 * 1024
 
 
 def label(text):
-    return text.replace(task, '<task72>').replace(home, '<home>')
+    return text.replace(fix, '<task72fix>').replace(task, '<task72>').replace(home, '<home>')
 
 
 def write(out, text):

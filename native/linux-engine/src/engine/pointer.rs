@@ -925,18 +925,27 @@ impl Engine {
             }
             None => None,
         };
-        // an Electron drop the engine lets land, watched: its drag loop's accept cursor at the release confirms it, the
-        // cursor watched from before the press (`drop_cursor.rs`; the design session's ruling on task 73's review,
-        // 2026-11-11); a watch that cannot start confirms nothing
-        let mut drop_cursor = match (&guard, &after, confirm, drop_window) {
-            (None, Some(_), None, Some(window))
+        // an Electron source's drag the engine lets land, watched: its drag loop's accept cursor at the release confirms
+        // the drop, the cursor watched from before the press (`drop_cursor.rs`; the design session's ruling on task
+        // 73's review, 2026-11-11). The source decides, as a handle's does, not the window under the path's end: the
+        // drag loop is the source's, wherever it drops (the second review, P2: a desktop drag from Electron to the bare
+        // root started no watch and answered ok). A watch that cannot start confirms nothing
+        let mut drop_cursor = match (&guard, &after, pressing_into) {
+            (None, Some(_), Some(source))
                 if self
-                    .family_of(window)
+                    .family_of(source)
                     .is_some_and(|f| crate::families::confirms_drop_by_cursor(f.name)) =>
             {
                 Some(crate::drop_cursor::DropCursor::start().map_err(|e| format!("{e:#}")))
             }
             _ => None,
+        };
+        // whether the window manager takes Chrome's activation request, for a drop nothing else can confirm (as a
+        // handle's, `handle::confirming`): read already for a Chrome drop window, else only for a drop that can begin
+        let supported = match (confirm, &after) {
+            (Some(_), _) => true,
+            (None, Some(_)) if guard.is_none() => crate::dnd::active_window_supported(&self.x).unwrap_or(false),
+            _ => false,
         };
         let mut at_release = None;
         let after_take = self.cfg.dnd_after_take;
@@ -1079,17 +1088,21 @@ impl Engine {
         };
         let Some(guard) = guard else {
             // a Chromium drag the engine lets drop: its watch is handed over once the button went up with no take (the
-            // late take is the watch's to cancel and report), or after a take on a drop the watch confirms; an Electron
-            // drop under way whose drag loop did not show the accept at the release is pending unconfirmed at once;
-            // otherwise (no release, or a take with nothing to confirm) there is nothing more to watch
+            // late take is the watch's to cancel and report), or after a take on a drop Chrome's activation request
+            // confirms; a drop under way that an Electron source's cursor did not confirm at the release, or that
+            // nothing can confirm (a Chrome source over a window not Chrome's, where the window manager takes the
+            // request), is pending unconfirmed at once, as a handle's is (`handle::confirming`); otherwise (no release,
+            // or a drop not judged) there is nothing more to watch
             if let Some(after) = after {
                 let released = after.released_with_take();
-                // an Electron drop's cursor at the release: the accept shown, or not (a watch that never started, a read
-                // that failed, or one that could not tell all confirm nothing)
-                let by_cursor = drop_cursor.as_ref().map(|watch| match (watch, &at_release) {
-                    (Ok(_), Some(read)) => read.accepted == Some(true),
-                    _ => false,
+                // an Electron source's cursor at the release: the accept shown, or not (a watch that never started, a
+                // read that failed, or one that could not tell all confirm nothing)
+                let cursor = drop_cursor.as_ref().map(|watch| match (watch, &at_release) {
+                    (Ok(_), Some(read)) => read.accepted,
+                    _ => None,
                 });
+                let confirming = super::handle::confirming(confirm, supported, cursor);
+                let by_cursor = cursor.map(|accepted| accepted == Some(true));
                 if let Some(watch) = &drop_cursor {
                     self.extra.insert(
                         "drop_cursor".into(),
@@ -1102,18 +1115,24 @@ impl Engine {
                 }
                 self.extra.insert(
                     "after_release".into(),
-                    json!({ "released_with_take": released, "confirming": confirm.is_some(), "by_cursor": by_cursor }),
+                    json!({
+                        "released_with_take": released,
+                        "confirming": confirm.is_some(),
+                        "by_cursor": by_cursor,
+                        "confirmed_by": format!("{confirming:?}"),
+                        "drop_window": drop_window,
+                    }),
                 );
                 let window = watched.expect("a watched drag has its window");
                 let app = |x: &mut crate::x11::X11| {
                     x.get_window(window)
                         .map_or_else(|_| format!("window {window}"), |w| w.app)
                 };
-                match (released, confirm, by_cursor) {
-                    (Some(false), _, _) | (Some(true), Some(_), _) => {
+                match (released, confirming) {
+                    (Some(false), _) | (Some(true), super::handle::Confirming::Activation(_)) => {
                         self.late_watch = Some(after.handed_over(app(&mut self.x)));
                     }
-                    (Some(true), None, Some(false)) => {
+                    (Some(true), confirming) if confirming.unconfirmed() => {
                         after.done();
                         self.inputs.end_watched(&mut self.x);
                         self.late_pending = Some((app(&mut self.x), crate::dnd::WatchEnd::Unconfirmed));

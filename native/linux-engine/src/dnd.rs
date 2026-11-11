@@ -406,6 +406,10 @@ enum Note {
     /// request path, through `SETTLE` from `at`, and cancel a take at once. With a take before it: look, through
     /// [`DROP_CONFIRM`], for the target's confirmation of its drop, when the watch confirms drops.
     Released { at: Instant, taken: bool },
+    /// The button was released at `at` by a thread that read no take (a held handle's idle bound while the engine was
+    /// busy, `engine/idle_watchdog.rs`): a take the watch had read by the time this came counts as before the release,
+    /// any later one as late, so a take the server handled just before the release but read after this is cancelled.
+    ReleasedUnread { at: Instant },
     /// The drag ended otherwise (cancelled in time, an error): nothing more to watch.
     Done,
     /// An acting request has come, or the engine ends: look one last time and end. A drop still waiting for its
@@ -421,6 +425,16 @@ struct Seen {
     /// Whether the target's client asked the window manager to activate the drop target's window (source 1, the
     /// application): Chrome's drop.
     activated: bool,
+}
+
+/// A release told to a [`LateWatch`] from another thread ([`LateWatch::release_teller`]).
+pub struct ReleaseTeller(std::sync::mpsc::Sender<Note>);
+
+impl ReleaseTeller {
+    /// The button went up at `at`, with no take read ([`Note::ReleasedUnread`]).
+    pub fn released(&self, at: Instant) {
+        let _ = self.0.send(Note::ReleasedUnread { at });
+    }
 }
 
 /// The after-release watch of one drag the engine watches for a drag and drop (the shared-mode guard's, and every
@@ -489,6 +503,17 @@ impl LateWatch {
     pub fn released(&self, at: Instant, taken: bool) {
         self.released_at.set(Some((at, taken)));
         let _ = self.notes.send(Note::Released { at, taken });
+    }
+
+    /// How another thread tells the watch of a release it sent (`engine/idle_watchdog.rs`), while the engine is busy.
+    pub fn release_teller(&self) -> ReleaseTeller {
+        ReleaseTeller(self.notes.clone())
+    }
+
+    /// The release another thread sent at `at` and told the watch of ([`ReleaseTeller`]), recorded on this side too;
+    /// `taken` is what the engine read after it.
+    pub fn released_elsewhere(&self, at: Instant, taken: bool) {
+        self.released_at.set(Some((at, taken)));
     }
 
     /// Whether the drag reached its release after a take (None: it never reached its release).
@@ -595,6 +620,10 @@ fn watch_loop(
         match inbox.try_recv() {
             Ok(Note::Released { at, taken }) => {
                 released = Some((at, taken));
+                on_release();
+            }
+            Ok(Note::ReleasedUnread { at }) => {
+                released = Some((at, taken.is_some()));
                 on_release();
             }
             Ok(Note::Done) | Err(std::sync::mpsc::TryRecvError::Disconnected) => return WatchEnd::Quiet,
@@ -1389,6 +1418,33 @@ mod tests {
         // when it went out: a key to the target, which the exit's settle follows (settle.rs)
         let escaped_at = late.escaped_at.expect("an Escape that went out has its instant");
         assert!(escaped_at >= released + late.after_release && escaped_at <= Instant::now());
+    }
+
+    #[test]
+    fn a_release_told_with_no_take_read_judges_the_takes_the_watch_saw_by_then() {
+        // a take read before the release was told of: a drag and drop under way, never cancelled
+        let (notes, inbox) = std::sync::mpsc::channel();
+        let mut looks = 0;
+        let end = watch_loop(
+            &inbox,
+            false,
+            || {},
+            || {
+                looks += 1;
+                if looks == 2 {
+                    notes.send(Note::ReleasedUnread { at: Instant::now() }).unwrap();
+                }
+                Ok(if looks == 1 { took(7) } else { Seen::default() })
+            },
+            || Ok(()),
+            |_| panic!("a take before the release is not late"),
+        );
+        assert_eq!(end, WatchEnd::Quiet);
+        // a take read after it: late, cancelled at once
+        let (notes, inbox) = std::sync::mpsc::channel();
+        notes.send(Note::ReleasedUnread { at: Instant::now() }).unwrap();
+        let end = watch_loop(&inbox, false, || {}, || Ok(took(7)), || Ok(()), |_| true);
+        assert!(matches!(end, WatchEnd::Late(LateDrop { escaped: true, .. })), "{end:?}");
     }
 
     #[test]

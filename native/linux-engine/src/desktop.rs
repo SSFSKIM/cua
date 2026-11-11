@@ -162,6 +162,16 @@ impl Desktop {
         crate::pressed::desktop_button(button, press, || fake(x, kind, button, x.root, 0, 0))
     }
 
+    /// A button's release through XTEST on a connection of another thread's own (`engine/idle_watchdog.rs`), recorded
+    /// as [`Desktop::button`]'s.
+    pub fn release_on(conn: &impl x11rb::connection::Connection, root: u32, button: u8) -> Result<()> {
+        crate::pressed::desktop_button(button, false, || -> Result<()> {
+            conn.xtest_fake_input(BUTTON_RELEASE_EVENT, button, 0, root, 0, 0, 0)?
+                .check()?;
+            Ok(())
+        })
+    }
+
     /// One absolute motion of the real pointer.
     pub fn motion(x: &X11, rx: i16, ry: i16) -> Result<()> {
         fake(x, MOTION_NOTIFY_EVENT, 0, x.root, rx, ry)

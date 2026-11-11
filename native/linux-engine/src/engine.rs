@@ -7,6 +7,7 @@ mod elements;
 mod handle;
 #[cfg(test)]
 mod identity_faults;
+mod idle_watchdog;
 mod keyboard;
 mod paste;
 #[cfg(test)]
@@ -140,6 +141,8 @@ pub struct Engine {
     late_pending: Option<(String, crate::dnd::WatchEnd)>,
     /// The Chromium drags' press watch (`stray.rs`), its connection opened by the first such drag.
     stray_watch: Option<crate::stray::StrayWatch>,
+    /// A held handle's idle bound while another request runs (`idle_watchdog.rs`), its thread started by the first.
+    idle_watchdog: Option<idle_watchdog::IdleWatchdog>,
 }
 
 /// Whether a request sends input or changes state, and so is refused while a late drag and drop, an unconfirmed drop
@@ -313,6 +316,7 @@ impl Engine {
             late_watch: None,
             late_pending: None,
             stray_watch: None,
+            idle_watchdog: None,
         })
     }
 
@@ -327,6 +331,16 @@ impl Engine {
         // before now counts); any other request only collects it once it has ended by itself
         let acting = acts(&request.command, request.input.as_ref());
         self.collect_late_watch(acting);
+        // a held handle's idle bound, kept while this request runs, however long (`idle_watchdog.rs`): for every
+        // request but the handle's own, which keep or end the hold themselves
+        if !matches!(request.command.as_str(), "drag_handle" | "release_handle")
+            && let Some(due) = self.handle_due()
+        {
+            let teller = self.handle_release_teller();
+            self.idle_watchdog
+                .get_or_insert_with(idle_watchdog::IdleWatchdog::start)
+                .arm(due, teller);
+        }
         self.inputs.request = request.id.clone();
         // a late drag and drop, an unconfirmed drop or a watch that failed is the first acting request's answer, the
         // request not run; reads and releases run meanwhile, and each of their replies carries the notice. The `end`
@@ -395,6 +409,14 @@ impl Engine {
         };
         if let Some(bus) = self.bus.as_mut() {
             merge(&mut self.bus_stats, bus.take_stats());
+        }
+        // a handle the watchdog released while the request ran: what that did is pending from now, this reply first
+        if let Some(fired) = self
+            .idle_watchdog
+            .as_ref()
+            .and_then(idle_watchdog::IdleWatchdog::disarm)
+        {
+            self.collect_watchdog_release(fired);
         }
         // a drag's session is kept past its request only while its late-take watch is armed: one that armed none (its
         // drag refused, cancelled in time, or failed) ends with its request

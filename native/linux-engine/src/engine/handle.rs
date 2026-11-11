@@ -121,7 +121,7 @@ pub enum Confirming {
 
 impl Confirming {
     /// Whether the drop is reported unconfirmed at once (an activation request is the watch's to wait for).
-    fn unconfirmed(self) -> bool {
+    pub(super) fn unconfirmed(self) -> bool {
         matches!(self, Confirming::Cursor(false) | Confirming::Nothing)
     }
 }
@@ -327,6 +327,79 @@ impl Engine {
         self.extra = request_extra;
         self.late_pending = Some((released.app, end));
         self.report_sent();
+    }
+
+    /// How the idle watchdog tells a held Chromium handle's after-release watch of its release (`idle_watchdog.rs`).
+    pub(super) fn handle_release_teller(&self) -> Option<crate::dnd::ReleaseTeller> {
+        self.handle
+            .as_ref()
+            .and_then(|h| h.after.as_ref())
+            .map(LateWatch::release_teller)
+    }
+
+    /// A held handle the idle watchdog released while a request ran (`idle_watchdog.rs`), collected once that request
+    /// is done, as [`Engine::release_idle_handle`] leaves its own release: the hold watch read and kept, the
+    /// after-release watch (told of the release by the watchdog) run out and collected, and the timeout pending, so the
+    /// request's own reply carries it and the next acting request, or the handle's `end`, is refused with it. A release
+    /// that failed may have left the button down: the engine's own release goes then, the bound being past.
+    pub(super) fn collect_watchdog_release(&mut self, fired: super::idle_watchdog::Fired) {
+        if fired.error.is_some() {
+            self.extra
+                .insert("idle_watchdog".into(), json!({ "error": fired.error }));
+            self.release_idle_handle();
+            return;
+        }
+        let Some(mut handle) = self.handle.take() else {
+            return;
+        };
+        let request_extra = std::mem::take(&mut self.extra);
+        let taken = match handle.holding.as_mut() {
+            Some((watch, holding)) => watch.before_release(holding).is_ok_and(|held| held.taken),
+            None => false,
+        };
+        let app = self.app_of_handle(handle.target);
+        if let Some((mut watch, holding)) = handle.holding.take() {
+            watch.finish(holding);
+            if self.hold_watch.is_none() {
+                self.hold_watch = Some(watch).filter(HoldWatch::healthy);
+            }
+        }
+        if let Some(after) = handle.after.take() {
+            after.released_elsewhere(fired.at, taken);
+            self.collect_late_watch(true);
+            let watch = after.handed_over(app.clone());
+            watch.run_out();
+            self.late_watch = Some(watch);
+            self.collect_late_watch(true);
+        }
+        let end = WatchEnd::IdleHandle {
+            idle: self.cfg.handle_idle,
+            at: fired.pointer,
+        };
+        if self.cfg.stats {
+            let mut record = serde_json::Map::new();
+            record.insert("id".into(), Value::Null);
+            record.insert("idle_handle".into(), super::late_stats(&app, &end));
+            record.insert("by".into(), json!("watchdog"));
+            record.insert("taken".into(), json!(taken));
+            for (key, value) in std::mem::take(&mut self.extra) {
+                record.insert(key, value);
+            }
+            eprintln!("{}", json!({ "stats": record }));
+        }
+        self.extra = request_extra;
+        self.late_pending = Some((app, end));
+    }
+
+    /// The application a handle's answers name: its target's, or the window under the pointer's.
+    fn app_of_handle(&mut self, target: Option<Window>) -> String {
+        match target {
+            Some(window) => self
+                .x
+                .get_window(window)
+                .map_or_else(|_| format!("window {window}"), |w| w.app),
+            None => "the window under the pointer".to_string(),
+        }
     }
 
     /// cua's `release_handle`, which its service sends when the REPL state that held a handle is gone (a new kernel's
@@ -540,13 +613,7 @@ impl Engine {
         {
             after.released(released_at, taken);
         }
-        let app = match handle.target {
-            Some(window) => self
-                .x
-                .get_window(window)
-                .map_or_else(|_| format!("window {window}"), |w| w.app),
-            None => "the window under the pointer".to_string(),
-        };
+        let app = self.app_of_handle(handle.target);
         if let Some((mut watch, holding)) = handle.holding.take() {
             watch.finish(holding);
             if self.hold_watch.is_none() {

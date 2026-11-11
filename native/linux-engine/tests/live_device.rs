@@ -96,6 +96,12 @@ impl Probe {
     /// The input events received since the last call, waiting `SETTLE` for any still on their way.
     fn inputs(&self) -> Vec<Input> {
         sleep(SETTLE);
+        // A round trip on the window's own connection, so every event the server queued to it before is read. A
+        // background drag sends the window some 1,800 synthetic motions, one socket write each, and the socket holds
+        // about 277 of them: the rest wait in the server until the window reads, and a drain alone stopped short of
+        // the release whenever it found the socket empty before the server refilled it (task 75, evidence
+        // `m4/drag-control-race/`).
+        self.conn.sync().unwrap();
         let mut seen = Vec::new();
         while let Some(event) = self.conn.poll_for_event().unwrap() {
             let sent = event.sent_event();
@@ -3568,6 +3574,66 @@ fn a_drag_handle_that_gets_no_request_for_its_idle_bound_is_released_where_it_is
         "answered once"
     );
     probe.inputs();
+}
+
+/// The idle bound holds while another request blocks the engine (the second review of task 73, P3): the release between
+/// requests and at a request's entry never ran while a request was running, so a keyboard request allowed during the
+/// hold (a key held for a minute) kept button 1 down past the bound. A held handle is released at its bound whatever the
+/// engine is doing; the blocked request's own reply carries the timeout's notice, and the next acting request is refused
+/// once with it, through the same pending path.
+#[test]
+fn a_drag_handle_s_idle_bound_holds_while_another_request_blocks_the_engine() {
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start_with(&["--drag-handle-idle-ms", "300"]);
+    let app = app_of(&mut engine, probe.id);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+        .unwrap();
+    // a key held 1.5 s, five times the bound: keyboard input runs while a handle is held
+    let sampled = std::thread::spawn(|| {
+        sleep(Duration::from_millis(900));
+        button1_down()
+    });
+    let reply = engine.exchange("press_key", json!({"key": "shift", "duration": 1500}));
+    assert!(
+        !sampled.join().unwrap(),
+        "released at the bound, while the key was still held"
+    );
+    let cause = idle_cause(&app, "0.3", (250, 200));
+    assert_eq!(
+        (&reply["ok"], &reply["notice"]),
+        (
+            &json!(true),
+            &json!(format!(
+                "{cause}. Read the window before sending input again: your next input request will not be run"
+            ))
+        ),
+        "the key request ran, and its reply carries the timeout"
+    );
+    assert_eq!(
+        engine.request("click", json!({"x": 20, "y": 20})),
+        Err(format!(
+            "{cause}; this click request was not run, so read the window before sending it again"
+        )),
+        "the next acting request answers the timeout, not run"
+    );
+    let buttons: Vec<Input> = probe
+        .inputs()
+        .into_iter()
+        .filter(|i| matches!(i, Input::ButtonPress { .. } | Input::ButtonRelease { .. }))
+        .collect();
+    assert_eq!(
+        buttons,
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ],
+        "the press, and one release where the pointer was"
+    );
 }
 
 /// A reset frees desktop pointer input at once: the REPL state that held a handle is gone (`js_reset`, a cell's

@@ -6,17 +6,16 @@
 //! Shown at the release, the drop is confirmed; any other cursor, or one that cannot be told, leaves it unconfirmed,
 //! never ok.
 //!
-//! The cursor is read at the release itself, not sampled before it: a thread of the watch's own, on its own connection,
-//! keeps every displayed-cursor change from before the press with each image it can fetch while that cursor is shown,
-//! so the drag loop's own image (Chromium's no-drop status's too) is known from around the take; just before the
-//! button goes up, the engine stops the thread and asks the server which cursor is shown now, with its image and name
-//! ([`DropCursor::at_release`]). That cursor is the accept when it carries no XFixes name and its image is none of
-//! those excluded ([`judge`]): the image shown when the watch began, every unnamed cursor's shown up to the take (the
-//! page's own, and the drag loop's when it came first, as `accept.rs`'s [`crate::accept::accept_shown`] excludes them),
-//! and the drag loop's, the first unnamed cursor from a few milliseconds before the take on: the loop's cursor came 1–2
-//! ms before the take in Chrome (task 68) and up to 1 ms after it in Electron, and where it was not seen the first
-//! status, no drop's image on a path from outside the zone, stands for it (the fix wave's pilots). Whether an accept
-//! can be stale at the release, as Chrome's was in task 69's press-inside control, is what the controls measure.
+//! The cursor is read at the release itself, not sampled before it: just before the button goes up, the engine asks
+//! the server which cursor is shown now, with its image and name ([`DropCursor::at_release`]). That cursor is the
+//! accept when its own image is one of Chromium's accepting drag cursors, as the installed Xcursor themes draw them and
+//! no theme draws a refusing one (`drag_cursors.rs`), and it carries no XFixes name and is not the image the watch
+//! began on ([`judge`]). An image is never taken for the accept because it differs from the ones shown before it: the
+//! fix wave's rule did that, and with no drag loop cursor seen and a first status that already accepted, it read a
+//! path's later no-drop as the accept (the second review, P1; the design session's ruling, 2026-11-11). So the history
+//! of the drag's cursors decides nothing; a thread of the watch's own, on its own connection, still keeps every change
+//! from before the press with the images it fetches, for the `--stats` record. Whether an accept can be stale at the
+//! release, as Chrome's was in task 69's press-inside control, is what the controls measure.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,14 +29,11 @@ use x11rb::protocol::Event;
 use x11rb::protocol::xfixes::{ConnectionExt as _, CursorNotifyMask};
 use x11rb::rust_connection::RustConnection;
 
-use crate::accept::{CursorChange, Image, after, fingerprint};
+use crate::accept::{CursorChange, Image, fingerprint};
+use crate::drag_cursors::DragImages;
 
 /// How often the watch's thread reads the changes that have come.
 const POLL: Duration = Duration::from_millis(1);
-
-/// How long before the take, on the server's clock, the drag loop's own cursor may come: 1–2 ms in Chrome (task 68). A
-/// page's own cursor shown earlier (a link's hand) is excluded as shown up to the take, never taken for the loop's.
-pub const LOOP_BEFORE_MS: u32 = 3;
 
 /// What the thread has seen: every change, and the image of each cursor it fetched while shown, by serial.
 #[derive(Default)]
@@ -55,13 +51,15 @@ pub struct DropCursor {
     thread: Option<std::thread::JoinHandle<()>>,
     /// The image shown when the watch began.
     initial: Image,
+    /// Chromium's drag cursors as the installed themes draw them, read once for the engine's life.
+    images: &'static DragImages,
 }
 
 /// The cursor at a release, and what it says of the drop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AtRelease {
-    /// Whether the accept was shown: None when it cannot be told (an excluded image unknown, no cursor shown up to the
-    /// take, or the read failed), which confirms nothing.
+    /// Whether the accept was shown: None when it cannot be told (no installed theme tells an accept apart, no take, or
+    /// the read failed), which confirms nothing.
     pub accepted: Option<bool>,
     /// The cursor shown at the release: its serial, its image, and whether it carries an XFixes name.
     pub shown: Option<(u32, Image, bool)>,
@@ -129,12 +127,13 @@ impl DropCursor {
             stop,
             thread: Some(thread),
             initial,
+            images: DragImages::installed(),
         })
     }
 
-    /// Just before the release, for a drag and drop whose source took `XdndSelection` at server time `take`: the
-    /// thread stopped, the cursor shown now read with its image and name, the changes before it read in, and the
-    /// accept judged ([`judge`]).
+    /// Just before the release, for a drag and drop whose source took `XdndSelection` (at server time `take`, which
+    /// the record keeps): the thread stopped, the cursor shown now read with its image and name, the changes before it
+    /// read in, and the accept judged by that image ([`judge`]).
     pub fn at_release(&mut self, take: Option<u32>) -> AtRelease {
         let started = Instant::now();
         self.stop();
@@ -160,9 +159,7 @@ impl DropCursor {
         };
         let shown = read.ok();
         let accepted = match (shown, take, &error) {
-            (Some((_, image, named)), Some(take), None) => {
-                judge(&seen.changes, &seen.images, self.initial, take, (image, named))
-            }
+            (Some((_, image, named)), Some(_), None) => judge(self.images, self.initial, (image, named)),
             _ => None,
         };
         AtRelease {
@@ -230,143 +227,84 @@ fn read_changes(conn: &RustConnection, seen: &Mutex<Seen>) -> Result<()> {
 }
 
 /// Whether the cursor shown at the release, `shown` (its image, and whether it carries an XFixes name), is the drag
-/// loop's accept for a take at server time `take`: None when that cannot be told, since the image of an excluded
-/// cursor is unknown, or no unnamed cursor came around the take. Excluded are the image shown when the watch began
-/// (`initial`), every unnamed cursor's up to the take, and the drag loop's: the first unnamed cursor from
-/// [`LOOP_BEFORE_MS`] before the take on (the loop's own, which is also the no-drop status's image, or its first
-/// status: module header). A named cursor is another client's theme cursor, never the accept.
-pub fn judge(
-    changes: &[CursorChange],
-    images: &HashMap<u32, Image>,
-    initial: Image,
-    take: u32,
-    shown: (Image, bool),
-) -> Option<bool> {
-    let since = take.wrapping_sub(LOOP_BEFORE_MS);
-    let unnamed = changes.iter().filter(|c| !c.named);
-    let around = unnamed.clone().find(|c| !after(since, c.time))?;
-    let mut excluded = vec![initial];
-    for change in unnamed.filter(|c| !after(c.time, take)).chain([around]) {
-        excluded.push(*images.get(&change.serial)?);
+/// loop's accept, by its own image: one `images` knows as an accepting drag cursor (`drag_cursors.rs`), not the image
+/// shown when the watch began (`initial`), and unnamed, since a named cursor is another client's theme cursor. None when
+/// no installed theme tells an accept apart at all. What was shown before the release decides nothing (module header).
+pub fn judge(images: &DragImages, initial: Image, shown: (Image, bool)) -> Option<bool> {
+    if !images.any_accept() {
+        return None;
     }
     let (image, named) = shown;
-    Some(!named && !excluded.contains(&image))
+    Some(!named && image != initial && images.accepts(image))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn change(serial: u32, time: u32) -> CursorChange {
-        CursorChange {
-            serial,
-            time,
-            named: false,
-            seen: Instant::now(),
-        }
-    }
-
-    /// The images of task 73's sittings, as `accept.rs`'s tests name them: the arrow before the press, the drag loop's
-    /// and the no-drop status's (one image), the accept's.
+    /// The images of task 73's sittings: the arrow before the press, the no-drop status's (breeze_cursors' `dnd-none`,
+    /// also its `dnd-move` and its grabbing hand, the drag loop's), and the accept's (its `dnd-copy`).
     const ARROW: Image = 0xb46b;
     const NONE: Image = 0xbd1d;
     const ACCEPT: Image = 0x1dc3;
 
-    fn images() -> HashMap<u32, Image> {
-        [(80, ARROW), (81, NONE), (82, NONE), (83, ACCEPT)]
-            .into_iter()
-            .collect()
+    fn breeze() -> DragImages {
+        DragImages::of(&[ACCEPT, NONE], &[NONE, ARROW])
     }
 
     #[test]
     fn the_accept_shown_at_the_release_confirms_and_any_other_cursor_does_not() {
-        // the loop's cursor around the take (100), then no drop, then the accept
-        let seq = [change(81, 99), change(82, 101), change(83, 105)];
-        assert_eq!(judge(&seq, &images(), ARROW, 100, (ACCEPT, false)), Some(true));
+        assert_eq!(judge(&breeze(), ARROW, (ACCEPT, false)), Some(true));
         assert_eq!(
-            judge(&seq, &images(), ARROW, 100, (NONE, false)),
+            judge(&breeze(), ARROW, (NONE, false)),
             Some(false),
             "no drop at the release: the path left the zone"
         );
+        assert_eq!(judge(&breeze(), ARROW, (ARROW, false)), Some(false), "the arrow");
         assert_eq!(
-            judge(&seq, &images(), ARROW, 100, (ARROW, false)),
+            judge(&breeze(), ARROW, (ACCEPT, true)),
+            Some(false),
+            "another client's named cursor"
+        );
+        assert_eq!(
+            judge(&breeze(), ACCEPT, (ACCEPT, false)),
             Some(false),
             "the image the watch began on"
         );
         assert_eq!(
-            judge(&seq, &images(), ARROW, 100, (ACCEPT, true)),
+            judge(&breeze(), ARROW, (0x7777, false)),
             Some(false),
-            "another client's named cursor"
+            "an image no theme draws as an accept, however it differs from the others"
         );
     }
 
     #[test]
-    fn what_cannot_be_told_confirms_nothing() {
-        let seq = [change(81, 99), change(83, 105)];
-        let mut unknown = images();
-        unknown.remove(&81);
-        assert_eq!(
-            judge(&seq, &unknown, ARROW, 100, (ACCEPT, false)),
-            None,
-            "the loop's image was never fetched"
-        );
-        let named = [CursorChange {
-            named: true,
-            ..change(2, 101)
-        }];
-        assert_eq!(
-            judge(&named, &images(), ARROW, 100, (ACCEPT, false)),
-            None,
-            "no unnamed cursor shown at all"
-        );
-        assert_eq!(judge(&[], &images(), ARROW, 100, (ACCEPT, false)), None);
-        // an accept in the take's own millisecond (a press inside the zone) is excluded with the loop's
-        let inside = [change(81, 99), change(83, 100)];
-        assert_eq!(judge(&inside, &images(), ARROW, 100, (ACCEPT, false)), Some(false));
+    fn a_no_drop_shown_at_the_release_never_confirms_whatever_came_first() {
+        // the review of the fix wave (P1): no loop cursor seen, the first status already accepting, then the path
+        // leaves; the fix wave's rule took the accept for the loop's and the no-drop at the release for the accept
+        assert_eq!(judge(&breeze(), ARROW, (NONE, false)), Some(false));
     }
 
     #[test]
-    fn the_drag_loop_s_image_is_the_first_unnamed_cursor_s_around_the_take() {
-        // the fix wave's pilot, Electron: the take at 761, the loop's cursor at 762, no drop, then the accept
-        let seq = [change(81, 101), change(82, 115), change(83, 124)];
-        assert_eq!(judge(&seq, &images(), ARROW, 100, (ACCEPT, false)), Some(true));
-        assert_eq!(judge(&seq, &images(), ARROW, 100, (NONE, false)), Some(false));
-        // the loop's cursor before the take and the first status, no drop, after it (the second pilot's Electron drags:
-        // the take at 739, the loop's at 738, no drop at 740, the accept at 742)
-        let soon = [change(81, 99), change(82, 101), change(83, 103)];
-        assert_eq!(judge(&soon, &images(), ARROW, 100, (ACCEPT, false)), Some(true));
-        // the loop's cursor never seen, the first status no drop: its image is the loop's
-        let unseen = [change(82, 113), change(83, 116)];
-        assert_eq!(judge(&unseen, &images(), ARROW, 100, (ACCEPT, false)), Some(true));
-        // the loop's cursor and the first status both up to the take, the accept long after (the third pilot)
-        let both = [change(81, 98), change(82, 100), change(83, 334)];
-        assert_eq!(judge(&both, &images(), ARROW, 100, (ACCEPT, false)), Some(true));
-        // a first status that already accepts (a press inside the zone) reads as the accept while it is shown: the
-        // press-inside control measures whether it can be stale at the release
-        let quick = [change(81, 100), change(83, 102)];
-        assert_eq!(judge(&quick, &images(), ARROW, 100, (ACCEPT, false)), Some(true));
-        // with no loop cursor seen, a first cursor that already accepts is taken for the loop's: unconfirmed
-        let only = [change(83, 104)];
-        assert_eq!(judge(&only, &images(), ARROW, 100, (ACCEPT, false)), Some(false));
-        // an accept in the take's own millisecond is excluded with the cursors up to it, as accept.rs's
-        let same_ms = [change(81, 99), change(83, 100), change(83, 103)];
-        assert_eq!(judge(&same_ms, &images(), ARROW, 100, (ACCEPT, false)), Some(false));
-        // a page's own cursor well before the take (a link's hand) is excluded too, and the loop's after it, which is
-        // still the loop's: no drop at the release never reads as the accept
-        let mut hand = images();
-        hand.insert(79, 0x2091);
-        let link = [change(79, 90), change(81, 101), change(83, 110)];
-        let page_only = [change(79, 90)];
+    fn the_accept_shown_at_the_release_confirms_whatever_came_first() {
+        // the same start, then the path comes back to the zone: the fix wave's rule excluded the accept as the loop's
+        assert_eq!(judge(&breeze(), ARROW, (ACCEPT, false)), Some(true));
+    }
+
+    #[test]
+    fn a_move_drawn_as_no_drop_never_confirms() {
+        // breeze_cursors' dnd-move is its dnd-none: an accepting cursor's image, but a refusing one's too
+        assert!(!breeze().accepts(NONE));
+        assert_eq!(judge(&breeze(), ARROW, (NONE, false)), Some(false));
+    }
+
+    #[test]
+    fn with_no_accept_told_apart_nothing_is_judged() {
+        assert_eq!(judge(&DragImages::of(&[], &[]), ARROW, (ACCEPT, false)), None);
         assert_eq!(
-            judge(&page_only, &hand, ARROW, 100, (NONE, false)),
+            judge(&DragImages::of(&[NONE], &[NONE]), ARROW, (NONE, false)),
             None,
-            "no cursor around the take: the loop's image is not known"
-        );
-        assert_eq!(judge(&link, &hand, ARROW, 100, (ACCEPT, false)), Some(true));
-        assert_eq!(
-            judge(&link, &hand, ARROW, 100, (NONE, false)),
-            Some(false),
-            "no drop is the loop's"
+            "every accepting image drawn as no drop"
         );
     }
 }

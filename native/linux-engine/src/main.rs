@@ -15,6 +15,7 @@ mod cover;
 mod dbus;
 mod desktop;
 mod dnd;
+mod drag_cursors;
 mod drop_cursor;
 mod engine;
 mod families;

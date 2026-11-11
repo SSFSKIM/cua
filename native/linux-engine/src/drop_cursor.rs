@@ -11,8 +11,12 @@
 //! so the drag loop's own image (Chromium's no-drop status's too) is known from around the take; just before the
 //! button goes up, the engine stops the thread and asks the server which cursor is shown now, with its image and name
 //! ([`DropCursor::at_release`]). That cursor is the accept when it carries no XFixes name and its image is none of
-//! those excluded: the image shown when the watch began, and every unnamed cursor's shown up to the take ([`judge`]),
-//! as `accept.rs`'s [`crate::accept::accept_shown`] tells them apart.
+//! those excluded ([`judge`]): the image shown when the watch began, every unnamed cursor's shown up to the take (the
+//! page's own, and the drag loop's when it came first, as `accept.rs`'s [`crate::accept::accept_shown`] excludes them),
+//! and the first unnamed cursor's after the take, which is the drag loop's or its first status's: the loop's cursor
+//! came 1–2 ms before the take in Chrome (task 68) and up to 1 ms after it in Electron (the fix wave's pilots), and the
+//! first status is no drop's image on a path from outside the zone. A first status that already accepts (a press
+//! inside the zone) is excluded with it, which can only leave a drop unconfirmed, never confirm a stale accept.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,11 +34,6 @@ use crate::accept::{CursorChange, Image, after, fingerprint};
 
 /// How often the watch's thread reads the changes that have come.
 const POLL: Duration = Duration::from_millis(1);
-
-/// How long after the take, on the server's clock, the drag loop's own cursor may come: Chrome's came 1–2 ms before it
-/// (task 68), Electron's here also 1 ms after it (the fix wave's pilot). A status within it counts as the loop's, which
-/// can only leave a drop unconfirmed, never confirm a stale one.
-pub const TAKE_SLACK_MS: u32 = 3;
 
 /// What the thread has seen: every change, and the image of each cursor it fetched while shown, by serial.
 #[derive(Default)]
@@ -227,11 +226,11 @@ fn read_changes(conn: &RustConnection, seen: &Mutex<Seen>) -> Result<()> {
 }
 
 /// Whether the cursor shown at the release, `shown` (its image, and whether it carries an XFixes name), is the drag
-/// loop's accept for a take at server time `take`: None when that cannot be told, since the image of an unnamed cursor
-/// shown up to the take is unknown, or none was shown then (the drag loop's own cursor, which is also the no-drop
-/// status's image, comes around the take). Excluded are the image shown when the watch began (`initial`) and every
-/// unnamed cursor's up to [`TAKE_SLACK_MS`] after the take; a named cursor is another client's theme cursor, never the
-/// accept.
+/// loop's accept for a take at server time `take`: None when that cannot be told, since the image of an excluded
+/// cursor is unknown, or no unnamed cursor was shown at all. Excluded are the image shown when the watch began
+/// (`initial`), every unnamed cursor's up to the take, and the first unnamed cursor's after it (the drag loop's own,
+/// which is also the no-drop status's image, or its first status: module header); a named cursor is another client's
+/// theme cursor, never the accept.
 pub fn judge(
     changes: &[CursorChange],
     images: &HashMap<u32, Image>,
@@ -239,13 +238,15 @@ pub fn judge(
     take: u32,
     shown: (Image, bool),
 ) -> Option<bool> {
-    let until = take.wrapping_add(TAKE_SLACK_MS);
-    let mut excluded = vec![initial];
-    for change in changes.iter().filter(|c| !c.named && !after(c.time, until)) {
-        excluded.push(*images.get(&change.serial)?);
-    }
-    if excluded.len() < 2 {
+    let unnamed: Vec<&CursorChange> = changes.iter().filter(|c| !c.named).collect();
+    let first_after = unnamed.iter().position(|c| after(c.time, take));
+    let upto = first_after.map_or(unnamed.len(), |i| i + 1);
+    if upto == 0 {
         return None;
+    }
+    let mut excluded = vec![initial];
+    for change in &unnamed[..upto] {
+        excluded.push(*images.get(&change.serial)?);
     }
     let (image, named) = shown;
     Some(!named && !excluded.contains(&image))
@@ -308,27 +309,49 @@ mod tests {
             None,
             "the loop's image was never fetched"
         );
+        let named = [CursorChange {
+            named: true,
+            ..change(2, 101)
+        }];
         assert_eq!(
-            judge(&seq[1..], &images(), ARROW, 100, (ACCEPT, false)),
+            judge(&named, &images(), ARROW, 100, (ACCEPT, false)),
             None,
-            "no cursor shown up to the take"
+            "no unnamed cursor shown at all"
         );
+        assert_eq!(judge(&[], &images(), ARROW, 100, (ACCEPT, false)), None);
         // an accept in the take's own millisecond (a press inside the zone) is excluded with the loop's
         let inside = [change(81, 99), change(83, 100)];
         assert_eq!(judge(&inside, &images(), ARROW, 100, (ACCEPT, false)), Some(false));
     }
 
     #[test]
-    fn the_drag_loop_s_cursor_a_millisecond_after_the_take_is_still_the_loop_s() {
+    fn the_drag_loop_s_image_is_the_first_unnamed_cursor_s_after_the_take_beside_those_up_to_it() {
         // the fix wave's pilot, Electron: the take at 761, the loop's cursor at 762, no drop, then the accept
         let seq = [change(81, 101), change(82, 115), change(83, 124)];
         assert_eq!(judge(&seq, &images(), ARROW, 100, (ACCEPT, false)), Some(true));
         assert_eq!(judge(&seq, &images(), ARROW, 100, (NONE, false)), Some(false));
-        // an accept that close to the take is the loop's window too: unconfirmed, never a stale confirmation
+        // the loop's cursor before the take and the first status, no drop, after it (the second pilot's Electron drags:
+        // the take at 739, the loop's at 738, no drop at 740, the accept at 742)
+        let soon = [change(81, 99), change(82, 101), change(83, 103)];
+        assert_eq!(judge(&soon, &images(), ARROW, 100, (ACCEPT, false)), Some(true));
+        // the loop's cursor never seen, the first status no drop: its image is the loop's
+        let unseen = [change(82, 113), change(83, 116)];
+        assert_eq!(judge(&unseen, &images(), ARROW, 100, (ACCEPT, false)), Some(true));
+        // a first status that already accepts is excluded with the loop's (a press inside the zone): unconfirmed,
+        // never a stale confirmation
         let quick = [change(81, 100), change(83, 102)];
         assert_eq!(judge(&quick, &images(), ARROW, 100, (ACCEPT, false)), Some(false));
-        // past the slack, the first cursor is not the loop's: nothing tells the loop's image
-        let late = [change(83, 100 + TAKE_SLACK_MS + 1)];
-        assert_eq!(judge(&late, &images(), ARROW, 100, (ACCEPT, false)), None);
+        let only = [change(83, 104)];
+        assert_eq!(judge(&only, &images(), ARROW, 100, (ACCEPT, false)), Some(false));
+        // a page's own cursor up to the take (a link's hand) is excluded too, and the loop's after it
+        let mut hand = images();
+        hand.insert(79, 0x2091);
+        let link = [change(79, 90), change(81, 101), change(83, 110)];
+        assert_eq!(judge(&link, &hand, ARROW, 100, (ACCEPT, false)), Some(true));
+        assert_eq!(
+            judge(&link, &hand, ARROW, 100, (NONE, false)),
+            Some(false),
+            "no drop is the loop's"
+        );
     }
 }

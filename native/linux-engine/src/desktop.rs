@@ -198,6 +198,55 @@ impl Desktop {
     }
 }
 
+/// The live tests' hook in `drag_handle`'s pre-press try (`engine/handle.rs` `pointer_free`;
+/// `CUA_ENGINE_FAULT=handle-try-click`, only in a build with the `live` feature, never a release asset): a second X
+/// client's click of button 3, sent while the try holds the server, as a person's click arriving at that moment. Its
+/// requests wait for the server's release, which comes after the try has given its grab up, so the click must land
+/// where the pointer is. Here with the desktop route's other XTEST buttons.
+#[cfg(feature = "live")]
+pub mod try_click {
+    use x11rb::connection::Connection as _;
+    use x11rb::protocol::xproto::{BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ConnectionExt as _};
+    use x11rb::protocol::xtest::ConnectionExt as _;
+    use x11rb::rust_connection::RustConnection;
+
+    /// The second client, connected before the server is held (a connection's setup waits for it otherwise).
+    pub fn before_try() -> Option<RustConnection> {
+        if std::env::var("CUA_ENGINE_FAULT").as_deref() != Ok("handle-try-click") {
+            return None;
+        }
+        let (conn, _) = x11rb::connect(None).ok()?;
+        conn.xtest_get_version(2, 2).ok()?.reply().ok()?;
+        Some(conn)
+    }
+
+    /// Its click sent, not waited for: the server handles it once it is let go.
+    pub fn during_try(clicker: Option<&RustConnection>) {
+        if let Some(conn) = clicker {
+            for kind in [BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT] {
+                let _ = conn.xtest_fake_input(kind, 3, x11rb::CURRENT_TIME, x11rb::NONE, 0, 0, 0);
+            }
+            let _ = conn.flush();
+        }
+    }
+
+    /// Once the server is let go: the click handled before the second client goes.
+    pub fn after_try(clicker: Option<RustConnection>) {
+        if let Some(conn) = clicker {
+            let _ = conn.get_input_focus().map(|c| c.reply());
+        }
+    }
+}
+
+#[cfg(not(feature = "live"))]
+pub mod try_click {
+    pub fn before_try() -> Option<()> {
+        None
+    }
+    pub fn during_try(_: Option<&()>) {}
+    pub fn after_try(_: Option<()>) {}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

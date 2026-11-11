@@ -149,7 +149,7 @@ fn breaches(files: &[(PathBuf, String)]) -> Vec<String> {
             }
             let allowed = matches!(
                 (file.as_str(), in_body(&fns, at).as_deref()),
-                ("route.rs", Some("press")) | ("engine/pointer.rs", Some("drag_handle"))
+                ("route.rs", Some("press")) | ("engine/handle.rs", Some("start_drag_handle"))
             );
             if !allowed {
                 found.push(format!(

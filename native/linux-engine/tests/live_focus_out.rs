@@ -734,12 +734,14 @@ fn held_at_the_server(conn: &RustConnection, keysym: u32) -> (bool, bool) {
 const SHIFT_L: u32 = 0xffe1;
 
 /// A `drag_handle` begun (its button 1 held at the server) and Shift held (`key_down` on the desktop route, XTEST),
-/// then a desktop scroll that runs far longer than the backstop (655 wheel steps of 36 ms, each holding its button),
-/// stopped by `stop` inside it: the exit that ends the engine before its request does still releases what it holds,
-/// the key, the drag's button and the wheel's.
+/// then a scroll that runs far longer than the backstop (655 wheel steps of 36 ms), stopped by `stop` inside it: the
+/// exit that ends the engine before its request does still releases what it holds, the key and the drag's button.
+/// The scroll goes to a window of the test's on the background route: desktop pointer input is refused while a handle
+/// is held (M4's T17), and a background wheel step holds nothing at the server.
 fn forced_inside_a_request(stop: impl FnOnce(&Engine)) -> (std::process::ExitStatus, Duration, (bool, bool)) {
     // the test's own connection, held through the test: xvfb-run's server resets its state once its last client leaves
     let (conn, _) = connect();
+    let probe = Probe::open("backstop", 400);
     let mut engine = Engine::start();
     engine
         .request("drag_handle", json!({"action": "start", "x": 200, "y": 200}))
@@ -750,7 +752,10 @@ fn forced_inside_a_request(stop: impl FnOnce(&Engine)) -> (std::process::ExitSta
         (true, true),
         "Shift and the drag's button down at the server"
     );
-    engine.pipeline(&[("scroll", json!({"direction": "down", "pixels": 65535}))]);
+    engine.pipeline(&[(
+        "scroll",
+        json!({"window": probe.target(), "x": 100, "y": 100, "direction": "down", "pixels": 65535}),
+    )]);
     sleep(Duration::from_millis(300));
     let stopped = Instant::now();
     stop(&engine);
@@ -778,7 +783,7 @@ fn the_backstop_releases_what_the_engine_holds_before_it_ends_a_request_still_ru
         "ended by the backstop: {took:?}"
     );
     assert!(!key, "Shift released at the server");
-    assert!(!button, "the drag's and the wheel's buttons released");
+    assert!(!button, "the drag's button released");
 }
 
 #[test]
@@ -791,7 +796,7 @@ fn a_second_sigint_releases_what_the_engine_holds_before_it_ends_a_request_still
     assert_eq!(status.code(), Some(130));
     assert!(took < Duration::from_millis(500), "at once: {took:?}");
     assert!(!key, "Shift released at the server");
-    assert!(!button, "the drag's and the wheel's buttons released");
+    assert!(!button, "the drag's button released");
 }
 
 #[test]

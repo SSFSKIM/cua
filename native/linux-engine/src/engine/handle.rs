@@ -116,7 +116,7 @@ impl Handle {
 /// status. `AlreadyGrabbed` (or `Frozen`) means another client holds the pointer. The grab is on the window the pointer
 /// is in, so it crosses nothing (task 73's probe on xterm, Chrome and Electron: evidence `m4/drag-handle/`).
 fn pointer_free(x: &X11) -> Result<GrabStatus> {
-    let clicker = live::before_try();
+    let clicker = crate::desktop::try_click::before_try();
     x.conn.grab_server()?;
     let tried = (|| -> Result<GrabStatus> {
         let mut window = x.root;
@@ -127,7 +127,7 @@ fn pointer_free(x: &X11) -> Result<GrabStatus> {
             }
             window = child;
         }
-        live::during_try(clicker.as_ref());
+        crate::desktop::try_click::during_try(clicker.as_ref());
         let (none, now, mode) = (x11rb::NONE, x11rb::CURRENT_TIME, GrabMode::ASYNC);
         let grab = x
             .conn
@@ -141,7 +141,7 @@ fn pointer_free(x: &X11) -> Result<GrabStatus> {
         .ungrab_server()
         .map_err(anyhow::Error::from)
         .and_then(|_| Ok(x.conn.flush()?));
-    live::after_try(clicker);
+    crate::desktop::try_click::after_try(clicker);
     let status = tried?;
     ungrabbed?;
     Ok(status)
@@ -432,54 +432,6 @@ fn screen_size(x: &X11) -> (u16, u16) {
         .iter()
         .find(|s| s.root == x.root)
         .map_or((u16::MAX, u16::MAX), |s| (s.width_in_pixels, s.height_in_pixels))
-}
-
-/// The live tests' hook in the pre-press try (`CUA_ENGINE_FAULT=handle-try-click`, only in a build with the `live`
-/// feature, never a release asset): a second X client's click of button 3, sent while the try holds the server, as a
-/// person's click arriving at that moment. Its requests wait for the server's release, which comes after the try has
-/// given its grab up, so the click must land where the pointer is.
-#[cfg(feature = "live")]
-mod live {
-    use x11rb::connection::Connection as _;
-    use x11rb::protocol::xproto::{BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ConnectionExt as _};
-    use x11rb::protocol::xtest::ConnectionExt as _;
-    use x11rb::rust_connection::RustConnection;
-
-    /// The second client, connected before the server is held (a connection's setup waits for it otherwise).
-    pub fn before_try() -> Option<RustConnection> {
-        if std::env::var("CUA_ENGINE_FAULT").as_deref() != Ok("handle-try-click") {
-            return None;
-        }
-        let (conn, _) = x11rb::connect(None).ok()?;
-        conn.xtest_get_version(2, 2).ok()?.reply().ok()?;
-        Some(conn)
-    }
-
-    /// Its click sent, not waited for: the server handles it once it is let go.
-    pub fn during_try(clicker: Option<&RustConnection>) {
-        if let Some(conn) = clicker {
-            for kind in [BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT] {
-                let _ = conn.xtest_fake_input(kind, 3, x11rb::CURRENT_TIME, x11rb::NONE, 0, 0, 0);
-            }
-            let _ = conn.flush();
-        }
-    }
-
-    /// Once the server is let go: the click handled before the second client goes.
-    pub fn after_try(clicker: Option<RustConnection>) {
-        if let Some(conn) = clicker {
-            let _ = conn.get_input_focus().map(|c| c.reply());
-        }
-    }
-}
-
-#[cfg(not(feature = "live"))]
-mod live {
-    pub fn before_try() -> Option<()> {
-        None
-    }
-    pub fn during_try(_: Option<&()>) {}
-    pub fn after_try(_: Option<()>) {}
 }
 
 #[cfg(test)]

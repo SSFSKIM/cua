@@ -628,6 +628,8 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m4/drop-signals/`.
 - Observation (M4, T14): Chrome completes, and confirms with its activation request, a drop that it released on a stale accept outside the drop zone, though the page takes nothing. So the activation request proves that the browser dropped, not that the page took the drop. Behind the floor no such drop was seen. An activation can also come during the drag, before the release, so only one read after the release counts.
   Evidence: `m4/drops/`.
+- Observation (M4, T16): LibreOffice 24.2's gtk3 plugin reports everything VCL draws 27 px too high, by its native menu bar's height, from any ConfigureNotify until the next pointer event. Its GTK host panels stay right, and the vendor's element points miss by the same amount. An empty `.odp` opens in Writer when Impress isn't installed, which showed only once a check verified the app's identity. Pointer parks and app identity have each misled a measurement in M4, so both are verified before a trial counts.
+  Evidence: `m4/writer-first-drag/`.
 
 ## Decision Log
 
@@ -1707,6 +1709,30 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - Firefox experiments outside the gate don't park the pointer, so their cua lanes refuse whenever it is elsewhere (tech debt).
   Evidence: `m4/pointer-route/` (README; the dry run; the `:0` sitting and its gedit step; the private proofs; the `:0` manifest); the task-71 report (local); `ci-gate` GREEN on 258f52b0, ddee5fd5, 102abe84, e47fc1e3 and 2acc8054 (with a rerun of a racy clipboard test).
   Date/Author: 2026-11-10, the plan-executor (session linux171), from task 71's report, its review and fix wave (reviewer-medium), and the design session's rulings.
+
+- Decision (2026-11-11, M4, T16: Writer's first drag, and LibreOffice's element points): task 72, on `feat/171-m4-t16`: 328a3bb5..770b924e; fix on `feat/171-m4-t16-fix`: 770b924e..bb161064; merged into `feat/171-m4` at 770f286d; evidence `m4/writer-first-drag/`. The design session ruled each step (2026-11-10 and 2026-11-11).
+  - **The first drag: the harness's aim, not Writer or any engine.** LibreOffice 24.2 on its gtk3 plugin draws VCL content from the frame's `maGeometry` (`vcl/unx/gtk3/gtkframe.cxx`). A ConfigureNotify sets it to the client's origin, and every pointer event's `UpdateGeometryFromEvent` resets it to the drawing area's. So after any configure (the harness's raise included), and until the next pointer event, AT-SPI reports VCL content 27 px too high, by the native menu bar's height. The GTK host panel keeps its true rectangle.
+    - The drag cell aimed into the page-header margin. Every engine missed there, and even real XTEST input did. "Priming" only worked because its first pointer event fixed the offset.
+    - Aimed from the host panel and re-sampled with every reading of the extents, the first drag in a fresh, unprimed window selects: cua 30/30, pinned 10/10, newest 10/10. The witness is clean and the audited case 3/3. The pre-T16 aim, kept as a control, misses 5/5.
+    - The harness's priming is removed (`drag.mjs`, outside the row's list, accepted). T18's gate inherits the Writer cell without priming.
+    - The "pointer off Writer" lane parks on the run's own front window: the foreign judge is not loosened to fit a lane, and the claim is "off Writer" (the design session).
+  - **The engine shared the miss** in its point-based element actions: the right click and the paste's focusing click use `visible_point`, from `GetExtents` in screen coordinates, and the element scroll uses the same centre. On a fresh window, they answered ok 27 px off. Left element clicks are `DoAction` and were unaffected, and observations carry no element frames. The pinned build has the same miss, so it is a vendor defect that cua now fixes.
+  - **Ruling "B".**
+    - The GTK host panel's extents are the truth for VCL content. A point is corrected by the measured difference between the host and the VCL root, only when the two disagree (`vcl.rs`). The recognition includes the target itself, so a request naming the root pane is corrected too (the review).
+    - If the host/VCL pair is not recognized, or the difference is not the known menu-bar offset's shape, the point-based actions are refused before any session opens or any window is activated. The refusal says the app's reported position can't be trusted until the pointer has moved over it.
+    - On fresh windows, cua lands on the element 3/3 in Writer, on Writer's root pane, and in Impress (verified as Impress: `soffice`, `gtk`, `document presentation`). The pinned build lands 0/3, 27 px high.
+    - A WM-framed GTK 3 window is unaffected in both engines. gedit has no WM frame.
+    - Calc gets the correction. Its landing is inferred from where its context menu opens, because three direct reads failed.
+    - The refusal path for an unrecognized structure is unit-tested only: no live LibreOffice window produced one.
+    - The deviations state the vcl gtk3 24.2 dependence.
+  - **Impress was not installed** on the VM, so the first wave's "Impress" rows had measured Writer. `libreoffice-impress` 4:24.2.7 was installed on 2026-11-11: 9 new packages, nothing upgraded or removed, fonts unchanged (432). The withdrawn rows are replaced.
+  - **Shared harness helpers** (the design session, 2026-11-10). `park.mjs` parks the real pointer and verifies it through `QueryPointer`'s chain, refusing the trial otherwise. `app-identity.mjs` checks the app under test by AT-SPI app name, toolkit and document role before a cell counts. T16's runners use both, and T18 moves the rest.
+  - **T8's Writer settle cells, re-aimed.** Every number T8 recorded holds. Writer's drag, which T8 had left out because the old aim selected nothing, now measures: 0 ms missed 10 of 31 at twice the load (all late), 10 ms missed 3 of 32, and 25 ms held 30 consecutive.
+    - So the service's `drag` settle goes from 10 to 25 ms, for every family, confirmed 30/30 idle and at twice the load (the design session, 2026-11-11).
+    - It sits in cua's service layer, between requests, outside the engine-wire timer that Acceptance 3 compares with the vendor. So #269's and #358's numbers stand.
+  - The GDK 3 motion-hint emulation drops queued synthetic motions while an app is busy. That changed no selection in a plain GTK window, so it is recorded only.
+  Evidence: `m4/writer-first-drag/` (README, `fix/`); the task-72 report (local); `ci-gate` GREEN on 770b924e and bb161064.
+  Date/Author: 2026-11-11, the plan-executor (session linux171), from task 72's report, its review and fix wave (reviewer-medium), and the design session's rulings.
 
 ## Outcomes & Retrospective
 

@@ -197,10 +197,9 @@ export const CELLS = [
   // nothing, so a Qt editor has no paste to settle
   ...editorCells('kate', ['key_click']),
   ...editorCells('qtcreator', ['key_click']),
-  // Writer selected nothing from a background drag in this experiment's scene, covered or unobscured, 5 and 12
-  // characters long, 0 of 5 each (dev sittings of task 62; the drag experiment primes Writer's first drag, and why a
-  // fresh window ignores it is T16's), so its drag has no effect to settle here
-  ...editorCells('writer').filter((c) => c.kind !== 'drag'),
+  // Writer's drag selected nothing in task 62's sittings because the aim was 27 px above the text (T16: LibreOffice
+  // reports VCL's extents too high until a pointer event); aimed where VCL draws (`linesOf`), it is measured since T16
+  ...editorCells('writer'),
   cell('writer', 'type_text'),
   cell('gnome-terminal', 'press_key'),
   cell('gnome-terminal', 'key_down'),

@@ -69,6 +69,16 @@ const WRITER_PROFILE = `<?xml version="1.0" encoding="UTF-8"?>
 </oor:items>
 `;
 
+// Impress's presentation: one slide (its master page and page layout, which ODF requires) holding one text frame, in
+// flat ODF (one XML file, opened as the presentation its mimetype names where Impress is installed).
+export const IMPRESS_DOC = `<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.3" office:mimetype="application/vnd.oasis.opendocument.presentation">
+<office:automatic-styles><style:page-layout style:name="PM1"><style:page-layout-properties fo:page-width="28cm" fo:page-height="15.75cm" style:print-orientation="landscape"/></style:page-layout></office:automatic-styles>
+<office:master-styles><style:master-page style:name="Default" style:page-layout-name="PM1"/></office:master-styles>
+<office:body><office:presentation><draw:page draw:name="cua171" draw:master-page-name="Default"><draw:frame svg:x="2cm" svg:y="3cm" svg:width="20cm" svg:height="3cm"><draw:text-box><text:p>cua171 slide text</text:p></draw:text-box></draw:frame></draw:page></office:presentation></office:body>
+</office:document>
+`;
+
 function scratchFile(ctx, ext = 'txt') {
   const file = join(ctx.dir, `${ctx.label}.${ext}`);
   writeFileSync(file, ctx.doc ?? DOC);
@@ -355,8 +365,10 @@ export const FAMILIES = {
       };
     },
   },
-  // T16 (M4): LibreOffice Impress on its gtk3 plugin, a new presentation (an empty .odp opens as one), for the VCL
-  // coordinate probe (writer-drag.mjs `--plan hierarchy`)
+  // T16 (M4): LibreOffice Impress on its gtk3 plugin, a one-slide presentation with a text frame (`IMPRESS_DOC`, flat
+  // ODF), for the VCL coordinate probes (vcl-probe.mjs). Needs libreoffice-impress: without it (the #171 VM as of
+  // 2026-11-10) LibreOffice opens any presentation in Writer, `--impress` notwithstanding (task 72's review, finding 3),
+  // so each scene's application is verified before it counts (app-identity.mjs)
   impress: {
     title: 'LibreOffice Impress (gtk3)',
     kind: 'slides',
@@ -365,8 +377,8 @@ export const FAMILIES = {
       const profile = join(ctx.dir, 'lo');
       mkdirSync(join(profile, 'user'), { recursive: true });
       writeFileSync(join(profile, 'user', 'registrymodifications.xcu'), WRITER_PROFILE);
-      const file = join(ctx.dir, `${ctx.label}.odp`);
-      writeFileSync(file, '');
+      const file = join(ctx.dir, `${ctx.label}.fodp`);
+      writeFileSync(file, IMPRESS_DOC);
       return {
         cmd: 'soffice',
         args: ['--impress', '--norestore', '--nologo', `-env:UserInstallation=${pathToFileURL(profile).href}`, file],

@@ -24,15 +24,17 @@ import { DRAG_DOC, WORDS, locate, runPath, selectOffsets, selectionCovers } from
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { runElementPlan, runHierarchyPlan } from './vcl-probe.mjs';
+import { runElementPlan, runHierarchyPlan, runIdentityPlan } from './vcl-probe.mjs';
 
 import { auditAnswered, parseXtrace, startProxy } from './audit.mjs';
 import { Engine } from './engine.mjs';
 import { captureWindow } from './pixels.mjs';
-import { openFamily, readCaret } from './families.mjs';
+import { FAMILIES, openFamily, readCaret } from './families.mjs';
 import { Oracle } from './oracle.mjs';
 import { negativeCheck } from './run.mjs';
-import { XPROBE, xdotool } from './scenes.mjs';
+import { SCREEN, XPROBE, xdotool } from './scenes.mjs';
+import { ParkRefused, ROOT, frameOf, framedRect, outsidePoint, parkOnFront, parkPointer } from './park.mjs';
+import { verifyIdentity } from './app-identity.mjs';
 import { startWitness } from './witness.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -43,18 +45,26 @@ export const READ_PARAGRAPHS = 4;
 export const PRIMARY_MARKER = 'cua171-writer-none';
 
 /**
- * Where the real pointer is parked before a run, in the window's coordinates or the screen's: `text` at the path's
- * start, `blank` in the document's empty lower part, `out` on the root beside the window and clear of the front window,
- * `none` left where it is.
+ * Where the real pointer is parked before a run, a screen point and the window it must then be over (park.mjs):
+ * `text` at the path's start and `blank` in the document's empty lower part, both over the scene's window; `out` on the
+ * bare root beside the window's frame (`frame`, `[left, right, top, bottom]`), clear of the front window (`avoid`),
+ * derived from the window's real geometry (task 72's review, finding 2: a fixed point beside an assumed 1100 px window
+ * was inside the maximized one); `none` left where it is. An `out` park with no bare root beside the window throws.
  */
-export function parkPoint(park, window, path) {
-  if (park === 'text') return { x: window.x + path[0].x, y: window.y + path[0].y };
-  if (park === 'blank') return { x: window.x + Math.round(window.width / 2), y: window.y + window.height - 120 };
-  // the screen's right edge, beside the window (1100 wide at the left) and above the front window's corner
-  if (park === 'out') return { x: 1275, y: 300 };
+export function parkPoint(park, window, path, { id, frame = [0, 0, 0, 0], avoid = [], screen = SCREEN } = {}) {
+  if (park === 'text') return { point: { x: window.x + path[0].x, y: window.y + path[0].y }, intended: id };
+  if (park === 'blank') return { point: { x: window.x + Math.round(window.width / 2), y: window.y + window.height - 120 }, intended: id };
+  if (park === 'out') {
+    const point = outsidePoint(window, frame, screen, { avoid });
+    if (!point) throw new ParkRefused(`no bare root beside the window at ${JSON.stringify(window)} for an outside park`);
+    return { point, intended: ROOT };
+  }
   if (park === 'none') return null;
   throw new Error(`unknown pointer park ${park}`);
 }
+
+/** The front window's rectangle with its frame, for an outside park to keep clear of. */
+const frontRect = (desktop) => (desktop.front?.id ? [framedRect(desktop.front.id)] : []);
 
 /**
  * A case: a lane, a fresh window per run or one window for the case's runs, its priming, where the pointer is, how the
@@ -135,7 +145,7 @@ export const PLANS = {
 /** The cases of `--plan` (observe by default), each lane checked against the lanes the run has. */
 export function writerPlan(args, lanes) {
   const plan = PLANS[args.plan ?? 'observe'];
-  if (!plan) throw new Error(`--plan ${args.plan}: the writer-drag plans are ${Object.keys(PLANS).join(', ')}, element and hierarchy`);
+  if (!plan) throw new Error(`--plan ${args.plan}: the writer-drag plans are ${Object.keys(PLANS).join(', ')}, element, hierarchy and identity`);
   const known = new Set(['atspi', 'keys', 'click', ...Object.keys(REAL), 'xtest', ...lanes.map((l) => l.label)]);
   for (const k of plan) if (!known.has(k.lane)) throw new Error(`case ${k.name} needs lane ${k.lane}, which the run does not have (--vendor, --variant)`);
   return plan;
@@ -292,11 +302,14 @@ async function oneRun(ctx, k, scene, at, engine, i, path) {
     xdotool('windowactivate', '--sync', scene.id);
     await sleep(150);
   }
-  const park = parkPoint(k.park, scene.window, path);
-  if (park) {
-    // only onto the root or a window of the run's (scenes.mjs `pointerSafeAt`)
+  const parked = parkPoint(k.park, scene.window, path, { id: scene.id, frame: frameOf(scene.id), avoid: frontRect(ctx.desktop) });
+  const park = parked?.point ?? null;
+  let parkedOver = null;
+  if (parked) {
+    // only onto the root or a window of the run's (scenes.mjs `pointerSafeAt`), then verified where it landed: a park
+    // that is not where it was meant to be refuses the case, so its runs never count (park.mjs)
     if (!ctx.desktop.pointerSafeAt(park)) throw new Error(`the pointer's park point (${park.x}, ${park.y}) is over a window the run did not open`);
-    xdotool('mousemove', park.x, park.y);
+    parkedOver = parkPointer(park, parked.intended).chain;
   }
   await claimPrimary();
   await sleep(300);
@@ -326,6 +339,8 @@ async function oneRun(ctx, k, scene, at, engine, i, path) {
     witness: k.lane === 'xtest' || REAL[k.lane] ? null : w.clean,
     witness_fields: w.clean ? undefined : w.fields,
     park,
+    // the windows the pointer was verified over (`xprobe pointer-chain`, from the root's child down; empty: the root)
+    park_chain: parkedOver,
     pointer_after: String(pointer).replace(/\n/g, ' ').trim(),
     path,
     shot: shot ? shot.split('/').at(-1) : null,
@@ -379,8 +394,13 @@ async function runCase(ctx, k, lanes, n, open) {
   let audited = null;
   try {
     for (let i = 0; i < n; i++) {
+      // the real pointer on the front window while a fresh window opens, so no motion of the harness's reaches it
+      // before the case's own park (park.mjs `parkOnFront`)
+      if (k.fresh || !shared) parkOnFront(ctx.desktop);
       const scene = k.fresh ? await open(`wd${k.name.replace(/[^a-z0-9]+/gi, '')}${i}`) : (shared ??= await open(`wd${k.name.replace(/[^a-z0-9]+/gi, '')}`));
       try {
+        // Writer, as AT-SPI shows it, before any of its runs counts (app-identity.mjs)
+        scene.identity ??= verifyIdentity(ctx.oracle, scene, 'writer');
         ctx.desktop.arrangeFront('visible');
         await sleep(800);
         ctx.desktop.raise(scene);
@@ -427,6 +447,7 @@ export function observedOnParity(run) {
 export async function runWriterDrag(args, { desktop, emit }) {
   if (args.plan === 'element') return runElementPlan(args, { desktop, emit });
   if (args.plan === 'hierarchy') return runHierarchyPlan(args, { desktop, emit });
+  if (args.plan === 'identity') return runIdentityPlan(args, { desktop, emit });
   if (!args.vendor) throw new Error('the writer-drag probe needs --vendor (the pinned build)');
   const lanes = [
     { label: 'pinned', bin: args.vendor, args: [] },
@@ -443,7 +464,8 @@ export async function runWriterDrag(args, { desktop, emit }) {
   const shots = join(args.out, 'shots');
   mkdirSync(shots, { recursive: true });
   const ctx = { desktop, oracle, witness, emit, family: 'writer', occlusion: 'visible', cua: args.cua, shots };
-  const open = (label) => openFamily(desktop, oracle, 'writer', label, { doc: DRAG_DOC });
+  // at the family's own size, not maximized, so the screen keeps a bare root beside the window for the outside park
+  const open = (label) => openFamily(desktop, oracle, 'writer', label, { doc: DRAG_DOC, geometry: FAMILIES.writer.geometry });
   const md = [
     `T16's probe (writer-drag.mjs, plan ${args.plan ?? 'observe'}): each case's runs (its own count, else ${n}) on LibreOffice Writer (gtk3), the path's text read by AT-SPI and by PRIMARY. The AT-SPI caret is not updated by a click alone in Writer, so "caret moved" says little for pointer input.`,
     '',

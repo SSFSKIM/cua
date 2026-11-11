@@ -1098,14 +1098,31 @@ shapes) too high by its native menu bar's height after a ConfigureNotify (the ha
 pointer event. The drag experiment's Writer cell aimed there, into the page's header margin, so on a private display
 no drag of any engine, a real XTEST drag included, selected anything, and the cell primed each window to hide a miss
 that was its own aim. `vcl-aim.mjs` reads VCL's offset itself, as the GTK panel hosting VCL's root pane less the root
-pane (they agree after a pointer event), and `drag.mjs`'s `locate` moves LibreOffice's character extents by it; the
-cell primes nothing. The engine corrects its element points the same way (`native/linux-engine/src/vcl.rs`) or refuses
-them; the harness's reading stays its own, so a proof aimed by it shows the engine's points independently.
+pane (they agree after a pointer event), and `drag.mjs`'s `locate` moves LibreOffice's character extents by it, the
+offset read with each character's extents (`vclDrawn`: between two readings that agree, since a pointer event or a
+configure between two aims moves both); the cell primes nothing. T8's settle instrument aims its Writer clicks and
+drags the same way (`action-settle.mjs` `linesOf`). The engine corrects its element points the same way
+(`native/linux-engine/src/vcl.rs`) or refuses them; the harness's reading stays its own, so a proof aimed by it shows
+the engine's points independently.
+
+Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), for any runner to import:
+
+- **The park** (`park.mjs`): `parkPointer(point, intended)` moves the real pointer, then reads where it landed through
+  `QueryPointer`'s child chain (`xprobe pointer-chain`) and throws `ParkRefused` unless it is at the point and over
+  the intended window (anywhere in the chain), or on the bare root for `ROOT`; a refused park's trial never counts.
+  `outsidePoint` derives a bare-root point beside a window from its real geometry and frame (none beside a maximized
+  window), and `parkOnFront` parks on the run's front window, off every application under test, while a fresh window
+  opens. T16's runners (`writer-drag.mjs`, `vcl-probe.mjs`) use it.
+- **The application's identity** (`app-identity.mjs`): `verifyIdentity(oracle, scene)` reads the scene's AT-SPI
+  application name and toolkit and the role of its frame's first document, and throws `IdentityRefused` unless they
+  are its family's (`APP_IDENTITY`), so Writer standing in for Impress fails. T16's runners, the drag experiment's
+  Writer cell and the settle instrument's LibreOffice scenes use it.
 
 - **The Writer probe** (`writer-drag.mjs`, measured, never judged but by `--plan first`): Writer windows, fresh for each
   run or one for a case, each run a drag (or a selection made otherwise) read by AT-SPI's selections of the first
   paragraphs and by PRIMARY (the harness's marker claimed first), the real pointer parked where the case says
-  (`out`, `text`, `blank`), the window's geometry recorded before and after. Lanes: an engine by its drag lane label,
+  (`out`, on the bare root beside the window's frame, which opens at the family's size so that there is one;
+  `text`; `blank`) and verified there (`park.mjs`), the window's geometry recorded before and after. Lanes: an engine by its drag lane label,
   `xtest` (cua's windowless drag through XTEST, the window active), `xdotool`, `xclick`, `xhold` (real input through
   xdotool at a person's pace), `atspi` (`Text.AddSelection`), `keys` (a background click, then Shift+Right). Aims:
   `locate` (the drag cell's), `raw` (the drag cell's before T16), `frame`. `--plan first` is T16's proof: fresh windows,
@@ -1114,8 +1131,11 @@ them; the harness's reading stays its own, so a proof aimed by it shows the engi
   `mechanism`, `geometry`) are the investigation's, kept as they ran.
 - **The point probes** (`vcl-probe.mjs`): `--plan hierarchy`, each LibreOffice application's AT-SPI levels by state;
   `--plan element`, an engine's element right click on fresh Writer, Calc and Impress windows and after that first
-  pointer event, located by the context menu VCL opens at the press, against the element's true centre from the host
-  panel, with a plain GTK 3 window the window manager frames (`pages/point-gtk3.py`) as the control.
+  pointer event, located by the context menu VCL opens at the press (for Calc, whose menu opens above a press near the
+  bottom, by the cell the click made active, read through AT-SPI's Selection, against the cell at the true centre),
+  against the element's true centre from the host panel, with a plain GTK 3 window the window manager frames
+  (`pages/point-gtk3.py`) as the control and `writer-root` (Writer's root pane itself) as the case whose own
+  ancestors hold no root pane; `--plan identity`, what each family's application shows through AT-SPI.
 
 ## Files
 
@@ -1154,4 +1174,5 @@ them; the harness's reading stays its own, so a proof aimed by it shows the engi
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
 | `vcl-aim.mjs`, `writer-drag.mjs`, `vcl-probe.mjs`, `pages/point-gtk3.py` | M4 T16's LibreOffice offset as the harness reads it, the Writer drag probe, the point probes and their GTK 3 control scene |
+| `park.mjs`, `xprobe/src/pointer.rs`, `app-identity.mjs` | the verified pointer park (`xprobe pointer-chain`) and the application's identity, shared by any runner (T16's fix wave) |
 | `atspi-probe.mjs`, `atspi-cache.mjs`, `pages/atspi-gtk4.py`, `pages/atspi-qt.py` | M4 T6's AT-SPI probe on its own private display: `Cache.GetItems` over the matrix and GTK 4's `EditableText`, the answers' reading and comparison, and its GTK 4 and Qt scenes |

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { locate } from '../../scripts/linux-engine-diff/drag.mjs';
-import { vclShift, vclShiftOf } from '../../scripts/linux-engine-diff/vcl-aim.mjs';
+import { vclDrawn, vclShift, vclShiftOf } from '../../scripts/linux-engine-diff/vcl-aim.mjs';
 
 // Writer's frame on the #171 VM (task 72's hierarchy sitting): the client panel at the client's origin, the menu bar's
 // panel, the panel hosting VCL's root pane 27 px lower; the root pane at the client's origin after a configure
@@ -39,6 +39,41 @@ test("a Writer drag is aimed where VCL draws the text, by the host panel's offse
   }
 });
 
+test("the aim samples VCL's offset with each character's extents, so a pointer event or a configure after locate moves neither", async () => {
+  // one window whose state changes between locate and the aim: the root pane, and the text's extents with it, move
+  // together, as LibreOffice's do (task 72's review, finding 4)
+  let rootY = 21;
+  const live = {
+    children: (id) => writerOracle(rootY).children(id),
+    role: (id) => writerOracle(rootY).role(id),
+    extents: (id) => writerOracle(rootY).extents(id),
+    charExtents: (id, offset) => writerOracle(rootY).charExtents(id, offset),
+  };
+  const fromConfigure = await locate({ oracle: live, desktop: null }, scene('writer'), ['select']);
+  rootY = 48;
+  assert.deepEqual(fromConfigure.text.cell(2), [302, 234], 'located after a configure, aimed after a pointer event');
+  const fromPointer = await locate({ oracle: live, desktop: null }, scene('writer'), ['select']);
+  rootY = 21;
+  assert.deepEqual(fromPointer.text.cell(2), [302, 234], 'located after a pointer event, aimed after a configure');
+});
+
+test('extents read while the state changes are read again, and a state that never holds still throws', () => {
+  // the state flips from a configure's to a pointer event's while the extents are read: that pairing is dropped
+  let rootY = 21;
+  let reads = 0;
+  const flipping = { ...writerOracle(21), extents: (id) => writerOracle(rootY).extents(id) };
+  const once = vclDrawn(flipping, 'frame', () => {
+    reads += 1;
+    const e = writerOracle(rootY).charExtents('p0', 2);
+    if (reads === 1) rootY = 48;
+    return e;
+  });
+  assert.equal(reads, 2, 'read again after the change');
+  assert.deepEqual(once, { x: 298, y: 247, w: 8, h: 15 }, 'the pointer state, both reads agreeing');
+  const restless = { ...writerOracle(21), extents: (id) => writerOracle((rootY = rootY === 21 ? 48 : 21)).extents(id) };
+  assert.throws(() => vclDrawn(restless, 'frame', () => writerOracle(rootY).charExtents('p0', 2)), /changed in each of 5 readings/);
+});
+
 test("another family's text keeps the AT-SPI extents less the window's origin", async () => {
   const at = await locate({ oracle: writerOracle(21), desktop: null }, scene('gedit-like'), ['select']);
   assert.deepEqual(at.text.cell(2), [302, 207]);
@@ -63,4 +98,17 @@ test("the declared refusal is the engine's own sentence (native/linux-engine/src
   const sentence = source.match(/pub const UNTRUSTED: &str =\s*"([^"]+)";/)?.[1];
   assert.ok(sentence, 'the constant is found');
   assert.match(sentence, VCL_UNTRUSTED);
+});
+
+test("T8's settle aims its Writer clicks and drags where VCL draws the text, after a configure as after a pointer event", async () => {
+  const { linesOf } = await import('../../scripts/linux-engine-diff/action-settle.mjs');
+  const sc = { family: 'writer', frame: 'frame', label: 'writer', origin: { x: 0, y: 21 } };
+  for (const rootY of [21, 48]) {
+    const [line] = linesOf({ oracle: writerOracle(rootY) }, sc, [{ node: 'p0', start: 0, end: 20 }]);
+    // the line is drawn at client y 226 to 241: a quarter into character 0, the line's middle
+    assert.deepEqual(line.point, { x: 284, y: 234 }, `root pane at ${rootY}`);
+    assert.equal(line.path[1].y, 234);
+  }
+  const [gedit] = linesOf({ oracle: writerOracle(21) }, { ...sc, family: 'gedit' }, [{ node: 'p0', start: 0, end: 20 }]);
+  assert.deepEqual(gedit.point, { x: 284, y: 207 }, "another family's extents as AT-SPI reports them");
 });

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { PLANS, PRIMARY_MARKER, aimAt, caseRow, firstVerdict, observed, observedOnParity, parkPoint, writerPlan } from '../../scripts/linux-engine-diff/writer-drag.mjs';
-import { clippedCentre, onElement } from '../../scripts/linux-engine-diff/vcl-probe.mjs';
+import { clippedCentre, landedOnElement, onElement } from '../../scripts/linux-engine-diff/vcl-probe.mjs';
+import { ParkRefused, ROOT } from '../../scripts/linux-engine-diff/park.mjs';
 
 const lanes = [{ label: 'pinned' }, { label: 'cua' }];
 const run = (over) => ({ ok: true, selection: [], primary: PRIMARY_MARKER, caret_moved: true, witness: true, ...over });
@@ -35,15 +36,29 @@ test("a case's row counts each observer apart, any selection at all, and the wit
   assert.equal(row.witness, false);
 });
 
-test('the pointer parks on the text, in the window off it, beside it, or stays', () => {
-  const window = { x: 0, y: 30, width: 1100, height: 760 };
+test('the pointer parks on the text, in the window off it, on the bare root beside its frame, or stays', () => {
+  const window = { x: 1, y: 30, width: 1100, height: 760 };
   const path = [{ x: 300, y: 200 }, { x: 440, y: 200 }];
-  assert.deepEqual(parkPoint('text', window, path), { x: 300, y: 230 });
-  assert.deepEqual(parkPoint('blank', window, path), { x: 550, y: 670 });
-  const out = parkPoint('out', window, path);
-  assert.ok(out.x >= window.x + window.width, 'outside the window');
-  assert.equal(parkPoint('none', window, path), null);
-  assert.throws(() => parkPoint('under', window, path), /unknown pointer park/);
+  const where = { id: 77, frame: [1, 1, 23, 1], avoid: [{ x: 1069, y: 617, width: 202, height: 174 }] };
+  assert.deepEqual(parkPoint('text', window, path, where), { point: { x: 301, y: 230 }, intended: 77 });
+  assert.deepEqual(parkPoint('blank', window, path, where), { point: { x: 551, y: 670 }, intended: 77 });
+  const out = parkPoint('out', window, path, where);
+  assert.equal(out.intended, ROOT, 'verified on the bare root');
+  assert.ok(out.point.x > window.x + window.width + 1, `beside the frame: ${JSON.stringify(out.point)}`);
+  assert.equal(parkPoint('none', window, path, where), null);
+  assert.throws(() => parkPoint('under', window, path, where), /unknown pointer park/);
+  // task 72's review, finding 2: the counted windows were maximized, so a fixed "outside" point was inside Writer;
+  // a window with no bare root beside it refuses the outside park rather than assume one
+  const maximized = { x: 0, y: 21, width: 1280, height: 779 };
+  assert.throws(() => parkPoint('out', maximized, path, { id: 77, frame: [0, 0, 21, 0] }), (e) => e instanceof ParkRefused && /no bare root/.test(e.message));
+});
+
+test("Calc's right click lands when the cell it made active is the true centre's, read directly", () => {
+  const row = { family: 'calc', cell_expected: 'C14', cell_after: 'C14', landed: { x: 0, y: 0 }, truth: { x: 500, y: 400 } };
+  assert.equal(landedOnElement(row), true, "the menu's corner is no reading of the press in Calc");
+  assert.equal(landedOnElement({ ...row, cell_after: 'C12' }), false, 'two rows up: a press at the stale point');
+  assert.equal(landedOnElement({ ...row, cell_expected: null, cell_after: null }), false, 'nothing read is no landing');
+  assert.equal(landedOnElement({ family: 'writer', landed: { x: 500, y: 401 }, truth: { x: 500, y: 400 } }), true);
 });
 
 test('a plan names only lanes the run has, and an unknown plan is refused', () => {

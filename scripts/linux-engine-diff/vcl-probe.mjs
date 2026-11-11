@@ -14,7 +14,9 @@ import { Engine } from './engine.mjs';
 import { openFamily } from './families.mjs';
 import { Oracle } from './oracle.mjs';
 import { PAGES, XPROBE, placeOnScreen, xdotool } from './scenes.mjs';
-import { LIBREOFFICE_FAMILIES, vclShift } from './vcl-aim.mjs';
+import { identityVerdict, readIdentity, verifyIdentity } from './app-identity.mjs';
+import { parkOnFront } from './park.mjs';
+import { LIBREOFFICE_FAMILIES, vclDrawn, vclLevels, vclShift } from './vcl-aim.mjs';
 import { startWitness } from './witness.mjs';
 import { xExecFileSync } from './xspawn.mjs';
 
@@ -73,10 +75,56 @@ async function openPointScene(desktop, label) {
 }
 
 /**
- * The element each family's right click aims at: VCL content in LibreOffice (Calc's sheet as a whole, since its cells'
- * objects are made on demand and an engine cannot resolve them again), the point scene's button.
+ * The element each probe family's right click aims at: VCL content in LibreOffice (Calc's sheet as a whole, since its
+ * cells' objects are made on demand and an engine cannot resolve them again; `writer-root`, Writer's root pane itself,
+ * whose own ancestors hold no root pane: task 72's review, finding 1), the point scene's button.
  */
-const TARGET_ROLES = { writer: ['paragraph'], calc: ['table'], impress: ['paragraph', 'text', 'shape'], 'gtk3-frame': ['push button'] };
+const TARGET_ROLES = { writer: ['paragraph'], 'writer-root': ['root pane'], calc: ['table'], impress: ['paragraph', 'text', 'shape'], 'gtk3-frame': ['push button'] };
+
+/** The application a probe family opens: `writer-root` is Writer's. */
+export const appOf = (family) => (family === 'writer-root' ? 'writer' : family);
+
+/**
+ * A probe family's fresh window, its application verified as the family's before anything of it counts
+ * (app-identity.mjs; `verify` false only for the identity plan, which reads what each shows): the point scene, or the
+ * family's application (Writer on the drag document).
+ */
+async function openProbeScene(desktop, oracle, family, role, { verify = true } = {}) {
+  const app = appOf(family);
+  const scene = app === 'gtk3-frame' ? await openPointScene(desktop, role) : await openFamily(desktop, oracle, app, role, app === 'writer' ? { doc: DRAG_DOC } : {});
+  if (!verify) return scene;
+  try {
+    scene.identity = verifyIdentity(oracle, scene, app);
+  } catch (error) {
+    await desktop.close([scene]);
+    throw error;
+  }
+  return scene;
+}
+
+/**
+ * Calc's active cell, read directly after a right click (a right click moves Calc's cell cursor to the cell it
+ * presses): the name of the sheet's selected child through AT-SPI's Selection, beside the name of the cell at a screen
+ * point, asked of the sheet in VCL's own coordinates (the point less the host's offset, since VCL answers in the
+ * coordinates it reports). `{selected, at}`, each null where it does not read.
+ */
+export function calcCells(oracle, table, point, shift) {
+  const name = (ref) => {
+    const [bus, path] = ref ?? [];
+    return bus && path && path !== '/org/a11y/atspi/null' ? oracle.name(`${bus}:${path}`) : null;
+  };
+  const read = (call) => {
+    try {
+      return name(call()[0]);
+    } catch {
+      return null;
+    }
+  };
+  return {
+    selected: read(() => oracle.on(table, 'org.a11y.atspi.Selection', 'GetSelectedChild', 'i', 0)),
+    at: point ? read(() => oracle.on(table, 'org.a11y.atspi.Component', 'GetAccessibleAtPoint', 'iiu', point.x - shift.dx, point.y - shift.dy, 0)) : null,
+  };
+}
 
 /** The centre of a rectangle `{x, y, w, h}` clipped to the window, floored, as the engine takes it (`visible_point`). */
 export function clippedCentre(e, win) {
@@ -91,19 +139,34 @@ export function clippedCentre(e, win) {
 export const onElement = (landed, truth) => Boolean(landed && truth) && Math.abs(landed.x - truth.x) <= 2 && Math.abs(landed.y - truth.y) <= 2;
 
 /**
+ * Whether a right click landed on its element: within 2 px of the element's true centre, or for Calc's sheet (whose
+ * menu opens above a press near the bottom, so its corner is no reading of the press) the active cell after the click
+ * being the cell at the true centre, read directly (`calcCells`).
+ */
+export function landedOnElement(row) {
+  if (row.family === 'calc') return Boolean(row.cell_expected) && row.cell_after === row.cell_expected;
+  return onElement(row.landed, row.truth);
+}
+
+/**
  * One engine's element right click (`click {element_id, mouse_button: right}`) on `n` fresh windows of a family, then
  * again on each after that first pointer event. Where it landed: the corner of the context menu VCL opens at the press
- * (one pixel below it), or the press the point scene's button records. The truth: the element's centre as the harness
- * reads it, its VCL extents moved by the host panel's offset (`vclShift`, never the engine's correction).
+ * (one pixel below it), the press the point scene's button records, or (Calc) the cell the click made active. The
+ * truth: the element's centre as the harness reads it, its VCL extents moved by the host panel's offset (`vclDrawn`,
+ * never the engine's correction).
  */
 async function elementProbe(ctx, family, n, spec) {
   const { desktop, oracle, emit, witness } = ctx;
   const rows = [];
+  const app = appOf(family);
   const engine = new Engine({ ...spec, args: [] }).start();
   try {
     for (let i = 0; i < n; i++) {
       const role = `el${spec.label.replace(/[^a-z0-9]+/gi, '')}${family.replace(/[^a-z0-9]+/gi, '')}${i}`;
-      const scene = family === 'gtk3-frame' ? await openPointScene(desktop, role) : await openFamily(desktop, oracle, family, role, family === 'writer' ? { doc: DRAG_DOC } : {});
+      // the real pointer on the front window, off the application, while the fresh window opens (park.mjs): a window
+      // mapped under a still pointer gets a crossing event only, never the motion that moves VCL's coordinates
+      parkOnFront(desktop);
+      const scene = await openProbeScene(desktop, oracle, family, role);
       try {
         desktop.arrangeFront('visible');
         await sleep(800);
@@ -125,17 +188,28 @@ async function elementProbe(ctx, family, n, spec) {
             return false;
           }
         };
-        const target = TARGET_ROLES[family].map((r) => nodes.find((x) => x.role === r && inWindow(x.id))).find(Boolean);
+        // Writer's root pane from the frame by the harness's own walk (vcl-aim.mjs `vclLevels`); the rest from the tree
+        const target = family === 'writer-root'
+          ? { id: vclLevels(oracle, scene.frame).root, role: 'root pane' }
+          : TARGET_ROLES[family].map((r) => nodes.find((x) => x.role === r && inWindow(x.id))).find(Boolean);
         if (!target) throw new Error(`${scene.label}: no ${TARGET_ROLES[family].join(' or ')} to right-click`);
         for (const pass of ['fresh', 'after a pointer event']) {
+          const libreoffice = LIBREOFFICE_FAMILIES.includes(app);
           const extents = oracle.extents(target.id);
-          const shift = LIBREOFFICE_FAMILIES.includes(family) ? vclShift(oracle, scene.frame) : { dx: 0, dy: 0 };
-          const truth = clippedCentre({ ...extents, x: extents.x + shift.dx, y: extents.y + shift.dy }, win);
+          const shift = libreoffice ? vclShift(oracle, scene.frame) : { dx: 0, dy: 0 };
+          const truth = clippedCentre(libreoffice ? vclDrawn(oracle, scene.frame, () => oracle.extents(target.id)) : extents, win);
           const reported = clippedCentre(extents, win);
+          // Calc: the cell at the true centre, asked before the press (whose pointer event moves VCL's coordinates)
+          const cells = app === 'calc' ? calcCells(oracle, target.id, truth, shift) : null;
           const before = popups();
           const { value, witness: w } = await witness.span(`${spec.label}:${family}:element-right-click`, () => engine.request('click', { window: { id: scene.id }, element_id: target.id, mouse_button: 'right' }));
           const ok = value.response.ok === true;
           let landed = null;
+          let cellAfter = null;
+          if (ok && app === 'calc') {
+            await sleep(300);
+            cellAfter = calcCells(oracle, target.id, null, shift).selected;
+          }
           if (ok && family === 'gtk3-frame') {
             await sleep(300);
             const label = preorderNames((await desktop.state(scene)).ax_tree).find((t) => /^press \d+ at /.test(t));
@@ -150,7 +224,9 @@ async function elementProbe(ctx, family, n, spec) {
             }
           }
           await sleep(500);
-          const row = { kind: 'element-probe', engine: spec.label, family, i, pass, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), witness: w.clean, window: { x: win.x, y: win.y, w: win.width, h: win.height }, extents, host_shift: shift, reported, truth, landed, on_element: onElement(landed, truth) };
+          const row = { kind: 'element-probe', engine: spec.label, family, i, pass, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), witness: w.clean, window: { x: win.x, y: win.y, w: win.width, h: win.height }, identity: scene.identity, extents, host_shift: shift, reported, truth, landed };
+          if (cells) Object.assign(row, { cell_before: cells.selected, cell_expected: cells.at, cell_after: cellAfter });
+          row.on_element = landedOnElement(row);
           emit(row);
           rows.push(row);
         }
@@ -233,8 +309,8 @@ export async function runHierarchyPlan(args, { desktop, emit }) {
   const failed = [];
   try {
     for (let i = 0; i < n; i++) {
-      for (const app of LIBREOFFICE_FAMILIES) {
-        const scene = await openFamily(desktop, oracle, app, `hier${i}`, app === 'writer' ? { doc: DRAG_DOC } : {});
+      for (const app of args.families?.length ? args.families : LIBREOFFICE_FAMILIES) {
+        const scene = await openProbeScene(desktop, oracle, app, `hier${i}`);
         try {
           const read = (state) => {
             const path = app === 'writer' ? pathTo(oracle, scene.frame, 'paragraph') : null;
@@ -268,6 +344,36 @@ export async function runHierarchyPlan(args, { desktop, emit }) {
   return { md, complete: failed.length === 0, failed };
 }
 
+/**
+ * What each family's application shows through AT-SPI (`--plan identity`, app-identity.mjs `readIdentity`): its
+ * application's name and toolkit, the role of its document and its frame's name, read on one fresh window each, with
+ * the verdict against `APP_IDENTITY`. The table's values come from this plan's sitting.
+ */
+export async function runIdentityPlan(args, { desktop, emit }) {
+  const oracle = new Oracle();
+  await desktop.openFront('visible');
+  const md = ["Each family's application as AT-SPI shows it (vcl-probe.mjs `runIdentityPlan`), against app-identity.mjs `APP_IDENTITY`.", '', '| family | application | toolkit | document | frame | verdict |', '|---|---|---|---|---|---|'];
+  const failed = [];
+  for (const family of args.families?.length ? args.families : ['writer', 'calc', 'impress', 'gtk3-frame']) {
+    let scene = null;
+    try {
+      scene = await openProbeScene(desktop, oracle, family, `id${family.replace(/[^a-z0-9]+/gi, '')}`, { verify: false });
+      const identity = readIdentity(oracle, scene.frame);
+      const frame = oracle.name(scene.frame);
+      const verdict = identityVerdict(identity, family);
+      emit({ kind: 'app-identity', family, ...identity, frame, ok: verdict.ok, why: verdict.why });
+      md.push(`| ${family} | ${identity.application} | ${identity.toolkit} | ${identity.document ?? '–'} | ${frame} | ${verdict.ok ? 'ok' : `**${verdict.why.join('; ')}**`} |`);
+      if (!verdict.ok) failed.push(`${family}: ${verdict.why.join('; ')}`);
+    } catch (error) {
+      failed.push(`${family}: ${String(error.message).split('\n')[0].slice(0, 200)}`);
+      md.push(`| ${family} | **failed: ${String(error.message).slice(0, 160)}** |`);
+    } finally {
+      if (scene) await desktop.close([scene]);
+    }
+  }
+  return { md, complete: failed.length === 0, failed };
+}
+
 export async function runElementPlan(args, { desktop, emit }) {
   const n = args.samplesTrials ?? 3;
   const oracle = new Oracle();
@@ -276,7 +382,7 @@ export async function runElementPlan(args, { desktop, emit }) {
   const ctx = { desktop, oracle, witness, emit, cua: args.cua };
   const lanes = [{ label: 'cua', bin: args.cua }, { label: 'pinned', bin: args.vendor }];
   const md = [
-    "An engine's element right click on fresh windows and after that first pointer event (vcl-probe.mjs `elementProbe`): where it landed (VCL's context menu's corner, or the press the GTK 3 point scene records) against the element's true centre as the harness reads it from LibreOffice's host panel.",
+    "An engine's element right click on fresh windows and after that first pointer event (vcl-probe.mjs `elementProbe`): where it landed (VCL's context menu's corner, the press the GTK 3 point scene records, or for Calc the cell the click made active, against the cell at the true centre) against the element's true centre as the harness reads it from LibreOffice's host panel. Every scene's application was verified first (app-identity.mjs).",
     '',
     '| engine | family | pass | on the element | reported centre | host shift | true centre | landed |',
     '|---|---|---|---:|---|---|---|---|',
@@ -284,14 +390,14 @@ export async function runElementPlan(args, { desktop, emit }) {
   const failed = [];
   try {
     for (const spec of lanes) {
-      for (const family of args.families?.length ? args.families : ['writer', 'calc', 'impress', 'gtk3-frame']) {
+      for (const family of args.families?.length ? args.families : ['writer', 'writer-root', 'calc', 'impress', 'gtk3-frame']) {
         try {
           const rows = await elementProbe(ctx, family, n, spec);
           for (const pass of ['fresh', 'after a pointer event']) {
             const mine = rows.filter((r) => r.pass === pass);
             const one = mine[0];
             const xy = (p) => (p ? `${p.x}, ${p.y}` : '–');
-            md.push(`| ${spec.label} | ${family} | ${pass} | ${mine.filter((r) => r.on_element).length}/${mine.length} | ${xy(one?.reported)} | ${one ? `${one.host_shift.dx}, ${one.host_shift.dy}` : '–'} | ${xy(one?.truth)} | ${one?.ok === false ? `**${one.error}**` : xy(one?.landed)} |`);
+            md.push(`| ${spec.label} | ${family} | ${pass} | ${mine.filter((r) => r.on_element).length}/${mine.length} | ${xy(one?.reported)} | ${one ? `${one.host_shift.dx}, ${one.host_shift.dy}` : '–'} | ${xy(one?.truth)} | ${one?.ok === false ? `**${one.error}**` : one?.cell_expected !== undefined ? `active cell ${one.cell_after ?? '–'} (the true centre's ${one.cell_expected ?? '–'}; menu corner ${xy(one.landed)})` : xy(one?.landed)} |`);
           }
         } catch (error) {
           failed.push(`${spec.label} ${family}: ${String(error.message).split('\n')[0].slice(0, 200)}`);

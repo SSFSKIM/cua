@@ -55,6 +55,8 @@ import { CHROMIUM, pasteTexts, seriesVerdict } from './focus-timer.mjs';
 import { preorder } from './normalize.mjs';
 import { parseInputStatus } from './ops.mjs';
 import { Oracle } from './oracle.mjs';
+import { verifyIdentity } from './app-identity.mjs';
+import { LIBREOFFICE_FAMILIES, vclDrawn } from './vcl-aim.mjs';
 import { Desktop, a11yBusAddress, activeWindow, desktopEnding } from './scenes.mjs';
 import { median } from './stats.mjs';
 import { judgeSpan, spanActivations, spanClean, startWitness } from './witness.mjs';
@@ -680,10 +682,14 @@ async function auditCell(ctx, cell, sc, lane) {
  * a double click, each with the line's span of offsets and its points, window-relative. (Qt 6's text answers every
  * line's character extents with the first line's place, so the second line is never aimed at.)
  */
-function linesOf(ctx, sc, nodes) {
+export function linesOf(ctx, sc, nodes) {
   const { oracle } = ctx;
+  // LibreOffice reports VCL's text up to its menu bar's height too high until a pointer event reaches it: each
+  // character's extents moved where VCL draws them, by the host panel's offset the harness reads with them (T16,
+  // vcl-aim.mjs; before T16 this aimed Writer into the page's header margin)
+  const charAt = LIBREOFFICE_FAMILIES.includes(sc.family) ? (node, offset) => vclDrawn(oracle, sc.frame, () => oracle.charExtents(node, offset)) : (node, offset) => oracle.charExtents(node, offset);
   const pointAt = (node, offset, part) => {
-    const e = oracle.charExtents(node, offset);
+    const e = charAt(node, offset);
     if (!(e.w > 0 && e.h >= 0)) throw new Error(`${sc.label}: no extents for character ${offset} (${JSON.stringify(e)})`);
     // Qt's KTextEditor answers a character's width with no height: the point is then 6 px into the line
     return { x: Math.round(e.x - sc.origin.x + Math.max(1, e.w * part)), y: Math.round(e.y - sc.origin.y + (e.h > 0 ? e.h / 2 : 6)) };
@@ -704,6 +710,9 @@ async function openScene(ctx, name) {
   // the family's own size asked for, so a browser opens at it and not maximized (families.mjs: Firefox's first window)
   const sc = await openFamily(desktop, oracle, def.family, `settle-${name}`, { geometry: FAMILIES[def.family].geometry, ...(def.page ? { page: def.page } : {}) });
   Object.assign(sc, { name, effects: def.effects });
+  // LibreOffice's module verified before any cell of it counts: one application serves Writer, Calc and Impress alike
+  // (app-identity.mjs)
+  if (LIBREOFFICE_FAMILIES.includes(def.family)) sc.identity = verifyIdentity(oracle, sc, def.family);
   const state = await desktop.state(sc);
   sc.origin = state.window;
   sc.treeSource = state.ax_tree_source;

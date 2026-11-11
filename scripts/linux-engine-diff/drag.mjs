@@ -53,7 +53,8 @@ import { captureWindow, pixelsChanged } from './pixels.mjs';
 import { negativeCheck } from './run.mjs';
 import { XPROBE, xdotool } from './scenes.mjs';
 import { blockOrder, median } from './stats.mjs';
-import { LIBREOFFICE_FAMILIES, vclShift } from './vcl-aim.mjs';
+import { LIBREOFFICE_FAMILIES, vclDrawn } from './vcl-aim.mjs';
+import { APP_IDENTITY, verifyIdentity } from './app-identity.mjs';
 import { startWitness } from './witness.mjs';
 import { SETTLE_MS } from '../../src/services/engine/linux/settle.mjs';
 
@@ -260,10 +261,11 @@ export async function locate(ctx, scene, kinds) {
       const area = FAMILIES[scene.family]?.area?.(scene.window);
       const estimate = (offset) => [area.x - origin.x + 12 + 10 * offset + 5, area.y - origin.y + 14];
       // LibreOffice reports VCL's text up to the menu bar's height too high until a pointer event reaches it: moved by
-      // the host panel's offset, read here by the harness (vcl-aim.mjs), so even a fresh window's first drag lands on it
-      const shift = LIBREOFFICE_FAMILIES.includes(scene.family) ? vclShift(oracle, scene.frame) : { dx: 0, dy: 0 };
-      const drawn = (e) => ({ ...e, x: e.x + shift.dx, y: e.y + shift.dy });
-      at.text = { id, cell: area ? estimate : (offset) => toWindow(centre(drawn(oracle.charExtents(id, offset)))) };
+      // the host panel's offset, read here by the harness (vcl-aim.mjs), so even a fresh window's first drag lands on
+      // it. The offset is read with each character's extents, since a pointer event or a configure between two aims
+      // moves both (task 72's review, finding 4)
+      const drawn = (offset) => (LIBREOFFICE_FAMILIES.includes(scene.family) ? vclDrawn(oracle, scene.frame, () => oracle.charExtents(id, offset)) : oracle.charExtents(id, offset));
+      at.text = { id, cell: area ? estimate : (offset) => toWindow(centre(drawn(offset))) };
     }
   }
   if (kinds.includes('scale')) {
@@ -840,6 +842,15 @@ export async function runDrag(args, { desktop, emit }) {
       const open = async (label) => {
         const scene = await openFamily(desktop, oracle, family, label, { page, doc: DRAG_DOC, env, geometry });
         if (page) scene.kindOf = 'page';
+        // a family with a declared identity (Writer) verified before its cell counts (app-identity.mjs)
+        if (APP_IDENTITY[family]) {
+          try {
+            scene.identity = verifyIdentity(oracle, scene, family);
+          } catch (error) {
+            await desktop.close([scene]);
+            throw error;
+          }
+        }
         return scene;
       };
       try {

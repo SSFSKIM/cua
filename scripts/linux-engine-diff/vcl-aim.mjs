@@ -26,13 +26,34 @@ export function vclShiftOf({ client, host, root }) {
  * pane (Writer, Calc and Impress alike, task 72's hierarchy sitting).
  */
 export function vclShift(oracle, frame) {
+  const { client, host, root } = vclLevels(oracle, frame);
+  return vclShiftOf({ client: oracle.extents(client), host: oracle.extents(host), root: oracle.extents(root) });
+}
+
+/** The node ids of a LibreOffice frame's client panel, the host panel below it and VCL's root pane in the host. */
+export function vclLevels(oracle, frame) {
   for (const client of oracle.children(frame)) {
     if (oracle.role(client) !== 'panel') continue;
     for (const host of oracle.children(client)) {
       if (oracle.role(host) !== 'panel') continue;
       const root = oracle.children(host).find((id) => oracle.role(id) === 'root pane');
-      if (root) return vclShiftOf({ client: oracle.extents(client), host: oracle.extents(host), root: oracle.extents(root) });
+      if (root) return { client, host, root };
     }
   }
   throw new Error("LibreOffice's frame has no panel hosting a root pane: VCL's offset cannot be read");
+}
+
+/**
+ * VCL extents (`read()`, `{x, y, w, h}`) moved where VCL draws them, the offset sampled with them: read between two
+ * readings of the offset that agree, so a pointer event or a configure that lands between the reads is never paired
+ * with the other state's extents (task 72's review, finding 4). Throws if the state keeps changing.
+ */
+export function vclDrawn(oracle, frame, read, { tries = 5 } = {}) {
+  for (let k = 0; k < tries; k++) {
+    const before = vclShift(oracle, frame);
+    const e = read();
+    const after = vclShift(oracle, frame);
+    if (before.dx === after.dx && before.dy === after.dy) return { ...e, x: e.x + after.dx, y: e.y + after.dy };
+  }
+  throw new Error(`LibreOffice's VCL offset changed in each of ${tries} readings: no extents to aim by`);
 }

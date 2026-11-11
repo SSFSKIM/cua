@@ -53,6 +53,9 @@ import { captureWindow, pixelsChanged } from './pixels.mjs';
 import { negativeCheck } from './run.mjs';
 import { XPROBE, xdotool } from './scenes.mjs';
 import { blockOrder, median } from './stats.mjs';
+import { LIBREOFFICE_FAMILIES, vclDrawn } from './vcl-aim.mjs';
+import { APP_IDENTITY, verifyIdentity } from './app-identity.mjs';
+import { parkPointer } from './park.mjs';
 import { startWitness } from './witness.mjs';
 import { SETTLE_MS } from '../../src/services/engine/linux/settle.mjs';
 
@@ -258,7 +261,12 @@ export async function locate(ctx, scene, kinds) {
       // GTK 4.14 answers no character extents: its first line, at an estimated 10 px a character past the margin
       const area = FAMILIES[scene.family]?.area?.(scene.window);
       const estimate = (offset) => [area.x - origin.x + 12 + 10 * offset + 5, area.y - origin.y + 14];
-      at.text = { id, cell: area ? estimate : (offset) => toWindow(centre(oracle.charExtents(id, offset))) };
+      // LibreOffice reports VCL's text up to the menu bar's height too high until a pointer event reaches it: moved by
+      // the host panel's offset, read here by the harness (vcl-aim.mjs), so even a fresh window's first drag lands on
+      // it. The offset is read with each character's extents, since a pointer event or a configure between two aims
+      // moves both (task 72's review, finding 4)
+      const drawn = (offset) => (LIBREOFFICE_FAMILIES.includes(scene.family) ? vclDrawn(oracle, scene.frame, () => oracle.charExtents(id, offset)) : oracle.charExtents(id, offset));
+      at.text = { id, cell: area ? estimate : (offset) => toWindow(centre(drawn(offset))) };
     }
   }
   if (kinds.includes('scale')) {
@@ -294,21 +302,6 @@ export async function verticalScrollBar(desktop, oracle, scene, { extents = fals
   return extents ? bars[0] : bars[0].id;
 }
 
-/**
- * Harness setup that hides a real behaviour, so it is listed here with what it hides: a family whose fresh window takes
- * one untimed, unjudged, witnessed drag before its measured runs.
- */
-export const DRAG_PRIMING = {
-  writer: {
-    reason:
-      "Writer ignores the first drag of a fresh window in every engine, the pinned build's included (Surprises, M1a.4): the cell would measure the window's first drag, not the engine's",
-    hides: "an agent's first drag in a fresh Writer window selects nothing: an M4 candidate (why, and whether the engine can prime the window itself)",
-  },
-};
-
-/** The priming drag's path: the odd runs' text, so the first measured run (even) never presses inside its selection. */
-export const primingPath = (at, kind) => runPath(at, kind, 1);
-
 /** The kind whose target and effect reader a kind uses: a held-move cell draws on its plain kind's target. */
 export const baseKind = (kind) => ({ 'handle-canvas': 'canvas', 'handle-dnd': 'dnd', 'select-unprimed': 'select' })[kind] ?? kind;
 
@@ -334,12 +327,12 @@ export function selectionCovers(text, i) {
 }
 
 /**
- * The unprimed judge's positive reference: of the primed `select` cell's even runs that took (every lane's, in the same
+ * The unprimed judge's positive reference: of the `select` cell's even runs that took (every lane's, in the same
  * sitting), how many `selectionCovers` takes too. Fewer than all, or none to check, and the judge could miss a first
  * drag that selects: the run reports REFERENCE MISMATCH (`dragVerdict`).
  */
-export function primedReference(primedRuns) {
-  const evens = primedRuns.filter((r) => r.i % 2 === 0 && r.took);
+export function selectReference(selectRuns) {
+  const evens = selectRuns.filter((r) => r.i % 2 === 0 && r.took);
   return { covers: evens.filter((r) => selectionCovers(r.after, 0)).length, n: evens.length };
 }
 
@@ -553,7 +546,7 @@ export function judgeRuns(kind, runs) {
  * at least one run (the reader works: the pinned build for a kind judged against its values, `expected`, which then
  * needs one for every parity the runs use; either build for a drop or a stroke); a cell without it is recorded, not
  * judged (`pass: null`). With `absolute` the cell is always judged: a long path's effect on every candidate run
- * (Acceptance 3), whatever the vendor builds took, and Writer's unprimed first drag, which every engine's may miss.
+ * (Acceptance 3), whatever the vendor builds took, and Writer's unprimed first drag, whatever the vendor builds took.
  */
 export function judgeCell(runs, lanes, expected = {}, { absolute = false } = {}) {
   const pinnedRuns = runs.filter((r) => r.engine === 'pinned');
@@ -620,16 +613,22 @@ async function readReceived(ctx, scene) {
  */
 export const POINTER_INSIDE = { firefox: { x: 970, y: 110 } };
 
+/** The occlusions whose cover lies over `POINTER_INSIDE`'s point (scenes.mjs `arrange`): the run's front window. */
+const COVERS_PARK = ['covered', 'partial-top'];
+
 /**
  * The real pointer parked in the scene window for a family `POINTER_INSIDE` names, only where nothing but the run's own
- * windows lies at the point (scenes.mjs `pointerSafeAt`); a point under another's window fails the run unmoved.
+ * windows lies at the point (scenes.mjs `pointerSafeAt`); a point under another's window fails the run unmoved. The
+ * park is then verified where it landed (park.mjs `parkPointer`): over the scene window, or over the run's front window
+ * where the cell's `occlusion` covers the point (a pointer under a cover is outside, to Gecko). A park that did not
+ * land there throws `ParkRefused`. `options` are `parkPointer`'s, given only by the tests.
  */
-export function parkInside(desktop, scene, family, { tool = xdotool } = {}) {
+export function parkInside(desktop, scene, family, { occlusion, ...options } = {}) {
   const at = POINTER_INSIDE[family];
   if (!at) return;
   const point = { x: scene.window.x + at.x, y: scene.window.y + at.y };
   if (!desktop.pointerSafeAt(point)) throw new Error(`the pointer's park point (${point.x}, ${point.y}) in ${family} is under a window the run did not open`);
-  tool('mousemove', point.x, point.y);
+  parkPointer(point, COVERS_PARK.includes(occlusion) ? desktop.front.id : scene.id, options);
 }
 
 /**
@@ -637,17 +636,11 @@ export function parkInside(desktop, scene, family, { tool = xdotool } = {}) {
  * sitting: what the application did, whatever the answer). `ctx.parkInside` parks the real pointer in the window first
  * (`parkInside`).
  */
-export async function series(ctx, spec, scene, at, kind, n, { prime = false, start = 0, readFailed = false } = {}) {
-  const { witness, emit, family } = ctx;
+export async function series(ctx, spec, scene, at, kind, n, { start = 0, readFailed = false } = {}) {
+  const { witness, family } = ctx;
   const engine = new Engine(spec).start();
   const runs = [];
   try {
-    if (prime) {
-      // DRAG_PRIMING: one drag the cell neither times nor judges, witnessed like every other
-      const { value, witness: w } = await witness.span(`${spec.label}:${family}:drag:${kind}:prime`, () => engine.request('drag', { window: { id: scene.id }, path: primingPath(at, kind) }));
-      emit({ kind: 'drag-prime', family, drag: kind, engine: spec.label, ok: value.response.ok === true, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, reason: DRAG_PRIMING[family].reason });
-      await sleep(700);
-    }
     for (let i = start; i < start + n; i++) {
       if (kind === 'select' && scene.kindOf === 'terminal') {
         // the marker must own PRIMARY before the drag: an xclip slow to start would take it after the selection
@@ -658,7 +651,7 @@ export async function series(ctx, spec, scene, at, kind, n, { prime = false, sta
       // the page's scroller goes back to its top by itself; the drag waits for it
       if (kind === 'scroller') for (let tries = 0; (await read()) !== 0 && tries < 40; tries++) await sleep(200);
       await ctx.desktop.arrange(scene, ctx.occlusion);
-      if (ctx.parkInside) parkInside(ctx.desktop, scene, family);
+      if (ctx.parkInside) parkInside(ctx.desktop, scene, family, { occlusion: ctx.occlusion });
       if (inFront(family, kind)) {
         // the window in front for every lane, the device case's way (dnd.mjs): raised, then activated
         xdotool('windowactivate', '--sync', scene.id);
@@ -683,7 +676,7 @@ export async function series(ctx, spec, scene, at, kind, n, { prime = false, sta
       // the no-press control is answered success, and its effect is read like any other: it must show none
       const after = ok || readFailed ? (at.text?.pixels ? await read() : await settled(read, before)) : null;
       // an engine's first request is cold: the long paths' speed is judged warm (dragSpeed)
-      const run = { family, drag: kind, occlusion: ctx.occlusion, engine: spec.label, i, first_request: i === start && !prime, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before, after, path };
+      const run = { family, drag: kind, occlusion: ctx.occlusion, engine: spec.label, i, first_request: i === start, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before, after, path };
       if (inFront(family, kind)) run.in_front = true;
       if (at.text?.pixels) run.pixels_changed = ok ? pixelsChanged(before.capture, after.capture) : false;
       if (at.page && (ok || readFailed)) {
@@ -732,7 +725,7 @@ export function blockPlan(lanes, count, start, { block = BLOCK_RUNS, offset = 0 
  * long path's effect is judged on every candidate run whatever the vendor builds took (Acceptance 3), as is Writer's
  * unprimed drag (`absolute`). Returns the cell's row and its judged runs.
  */
-export function judgeDragCell(family, kind, runs, { cuaLanes, vendors, laneLabels = null, load = false, primed = null, absolute = false }) {
+export function judgeDragCell(family, kind, runs, { cuaLanes, vendors, laneLabels = null, load = false, select = null, absolute = false }) {
   const judged = judgeRuns(kind, runs);
   const cell = judgeCell(judged.runs.filter((r) => r.engine !== CONTROL_LANE), cuaLanes, judged.expected, { absolute: absolute || isLongPath(family, kind) });
   const reach = reachJudged(family, kind) ? thumbReach(judged.runs, cuaLanes) : null;
@@ -755,7 +748,7 @@ export function judgeDragCell(family, kind, runs, { cuaLanes, vendors, laneLabel
     ...(isLongPath(family, kind) && !load && vendors.length ? { speed: Object.fromEntries(cuaLanes.map((l) => [l, speedOf(l)])) } : {}),
     ...(load ? { load: loadCounts(judged.runs, cuaLanes) } : {}),
     ...(kind.startsWith('handle-') ? { control: controlVerdict(judged.runs.filter((r) => r.engine === CONTROL_LANE)) } : {}),
-    ...(primed ? { primed_reference: primedReference(primed) } : {}),
+    ...(select ? { select_reference: selectReference(select) } : {}),
     ...(withReceived.length ? { received: Object.fromEntries(labels.map((l) => [l, { raw: of(l, 'raw'), moves: of(l, 'moves'), raw_events: of(l, 'raw_events'), move_events: of(l, 'move_events') }])) } : {}),
   };
   return { row, runs: reach ? reach.runs : judged.runs };
@@ -828,9 +821,9 @@ export async function runDrag(args, { desktop, emit }) {
   const plan = dragPlan(names, kindsAsked);
   if (!plan.length) throw new Error(`no drag cell in families ${names.join(', ')} with kinds ${kindsAsked?.join(', ') ?? 'all'}: nothing to measure`);
   const n = dragTrials(args);
-  // the unprimed lane's judge is checked against the primed cell's selections of the same sitting (primedReference)
+  // the unprimed lane's judge is checked against the select cell's selections of the same sitting (selectReference)
   for (const { family } of plan.filter((p) => p.kind === 'select-unprimed')) {
-    if (!plan.some((p) => p.family === family && p.kind === 'select')) throw new Error(`${family} select-unprimed needs the primed select cell beside it (--ops select,select-unprimed): its judge's positive reference`);
+    if (!plan.some((p) => p.family === family && p.kind === 'select')) throw new Error(`${family} select-unprimed needs the select cell beside it (--ops select,select-unprimed): its judge's positive reference`);
   }
   const lanes = dragEngines(args);
   const cuaLanes = lanes.filter((l) => l.label.startsWith('cua')).map((l) => l.label);
@@ -848,14 +841,14 @@ export async function runDrag(args, { desktop, emit }) {
   ];
   const cells = [];
   const errors = [];
-  // each family's primed select runs, the unprimed lane's reference
-  const primedSelect = {};
-  const record = (family, kind, runs, { absolute = false, primed = null } = {}) => {
-    const { row, runs: judged } = judgeDragCell(family, kind, runs, { cuaLanes, vendors, laneLabels: lanes.map((l) => l.label), load: Boolean(args.load), primed, absolute });
+  // each family's select runs, the unprimed lane's reference
+  const selectRuns = {};
+  const record = (family, kind, runs, { absolute = false, select = null } = {}) => {
+    const { row, runs: judged } = judgeDragCell(family, kind, runs, { cuaLanes, vendors, laneLabels: lanes.map((l) => l.label), load: Boolean(args.load), select, absolute });
     for (const r of judged) emit({ kind: 'drag-run', ...r });
     emit(row);
     cells.push(row);
-    if (kind === 'select') primedSelect[family] = judged;
+    if (kind === 'select') selectRuns[family] = judged;
     const took = (label) => `${judged.filter((r) => r.engine === label && r.took).length}/${judged.filter((r) => r.engine === label).length}`;
     const verdict = !row.reference && !row.load ? (row.pinned_took === 0 ? 'no vendor effect: not judged' : 'no usable pinned reference: not judged') : cuaLanes.map((l) => `${l} ${laneFailures(row, l).length ? '**FAIL**' : 'PASS'}`).join(', ');
     const witnessClean = judged.every((r) => r.witness) ? 'clean' : '**changed**';
@@ -882,6 +875,15 @@ export async function runDrag(args, { desktop, emit }) {
       const open = async (label) => {
         const scene = await openFamily(desktop, oracle, family, label, { page, doc: DRAG_DOC, env, geometry });
         if (page) scene.kindOf = 'page';
+        // a family with a declared identity (Writer) verified before its cell counts (app-identity.mjs)
+        if (APP_IDENTITY[family]) {
+          try {
+            scene.identity = verifyIdentity(oracle, scene, family);
+          } catch (error) {
+            await desktop.close([scene]);
+            throw error;
+          }
+        }
         return scene;
       };
       try {
@@ -899,13 +901,10 @@ export async function runDrag(args, { desktop, emit }) {
           measuring = kind;
           const runs = [];
           // rotating blocks of fresh engines (blockPlan), the first block's order shifted per kind, the top-ups going on
-          // with the rotation; a primed family primes each lane's window once, at its first drag
-          const primedLanes = new Set();
+          // with the rotation
           const measure = async (count, start) => {
             for (const { spec, start: from, count: size } of blockPlan(lanes, count, start, { offset: k })) {
-              const prime = k === 0 && Boolean(DRAG_PRIMING[family]) && !primedLanes.has(spec.label);
-              primedLanes.add(spec.label);
-              runs.push(...(await series(ctx, spec, scenes[spec.label], at[spec.label], kind, size, { prime, start: from })));
+              runs.push(...(await series(ctx, spec, scenes[spec.label], at[spec.label], kind, size, { start: from })));
               desktop.focusFront();
             }
           };
@@ -933,7 +932,7 @@ export async function runDrag(args, { desktop, emit }) {
         }
         if (kinds.includes('select-unprimed')) {
           measuring = 'select-unprimed';
-          record(family, 'select-unprimed', await unprimedRuns(ctx, lanes, n, open), { absolute: true, primed: primedSelect[family] ?? [] });
+          record(family, 'select-unprimed', await unprimedRuns(ctx, lanes, n, open), { absolute: true, select: selectRuns[family] ?? [] });
           measuring = null;
         }
       } catch (error) {

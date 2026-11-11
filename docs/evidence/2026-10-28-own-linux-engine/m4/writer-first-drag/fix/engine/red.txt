@@ -1,0 +1,85 @@
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling serde_core v1.0.228
+   Compiling rustix v1.1.4
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.228
+   Compiling anyhow v1.0.102
+   Compiling serde_json v1.0.149
+   Compiling linux-raw-sys v0.12.1
+   Compiling bitflags v2.13.2
+   Compiling num-traits v0.2.19
+   Compiling pxfm v0.1.30
+   Compiling syn v2.0.119
+   Compiling cua-linux-engine v0.3.0 (<task72fix>/red-tree/linux-engine)
+   Compiling zune-core v0.5.1
+   Compiling zune-jpeg v0.5.15
+   Compiling moxcms v0.8.1
+   Compiling serde_derive v1.0.228
+   Compiling bytemuck v1.25.0
+   Compiling byteorder-lite v0.1.0
+   Compiling itoa v1.0.18
+   Compiling x11rb-protocol v0.13.2
+   Compiling gethostname v1.1.0
+   Compiling memchr v2.8.3
+   Compiling image v0.25.10
+   Compiling x11rb v0.13.2
+warning: unused import: `Mutex`
+  --> src/engine/vcl_faults.rs:13:22
+   |
+13 | use std::sync::{Arc, Mutex};
+   |                      ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `cua-linux-engine` (bin "cua-engine" test) generated 1 warning (run `cargo fix --bin "cua-engine" -p cua-linux-engine --tests` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 1m 25s
+     Running unittests src/main.rs (target/x86_64-unknown-linux-musl/release/deps/cua_engine-fe88ff4bf993e0e1)
+
+running 9 tests
+test engine::vcl_faults::a_right_click_on_the_stale_root_pane_itself_lands_where_its_host_is ... FAILED
+test engine::vcl_faults::a_root_pane_in_an_unknown_shape_refuses_its_right_click_and_its_scroll_with_nothing_sent ... FAILED
+test engine::vcl_faults::a_root_pane_whose_host_agrees_is_clicked_where_it_is ... ok
+test engine::vcl_faults::an_element_scroll_on_the_stale_root_pane_itself_lands_where_its_host_is ... FAILED
+test vcl::tests::a_structure_without_the_menu_bar_offset_s_shape_is_refused ... ok
+test vcl::tests::after_a_configure_vcl_extents_are_shifted_down_by_the_menu_bar ... ok
+test vcl::tests::after_a_pointer_event_the_host_and_the_root_pane_agree_and_nothing_moves ... ok
+test vcl::tests::an_element_outside_the_root_pane_is_gtk_s_own_and_keeps_its_extents ... ok
+test vcl::tests::libreoffice_is_told_by_its_window_class ... ok
+
+failures:
+
+---- engine::vcl_faults::a_right_click_on_the_stale_root_pane_itself_lands_where_its_host_is stdout ----
+
+thread 'engine::vcl_faults::a_right_click_on_the_stale_root_pane_itself_lands_where_its_host_is' (2846990) panicked at src/engine/vcl_faults.rs:179:9:
+assertion `left == right` failed: [Object {"button": Number(3), "send_event": Bool(true), "type": String("button-press"), "x": Number(200), "y": Number(150)}, Object {"button": Number(3), "send_event": Bool(true), "type": String("button-press"), "x": Number(200), "y": Number(150)}]
+  left: (Number(3), (200, 150))
+ right: (Number(3), (200, 177))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- engine::vcl_faults::a_root_pane_in_an_unknown_shape_refuses_its_right_click_and_its_scroll_with_nothing_sent stdout ----
+
+thread 'engine::vcl_faults::a_root_pane_in_an_unknown_shape_refuses_its_right_click_and_its_scroll_with_nothing_sent' (2847010) panicked at src/engine/vcl_faults.rs:248:5:
+assertion `left == right` failed
+  left: Ok(Null)
+ right: Err("LibreOffice's reported position for this element can't be trusted until the pointer has moved over its window; nothing was sent")
+
+---- engine::vcl_faults::an_element_scroll_on_the_stale_root_pane_itself_lands_where_its_host_is stdout ----
+
+thread 'engine::vcl_faults::an_element_scroll_on_the_stale_root_pane_itself_lands_where_its_host_is' (2847022) panicked at src/engine/vcl_faults.rs:203:9:
+assertion `left == right` failed: every step at the host's centre: [Object {"scroll": String("down"), "x": Number(200), "y": Number(150)}, Object {"scroll": String("down"), "x": Number(200), "y": Number(150)}, Object {"scroll": String("down"), "x": Number(200), "y": Number(150)}, Object {"scroll": String("down"), "x": Number(200), "y": Number(150)}, Object {"scroll": String("down"), "x": Number(200), "y": Number(150)}, Object {"scroll": String("down"), "x": Number(200), "y": Number(150)}, Object {"scroll": String("down"), "x": Number(200), "y": Number(150)}, Object {"scroll": String("down"), "x": Number(200), "y": Number(150)}]
+  left: (200, 150)
+ right: (200, 177)
+
+
+failures:
+    engine::vcl_faults::a_right_click_on_the_stale_root_pane_itself_lands_where_its_host_is
+    engine::vcl_faults::a_root_pane_in_an_unknown_shape_refuses_its_right_click_and_its_scroll_with_nothing_sent
+    engine::vcl_faults::an_element_scroll_on_the_stale_root_pane_itself_lands_where_its_host_is
+
+test result: FAILED. 6 passed; 3 failed; 0 ignored; 0 measured; 417 filtered out; finished in 1.33s
+
+error: test failed, to rerun pass `--bin cua-engine`
+red status 101

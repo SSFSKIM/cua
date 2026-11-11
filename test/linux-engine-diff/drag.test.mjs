@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { CORNERS, DRAG_FAMILIES, POINTER_INSIDE, dragEngines, dragPlan, judgeCell, judgeRuns, pagePath, parkInside, parseDragStatus, runPath, selectOffsets } from '../../scripts/linux-engine-diff/drag.mjs';
 import { FAMILIES } from '../../scripts/linux-engine-diff/families.mjs';
+import { ParkRefused } from '../../scripts/linux-engine-diff/park.mjs';
 
 test("the drag page's status lines parse into each kind's value", () => {
   const s = parseDragStatus(['Range', 'select pha_bravo_charlie_de', 'range 75', 'scroller 117', 'dnd starts 2 drops 1 downs 3 detail 2 gap 412 selects 1 ends 2 effect 0 lat 31 dur 12 ups 1 at 123456789', 'canvas strokes 3 moves 2 dev 140']);
@@ -313,15 +314,15 @@ test("the unprimed Writer lane: a fresh window's first drag took when it selecte
   assert.equal(cell.reference, true);
   assert.equal(cell.lanes.cua.pass, false, 'every engine missing it is still a miss');
   assert.deepEqual(judgeRuns('select-unprimed', [{ engine: 'cua', i: 0, ok: true, before: '', after: 'pha bravo charlie d' }]).runs.map((r) => r.took), [true]);
-  // its positive reference: the primed cell's even runs that took, which the unprimed judge must take too, or it could
+  // its positive reference: the select cell's even runs that took, which the unprimed judge must take too, or it could
   // never see a first drag that selects
-  const primed = [{ i: 0, took: true, after: 'pha bravo charlie d' }, { i: 1, took: true, after: 'avo charlie delta e' }, { i: 2, took: false, after: '' }, { i: 4, took: true, after: 'pha bravo charlie d' }];
-  assert.deepEqual(T10.primedReference(primed), { covers: 2, n: 2 });
-  const mismatch = T10.primedReference([{ i: 0, took: true, after: 'pha_bravo_charlie_d' }]);
+  const select = [{ i: 0, took: true, after: 'pha bravo charlie d' }, { i: 1, took: true, after: 'avo charlie delta e' }, { i: 2, took: false, after: '' }, { i: 4, took: true, after: 'pha bravo charlie d' }];
+  assert.deepEqual(T10.selectReference(select), { covers: 2, n: 2 });
+  const mismatch = T10.selectReference([{ i: 0, took: true, after: 'pha_bravo_charlie_d' }]);
   assert.deepEqual(mismatch, { covers: 0, n: 1 });
-  assert.match(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', primed_reference: mismatch })]).failed.join(), /REFERENCE MISMATCH/);
-  assert.match(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', primed_reference: { covers: 0, n: 0 } })]).failed.join(), /REFERENCE MISMATCH/, 'no primed run to check the judge against');
-  assert.equal(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', primed_reference: { covers: 3, n: 3 } })]).pass, true);
+  assert.match(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', select_reference: mismatch })]).failed.join(), /REFERENCE MISMATCH/);
+  assert.match(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', select_reference: { covers: 0, n: 0 } })]).failed.join(), /REFERENCE MISMATCH/, 'no select run to check the judge against');
+  assert.equal(T10.dragVerdict([cellOf({ family: 'writer', drag: 'select-unprimed', select_reference: { covers: 3, n: 3 } })]).pass, true);
 });
 
 test("Firefox's held-move cells: drag_handle's start, a held move to each point, its end, in root coordinates, with a no-press control", () => {
@@ -526,20 +527,33 @@ test("a cell's drags run in rotating blocks of fresh engines, the top-ups contin
   assert.deepEqual(T10.blockPlan(lanes, 15, 0).map((b) => b.count), [10, 10, 10, 5, 5, 5]);
 });
 
-test("a Gecko drag cell parks the real pointer in its window, away from every path, and only onto the run's own windows", () => {
+test("a Gecko drag cell parks the real pointer in its window, away from every path, only onto the run's own windows, and verified where it landed", () => {
   const moves = [];
-  const tool = (...a) => moves.push(a);
-  const scene = { window: { x: 2, y: 30, width: 1050, height: 760 } };
-  const safe = { pointerSafeAt: () => true };
-  parkInside(safe, scene, 'firefox', { tool });
+  // the display's pointer after the move, over the frame then the scene's client (park.mjs `parkPointer`)
+  let chain = [0x100, 0x2a00007];
+  const read = () => {
+    const [, x, y] = moves.at(-1);
+    return { x, y, same_screen: true, chain };
+  };
+  const options = { move: (p) => moves.push(['mousemove', p.x, p.y]), read, pause: () => {} };
+  const scene = { id: 0x2a00007, window: { x: 2, y: 30, width: 1050, height: 760 } };
+  const front = { id: 0x3000001 };
+  const safe = { pointerSafeAt: () => true, front };
+  parkInside(safe, scene, 'firefox', options);
   assert.deepEqual(moves, [['mousemove', 972, 140]]);
   // the page sits about 85 px below the window's top (drag.mjs `locate`)
   const at = { x: POINTER_INSIDE.firefox.x, y: POINTER_INSIDE.firefox.y - 85 };
   for (const kind of ['select', 'range', 'scroller', 'dnd', 'canvas']) {
     for (const i of [0, 1]) for (const [x, y] of pagePath(kind, i)) assert.ok(Math.hypot(x - at.x, y - at.y) > 200, `${kind} ${i}: far from the park point`);
   }
-  parkInside(safe, scene, 'chrome', { tool });
+  parkInside(safe, scene, 'chrome', options);
   assert.equal(moves.length, 1, 'Chromium parks nothing here');
-  assert.throws(() => parkInside({ pointerSafeAt: () => false }, scene, 'firefox', { tool }), /under a window the run did not open/);
+  assert.throws(() => parkInside({ pointerSafeAt: () => false, front }, scene, 'firefox', options), /under a window the run did not open/);
   assert.equal(moves.length, 1, 'a refused park moves nothing');
+  // a pointer that landed over another window than the scene's is refused, so its run never counts
+  chain = [0x3000001];
+  assert.throws(() => parkInside(safe, scene, 'firefox', options), (e) => e instanceof ParkRefused && /not over window 0x02a00007/.test(e.message));
+  // where the cell's cover lies over the point, the pointer is meant to be over the run's front window (outside, to Gecko)
+  for (const occlusion of ['covered', 'partial-top']) parkInside(safe, scene, 'firefox', { ...options, occlusion });
+  assert.throws(() => parkInside(safe, scene, 'firefox', { ...options, occlusion: 'partial' }), ParkRefused, "the bottom half's cover leaves the point in the window");
 });

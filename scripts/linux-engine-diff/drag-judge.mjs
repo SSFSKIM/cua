@@ -124,8 +124,8 @@ export function dragVerdict(cells, { lane = 'cua' } = {}) {
   for (const cell of cells) {
     failed.push(...laneFailures(cell, lane));
     if (cell.control && !cell.control.pass) failed.push(`${cell.family} ${cell.drag}: CONTROL NON-DISCRIMINATING: the no-press control took ${cell.control.took} of ${cell.control.n}`);
-    const ref = cell.primed_reference;
-    if (ref && (ref.n === 0 || ref.covers < ref.n)) failed.push(`${cell.family} ${cell.drag}: REFERENCE MISMATCH: the unprimed judge took ${ref.covers} of the primed cell's ${ref.n} even runs that took`);
+    const ref = cell.select_reference;
+    if (ref && (ref.n === 0 || ref.covers < ref.n)) failed.push(`${cell.family} ${cell.drag}: REFERENCE MISMATCH: the unprimed judge took ${ref.covers} of the select cell's ${ref.n} even runs that took`);
   }
   return { pass: failed.length === 0, failed };
 }
@@ -148,7 +148,7 @@ export function judgeNotes(row, cuaLanes) {
   }
   if (row.load) notes.push(`load: pinned ${row.load.pinned.took}/${row.load.pinned.n} (mean ${r1(row.load.pinned.mean)}), ${cuaLanes.map((l) => `${l} ${row.load.lanes[l].took}/${row.load.lanes[l].n} (mean ${r1(row.load.lanes[l].mean)}, shortest ${r1(row.load.lanes[l].shortest)})`).join(', ')}`);
   if (row.control) notes.push(`control (no press) took ${row.control.took}/${row.control.n}`);
-  if (row.primed_reference) notes.push(`the judge took ${row.primed_reference.covers}/${row.primed_reference.n} of the primed cell's even runs`);
+  if (row.select_reference) notes.push(`the judge took ${row.select_reference.covers}/${row.select_reference.n} of the select cell's even runs`);
   if (row.received) notes.push(`received, coalesced samples (events), raw/moves, median: ${Object.entries(row.received).map(([l, v]) => `${l} ${r1(v.raw)} (${r1(v.raw_events)})/${r1(v.moves)} (${r1(v.move_events)})`).join(', ')}`);
   return notes.join('; ') || '–';
 }

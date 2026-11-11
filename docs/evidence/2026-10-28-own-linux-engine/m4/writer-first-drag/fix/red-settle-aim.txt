@@ -1,0 +1,33 @@
+✖ T8's settle aims its Writer clicks and drags where VCL draws the text, after a configure as after a pointer event (12.609626ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 136.598754
+
+✖ failing tests:
+
+test at test/linux-engine-diff/vcl-aim.test.mjs:103:1
+✖ T8's settle aims its Writer clicks and drags where VCL draws the text, after a configure as after a pointer event (12.609626ms)
+  AssertionError [ERR_ASSERTION]: root pane at 21
+  + actual - expected
+  
+    {
+      x: 284,
+  +   y: 207
+  -   y: 234
+    }
+  
+      at TestContext.<anonymous> (file://<worktree>/test/linux-engine-diff/vcl-aim.test.mjs:109:12)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: { x: 284, y: 207 },
+    expected: { x: 284, y: 234 },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

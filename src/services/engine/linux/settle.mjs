@@ -26,7 +26,7 @@ export const SETTLE_MS = Object.freeze({
   animated_qt: 125, // Qt's animated click: Qt 6 at twice the load (Qt 5 held at 100)
   clipboard_read: 0,
   clipboard_write: 0, // the engine confirms the paste before it answers
-  drag: 10, // Electron's page and gedit; gedit and xterm at twice the load
+  drag: 25, // Writer's text at twice the load (T16's fix wave; 10 elsewhere: Electron's page, gedit, xterm)
   drag_handle: 10, // Electron's page; gedit at twice the load
   activate_window: 10, // every family whose window manager's activation it reads but GTK 3's scene, idle and loaded
   move: 75, // Electron's page through the desktop route: its last motion, idle and at twice the load

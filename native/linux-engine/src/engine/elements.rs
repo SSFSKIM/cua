@@ -16,17 +16,20 @@ use crate::focus_ack::{FocusAck, nothing_pressed, press_ack};
 use crate::resolve;
 use crate::route::{Inputs, Target};
 use crate::tree::ObjRef;
+use crate::vcl;
 use crate::wire::{MouseButton, ScrollInput, SecondaryActionInput, parse_input};
 use crate::x11::{WindowInfo, X11};
 
 /// A resolved element: its window, the element and its ancestors nearest first, ending with the frame, and the
 /// window's association, confirmed again just before each effect on the element (`atspi::Associated::confirm`).
+/// `libreoffice`: the window is LibreOffice's, whose VCL extents a point corrects first (`vcl.rs`).
 #[derive(Clone)]
 pub(super) struct Element {
     pub(super) info: WindowInfo,
     pub(super) target: ObjRef,
     pub(super) ancestors: Vec<ObjRef>,
     pub(super) associated: Associated,
+    pub(super) libreoffice: bool,
 }
 
 enum RightClick {
@@ -54,12 +57,27 @@ impl Engine {
         // No address is `AT-SPI accessibility bus is unavailable` (from `bus_address`); a connection's own errors
         // propagate, as the vendor's do (behaviour §6.2 step 3).
         let ((target, ancestors), associated) = resolved?.map_err(anyhow::Error::msg)?;
+        let libreoffice = vcl::is_libreoffice(self.x.wm_class(window).as_deref());
         Ok(Element {
             info,
             target,
             ancestors,
             associated,
+            libreoffice,
         })
+    }
+
+    /// Refuses, before any session opens or any window is activated, a LibreOffice element whose VCL point cannot be
+    /// corrected (`vcl::UNTRUSTED`); the point itself is taken again, corrected, where the action sends its input.
+    pub(super) fn trusted_point(&mut self, element: &Element) -> Result<()> {
+        if !element.libreoffice {
+            return Ok(());
+        }
+        let bus = self
+            .bus
+            .as_mut()
+            .ok_or_else(|| anyhow!("AT-SPI accessibility bus is unavailable"))?;
+        vcl_shift(bus, element).map(|_| ())
     }
 
     /// The parts an element action works with once the element is resolved.
@@ -80,6 +98,8 @@ impl Engine {
         let mut within = None;
         let target = match button {
             MouseButton::Right => {
+                // a LibreOffice point that cannot be corrected is refused before the session or an activation
+                self.trusted_point(&element)?;
                 let way = self.route_for(Some(window), Kind::Clicks)?;
                 let (way, watch) = self.watch_within(Some(window), Kind::Clicks, way)?;
                 within = watch;
@@ -167,6 +187,7 @@ impl Engine {
     /// extents within the window (no ancestor clipping, no state check), then the wheel.
     pub(super) fn element_scroll(&mut self, window: u32, element: &str, input: &ScrollInput) -> Result<Value> {
         let element = self.resolve_element(window, element)?;
+        self.trusted_point(&element)?;
         let way = self.route_for(Some(window), Kind::Scroll)?;
         let (way, within) = self.watch_within(Some(window), Kind::Scroll, way)?;
         // the foreground route activates only once the amount and the chord are known good
@@ -175,6 +196,7 @@ impl Engine {
         let (x, bus, inputs) = self.parts()?;
         let scrolled = inputs.with_route(x, target, |x, route, _| {
             let bounds = atspi::extents(bus, &element.target)?.map_err(anyhow::Error::msg)?;
+            let bounds = vcl::moved(bounds, vcl_shift(bus, &element)?.map_or((0, 0), |(_, by)| by));
             let at = centre(clip_to_window(bounds, &element.info))?;
             element.associated.confirm_before_acting(bus, x)?;
             wheel(x, route, Some(at), input)
@@ -288,12 +310,16 @@ pub(super) fn visible_point(bus: &mut Bus, element: &Element, purpose: &str) -> 
         bail!("element is not visible; scroll it into view before {purpose}");
     }
     let bounds = atspi::extents(bus, &element.target)?.map_err(anyhow::Error::msg)?;
-    let (mut x0, mut y0, mut x1, mut y1) = clip_to_window(bounds, &element.info);
-    for ancestor in &element.ancestors {
+    // LibreOffice's VCL extents, and those of its VCL ancestors up to the root pane, moved where they are drawn
+    let shift = vcl_shift(bus, element)?;
+    let (vcl_ancestors, by) = shift.unwrap_or((0, (0, 0)));
+    let (mut x0, mut y0, mut x1, mut y1) = clip_to_window(vcl::moved(bounds, by), &element.info);
+    for (i, ancestor) in element.ancestors.iter().enumerate() {
         let role = atspi::role_name(bus, ancestor)?.ok_or_else(|| anyhow!("AT-SPI ancestor did not return a role"))?;
         if (role == "viewport" || role == "scroll pane")
-            && let Ok((ax0, ay0, ax1, ay1)) = atspi::extents(bus, ancestor)?
+            && let Ok(rect) = atspi::extents(bus, ancestor)?
         {
+            let (ax0, ay0, ax1, ay1) = if i < vcl_ancestors { vcl::moved(rect, by) } else { rect };
             x0 = x0.max(ax0);
             y0 = y0.max(ay0);
             x1 = x1.min(ax1);
@@ -301,6 +327,32 @@ pub(super) fn visible_point(bus: &mut Bus, element: &Element, purpose: &str) -> 
         }
     }
     centre((x0, y0, x1, y1))
+}
+
+/// The shift a LibreOffice element's VCL extents need (`vcl::shift`, read from the element and then its ancestors, so
+/// the root pane named itself is recognized too), with the number of its ancestors up to the root pane, which take it
+/// too; None for any other window's element and for an element outside the root pane. A structure whose offset cannot
+/// be read refuses the point (`vcl::UNTRUSTED`), before anything is sent.
+fn vcl_shift(bus: &mut Bus, element: &Element) -> Result<Option<(usize, (i32, i32))>> {
+    if !element.libreoffice {
+        return Ok(None);
+    }
+    let mut levels = Vec::with_capacity(element.ancestors.len() + 1);
+    for node in std::iter::once(&element.target).chain(&element.ancestors) {
+        let role = atspi::role_name(bus, node)?.unwrap_or_default();
+        // the root pane, and the host and the client panel above it, are all the rule reads
+        let above_root = levels.iter().position(|(r, _): &(String, _)| r == "root pane");
+        let extents = if role == "root pane" || above_root.is_some() {
+            atspi::extents(bus, node)?.ok()
+        } else {
+            None
+        };
+        levels.push((role, extents));
+        if above_root.is_some_and(|k| levels.len() > k + 2) {
+            break;
+        }
+    }
+    vcl::shift(&levels).map_err(anyhow::Error::msg)
 }
 
 #[cfg(test)]

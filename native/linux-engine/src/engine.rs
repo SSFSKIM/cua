@@ -16,6 +16,8 @@ mod pointer;
 mod refusal_faults;
 #[cfg(test)]
 mod targets_faults;
+#[cfg(test)]
+mod vcl_faults;
 mod way;
 mod windows;
 mod within;

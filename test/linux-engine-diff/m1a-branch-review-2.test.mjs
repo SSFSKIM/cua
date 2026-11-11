@@ -1,12 +1,13 @@
 // Regression tests for the M1a branch review's second round: the events experiment's speed gate (judged only on
 // enough samples, desktop first requests from interleaved fresh-engine blocks, a bootstrap interval for the first
-// series, declared speed gaps), and the Writer drag cell's priming drag.
+// series, declared speed gaps), and the Writer drag cell, which primed each fresh window until T16 found the miss was the
+// harness's aim (vcl-aim.mjs).
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { declaredSpeedGap } from '../../scripts/linux-engine-diff/deviations.mjs';
-import { DRAG_FAMILIES, DRAG_PRIMING, primingPath, runPath } from '../../scripts/linux-engine-diff/drag.mjs';
+import * as drag from '../../scripts/linux-engine-diff/drag.mjs';
 import { MIN_JUDGED, blockSequences, eventSpeeds, eventsPass, medianDifferenceInterval, scenarios } from '../../scripts/linux-engine-diff/events.mjs';
 
 /** Steps of one command, `n` per engine, each engine's times drawn around its own centre. */
@@ -99,10 +100,9 @@ test('the blocks run every desktop scenario without its window-bound steps, each
   }
 });
 
-test("Writer's drag cell primes each fresh window with one drag the runs never start inside", () => {
-  assert.ok(DRAG_FAMILIES.writer.includes('select'));
-  assert.match(DRAG_PRIMING.writer.reason, /first drag/);
-  assert.match(DRAG_PRIMING.writer.hides, /M4/);
-  const at = { text: { cell: (offset) => [10 * offset, 20] } };
-  assert.notDeepEqual(primingPath(at, 'select'), runPath(at, 'select', 0), 'the priming drag selects other text than the first run');
+test("Writer's drag cell primes no window: a fresh window's first drag is its first run (T16)", () => {
+  assert.ok(drag.DRAG_FAMILIES.writer.includes('select'));
+  // the priming drag hid the harness's own aim, 27 px above LibreOffice's text, never a first-drag behaviour
+  assert.equal(drag.DRAG_PRIMING, undefined);
+  assert.equal(drag.primingPath, undefined);
 });

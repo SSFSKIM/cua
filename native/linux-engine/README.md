@@ -192,6 +192,12 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   as the family of the window under its start asks, in place of the vendor's 8 ms between their points.
 - **Elements and windows** (`engine/elements.rs`, `engine/windows.rs`): element clicks through action 0 or a right
   click at the visible point, named actions, the element scroll, `activate_window` and `launch_app`.
+- **LibreOffice's positions** (`vcl.rs`, M4's T16): LibreOffice 24.2 on its gtk3 VCL plugin reports what VCL draws too
+  high by its native menu bar's height after a ConfigureNotify and until the next pointer event. A point taken from a
+  LibreOffice element's extents (the right click's, a paste's focusing click's, the element scroll's) is moved by the
+  GTK host panel's offset from VCL's root pane where the two disagree in that shape, and refused, nothing sent, where
+  the structure is another one. The structure is read from the element itself up, so an action naming the root pane
+  is corrected or refused too. Left element clicks are `DoAction` and take no point.
 - **The device mode** (`engine/way.rs`, `families.rs`, `route.rs`): a family lists, per input kind, whether it ignores
   the background route always, unless the real pointer is in its window, or unless a drag's path is unobscured: the
   paste chord, keys

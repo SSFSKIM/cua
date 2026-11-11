@@ -26,6 +26,7 @@ const ISOLATION = {
   writer: (l, dir) => l.cmd === 'soffice' && l.args.includes(`-env:UserInstallation=${pathToFileURL(join(dir, 'lo')).href}`),
   'writer-gen': (l, dir) => l.cmd === 'soffice' && l.args.includes(`-env:UserInstallation=${pathToFileURL(join(dir, 'lo')).href}`),
   calc: (l, dir) => l.cmd === 'soffice' && l.args.includes(`-env:UserInstallation=${pathToFileURL(join(dir, 'lo')).href}`),
+  impress: (l, dir) => l.cmd === 'soffice' && l.args.includes(`-env:UserInstallation=${pathToFileURL(join(dir, 'lo')).href}`),
   electron: (l, dir) => l.args.some((a) => a === `--cua-fixture-user-data=${join(dir, 'electron')}` || a === `--cua-user-data=${join(dir, 'electron')}`),
   'gnome-terminal': (l, dir, label) => l.cmd === 'sh' && l.args.includes(terminalAppId(label)) && l.args.includes(TERMINAL_SERVER),
   // plain processes: no single-instance mechanism at all

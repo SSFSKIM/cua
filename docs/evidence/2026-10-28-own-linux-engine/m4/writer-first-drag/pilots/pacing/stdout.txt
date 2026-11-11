@@ -1,0 +1,2 @@
+run exit 0; watchdog clean
+private run pilot-pacing exit 0 19:34:23

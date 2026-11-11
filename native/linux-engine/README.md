@@ -14,7 +14,12 @@ desktop) on the observation side (M1a.1); `press_key`, `key_down`, `key_up`, `cl
 `type_text` and `clipboard_write`, and `type_characters`. M3.1 adds `capabilities` (`caps.rs`: the X11 backend's
 fixed capabilities, the device mode, the version and the commit) and applies the device mode to every input kind a
 family ignores on the background route (below). M3's review adds `preflight`, a request that acts and sends nothing
-(below).
+(below). M4's T17 adds `release_handle`, a release cua's service sends at a new REPL kernel's setup (after `js_reset`
+or a cell's timeout): a `drag_handle` still held is released there as its end would release it, nothing held sends
+nothing, and it answers null. A held handle that gets no request of its own for 30 s (`--drag-handle-idle-ms` sets
+another) is released by the engine between requests where the pointer is, which is then pending as a drag's watch
+end is (`a drag handle released by timeout: …`): every reply carries it, and the next acting request, or the released
+handle's own `end`, is refused with it (`engine/handle.rs`).
 
 ```bash
 cargo build --release
@@ -285,8 +290,14 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   task 68's largest, 52.9 ms; a request read before the stamp, or after the window however late it was read, confirms
   nothing: task 69's fix wave), read on the watch's own connection with
   `SubstructureNotify` on the root. Only a request for that window counts, and only where the window manager lists
-  `_NET_ACTIVE_WINDOW` in `_NET_SUPPORTED`, read at the drag; Electron, whose drop sends none, and every other window
-  keep the floor with nothing to confirm. With no request in time the drop is unconfirmed, never ok: `Pending from
+  `_NET_ACTIVE_WINDOW` in `_NET_SUPPORTED`, read at the drag. Electron's drop sends none: it is confirmed by its
+  drag loop's accept cursor, read at the release itself on a cursor watch of its own begun before the press
+  (`drop_cursor.rs`: the accept is the unnamed cursor shown then whose image is none of the one shown at the press,
+  those shown up to the take and the drag loop's own, the first from 3 ms before the take; the design session's ruling
+  on task 73's review, adopted on 0 drags answered ok without a drop in 720 a load, plain drags and handles, at idle,
+  at the gate's window load and at twice the load, evidence `m4/drag-handle/fix/`). Every other window keeps the floor
+  with nothing to confirm.
+  With no request (or no accept) in time the drop is unconfirmed, never ok: `Pending from
   your last drag, an unconfirmed drop: …`, on every reply until the first acting request, refused with it. An acting
   request that comes before the 150 ms are over waits for the rest of them. The release at Chrome's accept cursor
   (`accept.rs`, the cursors told apart by their image) is measurement only (`--drag-dnd-release-at-accept`): Chrome's

@@ -32,7 +32,7 @@ import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
 import { probeAt } from './role-probe.mjs';
 import { openScene } from './run.mjs';
-import { configure } from './scenes.mjs';
+import { FIT_MARGIN, SCREEN, configure } from './scenes.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { spawnXprobe, xdotool } from './xtools.mjs';
@@ -80,11 +80,23 @@ export const CELLS = {
   // outlast the floor, so the release follows its last step at once (the design session, 2026-11-10: measure first)
   'long-left': () => [[530, 128], [800, 128], [800, 500], [500, 500]],
   // T17's second fix wave (the second review, P2; the design session, 2026-11-11): the plain source dragged out of the
-  // window, to the bare root 30 px right of it (`geometry`, the window's size), where nothing can drop; and a drop that
-  // only moves, from the move source right of the zone, 20 px into it
-  root: (i, geometry) => [[530, 128], [640, 128], [geometry.width + 30, 128]],
-  move: () => [[980, 128], [940, 128]],
+  // window to the bare root 30 px beside it, on whichever side the screen has room (`rootBeside`), where nothing can
+  // drop; and a drop that only moves, from the move source above the zone, 8 px into it
+  root: (i, geometry) => [[530, 128], [640, 128], [rootBeside(geometry), 128]],
+  move: () => [[725, 68], [725, 108]],
 };
+
+/**
+ * The page x of a point on the bare root 30 px beside the window (`geometry`: its screen place and size, in page
+ * pixels from the page's origin): right of it when the screen has room there, else left of it. A window with no room on
+ * either side has no bare root beside it, and the cell cannot run.
+ */
+export function rootBeside({ x, width, pageX }) {
+  const [screenWidth] = SCREEN;
+  if (x + pageX + width + 30 < screenWidth - FIT_MARGIN) return width + 30;
+  if (x + pageX - 30 >= FIT_MARGIN) return -pageX - 30;
+  throw new Error(`no bare root beside the window (${x}, width ${width}) on a ${screenWidth} px screen`);
+}
 
 /** T14's cells' sources, beside the judge's (drop-signals-judge.mjs `CELL_SOURCE`): each a drop the zone never counts. */
 export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain' };
@@ -269,7 +281,7 @@ const splitCell = (cell) => {
 /** A spec's path for run `i`, in window coordinates; `window` the window's geometry, for a cell that leaves it. */
 export function windowPath(at, cell, i, window = null) {
   const { base, cover } = splitCell(cell);
-  const geometry = window && { width: window.width - at.page.x, height: window.height - at.page.y };
+  const geometry = window && { x: window.x, pageX: at.page.x, width: window.width - at.page.x, height: window.height - at.page.y };
   const path = (cover ? COVER_CELLS : CELLS)[base](i, geometry);
   return path.map(([x, y]) => ({ x: x + at.page.x, y: y + at.page.y }));
 }
@@ -469,6 +481,8 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
     base,
     cover,
     i,
+    // where the path ended on the screen (the root cell's: beside the window)
+    end: { x: scene.window.x + path.at(-1).x, y: scene.window.y + path.at(-1).y },
     block: spec.block,
     cold,
     ok: value.response.ok === true,

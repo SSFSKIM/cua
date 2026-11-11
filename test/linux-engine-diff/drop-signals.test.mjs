@@ -372,9 +372,12 @@ test("the second fix wave's cells: a desktop drag that leaves the window for the
   const window = { x: 100, y: 50, width: 1050, height: 780 };
   const root = windowPath(at, 'root', 0, window);
   assert.deepEqual(root[0], { x: 534, y: 158 }, 'from the plain source');
-  assert.equal(root.at(-1).x, window.width + 30, '30 px right of the window');
+  assert.equal(root.at(-1).x, window.width + 30, '30 px right of the window, the screen having room there');
+  const right = { ...window, x: 220 };
+  assert.equal(windowPath(at, 'root', 0, right).at(-1).x, -30, 'else 30 px left of it');
+  assert.throws(() => windowPath(at, 'root', 0, { ...window, x: 10, width: 1260 }), /no bare root beside the window/);
   assert.equal(T14_SOURCE.root, 'plain', 'a drop the zone never counts');
-  assert.deepEqual(CELLS.move(0), [[980, 128], [940, 128]]);
+  assert.deepEqual(CELLS.move(0), [[725, 68], [725, 108]], 'from above the zone, into it');
   const sent = [];
   const engine = { request: async (command, input) => (sent.push([command, input]), { response: { ok: true } }) };
   await desktopDrag(engine, { window }, root);

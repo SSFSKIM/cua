@@ -51,6 +51,8 @@ export const DEFAULTS = {
 };
 /** Task 50's guards for a `:0` step, as T19's sitting ran them (pointer-route/scripts). */
 const GUARDS = 'docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts';
+/** The harness's X client, built in the checkout (xtools.mjs `XPROBE`). */
+const XPROBE_BUILT = 'scripts/linux-engine-diff/xprobe/target/release/xprobe';
 
 /** A step the runner will not start, with the reason. */
 export class GateRefused extends Error {
@@ -202,12 +204,14 @@ function labelledLog(path, label) {
  * step directory that exists, or (a gate) from an unclean checkout. Answers the step's exit code: the harness's, or 1
  * when its private display's watchdog was not clean.
  */
-export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng') } = {}) {
+export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT) } = {}) {
   const step = stepNamed(a.step);
   if (step.display === ':0') throw new GateRefused(`${step.name} runs on :0, in the declared sitting under task 50's guards: launch it with \`gate.mjs print ${step.name} ...\`'s command; this runner never runs on the person's display`);
   if (held()) throw new GateRefused(`${a.hold} exists: the host is held for sittings, and nothing starts`);
   if (loadRunning()) throw new GateRefused('stress-ng is running: a step starts only on a host with no load running');
   if (!existsSync(a.candidate)) throw new GateRefused(`no candidate at ${a.candidate}`);
+  // the harness's own X client (the display's watchdog, the witness): a fresh checkout has none until it is built
+  if (!existsSync(xprobe)) throw new GateRefused(`the harness's X client is not built: cargo build --release --manifest-path ${join(root, 'scripts/linux-engine-diff/xprobe/Cargo.toml')}`);
   const checkout = checkCheckout({ root, out: a.out, gate: a.gate, git });
   const dir = stepDir(step, a);
   if (existsSync(dir)) throw new GateRefused(`${dir} exists: each execution of a step writes a directory of its own`);

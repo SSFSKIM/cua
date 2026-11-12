@@ -133,12 +133,13 @@ test('a :0 step is printed as task 50\'s guarded sitting under the host lock, an
   await assert.rejects(runStep(run, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false }), /runs on :0.*never runs on the person's display/);
 });
 
-test('the runner starts nothing while the host is held, under a running load, into an existing step directory, or from an unclean checkout', async () => {
+test('the runner starts nothing without the harness\'s X client, while the host is held, under a running load, into an existing step directory, or from an unclean checkout', async () => {
   const candidate = join(fresh('c'), 'cua-engine');
   writeFileSync(candidate, 'x');
   const out = fresh('out');
   const a = parseGateArgs(['run', 'D1', '--candidate', candidate, '--out', out]);
-  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false };
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate };
+  await assert.rejects(runStep(a, { ...deps, xprobe: '/nowhere/xprobe' }), /the harness's X client is not built: cargo build --release/);
   await assert.rejects(runStep(a, { ...deps, held: () => true }), /held for sittings/);
   await assert.rejects(runStep(a, { ...deps, loadRunning: () => true }), /stress-ng is running/);
   await assert.rejects(runStep(a, { ...deps, git: cleanGit(' M scripts/x.mjs\n') }), /has 1 changes/);

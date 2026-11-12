@@ -2,7 +2,7 @@
 # The two-screen live tests (live_device.rs, `CUA_LIVE_TWO_SCREENS`) on a private Xorg whose two screens sit side by
 # side (tests/xorg-two-screens.conf: the dummy driver, no input devices), where a motion on one screen's root carries
 # the pointer across, as on a real multi-screen layout; Xvfb, which the gate's suite runs them on, puts its screens at
-# one origin and does not. The server takes a display it picks itself (-displayfd), never :0, and is terminated at the
+# one origin and does not. The server takes the first free display from :100 up, never :0, and is terminated at the
 # end, its socket and lock gone. Exits nonzero when a test fails or does not run.
 #
 # Needs xserver-xorg-core and xserver-xorg-video-dummy, run as an ordinary user: /usr/lib/xorg/Xorg directly (not the
@@ -27,14 +27,24 @@ stop() {
 }
 status=1
 trap 'stop; exit $status' EXIT
-exec 3> "$dir/display"
-/usr/lib/xorg/Xorg -displayfd 3 -config "$PWD/tests/xorg-two-screens.conf" -logfile "$dir/xorg.log" -noreset \
-  -nolisten tcp -sharevts -novtswitch -keeptty -seat "seat-cua-two-screens-$$" > "$dir/xorg.out" 2>&1 &
-xorg=$!
-exec 3>&-
-for _ in $(seq 100); do
-  if [ -s "$dir/display" ] || ! kill -0 "$xorg" 2>/dev/null; then break; fi
-  sleep 0.1
+# The display is the first free one from :100 up, named to the server, never :0: given only -displayfd, Xorg takes the
+# lowest free display, which is :0 wherever no X server holds it (GitHub's hosted runner). -displayfd still says when
+# the server is ready. A display taken meanwhile by another server makes this one exit at once, and the next is tried.
+for candidate in $(seq 100 163); do
+  if [ -e "/tmp/.X$candidate-lock" ] || [ -e "/tmp/.X11-unix/X$candidate" ]; then continue; fi
+  : > "$dir/display"
+  exec 3> "$dir/display"
+  /usr/lib/xorg/Xorg ":$candidate" -displayfd 3 -config "$PWD/tests/xorg-two-screens.conf" -logfile "$dir/xorg.log" \
+    -noreset -nolisten tcp -sharevts -novtswitch -keeptty -seat "seat-cua-two-screens-$$" > "$dir/xorg.out" 2>&1 &
+  xorg=$!
+  exec 3>&-
+  for _ in $(seq 100); do
+    if [ -s "$dir/display" ] || ! kill -0 "$xorg" 2>/dev/null; then break; fi
+    sleep 0.1
+  done
+  if [ -s "$dir/display" ] || kill -0 "$xorg" 2>/dev/null; then break; fi
+  wait "$xorg" 2>/dev/null
+  xorg=
 done
 display=$(tr -dc '0-9' < "$dir/display")
 if [ -z "$display" ] || [ "$display" = 0 ]; then

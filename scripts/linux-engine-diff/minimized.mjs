@@ -193,11 +193,16 @@ function read(request, judge, { minimized = true } = {}) {
   };
 }
 
-/** The listing's facts: this window's entry carries `minimized: true` (or, restored, no field), and no other one does. */
-export function listedAsMinimized(windows, id, minimized = true) {
+/**
+ * The listing's facts: this window's entry carries `minimized: true` (or, restored, no field), and no other window of
+ * the run's (`ours`, the ids the harness opened: none of them minimized) does, with at least one listed, so an engine
+ * that marks every window fails. The person's windows are never judged: one they minimized before the run is listed as
+ * minimized, and the harness never requires their windows to change.
+ */
+export function listedAsMinimized(windows, id, minimized, ours) {
   const mine = windows.filter((w) => w.id === id);
-  const others = windows.filter((w) => w.id !== id);
-  return mine.length === 1 && (minimized ? mine[0].minimized === true : !('minimized' in mine[0])) && others.every((w) => !('minimized' in w));
+  const others = windows.filter((w) => w.id !== id && ours.has(w.id));
+  return mine.length === 1 && (minimized ? mine[0].minimized === true : !('minimized' in mine[0])) && others.length > 0 && others.every((w) => !('minimized' in w));
 }
 
 /** The fixture's marker a state read must show: gedit's scratch file name (in its title), else the scene's label. */
@@ -378,18 +383,18 @@ export const MINIMIZED_OPS = {
   minimized_click_dedicated: refused((ctx) => ['click', { window: win(ctx), x: 200, y: 200 }], { mode: 'dedicated' }),
   minimized_type_text_dedicated: refused((ctx) => ['type_text', { window: win(ctx), text: 'cua171 refused' }], { mode: 'dedicated' }),
   // the reads, and the restored window as their control
-  minimized_list: read(() => ['list_windows', {}], (ctx, output) => listedAsMinimized(output, ctx.scene.id)),
+  minimized_list: read(() => ['list_windows', {}], (ctx, output) => listedAsMinimized(output, ctx.scene.id, true, ctx.desktop.harnessIds())),
   minimized_tree: read((ctx) => ['get_window_state', { window: win(ctx), include_screenshot: false }], (ctx, output) => minimizedState(output, expected(ctx))),
   minimized_shot: read((ctx) => ['get_window_state', { window: win(ctx), include_screenshot: true }], (ctx, output) => minimizedState(output, expected(ctx))),
   minimized_restored_shot: read(
     (ctx) => ['get_window_state', { window: win(ctx), include_screenshot: true }],
     (ctx, output, listed, facts) => {
       facts.shot = inspectShot(output?.screenshots?.[0], { id: ctx.scene.id, width: output?.window?.width, height: output?.window?.height });
-      return restoredState(output, expected(ctx), facts.shot) && listedAsMinimized(listed, ctx.scene.id, false);
+      return restoredState(output, expected(ctx), facts.shot) && listedAsMinimized(listed, ctx.scene.id, false, ctx.desktop.harnessIds());
     },
     { minimized: false },
   ),
-  minimized_restored_list: read(() => ['list_windows', {}], (ctx, output) => listedAsMinimized(output, ctx.scene.id, false), { minimized: false }),
+  minimized_restored_list: read(() => ['list_windows', {}], (ctx, output) => listedAsMinimized(output, ctx.scene.id, false, ctx.desktop.harnessIds()), { minimized: false }),
   // a held key released on the minimized window, on the background route: a recorder window (`minimized-recorder`),
   // which shows what the release delivered
   minimized_key_up_background: release({ mode: 'shared', holdRoute: 'background' }),

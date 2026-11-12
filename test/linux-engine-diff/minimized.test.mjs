@@ -60,12 +60,22 @@ test('the audit kinds: nothing sent for a refusal, the target alone for an activ
 });
 
 test('the listing check needs this window minimized and no other window with the field; restored, no field at all', () => {
-  assert.equal(listedAsMinimized([window(ID, { minimized: true }), window(2)], ID), true);
-  assert.equal(listedAsMinimized([window(ID), window(2)], ID), false, 'the field missing');
-  assert.equal(listedAsMinimized([window(2)], ID), false, 'not listed');
-  assert.equal(listedAsMinimized([window(ID, { minimized: true }), window(2, { minimized: true })], ID), false, 'an engine that marks every window');
-  assert.equal(listedAsMinimized([window(ID, { minimized: false }), window(2)], ID, false), false, 'restored: no field, not false');
-  assert.equal(listedAsMinimized([window(ID), window(2)], ID, false), true);
+  const ours = new Set([ID, 2]);
+  assert.equal(listedAsMinimized([window(ID, { minimized: true }), window(2)], ID, true, ours), true);
+  assert.equal(listedAsMinimized([window(ID), window(2)], ID, true, ours), false, 'the field missing');
+  assert.equal(listedAsMinimized([window(2)], ID, true, ours), false, 'not listed');
+  assert.equal(listedAsMinimized([window(ID, { minimized: true }), window(2, { minimized: true })], ID, true, ours), false, 'an engine that marks every window');
+  assert.equal(listedAsMinimized([window(ID, { minimized: false }), window(2)], ID, false, ours), false, 'restored: no field, not false');
+  assert.equal(listedAsMinimized([window(ID), window(2)], ID, false, ours), true);
+});
+
+test("the listing's facts judge the run's own windows only: a window the person minimized before the run fails nothing", () => {
+  const ours = new Set([ID, 2]);
+  const person = window(77, { minimized: true });
+  assert.equal(listedAsMinimized([window(ID, { minimized: true }), window(2), person], ID, true, ours), true, "the person's minimized window, listed as it is");
+  assert.equal(listedAsMinimized([window(ID), window(2), person], ID, false, ours), true, 'and the restored control');
+  assert.equal(listedAsMinimized([window(ID, { minimized: true }), window(2, { minimized: true }), person], ID, true, ours), false, 'an engine that marks every window still fails, on the run\'s own');
+  assert.equal(listedAsMinimized([window(ID, { minimized: true }), person], ID, true, ours), false, 'no other window of the run\'s listed: the control proves nothing');
 });
 
 const MARKER = 'cua171-diff-run-gedit-cua.txt';

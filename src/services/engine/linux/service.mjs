@@ -42,6 +42,8 @@ export function createService({env = process.env, settler = new ActionSettler()}
   let engine = null;
   let methods = null;
   const handles = new Map();
+  // the handles whose start is pending (waiting for the settle, the engine's start, or the engine's answer)
+  const starting = new Set();
 
   function client() {
     if (methods) return methods;
@@ -71,7 +73,12 @@ export function createService({env = process.env, settler = new ActionSettler()}
       }
       case 'drag_start': {
         const handle = handles.get(message.handle_id) ?? client().drag_handle();
-        await handle.start(message.point);
+        starting.add(handle);
+        try {
+          await handle.start(message.point);
+        } finally {
+          starting.delete(handle);
+        }
         handles.set(message.handle_id, handle);
         return undefined;
       }
@@ -99,9 +106,14 @@ export function createService({env = process.env, settler = new ActionSettler()}
   // release: never refused, and what the release leaves pending is reported as an end's is), and the handles are
   // forgotten, so desktop pointer input runs again from the reset (the design session's rulings on task 73's review,
   // 2026-11-11). Its answer is nobody's to read: an engine without the command, or one that cannot be driven, changes
-  // nothing here. With no handle stored nothing is sent, and nothing is started.
+  // nothing here. A start still pending is let go too (the whole-branch review of M4, P1): one not yet written to the
+  // engine never is, and one already written is released by this release_handle, which the engine runs after it (it
+  // runs requests one at a time, in order); either start then rejects, and its handle is never stored. With no handle
+  // stored and no start written nothing is sent, and nothing is started.
   async function releaseHandles() {
-    if (handles.size === 0) return;
+    const written = [...starting].map(handle => handle.abandon()).some(Boolean);
+    starting.clear();
+    if (handles.size === 0 && !written) return;
     handles.clear();
     try {
       await engine.request('release_handle', {});

@@ -362,6 +362,52 @@ test('a kernel reset releases the handles the ended kernel left started at once,
   assert.deepEqual(sent(engine).map(([command]) => command), ['drag_handle', 'drag_handle', 'release_handle'], 'released once: the next setup and reset have nothing to release');
 });
 
+// A start still pending at the reset (the whole-branch review of M4, P1): its handle is stored only once the engine
+// answered it, so a reset that found none stored released nothing, and the start then pressed button 1 for a kernel
+// that was gone. A start not yet written to the engine (waiting for the settle, or for the engine's start) never is; one
+// already written is released after it, by the reset's own release_handle, which the engine runs after the start.
+test('a kernel reset or a new kernel\'s setup during a start that waits for the settle sends neither the start nor a release', async t => {
+  for (const reset of [svc => svc.kernelReset(), svc => svc.handleRpc({type: 'setup'})]) {
+    const engine = fakeLinuxEngine(t);
+    const settler = heldSettler();
+    const svc = service(t, engine, {settler});
+    await svc.handleRpc({type: 'setup'});
+    settler.hold();
+    const start = svc.handleRpc({type: 'drag_start', handle_id: 'h1', point: {x: 1, y: 2}});
+    await settler.waiting();
+    await reset(svc);
+    settler.release();
+    await assert.rejects(start, {message: 'drag handle was let go: the kernel that started it was reset'});
+    await assert.rejects(svc.handleRpc({type: 'drag_end', handle_id: 'h1'}), {message: 'Sky drag handle has not been started'}, 'never stored');
+    await svc.kernelReset();
+    assert.deepEqual(sent(engine), [], 'nothing pressed, so nothing to release');
+    // the next kernel's handle of the same id starts as any other
+    await svc.handleRpc({type: 'drag_start', handle_id: 'h1', point: {x: 3, y: 4}});
+    await svc.handleRpc({type: 'drag_end', handle_id: 'h1'});
+    assert.deepEqual(sent(engine), [['drag_handle', {action: 'start', x: 3, y: 4}], ['drag_handle', {action: 'end'}]]);
+  }
+});
+
+test('a kernel reset or a new kernel\'s setup during a start the engine is running releases it after the start, and the handle is never stored', async t => {
+  for (const reset of [svc => svc.kernelReset(), svc => svc.handleRpc({type: 'setup'})]) {
+    // the engine answers the start late, as one whose start is still pressing
+    const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command, input) {
+      if (command === 'drag_handle' && input.action === 'start') return new Promise(resolve => setTimeout(resolve, 150));
+    }`});
+    const svc = service(t, engine);
+    await svc.handleRpc({type: 'setup'});
+    const start = svc.handleRpc({type: 'drag_start', handle_id: 'h1', point: {x: 1, y: 2}});
+    start.catch(() => {});
+    while (!sent(engine).length) await new Promise(resolve => setTimeout(resolve, 5));
+    await reset(svc);
+    assert.deepEqual(sent(engine), [['drag_handle', {action: 'start', x: 1, y: 2}], ['release_handle', {}]], 'released after the start, at the reset');
+    await assert.rejects(start, {message: 'drag handle was let go: the kernel that started it was reset'});
+    await assert.rejects(svc.handleRpc({type: 'drag_end', handle_id: 'h1'}), {message: 'Sky drag handle has not been started'}, 'never stored');
+    await svc.kernelReset();
+    assert.equal(sent(engine).length, 2, 'released once');
+  }
+});
+
 test('a kernel reset whose release fails forgets the handles and resolves; one before the engine was ever started starts nothing', async t => {
   const engine = fakeLinuxEngine(t, {behaviour: 'export function answer(command) { if (command === \'release_handle\') return {error: \'unknown command `release_handle`\'}; }'});
   const svc = service(t, engine);

@@ -36,6 +36,8 @@ export const CANNOT = {
   tree: 'read a window\'s accessibility tree',
 };
 const inputRoute = request => (request?.window != null ? 'input.background' : 'input.desktop');
+// A drag handle's start that a kernel reset overtook (dragHandle's `abandon`).
+const ABANDONED = 'drag handle was let go: the kernel that started it was reset';
 
 // `engine` (./client.mjs), `settler` (./settle.mjs), `ids` (./ids.mjs) -> {method: function}, in the vendor's order.
 export function createLinuxMethods({engine, settler, ids}) {
@@ -69,8 +71,15 @@ export function createLinuxMethods({engine, settler, ids}) {
     return engine.request(command, {});
   };
 
+  // A drag handle. Beside the vendor's three steps it has `abandon`, which the service calls at a kernel reset while the
+  // handle's start is pending (./service.mjs): a start not yet written to the engine is then refused where it would be
+  // written (the engine's request check, with nothing awaited before the write), so it never presses; one already written
+  // is the reset's to release, and `abandon` answers whether there is one. Either way the start then rejects, so the
+  // service never stores a handle of a kernel that is gone.
   function dragHandle() {
     let state = 'idle';
+    let abandoned = false;
+    let startWritten = false;
     const step = async (input, check) => {
       await settler.wait();
       await engine.request('drag_handle', input, check);
@@ -78,9 +87,18 @@ export function createLinuxMethods({engine, settler, ids}) {
     return {
       async start(point) {
         if (state !== 'idle') throw new Error('drag handle can only be started once');
-        await step(Object.assign({action: 'start'}, point), needs('input.desktop'));
+        await step(Object.assign({action: 'start'}, point), caps => {
+          if (abandoned) throw new Error(ABANDONED);
+          needs('input.desktop')(caps);
+          startWritten = true;
+        });
+        if (abandoned) throw new Error(ABANDONED);
         state = 'dragging';
         settler.defer('drag_handle');
+      },
+      abandon() {
+        abandoned = true;
+        return startWritten;
       },
       async move_to(point) {
         if (state !== 'dragging') throw new Error('drag handle must be started before moving');

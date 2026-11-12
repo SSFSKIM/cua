@@ -63,6 +63,8 @@ export const APP_IDENTITY = {
   // (pages/identity-windows.py) and the minimized cases' recorder (xprobe record)
   'identity-gtk3': { application: 'identity-windows.py', toolkit: 'gtk' },
   'identity-gtk4': { application: 'Unnamed', toolkit: 'GTK' },
+  // the safety cases' paste target (pages/paste-target.py, GTK 3; safety.mjs)
+  'paste-target': { application: 'paste-target.py', toolkit: 'gtk' },
   recorder: { wm_class: 'cua171-recorder / Cua171-recorder' },
 };
 

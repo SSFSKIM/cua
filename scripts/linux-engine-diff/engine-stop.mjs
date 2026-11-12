@@ -45,6 +45,7 @@ import { fileURLToPath } from 'node:url';
 
 import { cleanStart, insertedAt, keysOf, KEYS_PAGE, settledRead, tenth, textAndCaret } from './focus-timer.mjs';
 import { openFamily } from './families.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
 import { Desktop, desktopEnding } from './scenes.mjs';
@@ -641,9 +642,10 @@ async function oneRun(ctx, lane, path, kind, scenes, trial, browser = null) {
  */
 async function openScenes(ctx, browsers) {
   const { desktop, oracle } = ctx;
-  const scenes = { xterm: await openFamily(desktop, oracle, 'xterm', 'stop-hold') };
+  // each window's application verified as its family's before its runs count (app-identity.mjs)
+  const scenes = { xterm: await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, 'xterm', 'stop-hold'), 'xterm') };
   for (const browser of browsers) {
-    const scene = await openFamily(desktop, oracle, browser, 'stop-burst', { page: KEYS_PAGE });
+    const scene = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, browser, 'stop-burst', { page: KEYS_PAGE }), browser);
     scene.field ??= preorder((await desktop.state(scene)).ax_tree).find((n) => n.role === 'entry' && n.name === 'Field')?.id ?? null;
     if (!scene.field) throw new Error(`${browser}'s keys page has no field the harness can read`);
     scenes[browser] = scene;

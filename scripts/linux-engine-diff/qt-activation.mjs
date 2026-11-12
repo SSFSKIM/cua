@@ -36,6 +36,7 @@ import { performance } from 'node:perf_hooks';
 
 import { Engine } from './engine.mjs';
 import { openFamily } from './families.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { seriesVerdict } from './focus-timer.mjs';
 import { Oracle } from './oracle.mjs';
 import { Desktop, activeWindow, desktopEnding } from './scenes.mjs';
@@ -346,7 +347,9 @@ export async function runQtActivation(args, { emit, run, startLoad }) {
     for (const family of families) {
       let scene;
       try {
-        scene = await openFamily(desktop, oracle, family, 'qt-a');
+        // the window's application verified as the family's, its Qt major included, before its runs count
+        // (app-identity.mjs)
+        scene = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, 'qt-a'), family);
         if (!scene.field) throw new Error(`${family}'s window has no text field the harness can read`);
         desktop.arrangeFront('covered');
         await sleep(500);

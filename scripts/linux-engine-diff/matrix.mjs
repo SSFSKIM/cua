@@ -14,6 +14,7 @@ import { auditAnswered, parseXtrace, startProxy } from './audit.mjs';
 import { DEVICE_REFUSAL } from './deviations.mjs';
 import { Engine } from './engine.mjs';
 import { FAMILIES, familyNames, openFamily, readCaret, readCounter, readText, textArea, wmClass } from './families.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { caretArrived, clickPoints, counterArrived, keyArrived, terminalClickArrived, typedArrived } from './matrix-judge.mjs';
 import { Oracle } from './oracle.mjs';
 import { captureWindow, pixelsChanged } from './pixels.mjs';
@@ -225,7 +226,8 @@ export async function runMatrix(args, { desktop, emit, run }) {
       process.stdout.write(`family ${family}\n`);
       const scenes = {};
       try {
-        for (const e of list) scenes[e.label] = await openFamily(desktop, oracle, family, e.label.replace(/[^a-z0-9]+/gi, ''));
+        // each window's application verified as the family's before its cells count (app-identity.mjs)
+        for (const e of list) scenes[e.label] = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, e.label.replace(/[^a-z0-9]+/gi, '')), family);
         desktop.arrangeFront(args.occlusion);
         await sleep(1000);
         const identity = await identify(desktop, oracle, scenes.cua, args);

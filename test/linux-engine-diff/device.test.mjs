@@ -338,10 +338,14 @@ test("a case's pointer goes only onto the root or a live window of the run's, re
     const calls = [];
     const disposals = [];
     const skips = [];
+    // the pointer lands where it is moved, over the scene's window (its frame, then its client)
+    let at = { x: 300, y: 200 };
     const tool = (...args) => {
       calls.push(args.join(' '));
+      if (args[0] === 'mousemove') at = { x: args[1], y: args[2] };
       return args[0] === 'getmouselocation' ? 'X=300\nY=200\nSCREEN=0\nWINDOW=7\n' : '';
     };
+    const read = () => ({ ...at, same_screen: true, chain: [0x41, 0x42] });
     let blocked = unsafe;
     const isBlocked = (p) => blocked.some((b) => b.x === p.x && b.y === p.y);
     // the scene's window 0x42 on top at every point not blocked, another's (0x99) where blocked
@@ -355,7 +359,7 @@ test("a case's pointer goes only onto the root or a live window of the run's, re
     const ctx = { desktop, dispose: (fn) => disposals.push(fn) };
     let error = null;
     try {
-      parkPointer(ctx, { x: 600, y: 600 }, { tool, read: () => ({ x: 600, y: 600, same_screen: true, chain: [0x41, 0x42] }) });
+      parkPointer(ctx, { x: 600, y: 600 }, { tool, read });
     } catch (e) {
       error = e;
     }

@@ -25,6 +25,7 @@ import { join } from 'node:path';
 
 import { Engine } from './engine.mjs';
 import { familyNames, openFamily } from './families.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { IMAGE_TOLERANCE, imageVerdict } from './images.mjs';
 import { Oracle } from './oracle.mjs';
 import { XPROBE, configure, xdotool } from './scenes.mjs';
@@ -232,7 +233,8 @@ export async function engineReadiness(desktop, emit, args) {
   for (const name of names) {
     // `--geometry`: the families that open maximized (Firefox, Writer) open at that size instead, so the front window
     // can stand clear of them for the unobscured condition
-    const scene = await openFamily(desktop, oracle, name, 'ready', { geometry: args.geometry ?? null });
+    // the window's application verified as the family's before its trials count (app-identity.mjs)
+    const scene = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, name, 'ready', { geometry: args.geometry ?? null }), name);
     try {
       for (const condition of CONDITIONS) {
         const front = arrange(desktop, scene, condition);

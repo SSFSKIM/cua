@@ -93,6 +93,20 @@ export function parkAt(desktop, point, options = {}) {
   return parkPointer(point, top ? holds : ROOT, options);
 }
 
+/**
+ * The real pointer put back where a case found it, once the case is over (`parkAt`, verified the same way): a restore
+ * is no trial's park, so one refused does not fail the run but is recorded (`desktop.skip`) and answers null.
+ */
+export function restorePointer(desktop, point, options = {}) {
+  try {
+    return parkAt(desktop, point, options);
+  } catch (error) {
+    if (!(error instanceof ParkRefused)) throw error;
+    desktop.skip('pointer restore', `(${point.x}, ${point.y})`, error.message);
+    return null;
+  }
+}
+
 /** The middle of the run's front window (`desktop.front`, the harness's own xterm): `{id, x, y}`, or null for none. */
 export function frontPoint(desktop) {
   const id = desktop.front?.id;

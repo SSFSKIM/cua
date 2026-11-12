@@ -48,6 +48,7 @@ import { gzipSync } from 'node:zlib';
 import { attributeFocusOuts, auditRequests, focusSessions, parseXtrace, startProxy } from './audit.mjs';
 import { Engine } from './engine.mjs';
 import { openFamily, readCaret, readText } from './families.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
 import { Desktop, activeWindow, desktopEnding } from './scenes.mjs';
@@ -853,7 +854,8 @@ async function openWindows(ctx, family) {
   const { desktop, oracle } = ctx;
   const page = CHROMIUM.includes(family) ? { page: KEYS_PAGE } : {};
   const open = async (role) => {
-    const scene = await openFamily(desktop, oracle, family, role, page);
+    // the window's application verified as the family's before its runs count (app-identity.mjs)
+    const scene = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, role, page), family);
     if (page.page) {
       const nodes = preorder((await desktop.state(scene)).ax_tree);
       scene.field ??= nodes.find((n) => n.role === 'entry' && n.name === 'Field')?.id ?? null;

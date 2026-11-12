@@ -46,7 +46,7 @@ import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
 import { MINIMIZED_OPS, MINIMIZED_SCENE_OPS, judgeMinimized } from './minimized.mjs';
 import { stacking, startOverlay } from './clip.mjs';
-import { parkAt } from './park.mjs';
+import { parkAt, restorePointer } from './park.mjs';
 import { activeWindow, configure, xdotool } from './scenes.mjs';
 import { spawnXdotool } from './xtools.mjs';
 
@@ -270,7 +270,8 @@ export function parkPointer(ctx, point, { tool = xdotool, read } = {}) {
   if (!ctx.desktop.pointerSafeAt(point)) throw new Error(`the pointer's park point (${point.x}, ${point.y}) is over a window the run did not open: the case is not run`);
   ctx.dispose(() => {
     const back = [found, OUTSIDE].find((p) => ctx.desktop.pointerSafeAt(p));
-    if (back) tool('mousemove', back.x, back.y);
+    // verified where it landed, a restore refused recorded as a skip (park.mjs `restorePointer`)
+    if (back) restorePointer(ctx.desktop, back, { move: (p) => tool('mousemove', p.x, p.y), ...(read ? { read } : {}) });
     else ctx.desktop.skip('pointer restore', `(${found.x}, ${found.y})`, 'that place and the front window\'s middle are under a window the run did not open');
   });
   return parkAt(ctx.desktop, point, { move: (p) => tool('mousemove', p.x, p.y), ...(read ? { read } : {}) });

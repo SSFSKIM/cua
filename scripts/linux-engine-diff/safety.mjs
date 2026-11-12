@@ -24,7 +24,9 @@ import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 
 import { clipRead, grabsIn, startOwner, toplevel, waitQuarantineOver, watchGrabs, within } from './clip.mjs';
+import { verifiedScene, verifySceneIdentity } from './app-identity.mjs';
 import { Engine } from './engine.mjs';
+import { wmClass } from './families.mjs';
 import { foregroundStart } from './foreground-start.mjs';
 import { PAGES } from './scenes.mjs';
 import {
@@ -253,8 +255,17 @@ export class Cases {
     return owner;
   }
 
-  /** A paste-target window, closed when the case ends unless the case closed it. */
-  target(mode) {
+  /**
+   * A paste-target window, closed when the case ends unless the case closed it, and verified as the harness's GTK 3
+   * paste target before the case counts (app-identity.mjs; a window refused is closed with the case).
+   */
+  async target(mode) {
+    const scene = await this.openTarget(mode);
+    scene.identity = await verifySceneIdentity(this.desktop, this.oracle, scene, 'paste-target', { wmClassOf: wmClass });
+    return scene;
+  }
+
+  openTarget(mode) {
     return openTarget(this.desktop, mode, (scene) =>
       this.defer(async () => {
         if (this.desktop.windows.includes(scene)) await this.desktop.close([scene]);
@@ -281,7 +292,8 @@ export class Cases {
     const { resolveField } = await import('./text.mjs');
     const scene = await this.desktop.openChrome(role, 'text.html', { stem: 'case', query: `paste=${paste}` });
     await resolveField(this.desktop, scene, 'chrome-textarea');
-    return scene;
+    // the run's Chrome, verified before the case counts (app-identity.mjs)
+    return verifiedScene(this.desktop, this.oracle, scene, 'chrome');
   }
 
   focusFirst(scene) {

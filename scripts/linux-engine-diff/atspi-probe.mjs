@@ -29,6 +29,7 @@ import { performance } from 'node:perf_hooks';
 
 import { CACHE_INTERFACE, CACHE_PATH, adoptionReasons, atspiRoleName, cacheSubtree, compareWithTree, decodeStateWords, editableFindings, parseItems, roleCollisions, signatureKind, straddles, trackedNames } from './atspi-cache.mjs';
 import { electronReady, openFamily } from './families.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
 import { Desktop, desktopEnding } from './scenes.mjs';
@@ -183,7 +184,7 @@ async function whoAnswers(ctx, family) {
   let scene = null;
   try {
     if (family === 'electron' && !electronReady()) throw new Error('the Electron fixture is not installed (npm ci)');
-    scene = await openFamily(desktop, oracle, family, 'answer');
+    scene = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, 'answer'), family);
     const state = await desktop.state(scene);
     row.source = state.ax_tree_source;
     const tree = row.source === 'at_spi' ? state.ax_tree : null;
@@ -215,7 +216,7 @@ async function openMenus(ctx, family, mode) {
   const row = { kind: 'atspi-menus', family };
   let scene = null;
   try {
-    scene = await openFamily(desktop, oracle, family, 'menus', { mode });
+    scene = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, 'menus', { mode }), family);
     row.menu_opened = await waitForEvent(scene, 'menu-opened');
     await sleep(1000);
     const answer = askCache(address, requiredBus(oracle, scene, null));
@@ -246,7 +247,7 @@ async function changingTree(ctx, family, mode) {
   const row = { kind: 'atspi-changing', family };
   let scene = null;
   try {
-    scene = await openFamily(desktop, oracle, family, 'changing', { mode });
+    scene = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, 'changing', { mode }), family);
     row.started = await waitForEvent(scene, 'changing-started');
     await sleep(600);
     const bus = requiredBus(oracle, scene, null);
@@ -288,7 +289,7 @@ async function qtScene(ctx, family) {
   const row = { kind: 'atspi-qt', family };
   let scene = null;
   try {
-    scene = await openFamily(desktop, oracle, family, 'qt');
+    scene = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, 'qt'), family);
     const state = await desktop.state(scene);
     row.source = state.ax_tree_source;
     const tree = row.source === 'at_spi' ? state.ax_tree : null;
@@ -352,7 +353,7 @@ async function editableText(ctx, family, mode, { control = false } = {}) {
     return {};
   };
   try {
-    scene = await openFamily(desktop, oracle, family, `${control ? 'control' : 'edit'}${mode ?? 'doc'}`.replace(/[^a-z]/g, ''), mode ? { mode } : {});
+    scene = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, `${control ? 'control' : 'edit'}${mode ?? 'doc'}`.replace(/[^a-z]/g, ''), mode ? { mode } : {}), family);
     xdotool('windowactivate', '--sync', scene.id);
     await sleep(500);
     const nodes = preorder((await desktop.state(scene)).ax_tree);

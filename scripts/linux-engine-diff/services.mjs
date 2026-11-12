@@ -40,7 +40,9 @@ import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {parseArgs} from 'node:util';
 import {pathToFileURL} from 'node:url';
+import {verifiedScene} from './app-identity.mjs';
 import {runTmpdirInProcess} from './engine.mjs';
+import {Oracle} from './oracle.mjs';
 import {splitTruncationLine} from './normalize.mjs';
 import {Desktop, desktopEnding} from './scenes.mjs';
 import {judgeTruncation} from './services-judge.mjs';
@@ -179,6 +181,9 @@ try {
       : name === 'chrome' ? await desktop.openChrome('services', 'scene.html')
         : name === 'over-budget' ? await desktop.openChrome('services', 'over-budget.html') : null;
     if (!scene) throw new Error(`unknown scene ${name}`);
+    // the scene's application verified before its steps count (app-identity.mjs)
+    desktop.oracle ??= new Oracle();
+    await verifiedScene(desktop, desktop.oracle, scene, name === 'gedit' ? 'gedit' : 'chrome');
     const contexts = Object.fromEntries(lanes.map(({lane}) => [lane, {}]));
     for (const [step, run] of STEPS) {
       const outcomes = {};

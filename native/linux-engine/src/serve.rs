@@ -1,7 +1,7 @@
 //! The server loop (behaviour §1): one line in, one line out, strictly in order. Between requests the engine waits for
-//! whichever comes first: the next request line, a stop, or the one piece of work it can have due with no request, the
-//! end of a watched drag's late-take watch, which that drag's `FocusOut` follows (`route.rs`, the design session's
-//! ruling on task 60). Every other background request's `FocusOut` goes with it (M4's T7).
+//! whichever comes first: the next request line, a stop, or the work it can have due with no request: the end of a
+//! watched drag's late-take watch, which that drag's `FocusOut` follows (`route.rs`, the design session's ruling on task
+//! 60), and a held drag handle's idle bound. Every other background request's `FocusOut` goes with it (M4's T7).
 //!
 //! A stop is SIGTERM, SIGINT or SIGHUP, or stdin closing. Each ends the loop through the engine's orderly exit
 //! (`Engine::shutdown`), which releases what the engine holds and waits out the exit's settle after the last key to a
@@ -20,7 +20,9 @@
 //!
 //! The stop never depends on the engine's reader: responses go out through a writer thread of their own (`Outbox`), and
 //! a response still waiting there when the stop comes is abandoned, so the exit's drain runs even with the reader frozen
-//! and the pipe full, as cua's REPL host leaves it when it stops the engine (`src/repl-host/kernel-child.mjs`).
+//! and the pipe full, as cua's REPL host leaves it when it stops the engine (`src/repl-host/kernel-child.mjs`). Nor does
+//! the work due with no request: while a response waits to go out, it is done when it falls due (a held drag handle's
+//! idle bound, `engine/handle.rs`).
 
 use std::io::{BufRead, Write};
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -110,8 +112,9 @@ impl Outbox {
         Outbox { lines, written }
     }
 
-    /// Hands `line` to the writer and waits until it has gone out, its write has failed, or a stop has come.
-    fn send(&self, line: String, stopped: &AtomicI32) -> Sent {
+    /// Hands `line` to the writer and waits until it has gone out, its write has failed, or a stop has come; `meanwhile`
+    /// runs at each look, so work that falls due while a write is held up is done on time.
+    fn send(&self, line: String, stopped: &AtomicI32, mut meanwhile: impl FnMut()) -> Sent {
         if self.lines.send(line).is_err() {
             return Sent::Failed("the response writer has ended".into());
         }
@@ -121,7 +124,7 @@ impl Outbox {
                 Ok(Err(error)) => return Sent::Failed(error.to_string()),
                 Err(RecvTimeoutError::Disconnected) => return Sent::Failed("the response writer has ended".into()),
                 Err(RecvTimeoutError::Timeout) => match stopped.load(Ordering::SeqCst) {
-                    0 => {}
+                    0 => meanwhile(),
                     signal => return Sent::Stopped(signal),
                 },
             }
@@ -158,7 +161,14 @@ fn serve_with(server: &mut impl Server, inbox: &Receiver<Next>, out: &Outbox, st
         let Some(response) = server.respond(&line) else {
             continue;
         };
-        match out.send(response, stopped) {
+        // work due while the response waits on a reader that stopped reading (a held drag handle's idle bound) is done
+        // then: the bound holds whatever the reader does (the whole-branch review of M4, P2)
+        let meanwhile = || {
+            if server.next_due().is_some_and(|due| due <= Instant::now()) {
+                server.tick();
+            }
+        };
+        match out.send(response, stopped, meanwhile) {
             Sent::Written => {}
             Sent::Failed(error) => {
                 eprintln!("Error failed to write server response: {error}");
@@ -492,6 +502,35 @@ mod tests {
         assert_eq!(code, 143);
         assert_eq!(seen, ["a"], "nothing queued behind it runs");
         assert_eq!(after, 0);
+    }
+
+    #[test]
+    fn work_due_while_a_response_cannot_go_out_is_done_on_time() {
+        // the whole-branch review of M4 (P2): a held drag handle's idle bound, the engine's work due with no request,
+        // waited for the response before it to go out, so a reader that stopped reading kept button 1 down past it
+        let (unblock, blocked) = channel();
+        let (tx, rx) = channel();
+        tx.send(Next::Line("a\n".into())).unwrap();
+        let (ticked, tick) = channel();
+        let started = Instant::now();
+        let runner = std::thread::spawn(move || {
+            let mut echo = Echo {
+                due: Some(started + Duration::from_millis(40)),
+                ticked: Some(ticked),
+                ..Echo::default()
+            };
+            let code = serve_with(&mut echo, &rx, &Outbox::spawn(Stuck(blocked)), &AtomicI32::new(0));
+            (code, echo.seen, echo.ticks, echo.after)
+        });
+        let on_time = tick.recv_timeout(Duration::from_secs(2)).is_ok();
+        // the reader goes: the write fails, and the loop ends
+        drop(unblock);
+        let (code, seen, ticks, after) = runner.join().unwrap();
+        assert!(on_time, "the work was done while the response was stuck");
+        assert_eq!(seen, ["a"]);
+        assert_eq!(ticks.len(), 1, "once");
+        assert!(ticks[0] - started >= Duration::from_millis(40), "not before it was due");
+        assert_eq!((code, after), (1, 0), "the response never went out");
     }
 
     #[test]

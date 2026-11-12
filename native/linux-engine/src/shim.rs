@@ -627,14 +627,16 @@ mod tests {
         // the launcher, a shell, leaves the engine (a sleep holding the record's write end) behind it, and a sleep of
         // its own that does not hold it
         let (mut record, write_end) = Reader::make().unwrap();
-        let pids = std::env::temp_dir().join(format!("cua-shim-unit-{}", std::process::id()));
+        let scratch = Scratch::make("writer");
+        let pids = scratch.0.join("pid");
+        // the path is the script's argument, never its source; the descriptor's number is the test's own
         let script = format!(
-            "sleep 30 & echo $! > {0}.engine; sleep 30 {1}>&- & echo $! > {0}.other",
-            pids.display(),
+            "sleep 30 & echo $! > \"$1.engine\"; sleep 30 {}>&- & echo $! > \"$1.other\"",
             write_end.as_raw_fd()
         );
         // bash, whose redirections take a descriptor of any number (dash takes one digit)
-        let mut child = launcher("bash", &["-c", &script], Some(write_end.as_fd()));
+        let pids_arg = pids.to_str().unwrap();
+        let mut child = launcher("bash", &["-c", &script, "bash", pids_arg], Some(write_end.as_fd()));
         drop(write_end);
         assert!(wait(&mut child).success());
         let read = |what: &str| -> u32 {
@@ -656,6 +658,26 @@ mod tests {
         assert!(alive(other), "what does not hold the record is left alone");
         let _ = rustix::process::kill_process(Pid::from_raw(other as i32).unwrap(), Signal::KILL);
         assert_eq!(record.wait_for_writers(Duration::from_secs(1)), Writers::Gone);
+    }
+
+    /// A scratch directory of the test's own, removed on drop, whose name a shell would split and expand were it pasted
+    /// into a script's source (the whole-branch review of M4, P2: the temporary directory, which TMPDIR names, went
+    /// into the source): the scripts take their paths as arguments.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn make(tag: &str) -> Scratch {
+            let name = format!("cua-shim-unit {tag};$(exit 7) '\"{}", std::process::id());
+            let dir = std::env::temp_dir().join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            Scratch(dir)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     fn alive(pid: u32) -> bool {
@@ -685,9 +707,14 @@ mod tests {
         fn start(tag: &str) -> Lingering {
             let (record, write_end) = Reader::make().unwrap();
             let ours = std::fs::File::from(write_end.try_clone().unwrap());
-            let pidfile = std::env::temp_dir().join(format!("cua-shim-unit-{tag}-{}", std::process::id()));
-            let script = format!("sleep 30 & echo $! > {}", pidfile.display());
-            let mut child = launcher("sh", &["-c", &script], Some(write_end.as_fd()));
+            let scratch = Scratch::make(tag);
+            let pidfile = scratch.0.join("pid");
+            let script = "sleep 30 & echo $! > \"$1\"";
+            let mut child = launcher(
+                "sh",
+                &["-c", script, "sh", pidfile.to_str().unwrap()],
+                Some(write_end.as_fd()),
+            );
             drop(write_end);
             assert!(wait(&mut child).success());
             let engine = std::fs::read_to_string(&pidfile).unwrap().trim().parse().unwrap();

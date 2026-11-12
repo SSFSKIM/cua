@@ -17,8 +17,9 @@
 // the service as shipped (T8, T16's 25 ms drag); the facade suites on the candidate (repl-parity, native-baseline with
 // compare --engines, linux-native, linux-device-mode: w5's facade.sh); T7 revised's acceptance on the shipped engine (the focus-timer
 // experiment's shipped lane and its stops); the device cases of #263 and #264 (V5's device-chrome-dnd, and the real late
-// takes of `t14-late`, which the device scene cannot produce); T19's predicates manifest; T17's Electron cells
-// (`t17-fix3`, judged by drop-signals-judge.mjs `electronDropVerdict`). Apart in the same sitting, at twice the load
+// takes of `t14-late`, which the device scene cannot produce, judged by drop-signals-judge.mjs `chromeDropVerdict`);
+// T19's predicates manifest, Firefox's drag and drop included (P6); T17's Electron cells (`t17-fix3`, judged by
+// `electronDropVerdict`). Apart in the same sitting, at twice the load
 // (16 stress-ng workers on 8 cores, `--load-factor 2`): thumbs and ranges at 40 a side, the Chromium and Gecko kinds,
 // the settle's observations, the paste and exit settle, the accept signal's false releases and the late takes, T17's
 // Electron cells, and GTK 4's covered capture.
@@ -96,7 +97,10 @@ export const STEPS = [
   experiment('P2', 'private', 'idle', 30, predicates('scroll'), "T19's predicates manifest: scroll", { pilot: leavePilot }),
   experiment('P3', 'private', 'idle', 30, predicates('move'), "T19's predicates manifest: move", { pilot: leavePilot }),
   experiment('P4', 'private', 'idle', 30, predicates('select'), "T19's predicates manifest: select (the drag)", { pilot: leavePilot }),
-  experiment('P5', 'private', 'idle', 16, [...predicates('click,scroll,move,select'), '--plan', 'leave'], "T19's leave cases: the pointer moved out during the request", { pilot: asIs }),
+  // Firefox's HTML5 drag and drop (ffdnd-fix's manifest cases: 2 allowed, 5 refused, 1 leave), about P4's length; and its
+  // leave case beside the others' in P5, a fifth case of 20 runs (16 min for four)
+  experiment('P6', 'private', 'idle', 30, predicates('dnd'), "T19's predicates manifest: Firefox's HTML5 drag and drop", { pilot: leavePilot }),
+  experiment('P5', 'private', 'idle', 20, [...predicates('click,scroll,move,select,dnd'), '--plan', 'leave'], "T19's leave cases: the pointer moved out during the request", { pilot: asIs }),
   experiment('H1', 'private', 'idle', 22, signals('electron', 't17-fix3'), "T17's Electron cells: plain drags and handles, the controls, the four releases off the window"),
   experiment('H2', 'private', 'gate-windows', 25, signals('electron', 't17-fix3', ['--ballast', 'gate']), "T17's Electron cells at the gate's window load"),
   experiment('C1', 'private', 'idle', 4, signals('chrome', 't14-late'), "#264's real late takes (T14), which the gate's device scene cannot produce"),

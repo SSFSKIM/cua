@@ -408,6 +408,65 @@ test('a kernel reset or a new kernel\'s setup during a start the engine is runni
   }
 });
 
+// A handle the engine no longer holds (the design session's ruling on the whole-branch review of M4): the engine holds
+// at most one handle and its wire names none, so a move or an end of a stale handle reached whichever handle the engine
+// held then, a later one the agent never named. A handle is stale once another handle's start succeeded, or once one
+// of its own requests came back with the engine's idle-timeout refusal or its expiry; its move and end are refused in
+// the service, with nothing sent.
+const IDLE_REFUSAL = 'Pending from your last drag, a drag handle released by timeout: your drag handle in XTerm got no request for 30 s, so it was released where the pointer was, at (250, 200); the release may have dropped what it held and changed the desktop; this drag_handle request was not run, so read the window before sending it again';
+const STALE_LATER = 'this drag handle is no longer held: a later drag handle started since; this request was not run. Start a new handle to drag again';
+const STALE_EXPIRED = 'this drag handle is no longer held: cua released it after it got no request for its idle bound; this request was not run. Start a new handle to drag again';
+
+test('a handle another handle\'s start overtook is refused in the service, with nothing sent: it never moves or ends the later handle', async t => {
+  const engine = fakeLinuxEngine(t);
+  const svc = service(t, engine);
+  await svc.handleRpc({type: 'drag_start', handle_id: 'A', point: {x: 1, y: 2}});
+  // the engine released A for its idle bound (unseen by the service), then B starts
+  await svc.handleRpc({type: 'drag_start', handle_id: 'B', point: {x: 3, y: 4}});
+  const before = sent(engine).length;
+  await assert.rejects(svc.handleRpc({type: 'drag_move', handle_id: 'A', point: {x: 9, y: 9}}), {message: STALE_LATER});
+  await assert.rejects(svc.handleRpc({type: 'drag_end', handle_id: 'A'}), {message: STALE_LATER});
+  assert.equal(sent(engine).length, before, 'nothing on the wire');
+  await svc.handleRpc({type: 'drag_move', handle_id: 'B', point: {x: 5, y: 6}});
+  await svc.handleRpc({type: 'drag_end', handle_id: 'B'});
+  assert.deepEqual(sent(engine), [
+    ['drag_handle', {action: 'start', x: 1, y: 2}],
+    ['drag_handle', {action: 'start', x: 3, y: 4}],
+    ['drag_handle', {action: 'move_to', x: 5, y: 6}],
+    ['drag_handle', {action: 'end'}],
+  ]);
+});
+
+test('a handle whose request came back with the idle timeout or its expiry is refused in the service from then on, and a later handle runs', async t => {
+  for (const refusal of [IDLE_REFUSAL, 'your drag handle in XTerm is no longer held: it got no request for 30 s, so it was released where the pointer was, at (250, 200); this drag_handle request was not run. Start a new handle to drag again']) {
+    const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command, input, ctx) {
+      if (command === 'drag_handle' && input.action === 'move_to' && ctx.count === 3) return {error: ${JSON.stringify(refusal)}};
+    }`});
+    const svc = service(t, engine);
+    await svc.handleRpc({type: 'drag_start', handle_id: 'A', point: {x: 1, y: 2}});
+    await assert.rejects(svc.handleRpc({type: 'drag_move', handle_id: 'A', point: {x: 7, y: 7}}), {message: refusal}, 'the engine\'s own answer');
+    const before = sent(engine).length;
+    await assert.rejects(svc.handleRpc({type: 'drag_move', handle_id: 'A', point: {x: 8, y: 8}}), {message: STALE_EXPIRED});
+    await assert.rejects(svc.handleRpc({type: 'drag_end', handle_id: 'A'}), {message: STALE_EXPIRED});
+    assert.equal(sent(engine).length, before, 'nothing on the wire');
+    await svc.handleRpc({type: 'drag_start', handle_id: 'B', point: {x: 3, y: 4}});
+    await svc.handleRpc({type: 'drag_end', handle_id: 'B'});
+    assert.deepEqual(sent(engine).slice(before), [['drag_handle', {action: 'start', x: 3, y: 4}], ['drag_handle', {action: 'end'}]]);
+  }
+});
+
+test('a handle\'s other failures leave it held: only the timeout and the expiry let it go', async t => {
+  const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command, input, ctx) {
+    if (command === 'drag_handle' && input.action === 'move_to' && ctx.count === 3) return {error: 'drag handle point must be integers'};
+  }`});
+  const svc = service(t, engine);
+  await svc.handleRpc({type: 'drag_start', handle_id: 'A', point: {x: 1, y: 2}});
+  await assert.rejects(svc.handleRpc({type: 'drag_move', handle_id: 'A', point: {x: 7, y: 7}}), {message: 'drag handle point must be integers'});
+  await svc.handleRpc({type: 'drag_move', handle_id: 'A', point: {x: 8, y: 8}});
+  await svc.handleRpc({type: 'drag_end', handle_id: 'A'});
+  assert.deepEqual(sent(engine).map(([, input]) => input.action), ['start', 'move_to', 'move_to', 'end']);
+});
+
 test('a kernel reset whose release fails forgets the handles and resolves; one before the engine was ever started starts nothing', async t => {
   const engine = fakeLinuxEngine(t, {behaviour: 'export function answer(command) { if (command === \'release_handle\') return {error: \'unknown command `release_handle`\'}; }'});
   const svc = service(t, engine);

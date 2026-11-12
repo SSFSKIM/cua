@@ -86,6 +86,15 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   until that long has passed since the click (the design session's ruling on task 60: 0 missed on Electron at twice
   the load, 25 held; the review's probe, whose page spends 50 ms on the press, confirmed 10 of 10 at 25). Each
   paste's `--stats` record says how long after the key and the click it came and what it waited (`paste.settle`).
+- **A paste naming no element looks again for the focus** (`engine/paste.rs`, task 74): it pastes into the window's
+  focused element, read from the tree right after its session's synthetic `FocusIn`, and a toolkit can report that
+  focus a moment after it took it. GTK 3 marks its focus widget `focused` for AT-SPI only from an idle callback after
+  the focus-in (`gail_focus_notify_when_idle`), which the walk's own calls can hold off, so the walk could find none
+  and refuse a paste the window would have taken (6 of 30 on one contended CPU). So when the request's own session
+  synthesized the focus, a walk that finds none is repeated every 2 ms for up to 50 ms; a window that already held
+  the focus is read once. The longest wait measured was 15.3 ms on one contended CPU (7.3 ms idle). A refusal for
+  no focused element after a synthetic `FocusIn` therefore comes up to 50 ms later. `--stats` carries the look's
+  time (`paste.focused_ms`).
 - **A press waits for Qt's focus** (`focus_ack.rs`, task 61): Qt asks the window manager to activate a window when it
   handles a button press while the window is not its own focus window, and it makes the window its focus window only
   once it delivers the event the window's `FocusIn` queued, after the batch of X events it read the `FocusIn` in. A

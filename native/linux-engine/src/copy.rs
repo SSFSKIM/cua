@@ -106,6 +106,26 @@ pub fn focused<T: Transport>(t: &mut T, frame: &ObjRef) -> Result<Option<ObjRef>
     visit(t, frame, root, 0, &mut visited)
 }
 
+/// `walk` (a [`focused`] walk) again every `poll` while it finds nothing, for at most `bound` after the first: what it
+/// found, or None once the bound has passed, and the time it took. A zero bound walks once. A walk that fails is the
+/// error.
+pub fn until_focused<F>(
+    bound: Duration,
+    poll: Duration,
+    mut walk: impl FnMut() -> Result<Option<F>>,
+) -> Result<(Option<F>, Duration)> {
+    let started = Instant::now();
+    loop {
+        if let Some(found) = walk()? {
+            return Ok((Some(found), started.elapsed()));
+        }
+        if started.elapsed() >= bound {
+            return Ok((None, started.elapsed()));
+        }
+        std::thread::sleep(poll);
+    }
+}
+
 fn visit<T: Transport>(t: &mut T, obj: &ObjRef, seen: Seen, depth: u32, visited: &mut u32) -> Result<Option<ObjRef>> {
     if depth < MAX_DEPTH {
         for batch in seen.children.chunks(IN_FLIGHT / 2) {
@@ -485,6 +505,51 @@ mod tests {
             bus: ":1.2".into(),
             path: path.into(),
         }
+    }
+
+    #[test]
+    fn a_focus_found_late_is_found_by_walking_again_and_none_found_ends_at_the_bound() {
+        let poll = Duration::from_millis(1);
+        let bound = Duration::from_millis(40);
+        // found on the first walk: one walk, no wait
+        let mut walks = 0;
+        let (found, took) = until_focused(bound, poll, || {
+            walks += 1;
+            Ok(Some("entry"))
+        })
+        .unwrap();
+        assert_eq!((found, walks), (Some("entry"), 1));
+        assert!(took < bound, "{took:?}");
+        // reported on the third walk: found then, before the bound
+        let mut walks = 0;
+        let (found, took) = until_focused(bound, poll, || {
+            walks += 1;
+            Ok((walks == 3).then_some("entry"))
+        })
+        .unwrap();
+        assert_eq!((found, walks), (Some("entry"), 3));
+        assert!(took < bound, "{took:?}");
+        // never reported: None once the bound has passed, in short steps
+        let mut walks = 0;
+        let (found, took) = until_focused(bound, poll, || {
+            walks += 1;
+            Ok(None::<&str>)
+        })
+        .unwrap();
+        assert_eq!(found, None);
+        assert!(took >= bound && took < bound * 5, "{took:?}");
+        assert!(walks > 2, "walked again in steps: {walks}");
+        // a zero bound walks once
+        let mut walks = 0;
+        let (found, _) = until_focused(Duration::ZERO, poll, || {
+            walks += 1;
+            Ok(None::<&str>)
+        })
+        .unwrap();
+        assert_eq!((found, walks), (None, 1));
+        // a walk that fails is the error
+        let failed = until_focused(bound, poll, || Err::<Option<&str>, _>(anyhow::anyhow!("bus gone")));
+        assert_eq!(failed.unwrap_err().to_string(), "bus gone");
     }
 
     #[test]

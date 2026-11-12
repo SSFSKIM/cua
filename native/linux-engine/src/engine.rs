@@ -127,6 +127,9 @@ pub struct Engine {
     qt_marks: HashMap<x11rb::protocol::xproto::Window, Option<families::QtMark>>,
     /// The `drag_handle` between its start and its end (`handle.rs`).
     handle: Option<handle::Handle>,
+    /// A handle the idle bound released (its application, and where it was released, None on another screen): every
+    /// later move or end is refused with that, until a start presses again or cua's `release_handle` forgets it.
+    expired_handle: Option<(String, Option<(i16, i16)>)>,
     /// The drag handles' hold watch (`stray::HoldWatch`), its connection opened by the first handle with a target.
     hold_watch: Option<crate::stray::HoldWatch>,
     /// The clipboard's own connections, opened on first use.
@@ -309,6 +312,7 @@ impl Engine {
             families: HashMap::new(),
             qt_marks: HashMap::new(),
             handle: None,
+            expired_handle: None,
             hold_watch: None,
             launched: apps::Launched::default(),
             clipboard: None,

@@ -327,6 +327,19 @@ pub(super) struct DragMeasure<'a> {
     /// cursor just before the release (None: on another screen, or not read), which is where the release goes and so
     /// the window the drop's confirmation is held to (the third review of task 73, P3).
     pub(super) release_point: Option<&'a mut Option<(i16, i16)>>,
+    /// On the foreground route, a drop under way at the release, whose window is not the one the drag named: its input
+    /// is XTEST's, so its path may end over another window. The slot gets the managed top-level under the real pointer
+    /// just before the release when its family's drop is confirmed by activation (Chrome's), and the after-release
+    /// watch is told it when the window manager takes that request (the flag), as a handle's release does (the
+    /// whole-branch review of M4, P2).
+    pub(super) drop_window_at_release: Option<(&'a mut Option<Window>, bool)>,
+}
+
+/// Whether a drop on `window` (a managed top-level) is confirmed by its activation request: its family's drop sends one
+/// (Chrome's, known by its X11 class alone, so no accessibility-bus call comes before the release).
+fn confirms_by_activation(x: &X11, window: Window) -> bool {
+    crate::families::family(crate::families::FAMILIES, x.wm_class(window).as_deref(), None)
+        .is_some_and(|f| crate::families::confirms_drop(f.name))
 }
 
 /// The wall clock in milliseconds since the epoch (`--stats` only: the harness lines a drag up with its own watchers).
@@ -548,23 +561,33 @@ fn drag_along(
                 Some(json!({ "steps_after_take": left, "release_after_take_ms": at.elapsed().as_secs_f64() * 1000.0 }));
         }
         crate::desktop::drag_hooks::before_release();
-        // an Electron drop under way: the drag loop's cursor shown at the release itself, which confirms it or not, and
-        // on an XTEST route the real pointer beside it, where the release goes whatever the path asked (a person's
-        // motion since the last sample moves the drop)
-        if taken.is_some()
-            && let Some(cursor) = measure.drop_cursor
-        {
+        // a drop under way: an Electron source's drag loop cursor shown at the release itself, which confirms it or
+        // not, and on an XTEST route the real pointer beside it, where the release goes whatever the path asked (a
+        // person's motion since the last sample moves the drop); on the foreground route, the Chrome window under that
+        // pointer, whose activation request confirms the drop
+        if taken.is_some() && (measure.drop_cursor.is_some() || measure.drop_window_at_release.is_some()) {
+            let pointer = x
+                .conn
+                .query_pointer(x.root)
+                .ok()
+                .and_then(|c| c.reply().ok())
+                .filter(|p| p.same_screen)
+                .map(|p| (p.root_x, p.root_y));
             if let Some(slot) = measure.release_point {
-                *slot = x
-                    .conn
-                    .query_pointer(x.root)
-                    .ok()
-                    .and_then(|c| c.reply().ok())
-                    .filter(|p| p.same_screen)
-                    .map(|p| (p.root_x, p.root_y));
+                *slot = pointer;
             }
-            let take = hold.as_ref().and_then(|(watch, _)| watch.taken_time());
-            *measure.at_release = Some(cursor.at_release(take));
+            if let Some((slot, supported)) = measure.drop_window_at_release {
+                *slot = pointer
+                    .and_then(|(rx, ry)| x.managed_client_at(rx, ry))
+                    .filter(|&window| confirms_by_activation(x, window));
+                if supported && let Some(after) = after {
+                    after.confirm_drop_of(*slot);
+                }
+            }
+            if let Some(cursor) = measure.drop_cursor {
+                let take = hold.as_ref().and_then(|(watch, _)| watch.taken_time());
+                *measure.at_release = Some(cursor.at_release(take));
+            }
         }
         pressed = false;
         // stamped as the release goes out, not once its round trip is back: Chrome's drop confirmation answers the
@@ -895,9 +918,12 @@ impl Engine {
         // window manager that lists `_NET_ACTIVE_WINDOW` as supported (the design session's ruling on task 68,
         // 2026-11-09); Electron's by its drag loop's cursor at the release (below); every other window keeps the floor
         // with nothing to confirm
+        // The foreground route's is resolved at the button-up instead, as on every XTEST release: its path may end over
+        // another window (the whole-branch review of M4, P2)
+        let resolve_at_release = hold.is_some() && matches!(target, Target::Foreground(_));
         let drop_window = match (hold.is_some(), target) {
-            (false, _) => None,
-            (true, Target::Window(window) | Target::Foreground(window)) => Some(window),
+            (false, _) | (true, Target::Foreground(_)) => None,
+            (true, Target::Window(window)) => Some(window),
             (true, Target::Desktop) => input.path.last().and_then(|p| self.x.client_at(p.x, p.y)),
         };
         let confirm = match drop_window {
@@ -932,11 +958,16 @@ impl Engine {
                     Target::Window(window) => EscapeRoute::Synthetic(window),
                     Target::Foreground(_) | Target::Desktop => EscapeRoute::Xtest,
                 };
+                let otherwise = if resolve_at_release {
+                    Confirm::AtRelease
+                } else {
+                    Confirm::Never
+                };
                 Some(LateWatch::start(
                     window,
                     route,
                     escape[0],
-                    confirm.map_or(Confirm::Never, Confirm::Window),
+                    confirm.map_or(otherwise, Confirm::Window),
                 )?)
             }
             None => None,
@@ -968,6 +999,7 @@ impl Engine {
         // input is synthetic and leaves the real pointer where it is, so its release is the path's end
         let xtest_route = !matches!(target, Target::Window(_));
         let mut release_point = None;
+        let mut drop_at_release = None;
         let after_take = self.cfg.dnd_after_take;
         let mut scheduled = None;
         let bound = self.cfg.dnd_hold;
@@ -1034,6 +1066,7 @@ impl Engine {
                     drop_cursor: drop_cursor.as_mut().and_then(|c| c.as_mut().ok()),
                     at_release: &mut at_release,
                     release_point: xtest_route.then_some(&mut release_point),
+                    drop_window_at_release: resolve_at_release.then_some((&mut drop_at_release, supported)),
                 },
             );
             if let Some(event) = route.event_time()
@@ -1043,6 +1076,11 @@ impl Engine {
             }
             dragged
         });
+        // on the foreground route, the drop's window is the one found at the button-up
+        let (confirm, drop_window) = match resolve_at_release {
+            true => (drop_at_release, drop_at_release),
+            false => (confirm, drop_window),
+        };
         self.record_focus_ack(ack.as_ref());
         // the pointer watch's word on a drag that otherwise succeeded (`within.rs`)
         let left = self.within_answer(within, "drag");

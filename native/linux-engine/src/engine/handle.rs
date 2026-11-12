@@ -35,7 +35,8 @@
 //!   by the engine where the pointer is, between requests (`Engine::release_idle_handle`): a cell that lost its handle,
 //!   thrown between `start` and `end`, can never end it, and every desktop pointer request would be refused for good
 //!   with the button down. What the release did is pending, as a watch's end is: the next reply carries it, and the next
-//!   acting request, or the released handle's `end`, is refused with it, not run.
+//!   acting request, or the released handle's `end`, is refused with it, not run. Every later move or end of the
+//!   released handle is refused too, with nothing sent, until a start presses again ([`handle_expired`]).
 //! - `start` then `end` with no move is a press and a release in place, as the vendor's; the cleanup before a first move
 //!   is the exit's (`Engine::shutdown`), which ends a held handle as its `end` does.
 
@@ -69,6 +70,18 @@ pub(super) fn handle_held(idle: Duration) -> String {
     format!(
         "a drag handle is held; end it before sending desktop pointer input (a handle that gets no request for {} s is \
          released where it is)",
+        idle.as_secs_f64()
+    )
+}
+
+/// The refusal of a move or an end of a handle the idle bound released (`idle` its bound, `at` where it was released,
+/// None on another screen), once the timeout's own refusal was answered: it holds nothing, so a move would drag nothing
+/// and an end release nothing (the whole-branch review of M4, P2: a retried move answered ok with the button up).
+pub(super) fn handle_expired(app: &str, idle: Duration, at: Option<(i16, i16)>) -> String {
+    let at = at.map_or_else(|| "on another screen".to_string(), |(x, y)| format!("at ({x}, {y})"));
+    format!(
+        "your drag handle in {app} is no longer held: it got no request for {} s, so it was released where the \
+         pointer was, {at}; this drag_handle request was not run. Start a new handle to drag again",
         idle.as_secs_f64()
     )
 }
@@ -235,6 +248,13 @@ impl Engine {
     /// end's answers from its watches.
     pub(super) fn drag_handle(&mut self, input: Option<Value>) -> Result<Value> {
         let input: DragHandleInput = parse_input(input)?;
+        // a handle the idle bound released: every later move or end of it is refused until a new start. The engine,
+        // not cua's service, tells it from the wire's move with no start: only the engine saw the release, and its
+        // handle has no id the service could name (`Engine::expired_handle`)
+        if let (Some((app, at)), DragHandleInput::MoveTo { .. } | DragHandleInput::End) = (&self.expired_handle, &input)
+        {
+            bail!(handle_expired(app, self.cfg.handle_idle, *at));
+        }
         match input {
             DragHandleInput::Start { x: px, y: py } => self.start_drag_handle(px, py)?,
             DragHandleInput::MoveTo { x: px, y: py } => {
@@ -325,6 +345,7 @@ impl Engine {
             eprintln!("{}", json!({ "stats": record }));
         }
         self.extra = request_extra;
+        self.expired_handle = Some((released.app.clone(), released.at));
         self.late_pending = Some((released.app, end));
         self.report_sent();
     }
@@ -388,6 +409,7 @@ impl Engine {
             eprintln!("{}", json!({ "stats": record }));
         }
         self.extra = request_extra;
+        self.expired_handle = Some((app.clone(), fired.pointer));
         self.late_pending = Some((app, end));
     }
 
@@ -409,6 +431,8 @@ impl Engine {
     /// alone: nobody is left to read it. A handle that holds nothing (a move with no start) is dropped; with none,
     /// nothing is sent, and a handle the idle bound already released keeps its notice.
     pub(super) fn release_lost_handle(&mut self) -> Value {
+        // the kernel whose handle the idle bound released is gone too: a new kernel's handles start afresh
+        self.expired_handle = None;
         let Some(handle) = self.handle.take() else {
             return Value::Null;
         };
@@ -503,6 +527,7 @@ impl Engine {
         std::thread::sleep(pacing.press);
         handle.last_request = Instant::now();
         self.handle = Some(handle);
+        self.expired_handle = None;
         Ok(())
     }
 
@@ -731,14 +756,16 @@ impl Engine {
     }
 }
 
-/// The engine's screen's size, for where the server keeps the pointer.
+/// The engine's screen's size now, for where the server keeps the pointer: the root's geometry, which RandR changes, not
+/// the connection's setup, which gives its size when the engine connected (the whole-branch review of M4, P2: a handle
+/// moved into area the screen gained after the engine started recorded a point the pointer was never at, and its end
+/// reported the person's motion). A root that cannot be read keeps nothing off the screen.
 fn screen_size(x: &X11) -> (u16, u16) {
     x.conn
-        .setup()
-        .roots
-        .iter()
-        .find(|s| s.root == x.root)
-        .map_or((u16::MAX, u16::MAX), |s| (s.width_in_pixels, s.height_in_pixels))
+        .get_geometry(x.root)
+        .ok()
+        .and_then(|cookie| cookie.reply().ok())
+        .map_or((u16::MAX, u16::MAX), |g| (g.width, g.height))
 }
 
 #[cfg(test)]

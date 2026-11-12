@@ -635,8 +635,8 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
             probe.conn.flush().unwrap();
         };
         let activate = |probe: &Probe| {
-            let request =
-                x11rb::protocol::xproto::ClientMessageEvent::new(32, probe.id, active_window, [1, 0, 0, 0, 0]);
+            let window = DROP_ACTIVATES.lock().unwrap().unwrap_or(probe.id);
+            let request = x11rb::protocol::xproto::ClientMessageEvent::new(32, window, active_window, [1, 0, 0, 0, 0]);
             probe
                 .conn
                 .send_event(
@@ -787,6 +787,10 @@ enum Shape {
     NoDrop,
     Accept,
 }
+
+/// The window a `Drops` source's activation request names in place of its own: the drop's destination, another Chrome
+/// window, whose renderer asks for its own window's activation when the drop lands in it. None: the source's own.
+static DROP_ACTIVATES: std::sync::Mutex<Option<Window>> = std::sync::Mutex::new(None);
 
 /// The window-relative places of the motions the last drag's source saw after its take.
 static AFTER_TAKE_MOTIONS: std::sync::Mutex<Vec<(i16, i16)>> = std::sync::Mutex::new(Vec::new());
@@ -1399,6 +1403,66 @@ fn a_chrome_drop_under_way_at_its_release_is_confirmed_by_its_activation_request
     set_active_window(None);
     stop.send(()).unwrap();
     let _ = recorder.join();
+}
+
+/// A dedicated drag into Chrome with the real pointer outside its window takes the foreground route (XTEST), whose path
+/// may leave the window: the drop's window is the managed top-level under the real pointer at the button-up, as on
+/// every XTEST release, not the window the drag named (the whole-branch review of M4, P2: a drop into a second Chrome
+/// window, confirmed by that window's activation request, was reported unconfirmed and refused the next acting
+/// request). A drop that window never confirms is still unconfirmed.
+#[test]
+fn a_dedicated_foreground_drag_from_one_chrome_window_into_another_is_confirmed_by_the_window_under_its_release() {
+    // from inside the source, at (0, 0) 400 by 300, to inside the destination at (700, 0)
+    let path = json!([{"x": 100, "y": 200}, {"x": 800, "y": 200}]);
+    let listed = ActiveWindowSupported::listed();
+    for destination_confirms in [true, false] {
+        let destination = Probe::open("Google-chrome", (700, 0, 400, 300));
+        managed(destination.id);
+        *DROP_ACTIVATES.lock().unwrap() = Some(destination.id);
+        let (window, stop, recorder) = drag_source(OnRelease::Drops {
+            activates: destination_confirms,
+            cursors: &[],
+        });
+        managed(window);
+        let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+        let app = app_of(&mut dedicated, window);
+        // outside both windows: the foreground route
+        pointer_to(600, 450);
+        let dragged = dedicated.request("drag", json!({"window": {"id": window}, "path": path}));
+        sleep(SETTLE);
+        let notice = dedicated.exchange("list_windows", json!({}))["notice"].clone();
+        let next = dedicated.request("click", json!({"x": 600, "y": 450}));
+        set_active_window(None);
+        *DROP_ACTIVATES.lock().unwrap() = None;
+        stop.send(()).unwrap();
+        let seen = recorder.join().unwrap();
+        assert_eq!(
+            &seen[..2],
+            [
+                Input::ButtonPress { button: 1, sent: false },
+                Input::ButtonRelease { button: 1, sent: false },
+            ],
+            "the foreground route: pressed in the source, released to its grab"
+        );
+        if destination_confirms {
+            assert_eq!(
+                (dragged, notice, next),
+                (Ok(Value::Null), Value::Null, Ok(Value::Null)),
+                "the destination's activation confirms the drop"
+            );
+        } else {
+            assert_eq!(
+                (dragged, notice, next),
+                (
+                    Ok(Value::Null),
+                    json!(unconfirmed_notice(&app)),
+                    Err(unconfirmed_refusal(&app, "click"))
+                ),
+                "no activation: unconfirmed"
+            );
+        }
+    }
+    drop(listed);
 }
 
 /// The release at the accept, measurement only (`--drag-dnd-release-at-accept`): on the desktop route over a Chrome
@@ -3574,6 +3638,201 @@ fn a_drag_handle_that_gets_no_request_for_its_idle_bound_is_released_where_it_is
         "answered once"
     );
     probe.inputs();
+}
+
+/// The screen of a private Xorg set through RandR to `width` by `height`, one of its modes (tests/xorg-resizable.conf):
+/// its CRTC shows that mode and the root takes its size, the CRTC changed first when shrinking and last when growing so
+/// the screen always holds it. The root's size is read back.
+fn screen_mode(conn: &RustConnection, root: Window, (width, height): (u16, u16)) {
+    use x11rb::protocol::randr::{ConnectionExt as _, Rotation};
+    conn.randr_query_version(1, 6).unwrap().reply().unwrap();
+    let resources = conn.randr_get_screen_resources_current(root).unwrap().reply().unwrap();
+    let mode = resources
+        .modes
+        .iter()
+        .find(|m| (m.width, m.height) == (width, height))
+        .unwrap_or_else(|| panic!("a {width}x{height} mode: {:?}", resources.modes))
+        .id;
+    let crtc = resources.crtcs[0];
+    let info = conn
+        .randr_get_crtc_info(crtc, resources.config_timestamp)
+        .unwrap()
+        .reply()
+        .unwrap();
+    let outputs = if info.outputs.is_empty() {
+        resources.outputs[..1].to_vec()
+    } else {
+        info.outputs
+    };
+    let set_crtc = || {
+        let (now, config) = (x11rb::CURRENT_TIME, resources.config_timestamp);
+        conn.randr_set_crtc_config(crtc, now, config, 0, 0, mode, Rotation::ROTATE0, &outputs)
+            .unwrap()
+            .reply()
+            .expect("RandR sets the CRTC's mode");
+    };
+    // about 96 dpi: RandR wants non-zero millimetres
+    let set_size = || {
+        let mm = |pixels: u16| (u32::from(pixels) * 254 / 960).max(1);
+        conn.randr_set_screen_size(root, width, height, mm(width), mm(height))
+            .unwrap()
+            .check()
+            .expect("RandR sets the screen's size");
+    };
+    if width < info.width || height < info.height {
+        set_crtc();
+        set_size();
+    } else {
+        set_size();
+        set_crtc();
+    }
+    let geometry = conn.get_geometry(root).unwrap().reply().unwrap();
+    assert_eq!((geometry.width, geometry.height), (width, height), "the root's size");
+}
+
+/// A handle's asked point is kept on the screen as it is now, not as it was when the engine connected (the
+/// whole-branch review of M4, P2): the connection's setup gives the root's size at the engine's start, so after the
+/// screen grew a move into the new area recorded a point the server never kept the pointer at, and `end` answered that
+/// the person had moved the pointer. A move beyond the grown screen is still kept on it. Xvfb's RandR never grows a
+/// screen past the size it started with, so this runs on the private Xorg that `CUA_LIVE_RESIZABLE` names
+/// (`tests/two-screens.sh` starts it from tests/xorg-resizable.conf, and requires this test to pass), and says it is
+/// skipped without one.
+#[test]
+fn a_drag_handle_moved_into_screen_area_added_after_the_engine_started_ends_as_asked() {
+    let Ok(display) = std::env::var("CUA_LIVE_RESIZABLE") else {
+        eprintln!("skipped: CUA_LIVE_RESIZABLE names no resizable display (tests/two-screens.sh runs this test)");
+        return;
+    };
+    let (conn, screen) = x11rb::connect(Some(&display)).expect("the resizable display");
+    let root = conn.setup().roots[screen].root;
+    let place = || {
+        let pointer = conn.query_pointer(root).unwrap().reply().unwrap();
+        let held = pointer.mask.contains(x11rb::protocol::xproto::KeyButMask::BUTTON1);
+        ((pointer.root_x, pointer.root_y), held)
+    };
+    screen_mode(&conn, root, (640, 480));
+    let mut engine = Engine::start_on_display(&display);
+    engine.request("list_windows", json!({})).unwrap();
+    // the screen grows after the engine connected
+    screen_mode(&conn, root, (1280, 800));
+    let mut handle = |action: Value| engine.request("drag_handle", action);
+    let ended = (|| {
+        handle(json!({"action": "start", "x": 150, "y": 150}))?;
+        handle(json!({"action": "move_to", "x": 900, "y": 600}))?;
+        let moved = place();
+        let first = handle(json!({"action": "end"}));
+        // beyond the grown screen: kept on it, at its edge, and that is where it was asked to be
+        handle(json!({"action": "start", "x": 150, "y": 150}))?;
+        handle(json!({"action": "move_to", "x": 1320, "y": 150}))?;
+        let edge = place();
+        let second = handle(json!({"action": "end"}));
+        Ok::<_, String>((moved, first, edge, second, place()))
+    })();
+    drop(engine);
+    screen_mode(&conn, root, (640, 480));
+    let (moved, first, edge, second, after) = ended.expect("the handle's requests");
+    assert_eq!(
+        moved,
+        ((900, 600), true),
+        "the server put the held pointer in the new area"
+    );
+    assert_eq!(first, Ok(Value::Null), "released where it was asked to be");
+    assert_eq!(edge, ((1279, 150), true));
+    assert_eq!(second, Ok(Value::Null));
+    assert_eq!(after, ((1279, 150), false), "released");
+}
+
+/// The refusal of a move or an end of a handle the idle bound released, after the timeout's own (handle.rs
+/// `handle_expired`).
+fn handle_expired(app: &str, seconds: &str, at: (i16, i16)) -> String {
+    format!(
+        "your drag handle in {app} is no longer held: it got no request for {seconds} s, so it was released where the \
+         pointer was, at ({}, {}); this drag_handle request was not run. Start a new handle to drag again",
+        at.0, at.1
+    )
+}
+
+/// The real pointer's place on the screen.
+fn pointer_place() -> (i16, i16) {
+    let (conn, screen) = x11rb::connect(None).expect("an X connection");
+    let root = conn.setup().roots[screen].root;
+    let pointer = conn.query_pointer(root).unwrap().reply().unwrap();
+    (pointer.root_x, pointer.root_y)
+}
+
+/// A handle the idle bound released stays released (the whole-branch review of M4, P2): the timeout's refusal is
+/// answered once, and a move retried after it answered ok with the button up, moving the pointer as if it dragged. Every
+/// later move or end of it is refused with the expiry, nothing sent, until a new start, which holds and drags as ever. A
+/// move with no start at all, in an engine that released no handle, still moves the pointer and presses nothing.
+#[test]
+fn a_drag_handle_released_for_its_idle_bound_refuses_every_later_move_and_end_until_a_new_start() {
+    let probe = Probe::open("XTerm", (0, 0, 400, 300));
+    managed(probe.id);
+    let mut engine = Engine::start_with(&["--drag-handle-idle-ms", "300"]);
+    let app = app_of(&mut engine, probe.id);
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 250, "y": 200}))
+        .unwrap();
+    sleep(Duration::from_millis(500));
+    assert!(!button1_down(), "released by the engine");
+    assert_eq!(
+        engine.request("drag_handle", json!({"action": "move_to", "x": 260, "y": 200})),
+        Err(format!(
+            "{}; this drag_handle request was not run, so read the window before sending it again",
+            idle_cause(&app, "0.3", (250, 200))
+        )),
+        "the first: the timeout"
+    );
+    for (what, request) in [
+        ("a retried move", json!({"action": "move_to", "x": 260, "y": 200})),
+        ("another move", json!({"action": "move_to", "x": 270, "y": 210})),
+        ("its end", json!({"action": "end"})),
+        ("its end again", json!({"action": "end"})),
+    ] {
+        assert_eq!(
+            engine.request("drag_handle", request),
+            Err(handle_expired(&app, "0.3", (250, 200))),
+            "{what}"
+        );
+    }
+    assert_eq!(pointer_place(), (250, 200), "nothing moved the pointer");
+    assert!(!button1_down());
+    assert_eq!(
+        probe.inputs(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ],
+        "the press, and the release where the pointer was: nothing after it"
+    );
+    // a new start holds and drags as ever
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 150, "y": 150}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 200, "y": 180}))
+        .unwrap();
+    assert!(button1_down(), "held again");
+    assert_eq!(engine.request("drag_handle", json!({"action": "end"})), Ok(Value::Null));
+    assert_eq!(
+        probe.inputs(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ]
+    );
+    // the wire's move with no start, in an engine that released no handle: the pointer moves, nothing is pressed
+    let mut fresh = Engine::start_with(&["--drag-handle-idle-ms", "300"]);
+    assert_eq!(
+        fresh.request("drag_handle", json!({"action": "move_to", "x": 120, "y": 110})),
+        Ok(Value::Null)
+    );
+    assert_eq!(pointer_place(), (120, 110));
+    assert!(!button1_down());
+    assert_eq!(probe.inputs(), vec![], "a move presses nothing");
 }
 
 /// The idle bound holds while another request blocks the engine (the second review of task 73, P3): the release between

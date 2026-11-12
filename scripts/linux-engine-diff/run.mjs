@@ -1073,7 +1073,12 @@ async function diffRun(args, candidate, { handoff }) {
     for (const scene of args.scenes.filter((s) => s !== 'desktop')) {
       // the safety cases open windows of their own (safety.mjs)
       const ops = blockPlan.filter((p) => p.scene === scene).map((p) => p.op);
-      const open = (role, text = false) => openScene(desktop, scene, role, { text });
+      // each window's application verified as the scene's family's (`openScene`), and recorded
+      const open = async (role, text = false) => {
+        const opened = await openScene(desktop, scene, role, { text });
+        emit({ kind: 'scene-identity', scene, role, family: SCENE_FAMILY[scene], identity: opened.identity });
+        return opened;
+      };
       windows[scene] = { shared: ops.some((op) => !ownWindow(op)) ? await open('read') : null, own: {}, text: {} };
       // each engine that runs one of the scene's own-window operations gets its own window
       for (const label of labels.filter((l) => ops.some((op) => ownWindow(op) && !isText(op) && runsOp(l, op)))) {

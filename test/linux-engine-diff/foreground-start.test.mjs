@@ -43,7 +43,7 @@ test("a foreground sample after a Chrome sample starts with the front window act
     left = 0;
   };
   const start = await foregroundStart(w.desktop, EDITOR, w.deps);
-  assert.deepEqual(start, { activated_front: true, quiet: true, waited_ms: 40 });
+  assert.deepEqual(start, { activated_front: true, popups_at_start: 1, quiet: true, waited_ms: 40 });
   assert.equal(w.log[0], 'focusFront', 'the focus moved before the quiet check');
   // the popups looked for are those of the run's other clients only: Chrome's, not the target's or the front's
   assert.ok(w.log.slice(1).every((l) => l === 'popups 1a00002'));
@@ -63,27 +63,27 @@ test("the differential run and the dedicated safety case start a foreground samp
 
 test('a foreground sample with the front window already active only waits for the popups to close', async () => {
   const w = world({ popupsOpen: (t) => (t < 60 ? [0x1a00049] : []) });
-  assert.deepEqual(await foregroundStart(w.desktop, EDITOR, w.deps), { activated_front: false, quiet: true, waited_ms: 60 });
+  assert.deepEqual(await foregroundStart(w.desktop, EDITOR, w.deps), { activated_front: false, popups_at_start: 1, quiet: true, waited_ms: 60 });
   assert.ok(!w.log.includes('focusFront'));
   const quiet = world();
-  assert.deepEqual(await foregroundStart(quiet.desktop, EDITOR, quiet.deps), { activated_front: false, quiet: true, waited_ms: 0 });
+  assert.deepEqual(await foregroundStart(quiet.desktop, EDITOR, quiet.deps), { activated_front: false, popups_at_start: 0, quiet: true, waited_ms: 0 });
 });
 
 test('the target active already (a case that activated it before the span) stays active', async () => {
   const w = world({ active: EDITOR });
-  assert.deepEqual(await foregroundStart(w.desktop, EDITOR, w.deps), { activated_front: false, quiet: true, waited_ms: 0 });
+  assert.deepEqual(await foregroundStart(w.desktop, EDITOR, w.deps), { activated_front: false, popups_at_start: 0, quiet: true, waited_ms: 0 });
   assert.ok(!w.log.includes('focusFront'));
 });
 
 test("a popup that never closes is recorded and the sample goes on: one that unmaps inside the span still fails it", async () => {
   const w = world({ popupsOpen: () => [0x1a00049] });
-  assert.deepEqual(await foregroundStart(w.desktop, EDITOR, { ...w.deps, boundMs: 1000, pollMs: 20 }), { activated_front: false, quiet: false, waited_ms: 1000, open: [0x1a00049] });
+  assert.deepEqual(await foregroundStart(w.desktop, EDITOR, { ...w.deps, boundMs: 1000, pollMs: 20 }), { activated_front: false, popups_at_start: 1, quiet: false, waited_ms: 1000, open: [0x1a00049] });
 });
 
 test("a Chrome target's popups are its own, so a Chrome foreground sample is left as its condition made it", async () => {
   // Chrome in front on purpose (device.mjs `alreadyInFront`): not moved, and its own popup is not waited for
   const w = world({ active: CHROME_STUB, popupsOpen: (t) => (t < 500 ? [0x1a00049] : []) });
-  assert.deepEqual(await foregroundStart(w.desktop, CHROME_TEXT, { ...w.deps, popups: (ids) => (w.log.push(ids), []) }), { activated_front: false, quiet: true, waited_ms: 0 });
+  assert.deepEqual(await foregroundStart(w.desktop, CHROME_TEXT, { ...w.deps, popups: (ids) => (w.log.push(ids), []) }), { activated_front: false, popups_at_start: 0, quiet: true, waited_ms: 0 });
   assert.deepEqual(w.log, [[EDITOR]], "only the other clients' popups are looked for");
   // a run with no window of another client has nothing to wait for
   const alone = world();

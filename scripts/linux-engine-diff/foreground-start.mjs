@@ -40,9 +40,10 @@ export async function foregroundStart(desktop, target, { active = activeWindow, 
   if (activatedFront) desktop.focusFront();
   const ids = [...others.values()];
   let open = popups(ids);
+  const atStart = open.length;
   while (open.length && now() - now0 < boundMs) {
     await sleep(pollMs);
     open = popups(ids);
   }
-  return { activated_front: activatedFront, quiet: open.length === 0, waited_ms: Math.round(now() - now0), ...(open.length ? { open } : {}) };
+  return { activated_front: activatedFront, popups_at_start: atStart, quiet: open.length === 0, waited_ms: Math.round(now() - now0), ...(open.length ? { open } : {}) };
 }

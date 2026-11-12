@@ -96,7 +96,7 @@ export const STEPS = [
   experiment('P2', 'private', 'idle', 30, predicates('scroll'), "T19's predicates manifest: scroll", { pilot: leavePilot }),
   experiment('P3', 'private', 'idle', 30, predicates('move'), "T19's predicates manifest: move", { pilot: leavePilot }),
   experiment('P4', 'private', 'idle', 30, predicates('select'), "T19's predicates manifest: select (the drag)", { pilot: leavePilot }),
-  experiment('P5', 'private', 'idle', 8, [...predicates('click,scroll,move,select'), '--plan', 'leave'], "T19's leave cases: the pointer moved out during the request", { pilot: asIs }),
+  experiment('P5', 'private', 'idle', 16, [...predicates('click,scroll,move,select'), '--plan', 'leave'], "T19's leave cases: the pointer moved out during the request", { pilot: asIs }),
   experiment('H1', 'private', 'idle', 22, signals('electron', 't17-fix3'), "T17's Electron cells: plain drags and handles, the controls, the four releases off the window"),
   experiment('H2', 'private', 'gate-windows', 25, signals('electron', 't17-fix3', ['--ballast', 'gate']), "T17's Electron cells at the gate's window load"),
   experiment('C1', 'private', 'idle', 4, signals('chrome', 't14-late'), "#264's real late takes (T14), which the gate's device scene cannot produce"),

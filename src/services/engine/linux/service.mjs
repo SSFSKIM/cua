@@ -79,6 +79,8 @@ export function createService({env = process.env, settler = new ActionSettler()}
         } finally {
           starting.delete(handle);
         }
+        // the engine holds one handle: every other one stored is no longer held (./methods.mjs dragHandle)
+        for (const other of handles.values()) if (other !== handle) other.supersede();
         handles.set(message.handle_id, handle);
         return undefined;
       }

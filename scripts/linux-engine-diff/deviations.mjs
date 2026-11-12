@@ -135,6 +135,9 @@ export const HANDLE_END = new RegExp(
     String.raw`\S.* may not have received your drag where you asked: the desktop pointer was moved while the handle was held, so it was released (at \(-?\d+, -?\d+\)|on another screen) instead of at \(-?\d+, -?\d+\)\. Read the window to see what happened before dragging again`,
     // a move or an end of a handle the idle bound released, after the timeout's own refusal (the whole-branch review)
     String.raw`your drag handle in \S.* is no longer held: it got no request for \d+(\.\d+)? s, so it was released where the pointer was, (at \(-?\d+, -?\d+\)|on another screen); this drag_handle request was not run\. Start a new handle to drag again`,
+    // cua's service's refusal of a move or an end of a handle the engine no longer holds, nothing sent (methods.mjs
+    // STALE_HANDLE): a later handle started, or the engine released this one for its idle bound
+    String.raw`this drag handle is no longer held: (a later drag handle started since|cua released it after it got no request for its idle bound); this request was not run\. Start a new handle to drag again`,
   ]
     .map((s) => `^${s}$`)
     .join('|'),
@@ -159,7 +162,7 @@ export const DEVIATIONS = [
     field: 'error',
     answer: (c) => c.ok === false && (HANDLE_POINTER_ELSEWHERE.test(String(c.error)) || HANDLE_END.test(String(c.error))),
     reason:
-      "a handle's start tries a pointer grab, under a server grab and given up in the same request batch, and is refused with nothing pressed while another client holds the pointer, whose grab would take the press; its end, after its release, answers an error when another client's grab crossed the target before the release with no drag and drop begun, when its watch failed, or when the real pointer was not where the last request put it; and a move or an end of a handle cua released after its idle bound is refused, with nothing sent, until a new start. The vendor presses into the grab and answers ok every time",
+      "a handle's start tries a pointer grab, under a server grab and given up in the same request batch, and is refused with nothing pressed while another client holds the pointer, whose grab would take the press; its end, after its release, answers an error when another client's grab crossed the target before the release with no drag and drop begun, when its watch failed, or when the real pointer was not where the last request put it; and a move or an end of a handle cua released after its idle bound is refused, with nothing sent, until a new start, as is one of a handle a later handle's start overtook (the engine holds one handle, and the wire names none). The vendor presses into the grab and answers ok every time",
     section: HANDLE_SECTION,
   },
   // M4's T19 (#353): Gecko's pointer kinds by the real pointer. The vendor answers ok for a Gecko window's background

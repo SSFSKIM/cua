@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { STALE_HANDLE } from '../../src/services/engine/linux/methods.mjs';
 import { DEVIATIONS, declaredDeviation, fixtureTruncationMismatch, lineAsReported, setAsideTruncation, truncationMismatch } from '../../scripts/linux-engine-diff/deviations.mjs';
 
 test('every declared deviation names its operation, field, reason and the spec section', () => {
@@ -56,6 +57,11 @@ test("drag_handle's lifecycle answers are declared by their own sentences, each 
     const expired = `your drag handle in XTerm is no longer held: it got no request for 0.3 s, so it was released where the pointer was, ${at}; this drag_handle request was not run. Start a new handle to drag again`;
     assert.ok(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error(expired) }), at);
     assert.equal(declaredDeviation({ op: 'drag', field: 'error', candidate: error(expired) }), null, "a drag's error is not a handle's");
+  }
+  // cua's service's refusal of a stale handle's move or end (src/services/engine/linux/methods.mjs STALE_HANDLE)
+  for (const stale of Object.values(STALE_HANDLE)) {
+    assert.ok(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error(stale) }), stale);
+    assert.equal(declaredDeviation({ op: 'drag', field: 'error', candidate: error(stale) }), null, "a drag's error is not a handle's");
   }
   for (const sentence of [elsewhere, cut, failed]) assert.equal(declaredDeviation({ op: 'drag', field: 'error', candidate: error(sentence) }), null, `a drag's error is not a handle's: ${sentence.slice(0, 30)}`);
   assert.equal(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error('Google-chrome may not have received your drag: something else') }), null, 'another sentence');

@@ -20,6 +20,7 @@ import { runTmp } from './app-env.mjs';
 import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace, startProxy, watchAncestry } from './audit.mjs';
 import { verifySceneIdentity } from './app-identity.mjs';
 import { auditForeign, foreignLine } from './foreign.mjs';
+import { foregroundStart } from './foreground-start.mjs';
 import { startMonitor } from './busmon.mjs';
 import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
@@ -366,10 +367,15 @@ async function measureSample(s, ctx) {
   // a cua text command's route is known beforehand: its witness is judged against it and the route the engine reports
   // taking (Decision Log, M2.2); a vendor build's is judged strictly
   const expected = VENDORS.includes(s.label) ? null : routeOf(op, s.sceneName);
+  // a foreground-route sample starts, outside its span, with the front window active and the other clients' popups
+  // closed (foreground-start.mjs), every lane alike: a client a previous sample left active closes its popups as the
+  // route's activation takes the focus from it, which the witness would count inside the span
+  const started = witness && target && routeOf(op, s.sceneName) === 'foreground' ? await foregroundStart(s.desktop, target.id) : null;
   const answered = witness && target && (isText(op) || isDevice(op)) ? await routeWitness(witness, tag, target.id, expected, send, { inFront: OPS[op].inFront === true, opensWindows: command === 'click' && input.mouse_button === 'right', pointerMoves: OPS[op].pointerMoves === true }) : await span(tag, send);
   const { response, ms, sinceSpawnMs, stats } = answered.value;
   const row = { kind: 'sample', engine: s.label, scene: s.sceneName, op, block: s.block, series: i === 0 ? 'cold' : 'warm', i };
   if (expected) row.route_expected = expected;
+  if (started) row.foreground_start = started;
   row.ms = Math.round((i === 0 && startedInSpan ? sinceSpawnMs : ms) * 100) / 100;
   row.timed = i === 0 && startedInSpan ? 'spawn' : 'request';
   row.request_ms = Math.round(ms * 100) / 100;

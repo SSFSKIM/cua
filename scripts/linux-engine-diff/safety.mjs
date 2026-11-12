@@ -25,6 +25,7 @@ import { join } from 'node:path';
 
 import { clipRead, grabsIn, startOwner, toplevel, waitQuarantineOver, watchGrabs, within } from './clip.mjs';
 import { Engine } from './engine.mjs';
+import { foregroundStart } from './foreground-start.mjs';
 import { PAGES } from './scenes.mjs';
 import {
   CHANGED,
@@ -573,6 +574,9 @@ export class Cases {
     await sleep(300);
     const marker = `cua171-${op}-${stamp()}`;
     const expected = dedicated ? 'foreground' : 'background';
+    // the foreground route's start, outside the span: the other clients' popups closed (foreground-start.mjs; the
+    // target, activated above, stays active)
+    const started = dedicated ? await foregroundStart(this.desktop, scene.id) : null;
     const span = await routeWitness(this.witness, `case:${op}`, scene.id, expected, () => engine.request('type_text', { window: { id: scene.id }, element_id: scene.field, text: marker }));
     await sleep(300);
     const after = textOf(this.oracle, scene.field);
@@ -598,7 +602,7 @@ export class Cases {
     }
     // the expected route, then its allowance (judgeRouteSpan): a route other than the expected one fails here
     if (!span.judged.clean) reasons.push(`the witness changed beyond the ${expected} route's allowance (${span.judged.fields.join(', ')})`);
-    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, route_expected: expected, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), witness_restacks: (span.report?.restacks ?? []).slice(0, 30), witness_focus: (span.report?.focus ?? []).slice(0, 30), paste });
+    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, route_expected: expected, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), witness_restacks: (span.report?.restacks ?? []).slice(0, 30), witness_focus: (span.report?.focus ?? []).slice(0, 30), paste, ...(started ? { foreground_start: started } : {}) });
   }
 }
 

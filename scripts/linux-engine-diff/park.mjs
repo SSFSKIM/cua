@@ -9,7 +9,8 @@
 // the harness's own audit, `foreign.mjs`: a runner that wants the pointer off its application parks it on a window of
 // its own, as `parkOnFront` does.)
 
-import { xdotool, xprobe } from './xtools.mjs';
+import { xExecFileSync } from './xspawn.mjs';
+import { XPROBE, xdotool, xprobe } from './xtools.mjs';
 
 /** A park whose pointer did not land where it was meant to: the trial is refused and never counts. */
 export class ParkRefused extends Error {
@@ -65,6 +66,31 @@ export function parkPointer(point, intended, { move = (p) => xdotool('mousemove'
   const verdict = parkVerdict(reading, point, intended);
   if (!verdict.ok) throw new ParkRefused(`the pointer's park at (${point.x}, ${point.y}) is refused: ${verdict.why}`);
   return reading;
+}
+
+/**
+ * `parkPointer`'s `move` and `read` on a display of a runner's own (`env`, its `DISPLAY`), for a runner whose tools
+ * do not run on the harness's display (events.mjs's private server). `exec` is given only by the tests.
+ */
+export function displayTools(env, exec = xExecFileSync) {
+  const options = { encoding: 'utf8', timeout: 15000, env };
+  return {
+    move: (p) => exec('xdotool', ['mousemove', String(p.x), String(p.y)], options),
+    read: () => JSON.parse(exec(XPROBE, ['pointer-chain'], options)),
+  };
+}
+
+/**
+ * The real pointer parked at a screen point `{x, y}` where the run's window on top there is meant, or the bare root
+ * where none is: what is on top is read at the point just before the move (`desktop.topAt` among the run's windows),
+ * and a point under another's window, or under a window of the run's it no longer owns (scenes.mjs `pointerSafeAt`),
+ * is refused unmoved. The park is then verified (`parkPointer`, whose `options` these are). Throws `ParkRefused`.
+ */
+export function parkAt(desktop, point, options = {}) {
+  const ids = desktop.windows.map((w) => w.id).filter((id) => Number.isSafeInteger(id) && id > 0);
+  const { top, holds } = desktop.topAt(point, ids);
+  if (top && !(typeof holds === 'number' && desktop.liveOwned(holds))) throw new ParkRefused(`the pointer's park point (${point.x}, ${point.y}) is over a window the run did not open`);
+  return parkPointer(point, top ? holds : ROOT, options);
 }
 
 /** The middle of the run's front window (`desktop.front`, the harness's own xterm): `{id, x, y}`, or null for none. */

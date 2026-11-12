@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import { runTmp } from './app-env.mjs';
 import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace, startProxy, watchAncestry } from './audit.mjs';
+import { verifySceneIdentity } from './app-identity.mjs';
 import { auditForeign, foreignLine } from './foreign.mjs';
 import { startMonitor } from './busmon.mjs';
 import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
@@ -647,10 +648,54 @@ export function launchEntry(dir) {
 }
 
 /**
+ * The family whose application each scene's windows must show (app-identity.mjs `APP_IDENTITY`), by the opener behind
+ * the scene (`openScene`).
+ */
+export const SCENE_FAMILY = {
+  gedit: 'gedit',
+  minimized: 'gedit',
+  chrome: 'chrome',
+  'chrome-input': 'chrome',
+  'chrome-textarea': 'chrome',
+  'chrome-address-bar': 'chrome',
+  'over-budget': 'chrome',
+  'big-text': 'chrome',
+  retention: 'chrome',
+  identity: 'chrome',
+  'device-chrome': 'chrome',
+  'device-chrome-dnd': 'chrome',
+  'device-firefox': 'firefox',
+  'gnome-text-editor': 'gnome-text-editor',
+  'device-gtk4': 'gtk4-input',
+  'device-xterm': 'xterm',
+  'minimized-xterm': 'xterm',
+  'minimized-recorder': 'recorder',
+  'device-qt': 'kate',
+  'identity-kate': 'kate',
+  'identity-gtk3': 'identity-gtk3',
+  'identity-gtk4': 'identity-gtk4',
+  'gtk-table': 'gtk-table',
+  calc: 'calc',
+};
+
+/**
+ * Opens one window of a scene (`openSceneWindow`), and verifies its application as the scene's family's
+ * (`SCENE_FAMILY`; app-identity.mjs `verifySceneIdentity`) before any of its samples counts: a scene that is not is
+ * refused (`IdentityRefused`) and the run stops. The identity read is kept on the scene (`identity`).
+ */
+export async function openScene(desktop, scene, role, options = {}) {
+  const opened = await openSceneWindow(desktop, scene, role, options);
+  const { wmClass } = await import('./families.mjs');
+  desktop.oracle ??= new Oracle();
+  opened.identity = await verifySceneIdentity(desktop, desktop.oracle, opened, SCENE_FAMILY[scene], { wmClassOf: wmClass });
+  return opened;
+}
+
+/**
  * Opens one window of a scene: gedit on a scratch file, a harness page in Chrome, a family's application; M2's text
  * scenes with their field resolved (text.mjs).
  */
-export async function openScene(desktop, scene, role, { text = false } = {}) {
+async function openSceneWindow(desktop, scene, role, { text = false } = {}) {
   if (scene === 'gedit') {
     const opened = await desktop.openGedit(role, GEDIT_TEXT);
     opened.originalLength = (await desktop.geditText(opened)).length;

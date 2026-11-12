@@ -54,7 +54,7 @@ import { negativeCheck } from './run.mjs';
 import { XPROBE, xdotool } from './scenes.mjs';
 import { blockOrder, median } from './stats.mjs';
 import { LIBREOFFICE_FAMILIES, vclDrawn } from './vcl-aim.mjs';
-import { APP_IDENTITY, verifyIdentity } from './app-identity.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { parkPointer } from './park.mjs';
 import { startWitness } from './witness.mjs';
 import { SETTLE_MS } from '../../src/services/engine/linux/settle.mjs';
@@ -875,16 +875,8 @@ export async function runDrag(args, { desktop, emit }) {
       const open = async (label) => {
         const scene = await openFamily(desktop, oracle, family, label, { page, doc: DRAG_DOC, env, geometry });
         if (page) scene.kindOf = 'page';
-        // a family with a declared identity (Writer) verified before its cell counts (app-identity.mjs)
-        if (APP_IDENTITY[family]) {
-          try {
-            scene.identity = verifyIdentity(oracle, scene, family);
-          } catch (error) {
-            await desktop.close([scene]);
-            throw error;
-          }
-        }
-        return scene;
+        // the family's application verified before its cell counts (app-identity.mjs)
+        return verifiedScene(desktop, oracle, scene, family);
       };
       try {
         if (plain.length) {

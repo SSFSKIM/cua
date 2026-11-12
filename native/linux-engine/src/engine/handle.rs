@@ -583,6 +583,7 @@ impl Engine {
             _ => None,
         };
         let mut cursor_record = None;
+        let mut cursor_read = None;
         // the managed top-level under the release, past the drag image: where the drop goes, if anywhere
         let under = match (judging, at) {
             (true, Some((rx, ry))) => self.x.managed_client_at(rx, ry),
@@ -594,7 +595,9 @@ impl Engine {
                 Ok(watch) => {
                     let read = watch.at_release(take_time);
                     cursor_record = Some(read.record());
-                    read.accepted
+                    let accepted = read.accepted;
+                    cursor_read = Some(read);
+                    accepted
                 }
                 Err(error) => {
                     cursor_record = Some(json!({ "accepted": null, "error": error }));
@@ -618,16 +621,15 @@ impl Engine {
         {
             after.released(released_at, taken);
         }
-        // an Electron accept confirms only a release over a window that takes drag and drop: Chromium keeps its last
-        // status's accept when the path leaves for one that does not (the bare root, an xterm), and drops nowhere (the
-        // design session's ruling, 2026-11-11); read after the release, which it does not need to precede
-        if let Some(Confirming::Cursor(accepted)) = confirmed {
-            let aware = under.is_some_and(|window| self.x.xdnd_aware(window));
-            let over = crate::drop_cursor::over_drop_target(Some(accepted), aware);
-            confirmed = Some(Confirming::Cursor(over == Some(true)));
+        // an Electron accept confirms only a release over a window that takes drag and drop, and only one put up after
+        // the pointer came into it: Chromium keeps its last status's accept when the path leaves for one that does not
+        // (the bare root, an xterm), or for one that has not answered yet, and drops nowhere (the design session's
+        // ruling, 2026-11-11; the third review, P2)
+        if let (Some(Confirming::Cursor(true)), Some(read)) = (confirmed, &cursor_read) {
+            let (held, over) = self.accept_held_to_release(read, at);
+            confirmed = Some(Confirming::Cursor(held));
             if let Some(Value::Object(record)) = cursor_record.as_mut() {
-                record.insert("over_xdnd_aware".into(), json!(aware));
-                record.insert("under".into(), json!(under));
+                record.insert("release_over".into(), over);
             }
         }
         let app = self.app_of_handle(handle.target);
@@ -692,6 +694,28 @@ impl Engine {
             Ok(())
         })();
         Released { answer, at, app }
+    }
+
+    /// An Electron source's accept shown at the release (`read`), held to the window under the release (`release`, a
+    /// root point; None when it is not known): it confirms only when the managed top-level there, past the drag image,
+    /// takes drag and drop (`XdndAware`), and only when the accept was put up after the real pointer last came into
+    /// that top-level ([`crate::drop_cursor::set_since_entry`]): a target that has not answered yet leaves the window
+    /// before's accept on display (the third review of task 73, P2). Read after the release, which it does not need to
+    /// precede. What it read goes on the `--stats` record.
+    pub(super) fn accept_held_to_release(
+        &self,
+        read: &crate::drop_cursor::AtRelease,
+        release: Option<(i16, i16)>,
+    ) -> (bool, Value) {
+        let levels = self.x.top_levels();
+        let top_at = |place: (i16, i16)| levels.as_ref().and_then(|levels| levels.at(place));
+        let top = release.and_then(top_at);
+        let under = top.and_then(|top| self.x.client_of(top));
+        let aware = under.is_some_and(|window| self.x.xdnd_aware(window));
+        let since_entry = top.is_some() && read.set_since_entry(|place| top_at(place) == top);
+        let held = crate::drop_cursor::over_drop_target(read.accepted, aware, since_entry) == Some(true);
+        let record = json!({ "at": release, "under": under, "xdnd_aware": aware, "since_entry": since_entry });
+        (held, record)
     }
 
     /// The real pointer, on the engine's root.

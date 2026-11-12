@@ -1122,13 +1122,16 @@ impl Engine {
                     (Ok(_), Some(read)) => read.accepted,
                     _ => None,
                 });
-                // and an accept only over a window that takes drag and drop: Chromium keeps its last status's accept
-                // when the path leaves for one that does not (the bare root, an xterm), and drops nowhere (the design
-                // session's ruling, 2026-11-11), as a handle's. The window is the one under the release: on an XTEST
-                // route where the real pointer was at the button-up, which a person's motion may have taken off the
-                // path's end (the third review, P3), and on the background route the path's end
+                // and an accept only over a window that takes drag and drop, put up after the pointer came into it:
+                // Chromium keeps its last status's accept when the path leaves for one that does not (the bare root, an
+                // xterm), or for one that has not answered yet, and drops nowhere (the design session's ruling,
+                // 2026-11-11; the third review, P2), as a handle's. The window is the one under the release: on an
+                // XTEST route where the real pointer was at the button-up, which a person's motion may have taken off
+                // the path's end (the third review, P3), and on the background route the path's end
                 let mut over_aware = None;
-                if cursor == Some(Some(true)) {
+                if cursor == Some(Some(true))
+                    && let Some(read) = &at_release
+                {
                     let release = match (xtest_route, input.path.last()) {
                         (true, _) => release_point,
                         (false, Some(p)) => match input.window {
@@ -1137,15 +1140,10 @@ impl Engine {
                         },
                         (false, None) => None,
                     };
-                    let under = release.and_then(|(rx, ry)| self.x.managed_client_at(rx, ry));
-                    let aware = under.is_some_and(|window| self.x.xdnd_aware(window));
-                    over_aware = Some(json!({
-                        "at": release,
-                        "read": if xtest_route { "pointer" } else { "path_end" },
-                        "under": under,
-                        "xdnd_aware": aware,
-                    }));
-                    cursor = Some(crate::drop_cursor::over_drop_target(Some(true), aware));
+                    let (held, mut over) = self.accept_held_to_release(read, release);
+                    over["read"] = json!(if xtest_route { "pointer" } else { "path_end" });
+                    over_aware = Some(over);
+                    cursor = Some(Some(held));
                 }
                 let confirming = super::handle::confirming(confirm, supported, cursor);
                 let by_cursor = cursor.map(|accepted| accepted == Some(true));

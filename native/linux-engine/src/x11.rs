@@ -189,6 +189,24 @@ pub fn blocking_dialog(transient_for: Option<Window>, candidates: &[Candidate]) 
         .map(|c| c.window)
 }
 
+/// The viewable managed top-levels at one moment, bottom to top, each with its rectangle in root coordinates (left, top,
+/// right and bottom, exclusive, its border included): the override-redirect ones, a drag and drop's drag image among
+/// them, are passed over ([`X11::top_levels`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopLevels(pub Vec<(Window, (i32, i32, i32, i32))>);
+
+impl TopLevels {
+    /// The topmost of them whose rectangle holds a root point.
+    pub fn at(&self, (x, y): (i16, i16)) -> Option<Window> {
+        let (x, y) = (i32::from(x), i32::from(y));
+        self.0
+            .iter()
+            .rev()
+            .find(|(_, (left, top, right, bottom))| x >= *left && y >= *top && x < *right && y < *bottom)
+            .map(|&(window, _)| window)
+    }
+}
+
 /// The pending replies for one window's description.
 struct Describe<'c> {
     attributes: Cookie<'c, RustConnection, GetWindowAttributesReply>,
@@ -622,6 +640,12 @@ impl X11 {
     /// drop is for (task 73's sittings, `m4/drag-handle/`). The top-levels' attributes and geometries are asked for at
     /// once, so the lookup costs about one round trip.
     pub fn managed_client_at(&self, rx: i16, ry: i16) -> Option<Window> {
+        self.client_of(self.top_levels()?.at((rx, ry))?)
+    }
+
+    /// The viewable managed top-levels now, the override-redirect ones passed over, bottom to top, each with its
+    /// rectangle ([`TopLevels`]): attributes and geometries asked for at once, about one round trip.
+    pub fn top_levels(&self) -> Option<TopLevels> {
         let children = self.conn.query_tree(self.root).ok()?.reply().ok()?.children;
         let pending: Vec<_> = children
             .iter()
@@ -632,24 +656,31 @@ impl X11 {
                 ))
             })
             .collect::<Option<_>>()?;
-        let mut found = None;
+        let mut levels = Vec::new();
         for (&w, (attributes, geometry)) in children.iter().zip(pending) {
             let (Ok(attributes), Ok(g)) = (attributes.reply(), geometry.reply()) else {
                 continue;
             };
-            let (x, y) = (i32::from(rx), i32::from(ry));
-            let (left, top) = (i32::from(g.x), i32::from(g.y));
-            let border = 2 * i32::from(g.border_width);
-            let inside = x >= left
-                && y >= top
-                && x < left + i32::from(g.width) + border
-                && y < top + i32::from(g.height) + border;
-            // stacking order is bottom to top: the last that holds the point is the topmost
-            if inside && attributes.map_state == MapState::VIEWABLE && !attributes.override_redirect {
-                found = Some(w);
+            if attributes.map_state == MapState::VIEWABLE && !attributes.override_redirect {
+                let border = 2 * i32::from(g.border_width);
+                let (left, top) = (i32::from(g.x), i32::from(g.y));
+                levels.push((
+                    w,
+                    (
+                        left,
+                        top,
+                        left + i32::from(g.width) + border,
+                        top + i32::from(g.height) + border,
+                    ),
+                ));
             }
         }
-        self.client_in(found?, 0)
+        Some(TopLevels(levels))
+    }
+
+    /// The client window in a top-level (the top-level itself, or the client a window manager's frame holds).
+    pub fn client_of(&self, top_level: Window) -> Option<Window> {
+        self.client_in(top_level, 0)
     }
 
     /// Whether a top-level client takes drag and drop: it carries `XdndAware`, which a drag's source looks for on the
@@ -1186,6 +1217,18 @@ impl X11 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_top_level_at_a_point_is_the_topmost_whose_rectangle_holds_it() {
+        // bottom to top: a window, another over its right part, the right edge exclusive
+        let levels = TopLevels(vec![(1, (0, 0, 900, 700)), (2, (800, 100, 1000, 300))]);
+        assert_eq!(levels.at((10, 10)), Some(1));
+        assert_eq!(levels.at((850, 150)), Some(2), "the upper one where they overlap");
+        assert_eq!(levels.at((999, 299)), Some(2));
+        assert_eq!(levels.at((1000, 150)), None, "the bare root");
+        assert_eq!(levels.at((899, 699)), Some(1));
+        assert_eq!(levels.at((900, 699)), None);
+    }
 
     #[test]
     fn a_modal_transient_is_modal_transient_for_a_window_and_shown() {

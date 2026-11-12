@@ -343,6 +343,8 @@ export const PLANS = {
   ],
   't17-slow': [['cua:desktop', 'slow', 30], ['cua:handle', 'slow', 30]],
   't17-moved': [['cua:desktop', 'moved', 30]],
+  // 60 cold first-handle drags into the hung sink, each a fresh engine's first: the design session's count for #365 (2026-11-12)
+  't17-slow-cold': Array.from({ length: 60 }, () => ['cua:handle', 'slow', 1]),
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],

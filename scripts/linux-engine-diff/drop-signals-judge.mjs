@@ -391,7 +391,7 @@ export function blockPlan(specs, { size = 10 } = {}) {
 // T17's Electron cells in the gate (#364; the T18 executor's ruling on the design session's T14 gate rule, 2026-11-12)
 
 /** The drop-signals plans whose Electron cells the gate judges (drop-signals.mjs PLANS); `t17-moved` needs a live build's hook. */
-export const ELECTRON_JUDGED_PLANS = ['t17-floor', 't17-handle', 't17-fix2', 't17-fix3'];
+export const ELECTRON_JUDGED_PLANS = ['t17-floor', 't17-handle', 't17-fix2', 't17-fix3', 't17-slow-cold'];
 
 /** Whether a drop-signals run's rows are T17's Electron cells, judged by `electronDropVerdict`. */
 export const judgedElectronPlan = (args) => args.families?.[0] === 'electron' && ELECTRON_JUDGED_PLANS.includes(args.plan);
@@ -401,6 +401,15 @@ export const LANDING_CELLS = ['plain', 'move', 'plain-long'];
 
 /** The cells that end off the window (drop-signals.mjs `OFF_WINDOW`): nothing there takes a drop. */
 export const OFF_WINDOW_CELLS = ['root', 'xterm', 'other', 'slow', 'moved'];
+
+/**
+ * The hung sink's cell (`slow`): a false ok there is #365's race (a target that stalls before its first XdndStatus, an
+ * accept from the window left put up after the entry), a stated limit. `'declared-race'` (the design session,
+ * 2026-11-12): its false oks are #365's finding, counted per load, and fail nothing; `'hard'`: they fail as any other
+ * cell's do. A false ok in every other cell is always hard.
+ */
+export const SLOW_CELL_MODE = 'declared-race';
+const RACE_CELL = 'slow';
 
 /** The page's dragend `dropEffect` codes (pages/drop-signals.html `EFFECTS`) of a drop whose accept breeze_cursors cannot show. */
 const MOVE_OR_LINK = [2, 3];
@@ -431,11 +440,19 @@ export function unconfirmedClass(r) {
  * whose every end was not verified (the bare root under the gate's ballast: unmeasured). An off-window drag whose end
  * was not verified is left out of its cell and counted apart. Answers `{md, failed, findings, counts}`.
  */
-export function electronDropVerdict(rows, { specs = [], share = 0.05 } = {}) {
+export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode = SLOW_CELL_MODE } = {}) {
+  if (!['hard', 'declared-race'].includes(slowMode)) throw new Error(`the slow cell's mode is hard or declared-race, not ${slowMode}`);
   const failed = [];
+  // #365's declared race: the hung sink's false oks per lane, and its drags
+  const race = { lanes: [], false_ok: 0, drags: 0 };
   const findings = [];
   const cells = new Map();
-  for (const s of specs) cells.set(`${s.lane}|${s.cell}`, { lane: s.lane, cell: s.cell, n: s.n, rows: [] });
+  // a plan may name a cell in several specs (t17-slow-cold: one cold drag each): its drags are their sum
+  for (const s of specs) {
+    const key = `${s.lane}|${s.cell}`;
+    if (cells.has(key)) cells.get(key).n += s.n;
+    else cells.set(key, { lane: s.lane, cell: s.cell, n: s.n, rows: [] });
+  }
   for (const r of rows) {
     const key = `${r.lane}|${r.cell}`;
     if (!cells.has(key)) cells.set(key, { lane: r.lane, cell: r.cell, n: null, rows: [] });
@@ -448,7 +465,7 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05 } = {}) {
     '| lane | cell | drags | end not verified | landed | ok, nothing pending | unconfirmed | other notice | error | false ok | landed, unconfirmed (move or link / cold handle at load / other) |',
     '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|',
   ];
-  const total = { drags: 0, landed: 0, false_ok: 0, missing_landing: 0, false_error: 0, unconfirmed_landed: 0, by_class: { 'move-link': 0, 'cold-load': 0, other: 0 }, unverified: 0 };
+  const total = { drags: 0, landed: 0, false_ok: 0, race_false_ok: 0, race_drags: 0, missing_landing: 0, false_error: 0, unconfirmed_landed: 0, by_class: { 'move-link': 0, 'cold-load': 0, other: 0 }, unverified: 0 };
   for (const c of cells.values()) {
     const name = `${c.lane} ${c.cell}`;
     const base = c.rows[0]?.base ?? c.cell.split('@')[0];
@@ -465,13 +482,18 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05 } = {}) {
     const which = (rs) => rs.slice(0, 3).map((r) => `#${r.i}`).join(', ');
     if (c.n === null) failed.push(`${name}: ${c.rows.length} drags the plan does not name`);
     else if (c.rows.length < c.n) failed.push(`${name}: ${c.rows.length} of the plan's ${c.n} drags ran (a missing case)`);
-    if (falseOk.length) failed.push(`${name}: answered ok with no drop and nothing pending on ${falseOk.length} of ${list.length} (${which(falseOk)})`);
+    const raced = slowMode === 'declared-race' && base === RACE_CELL;
+    if (raced) {
+      race.lanes.push(`${c.lane} ${falseOk.length} of ${list.length}`);
+      race.false_ok += falseOk.length;
+      race.drags += list.length;
+    } else if (falseOk.length) failed.push(`${name}: answered ok with no drop and nothing pending on ${falseOk.length} of ${list.length} (${which(falseOk)})`);
     if (missing.length) failed.push(`${name}: the drop did not land on ${missing.length} of ${list.length}, in a cell that expects it (${which(missing)})`);
     if (falseError.length) failed.push(`${name}: answered an error for a drop that landed on ${falseError.length} of ${list.length} (${which(falseError)})`);
     if (c.rows.length && !list.length) findings.push(`${name} unmeasured: every end (${unverified.length}) was not verified where the drag left the pointer`);
     total.drags += list.length;
     total.landed += count((r) => r.outcome?.landed);
-    total.false_ok += falseOk.length;
+    if (!raced) total.false_ok += falseOk.length;
     total.missing_landing += missing.length;
     total.false_error += falseError.length;
     total.unconfirmed_landed += landedUnconfirmed.length;
@@ -479,6 +501,9 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05 } = {}) {
     for (const k of Object.keys(byClass)) total.by_class[k] += byClass[k];
     md.push(`| ${c.lane} | ${c.cell} | ${list.length} | ${unverified.length} | ${count((r) => r.outcome?.landed)} | ${count((r) => r.ok === true && pendingOf(r) === null)} | ${count((r) => pendingOf(r) === 'unconfirmed')} | ${count((r) => pendingOf(r) === 'other')} | ${count((r) => r.ok !== true)} | ${falseOk.length} | ${landedUnconfirmed.length} (${byClass['move-link']} / ${byClass['cold-load']} / ${byClass.other}) |`);
   }
+  total.race_false_ok = race.false_ok;
+  total.race_drags = race.drags;
+  if (race.drags) findings.push(`#365's declared race, load ${load}: the hung sink answered ok with no drop and nothing pending on ${race.false_ok} of ${race.drags} drags (${race.lanes.join(', ')}), a finding, not a fail`);
   if (total.by_class['move-link']) findings.push(`${total.by_class['move-link']} landed move or link drops answered unconfirmed: under breeze_cursors their accept is drawn as no drop, or not at all (#364)`);
   if (total.by_class['cold-load']) findings.push(`${total.by_class['cold-load']} cold handle drops at load landed while Electron's cursor still showed no drop, answered unconfirmed (#364)`);
   if (total.by_class.other) findings.push(`${total.by_class.other} other landed drops answered unconfirmed`);

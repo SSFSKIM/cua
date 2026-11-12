@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { electronDropVerdict, judgedElectronPlan, unconfirmedClass } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
+import { SLOW_CELL_MODE, electronDropVerdict, judgedElectronPlan, unconfirmedClass } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
 
 const UNCONFIRMED = 'the drag answered ok, but its drop is an unconfirmed drop: read the window';
 
@@ -52,12 +52,43 @@ test('clean cells pass: landed drops ok, the off-window releases unconfirmed, ev
 });
 
 test('a false ok fails the gate: ok with nothing pending on a drag that dropped nowhere, off the window or in it', () => {
-  const rows = [drag({ lane: 'cua:desktop', cell: 'slow', i: 0, verified: true }), drag({ cell: 'left', i: 1 })];
-  const v = electronDropVerdict(rows, { specs: specs(['cua:desktop', 'slow', 1], ['cua', 'left', 1]) });
+  const rows = [drag({ lane: 'cua:desktop', cell: 'root', i: 0, verified: true }), drag({ cell: 'left', i: 1 })];
+  const v = electronDropVerdict(rows, { specs: specs(['cua:desktop', 'root', 1], ['cua', 'left', 1]) });
   assert.equal(v.failed.length, 2);
-  assert.match(v.failed[0], /cua:desktop slow: answered ok with no drop and nothing pending on 1 of 1/);
+  assert.match(v.failed[0], /cua:desktop root: answered ok with no drop and nothing pending on 1 of 1/);
   assert.match(v.failed[1], /cua left: answered ok with no drop and nothing pending/);
   assert.equal(v.counts.false_ok, 2);
+});
+
+/** The hung sink's cells at the gate's window load: a cold handle and a plain drag answered ok, one handle honest; an xterm release answered ok. */
+const sinkRows = () => [
+  drag({ lane: 'cua:handle', cell: 'slow', i: 0, landed: false, effect: 1, cold: true, load: 'gate-windows', verified: true }),
+  drag({ lane: 'cua:desktop', cell: 'slow', i: 0, landed: false, load: 'gate-windows', verified: true }),
+  drag({ lane: 'cua:handle', cell: 'slow', i: 1, landed: false, notice: UNCONFIRMED, load: 'gate-windows', verified: true }),
+  drag({ lane: 'cua:handle', cell: 'xterm', i: 0, landed: false, load: 'gate-windows', verified: true }),
+];
+const sinkSpecs = () => specs(['cua:handle', 'slow', 2], ['cua:desktop', 'slow', 1], ['cua:handle', 'xterm', 1]);
+
+test("the hung sink is #365's declared race by default (the design session, 2026-11-12): its false oks are a finding with counts, and fail nothing", () => {
+  assert.equal(SLOW_CELL_MODE, 'declared-race');
+  const v = electronDropVerdict(sinkRows(), { specs: sinkSpecs() });
+  assert.deepEqual(v.failed, ['cua:handle xterm: answered ok with no drop and nothing pending on 1 of 1 (#0)'], 'a false ok in any other cell stays hard');
+  assert.ok(v.findings.includes("#365's declared race, load gate-windows: the hung sink answered ok with no drop and nothing pending on 2 of 3 drags (cua:handle 1 of 2, cua:desktop 1 of 1), a finding, not a fail"));
+  assert.equal(v.counts.false_ok, 1, 'the hard false oks alone');
+  assert.equal(v.counts.race_false_ok, 2);
+  assert.equal(v.counts.race_drags, 3);
+});
+
+test("with the switch set hard, the hung sink's false ok fails the gate as any other cell's does", () => {
+  const v = electronDropVerdict(sinkRows(), { specs: sinkSpecs(), slowMode: 'hard' });
+  assert.deepEqual(v.failed, [
+    'cua:handle slow: answered ok with no drop and nothing pending on 1 of 2 (#0)',
+    'cua:desktop slow: answered ok with no drop and nothing pending on 1 of 1 (#0)',
+    'cua:handle xterm: answered ok with no drop and nothing pending on 1 of 1 (#0)',
+  ]);
+  assert.equal(v.counts.race_false_ok, 0);
+  assert.ok(!v.findings.some((f) => /#365/.test(f)));
+  assert.throws(() => electronDropVerdict(sinkRows(), { specs: sinkSpecs(), slowMode: 'soft' }), /the slow cell's mode is hard or declared-race/);
 });
 
 test('an off-window release the page reports as dropped is still no drop: Chromium ends it with its last operation', () => {
@@ -116,4 +147,13 @@ test('an off-window cell whose every end was not verified is unmeasured, a findi
   assert.deepEqual(v.failed, []);
   assert.equal(v.counts.unverified, 3);
   assert.match(v.findings.join(), /cua:desktop root unmeasured: every end \(3\) was not verified/);
+});
+
+test('a cell several specs name is judged on their sum: the cold count, 60 specs of one cold drag each', () => {
+  assert.equal(judgedElectronPlan({ families: ['electron'], plan: 't17-slow-cold' }), true);
+  const rows = Array.from({ length: 3 }, (_, k) => drag({ lane: 'cua:handle', cell: 'slow', i: 0, landed: false, cold: true, load: 'gate-windows', verified: true, ...(k ? { notice: UNCONFIRMED } : {}) }));
+  const v = electronDropVerdict(rows, { specs: specs(['cua:handle', 'slow', 1], ['cua:handle', 'slow', 1], ['cua:handle', 'slow', 1], ['cua:handle', 'slow', 1]) });
+  assert.deepEqual(v.failed, ["cua:handle slow: 3 of the plan's 4 drags ran (a missing case)"]);
+  assert.equal(v.counts.race_false_ok, 1);
+  assert.equal(v.counts.race_drags, 3);
 });

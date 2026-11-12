@@ -648,6 +648,21 @@ export function launchEntry(dir) {
 }
 
 /**
+ * The gate's ballast (`--ballast gate`, a verdict run's): dnd.mjs's `GATE_BALLAST`, the Chrome windows a full verdict
+ * run has open, opened as the run opens its scenes (`open(scene, role, {text})`, `openScene`). Chrome's take latency
+ * rises with its window load, so a verdict run split into steps carries the full run's load into the step that drags
+ * in Chrome. They stay open to the run's end and close with every window of the run. Returns the windows.
+ */
+export async function openGateBallast({ open }) {
+  const { GATE_BALLAST } = await import('./dnd.mjs');
+  const windows = [];
+  for (const [scene, n] of Object.entries(GATE_BALLAST)) {
+    for (let k = 0; k < n; k++) windows.push(await open(scene, `ballast${k}`, { text: ['chrome-textarea', 'chrome-address-bar'].includes(scene) }));
+  }
+  return windows;
+}
+
+/**
  * The family whose application each scene's windows must show (app-identity.mjs `APP_IDENTITY`), by the opener behind
  * the scene (`openScene`).
  */
@@ -1022,6 +1037,7 @@ async function diffRun(args, candidate, { handoff }) {
     samples_tree: args.samplesTree,
     samples_input: args.samplesInput,
     occlusion: args.occlusion,
+    ...(args.ballast ? { ballast: args.ballast } : {}),
     started: new Date().toISOString(),
   });
   // Every scene label of this run: equivalent windows differ in their own label and list each other's (gedit's
@@ -1044,6 +1060,8 @@ async function diffRun(args, candidate, { handoff }) {
     if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
     const launch = plan.some((p) => OPS[p.op].apps) ? launchEntry(desktop.dir) : null;
     if (launch) desktop.launchCount = launch.count;
+    // the gate's ballast before the step's scenes, open to the run's end (`openGateBallast`)
+    if (args.ballast === 'gate') await openGateBallast({ open: (scene, role, options) => openScene(desktop, scene, role, options) });
     // Scenes: one shared window per scene for tree reads, one window per engine for screenshots and input.
     const windows = {};
     for (const scene of args.scenes.filter((s) => s !== 'desktop')) {

@@ -9,7 +9,7 @@
 export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
-      [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
+      [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>] [--ballast gate]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route|writer-drag --cua <bin> --out <dir> [--run <name>]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short | --dnd-select] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] [--lanes <list>] [--trace] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
@@ -173,8 +173,9 @@ export function parseArgs(argv) {
   }
   if (a.experiment) a.mode = 'experiment';
   for (const [key, flag] of [['coverMs', '--cover-ms'], ['prelude', '--prelude'], ['ballast', '--ballast'], ['stray', '--stray'], ['parkPointer', '--park-pointer']]) {
-    // the drop-signals experiment opens the gate's ballast too (T13), with no cold run
-    if (a[key] !== undefined && !a.dndCold && !(key === 'ballast' && a.experiment === 'drop-signals')) throw new Error(`${flag} is the cold drag-and-drop run's (--dnd-cold)`);
+    // the drop-signals experiment opens the gate's ballast too (T13), with no cold run, and so does a verdict run (a
+    // gate step carrying the full run's Chrome windows, run.mjs `openGateBallast`)
+    if (a[key] !== undefined && !a.dndCold && !(key === 'ballast' && (a.experiment === 'drop-signals' || a.mode === 'run'))) throw new Error(`${flag} is the cold drag-and-drop run's (--dnd-cold)`);
   }
   if (a.dndCold) a.coverMs ??= 0;
   if (a.dev && a.mode !== 'run') throw new Error('--dev is the verdict run\'s: only a verdict run is a release gate');

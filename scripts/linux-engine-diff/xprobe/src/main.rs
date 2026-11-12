@@ -49,6 +49,8 @@
 //! - `xprobe drop-watch [window]`: what a client with no RECORD and no grab sees around a drag and drop: `XdndSelection`
 //!   takes, displayed-cursor changes with their images, `_NET_ACTIVE_WINDOW` requests, root children's maps and ends,
 //!   and the window's crossings, until stdin closes (`dropwatch.rs`; T13).
+//! - `xprobe xdnd-sink <title> [x y width height]`: a managed, titled window marked `XdndAware` that never answers a
+//!   drag's messages, as a hung drop target (`sink.rs`; T17's third fix wave).
 //! - `xprobe order-watch`: the focus transitions, activation requests, root restacks with their geometry and every
 //!   pointer button press and release, in the server's order, until stdin closes (`order.rs`; task 63).
 //! - `xprobe record-run --ours <pid>`: every client's requests that can change a window, for a whole harness run,
@@ -72,6 +74,7 @@ mod pointer;
 mod record;
 mod requests;
 mod restack;
+mod sink;
 mod watchdog;
 mod whole;
 
@@ -123,6 +126,7 @@ fn main() {
         Some("crossing-watch") if args.len() == 1 => crossing::crossing_watch(),
         Some("cursor-watch") if args.len() == 1 => cursor::cursor_watch(),
         Some("drop-watch") => dropwatch::drop_watch(&args[1..]),
+        Some("xdnd-sink") => sink::xdnd_sink(&args[1..]),
         Some("order-watch") if args.len() == 1 => order::order_watch(),
         Some("motion-watch") => motion::motion_watch(&args[1..]),
         Some("record-run") => whole::record_run(&args[1..]),

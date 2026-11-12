@@ -36,7 +36,7 @@ import { openScene } from './run.mjs';
 import { FIT_MARGIN, SCREEN, configure } from './scenes.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { spawnXprobe, xdotool } from './xtools.mjs';
+import { XPROBE, spawnXprobe, xdotool } from './xtools.mjs';
 import { xExecFileSync } from './xspawn.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -90,6 +90,14 @@ export const CELLS = {
   xterm: (i, geometry) => [[530, 128], [640, 128], geometry.ends.xterm],
   other: (i, geometry) => [[530, 128], [640, 128], geometry.ends.other],
   move: () => [[725, 68], [725, 108]],
+  // T17's third fix wave (the third review, P2): accepted in the zone, then released over a window that takes drag and
+  // drop but never answers (`xprobe xdnd-sink`, a hung drop target): Chromium drops nothing there, and its drag loop
+  // still shows the zone's accept
+  slow: (i, geometry) => [[530, 128], [640, 128], geometry.ends.slow],
+  // and P3: the short drop, the real pointer moved by another client onto the bare root beside the window just before
+  // the release (the live build's hook, `CUA_ENGINE_FAULT=drag-release-move`, which the cell's engine gets: `moveHook`),
+  // so the release goes there, off the zone it was asked to end in
+  moved: () => [[530, 128], [570, 128]],
 };
 
 /**
@@ -105,29 +113,62 @@ export function rootBeside({ x, width, pageX }) {
 }
 
 /** T14's cells' sources, beside the judge's (drop-signals-judge.mjs `CELL_SOURCE`): each a drop the zone never counts. */
-export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain', xterm: 'plain', other: 'plain' };
+export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain', xterm: 'plain', other: 'plain', slow: 'plain', moved: 'plain' };
 
 /** Where the `other` cell's window goes: right of the scene's, below the root cell's end (x, y, width, height). */
 export const OTHER_PLACE = [920, 250, 340, 360];
 
-/** A window's client origin on the screen. */
+/** Where the `slow` cell's sink goes: above the other window, right of the root cell's end (x, y, width, height). */
+export const SINK_PLACE = [1100, 40, 160, 150];
+
+/** A window's client origin on the screen, and its size. */
 function clientOrigin(id) {
   const g = Object.fromEntries(xdotool('getwindowgeometry', '--shell', id).split('\n').map((l) => l.split('=')).map(([k, v]) => [k, Number(v)]));
-  return { x: g.X, y: g.Y };
+  return { x: g.X, y: g.Y, width: g.WIDTH, height: g.HEIGHT };
 }
 
-/** The cells that end off the source's window: where each ends, and what must be under that end (`OFF_WINDOW`). */
-export const OFF_WINDOW = ['root', 'xterm', 'other'];
+/** A point in the scene window's coordinates (`windowPath`'s) on the screen. */
+const screenOf = (scene, p) => ({ x: scene.window.x + p.x, y: scene.window.y + p.y });
+
+/**
+ * The `slow` cell's sink (`xprobe xdnd-sink`): a window of the run's own, a scene application found by its run-unique
+ * title and closed with the run's windows, at `SINK_PLACE`.
+ */
+async function openSink(desktop) {
+  desktop.assertOpen();
+  const label = desktop.label('xdndsink', 'slow');
+  const child = desktop.spawnApp(label, XPROBE, ['xdnd-sink', label, ...SINK_PLACE], { app: 'xdnd-sink' });
+  const sink = { kind: 'family', family: 'xdnd-sink', role: 'slow', label, pid: child.pid, group: true, id: null };
+  desktop.windows.push(sink);
+  sink.id = (await desktop.waitForWindow((w) => w.title === label, label)).id;
+  configure(sink.id, ...SINK_PLACE);
+  return sink;
+}
+
+/**
+ * The cells whose release comes off the source's window: where each ends, and what must be under that end. `moved`'s
+ * path ends in the zone, but its release comes where the hook put the pointer, the bare root.
+ */
+export const OFF_WINDOW = ['root', 'xterm', 'other', 'slow', 'moved'];
 
 /**
  * The screen ends of the off-window cells and the window each must find there: the bare root beside the window, the
- * front xterm's middle, the other browser window's scroller (page (150, 150) from its client's origin).
+ * front xterm's middle, the other browser window's scroller (page (150, 150) from its client's origin), the sink's
+ * middle (`sink`: its client's origin and size), and where the `moved` cell's hook puts the pointer (`moved`: the bare
+ * root beside the window, the root cell's end on the screen).
  */
-export function offWindowEnds({ front = null, other = null } = {}) {
+export function offWindowEnds({ front = null, other = null, sink = null, moved = null } = {}) {
   return {
     xterm: front && { x: front.x, y: front.y, over: front.id },
     other: other && { x: other.x + 150, y: other.y + 150, over: other.id },
+    slow: sink && { x: sink.x + Math.floor(sink.width / 2), y: sink.y + Math.floor(sink.height / 2), over: sink.id },
+    moved: moved && { x: moved.x, y: moved.y, over: ROOT },
   };
+}
+
+/** The engine environment of a `moved` cell's block: the live build's hook, moving the pointer to `at` (`moved`'s end). */
+export function moveHook(base, at) {
+  return { ...base, CUA_ENGINE_FAULT: 'drag-release-move', CUA_ENGINE_FAULT_AT: `${at.x},${at.y}` };
 }
 
 /** A T14 cell's outcome from the page's status before and after: its source's drag and drop started, and dropped. */
@@ -288,7 +329,19 @@ export const PLANS = {
     ['cua:handle', 'plain', 100], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30], ['cua:handle', 'move', 30],
     ...OFF_WINDOW.map((cell) => ['cua:handle', cell, 30]),
   ],
-  't17-root': OFF_WINDOW.map((cell) => ['cua:desktop', cell, 30]),
+  't17-root': OFF_WINDOW.slice(0, 3).map((cell) => ['cua:desktop', cell, 30]),
+  // its third fix wave (the third review, 2026-11-11), Electron, at each load: the two controls and the four releases
+  // off the window (the bare root, the xterm, another browser window, the hung sink), 30 each, as plain drags and as
+  // handles, and 100 drops each. `t17-slow`: the sink alone, run on the engine before the fix first. `t17-moved`: the
+  // short drop with the pointer moved to the bare root before the release, on a live build only (the hook)
+  't17-fix3': [
+    ['cua', 'plain', 100], ['cua', 'left', 30], ['cua', 'inzone-out', 30],
+    ...['root', 'xterm', 'other', 'slow'].map((cell) => ['cua:desktop', cell, 30]),
+    ['cua:handle', 'plain', 100], ['cua:handle', 'left', 30], ['cua:handle', 'inzone-out', 30],
+    ...['root', 'xterm', 'other', 'slow'].map((cell) => ['cua:handle', cell, 30]),
+  ],
+  't17-slow': [['cua:desktop', 'slow', 30], ['cua:handle', 'slow', 30]],
+  't17-moved': [['cua:desktop', 'moved', 30]],
   pilot: [
     ...['plain', 'nozone', 'nested', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'freeze-250', 'link', 'image', 'seltext', 'select', 'range', 'scroller', 'canvas', 'inert'].map((cell) => ['cua', cell, 2]),
     ['cua:accept', 'plain', 5],
@@ -486,13 +539,13 @@ async function oneDrag(ctx, { lane, spec, cell, i, engine, before, cold }) {
   const freeze = frozen ? await frozen : undefined;
   const answered = Date.now();
   // an off-window cell's end read where the drag left the real pointer, once the drag image is gone: the window it is
-  // for under it (the bare root, the xterm, the other browser window), or the row says what was there instead and the
-  // tables leave the drag out. Read, not parked: a park on the bare root is a pointer warp on a window the run did not
-  // open, which the harness's audit fails (park.mjs)
+  // for under it (the bare root, the xterm, the other browser window, the sink), or the row says what was there instead
+  // and the tables leave the drag out. Read, not parked: a park on the bare root is a pointer warp on a window the run did
+  // not open, which the harness's audit fails (park.mjs). The `moved` cell's release is where its hook put the pointer
   let endPark = null;
   if (offWindow) {
     const over = base === 'root' ? ROOT : ctx.ends[base].over;
-    const verdict = parkVerdict(readPointer(), end, over);
+    const verdict = parkVerdict(readPointer(), base === 'moved' ? ctx.ends.moved : end, over);
     endPark = { over, verified: verdict.ok, ...(verdict.ok ? {} : { why: verdict.why }) };
   }
   await sleep(1000);
@@ -580,6 +633,7 @@ export async function runDropSignals(args, { desktop, emit }) {
   let watch = null;
   let scene = null;
   let other = null;
+  let sink = null;
   try {
     if (args.ballast === 'gate') {
       for (const [name, n] of Object.entries(GATE_BALLAST)) {
@@ -595,6 +649,11 @@ export async function runDropSignals(args, { desktop, emit }) {
       configure(other.id, ...OTHER_PLACE);
       await sleep(1000);
     }
+    // the `slow` cell's hung drop target, above the other window
+    if (specs.some((s) => splitCell(s.cell).base === 'slow')) {
+      sink = await openSink(desktop);
+      await sleep(500);
+    }
     desktop.arrangeFront('visible');
     inFront(scene);
     await sleep(1000);
@@ -602,16 +661,19 @@ export async function runDropSignals(args, { desktop, emit }) {
     watch = await startDropWatch(scene.id);
     // the run's own browser process (the freeze cell's), never one found by name
     const browser = family === 'chrome' && desktop.chrome ? runBrowser(desktop.chrome.profile) : null;
-    const ends = offWindowEnds({ front: frontPoint(desktop), other: other && { id: other.id, ...clientOrigin(other.id) } });
+    // the `moved` cell's hook point: the root cell's end, the bare root beside the window, on the screen
+    const moved = specs.some((s) => splitCell(s.cell).base === 'moved') ? screenOf(scene, windowPath(at, 'root', 0, scene.window).at(-1)) : null;
+    const ends = offWindowEnds({ front: frontPoint(desktop), other: other && { id: other.id, ...clientOrigin(other.id) }, sink: sink && { id: sink.id, ...clientOrigin(sink.id) }, moved });
     const ctx = { desktop, scene, at, watch, oracle, emit, load, family, cua: args.cua, browser, frame: await frameOf(desktop, scene), xdndAware: xdndAware(scene.id), ends };
-    emit({ kind: 'drop-signal-scene', family, load, browser, window: scene.id, page: at.page, frame: ctx.frame, xdnd_aware: ctx.xdndAware, ballast: ballast.length, plan: args.plan ?? 'main', specs, ends, other: other ? { id: other.id, xdnd_aware: xdndAware(other.id) } : null });
+    emit({ kind: 'drop-signal-scene', family, load, browser, window: scene.id, page: at.page, frame: ctx.frame, xdnd_aware: ctx.xdndAware, ballast: ballast.length, plan: args.plan ?? 'main', specs, ends, other: other ? { id: other.id, xdnd_aware: xdndAware(other.id) } : null, sink: sink ? { id: sink.id, xdnd_aware: xdndAware(sink.id) } : null });
     const plan = blockPlan(specs.map((s, k) => ({ ...s, spec: k })));
     for (const [b, block] of plan.entries()) {
       const lane = LANES[block.lane];
       if (!lane) throw new Error(`no lane ${block.lane}`);
       const { cover } = splitCell(block.cell);
       if (Boolean(cover) !== Boolean(lane.cover)) throw new Error(`${block.lane} ${block.cell}: a covered cell runs on the cover lane, and only there`);
-      const fresh = () => new Engine({ label: block.lane, bin: args.cua, args: lane.args, stats: true }).start();
+      const env = splitCell(block.cell).base === 'moved' ? moveHook(process.env, ends.moved) : undefined;
+      const fresh = () => new Engine({ label: block.lane, bin: args.cua, args: lane.args, stats: true, env }).start();
       let engine = lane.gate ? null : fresh();
       try {
         let before = await readStatus(desktop, scene);
@@ -642,7 +704,7 @@ export async function runDropSignals(args, { desktop, emit }) {
     }
   } finally {
     if (watch) await watch.stop();
-    await desktop.close([...(scene ? [scene] : []), ...(other ? [other] : []), ...ballast]);
+    await desktop.close([...(scene ? [scene] : []), ...(other ? [other] : []), ...(sink ? [sink] : []), ...ballast]);
   }
   const md = [`Drop signals (drop-signals.mjs), ${family}, load ${load}, plan ${args.plan ?? 'main'}: ${rows.length} drags.`, ''];
   for (const table of [neverTakeTable(rows), afterReleaseTable(rows), acceptTable(rows), lateTakeTable(rows), coverTable(rows)]) md.push(...table.md, '');

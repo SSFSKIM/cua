@@ -267,6 +267,48 @@ pub mod handle_hooks {
     }
 }
 
+/// The live build's hook in a plain `drag` (`engine/pointer.rs` `drag_along`), only with the `live` feature, never a
+/// release asset: with `CUA_ENGINE_FAULT=drag-release-move` and `CUA_ENGINE_FAULT_AT=<x>,<y>`, a second X client's
+/// motion of the real pointer to that root point, as a person's arriving just before the release, handled before the
+/// drag goes on to its release (the third review of task 73, P3: the release then goes where the pointer is, not where
+/// the path ended). The drop-signals experiment's `moved` cell runs it on the run's own Electron.
+#[cfg(feature = "live")]
+pub mod drag_hooks {
+    use x11rb::connection::Connection as _;
+    use x11rb::protocol::xproto::{ConnectionExt as _, MOTION_NOTIFY_EVENT};
+    use x11rb::protocol::xtest::ConnectionExt as _;
+
+    /// The person's motion just before the release's reads, waited for.
+    pub fn before_release() {
+        if std::env::var("CUA_ENGINE_FAULT").as_deref() != Ok("drag-release-move") {
+            return;
+        }
+        let at = std::env::var("CUA_ENGINE_FAULT_AT").ok().and_then(|at| {
+            let (x, y) = at.split_once(',')?;
+            Some((x.trim().parse::<i16>().ok()?, y.trim().parse::<i16>().ok()?))
+        });
+        let moved = (|| -> Option<()> {
+            let (x, y) = at?;
+            let (conn, screen) = x11rb::connect(None).ok()?;
+            let root = conn.setup().roots[screen].root;
+            conn.xtest_get_version(2, 2).ok()?.reply().ok()?;
+            conn.xtest_fake_input(MOTION_NOTIFY_EVENT, 0, x11rb::CURRENT_TIME, root, x, y, 0)
+                .ok()?;
+            conn.get_input_focus().ok()?.reply().ok()?;
+            Some(())
+        })();
+        assert!(
+            moved.is_some(),
+            "the release hook's motion went out (CUA_ENGINE_FAULT_AT=<x>,<y>)"
+        );
+    }
+}
+
+#[cfg(not(feature = "live"))]
+pub mod drag_hooks {
+    pub fn before_release() {}
+}
+
 #[cfg(not(feature = "live"))]
 pub mod handle_hooks {
     pub fn before_try() -> Option<()> {

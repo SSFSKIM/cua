@@ -385,14 +385,38 @@ test("the second fix wave's cells: a desktop drag that leaves the window for the
   assert.ok(LANES['cua:desktop'].desktop);
   // the release over the xterm and over the other browser window, at their screen points
   const ends = offWindowEnds({ front: { id: 7, x: 1170, y: 715 }, other: { id: 9, x: 920, y: 250 } });
-  assert.deepEqual(ends, { xterm: { x: 1170, y: 715, over: 7 }, other: { x: 1070, y: 400, over: 9 } });
+  assert.deepEqual(ends, { xterm: { x: 1170, y: 715, over: 7 }, other: { x: 1070, y: 400, over: 9 }, slow: null, moved: null });
   assert.deepEqual(windowPath(at, 'xterm', 0, window, ends).at(-1), { x: 1070, y: 665 }, 'window coordinates of the xterm');
   assert.deepEqual(windowPath(at, 'other', 0, window, ends).at(-1), { x: 970, y: 350 });
-  assert.deepEqual(OFF_WINDOW.map((c) => T14_SOURCE[c]), ['plain', 'plain', 'plain'], 'drops the zone never counts');
+  assert.deepEqual(OFF_WINDOW.map((c) => T14_SOURCE[c]), ['plain', 'plain', 'plain', 'plain', 'plain'], 'drops the zone never counts');
   const plan = planSpecs({ plan: 't17-fix2' });
-  for (const cell of OFF_WINDOW) assert.deepEqual(plan.filter((s) => s.cell === cell).map((s) => s.lane), ['cua:desktop', 'cua:handle'], cell);
+  for (const cell of ['root', 'xterm', 'other']) assert.deepEqual(plan.filter((s) => s.cell === cell).map((s) => s.lane), ['cua:desktop', 'cua:handle'], cell);
   assert.ok(plan.every((s) => s.n === (s.cell === 'plain' ? 100 : 30)));
-  assert.deepEqual(planSpecs({ plan: 't17-root' }).map((s) => [s.lane, s.cell, s.n]), OFF_WINDOW.map((c) => ['cua:desktop', c, 30]));
+  assert.deepEqual(planSpecs({ plan: 't17-root' }).map((s) => [s.lane, s.cell, s.n]), ['root', 'xterm', 'other'].map((c) => ['cua:desktop', c, 30]));
+});
+
+test("the third fix wave's cells: a release over a drop target that never answers, and one the pointer was moved from (M4's T17)", async () => {
+  const { OFF_WINDOW, T14_SOURCE, moveHook, offWindowEnds, planSpecs, windowPath } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  const { ROOT } = await import('../../scripts/linux-engine-diff/park.mjs');
+  const at = { page: { x: 4, y: 30 } };
+  const window = { x: 100, y: 50, width: 1050, height: 780 };
+  // the sink's middle, from its client's origin and size; the hook's point, on the bare root
+  const ends = offWindowEnds({ sink: { id: 11, x: 1100, y: 60, width: 160, height: 150 }, moved: { x: 1180, y: 208 } });
+  assert.deepEqual(ends.slow, { x: 1180, y: 135, over: 11 });
+  assert.deepEqual(ends.moved, { x: 1180, y: 208, over: ROOT });
+  const slow = windowPath(at, 'slow', 0, window, ends);
+  assert.deepEqual(slow.map((p) => [p.x, p.y]), [[534, 158], [644, 158], [1080, 85]], 'accepted in the zone, then to the sink');
+  assert.deepEqual(windowPath(at, 'moved', 0, window, ends).at(-1), { x: 574, y: 158 }, 'the short drop: the path ends in the zone');
+  assert.ok(OFF_WINDOW.includes('slow') && OFF_WINDOW.includes('moved'), 'neither is ever counted as dropped');
+  assert.equal(T14_SOURCE.slow, 'plain');
+  assert.deepEqual(moveHook({ DISPLAY: ':5' }, ends.moved), { DISPLAY: ':5', CUA_ENGINE_FAULT: 'drag-release-move', CUA_ENGINE_FAULT_AT: '1180,208' });
+  const plan = planSpecs({ plan: 't17-fix3' });
+  for (const cell of ['root', 'xterm', 'other', 'slow']) assert.deepEqual(plan.filter((s) => s.cell === cell).map((s) => [s.lane, s.n]), [['cua:desktop', 30], ['cua:handle', 30]], cell);
+  for (const cell of ['left', 'inzone-out']) assert.deepEqual(plan.filter((s) => s.cell === cell).map((s) => [s.lane, s.n]), [['cua', 30], ['cua:handle', 30]], cell);
+  assert.deepEqual(plan.filter((s) => s.cell === 'plain').map((s) => [s.lane, s.n]), [['cua', 100], ['cua:handle', 100]]);
+  assert.equal(plan.length, 14, 'no move cell, no moved cell: the hook is a live build\'s');
+  assert.deepEqual(planSpecs({ plan: 't17-slow' }).map((s) => [s.lane, s.cell, s.n]), [['cua:desktop', 'slow', 30], ['cua:handle', 'slow', 30]]);
+  assert.deepEqual(planSpecs({ plan: 't17-moved' }).map((s) => [s.lane, s.cell, s.n]), [['cua:desktop', 'moved', 30]]);
 });
 
 test('the drop-signals experiment takes the gate ballast without a cold run; the dnd experiment still refuses it', async () => {

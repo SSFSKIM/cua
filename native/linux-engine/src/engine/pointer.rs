@@ -543,6 +543,7 @@ fn drag_along(
             *scheduled =
                 Some(json!({ "steps_after_take": left, "release_after_take_ms": at.elapsed().as_secs_f64() * 1000.0 }));
         }
+        crate::desktop::drag_hooks::before_release();
         // an Electron drop under way: the drag loop's cursor shown at the release itself, which confirms it or not
         if taken.is_some()
             && let Some(cursor) = measure.drop_cursor

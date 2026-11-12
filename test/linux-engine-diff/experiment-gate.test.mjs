@@ -243,6 +243,8 @@ test("a summary renders no experiment run whose rows mix labels or candidates: e
   const candidates = renderSummary([meta(true, 'aa'.repeat(32)), summary(true), meta(true, 'bb'.repeat(32)), summary(true)]);
   assert.match(candidates, /^## mixed \(not judged: its rows mix two or more candidates\)$/m);
   assert.doesNotMatch(candidates, /a summary, gate/);
+  const twice = renderSummary([meta(false), summary(false), meta(false), summary(false)]);
+  assert.match(twice, /^## mixed \(not judged: its rows mix 2 executions\)$/m, 'two development runs under one name are two executions too');
   // one execution renders as before
   assert.match(renderSummary([meta(true, 'aa'.repeat(32)), summary(true)]), /^## mixed \(experiment drop-signals; release gate\)$/m);
 });

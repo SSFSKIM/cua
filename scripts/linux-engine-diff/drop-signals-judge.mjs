@@ -525,7 +525,9 @@ export function unconfirmedClass(r) {
 
 /**
  * T17's Electron cells judged for the gate, from one run's `drop-signal` rows (one load) and its plan's `specs`
- * (`{lane, cell, n}`). Fails, each named: a false ok (answered ok with nothing pending on a drag that dropped nowhere);
+ * (`{lane, cell, n}`). Fails, each named: a false ok (answered ok on a drag that dropped nowhere, with nothing honestly
+ * pending: a notice counts only with the next acting request refused with it, `pendingOf`); T14's pending contract
+ * broken (a notice without its refusal, or a refusal without its notice);
  * a missing landing in a cell that expects one (honesty excuses an unconfirmed answer, not a missing effect); an error
  * answered for a drop that landed (T17's proof: no false error undisturbed); a cell with fewer drags than its plan, or
  * drags the plan does not name (a missing case fails, as a missing operation does). Findings, counted and never a fail:

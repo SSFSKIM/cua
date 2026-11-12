@@ -62,11 +62,13 @@ export function renderSummary(lines) {
     const rows = lines.filter((l) => l.run === run);
     const meta = rows.find((r) => r.kind === 'meta');
     if (meta?.experiment) {
-      // one execution's rows only (the harness-fix wave): a run name whose labelled rows carry two labels, or two
-      // candidates, is not rendered, so no row's label or candidate stands for another execution's
+      // one execution's rows only (the harness-fix wave): every experiment writes one meta row, so a run name with more
+      // (a run from before the reused name was refused) is not rendered, and no row's label or candidate stands for
+      // another execution's
+      const metas = rows.filter((r) => r.kind === 'meta');
       const labelled = rows.filter((r) => r.kind === 'meta' || r.kind === 'experiment-summary');
-      const candidates = new Set(rows.filter((r) => r.kind === 'meta').map((r) => r.candidate?.sha256 ?? null));
-      const mix = new Set(labelled.map((r) => r.gate)).size > 1 ? 'a release gate and a development run' : candidates.size > 1 ? 'two or more candidates' : null;
+      const candidates = new Set(metas.map((r) => r.candidate?.sha256 ?? null));
+      const mix = new Set(labelled.map((r) => r.gate)).size > 1 ? 'a release gate and a development run' : candidates.size > 1 ? 'two or more candidates' : metas.length > 1 ? `${metas.length} executions` : null;
       if (mix) {
         out.push(`## ${run} (not judged: its rows mix ${mix})`, '', 'Each execution needs a run name of its own; these rows are no verdict.', '');
         continue;

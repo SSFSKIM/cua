@@ -49,6 +49,9 @@ gates:
   # release workflow (.github/workflows/linux-engine.yml) builds it, and its tests run: the unit tests, and under Xvfb
   # with a session bus and AT-SPI the live ones (a GTK 3 window's tree read, a background key read back through the
   # tree, a window screenshot; M2 adds paste). Comparisons against the vendor's engine run on the #171 VM, never here.
+  # Clippy runs over the live build's every target and over the shipped binary, whose `live` stubs only it compiles.
+  # Last, tests/two-screens.sh: the two-screen tests on a private Xorg (the dummy driver) whose screens sit side by
+  # side, which Xvfb cannot lay out; it exits nonzero unless both ran and passed.
   # No Node, so no shared setup; the toolchain is rust-toolchain.toml's.
   - name: engine-linux
     lane: hosted
@@ -56,14 +59,17 @@ gates:
     setup: false
     run: |
       sudo apt-get update -y
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth dbus at-spi2-core yad
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth dbus at-spi2-core yad xserver-xorg-core xserver-xorg-video-dummy
       cd native/linux-engine
       rustup toolchain install
       rustup target add x86_64-unknown-linux-musl
       rustc --version
       cargo fmt --check
+      cargo clippy --release --locked --target x86_64-unknown-linux-musl --all-targets --features live -- -D warnings
+      cargo clippy --release --locked --target x86_64-unknown-linux-musl -- -D warnings
       cargo build --release --locked --target x86_64-unknown-linux-musl
       xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --release --locked --target x86_64-unknown-linux-musl --features live -- --test-threads 1
+      tests/two-screens.sh
     paths:
       - "native/linux-engine/**"
       - ".github/ci-kit.yml"

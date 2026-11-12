@@ -389,6 +389,14 @@ impl Inputs {
 }
 
 impl Route<'_> {
+    /// Whether this route's background session sent the window a synthetic `FocusIn`; never on the desktop route.
+    pub fn synthesized_focus(&self) -> bool {
+        match self {
+            Route::Window(session) => session.synthesized_focus(),
+            Route::Desktop(..) => false,
+        }
+    }
+
     /// The time field an event sent now on this route carries: the background session's, or None through XTEST, whose
     /// events the server stamps itself.
     pub fn event_time(&self) -> Option<u32> {

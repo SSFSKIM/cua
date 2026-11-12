@@ -288,7 +288,7 @@ test('--dev is the verdict run\'s flag; experiments take no gate', async () => {
   assert.throws(() => parseArgs(['--experiment', 'drag', '--vendor', '/v', '--cua', '/c', '--out', 'o', '--dev']), /--dev/);
 });
 
-test('a dev run\'s summary and verdict say it is not a release gate; a gate run\'s name its verified candidate', async () => {
+test('a dev run\'s summary and verdict say it is not a release gate; a gate run\'s say it is one and name its verified candidate', async () => {
   const candidate = { gate: false, sha256: sha(GNU), target: 'x86_64-unknown-linux-gnu', linkage: 'dynamic', version: 'cua-engine 0.3.0 (9d3fdce6b10f)', commit: OTHER, clean: false, attestation: null };
   const meta = { kind: 'meta', commit: OTHER, cua_version: candidate.version, occlusion: 'covered', blocks: 1, samples_tree: 1, samples_input: 1, engines: [] };
   const end = { kind: 'end', valid: true, pass: true, failed: [], parity: [], refused: [], finished: 'now' };
@@ -300,10 +300,11 @@ test('a dev run\'s summary and verdict say it is not a release gate; a gate run\
   const attestation = { verified: true, signer_workflow: 'SSFSKIM/cua/.github/workflows/linux-engine.yml', attestations: [{ source_commit: HEAD, source_ref: 'refs/heads/feat/171-m3', run: 'https://github.com/SSFSKIM/cua/actions/runs/41350086196/attempts/1', subjects: [], runner: 'github-hosted' }] };
   const gated = { ...candidate, gate: true, target: 'x86_64-unknown-linux-musl', linkage: 'static-pie', sha256: sha(MUSL), commit: HEAD, clean: true, attestation };
   const gate = renderSummary([{ run: 'g', ...meta, gate: true, candidate: gated }, { run: 'g', ...end, gate: true }]);
-  assert.match(gate, /^## g$/m);
+  // a gate's artifacts say so too (M4's T18: every artifact a gate step writes carries its label)
+  assert.match(gate, /^## g \(release gate\)$/m);
   assert.doesNotMatch(gate, /not a release gate/);
   assert.match(gate, /attestation verified: \.github\/workflows\/linux-engine\.yml run https:\/\/github\.com\/SSFSKIM\/cua\/actions\/runs\/41350086196\/attempts\/1, built from cd4c929758caf90329fd5cfb0d5028f1ec1c92c2 \(refs\/heads\/feat\/171-m3\) on a github-hosted runner/);
-  assert.match(gate, /run valid; every verdict PASS/);
+  assert.match(gate, /run valid; release gate: every verdict PASS/);
 });
 
 // ---------------------------------------------------------------------------------------------------------------

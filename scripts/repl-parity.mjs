@@ -33,11 +33,12 @@ const state=device=>join(root,'.doperpowers/sde/repl-parity',`${device}.json`);
 const save=(p,value)=>writeFileSync(p,JSON.stringify(value,null,2)+'\n');
 // The CLI's arguments, validated: the action, its options and positionals. It reads no journal and starts nothing.
 export function parseSelection(argv){
- const {values:v,positionals:[action,a,b]}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},host:{type:'string',default:'vendor'},engine:{type:'string'},'engine-bin':{type:'string'},'approved-runtime':{type:'string'},'approved-engine':{type:'string'},suite:{type:'string'},through:{type:'string'},out:{type:'string'},expected:{type:'string'},commit:{type:'string'},profile:{type:'string'},node:{type:'string'},home:{type:'string'},'pending-cell':{type:'string',multiple:true},'pending-reason':{type:'string'},'pause-file':{type:'string'}}});
+ const {values:v,positionals:[action,a,b]}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},host:{type:'string',default:'vendor'},engine:{type:'string'},'engine-bin':{type:'string'},'approved-runtime':{type:'string'},'approved-engine':{type:'string'},suite:{type:'string'},through:{type:'string'},out:{type:'string'},expected:{type:'string'},commit:{type:'string'},profile:{type:'string'},node:{type:'string'},home:{type:'string'},'native-only':{type:'boolean',default:false},'pending-cell':{type:'string',multiple:true},'pending-reason':{type:'string'},'pause-file':{type:'string'}}});
  if((v['pending-cell']?.length||v['pending-reason'])&&(action!=='run'||!isDeclaredDevice(v.device)||DEVICES[v.device].platform!=='linux'))throw new Error('Pending declarations require a live Linux run; diff reads recorded declarations');
  if(v.through&&!milestones.includes(v.through))throw new Error('Invalid through milestone');
  if(!(v.device==='local'||isDeclaredDevice(v.device))||!['vendor','cua'].includes(v.host)||!['cells','services','api','docs-profiles','secrets','secrets-live','native','native-mac','all'].includes(v.suite??'cells'))throw new Error('Invalid parity selection');
  const approved=v['approved-runtime']!==undefined||v['approved-engine']!==undefined;
+ if(v['native-only']&&(action!=='prepare'||!isDeclaredDevice(v.device)||DEVICES[v.device].platform!=='linux'||v.profile!==undefined))throw new Error('--native-only prepares a declared Linux device for the native suite alone: it belongs to prepare, and names no --profile');
  const linuxNative=action==='run'&&isDeclaredDevice(v.device)&&DEVICES[v.device].platform==='linux'&&['native','all'].includes(v.suite);
  if(v.suite==='native-mac'||action==='prepare'&&approved)nativeMacSelection(action,v,approved);
  else if(linuxNative&&!approved)linuxEngineSelection(v);
@@ -54,6 +55,11 @@ function linuxEngineSelection(v){
  if(!['vendor','cua'].includes(v.engine))throw new Error('a Linux native run names its engine: --engine vendor|cua');
  if(v.host!=='cua')throw new Error('a Linux native engine lane runs on cua\'s own host, the only one Linux serves: --host cua');
  if(v['engine-bin']!==undefined&&!/^\/[^\0\n]*$/.test(v['engine-bin']))throw new Error('--engine-bin needs the absolute path of the cua-engine on the device');
+}
+// A native-only preparation (prepare --native-only, ./repl-parity/prepare-device.mjs) bound no Chrome profile: it serves
+// the native suite alone.
+export function assertPreparationServes(prepared,suite){
+ if(prepared.nativeOnly&&suite!=='native')throw new Error(`the device's preparation is native-only (no Chrome profile bound): it serves --suite native, not ${suite}`);
 }
 // A run whose selection holds native cases names its engine (the lane is never left to a default or to the device's
 // engine.json); the selection is known only once the prepared platform has chosen the cases.
@@ -81,7 +87,7 @@ export async function main(argv=process.argv.slice(2)){
  if(action==='prepare'||action==='cleanup-prepared'){
   // On macOS the approved route: the approved runtime and engine served in place, nothing installed (the native-mac suite).
   if(action==='prepare'?v['approved-runtime']!==undefined:isApprovedJournal(state(v.device))){console.log(JSON.stringify(manageApprovedPreparation(action,{...v,journal:state(v.device)}),null,2));return;}
-  const prepared=managePreparation(action,{...v,journal:state(v.device)});
+  const prepared=managePreparation(action,{...v,nativeOnly:v['native-only'],journal:state(v.device)});
   console.log(JSON.stringify(prepared,null,2));return;
  }
  if(action==='diff'){
@@ -124,6 +130,7 @@ export async function main(argv=process.argv.slice(2)){
   writeFileSync(join(out,'results.jsonl'),rows.map(r=>JSON.stringify(r)).join('\n')+'\n');console.log(JSON.stringify({fake:true,cases:doubles.length,assertions:'PASS',out}));return;
  }
  const prepared=json(state(v.device)),{scenarios:selected,pending}=selectScenarios(scenarios,inventory,{suite:v.suite,through:v.through,platform:prepared.platform});
+ assertPreparationServes(prepared,v.suite);
  if(!selected.length)throw new Error('No executable cases selected');
  assertNativeEngine(selected,v);
  const environmentPending=resolvePendingDeclarations({logicalCells:v['pending-cell']??[],reason:v['pending-reason'],platform:prepared.platform,through:v.through,scenarios:selected});

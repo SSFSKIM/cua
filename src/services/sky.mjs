@@ -42,7 +42,8 @@
 // goes to the vendor unchanged, as on macOS. With cua's own Linux service (#171), whose engine refuses the first request
 // that acts after a late drag and drop it has not reported yet, the launch acts too: just before it, the wrapper calls
 // the service's `beforeLaunch` (the engine's `preflight`), whose refusal is the launch's answer; the vendor's service has
-// no such export and is not asked.
+// no such export and is not asked. The same goes for `kernelReset`, which the trusted worker calls when the REPL host
+// ended the kernel (js_reset, a cell's timeout): passed on only to a loaded service that has it (cua's Linux service).
 //
 // Approvals on Linux (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, "The service", Policy and approvals,
 // its Linux sentence): sky_linux has no policy of its own, so this wrapper asks through the policy module
@@ -247,7 +248,16 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
       throw inputFailed(method, reference.label, kind);
     }
   }
-  return {handleRpc};
+
+  // The REPL host's kernel reset (js_reset or a cell's timeout; src/repl-host/trusted-worker.mjs): passed to the
+  // service already loaded when it has one of its own (cua's Linux service, which releases a held drag handle). The
+  // vendor's services and macOS's have none; nothing is loaded for it.
+  async function kernelReset() {
+    if (vendor === null) return;
+    const service = await Promise.resolve(vendor).catch(() => null);
+    if (typeof service?.kernelReset === 'function') await service.kernelReset();
+  }
+  return {handleRpc, kernelReset};
 }
 
 // The service as the trusted worker runs it, configured by the launch environment.
@@ -267,4 +277,7 @@ let service = null;
 export function handleRpc(request) {
   service ??= skyServiceFromEnv();
   return service.handleRpc(request);
+}
+export async function kernelReset() {
+  await service?.kernelReset();
 }

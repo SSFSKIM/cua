@@ -4,14 +4,15 @@
 // `--summarize` (rewrite summary.md from results.jsonl); and M0.4's: `--experiment matrix` (the application-family
 // matrix), `--family` (the families an experiment runs on, by name, families.mjs) and `--load` (every core busy
 // during the experiment); and #267's: a verdict run is a release gate on the attested candidate `--cua` names
-// (candidate.mjs), or `--dev`, a run on any build that is not one.
+// (candidate.mjs), or `--dev`, a run on any build that is not one; and M4's T18: an experiment that joins the gate
+// (`--gate`) takes its candidate through the same preparation, and one run without it is labelled a development run.
 
 export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
-      [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>] [--ballast gate]
+      [--dev] [--ballast gate] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route|writer-drag --cua <bin> --out <dir> [--run <name>]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route|writer-drag --cua <bin> --out <dir> [--run <name>] [--gate]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short | --dnd-select] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] [--lanes <list>] [--trace] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop, qt-activation)
       [--released <bin>] [--kinds click,key-click,press_key,drag,scroll] (qt-activation)
@@ -74,6 +75,9 @@ export function parseArgs(argv) {
     else if (flag === '--summarize') a.mode = 'summarize';
     // a verdict run on any build, its verdict labelled not a release gate (candidate.mjs); without it the run is a gate
     else if (flag === '--dev') a.dev = true;
+    // an experiment that joins the gate: its candidate the release workflow's attested artifact of the checkout's commit,
+    // checked as a verdict run's is (candidate.mjs); without it an experiment is a development run, and says so
+    else if (flag === '--gate') a.gate = true;
     else if (flag === '--no-counts') a.counts = false;
     else if (flag === '--no-audit') a.audit = false;
     // the dnd experiment without its 100 ms grab sampler, whose own grabs can fail Chrome's drag-start grab (M3.1)
@@ -173,12 +177,13 @@ export function parseArgs(argv) {
   }
   if (a.experiment) a.mode = 'experiment';
   for (const [key, flag] of [['coverMs', '--cover-ms'], ['prelude', '--prelude'], ['ballast', '--ballast'], ['stray', '--stray'], ['parkPointer', '--park-pointer']]) {
-    // the drop-signals experiment opens the gate's ballast too (T13), with no cold run, and so does a verdict run (a
-    // gate step carrying the full run's Chrome windows, run.mjs `openGateBallast`)
+    // the drop-signals experiment opens the gate's ballast too (T13), with no cold run, and so does a verdict run whose
+    // step carries the gate's Chrome drops (T18: a gate split into steps keeps M3's Chrome window load)
     if (a[key] !== undefined && !a.dndCold && !(key === 'ballast' && (a.experiment === 'drop-signals' || a.mode === 'run'))) throw new Error(`${flag} is the cold drag-and-drop run's (--dnd-cold)`);
   }
   if (a.dndCold) a.coverMs ??= 0;
-  if (a.dev && a.mode !== 'run') throw new Error('--dev is the verdict run\'s: only a verdict run is a release gate');
+  if (a.dev && a.mode !== 'run') throw new Error('--dev is the verdict run\'s: an experiment is a development run unless --gate');
+  if (a.gate && a.mode !== 'experiment') throw new Error('--gate is the experiments\': a verdict run is a release gate unless --dev');
   const require = (...keys) => {
     for (const key of keys) {
       const flag = Object.entries({ ...VALUE_FLAGS }).find(([, k]) => k === key)?.[0] ?? `--${key}`;

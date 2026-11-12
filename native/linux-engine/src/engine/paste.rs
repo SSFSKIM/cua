@@ -30,7 +30,7 @@ use crate::field::{self, Observation};
 use crate::focus_ack::press_ack;
 use crate::input::{chord_keycodes, focus_is_within};
 use crate::paste::{self, CHANGED_CAUSE, Expected, Transfer, UNCONFIRMED};
-use crate::route::Route;
+use crate::route::{Route, Target};
 use crate::tree::ObjRef;
 use crate::wire::{ClipboardWriteInput, TypeTextInput, parse_input};
 use crate::x11::X11;
@@ -40,6 +40,13 @@ const FOCUS_WAIT: Duration = Duration::from_millis(500);
 const FOCUS_POLL: Duration = Duration::from_millis(10);
 /// How many focusing clicks at most (`click_for_focus`).
 const FOCUS_CLICKS: u32 = 2;
+
+/// How long the window's focused element is looked for again, and the poll, when the paste's own session has just
+/// synthesized the window's focus: a toolkit can report the focus a moment after it took it. GTK 3 marks its focus
+/// widget `focused` for AT-SPI only from an idle callback after the focus-in (`_focus_widget`, set by
+/// `gail_focus_notify_when_idle`), so a walk sent at once can be answered before it, finding none (task 74).
+const FOCUSED_WAIT: Duration = Duration::from_millis(50);
+const FOCUSED_POLL: Duration = Duration::from_millis(2);
 
 /// The largest field observed whole for the scrolled-field confirmation, in characters, and in lines (a terminal's
 /// screen is far smaller: 20 rows of 69 on the harness's).
@@ -99,6 +106,9 @@ struct Report {
     /// How long a clicked element took to report the focus (or the wait, when it did not), and the clicks it took.
     focus_ms: Option<f64>,
     clicks: u32,
+    /// With no element named: how long the window's focused element took to be found, or the look's whole time when
+    /// none was.
+    focused_ms: Option<f64>,
     /// Under `--stats`, what the confirmation is judged against: the field's count and the text around the insertion
     /// point when observed, and again once an unconfirmed paste's confirmation has ended (`trace_around`).
     trace: bool,
@@ -202,6 +212,7 @@ impl Engine {
                 "delivery": report.delivery,
                 "settle": report.settle,
                 "focus_ms": report.focus_ms,
+                "focused_ms": report.focused_ms,
                 "clicks": report.clicks,
                 "observed_around": report.observed_around,
                 "unconfirmed_around": report.unconfirmed_around,
@@ -303,6 +314,8 @@ impl Engine {
             Err(_) => None,
         };
         let resource_id_mask = self.x.conn.setup().resource_id_mask;
+        // a session already open for the window (a hold's) synthesized its focus for an earlier request
+        let session_was_open = matches!(target, Target::Window(w) if self.inputs.open_for(w));
         let Engine {
             x,
             inputs,
@@ -319,7 +332,11 @@ impl Engine {
                 let (element, named) = match &named {
                     Ok(element) => (element.clone(), true),
                     Err(associated) => {
-                        let focused = copy::focused(bus, &associated.frame)?.ok_or_else(|| {
+                        let bound = focused_wait(session_was_open, route.synthesized_focus());
+                        let (focused, took) =
+                            copy::until_focused(bound, FOCUSED_POLL, || copy::focused(bus, &associated.frame))?;
+                        report.focused_ms = Some(took.as_secs_f64() * 1000.0);
+                        let focused = focused.ok_or_else(|| {
                             anyhow!("window {window} has no focused element to paste into; nothing was sent")
                         })?;
                         // the focused element is never clicked (step 2), so it needs no point and no VCL correction
@@ -520,6 +537,17 @@ fn identity_refusal(window: Window, clicked: bool) -> String {
         )
     } else {
         atspi::changed_before_acting(window)
+    }
+}
+
+/// How long a paste naming no element looks again for the window's focused element: only when its own session, opened
+/// for this request (`session_was_open` false), synthesized the window's focus, which the toolkit may not report yet.
+/// A focus the window already held, really or from an earlier request's session kept by a hold, is read once.
+fn focused_wait(session_was_open: bool, synthesized: bool) -> Duration {
+    if !session_was_open && synthesized {
+        FOCUSED_WAIT
+    } else {
+        Duration::ZERO
     }
 }
 
@@ -913,6 +941,26 @@ struct Scrolled {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_focus_this_requests_own_session_synthesized_is_looked_for_again() {
+        assert_eq!(
+            focused_wait(false, true),
+            FOCUSED_WAIT,
+            "a FocusIn sent for this request"
+        );
+        assert_eq!(
+            focused_wait(false, false),
+            Duration::ZERO,
+            "the real focus already within the window: no FocusIn sent"
+        );
+        assert_eq!(
+            focused_wait(true, true),
+            Duration::ZERO,
+            "a hold's session, whose FocusIn an earlier request sent"
+        );
+        assert_eq!(focused_wait(true, false), Duration::ZERO);
+    }
 
     #[test]
     fn only_a_family_that_asks_at_every_owner_change_waits_for_its_targets() {

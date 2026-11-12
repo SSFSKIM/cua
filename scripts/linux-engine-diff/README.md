@@ -82,7 +82,27 @@ release gate`. Iterate on dev builds; a speed claim or an adoption run takes a m
 (`--target x86_64-unknown-linux-musl`, the workflow's `RUSTFLAGS` path remaps, `CUA_ENGINE_GIT_SHA`, and its `strip`),
 still a dev run, or better the workflow's own artifact.
 
-The experiments (`--experiment`) take `--cua` as before and are not gates.
+An experiment (`--experiment`) is a development run unless it is given `--gate` (M4's T18): with it, its candidate goes
+through the same preparation and checks as a gate verdict run's, before anything starts, and a refusal exits 2 with
+nothing run. Either way the run's `meta` and summary rows, its `summary.md` heading and its first and last lines on
+stdout carry its label, `release gate` or `development run, not a release gate`; a gate verdict run's heading and
+verdict line now say `release gate` too.
+
+## M4's gate as steps (`../linux-engine-gate/`, T18)
+
+`scripts/linux-engine-gate/steps.mjs` is the gate as one runnable sequence: steps of 45 minutes or less, each a valid run of its own (its
+`--run`, its directory, its stub check, a verdict step's explicit `--ops`), the verdict steps on `:0` and everything
+else on private displays, idle and at twice the load. `node scripts/linux-engine-gate/gate.mjs --list` prints every
+step's minutes, display, load and command with the totals; `print <step>` prints one step's command and writes its
+labelled directory; `run <step>` runs one step that is not `:0`'s, under the host lock (the printed commands include
+`locked.sh`). The `:0` steps are only ever printed: they run in the declared sitting through task 50's guards
+(`run71.sh` under `wrap71.py`). A gate step runs from a clean checkout at the candidate's commit (a symlinked
+`node_modules` counts as a change), with its out directory outside it; `--dev` runs a development build, and `--dev
+--pilot <n>` each step's smallest form. Each step's directory is named `<step>.release-gate` or
+`<step>.development-run[.pilot]` and opens with a README and `step.json` carrying the label. T17's Electron cells
+(`drop-signals --family electron --plan t17-fix3`) are judged by `drop-signals-judge.mjs` `electronDropVerdict`: a false
+ok, a missing landing, an error for a drop that landed and a missing cell fail; landed drops answered unconfirmed are
+findings with their counts.
 
 ## Instances of the run's own (task 43)
 
@@ -1143,6 +1163,7 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 |---|---|
 | `../linux-engine-diff.mjs` | the entry point |
 | `cli.mjs` | the command line |
+| `../linux-engine-gate/` | M4's gate as steps (T18): `steps.mjs` the plan and its commands, `gate.mjs` the runner that lists, prints or runs one, `display.mjs` a step's private display, `norecord.mjs` its harness script with no whole-run RECORD; a launcher above the harness, outside this directory's source checks |
 | `candidate.mjs` | a verdict run's cua candidate: stored, its target read, its attestation verified; a gate's refusals |
 | `engine.mjs` | an engine process over the wire |
 | `run.mjs`, `ops.mjs` | the differential run and its operations |

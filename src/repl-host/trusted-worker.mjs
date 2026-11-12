@@ -10,8 +10,8 @@
 // services by real path, and resolving names through the vendor module tree would reach the legacy services the own
 // route excludes); no response-meta tracing (NR:tracing.js, vendor telemetry) and no audio; cua's lifeline watcher
 // (./lifeline.mjs) is added, so a worker never outlives its supervisor, and on Linux it takes the engine's held record
-// (../services/engine/linux/held-record.mjs) before it starts anything. Every sentence trusted code
-// or a cell can observe is the vendor's. #120's clean-room rewrite replaces this port before distribution.
+// (../services/engine/linux/held-record.mjs) before it starts anything; cua's `kernel_reset` is added (below). Every
+// sentence trusted code or a cell can observe is the vendor's. #120's clean-room rewrite replaces this port before distribution.
 // Trusted service host. JSONL on stdout is reserved for the supervisor.
 import { Console } from "node:console";
 import { realpathSync } from "node:fs";
@@ -39,7 +39,8 @@ process.chdir(process.argv[2]);
 const stderrConsole = new Console(process.stderr);
 
 const configuredServices = JSON.parse(process.env.CUA_REPL_TRUSTED_SERVICES);
-const handlers = new Map();
+// Each service's module, as its first request loaded it.
+const modules = new Map();
 const trustedCodeRoots = (process.env.CUA_REPL_TRUSTED_CODE_PATHS ?? "")
   .split(path.delimiter)
   .filter((entry) => path.isAbsolute(entry))
@@ -124,23 +125,33 @@ function resolveTrustedService(configured) {
 }
 
 async function loadHandler(service) {
-  let handler = handlers.get(service);
-  if (handler === undefined) {
+  let loading = modules.get(service);
+  if (loading === undefined) {
     const configured = configuredServices[service];
     if (typeof configured !== "string") {
       throw new Error(`Trusted RPC service is not configured: ${service}`);
     }
-    handler = import(resolveTrustedService(configured)).then((module) => {
-      if (typeof module.handleRpc !== "function") {
-        throw new Error(
-          `Trusted RPC service ${service} does not export handleRpc`,
-        );
-      }
-      return module.handleRpc;
-    });
-    handlers.set(service, handler);
+    loading = import(resolveTrustedService(configured));
+    modules.set(service, loading);
   }
-  return await handler;
+  const module = await loading;
+  if (typeof module.handleRpc !== "function") {
+    throw new Error(`Trusted RPC service ${service} does not export handleRpc`);
+  }
+  return module.handleRpc;
+}
+
+// cua: the supervisor's `kernel_reset` (js_reset or a cell's timeout ended the kernel; src/repl-host/supervisor.mjs):
+// each service already loaded that exports `kernelReset` releases what that kernel held (cua's Linux service, its drag
+// handles), all at once. Nothing is loaded for it, a service without the export is not asked, and a failure is the
+// service's own: the reset is answered when all have settled.
+async function kernelReset() {
+  await Promise.allSettled(
+    [...modules.values()].map(async (loading) => {
+      const module = await loading;
+      if (typeof module.kernelReset === "function") await module.kernelReset();
+    }),
+  );
 }
 
 async function runInExecContext(message, operation) {
@@ -180,6 +191,12 @@ async function handleServiceRequest(message) {
 }
 
 function handleNodeReplMessage(message) {
+  if (message.type === "kernel_reset") {
+    void kernelReset().finally(() =>
+      send({ type: "kernel_reset_result", id: message.id }),
+    );
+    return;
+  }
   if (message.type === "turn_ended") {
     const execState = runtime.createExecState(message);
     execContext.activate(execState.id);

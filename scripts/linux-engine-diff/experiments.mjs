@@ -16,9 +16,12 @@
 import { execFileSync, spawn } from 'node:child_process';
 
 import { xExecFileSync } from './xspawn.mjs';
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
-import { availableParallelism, loadavg } from 'node:os';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { availableParallelism, loadavg, tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { PreparationStopped, candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
+import { electronDropVerdict, judgedElectronPlan } from './drop-signals-judge.mjs';
 
 import { elementClick, partialCover } from './clicks.mjs';
 import { Engine } from './engine.mjs';
@@ -310,11 +313,81 @@ function startLoad(emit, factor = 1) {
   };
 }
 
-export async function runExperiment(args) {
+const STOP_CODES = { SIGINT: 130, SIGTERM: 143 };
+
+/**
+ * `body(args, record)` on the experiment's candidate (M4's T18, the design session's ruling: an experiment that joins the
+ * gate takes its candidate as a verdict run does). With `--gate` the candidate `--cua` names is stored as `cua-engine`
+ * (mode 0700) in a directory of the run's own and checked by candidate.mjs's preparation before anything runs; a refusal
+ * is thrown as a `CandidateRefused` and nothing starts. `body` gets the stored copy and its record, and the copy is
+ * removed on a refusal, an error, the end and a stop. A stop (SIGINT or SIGTERM) while this listener is the process's
+ * only one (the checks, or a part of the run before a Desktop hooks its own cleanup, stop.mjs) kills the command the
+ * checks wait on, removes the copy and exits as the signal would; once a Desktop's handler is in place it is that
+ * handler's, and the exit removes the copy. Without `--gate`, `body` gets `--cua` as given and no record.
+ */
+export async function withExperimentCandidate(args, body, { prepare = prepareCandidate, proc = process } = {}) {
+  if (!args.gate) return body(args, null);
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
+  const remove = () => rmSync(dir, { recursive: true, force: true });
+  proc.once('exit', remove);
+  const stopping = new AbortController();
+  let preparing = null;
+  const onStop = (signal) => {
+    if (proc.listenerCount(signal) !== 1) return;
+    stopping.abort();
+    Promise.resolve(preparing)
+      .catch(() => {})
+      .finally(() => {
+        remove();
+        proc.exit(STOP_CODES[signal]);
+      });
+  };
+  for (const signal of Object.keys(STOP_CODES)) proc.on(signal, onStop);
+  try {
+    preparing = prepare({ source: args.cua, gate: true, dir, signal: stopping.signal });
+    let candidate;
+    try {
+      candidate = await preparing;
+    } catch (error) {
+      if (!(error instanceof PreparationStopped) || !stopping.signal.aborted) throw error;
+    }
+    // stopped during the checks: the stop exits once the command in flight has ended, and nothing more starts
+    if (stopping.signal.aborted) await new Promise(() => {});
+    return await body({ ...args, cua: candidate.path }, candidate.record);
+  } finally {
+    for (const signal of Object.keys(STOP_CODES)) proc.off(signal, onStop);
+    proc.off('exit', remove);
+    remove();
+  }
+}
+
+/** The rows that carry the run's label: its `meta` (with the candidate's record) and its summary. */
+const LABELLED = new Set(['meta', 'experiment-summary']);
+
+/**
+ * An experiment run: a release gate's with `--gate`, its candidate checked first (`withExperimentCandidate`), otherwise
+ * a development run's. Either way its label ("release gate", or "development run, not a release gate") is in its
+ * `meta` and summary rows, its summary.md (report.mjs) and the first and last lines it prints. `start` is the
+ * experiment proper (the tests pass their own): it gets the run's args and `{emit, results}`, and answers whether the
+ * run is complete.
+ */
+export async function runExperiment(args, { prepare = prepareCandidate, start = experimentRun } = {}) {
   const run = args.run ?? `${args.experiment}-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
-  mkdirSync(args.out, { recursive: true });
-  const results = join(args.out, 'results.jsonl');
-  const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
+  return withExperimentCandidate(args, async (runArgs, record) => {
+    mkdirSync(args.out, { recursive: true });
+    const results = join(args.out, 'results.jsonl');
+    const gate = Boolean(args.gate);
+    const label = gateLabel(gate);
+    const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row, ...(LABELLED.has(row.kind) ? { gate, label, ...(row.kind === 'meta' && record ? { candidate: record } : {}) } : {}) })}\n`);
+    process.stdout.write(`${label}${record ? `; ${candidateLine(record)}` : ''}\n`);
+    const complete = await start({ ...runArgs, run }, { emit, results });
+    process.stdout.write(`${label}: ${run} ${complete ? 'complete' : 'incomplete or failed'}\n`);
+    return complete;
+  }, { prepare });
+}
+
+async function experimentRun(args, { emit, results }) {
+  const { run } = args;
   if (args.experiment === 'focus-timer') {
     // on a private X server of its own, like the AT-SPI probe (focus-timer.mjs), its load started there
     emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
@@ -396,6 +469,15 @@ export async function runExperiment(args) {
       // the drag experiment's judges (T10) and the predicate cases' (T15) fail the run as an incomplete one does; the others
       // report completeness only
       outcome = { complete: result.complete && result.pass !== false, failed: result.failed };
+      // T17's Electron cells are judged (drop-signals-judge.mjs `electronDropVerdict`): a false ok, a missing landing or
+      // a missing cell fails the run; the unconfirmed drops are findings with their counts
+      if (args.experiment === 'drop-signals' && judgedElectronPlan(args)) {
+        const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
+        const judged = electronDropVerdict(rows.filter((r) => r.kind === 'drop-signal'), { specs: rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? [] });
+        emit({ kind: 'electron-drop-verdict', pass: judged.failed.length === 0, failed: judged.failed, findings: judged.findings, counts: judged.counts });
+        md = [...md, ...judged.md];
+        outcome = { complete: outcome.complete && judged.failed.length === 0, failed: [...outcome.failed, ...judged.failed] };
+      }
     } else if (args.experiment === 'matrix') {
       const { names } = await runMatrix(args, { desktop, emit, run });
       const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);

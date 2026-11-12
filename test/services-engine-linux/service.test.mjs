@@ -4,7 +4,8 @@
 // capability report turned into one sentence, and `truncated` passed through for the facade's line.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createService, LINUX_METHODS} from '../../src/services/engine/linux/service.mjs';
+import {createService, kernelReset as linuxKernelReset, LINUX_METHODS} from '../../src/services/engine/linux/service.mjs';
+import {createSkyService, kernelReset as skyKernelReset} from '../../src/services/sky.mjs';
 import {ANIMATED_ACTION, ActionSettler, SETTLE_MS} from '../../src/services/engine/linux/settle.mjs';
 import {fakeLinuxEngine, SHOT_BYTES, TREE, WINDOWS} from '../helpers/fake-linux-engine.mjs';
 
@@ -343,6 +344,45 @@ test('a new kernel\'s setup releases the drag handles the old kernel left starte
   assert.equal(sent(engine).length, 4);
 });
 
+test('a kernel reset releases the handles the ended kernel left started at once, before any new kernel\'s setup; with none held it sends nothing', async t => {
+  // js_reset and a cell's timeout end the kernel; the REPL host tells the trusted worker, which calls kernelReset
+  // (src/repl-host/supervisor.mjs, trusted-worker.mjs), so the button is up when the reset answers
+  const engine = fakeLinuxEngine(t);
+  const svc = service(t, engine);
+  await svc.handleRpc({type: 'setup'});
+  await svc.kernelReset();
+  assert.deepEqual(sent(engine), [], 'no handle: nothing sent');
+  await svc.handleRpc({type: 'drag_start', handle_id: 'h1', point: {x: 1, y: 2}});
+  await svc.handleRpc({type: 'drag_move', handle_id: 'h1', point: {x: 5, y: 6}});
+  await svc.kernelReset();
+  assert.deepEqual(sent(engine).at(-1), ['release_handle', {}], 'released at the reset itself');
+  await assert.rejects(svc.handleRpc({type: 'drag_end', handle_id: 'h1'}), {message: 'Sky drag handle has not been started'}, 'forgotten');
+  await svc.handleRpc({type: 'setup'});
+  await svc.kernelReset();
+  assert.deepEqual(sent(engine).map(([command]) => command), ['drag_handle', 'drag_handle', 'release_handle'], 'released once: the next setup and reset have nothing to release');
+});
+
+test('a kernel reset whose release fails forgets the handles and resolves; one before the engine was ever started starts nothing', async t => {
+  const engine = fakeLinuxEngine(t, {behaviour: 'export function answer(command) { if (command === \'release_handle\') return {error: \'unknown command `release_handle`\'}; }'});
+  const svc = service(t, engine);
+  await svc.kernelReset();
+  assert.deepEqual(engine.spawns(), [], 'a reset never starts the engine');
+  await svc.handleRpc({type: 'drag_start', handle_id: 'h1', point: {x: 1, y: 2}});
+  assert.equal(await svc.kernelReset(), undefined);
+  await assert.rejects(svc.handleRpc({type: 'drag_move', handle_id: 'h1', point: {x: 0, y: 0}}), {message: 'Sky drag handle has not been started'});
+});
+
+test('the kernel reset is not a message the service answers: a cell\'s rpc asking for one is refused, and the handle stays held', async t => {
+  const engine = fakeLinuxEngine(t);
+  const svc = service(t, engine);
+  await svc.handleRpc({type: 'drag_start', handle_id: 'h1', point: {x: 1, y: 2}});
+  for (const type of ['kernel_reset', 'kernelReset', 'release_handle'])
+    await assert.rejects(svc.handleRpc({type}), {message: `Unsupported sky request type: ${type}`});
+  await assert.rejects(execute(svc, 'release_handle'), {message: 'Sky runtime method is not available: release_handle'});
+  await svc.handleRpc({type: 'drag_end', handle_id: 'h1'});
+  assert.deepEqual(sent(engine).map(([command]) => command), ['drag_handle', 'drag_handle']);
+});
+
 test('a setup whose handle release fails still answers the methods and forgets the handles', async t => {
   const engine = fakeLinuxEngine(t, {behaviour: 'export function answer(command) { if (command === \'release_handle\') return {error: \'unknown command `release_handle`\'}; }'});
   const svc = service(t, engine);
@@ -403,4 +443,38 @@ test('a window\'s screenshot needs capture.window; the tree alone does not', asy
   const svc = service(t, engine);
   await assert.rejects(execute(svc, 'get_window_state', {window: W}), {message: 'cua-engine cannot capture a window on this desktop: its x backend reports no capture.window capability'});
   await execute(svc, 'get_window_state', {window: W, include_screenshot: false});
+});
+
+// The kernel reset's path above the service (#171 M4 T18): the trusted worker calls `kernelReset` on each trusted service
+// module it already loaded (src/repl-host/trusted-worker.mjs), and the sky wrapper (src/services/sky.mjs) passes it to
+// the engine service it loaded, where only cua's Linux service has one. Nothing is loaded or started for it.
+test('the modules\' own kernelReset with no service made yet does nothing and makes none', async () => {
+  // no CUA_ENGINE_BIN or CUA_SKY_SERVICE here: making a service would not even configure
+  assert.equal(await linuxKernelReset(), undefined);
+  assert.equal(await skyKernelReset(), undefined);
+});
+
+test('the sky wrapper passes a kernel reset to the engine service it loaded, and loads none for it', async () => {
+  const calls = [];
+  const engineService = {handleRpc: async request => { calls.push(request.type); return {target: 'linux', methods: []}; }, kernelReset: async () => { calls.push('kernelReset'); }};
+  let loads = 0;
+  const sky = createSkyService({loadVendor: async () => { loads++; return engineService; }, platform: 'linux', nodeRepl: {}, secrets: null});
+  assert.equal(await sky.kernelReset(), undefined);
+  assert.equal(loads, 0, 'nothing loaded for the reset');
+  await sky.handleRpc({type: 'setup'});
+  await sky.kernelReset();
+  assert.deepEqual(calls, ['setup', 'kernelReset']);
+  assert.equal(loads, 1);
+});
+
+test('the sky wrapper\'s kernel reset with a service that has none (the vendor\'s, macOS\'s), or one that failed to load, asks nothing and resolves', async () => {
+  const vendor = {handleRpc: async () => ({target: 'linux', methods: []})};
+  for (const platform of ['linux', 'darwin']) {
+    const sky = createSkyService({loadVendor: async () => vendor, platform, nodeRepl: {}, secrets: null, setResponseMeta: () => {}});
+    await sky.handleRpc({type: 'setup'});
+    assert.equal(await sky.kernelReset(), undefined, platform);
+  }
+  const broken = createSkyService({loadVendor: async () => { throw new Error('no such module'); }, platform: 'linux', nodeRepl: {}, secrets: null});
+  await assert.rejects(broken.handleRpc({type: 'setup'}), {message: 'no such module'});
+  assert.equal(await broken.kernelReset(), undefined);
 });

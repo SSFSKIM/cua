@@ -15,8 +15,9 @@
 //
 // with the vendor's sentences for a method it does not have and a drag handle never started. Beside handleRpc it
 // exports `beforeLaunch`, which the wrapper calls just before it launches an application through the supervisor
-// (createService's beforeLaunch). Setup also starts the engine: its version is checked (MIN_ENGINE_VERSION) and its
-// capability report read. Setup always answers with the methods, even when the engine cannot be driven (too old, not
+// (createService's beforeLaunch), and `kernelReset`, which the REPL host's js_reset and a cell's timeout reach through
+// the trusted worker and the wrapper: the handles the ended kernel held are released then, never by a cell's request.
+// Setup also starts the engine: its version is checked (MIN_ENGINE_VERSION) and its capability report read. Setup always answers with the methods, even when the engine cannot be driven (too old, not
 // runnable, not configured): the facade's Sky proxy (src/cua-api/sky.mjs) answers every member of a failed setup,
 // `then` included, with a rejecting function, so a rejected setup would leave the facade's bootstrap pending for ever.
 // Instead every method then refuses with the sentence saying why, before anything is sent, and each call tries again
@@ -91,12 +92,14 @@ export function createService({env = process.env, settler = new ActionSettler()}
     }
   }
 
-  // A setup comes from a new kernel's first cell, before its code (src/cua-api/bootstrap.mjs): the kernel that started
-  // the handles still stored here is gone (js_reset, a cell's timeout), and its handle objects with it, so nothing will
-  // end them. The engine releases a held handle at once (`release_handle`, a release: never refused, and what the
-  // release leaves pending is reported as an end's is), and the handles are forgotten, so desktop pointer input runs
-  // again from the new kernel's first call (the design session's ruling on task 73's review, 2026-11-11). Its answer
-  // is nobody's to read: an engine without the command, or one that cannot be driven, changes nothing here.
+  // At a kernel reset (js_reset or a cell's timeout; the REPL host tells the worker as it ends the kernel, #171 M4 T18)
+  // and at a new kernel's setup, which comes from its first cell before its code (src/cua-api/bootstrap.mjs) and
+  // catches a kernel that ended otherwise: the kernel that started the handles still stored here is gone, and its
+  // handle objects with it, so nothing will end them. The engine releases a held handle at once (`release_handle`, a
+  // release: never refused, and what the release leaves pending is reported as an end's is), and the handles are
+  // forgotten, so desktop pointer input runs again from the reset (the design session's rulings on task 73's review,
+  // 2026-11-11). Its answer is nobody's to read: an engine without the command, or one that cannot be driven, changes
+  // nothing here. With no handle stored nothing is sent, and nothing is started.
   async function releaseHandles() {
     if (handles.size === 0) return;
     handles.clear();
@@ -115,7 +118,7 @@ export function createService({env = process.env, settler = new ActionSettler()}
     await engine.request('preflight', {});
   }
 
-  return {handleRpc, beforeLaunch, close: () => engine?.close()};
+  return {handleRpc, beforeLaunch, kernelReset: releaseHandles, close: () => engine?.close()};
 }
 
 // The service as the trusted worker loads it: one per worker. `beforeLaunch` is cua's own: the vendor's service has no
@@ -128,4 +131,8 @@ export function handleRpc(message) {
 export function beforeLaunch() {
   service ??= createService();
   return service.beforeLaunch();
+}
+// A worker that never made the service has nothing to release.
+export async function kernelReset() {
+  await service?.kernelReset();
 }

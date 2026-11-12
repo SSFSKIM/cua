@@ -54,8 +54,13 @@ const drag = (families, extra = []) => ['--experiment', 'drag', '--vendor', '{ve
 const settle = (families, extra = []) => ['--experiment', 'settle', '--lanes', 'shipped', '--family', families, ...extra];
 const signals = (family, plan, extra = []) => ['--experiment', 'drop-signals', '--family', family, '--plan', plan, ...extra];
 const predicates = (ops) => ['--experiment', 'predicates', '--vendor', '{vendor}', '--ops', ops];
-const FOCUS_SHIPPED = ['--experiment', 'focus-timer', '--scenarios', 'burst,aba,paste,click-paste,click-field', '--lanes', 'shipped'];
-const FOCUS_STOPS = ['--experiment', 'focus-timer', '--stops-only'];
+// T7 revised's scenarios in two sittings, as T7's and task 60's ran them: the click scenarios' series leave the page's
+// focus in its other field, so an audit of keys after them types there (the pilot's F1: Chromium's key audits read '')
+const FOCUS_KEYS = ['--experiment', 'focus-timer', '--scenarios', 'burst,aba,paste', '--lanes', 'shipped'];
+const FOCUS_CLICKS = ['--experiment', 'focus-timer', '--scenarios', 'click-paste,click-field', '--lanes', 'shipped'];
+// the stops are Chromium's (focus-timer.mjs: SIGTERM after keys and after clicks on Chrome and Electron); with every
+// family named, the others go unmeasured and fail the sitting (the pilot's F2)
+const FOCUS_STOPS = ['--experiment', 'focus-timer', '--stops-only', '--family', 'chrome,electron'];
 
 export const STEPS = [
   // ---- the verdict run on :0, M3's scenes and M4's in the frozen order
@@ -84,7 +89,8 @@ export const STEPS = [
   experiment('S2', 'own', 'idle', 25, settle('firefox,gedit'), "the settle: Firefox's and gedit's cells"),
   experiment('S3', 'own', 'idle', 26, settle('kate,qtcreator,writer,gnome-terminal'), "the settle: kate's, Qt Creator's, Writer's (its drag at 25 ms, T16) and gnome-terminal's cells"),
   experiment('S4', 'own', 'idle', 30, settle('xterm,gtk3,qt5,qt6,gtk4'), "the settle: xterm's, GTK 3's, Qt 5's and 6's, GTK 4's cells"),
-  experiment('F1', 'own', 'idle', 25, FOCUS_SHIPPED, 'T7 revised on the shipped engine: burst, A-B-A, key then paste, click then paste, a click into another field then paste'),
+  experiment('F1a', 'own', 'idle', 20, FOCUS_KEYS, 'T7 revised on the shipped engine: burst, A-B-A, key then paste'),
+  experiment('F1b', 'own', 'idle', 12, FOCUS_CLICKS, 'T7 revised on the shipped engine: click then paste, a click into another field then paste'),
   experiment('F2', 'own', 'idle', 8, FOCUS_STOPS, 'T7 revised: SIGTERM straight after keys and after clicks, 30 each on Chrome and Electron, and SIGKILL as the control', { pilot: asIs }),
   experiment('P1', 'private', 'idle', 30, predicates('click'), "T19's predicates manifest: Firefox's click cases", { pilot: leavePilot }),
   experiment('P2', 'private', 'idle', 30, predicates('scroll'), "T19's predicates manifest: scroll", { pilot: leavePilot }),
@@ -109,7 +115,8 @@ export const STEPS = [
   experiment('L4b', 'private', 'load2', 25, signals('chrome', 't14', LOAD2), "the accept signal's false releases (the measurement lane, T14's 300 long drops and the controls)"),
   experiment('L4c', 'private', 'load2', 4, signals('chrome', 't14-late', LOAD2), 'the late-take rate: real late takes at twice the load'),
   experiment('L5', 'private', 'load2', 4, ['--experiment', 'engine-readiness', '--vendor', '{vendor}', '--family', 'gnome-text-editor', ...LOAD2], "GTK 4's covered first captures judged by content (T9's shortened cap)"),
-  experiment('F3', 'own', 'load2', 35, [...FOCUS_SHIPPED, ...LOAD2], 'T7 revised at twice the load: the five scenarios on the shipped engine'),
+  experiment('F3a', 'own', 'load2', 30, [...FOCUS_KEYS, ...LOAD2], 'T7 revised at twice the load: burst, A-B-A, key then paste'),
+  experiment('F3b', 'own', 'load2', 15, [...FOCUS_CLICKS, ...LOAD2], 'T7 revised at twice the load: click then paste, a click into another field then paste'),
   experiment('F4', 'own', 'load2', 10, [...FOCUS_STOPS, ...LOAD2], 'T7 revised at twice the load: SIGTERM straight after keys and after clicks', { pilot: asIs }),
 ];
 

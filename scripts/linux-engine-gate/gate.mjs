@@ -218,6 +218,8 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   mkdirSync(dir, { recursive: true });
   const { label } = stepLabel(a);
   const record = stepRecord(step, a, { root, checkout, command: launchCommand(step, a, root) });
+  // the harness's out directory, before any script writes in it (services.mjs's Desktop logs there at its start)
+  mkdirSync(join(dir, 'run'), { recursive: true });
   const env = { ...process.env, PATH: existsSync(a.firefoxDir) ? `${a.firefoxDir}:${process.env.PATH}` : process.env.PATH };
   // the facade step's script has no candidate checks of its own: a gate's runs here, its copy removed at the end
   let store = null;

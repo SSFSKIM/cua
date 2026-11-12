@@ -90,11 +90,11 @@ test('every experiment step parses; a gate\'s takes --gate, a development run\'s
 
 test("the coverage the gate names: T7 revised's shipped lane and stops, the settle as shipped, T17's cells at three loads, never t17-moved", () => {
   const parsed = (name) => parseArgs([...stepArgs(stepNamed(name), { paths: PATHS, gate: true }), '--out', '/o']);
-  for (const name of ['F1', 'F3']) {
-    assert.deepEqual(parsed(name).scenarios, ['burst', 'aba', 'paste', 'click-paste', 'click-field']);
-    assert.deepEqual(parsed(name).lanes, ['shipped']);
-  }
-  for (const name of ['F2', 'F4']) assert.equal(parsed(name).stopsOnly, true);
+  // the key scenarios and the click scenarios in sittings of their own: a click series leaves the focus in the other field
+  for (const name of ['F1a', 'F3a']) assert.deepEqual([parsed(name).scenarios, parsed(name).lanes], [['burst', 'aba', 'paste'], ['shipped']]);
+  for (const name of ['F1b', 'F3b']) assert.deepEqual([parsed(name).scenarios, parsed(name).lanes], [['click-paste', 'click-field'], ['shipped']]);
+  // the stops are Chromium's alone: every other family would go unmeasured
+  for (const name of ['F2', 'F4']) assert.deepEqual([parsed(name).stopsOnly, parsed(name).families], [true, ['chrome', 'electron']]);
   for (const s of STEPS.filter((x) => x.args?.includes('settle'))) assert.deepEqual(parsed(s.name).lanes, ['shipped'], s.name);
   const t17 = STEPS.filter((s) => s.args?.includes('t17-fix3')).map((s) => s.load);
   assert.deepEqual(t17.sort(), ['gate-windows', 'idle', 'load2']);

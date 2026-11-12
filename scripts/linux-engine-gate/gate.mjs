@@ -239,7 +239,8 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   // a short scratch directory (its session bus's socket lies there) and copied into the step's `logs/` at its end
   const args = [...stepArgs(step, { paths: { ...a, candidate: candidatePath }, gate: a.gate, pilot: a.pilot }), ...(step.kind === 'suite' ? [] : ['--out', join(dir, 'run')])];
   record.argv = [stepScript(step), ...args];
-  const suiteLogs = step.kind === 'suite' ? mkdtempSync(join(tmpdir(), 'cua171-gl-')) : null;
+  // under /tmp itself, whatever TMPDIR names (a macOS TMPDIR alone is about 50 bytes): the socket's 108 bytes
+  const suiteLogs = step.kind === 'suite' ? mkdtempSync('/tmp/cua171-gl-') : null;
   if (suiteLogs) record.env = suiteEnv({ candidate: candidatePath, dir, gate: a.gate, logs: suiteLogs });
   record.started = new Date().toISOString();
   writeRecord(dir, record);

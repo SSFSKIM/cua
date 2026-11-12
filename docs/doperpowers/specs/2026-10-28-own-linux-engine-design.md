@@ -630,6 +630,14 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m4/drops/`.
 - Observation (M4, T16): LibreOffice 24.2's gtk3 plugin reports everything VCL draws 27 px too high, by its native menu bar's height, from any ConfigureNotify until the next pointer event. Its GTK host panels stay right, and the vendor's element points miss by the same amount. An empty `.odp` opens in Writer when Impress isn't installed, which showed only once a check verified the app's identity. Pointer parks and app identity have each misled a measurement in M4, so both are verified before a trial counts.
   Evidence: `m4/writer-first-drag/`.
+- Observation (M4, T17): Chromium's drag and drop on X11, as a third client sees it.
+  - During a drag, its drag image is an override-redirect window under the pointer.
+  - When the drag leaves for a window that is not `XdndAware`, it keeps its last accept and its status cursor.
+  - Released over a target that has sent no first status, it ends with no drop and an unchanged cursor, and the page's `dragend` still reports `copy`. So `dragend` is no drop signal off the window.
+  - Its `XdndFinished` and its target's `XdndStatus` cannot be read from another process.
+  - Electron's cursor lags its own drop on a cold first drag at load.
+  - On Xvfb, XTEST's raw XI2 motion values are the requested root coordinates, and they reach a client that does not hold the grab.
+  Evidence: `m4/drag-handle/` (`fix2/`, `fix3/`).
 
 ## Decision Log
 
@@ -1733,6 +1741,54 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - The GDK 3 motion-hint emulation drops queued synthetic motions while an app is busy. That changed no selection in a plain GTK window, so it is recorded only.
   Evidence: `m4/writer-first-drag/` (README, `fix/`); the task-72 report (local); `ci-gate` GREEN on 770b924e and bb161064.
   Date/Author: 2026-11-11, the plan-executor (session linux171), from task 72's report, its review and fix wave (reviewer-medium), and the design session's rulings.
+
+- Decision (2026-11-12, M4, T17 (#250): `drag_handle` as built, and Electron's drop confirmation): task 73 on `feat/171-m4`. The build is 035b1c04..df988aa5, and the fix waves are 2ed591f4..2d76095c, 0a83de46..1df5d015 and 78605c7d..2c65f88a. Evidence is in `m4/drag-handle/` (`fix/`, `fix2/`, `fix3/`). Three reviews in a row (reviewer-medium) found answers of ok for drops that never happened. Each was reproduced live, fixed test-first and re-reviewed; the bounded re-review of the third wave found nothing (verdict correct). The design session ruled each step (2026-11-10 to 2026-11-12).
+  - **The lifecycle as ruled (2026-11-10, above), built** in `engine/handle.rs`, which was split out of `pointer.rs`.
+    - The pre-press try is one batch under a server grab: the `QueryPointer` chain, then `GrabPointer` and `UngrabPointer`. Any status but `Success` refuses the request with nothing pressed. The press comes after the server is let go, so a click queued during the try lands first, as the live test shows.
+    - The hold watch is a connection of its own, not a thread. It is read once, with a round trip, before the release. A take silences the hold-cut error for every handle, not only Chromium's.
+    - The refusal while a handle is held also covers the foreground route and a second `start`, since both are XTEST on the same pointer. Keys and the background route still run.
+    - A handle is desktop input in both modes and activates nothing. So task 63's pointer wait, carried to T17, has nothing to wait for.
+  - **A lost handle is released.**
+    - A held handle that gets no request of its own for 30 s (`HANDLE_IDLE`) is released where the pointer is, through `end`'s path.
+      - The release is pending as T14's notice: "your drag handle in <app> got no request for 30 s, so it was released where the pointer was…".
+      - The next acting request is refused once with that notice, and so is the released handle's own `end`.
+    - The bound also holds while another request blocks the engine. A watchdog thread sends only the button-up, by XTEST on its own connection, and the blocked request's reply carries the notice.
+    - At a new kernel's `setup`, the service forgets its stored handles and sends `release_handle`, a cua-only command that is not an action. A reset therefore frees pointer input from the next kernel's first call. Releasing at `js_reset` itself needs the REPL host to tell the worker, and T18 does that (the design session, 2026-11-11). Until then, a reset can leave the button down until the next `setup` or the idle bound.
+  - **Where the release lands.**
+    - The pointer is read again after the release dwell, and that reading decides `moved`, the release point and the drop window.
+    - On the XTEST routes (desktop and foreground), a plain drag's destination is the window under the real pointer at the button-up. The background route keeps the path's end.
+  - **Chrome's drop window is the managed top-level under the release** (`managed_client_at`), looked up past the drag image. The drag image is an override-redirect window, and `client_at` reports it as no client, so every handle drop into Chrome was unconfirmable and answered ok (fixed in e8574df3).
+    - A Chrome source's drop that no activation can confirm is unconfirmed: over a window that is not Chrome's, with a window manager that supports the request.
+    - With no window-manager support, it answers ok, as T14's `drag` does.
+  - **Electron's drops are confirmed by the drag cursor** (the design session, 2026-11-11 and 2026-11-12). Chromium's `XdndFinished` cannot be read from another process (only RECORD could read it). After three waves, the rule is:
+    - **The accept, by its own image.** The image shown at the release must be a `dnd-move`, `dnd-copy` or `dnd-link` image in some installed Xcursor theme (following `Inherits`). It must also be no theme's `dnd-none`, `closedhand`, `grabbing`, `hand2` or `left_ptr` image. The cursor's history decides nothing. The first wave judged the cursor by how it differed from earlier images, which confirmed a failed drop, so it was replaced.
+    - **Over a window that takes drag and drop.** The managed top-level under the release must be `XdndAware`. Chromium keeps its last accept when it leaves for a window that is not.
+    - **Put up after the drag entered that window.** The cursor watch reads the XTEST pointer's raw XI2 motions on its own connection, so the server itself orders the entry against the cursor change. Doubt answers unconfirmed: a relative device's motion, an unreadable start, or a change the watch never saw.
+    - **A take read at or after the release's stamp is late** and gets its Escape, whenever the watchdog's notice arrives.
+    - A drop not accepted, or not told, is unconfirmed, never ok. A plain drag's cursor watch starts whenever the source is Electron, wherever its path ends.
+  - **The false successes removed.**
+    - The engine before the second wave (d70b9e89's) answered ok when an Electron drag was released over the bare root (30/30) or over an xterm (30/30), and nothing dropped.
+    - On the second wave's engine, a drag accepted in one window and released over a target that never answers answered ok 60/60. A release after the pointer moved onto the bare root answered ok 30/30.
+    - All of them now answer unconfirmed.
+  - **Proof on the final engine (83dd7e5b):** Electron, plan `t17-fix3`, idle, at the gate's window load and at twice that load.
+    - Counted: 560, 499 and 560.
+    - Answered ok without a drop: 0 at each load, so 0 of 1,619 (0 of 1,618 in the second wave).
+    - The hung-target cell answered unconfirmed 180 of 180.
+    - Every landed drop that showed the accept passed the entry rule: 588 of 588.
+  - **Costs and limits.**
+    - **The cursor theme.** Under the VM's `breeze_cursors`, `dnd-move` draws as `dnd-none`, and there is no `dnd-link`. So every move or link drop answers unconfirmed (180 of 180 landed moves). The deviations say so (#364).
+    - **Cold handle drops at load.** A cold Electron handle drop at load can land while Electron's cursor still shows no-drop: 6 of 100 at the gate's window load and at twice that load (4–5% in the second wave). The design session ruled this #364's finding, not a bar.
+    - **The bare-root cell at the gate's window load is unmeasured.** A ballast window covers the bare root there; the 60 drags released over it answered unconfirmed.
+    - **Races left as limits** under the design session's convergence line (2026-11-12): a person's pointer motion during the release, and a target that stalls before its first `XdndStatus`. The second includes Chromium lagging its own events, so that an accept from the window it is leaving is put up after the entry into a target that never answers. One P3 ticket, registered by the design session from the plan-executor's text (2026-11-12), collects them.
+  - #363 closes: Electron's held drop at twice the load landed 80 of 80 in cua, against the pinned build's 79 of 80.
+  - **The deviations:**
+    - the refusal while held, on six desktop pointer commands;
+    - `start`'s refusal;
+    - `end`'s hold-cut and pointer-moved answers;
+    - the idle timeout's notice;
+    - the pending declaration, which names the accepting cursor and its two conditions (an `XdndAware` window, entered before the accept was put up).
+  Evidence: `m4/drag-handle/` (README, `fix/`, `fix2/`, `fix3/`); the task-73 report (local); `ci-gate` GREEN on df988aa5, 2d76095c, 69d095f8, 1df5d015 and 2c65f88a (the last after reruns of two flaky hosted macOS tests).
+  Date/Author: 2026-11-12, the plan-executor (session linux171), from task 73's proposal, build, three fix waves and four reviews (reviewer-medium), and the design session's rulings.
 
 ## Outcomes & Retrospective
 

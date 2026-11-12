@@ -51,6 +51,12 @@ test("drag_handle's lifecycle answers are declared by their own sentences, each 
     const moved = `Electron may not have received your drag where you asked: the desktop pointer was moved while the handle was held, so it was released ${at} instead of at (300, 260). Read the window to see what happened before dragging again`;
     assert.ok(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error(moved) }), at);
   }
+  // a move or an end of a handle the idle bound released (the whole-branch review of M4)
+  for (const at of ['at (250, 200)', 'on another screen']) {
+    const expired = `your drag handle in XTerm is no longer held: it got no request for 0.3 s, so it was released where the pointer was, ${at}; this drag_handle request was not run. Start a new handle to drag again`;
+    assert.ok(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error(expired) }), at);
+    assert.equal(declaredDeviation({ op: 'drag', field: 'error', candidate: error(expired) }), null, "a drag's error is not a handle's");
+  }
   for (const sentence of [elsewhere, cut, failed]) assert.equal(declaredDeviation({ op: 'drag', field: 'error', candidate: error(sentence) }), null, `a drag's error is not a handle's: ${sentence.slice(0, 30)}`);
   assert.equal(declaredDeviation({ op: 'drag_handle', field: 'error', candidate: error('Google-chrome may not have received your drag: something else') }), null, 'another sentence');
   assert.equal(declaredDeviation({ op: 'drag_handle', field: 'answer', candidate: error(cut) }), null, 'the error field alone');

@@ -43,10 +43,11 @@ test("a foreground sample after a Chrome sample starts with the front window act
     left = 0;
   };
   const start = await foregroundStart(w.desktop, EDITOR, w.deps);
-  assert.deepEqual(start, { activated_front: true, popups_at_start: 1, quiet: true, waited_ms: 40 });
-  assert.equal(w.log[0], 'focusFront', 'the focus moved before the quiet check');
+  // the popup Chrome had open while active is recorded: the route's activation would have closed it inside the span
+  assert.deepEqual(start, { activated_front: true, popups_while_active: 1, popups_at_start: 1, quiet: true, waited_ms: 40 });
+  assert.deepEqual(w.log.slice(0, 2), ['popups 1a00002', 'focusFront'], 'read while Chrome was active, then the focus moved, before the quiet check');
   // the popups looked for are those of the run's other clients only: Chrome's, not the target's or the front's
-  assert.ok(w.log.slice(1).every((l) => l === 'popups 1a00002'));
+  assert.ok(w.log.filter((l) => l !== 'focusFront').every((l) => l === 'popups 1a00002'));
 });
 
 test("the differential run and the dedicated safety case start a foreground sample this way, outside the witness's span", async () => {

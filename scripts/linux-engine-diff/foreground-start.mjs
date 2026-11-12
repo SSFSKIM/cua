@@ -24,8 +24,9 @@ const openPopups = (ids) => JSON.parse(xprobe(['popups', ...ids])).popups;
  * of its registered windows (`desktop.windows`) less the target's and the front window's. When one of them holds the
  * active window, the front window takes it back (`desktop.focusFront`, as every condition leaves it); a window of the
  * target's own client stays active (a case that activated its target, or Chrome in front on purpose). Then it waits,
- * at most `boundMs`, until none of those clients has a popup open. Returns the sample's record
- * (`{activated_front, quiet, waited_ms, open?}`; `open` the popups still open at the bound, after which the sample
+ * at most `boundMs`, until none of those clients has a popup open. Returns the sample's record (`{activated_front,
+ * popups_while_active?, popups_at_start, quiet, waited_ms, open?}`: the popups open while another client held the
+ * focus, those open once the front window had it, and `open` those still open at the bound, after which the sample
  * goes on), or null for a run with no other client. `active`, `popups`, `sleep` and `now` are given only by the tests.
  */
 export async function foregroundStart(desktop, target, { active = activeWindow, popups = openPopups, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, boundMs = 1000, pollMs = 20 } = {}) {
@@ -35,16 +36,18 @@ export async function foregroundStart(desktop, target, { active = activeWindow, 
     if (Number.isSafeInteger(id) && id > 0 && !exempt.has(clientOf(id)) && !others.has(clientOf(id))) others.set(clientOf(id), id);
   }
   if (others.size === 0) return null;
+  const ids = [...others.values()];
   const activatedFront = Boolean(desktop.front?.id) && others.has(clientOf(active()));
+  // the popups the client that held the focus had open: each one the route's activation would have closed in the span
+  const before = activatedFront ? popups(ids).length : null;
   if (activatedFront) desktop.focusFront();
   // the quiet wait's own time, from the front window's activation on
   const now0 = now();
-  const ids = [...others.values()];
   let open = popups(ids);
   const atStart = open.length;
   while (open.length && now() - now0 < boundMs) {
     await sleep(pollMs);
     open = popups(ids);
   }
-  return { activated_front: activatedFront, popups_at_start: atStart, quiet: open.length === 0, waited_ms: Math.round(now() - now0), ...(open.length ? { open } : {}) };
+  return { activated_front: activatedFront, ...(activatedFront ? { popups_while_active: before } : {}), popups_at_start: atStart, quiet: open.length === 0, waited_ms: Math.round(now() - now0), ...(open.length ? { open } : {}) };
 }

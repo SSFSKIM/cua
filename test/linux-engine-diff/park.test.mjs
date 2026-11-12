@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { ParkRefused, ROOT, parkOnFront, parkPointer, parkVerdict } from '../../scripts/linux-engine-diff/park.mjs';
+import { ParkRefused, ROOT, displayTools, parkAt, parkOnFront, parkPointer, parkVerdict, restorePointer } from '../../scripts/linux-engine-diff/park.mjs';
 
 const WRITER = 0x2a00007;
 const FRAME = 0x400012;
@@ -55,4 +55,68 @@ test("the front window parks the pointer on the run's own window, verified, and 
   assert.deepEqual(moves, [{ x: 1170, y: 715 }]);
   assert.deepEqual(reading.chain, [0x40001f, 0xe0000c]);
   assert.equal(parkOnFront({ front: null }), null);
+});
+
+// a run's desktop as parkAt reads it: its windows, what is on top at a point (`xprobe top-at`), and which it still owns
+function desktopWith(top, { owned = [WRITER] } = {}) {
+  const asked = [];
+  return {
+    asked,
+    windows: [{ id: WRITER }, { id: null }, { id: 0xe0000c }],
+    topAt: (point, ids) => (asked.push({ point, ids }), top),
+    liveOwned: (id) => owned.includes(id),
+  };
+}
+
+test("parkAt parks over the run's window on top at the point, or the bare root where none is, verified there", () => {
+  const point = { x: 400, y: 300 };
+  const moves = [];
+  const over = desktopWith({ top: FRAME, holds: WRITER });
+  const reading = parkAt(over, point, { move: (p) => moves.push(p), read: () => ({ x: 400, y: 300, same_screen: true, chain: [FRAME, WRITER] }) });
+  assert.deepEqual(reading.chain, [FRAME, WRITER]);
+  assert.deepEqual(moves, [point]);
+  assert.deepEqual(over.asked, [{ point, ids: [WRITER, 0xe0000c] }], "only the run's windows with ids are asked about");
+  // nothing on top: the bare root is meant, so a window that turns up under the pointer is refused
+  const bare = desktopWith({ top: 0 });
+  assert.deepEqual(parkAt(bare, point, { move: () => {}, read: () => ({ x: 400, y: 300, chain: [] }) }).chain, []);
+  assert.throws(() => parkAt(bare, point, { move: () => {}, read: () => ({ x: 400, y: 300, chain: [WRITER] }) }), (e) => e instanceof ParkRefused && /not on the bare root/.test(e.message));
+  // the run's window on top, but the pointer landed elsewhere
+  assert.throws(() => parkAt(over, point, { move: () => {}, read: () => ({ x: 400, y: 300, chain: [0x600003] }) }), (e) => e instanceof ParkRefused && /not over window 0x02a00007/.test(e.message));
+});
+
+test("parkAt refuses, unmoved, a point under another's window or a window of the run's it no longer owns", () => {
+  const point = { x: 400, y: 300 };
+  const fail = () => assert.fail('the pointer must not move');
+  assert.throws(() => parkAt(desktopWith({ top: 0x600003, holds: null }), point, { move: fail, read: fail }), (e) => e instanceof ParkRefused && /\(400, 300\) is over a window the run did not open/.test(e.message));
+  assert.throws(() => parkAt(desktopWith({ top: FRAME, holds: WRITER }, { owned: [] }), point, { move: fail, read: fail }), (e) => e instanceof ParkRefused && /did not open/.test(e.message));
+});
+
+test("a restore puts the pointer back verified, and one refused is recorded as a skip, never a failure", () => {
+  const skips = [];
+  const over = { ...desktopWith({ top: FRAME, holds: WRITER }), skip: (what, window, reason) => skips.push({ what, window, reason }) };
+  const point = { x: 300, y: 200 };
+  assert.deepEqual(restorePointer(over, point, { move: () => {}, read: () => ({ x: 300, y: 200, chain: [FRAME, WRITER] }) }).chain, [FRAME, WRITER]);
+  assert.deepEqual(skips, []);
+  assert.equal(restorePointer(over, point, { move: () => {}, read: () => ({ x: 300, y: 200, chain: [0x600003] }) }), null);
+  assert.equal(skips.length, 1);
+  assert.equal(skips[0].what, 'pointer restore');
+  assert.equal(skips[0].window, '(300, 200)');
+  assert.match(skips[0].reason, /not over window 0x02a00007/);
+  // another's window at the point: refused unmoved, and recorded the same way
+  const fail = () => assert.fail('the pointer must not move');
+  assert.equal(restorePointer({ ...desktopWith({ top: 0x600003, holds: null }), skip: (what) => skips.push({ what }) }, point, { move: fail, read: fail }), null);
+  assert.equal(skips.length, 2);
+  // anything but a refused park is the run's failure
+  assert.throws(() => restorePointer(over, point, { move: () => { throw new Error('the display is gone'); } }), /the display is gone/);
+});
+
+test("a park on a display of its own moves and reads the pointer there, through the tools' environment", () => {
+  const calls = [];
+  const env = { DISPLAY: ':93' };
+  const tools = displayTools(env, (cmd, args, options) => (calls.push({ cmd, args, env: options.env }), cmd === 'xdotool' ? '' : '{"x":300,"y":300,"same_screen":true,"chain":[]}'));
+  assert.deepEqual(parkPointer({ x: 300, y: 300 }, ROOT, tools).chain, []);
+  assert.deepEqual(calls.map((c) => [c.cmd.endsWith('xprobe') ? 'xprobe' : c.cmd, c.args, c.env.DISPLAY]), [
+    ['xdotool', ['mousemove', '300', '300'], ':93'],
+    ['xprobe', ['pointer-chain'], ':93'],
+  ]);
 });

@@ -32,6 +32,7 @@ import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
 import { probeAt } from './role-probe.mjs';
 import { ROOT, frontPoint, parkPointer, parkVerdict, readPointer } from './park.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { openScene } from './run.mjs';
 import { FIT_MARGIN, SCREEN, configure } from './scenes.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -640,12 +641,13 @@ export async function runDropSignals(args, { desktop, emit }) {
         for (let k = 0; k < n; k++) ballast.push(await openScene(desktop, name, `ballast${k}`, { text: ['chrome-textarea', 'chrome-address-bar'].includes(name) }));
       }
     }
-    scene = await openFamily(desktop, oracle, family, 'dropsig', { page: PAGE });
+    // the family's application verified before any cell counts (app-identity.mjs)
+    scene = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, 'dropsig', { page: PAGE }), family);
     scene.kindOf = 'page';
     // the `other` cell's window: another of the run's browser windows, the same page, right of the scene's, below the
     // root cell's end
     if (specs.some((s) => splitCell(s.cell).base === 'other')) {
-      other = await openFamily(desktop, oracle, family, 'dropsig-other', { page: PAGE });
+      other = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, 'dropsig-other', { page: PAGE }), family);
       configure(other.id, ...OTHER_PLACE);
       await sleep(1000);
     }

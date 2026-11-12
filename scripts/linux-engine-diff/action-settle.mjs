@@ -56,7 +56,8 @@ import { CHROMIUM, pasteTexts, seriesVerdict } from './focus-timer.mjs';
 import { preorder } from './normalize.mjs';
 import { parseInputStatus } from './ops.mjs';
 import { Oracle } from './oracle.mjs';
-import { verifyIdentity } from './app-identity.mjs';
+import { verifiedScene } from './app-identity.mjs';
+import { parkPointer } from './park.mjs';
 import { LIBREOFFICE_FAMILIES, vclDrawn } from './vcl-aim.mjs';
 import { Desktop, a11yBusAddress, activeWindow, desktopEnding } from './scenes.mjs';
 import { median } from './stats.mjs';
@@ -330,9 +331,10 @@ async function prepareRun(ctx, cell, sc, svc, trial) {
     } else run.point = cell.kind === 'move' ? sc.points.move[turn(sc, 'move')] : sc.points.click[trial % 2];
     if (effects === 'screen') await clearScreen(ctx, sc);
   } else if (cell.kind === 'move_relative') {
-    // the pointer over the pad's middle first (the harness's own move, through xdotool), then 40 px either way
-    const [x, y] = [sc.origin.x + 500, sc.origin.y + 150];
-    xdotool('mousemove', '--sync', String(x), String(y));
+    // the pointer over the pad's middle first (the harness's own move), verified there over the scene's window, which
+    // the desktop route's cell has active and on top (park.mjs `parkPointer`: a park elsewhere refuses the run), then
+    // 40 px either way
+    parkPointer({ x: sc.origin.x + 500, y: sc.origin.y + 150 }, sc.id);
     run.dx = trial % 2 ? -40 : 40;
   } else if (cell.kind === 'scroll') {
     run.point = sc.points.scroll;
@@ -713,9 +715,9 @@ async function openScene(ctx, name) {
   // the family's own size asked for, so a browser opens at it and not maximized (families.mjs: Firefox's first window)
   const sc = await openFamily(desktop, oracle, def.family, `settle-${name}`, { geometry: FAMILIES[def.family].geometry, ...(def.page ? { page: def.page } : {}) });
   Object.assign(sc, { name, effects: def.effects });
-  // LibreOffice's module verified before any cell of it counts: one application serves Writer, Calc and Impress alike
-  // (app-identity.mjs)
-  if (LIBREOFFICE_FAMILIES.includes(def.family)) sc.identity = verifyIdentity(oracle, sc, def.family);
+  // the family's application verified before any cell of it counts, LibreOffice's module included: one application
+  // serves Writer, Calc and Impress alike (app-identity.mjs)
+  await verifiedScene(desktop, oracle, sc, def.family);
   const state = await desktop.state(sc);
   sc.origin = state.window;
   sc.treeSource = state.ax_tree_source;

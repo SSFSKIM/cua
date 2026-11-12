@@ -24,6 +24,7 @@ import { readFileSync } from 'node:fs';
 import { DRAG_DOC, verticalScrollBar } from './drag.mjs';
 import { Engine } from './engine.mjs';
 import { FAMILIES, familyNames, openFamily, readGtk4Status, readQtCounts } from './families.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { Oracle } from './oracle.mjs';
 import { captureWindow, pixelsChanged } from './pixels.mjs';
 import { negativeCheck } from './run.mjs';
@@ -332,7 +333,8 @@ export async function runKinds(args, { desktop, emit }) {
           // enough to scroll everywhere else
           const doc = FAMILIES[family].kind === 'terminal' ? null : DRAG_DOC;
           // a terminal's recorder reports every motion (mode 1003) as well as the buttons and the wheel
-          scenes[l.label] = await openFamily(desktop, oracle, family, `kinds${l.label.replace(/[^a-z0-9]+/gi, '')}`, { page, doc, env, geometry, motion: true });
+          // the window's application verified as the family's before its cells count (app-identity.mjs)
+          scenes[l.label] = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, `kinds${l.label.replace(/[^a-z0-9]+/gi, '')}`, { page, doc, env, geometry, motion: true }), family);
           if (page) scenes[l.label].kindOf = 'page';
           // an editor's or a document's effect is its vertical scroll bar's value, where it has one
           if (!['terminal', 'gtk4-input', 'qt-input', 'qt-style'].includes(scenes[l.label].kindOf) && !page && !scenes[l.label].pixels) {

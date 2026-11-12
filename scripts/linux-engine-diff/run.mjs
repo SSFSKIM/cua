@@ -18,7 +18,9 @@ import { fileURLToPath } from 'node:url';
 
 import { runTmp } from './app-env.mjs';
 import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace, startProxy, watchAncestry } from './audit.mjs';
+import { verifySceneIdentity } from './app-identity.mjs';
 import { auditForeign, foreignLine } from './foreign.mjs';
+import { foregroundStart } from './foreground-start.mjs';
 import { startMonitor } from './busmon.mjs';
 import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
@@ -365,10 +367,15 @@ async function measureSample(s, ctx) {
   // a cua text command's route is known beforehand: its witness is judged against it and the route the engine reports
   // taking (Decision Log, M2.2); a vendor build's is judged strictly
   const expected = VENDORS.includes(s.label) ? null : routeOf(op, s.sceneName);
+  // a foreground-route sample starts, outside its span, with the front window active and the other clients' popups
+  // closed (foreground-start.mjs), every lane alike: a client a previous sample left active closes its popups as the
+  // route's activation takes the focus from it, which the witness would count inside the span
+  const started = witness && target && routeOf(op, s.sceneName) === 'foreground' ? await foregroundStart(s.desktop, target.id) : null;
   const answered = witness && target && (isText(op) || isDevice(op)) ? await routeWitness(witness, tag, target.id, expected, send, { inFront: OPS[op].inFront === true, opensWindows: command === 'click' && input.mouse_button === 'right', pointerMoves: OPS[op].pointerMoves === true }) : await span(tag, send);
   const { response, ms, sinceSpawnMs, stats } = answered.value;
   const row = { kind: 'sample', engine: s.label, scene: s.sceneName, op, block: s.block, series: i === 0 ? 'cold' : 'warm', i };
   if (expected) row.route_expected = expected;
+  if (started) row.foreground_start = started;
   row.ms = Math.round((i === 0 && startedInSpan ? sinceSpawnMs : ms) * 100) / 100;
   row.timed = i === 0 && startedInSpan ? 'spawn' : 'request';
   row.request_ms = Math.round(ms * 100) / 100;
@@ -647,10 +654,69 @@ export function launchEntry(dir) {
 }
 
 /**
+ * The gate's ballast (`--ballast gate`, a verdict run's): dnd.mjs's `GATE_BALLAST`, the Chrome windows a full verdict
+ * run has open, opened as the run opens its scenes (`open(scene, role, {text})`, `openScene`). Chrome's take latency
+ * rises with its window load, so a verdict run split into steps carries the full run's load into the step that drags
+ * in Chrome. They stay open to the run's end and close with every window of the run. Returns the windows.
+ */
+export async function openGateBallast({ open }) {
+  const { GATE_BALLAST } = await import('./dnd.mjs');
+  const windows = [];
+  for (const [scene, n] of Object.entries(GATE_BALLAST)) {
+    for (let k = 0; k < n; k++) windows.push(await open(scene, `ballast${k}`, { text: ['chrome-textarea', 'chrome-address-bar'].includes(scene) }));
+  }
+  return windows;
+}
+
+/**
+ * The family whose application each scene's windows must show (app-identity.mjs `APP_IDENTITY`), by the opener behind
+ * the scene (`openScene`).
+ */
+export const SCENE_FAMILY = {
+  gedit: 'gedit',
+  minimized: 'gedit',
+  chrome: 'chrome',
+  'chrome-input': 'chrome',
+  'chrome-textarea': 'chrome',
+  'chrome-address-bar': 'chrome',
+  'over-budget': 'chrome',
+  'big-text': 'chrome',
+  retention: 'chrome',
+  identity: 'chrome',
+  'device-chrome': 'chrome',
+  'device-chrome-dnd': 'chrome',
+  'device-firefox': 'firefox',
+  'gnome-text-editor': 'gnome-text-editor',
+  'device-gtk4': 'gtk4-input',
+  'device-xterm': 'xterm',
+  'minimized-xterm': 'xterm',
+  'minimized-recorder': 'recorder',
+  'device-qt': 'kate',
+  'identity-kate': 'kate',
+  'identity-gtk3': 'identity-gtk3',
+  'identity-gtk4': 'identity-gtk4',
+  'gtk-table': 'gtk-table',
+  calc: 'calc',
+};
+
+/**
+ * Opens one window of a scene (`openSceneWindow`), and verifies its application as the scene's family's
+ * (`SCENE_FAMILY`; app-identity.mjs `verifySceneIdentity`) before any of its samples counts: a scene that is not is
+ * refused (`IdentityRefused`) and the run stops. The identity read is kept on the scene (`identity`).
+ */
+export async function openScene(desktop, scene, role, options = {}) {
+  const opened = await openSceneWindow(desktop, scene, role, options);
+  const { wmClass } = await import('./families.mjs');
+  desktop.oracle ??= new Oracle();
+  opened.identity = await verifySceneIdentity(desktop, desktop.oracle, opened, SCENE_FAMILY[scene], { wmClassOf: wmClass });
+  return opened;
+}
+
+/**
  * Opens one window of a scene: gedit on a scratch file, a harness page in Chrome, a family's application; M2's text
  * scenes with their field resolved (text.mjs).
  */
-export async function openScene(desktop, scene, role, { text = false } = {}) {
+async function openSceneWindow(desktop, scene, role, { text = false } = {}) {
   if (scene === 'gedit') {
     const opened = await desktop.openGedit(role, GEDIT_TEXT);
     opened.originalLength = (await desktop.geditText(opened)).length;
@@ -977,6 +1043,7 @@ async function diffRun(args, candidate, { handoff }) {
     samples_tree: args.samplesTree,
     samples_input: args.samplesInput,
     occlusion: args.occlusion,
+    ...(args.ballast ? { ballast: args.ballast } : {}),
     started: new Date().toISOString(),
   });
   // Every scene label of this run: equivalent windows differ in their own label and list each other's (gedit's
@@ -999,12 +1066,19 @@ async function diffRun(args, candidate, { handoff }) {
     if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
     const launch = plan.some((p) => OPS[p.op].apps) ? launchEntry(desktop.dir) : null;
     if (launch) desktop.launchCount = launch.count;
+    // the gate's ballast before the step's scenes, open to the run's end (`openGateBallast`)
+    if (args.ballast === 'gate') await openGateBallast({ open: (scene, role, options) => openScene(desktop, scene, role, options) });
     // Scenes: one shared window per scene for tree reads, one window per engine for screenshots and input.
     const windows = {};
     for (const scene of args.scenes.filter((s) => s !== 'desktop')) {
       // the safety cases open windows of their own (safety.mjs)
       const ops = blockPlan.filter((p) => p.scene === scene).map((p) => p.op);
-      const open = (role, text = false) => openScene(desktop, scene, role, { text });
+      // each window's application verified as the scene's family's (`openScene`), and recorded
+      const open = async (role, text = false) => {
+        const opened = await openScene(desktop, scene, role, { text });
+        emit({ kind: 'scene-identity', scene, role, family: SCENE_FAMILY[scene], identity: opened.identity });
+        return opened;
+      };
       windows[scene] = { shared: ops.some((op) => !ownWindow(op)) ? await open('read') : null, own: {}, text: {} };
       // each engine that runs one of the scene's own-window operations gets its own window
       for (const label of labels.filter((l) => ops.some((op) => ownWindow(op) && !isText(op) && runsOp(l, op)))) {

@@ -21,6 +21,7 @@
 // before the move (scenes.mjs `pointerSafeAt`): a park point over another's window stops the run unmoved.
 
 import { PAGE as DRAG_PAGE, DRAG_DOC, locate, selectionCovers, series as dragSeries, verticalScrollBar } from './drag.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { FAMILIES, openFamily } from './families.mjs';
 import { hoverTarget, series as kindSeries } from './kinds.mjs';
 import { Oracle } from './oracle.mjs';
@@ -288,7 +289,9 @@ async function openGroup(desktop, oracle, family, group, label) {
     scene.scrollbar = await verticalScrollBar(desktop, oracle, scene).catch(() => null);
     scene.hover = await hoverTarget(desktop, oracle, scene);
   }
-  return scene;
+  // the family's application verified before any of its runs counts, T19's and the gate manifest's (predicates.mjs)
+  // alike (app-identity.mjs)
+  return verifiedScene(desktop, oracle, scene, family);
 }
 
 /**

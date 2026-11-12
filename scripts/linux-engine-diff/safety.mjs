@@ -24,7 +24,10 @@ import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 
 import { clipRead, grabsIn, startOwner, toplevel, waitQuarantineOver, watchGrabs, within } from './clip.mjs';
+import { verifiedScene, verifySceneIdentity } from './app-identity.mjs';
 import { Engine } from './engine.mjs';
+import { wmClass } from './families.mjs';
+import { foregroundStart } from './foreground-start.mjs';
 import { PAGES } from './scenes.mjs';
 import {
   CHANGED,
@@ -252,8 +255,17 @@ export class Cases {
     return owner;
   }
 
-  /** A paste-target window, closed when the case ends unless the case closed it. */
-  target(mode) {
+  /**
+   * A paste-target window, closed when the case ends unless the case closed it, and verified as the harness's GTK 3
+   * paste target before the case counts (app-identity.mjs; a window refused is closed with the case).
+   */
+  async target(mode) {
+    const scene = await this.openTarget(mode);
+    scene.identity = await verifySceneIdentity(this.desktop, this.oracle, scene, 'paste-target', { wmClassOf: wmClass });
+    return scene;
+  }
+
+  openTarget(mode) {
     return openTarget(this.desktop, mode, (scene) =>
       this.defer(async () => {
         if (this.desktop.windows.includes(scene)) await this.desktop.close([scene]);
@@ -280,7 +292,8 @@ export class Cases {
     const { resolveField } = await import('./text.mjs');
     const scene = await this.desktop.openChrome(role, 'text.html', { stem: 'case', query: `paste=${paste}` });
     await resolveField(this.desktop, scene, 'chrome-textarea');
-    return scene;
+    // the run's Chrome, verified before the case counts (app-identity.mjs)
+    return verifiedScene(this.desktop, this.oracle, scene, 'chrome');
   }
 
   focusFirst(scene) {
@@ -573,6 +586,9 @@ export class Cases {
     await sleep(300);
     const marker = `cua171-${op}-${stamp()}`;
     const expected = dedicated ? 'foreground' : 'background';
+    // the foreground route's start, outside the span: the other clients' popups closed (foreground-start.mjs; the
+    // target, activated above, stays active)
+    const started = dedicated ? await foregroundStart(this.desktop, scene.id) : null;
     const span = await routeWitness(this.witness, `case:${op}`, scene.id, expected, () => engine.request('type_text', { window: { id: scene.id }, element_id: scene.field, text: marker }));
     await sleep(300);
     const after = textOf(this.oracle, scene.field);
@@ -598,7 +614,7 @@ export class Cases {
     }
     // the expected route, then its allowance (judgeRouteSpan): a route other than the expected one fails here
     if (!span.judged.clean) reasons.push(`the witness changed beyond the ${expected} route's allowance (${span.judged.fields.join(', ')})`);
-    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, route_expected: expected, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), witness_restacks: (span.report?.restacks ?? []).slice(0, 30), witness_focus: (span.report?.focus ?? []).slice(0, 30), paste });
+    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, route_expected: expected, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), witness_restacks: (span.report?.restacks ?? []).slice(0, 30), witness_focus: (span.report?.focus ?? []).slice(0, 30), paste, ...(started ? { foreground_start: started } : {}) });
   }
 }
 

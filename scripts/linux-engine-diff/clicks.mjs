@@ -12,6 +12,8 @@
 
 import { Engine } from './engine.mjs';
 import { openFamily, readCounter, readText } from './families.mjs';
+import { verifiedScene } from './app-identity.mjs';
+import { restorePointer } from './park.mjs';
 import { counterArrived } from './matrix-judge.mjs';
 import { CUA_CHOICE } from './matrix.mjs';
 import { Oracle } from './oracle.mjs';
@@ -73,8 +75,9 @@ async function gtk4Probe(desktop, oracle, emit, args) {
   const md = ['| window | input | route | arrived |', '|---|---|---|---|'];
   const restore = xdotool('getmouselocation', '--shell');
   const pointer = Object.fromEntries(restore.split('\n').map((l) => l.split('=')));
-  const editor = await openFamily(desktop, oracle, 'gnome-text-editor', 'probe');
-  const button = await openFamily(desktop, oracle, 'gtk4-button', 'probe');
+  // each window's application verified as its family's before the probe counts (app-identity.mjs)
+  const editor = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, 'gnome-text-editor', 'probe'), 'gnome-text-editor');
+  const button = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, 'gtk4-button', 'probe'), 'gtk4-button');
   const spike = new Engine({ label: 'cua', bin: args.cua, args: CUA_CHOICE }).start();
   const record = (window, input, route, before, after, arrived) => {
     emit({ kind: 'gtk4-probe', window, input, route, before, after, arrived });
@@ -119,8 +122,9 @@ async function gtk4Probe(desktop, oracle, emit, args) {
   } finally {
     await spike.close();
     const back = { x: Number(pointer.X), y: Number(pointer.Y) };
-    if (desktop.pointerSafeAt(back)) xdotool('mousemove', back.x, back.y);
-    else desktop.skip('pointer restore', `(${back.x}, ${back.y})`, 'that place is under a window the run did not open');
+    // only onto the root or a live window of the run's, verified where it landed; a restore refused is a skip
+    // (park.mjs `restorePointer`)
+    restorePointer(desktop, back);
     desktop.focusFront();
     await desktop.close([editor, button]);
   }
@@ -145,7 +149,7 @@ export async function elementClick(desktop, emit, args) {
       for (const condition of conditions) {
         const scenes = {};
         try {
-          for (const e of engines(args)) scenes[e.label] = await openFamily(desktop, oracle, family, `${e.label}${condition}`);
+          for (const e of engines(args)) scenes[e.label] = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, `${e.label}${condition}`), family);
           desktop.arrangeFront(condition);
           await sleep(1000);
           for (const spec of engines(args)) {
@@ -249,7 +253,7 @@ export async function partialCover(desktop, emit, args) {
   try {
     if (!(await negativeCheck(desktop, witness, stubScene, emit))) throw new Error('the witness did not fail the activating stub; the run is invalid');
     const geometry = args.geometry ?? null;
-    for (const e of engines(args)) scenes[e.label] = await openFamily(desktop, oracle, 'firefox', `${e.label}cover`, { geometry });
+    for (const e of engines(args)) scenes[e.label] = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, 'firefox', `${e.label}cover`, { geometry }), 'firefox');
     const ctx = { desktop, oracle, witness, emit };
     const first = scenes[engines(args)[0].label];
     emit({ kind: 'partial-cover-window', geometry, window: first.window });

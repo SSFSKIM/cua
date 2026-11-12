@@ -116,6 +116,7 @@ fn main() {
         Some("ancestry") => ancestry::ancestry(&args[1..]),
         Some("pointer-chain") => pointer::pointer_chain(&args[1..]),
         Some("top-at") => restack::top_at_cmd(&args[1..]),
+        Some("popups") => restack::popups(&args[1..]),
         Some("restack-grabbed") => restack::restack_grabbed(&args[1..]),
         Some("popup") => restack::popup(&args[1..]),
         Some("overlay") => restack::overlay(&args[1..]),

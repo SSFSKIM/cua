@@ -9,6 +9,8 @@
 //! - `xprobe top-at <x> <y> [<window>...]`: `{"top":…,"holds":…}`, the topmost viewable root child covering a screen
 //!   point (0 for none: the root), and which of the given windows lies in it (null for none). The harness reads it
 //!   before it moves the pointer there.
+//! - `xprobe popups <window>...`: `{"popups":[…]}`, the viewable override-redirect root children of the clients the
+//!   windows belong to: a foreground sample starts once the run's Chrome has none open (`foregroundStart`).
 //! - `xprobe restack-grabbed <window>...`: under one server grab, raises each window in turn (`ConfigureWindow`
 //!   stack mode `Above`), the harness's coalesced negative check.
 //! - `xprobe popup <x> <y> <width> <height> <ms>`: an override-redirect window of xprobe's own, mapped for `ms` and
@@ -176,6 +178,40 @@ pub fn toplevel(args: &[String]) -> Result<()> {
     let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     println!("{{\"toplevel\":{}}}", toplevel_of(&conn, root, window)?);
+    Ok(())
+}
+
+/// The X server's resource range of one client: a window id with its resource bits cleared (`witness.mjs`
+/// `CLIENT_MASK`).
+const CLIENT_MASK: u32 = 0x1f_ffff;
+
+/// The viewable override-redirect root children of the clients the given windows belong to: `{"popups":[…]}`, the
+/// ones open now (a client's own popups, menus and tooltips, which it may close when it loses the focus).
+pub fn popups(args: &[String]) -> Result<()> {
+    if args.is_empty() {
+        return Err("popups <window>...".into());
+    }
+    let clients = args
+        .iter()
+        .map(|a| crate::parse_window(a).map(|w| w & !CLIENT_MASK))
+        .collect::<Result<Vec<_>>>()?;
+    let (conn, screen) = crate::xconnect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let children = conn.query_tree(root)?.reply()?.children;
+    let ours: Vec<Window> = children.into_iter().filter(|w| clients.contains(&(w & !CLIENT_MASK))).collect();
+    let attributes = ours
+        .iter()
+        .map(|&w| conn.get_window_attributes(w))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut open = Vec::new();
+    for (&id, a) in ours.iter().zip(attributes) {
+        // a window destroyed since the tree was read is not open
+        let Ok(a) = a.reply() else { continue };
+        if a.override_redirect && a.map_state == MapState::VIEWABLE {
+            open.push(id.to_string());
+        }
+    }
+    println!("{{\"popups\":[{}]}}", open.join(","));
     Ok(())
 }
 

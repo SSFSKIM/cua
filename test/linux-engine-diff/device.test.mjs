@@ -338,16 +338,28 @@ test("a case's pointer goes only onto the root or a live window of the run's, re
     const calls = [];
     const disposals = [];
     const skips = [];
+    // the pointer lands where it is moved, over the scene's window (its frame, then its client)
+    let at = { x: 300, y: 200 };
     const tool = (...args) => {
       calls.push(args.join(' '));
+      if (args[0] === 'mousemove') at = { x: args[1], y: args[2] };
       return args[0] === 'getmouselocation' ? 'X=300\nY=200\nSCREEN=0\nWINDOW=7\n' : '';
     };
+    const read = () => ({ ...at, same_screen: true, chain: [0x41, 0x42] });
     let blocked = unsafe;
-    const desktop = { pointerSafeAt: (p) => !blocked.some((b) => b.x === p.x && b.y === p.y), skip: (what, window, reason) => skips.push(what) };
+    const isBlocked = (p) => blocked.some((b) => b.x === p.x && b.y === p.y);
+    // the scene's window 0x42 on top at every point not blocked, another's (0x99) where blocked
+    const desktop = {
+      pointerSafeAt: (p) => !isBlocked(p),
+      skip: (what, window, reason) => skips.push(what),
+      windows: [{ id: 0x42 }],
+      topAt: (p) => (isBlocked(p) ? { top: 0x99, holds: null } : { top: 0x41, holds: 0x42 }),
+      liveOwned: (id) => id === 0x42,
+    };
     const ctx = { desktop, dispose: (fn) => disposals.push(fn) };
     let error = null;
     try {
-      parkPointer(ctx, { x: 600, y: 600 }, { tool });
+      parkPointer(ctx, { x: 600, y: 600 }, { tool, read });
     } catch (e) {
       error = e;
     }
@@ -366,4 +378,19 @@ test("a case's pointer goes only onto the root or a live window of the run's, re
   const stays = run({ later: [{ x: 300, y: 200 }, { x: 1170, y: 715 }] });
   assert.deepEqual(stays.moves, ['mousemove 600 600']);
   assert.deepEqual(stays.skips, ['pointer restore']);
+});
+
+test("a case's park is verified where it landed, over the run's window on top at the point, and refused elsewhere", async () => {
+  const { parkPointer } = await import('../../scripts/linux-engine-diff/device.mjs');
+  const { ParkRefused } = await import('../../scripts/linux-engine-diff/park.mjs');
+  const tool = (...args) => (args[0] === 'getmouselocation' ? 'X=300\nY=200\nSCREEN=0\nWINDOW=7\n' : '');
+  // the cover over the scene's bottom half (`UNDER`) is the run's window on top there, so it is the one meant
+  const desktop = { pointerSafeAt: () => true, windows: [{ id: 0x42 }, { id: 0x50 }], topAt: () => ({ top: 0x51, holds: 0x50 }), liveOwned: () => true };
+  const ctx = { desktop, dispose: () => {} };
+  assert.deepEqual(parkPointer(ctx, { x: 700, y: 650 }, { tool, read: () => ({ x: 700, y: 650, chain: [0x51, 0x50] }) }).chain, [0x51, 0x50]);
+  // the pointer under the scene, not the cover: a park the case did not mean
+  assert.throws(() => parkPointer(ctx, { x: 700, y: 650 }, { tool, read: () => ({ x: 700, y: 650, chain: [0x41, 0x42] }) }), (e) => e instanceof ParkRefused && /not over window 0x00000050/.test(e.message));
+  // nothing on top at the point: the bare root is meant
+  const bare = { ...desktop, topAt: () => ({ top: 0 }) };
+  assert.throws(() => parkPointer({ desktop: bare, dispose: () => {} }, { x: 1, y: 1 }, { tool, read: () => ({ x: 1, y: 1, chain: [0x42] }) }), /not on the bare root/);
 });

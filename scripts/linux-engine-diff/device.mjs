@@ -46,6 +46,7 @@ import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
 import { MINIMIZED_OPS, MINIMIZED_SCENE_OPS, judgeMinimized } from './minimized.mjs';
 import { stacking, startOverlay } from './clip.mjs';
+import { parkAt, restorePointer } from './park.mjs';
 import { activeWindow, configure, xdotool } from './scenes.mjs';
 import { spawnXdotool } from './xtools.mjs';
 
@@ -259,17 +260,21 @@ const OUTSIDE = { x: 1170, y: 715 };
  * a live window of the run's, read at its point just before the move (scenes.mjs `pointerSafeAt`): a motion into
  * another's window, a popup of the person's Chrome over the scene included, is a change of it (T4b's audit round). A
  * park point under another's window fails the case unmoved; a place to go back to under another's falls back to the
- * front window's middle, and with that under another's too, the pointer stays and the skip is recorded.
+ * front window's middle, and with that under another's too, the pointer stays and the skip is recorded. The park is
+ * verified where it landed (park.mjs `parkAt`): over the run's window on top at the point (the scene, the cover over
+ * it, the front window), or the bare root where none is; a park that did not land there throws `ParkRefused`, and the
+ * case is not run. Returns the park's reading. `read` (the pointer's reading) is given only by the tests.
  */
-export function parkPointer(ctx, point, { tool = xdotool } = {}) {
+export function parkPointer(ctx, point, { tool = xdotool, read } = {}) {
   const found = pointerAt(tool);
   if (!ctx.desktop.pointerSafeAt(point)) throw new Error(`the pointer's park point (${point.x}, ${point.y}) is over a window the run did not open: the case is not run`);
   ctx.dispose(() => {
     const back = [found, OUTSIDE].find((p) => ctx.desktop.pointerSafeAt(p));
-    if (back) tool('mousemove', back.x, back.y);
+    // verified where it landed, a restore refused recorded as a skip (park.mjs `restorePointer`)
+    if (back) restorePointer(ctx.desktop, back, { move: (p) => tool('mousemove', p.x, p.y), ...(read ? { read } : {}) });
     else ctx.desktop.skip('pointer restore', `(${found.x}, ${found.y})`, 'that place and the front window\'s middle are under a window the run did not open');
   });
-  tool('mousemove', point.x, point.y);
+  return parkAt(ctx.desktop, point, { move: (p) => tool('mousemove', p.x, p.y), ...(read ? { read } : {}) });
 }
 /**
  * Where a Chromium case that takes the background route parks the real pointer, window-relative, away from every path

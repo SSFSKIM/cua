@@ -20,7 +20,7 @@ DEVICE=cua-171
 cd "$WT" || exit 2
 part=$1
 SHA=$(git rev-parse HEAD)
-DIRTY=$(git status --porcelain)
+DIRTY=$(git status --porcelain | grep -v "^?? node_modules$")  # the node_modules symlink is the checkout's own
 if [ "$LABEL" = counted ] && [ -n "$DIRTY" ]; then echo "a counted run needs a clean tree" >&2; exit 2; fi
 case "$part" in
   parity|baseline|accept|device|services) ;;

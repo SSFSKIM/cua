@@ -71,8 +71,10 @@ try {
   if (!/window id/.test(check)) throw new Error('openbox did not take the private display');
   Object.assign(record, {openbox: wm.pid, environment: Object.fromEntries(['DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR', 'XDG_DATA_DIRS'].map(k => [k, env[k] ?? null]))});
   save();
-  const child = spawn(command, args, {env: {...env, CUA_PARITY_DISPLAY: server.display}, stdio: 'inherit'});
-  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => child.kill(signal));
+  // the suite in a process group of its own, so a stop reaches all of it (a shell's children too), and the desktop is
+  // taken down only once the suite has exited
+  const child = spawn(command, args, {env: {...env, CUA_PARITY_DISPLAY: server.display}, stdio: 'inherit', detached: true});
+  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { try { process.kill(-child.pid, signal); } catch { /* gone */ } });
   const result = await new Promise(done => child.once('exit', (code, signal) => done({code, signal})));
   record.result = result;
   status = result.code ?? 1;

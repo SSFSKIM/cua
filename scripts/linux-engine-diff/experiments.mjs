@@ -21,7 +21,8 @@ import { availableParallelism, loadavg, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { PreparationStopped, candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
-import { electronDropVerdict, judgedElectronPlan } from './drop-signals-judge.mjs';
+import { dropSignalsVerdict, judgedChromePlan, judgedElectronPlan } from './drop-signals-judge.mjs';
+import { RunRefused, runHasRows } from './run.mjs';
 
 import { elementClick, partialCover } from './clicks.mjs';
 import { Engine } from './engine.mjs';
@@ -373,9 +374,17 @@ const LABELLED = new Set(['meta', 'experiment-summary']);
  */
 export async function runExperiment(args, { prepare = prepareCandidate, start = experimentRun } = {}) {
   const run = args.run ?? `${args.experiment}-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
+  // nothing runs, and no candidate is checked, for a run that cannot stand as one execution's or a gate's: a name the
+  // out directory already has rows of (a retry with the same --out and --run would render under the first run's label
+  // and candidate), or a gate step with no judge to fail it
+  const results = join(args.out, 'results.jsonl');
+  if (runHasRows(results, run)) throw new RunRefused(`the run name ${run} already has rows in ${results}: give each execution a --run name of its own`);
+  if (args.gate && args.experiment === 'drop-signals' && !judgedElectronPlan(args) && !judgedChromePlan(args)) {
+    throw new RunRefused(`no gate judge holds the drop-signals plan ${args.plan ?? 'main'} (${args.families?.[0] ?? 'chrome'}): its counts would pass whatever they are; run it as a development run`);
+  }
+  if (args.gate && args.experiment === 'drop-signals' && args.samplesTrials != null) throw new RunRefused('a gate drop-signals step runs its plan whole: --trials caps it (a pilot, a development run)');
   return withExperimentCandidate(args, async (runArgs, record) => {
     mkdirSync(args.out, { recursive: true });
-    const results = join(args.out, 'results.jsonl');
     const gate = Boolean(args.gate);
     const label = gateLabel(gate);
     const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row, ...(LABELLED.has(row.kind) ? { gate, label, ...(row.kind === 'meta' && record ? { candidate: record } : {}) } : {}) })}\n`);
@@ -469,12 +478,13 @@ async function experimentRun(args, { emit, results }) {
       // the drag experiment's judges (T10) and the predicate cases' (T15) fail the run as an incomplete one does; the others
       // report completeness only
       outcome = { complete: result.complete && result.pass !== false, failed: result.failed };
-      // T17's Electron cells are judged (drop-signals-judge.mjs `electronDropVerdict`): a false ok, a missing landing or
-      // a missing cell fails the run; the unconfirmed drops are findings with their counts
-      if (args.experiment === 'drop-signals' && judgedElectronPlan(args)) {
-        const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
-        const judged = electronDropVerdict(rows.filter((r) => r.kind === 'drop-signal'), { specs: rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? [] });
-        emit({ kind: 'electron-drop-verdict', pass: judged.failed.length === 0, failed: judged.failed, findings: judged.findings, counts: judged.counts });
+      // the gate's drop-signals cells are judged (drop-signals-judge.mjs `dropSignalsVerdict`): T17's Electron cells and
+      // T14's Chrome cells. A false ok, an unreported late take, a broken pending contract, a missing landing or a
+      // missing cell fails the run; the unconfirmed drops are findings with their counts. A gate run of any other plan
+      // was refused before it began (`runExperiment`)
+      const judged = args.experiment === 'drop-signals' ? dropSignalsVerdict(args, readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run)) : null;
+      if (judged) {
+        emit({ kind: judged.judge === 'electronDropVerdict' ? 'electron-drop-verdict' : 'chrome-drop-verdict', pass: judged.failed.length === 0, failed: judged.failed, findings: judged.findings, counts: judged.counts });
         md = [...md, ...judged.md];
         outcome = { complete: outcome.complete && judged.failed.length === 0, failed: [...outcome.failed, ...judged.failed] };
       }

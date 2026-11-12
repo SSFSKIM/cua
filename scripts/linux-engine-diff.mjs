@@ -34,13 +34,16 @@ if (args.mode === 'check-wire') {
   await recordWire(args);
 } else if (args.mode === 'experiment') {
   const { runExperiment } = await import('./linux-engine-diff/experiments.mjs');
+  const { RunRefused } = await import('./linux-engine-diff/run.mjs');
   const { CandidateRefused } = await import('./linux-engine-diff/candidate.mjs');
   try {
     process.exit((await runExperiment(args)) ? 0 : 1);
   } catch (error) {
-    // nothing ran: a gate experiment's candidate is not one a gate takes (candidate.mjs)
-    if (!(error instanceof CandidateRefused)) throw error;
-    process.stderr.write(`candidate refused: ${error.message}\n`);
+    // nothing ran: the run's name is taken, a gate step has no judge, or a gate experiment's candidate is not one a gate
+    // takes (candidate.mjs)
+    if (error instanceof RunRefused) process.stderr.write(`run refused: ${error.message}\n`);
+    else if (error instanceof CandidateRefused) process.stderr.write(`candidate refused: ${error.message}\n`);
+    else throw error;
     process.exit(2);
   }
 } else {

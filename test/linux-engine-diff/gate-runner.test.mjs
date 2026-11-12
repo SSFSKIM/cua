@@ -12,6 +12,8 @@ import { GateRefused, checkCheckout, launchCommand, listText, parseGateArgs, pri
 import { FACADE_SCRIPT, GATE_SCENES, MAX_STEP_MINUTES, STEPS, stepArgs, stepNamed, stepScript, suiteEnv, totals, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { planOps } from '../../scripts/linux-engine-diff/run.mjs';
+import { dropSignalsVerdict } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
+import { PREDICATE_KINDS } from '../../scripts/linux-engine-diff/predicates.mjs';
 
 const scratch = mkdtempSync(join(tmpdir(), 'cua171-gate-test-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -102,6 +104,26 @@ test("the coverage the gate names: T7 revised's shipped lane and stops, the sett
   assert.ok(STEPS.some((s) => s.args?.includes('t14-late') && s.load === 'idle'));
   const z0 = parsed('Z0');
   assert.deepEqual([z0.families, z0.ops], [['firefox', 'writer'], ['dnd', 'select']]);
+});
+
+test("every drop-signals step is judged: T17's Electron cells by electronDropVerdict, Chrome's t14 and t14-late by chromeDropVerdict", () => {
+  const judges = Object.fromEntries(STEPS.filter((s) => s.args?.includes('drop-signals')).map((s) => {
+    const parsed = parseArgs([...stepArgs(s, { paths: PATHS, gate: true }), '--out', '/o']);
+    return [s.name, dropSignalsVerdict(parsed, [])?.judge ?? null];
+  }));
+  assert.deepEqual(judges, { H1: 'electronDropVerdict', H2: 'electronDropVerdict', C1: 'chromeDropVerdict', L4a: 'electronDropVerdict', L4b: 'chromeDropVerdict', L4c: 'chromeDropVerdict' });
+});
+
+test("T19's predicates manifest is measured whole: every kind in a step of its own, the leave cases of every kind in P5, Firefox's drag and drop in P6", () => {
+  const ops = (name) => parseArgs([...stepArgs(stepNamed(name), { paths: PATHS, gate: true }), '--out', '/o']).ops;
+  const steps = ['P1', 'P2', 'P3', 'P4', 'P6'];
+  const kinds = PREDICATE_KINDS.map((k) => k.kind);
+  for (const kind of kinds) assert.equal(steps.filter((s) => ops(s).includes(kind)).length, 1, `${kind}: in exactly one step`);
+  assert.deepEqual(ops('P6'), ['dnd']);
+  assert.deepEqual(ops('P5'), ['click', 'scroll', 'move', 'select', 'dnd']);
+  for (const kind of kinds) assert.ok(ops('P5').includes(kind), `${kind}: its leave cases in P5`);
+  assert.equal(stepNamed('P6').display, 'private');
+  assert.ok(stepNamed('P6').minutes <= MAX_STEP_MINUTES);
 });
 
 test('a pilot is a development run in its smallest form: --trials, the leave cases, a drag at load without the load', () => {

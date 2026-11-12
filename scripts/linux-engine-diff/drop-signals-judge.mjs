@@ -43,11 +43,12 @@ export function percentiles(values) {
 export function parseDropStatus(texts) {
   const find = (re) => texts.map((t) => String(t).match(re)).find(Boolean) ?? null;
   const out = { dnd: null, last: null, select: null, range: null, scroll: null, canvas: null, press: null };
-  const d = find(/^dnd (.*) last (\S+) effect (-?\d+) lat (-?\d+) dur (-?\d+)$/);
+  // the last record's `seq`, the press its dragstart followed, since the harness-fix wave (a sitting before has none)
+  const d = find(/^dnd (.*) last (\S+)(?: seq (\d+))? effect (-?\d+) lat (-?\d+) dur (-?\d+)$/);
   if (d) {
     out.dnd = {};
     for (const [, src, starts, drops] of d[1].matchAll(/(\S+) (\d+)\/(\d+)/g)) out.dnd[src] = { starts: Number(starts), drops: Number(drops) };
-    out.last = { src: d[2], effect: Number(d[3]), lat: Number(d[4]), dur: Number(d[5]) };
+    out.last = { src: d[2], ...(d[3] === undefined ? {} : { seq: Number(d[3]) }), effect: Number(d[4]), lat: Number(d[5]), dur: Number(d[6]) };
   }
   const sel = find(/^select seq (\d+) text (.*)$/);
   if (sel) out.select = { seq: Number(sel[1]), text: sel[2] === 'none' ? '' : sel[2] };
@@ -67,6 +68,30 @@ export function parseDropStatus(texts) {
  * is a kind with an effect of its own.
  */
 export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain', 'canvas-drag': 'canvas-drag', move: 'move' };
+/** T14's and T17's cells' sources (drop-signals.mjs `CELLS`): each a drop the zone never counts. */
+export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain', xterm: 'plain', other: 'plain', slow: 'plain', moved: 'plain' };
+
+/**
+ * The dropEffect code of the dragend this trial's own drag made (the page's `last` record), or null when the record is
+ * not this trial's: the page keeps its last record until the next dragstart, and the runner carries the page across
+ * trials and blocks. The record is this trial's when its source's drag and drop started between the reads before and
+ * after the trial (its start count grew), the page counted this trial's press, the record is that source's, and its
+ * dragend has come. Since the harness-fix wave the page stamps the record with the press its dragstart followed, which
+ * must be this trial's (`seq`). A stored record from before the stamp is bound by the start count alone: its residue is
+ * an earlier trial's dragstart first counted in this one, more than the runner's second after that trial's answer.
+ */
+export function ownDragend(r) {
+  const cell = r.base ?? r.cell;
+  const src = T14_SOURCE[cell] ?? CELL_SOURCE[cell];
+  const { before, after } = r;
+  const [b, a, last] = [before?.dnd?.[src], after?.dnd?.[src], after?.last];
+  if (!src || !b || !a || !last || !(a.starts > b.starts) || last.src !== src || !(last.dur >= 0)) return null;
+  const press = after.press?.seq;
+  if (typeof press !== 'number' || press === before.press?.seq) return null;
+  if (typeof last.seq === 'number' && last.seq !== press) return null;
+  return last.effect;
+}
+
 export const ZONE_CELLS = ['freeze-230', 'freeze-240', 'freeze-250', 'freeze-255', 'freeze-260', 'freeze-280', 'freeze-330', 'plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'plain-long', 'canvas-drag', 'move'];
 
 /** The range runs' end values: even runs drag up to about 10, odd runs back to 0 (drop-signals.mjs `CELLS.range`). */
@@ -414,18 +439,86 @@ const RACE_CELL = 'slow';
 /** The page's dragend `dropEffect` codes (pages/drop-signals.html `EFFECTS`) of a drop whose accept breeze_cursors cannot show. */
 const MOVE_OR_LINK = [2, 3];
 
-/** What a drag left pending past its watch: the unconfirmed notice, another notice, or nothing. */
-const pendingOf = (r) => (r.notice ? (/unconfirmed drop/.test(r.notice) ? 'unconfirmed' : 'other') : null);
-/** Whether a drag dropped anywhere: the zone took it, or (a cell in the window) the page's dragend says it dropped. */
-const droppedOf = (r) => Boolean(r.outcome?.landed) || (!OFF_WINDOW_CELLS.includes(r.base ?? r.cell) && (r.after?.last?.effect ?? 0) > 0);
+// what a drag left pending, in the engine's words (dnd.rs `pending_notice`, `pending_refusal`): the read's notice and
+// the refusal of the acting request after it (the runner's `preflight`) name the same cause
+const NOTICE = /^Pending from your last drag, (.+)\. Read the window before sending input again: your next input request will not be run$/s;
+const REFUSAL = /^Pending from your last drag, (.+); this preflight request was not run, so read the window before sending it again$/s;
+const CAUSE_KINDS = [
+  ['late', /^a late drag and drop: /],
+  ['unconfirmed', /^an unconfirmed drop: /],
+  ['failed', /^a failed watch: /],
+  ['idle-handle', /^a drag handle released by timeout: /],
+];
+
+/**
+ * What a drag left pending past its watch, held to T14's contract: the read after the watch carries the notice, and the
+ * next acting request is refused once with the same cause. `{kind, notice, refused, kept}`: `kind` the notice's cause
+ * (`late`, `unconfirmed`, `failed`, `idle-handle`, `other`) or null for none; `kept` whether the notice and the refusal
+ * agree (both absent, or both present with one cause). Only a kept notice excuses an answer.
+ */
+export function pendingOf(r) {
+  const notice = typeof r.notice === 'string' ? (r.notice.match(NOTICE)?.[1] ?? r.notice) : null;
+  const refusal = r.next && r.next.ok === false ? (String(r.next.error ?? '').match(REFUSAL)?.[1] ?? '') : null;
+  const kind = notice === null ? null : (CAUSE_KINDS.find(([, re]) => re.test(notice))?.[0] ?? 'other');
+  return { kind, notice: notice !== null, refused: refusal !== null, kept: notice === null ? refusal === null : refusal === notice };
+}
+
+/** What a drag honestly left pending: its notice's kind when the next acting request was refused with it, else null. */
+const honest = (r) => {
+  const p = pendingOf(r);
+  return p.kept ? p.kind : null;
+};
+
+/** Where T14's pending contract broke: a notice the next acting request was not refused with, or a refusal with no notice. */
+function pendingBreaks(list, name, failed) {
+  const unrefused = list.filter((r) => pendingOf(r).notice && !pendingOf(r).kept);
+  const unannounced = list.filter((r) => !pendingOf(r).notice && pendingOf(r).refused);
+  const which = (rs) => rs.slice(0, 3).map((r) => `#${r.i}`).join(', ');
+  if (unrefused.length) failed.push(`${name}: the read carried a notice, and the next acting request was not refused with it, on ${unrefused.length} of ${list.length} (${which(unrefused)})`);
+  if (unannounced.length) failed.push(`${name}: the next acting request was refused for something pending, and the read carried no notice, on ${unannounced.length} of ${list.length} (${which(unannounced)})`);
+  return unrefused.length + unannounced.length;
+}
+
+/**
+ * A run's drags by (lane, cell), each with the drags its plan names (`n`, null for a cell the plan does not name): a plan
+ * may name a cell in several specs (t17-slow-cold: one cold drag each), and its drags are their sum. A cell the plan
+ * does not name, or one with fewer drags than its plan, is pushed to `failed` (a missing case fails, as a missing
+ * operation does).
+ */
+function planCells(rows, specs, failed) {
+  const cells = new Map();
+  for (const s of specs) {
+    const key = `${s.lane}|${s.cell}`;
+    if (cells.has(key)) cells.get(key).n += s.n;
+    else cells.set(key, { lane: s.lane, cell: s.cell, n: s.n, rows: [] });
+  }
+  for (const r of rows) {
+    const key = `${r.lane}|${r.cell}`;
+    if (!cells.has(key)) cells.set(key, { lane: r.lane, cell: r.cell, n: null, rows: [] });
+    cells.get(key).rows.push(r);
+  }
+  for (const c of cells.values()) {
+    const name = `${c.lane} ${c.cell}`;
+    if (c.n === null) failed.push(`${name}: ${c.rows.length} drags the plan does not name`);
+    else if (c.rows.length < c.n) failed.push(`${name}: ${c.rows.length} of the plan's ${c.n} drags ran (a missing case)`);
+  }
+  return cells;
+}
+
+/**
+ * Whether a drag dropped anywhere: the zone took it, or (a cell in the window) this trial's own dragend says it dropped
+ * (`ownDragend`; never a record an earlier trial left on the page).
+ */
+const droppedOf = (r) => Boolean(r.outcome?.landed) || (!OFF_WINDOW_CELLS.includes(r.base ?? r.cell) && (ownDragend(r) ?? 0) > 0);
 
 /**
  * Why a landed drop answered unconfirmed, as the gate counts it (Decision Log, T17 as built: none fails the gate):
- * `move-link`, a drop that only moves or links, whose accept breeze_cursors draws as no drop (or does not have);
- * `cold-load`, a block's cold handle drop at load, whose cursor can still show no drop (#364, about 6%); `other`.
+ * `move-link`, a drop that only moves or links (this trial's own dragend), whose accept breeze_cursors draws as no drop
+ * (or does not have); `cold-load`, a block's cold handle drop at load, whose cursor can still show no drop (#364, about
+ * 6%); `other`.
  */
 export function unconfirmedClass(r) {
-  if (MOVE_OR_LINK.includes(r.after?.last?.effect)) return 'move-link';
+  if (MOVE_OR_LINK.includes(ownDragend(r))) return 'move-link';
   if (r.lane === 'cua:handle' && r.cold && r.load !== 'idle') return 'cold-load';
   return 'other';
 }
@@ -446,18 +539,7 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   // #365's declared race: the hung sink's false oks per lane, and its drags
   const race = { lanes: [], false_ok: 0, drags: 0 };
   const findings = [];
-  const cells = new Map();
-  // a plan may name a cell in several specs (t17-slow-cold: one cold drag each): its drags are their sum
-  for (const s of specs) {
-    const key = `${s.lane}|${s.cell}`;
-    if (cells.has(key)) cells.get(key).n += s.n;
-    else cells.set(key, { lane: s.lane, cell: s.cell, n: s.n, rows: [] });
-  }
-  for (const r of rows) {
-    const key = `${r.lane}|${r.cell}`;
-    if (!cells.has(key)) cells.set(key, { lane: r.lane, cell: r.cell, n: null, rows: [] });
-    cells.get(key).rows.push(r);
-  }
+  const cells = planCells(rows, specs, failed);
   const load = [...new Set(rows.map((r) => r.load))].join(', ') || 'none';
   const md = [
     `T17's Electron cells (drop-signals-judge.mjs \`electronDropVerdict\`), load ${load}:`,
@@ -465,23 +547,21 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     '| lane | cell | drags | end not verified | landed | ok, nothing pending | unconfirmed | other notice | error | false ok | landed, unconfirmed (move or link / cold handle at load / other) |',
     '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|',
   ];
-  const total = { drags: 0, landed: 0, false_ok: 0, race_false_ok: 0, race_drags: 0, missing_landing: 0, false_error: 0, unconfirmed_landed: 0, by_class: { 'move-link': 0, 'cold-load': 0, other: 0 }, unverified: 0 };
+  const total = { drags: 0, landed: 0, false_ok: 0, race_false_ok: 0, race_drags: 0, missing_landing: 0, false_error: 0, pending_broken: 0, unconfirmed_landed: 0, by_class: { 'move-link': 0, 'cold-load': 0, other: 0 }, unverified: 0 };
   for (const c of cells.values()) {
     const name = `${c.lane} ${c.cell}`;
     const base = c.rows[0]?.base ?? c.cell.split('@')[0];
     const unverified = c.rows.filter((r) => r.end_park && r.end_park.verified === false);
     const list = c.rows.filter((r) => !unverified.includes(r));
     const count = (f) => list.filter(f).length;
-    const falseOk = list.filter((r) => r.ok === true && pendingOf(r) === null && !droppedOf(r));
+    const falseOk = list.filter((r) => r.ok === true && honest(r) === null && !droppedOf(r));
     const landing = LANDING_CELLS.includes(base);
     const missing = landing ? list.filter((r) => !r.outcome?.landed) : [];
     const falseError = landing ? list.filter((r) => r.outcome?.landed && r.ok !== true) : [];
-    const landedUnconfirmed = list.filter((r) => r.outcome?.landed && pendingOf(r) === 'unconfirmed');
+    const landedUnconfirmed = list.filter((r) => r.outcome?.landed && honest(r) === 'unconfirmed');
     const byClass = { 'move-link': 0, 'cold-load': 0, other: 0 };
     for (const r of landedUnconfirmed) byClass[unconfirmedClass(r)] += 1;
     const which = (rs) => rs.slice(0, 3).map((r) => `#${r.i}`).join(', ');
-    if (c.n === null) failed.push(`${name}: ${c.rows.length} drags the plan does not name`);
-    else if (c.rows.length < c.n) failed.push(`${name}: ${c.rows.length} of the plan's ${c.n} drags ran (a missing case)`);
     const raced = slowMode === 'declared-race' && base === RACE_CELL;
     if (raced) {
       race.lanes.push(`${c.lane} ${falseOk.length} of ${list.length}`);
@@ -490,6 +570,7 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     } else if (falseOk.length) failed.push(`${name}: answered ok with no drop and nothing pending on ${falseOk.length} of ${list.length} (${which(falseOk)})`);
     if (missing.length) failed.push(`${name}: the drop did not land on ${missing.length} of ${list.length}, in a cell that expects it (${which(missing)})`);
     if (falseError.length) failed.push(`${name}: answered an error for a drop that landed on ${falseError.length} of ${list.length} (${which(falseError)})`);
+    total.pending_broken += pendingBreaks(list, name, failed);
     if (c.rows.length && !list.length) findings.push(`${name} unmeasured: every end (${unverified.length}) was not verified where the drag left the pointer`);
     total.drags += list.length;
     total.landed += count((r) => r.outcome?.landed);
@@ -499,7 +580,7 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
     total.unconfirmed_landed += landedUnconfirmed.length;
     total.unverified += unverified.length;
     for (const k of Object.keys(byClass)) total.by_class[k] += byClass[k];
-    md.push(`| ${c.lane} | ${c.cell} | ${list.length} | ${unverified.length} | ${count((r) => r.outcome?.landed)} | ${count((r) => r.ok === true && pendingOf(r) === null)} | ${count((r) => pendingOf(r) === 'unconfirmed')} | ${count((r) => pendingOf(r) === 'other')} | ${count((r) => r.ok !== true)} | ${falseOk.length} | ${landedUnconfirmed.length} (${byClass['move-link']} / ${byClass['cold-load']} / ${byClass.other}) |`);
+    md.push(`| ${c.lane} | ${c.cell} | ${list.length} | ${unverified.length} | ${count((r) => r.outcome?.landed)} | ${count((r) => r.ok === true && honest(r) === null)} | ${count((r) => honest(r) === 'unconfirmed')} | ${count((r) => ![null, 'unconfirmed'].includes(honest(r)))} | ${count((r) => r.ok !== true)} | ${falseOk.length} | ${landedUnconfirmed.length} (${byClass['move-link']} / ${byClass['cold-load']} / ${byClass.other}) |`);
   }
   total.race_false_ok = race.false_ok;
   total.race_drags = race.drags;
@@ -509,6 +590,126 @@ export function electronDropVerdict(rows, { specs = [], share = 0.05, slowMode =
   if (total.by_class.other) findings.push(`${total.by_class.other} other landed drops answered unconfirmed`);
   const over = total.landed > 0 && total.unconfirmed_landed > share * total.landed;
   findings.push(`T14's share, reported and not a fail for these cells: ${total.unconfirmed_landed} of ${total.landed} landed drops answered unconfirmed, ${over ? 'over' : 'within'} ${share * 100}%`);
-  md.push('', failed.length ? `**Fails:** ${failed.join('; ')}.` : 'No false ok, no missing landing, no false error; every cell of the plan ran.', '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
+  md.push('', failed.length ? `**Fails:** ${failed.join('; ')}.` : 'No false ok, no missing landing, no false error, every notice refused once; every cell of the plan ran.', '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
   return { md, failed, findings, counts: { load, ...total, over_share: over } };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Chrome's cells in the gate (the harness-fix wave: the whole-branch review's P1, 2026-11-12): T14's contract
+
+/**
+ * The drop-signals plans whose Chrome cells the gate judges (drop-signals.mjs PLANS): T14's real late takes
+ * (`t14-late`, steps C1 and L4c), the release at the accept with its controls (`t14`, L4b), and the same drags and the
+ * long control on the engine as it ships (`t14-floor`, `t14-long`, `t14-long-gate`). T13's surveys measure and judge
+ * nothing, and no gate step runs them.
+ */
+export const CHROME_JUDGED_PLANS = ['t14', 't14-floor', 't14-late', 't14-long', 't14-long-gate'];
+
+/** Whether a drop-signals run's rows are T14's Chrome cells (Chrome is the experiment's default family), judged by `chromeDropVerdict`. */
+export const judgedChromePlan = (args) => (args.families?.[0] ?? 'chrome') === 'chrome' && CHROME_JUDGED_PLANS.includes(args.plan);
+
+/** The Chrome plans whose sitting exists to make real late takes (#264): one with none proves nothing. */
+const LATE_TAKE_PLANS = ['t14-late'];
+
+/** T14's controls: a drag and drop that leaves the zone (the accepted-then-left path, the press inside it, the long path). */
+const CONTROL_CELLS = ['left', 'inzone-out', 'long-left'];
+
+/** The lane of the release at the accept (`--drag-dnd-release-at-accept`): a measurement flag, not what ships (T14's ruling 2, reverted). */
+const ACCEPT_LANE = 'cua:accept';
+
+/** A drag the measurement lane released at Chrome's accept cursor: its outcome is the measurement, not the shipped floor's. */
+const releasedAtAccept = (r) => r.lane === ACCEPT_LANE && r.accept?.accepted === true;
+
+/** A late take reported as T14 built it: the late notice on the read, the next acting request refused with it, its Escape sent. */
+const lateReported = (r) => honest(r) === 'late' && r.next?.late_dnd?.escaped === true;
+
+/**
+ * T14's Chrome cells judged for the gate, from one run's `drop-signal` rows (one load), its plan's `specs` and its
+ * `plan`. Fails, each named: a late take (the source's take after the release) not reported, by its notice on the read,
+ * the refusal of the next acting request with it and its Escape; a late drag and drop reported on a drag with no late
+ * take (a normal drop leaves no late notice and sends no Escape); a false ok (answered ok on a drop that did not land,
+ * with nothing honestly pending); a long drop that did not land, whatever its answer; T14's pending contract broken (a
+ * notice without its refusal, or a refusal without its notice); a missing case; and, for a plan that exists to make them
+ * (`t14-late`), a sitting with no late take. On the measurement lane (`cua:accept`) a drag released at the accept that
+ * did not land is a false release, counted with its answer: that lane's early release does not ship, and its ok is
+ * the stated limit of Chrome's confirmation (it confirms Chrome's drop, not the page's); its drags that fell to the
+ * floor are judged as shipped. Findings, counted: the late takes; landed drops answered unconfirmed (T14's share against
+ * 5%); the false releases; drags whose drag and drop the harness had to end with its own Escape. Answers
+ * `{md, failed, findings, counts}`.
+ */
+export function chromeDropVerdict(rows, { specs = [], plan = null, capped = false, share = 0.05 } = {}) {
+  const failed = [];
+  const findings = [];
+  const cells = planCells(rows, specs, failed);
+  const load = [...new Set(rows.map((r) => r.load))].join(', ') || 'none';
+  const md = [
+    `T14's Chrome cells (drop-signals-judge.mjs \`chromeDropVerdict\`), plan ${plan ?? 'none'}, load ${load}:`,
+    '',
+    '| lane | cell | drags | never took | landed | ok, nothing pending | unconfirmed | late takes | reported | false ok | false releases (answered ok) | harness Escapes |',
+    '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|',
+  ];
+  const total = { drags: 0, untaken: 0, landed: 0, late: 0, late_reported: 0, late_notice_without_take: 0, false_ok: 0, missing_landing: 0, pending_broken: 0, unconfirmed_landed: 0, false_releases: 0, false_release_ok: 0, harness_escapes: 0 };
+  for (const c of cells.values()) {
+    const name = `${c.lane} ${c.cell}`;
+    const list = c.rows;
+    const base = list[0]?.base ?? c.cell;
+    const count = (f) => list.filter(f).length;
+    const which = (rs) => rs.slice(0, 3).map((r) => `#${r.i}`).join(', ');
+    const landed = (r) => r.outcome?.landed === true;
+    const late = list.filter((r) => r.signals?.late_take === true);
+    const unreported = late.filter((r) => !lateReported(r));
+    const lateWithoutTake = list.filter((r) => r.signals?.late_take !== true && pendingOf(r).kind === 'late');
+    const falseReleases = list.filter((r) => releasedAtAccept(r) && !landed(r));
+    // a drag whose drag and drop never took (no XdndSelection take, the watch's or the hold's) answers as a plain drag:
+    // its ok claims no drop. A control needs drags that took, or it proved nothing
+    const untaken = list.filter((r) => !tookOf(r));
+    const falseOk = list.filter((r) => r.ok === true && honest(r) === null && !landed(r) && tookOf(r) && !releasedAtAccept(r));
+    const missing = base === 'plain-long' ? list.filter((r) => !landed(r) && !releasedAtAccept(r)) : [];
+    if (CONTROL_CELLS.includes(base) && list.length && untaken.length === list.length) failed.push(`${name}: no drag and drop took on any of ${list.length}: the control proved nothing`);
+    const landedUnconfirmed = list.filter((r) => landed(r) && honest(r) === 'unconfirmed');
+    if (unreported.length) failed.push(`${name}: a late take not reported (its notice on the read, the next acting request refused with it, its Escape) on ${unreported.length} of ${list.length} (${which(unreported)})`);
+    if (lateWithoutTake.length) failed.push(`${name}: a late drag and drop reported, and its Escape sent, on a drag with no late take, on ${lateWithoutTake.length} of ${list.length} (${which(lateWithoutTake)})`);
+    if (falseOk.length) failed.push(`${name}: answered ok with no drop and nothing pending on ${falseOk.length} of ${list.length} (${which(falseOk)})`);
+    if (missing.length) failed.push(`${name}: the drop did not land on ${missing.length} of ${list.length}, in a cell that expects it (${which(missing)})`);
+    total.pending_broken += pendingBreaks(list, name, failed);
+    total.drags += list.length;
+    total.untaken += untaken.length;
+    total.landed += count(landed);
+    total.late += late.length;
+    total.late_reported += late.length - unreported.length;
+    total.late_notice_without_take += lateWithoutTake.length;
+    total.false_ok += falseOk.length;
+    total.missing_landing += missing.length;
+    total.unconfirmed_landed += landedUnconfirmed.length;
+    total.false_releases += falseReleases.length;
+    total.false_release_ok += falseReleases.filter((r) => r.ok === true && honest(r) === null).length;
+    total.harness_escapes += count((r) => r.escaped === true);
+    md.push(`| ${c.lane} | ${c.cell} | ${list.length} | ${untaken.length} | ${count(landed)} | ${count((r) => r.ok === true && honest(r) === null)} | ${count((r) => honest(r) === 'unconfirmed')} | ${late.length} | ${late.length - unreported.length} | ${falseOk.length} | ${falseReleases.length} (${falseReleases.filter((r) => r.ok === true && honest(r) === null).length}) | ${count((r) => r.escaped === true)} |`);
+  }
+  // a sitting capped by --trials (a pilot; a gate step runs its plan whole, `runExperiment`) may well make none
+  if (LATE_TAKE_PLANS.includes(plan) && total.late === 0) {
+    if (capped) findings.push('no late take came in a sitting capped by --trials: #264 unjudged here');
+    else failed.push('no late take came: the sitting proves nothing of #264');
+  }
+  if (total.late) findings.push(`${total.late} late takes, ${total.late_reported} reported`);
+  if (total.untaken) findings.push(`${total.untaken} drags whose drag and drop never took, answered as plain drags`);
+  const over = total.landed > 0 && total.unconfirmed_landed > share * total.landed;
+  findings.push(`T14's share, reported and not a fail: ${total.unconfirmed_landed} of ${total.landed} landed drops answered unconfirmed, ${over ? 'over' : 'within'} ${share * 100}%`);
+  if (total.false_releases) findings.push(`${total.false_releases} false releases at the accept (measurement lane \`${ACCEPT_LANE}\`, not shipped), ${total.false_release_ok} of them answered ok with nothing pending`);
+  if (total.harness_escapes) findings.push(`${total.harness_escapes} drags whose drag and drop was still open a second after the answer, ended by the harness's Escape`);
+  md.push('', failed.length ? `**Fails:** ${failed.join('; ')}.` : 'Every late take reported, no false ok, no missing landing, every notice refused once; every cell of the plan ran.', '', `Findings (counted, not fails): ${findings.join('; ')}.`, '');
+  return { md, failed, findings, counts: { load, ...total, over_share: over } };
+}
+
+/**
+ * A drop-signals run's gate verdict from its rows (the run's own, every kind), by its family and plan (`args`, as the
+ * CLI parses them): T17's Electron cells (`electronDropVerdict`), T14's Chrome cells (`chromeDropVerdict`), or null for
+ * a plan no gate judge holds. Answers the verdict with `judge`, the judge's name.
+ */
+export function dropSignalsVerdict(args, rows) {
+  const drags = rows.filter((r) => r.kind === 'drop-signal');
+  const specs = rows.find((r) => r.kind === 'drop-signal-scene')?.specs ?? [];
+  if (judgedElectronPlan(args)) return { judge: 'electronDropVerdict', ...electronDropVerdict(drags, { specs }) };
+  if (judgedChromePlan(args)) return { judge: 'chromeDropVerdict', ...chromeDropVerdict(drags, { specs, plan: args.plan, capped: args.samplesTrials != null }) };
+  return null;
 }

@@ -232,6 +232,24 @@ test("an unconfirmed drop's refusal is dnd.rs's, naming the request not run", ()
   );
 });
 
+test("a drop case's notice holds only with the next acting request refused with it (the harness-fix wave): without the refusal it excuses nothing", () => {
+  const op = 'chrome_dnd_inzone_out_in_front_shared';
+  const notice = dndUnconfirmedNotice('Google-chrome');
+  const refused = { next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') };
+  const base = row({ ok: true, effect: false, started: true, dropped: false, dnd: { in_front: true }, desktop_same: true, state_notice: notice, ...refused });
+  const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
+  assert.equal(judgeDevice(op, [base], audit).pass, true);
+  const unrefused = judgeDevice(op, [base, { ...base, i: 1, next_ok: true, next_error: null }], audit);
+  assert.equal(unrefused.pass, false);
+  assert.ok(unrefused.reasons.some((r) => /answered ok with no drop and nothing pending on 1 of 2 samples/.test(r)), unrefused.reasons.join('\n'));
+  assert.ok(unrefused.reasons.some((r) => /a notice the next acting request was not refused with on 1 of 2 samples/.test(r)), unrefused.reasons.join('\n'));
+  // a landed drop's notice without its refusal: no false ok, and still the contract broken
+  const landed = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true, state_notice: notice, next_ok: true, next_error: null });
+  const v = judgeDevice('chrome_dnd_in_front_shared', [landed], audit);
+  assert.equal(v.pass, false);
+  assert.equal(v.drops.unconfirmed_landed, 0, 'an unrefused notice is not an honest unconfirmed');
+});
+
 test("a landed drop reported unconfirmed is honest, counted apart; a false ok fails its case (the design session, 2026-11-10)", () => {
   for (const op of ['chrome_dnd_in_front_shared', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_covered_dedicated', 'chrome_dnd_short_covered_dedicated', 'chrome_dnd_short_pointer_outside_dedicated']) {
     assert.equal(OPS[op].confirm, true, op);
@@ -240,13 +258,13 @@ test("a landed drop reported unconfirmed is honest, counted apart; a false ok fa
     const audit = { clean: true, kind: dedicated ? 'foreground' : 'background', answered: [{ ok: true }] };
     assert.deepEqual(judgeDevice(op, [good], audit), { pass: true, reasons: [], drops: { samples: 1, landed: 1, ok: 1, false_ok: 0, unconfirmed_landed: 0 } }, op);
     // landed, its confirmation late: honest, the case passes and the run counts it
-    const honest = judgeDevice(op, [good, { ...good, i: 1, state_notice: dndUnconfirmedNotice('Google-chrome') }], audit);
+    const honest = judgeDevice(op, [good, { ...good, i: 1, state_notice: dndUnconfirmedNotice('Google-chrome'), next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') }], audit);
     assert.equal(honest.pass, true, `${op}: an honest unconfirmed`);
     assert.deepEqual(honest.drops, { samples: 2, landed: 2, ok: 2, false_ok: 0, unconfirmed_landed: 1 });
   }
   // a false ok: answered ok, nothing dropped, nothing pending
   const op = 'chrome_dnd_inzone_out_in_front_shared';
-  const base = row({ ok: true, effect: false, started: true, dropped: false, dnd: { in_front: true }, desktop_same: true, state_notice: dndUnconfirmedNotice('Google-chrome') });
+  const base = row({ ok: true, effect: false, started: true, dropped: false, dnd: { in_front: true }, desktop_same: true, state_notice: dndUnconfirmedNotice('Google-chrome'), next_ok: false, next_error: dndUnconfirmedRefusal('Google-chrome', 'preflight') });
   const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
   assert.deepEqual(judgeDevice(op, [base], audit), { pass: true, reasons: [], drops: { samples: 1, landed: 0, ok: 1, false_ok: 0, unconfirmed_landed: 0 } }, 'nothing landed, reported');
   const falseOk = judgeDevice(op, [base, { ...base, i: 1, state_notice: null }], audit);

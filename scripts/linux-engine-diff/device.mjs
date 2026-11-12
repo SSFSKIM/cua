@@ -42,6 +42,7 @@
 
 import { readFileSync } from 'node:fs';
 
+import { pendingOf } from './drop-signals-judge.mjs';
 import { readGtk4Status } from './families.mjs';
 import { IDENTITY_OPS, IDENTITY_SCENE_OPS, judgeIdentity } from './identity.mjs';
 import { MINIMIZED_OPS, MINIMIZED_SCENE_OPS, judgeMinimized } from './minimized.mjs';
@@ -366,7 +367,12 @@ function device({ device: expect, condition = covered, park, read, request, effe
         await sleep(QUIET_MS);
         const state = await ctx.engine.request('get_window_state', { window: { id: ctx.scene.id }, include_screenshot: false });
         out.state_notice = state.response.notice ?? null;
-        if (out.state_notice !== null) await ctx.engine.request('preflight', {});
+        // its answer kept: a notice holds only with that request refused with it (T14's contract)
+        if (out.state_notice !== null) {
+          const next = await ctx.engine.request('preflight', {});
+          out.next_ok = next.response.ok === true;
+          out.next_error = next.response.ok ? null : String(next.response.error);
+        }
       }
       if (expect === 'leaves') {
         // whether a drag that leaves the zone started its drag and drop, and whether anything dropped on the zone
@@ -620,11 +626,15 @@ export function judgeDevice(op, rows, audit) {
   // landed drops); a drag answered ok with no drop and nothing pending is a false ok, the one failure
   let drops = null;
   if (DEVICE_OPS[op].confirm) {
-    const pending = (r) => r.state_notice != null;
+    // a notice holds only when the acting request after it was refused with it (drop-signals-judge.mjs `pendingOf`)
+    const held = (r) => pendingOf({ notice: r.state_notice, next: r.state_notice == null ? null : { ok: r.next_ok, error: r.next_error } });
+    const pending = (r) => r.state_notice != null && held(r).kept;
     const landed = rows.filter((r) => r.effect === true);
     const falseOk = rows.filter((r) => r.ok && r.effect !== true && !pending(r));
     drops = { samples: rows.length, landed: landed.length, ok: rows.filter((r) => r.ok).length, false_ok: falseOk.length, unconfirmed_landed: landed.filter(pending).length };
     if (falseOk.length) reasons.push(`a drag answered ok with no drop and nothing pending on ${falseOk.length} of ${rows.length} samples (${falseOk.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
+    const unrefused = rows.filter((r) => r.state_notice != null && !held(r).kept);
+    if (unrefused.length) reasons.push(`a notice the next acting request was not refused with on ${unrefused.length} of ${rows.length} samples (${unrefused.slice(0, 3).map((r) => `${r.block}/${r.i}`).join(', ')})`);
   }
   if (expect === 'leaves') {
     // a drag and drop whose path ends outside the zone (the press inside it, or a long path that outlasts the floor):

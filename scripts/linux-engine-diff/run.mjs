@@ -941,7 +941,7 @@ export class RunRefused extends Error {
 }
 
 /** Whether `results.jsonl` already has rows of the run `run`. */
-function runHasRows(results, run) {
+export function runHasRows(results, run) {
   if (!existsSync(results)) return false;
   return readFileSync(results, 'utf8').split('\n').some((line) => {
     try {

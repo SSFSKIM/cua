@@ -62,6 +62,15 @@ export function renderSummary(lines) {
     const rows = lines.filter((l) => l.run === run);
     const meta = rows.find((r) => r.kind === 'meta');
     if (meta?.experiment) {
+      // one execution's rows only (the harness-fix wave): a run name whose labelled rows carry two labels, or two
+      // candidates, is not rendered, so no row's label or candidate stands for another execution's
+      const labelled = rows.filter((r) => r.kind === 'meta' || r.kind === 'experiment-summary');
+      const candidates = new Set(rows.filter((r) => r.kind === 'meta').map((r) => r.candidate?.sha256 ?? null));
+      const mix = new Set(labelled.map((r) => r.gate)).size > 1 ? 'a release gate and a development run' : candidates.size > 1 ? 'two or more candidates' : null;
+      if (mix) {
+        out.push(`## ${run} (not judged: its rows mix ${mix})`, '', 'Each execution needs a run name of its own; these rows are no verdict.', '');
+        continue;
+      }
       // an experiment run since T18 says whether it was a release gate (`--gate`) or a development run; one from before, nothing
       const label = gateLabel(meta.gate);
       out.push(`## ${run} (experiment ${meta.experiment}${label ? `; ${label}` : ''})`, '');

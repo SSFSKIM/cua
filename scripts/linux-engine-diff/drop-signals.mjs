@@ -25,7 +25,7 @@
 
 import { GATE_BALLAST } from './dnd.mjs';
 import { locate } from './drag.mjs';
-import { FREEZE_ENDS, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
+import { FREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
 import { Engine } from './engine.mjs';
 import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -113,8 +113,8 @@ export function rootBeside({ x, width, pageX }) {
   throw new Error(`no bare root beside the window (${x}, width ${width}) on a ${screenWidth} px screen`);
 }
 
-/** T14's cells' sources, beside the judge's (drop-signals-judge.mjs `CELL_SOURCE`): each a drop the zone never counts. */
-export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain', xterm: 'plain', other: 'plain', slow: 'plain', moved: 'plain' };
+/** T14's and T17's cells' sources (the judge's, drop-signals-judge.mjs `T14_SOURCE`). */
+export { T14_SOURCE };
 
 /** Where the `other` cell's window goes: right of the scene's, below the root cell's end (x, y, width, height). */
 export const OTHER_PLACE = [920, 250, 340, 360];

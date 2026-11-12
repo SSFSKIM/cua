@@ -6,27 +6,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { SLOW_CELL_MODE, electronDropVerdict, judgedElectronPlan, unconfirmedClass } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
+import { dropRow } from './drop-rows.mjs';
 
-const UNCONFIRMED = 'the drag answered ok, but its drop is an unconfirmed drop: read the window';
+const UNCONFIRMED = 'unconfirmed';
 
-/** One drag's row: a landed drop into the zone by default, answered ok with nothing pending. */
-function drag({ lane = 'cua', cell = 'plain', i = 0, load = 'idle', ok = true, notice = null, landed = cell === 'plain', effect = landed ? 1 : 0, cold = false, verified } = {}) {
-  return {
-    kind: 'drop-signal',
-    load,
-    family: 'electron',
-    lane,
-    cell,
-    base: cell,
-    i,
-    cold,
-    ok,
-    notice,
-    outcome: { started: true, landed, effect: null },
-    after: { last: { src: 'plain', effect } },
-    ...(verified === undefined ? {} : { end_park: { over: 1, verified } }),
-  };
-}
+/** One Electron drag's row (drop-rows.mjs): a landed drop into the zone by default, answered ok with nothing pending. */
+const drag = ({ notice = null, ...o } = {}) => dropRow({ family: 'electron', pending: notice, ...o });
 const many = (n, f) => Array.from({ length: n }, (_, i) => f(i));
 const specs = (...cells) => cells.map(([lane, cell, n]) => ({ lane, cell, n }));
 
@@ -156,4 +141,72 @@ test('a cell several specs name is judged on their sum: the cold count, 60 specs
   assert.deepEqual(v.failed, ["cua:handle slow: 3 of the plan's 4 drags ran (a missing case)"]);
   assert.equal(v.counts.race_false_ok, 1);
   assert.equal(v.counts.race_drags, 3);
+});
+
+// the harness-fix wave (the whole-branch review's harness slices, 2026-11-12): the drop evidence bound to the trial,
+// and the notice held to its refusal
+
+test("a control's drag that started nothing has not dropped, whatever the page's last record still says from an earlier trial", () => {
+  // a good plain drop, then a candidate that does nothing on the controls and answers ok: the page keeps the plain
+  // drop's dragend (effect 1) until a new dragstart
+  const rows = [
+    drag({ i: 0 }),
+    drag({ cell: 'left', i: 0, started: false, landed: false }),
+    drag({ cell: 'inzone-out', i: 0, started: false, landed: false }),
+  ];
+  const v = electronDropVerdict(rows, { specs: specs(['cua', 'plain', 1], ['cua', 'left', 1], ['cua', 'inzone-out', 1]) });
+  assert.deepEqual(v.failed, [
+    'cua left: answered ok with no drop and nothing pending on 1 of 1 (#0)',
+    'cua inzone-out: answered ok with no drop and nothing pending on 1 of 1 (#0)',
+  ]);
+  assert.equal(v.counts.false_ok, 2);
+});
+
+test("a control's own drop counts: its dragstart in this trial, stamped with this trial's press, its dragend come", () => {
+  // Electron drops a control's drag on another of the page's elements (effect 1), and the drag answered ok
+  const own = drag({ cell: 'left', landed: false, effect: 1 });
+  assert.deepEqual(electronDropVerdict([own], { specs: specs(['cua', 'left', 1]) }).failed, []);
+  // the record is another press's: a dragstart stamped before this trial's press is not this trial's
+  const other = drag({ cell: 'left', landed: false, effect: 1 });
+  other.after.last.seq = 9;
+  assert.match(electronDropVerdict([other], { specs: specs(['cua', 'left', 1]) }).failed.join(), /answered ok with no drop/);
+  // its dragend not come: no drop yet
+  const open = drag({ cell: 'left', landed: false, effect: -1 });
+  open.after.last.dur = -1;
+  assert.match(electronDropVerdict([open], { specs: specs(['cua', 'left', 1]) }).failed.join(), /answered ok with no drop/);
+});
+
+test("the stored sittings' records, before the press stamp, are bound by the start count: a record no start of this trial's made is no drop", () => {
+  // Chromium's dragstart carries its press's time, so the record's latency (0 on every stored drag) binds nothing
+  assert.deepEqual(electronDropVerdict([drag({ cell: 'left', landed: false, effect: 1, stamp: false, lat: 0 })], { specs: specs(['cua', 'left', 1]) }).failed, []);
+  const inherited = electronDropVerdict([drag({ cell: 'left', landed: false, started: false, stamp: false })], { specs: specs(['cua', 'left', 1]) });
+  assert.match(inherited.failed.join(), /answered ok with no drop/);
+});
+
+test('a notice excuses nothing without the next acting request refused with it: an ok on a drop that did not land is then a false ok', () => {
+  const run = { ok: true, error: null, late_dnd: null };
+  const rows = [drag({ lane: 'cua:desktop', cell: 'root', notice: UNCONFIRMED, verified: true, landed: false, next: run })];
+  const v = electronDropVerdict(rows, { specs: specs(['cua:desktop', 'root', 1]) });
+  assert.deepEqual(v.failed, [
+    'cua:desktop root: answered ok with no drop and nothing pending on 1 of 1 (#0)',
+    'cua:desktop root: the read carried a notice, and the next acting request was not refused with it, on 1 of 1 (#0)',
+  ]);
+  assert.equal(v.counts.pending_broken, 1);
+});
+
+test('the refusal must name what the notice named, and a refusal with no notice on the read breaks the contract too', () => {
+  const otherCause = { ok: false, error: 'Pending from your last drag, a failed watch: x; this preflight request was not run, so read the window before sending it again', late_dnd: null };
+  const mismatched = drag({ lane: 'cua:desktop', cell: 'root', notice: UNCONFIRMED, verified: true, landed: false, next: otherCause });
+  const unannounced = drag({ i: 1, next: { ok: false, error: otherCause.error, late_dnd: null } });
+  const v = electronDropVerdict([mismatched, unannounced], { specs: specs(['cua:desktop', 'root', 1], ['cua', 'plain', 1]) });
+  assert.ok(v.failed.includes('cua:desktop root: the read carried a notice, and the next acting request was not refused with it, on 1 of 1 (#0)'), v.failed.join('\n'));
+  assert.ok(v.failed.includes('cua plain: the next acting request was refused for something pending, and the read carried no notice, on 1 of 1 (#1)'), v.failed.join('\n'));
+});
+
+test("a landed move is classed by this trial's own dragend, never by an earlier one's", () => {
+  assert.equal(unconfirmedClass(drag({ cell: 'move', landed: true, effect: 2, notice: UNCONFIRMED })), 'move-link');
+  // the move's dragend not come by the read, an earlier move's record before it
+  const open = drag({ cell: 'move', landed: true, effect: -1, notice: UNCONFIRMED, inherited: { src: 'move', effect: 2 } });
+  open.after.last.dur = -1;
+  assert.equal(unconfirmedClass(open), 'other');
 });

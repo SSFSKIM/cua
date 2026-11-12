@@ -216,3 +216,51 @@ test('a gate experiment is labelled a release gate, runs the stored copy, and re
   assert.match(stdout.split('\n')[0], /^release gate; candidate: sha256 /);
   assert.equal(existsSync(stored), false, 'the stored copy is removed when the run ends');
 });
+
+// the harness-fix wave (the whole-branch review's harness slices, 2026-11-12)
+
+test('an experiment run name the out directory already has rows of is refused before anything runs, as a verdict run\'s is', async () => {
+  const out = join(fresh('out'), 'run');
+  await labelled({ experiment: 'drag', cua: '/the/dev/build', out, run: 'reused', families: [] });
+  const before = readFileSync(join(out, 'results.jsonl'), 'utf8');
+  let started = false;
+  await assert.rejects(
+    runExperiment({ experiment: 'drag', cua: '/the/artifact', out, run: 'reused', gate: true, families: [] }, { prepare: async () => assert.fail('no candidate is checked for a refused run'), start: async () => (started = true) }),
+    /the run name reused already has rows in .*results\.jsonl: give each execution a --run name of its own/,
+  );
+  assert.equal(started, false);
+  assert.equal(readFileSync(join(out, 'results.jsonl'), 'utf8'), before, 'nothing was appended');
+});
+
+test("a summary renders no experiment run whose rows mix labels or candidates: each row's provenance stands for its own execution", async () => {
+  const { renderSummary } = await import('../../scripts/linux-engine-diff/report.mjs');
+  const candidate = (sha) => ({ gate: true, sha256: sha, target: 'x86_64-unknown-linux-musl', linkage: 'static-pie', version: 'cua-engine 0.4.0', attestation: null });
+  const meta = (gate, sha) => ({ run: 'mixed', kind: 'meta', experiment: 'drop-signals', gate, label: gate ? 'release gate' : 'development run, not a release gate', ...(sha ? { candidate: candidate(sha) } : {}) });
+  const summary = (gate) => ({ run: 'mixed', kind: 'experiment-summary', markdown: [`a summary, gate ${gate}`], gate, label: gate ? 'release gate' : 'development run, not a release gate', complete: true, failed: [] });
+  const labels = renderSummary([meta(false), summary(false), meta(true, 'aa'.repeat(32)), summary(true)]);
+  assert.match(labels, /^## mixed \(not judged: its rows mix a release gate and a development run\)$/m);
+  assert.doesNotMatch(labels, /a summary, gate/);
+  const candidates = renderSummary([meta(true, 'aa'.repeat(32)), summary(true), meta(true, 'bb'.repeat(32)), summary(true)]);
+  assert.match(candidates, /^## mixed \(not judged: its rows mix two or more candidates\)$/m);
+  assert.doesNotMatch(candidates, /a summary, gate/);
+  // one execution renders as before
+  assert.match(renderSummary([meta(true, 'aa'.repeat(32)), summary(true)]), /^## mixed \(experiment drop-signals; release gate\)$/m);
+});
+
+test('a gate drop-signals run on a plan no gate judge holds is refused before anything runs: no step passes unjudged', async () => {
+  const out = join(fresh('out'), 'run');
+  const prepare = async ({ dir }) => {
+    const path = join(dir, 'cua-engine');
+    writeFileSync(path, MUSL);
+    return { path, record: { gate: true, sha256: 'ab'.repeat(32) } };
+  };
+  await assert.rejects(runExperiment({ experiment: 'drop-signals', families: ['chrome'], plan: 'main', cua: '/the/artifact', out, run: 'unjudged', gate: true }, { prepare: async () => assert.fail('no candidate is checked for a refused run') }), /no gate judge holds the drop-signals plan main \(chrome\)/);
+  assert.equal(existsSync(join(out, 'results.jsonl')), false, 'nothing ran');
+  // a gate step runs its plan whole: a capped sitting may make no late take, which only the whole plan must
+  await assert.rejects(runExperiment({ experiment: 'drop-signals', families: ['chrome'], plan: 't14-late', samplesTrials: 2, cua: '/the/artifact', out, run: 'capped', gate: true }, { prepare }), /runs its plan whole: --trials caps it/);
+  // a development run of the same plan measures, as T13's survey always has; the gate's Chrome plans are judged
+  for (const plan of ['t14', 't14-late']) {
+    const judged = join(fresh('out'), 'run');
+    await runExperiment({ experiment: 'drop-signals', families: ['chrome'], plan, cua: '/the/artifact', out: judged, run: `judged-${plan}`, gate: true }, { prepare, start: async () => true });
+  }
+});

@@ -99,15 +99,17 @@
   document.addEventListener('mouseup', (e) => { if (e.button === 0) up(); }, true);
 
   // a drag and drop, by the source it started from: starts, drops on the zone, and the last dragend's dropEffect and
-  // times (ms from the press to dragstart, and from dragstart to dragend)
+  // times (ms from the press to dragstart, and from dragstart to dragend), stamped with the press its dragstart followed
+  // (`seq`), so the harness binds the record to the trial that made it: the record outlives its trial until the next
+  // dragstart
   const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext', 'canvas-drag', 'inzone', 'move'];
   const dnd = Object.fromEntries(SOURCES.map((s) => [s, { starts: 0, drops: 0 }]));
-  const last = { src: 'none', effect: -1, lat: -1, dur: -1 };
+  const last = { src: 'none', seq: 0, effect: -1, lat: -1, dur: -1 };
   let pressedAt = null;
   let startedAt = null;
   document.addEventListener('pointerdown', (e) => { pressedAt = e.timeStamp; }, true);
   const EFFECTS = { none: 0, copy: 1, move: 2, link: 3 };
-  const showDnd = () => line('s-dnd', `dnd ${SOURCES.map((s) => `${s} ${dnd[s].starts}/${dnd[s].drops}`).join(' ')} last ${last.src} effect ${last.effect} lat ${last.lat} dur ${last.dur}`);
+  const showDnd = () => line('s-dnd', `dnd ${SOURCES.map((s) => `${s} ${dnd[s].starts}/${dnd[s].drops}`).join(' ')} last ${last.src} seq ${last.seq} effect ${last.effect} lat ${last.lat} dur ${last.dur}`);
   const sourceOf = (node) => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('[data-src]')?.dataset.src ?? null;
   document.addEventListener('dragstart', (e) => {
     const src = sourceOf(e.target);
@@ -115,6 +117,7 @@
     dnd[src].starts += 1;
     startedAt = e.timeStamp;
     last.src = src;
+    last.seq = seq;
     last.effect = -1;
     last.lat = pressedAt === null ? -1 : Math.round(e.timeStamp - pressedAt);
     last.dur = -1;

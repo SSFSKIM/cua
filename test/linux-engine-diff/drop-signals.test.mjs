@@ -34,6 +34,19 @@ test("the page's status lines parse into counts by source and each kind's last p
   assert.deepEqual(s.canvas, { seq: 10, moves: 3 });
   assert.deepEqual(s.press, { seq: 11, at: 123456 });
   assert.equal(parseDropStatus(['nothing here']).dnd, null, 'no dnd line: no counts, never zeros');
+  // since the harness-fix wave the last record carries the press its dragstart followed
+  const stamped = parseDropStatus([STATUS[0].replace('last seltext effect', 'last seltext seq 11 effect')]);
+  assert.deepEqual(stamped.last, { src: 'seltext', seq: 11, effect: 0, lat: 4, dur: 120 });
+});
+
+test("the page stamps its last dragend record with the press its dragstart followed, and the parser reads the page's own line", async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../../scripts/linux-engine-diff/pages/drop-signals.html', import.meta.url), 'utf8');
+  assert.match(page, /last\.seq = seq;/);
+  // the line's record part, after the sources' counts (a template of its own inside it)
+  const tail = page.match(/\.join\(' '\)\} (last [^`]*)`\)/)[1];
+  const rendered = `dnd plain 2/1 inzone 1/0 ${tail.replace('${last.src}', 'inzone').replace('${last.seq}', '7').replace('${last.effect}', '0').replace('${last.lat}', '3').replace('${last.dur}', '310')}`;
+  assert.deepEqual(parseDropStatus([rendered]).last, { src: 'inzone', seq: 7, effect: 0, lat: 3, dur: 310 });
 });
 
 test("a drag's outcome: a source's start and the zone's drop, or a kind's effect on its own press, never another's", () => {

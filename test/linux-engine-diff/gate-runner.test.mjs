@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { GateRefused, checkCheckout, launchCommand, listText, parseGateArgs, printStep, runStep, stepDir } from '../../scripts/linux-engine-diff/gate.mjs';
-import { GATE_SCENES, MAX_STEP_MINUTES, STEPS, stepArgs, stepNamed, totals, verdictOps } from '../../scripts/linux-engine-diff/gate-steps.mjs';
+import { GateRefused, checkCheckout, launchCommand, listText, parseGateArgs, printStep, runStep, stepDir } from '../../scripts/linux-engine-gate/gate.mjs';
+import { GATE_SCENES, MAX_STEP_MINUTES, STEPS, stepArgs, stepNamed, totals, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { planOps } from '../../scripts/linux-engine-diff/run.mjs';
 

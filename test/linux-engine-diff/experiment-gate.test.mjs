@@ -31,7 +31,7 @@ const fresh = (name) => {
   return dir;
 };
 
-/** A 64-bit x86_64 ELF header with these program segments: enough of one for candidate.mjs's reader. */
+/** A 64-bit ELF header for this host's machine with these program segments: enough of one for candidate.mjs's reader. */
 function elf(segments = []) {
   const header = Buffer.alloc(64 + 56 * segments.length);
   header.write('\x7fELF', 0, 'latin1');
@@ -39,7 +39,7 @@ function elf(segments = []) {
   header[5] = 1;
   header[6] = 1;
   header.writeUInt16LE(3, 16); // a position-independent executable
-  header.writeUInt16LE(62, 18); // x86_64
+  header.writeUInt16LE(process.arch === 'arm64' ? 183 : 62, 18); // the host's machine (x86_64 or aarch64): the arch check passes
   header.writeBigUInt64LE(64n, 32);
   header.writeUInt16LE(56, 54);
   header.writeUInt16LE(segments.length, 56);
@@ -110,7 +110,7 @@ test('--gate is the experiments\' flag; a verdict run is a gate unless --dev, an
 });
 
 for (const [name, bytes, tools, reason] of [
-  ['a gnu build', GNU, {}, /built for x86_64-unknown-linux-gnu/],
+  ['a gnu build', GNU, {}, /built for \w+-unknown-linux-gnu/],
   ['an unattested file', MUSL, {}, /unattested: gh found no attestation/],
   ['a candidate built from another commit', MUSL, { attestationCommit: OTHER }, /commit mismatch: the candidate was built from 9d3fdce6/],
 ]) {

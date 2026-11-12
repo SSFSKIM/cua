@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// M4's gate runner (#171 M4, T18): the gate's steps (gate-steps.mjs) listed, one printed, or one run, by name.
+// M4's gate runner (#171 M4, T18): the gate's steps (steps.mjs) listed, one printed, or one run, by name. It is a
+// launcher above the harness, as the sittings' private-run.mjs scripts were, so it lives outside scripts/linux-engine-diff/:
+// it starts Xvfb, Openbox, an xterm and node itself, which the harness's own source checks forbid any harness module.
 //
-//   node scripts/linux-engine-diff/gate.mjs --list [--candidate <file>] [--out <dir>] [--dev] [--pilot <n>]
-//   node scripts/linux-engine-diff/gate.mjs print <step> --candidate <file> --out <dir> [--dev] [--pilot <n>]
-//   node scripts/linux-engine-diff/gate.mjs run <step> --candidate <file> --out <dir> [--dev] [--pilot <n>]
+//   node scripts/linux-engine-gate/gate.mjs --list [--candidate <file>] [--out <dir>] [--dev] [--pilot <n>]
+//   node scripts/linux-engine-gate/gate.mjs print <step> --candidate <file> --out <dir> [--dev] [--pilot <n>]
+//   node scripts/linux-engine-gate/gate.mjs run <step> --candidate <file> --out <dir> [--dev] [--pilot <n>]
 //
 // `--list` prints every step's estimated minutes, display, load and command, with the totals per display and per load.
 // `print` prints one step's command and writes its directory's labelled README; `run` runs one step, and never a `:0`
@@ -32,8 +34,8 @@ import { homedir, tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { REPO_ROOT, candidateLine, prepareCandidate } from './candidate.mjs';
-import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, totals } from './gate-steps.mjs';
+import { REPO_ROOT, candidateLine, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
+import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, totals } from './steps.mjs';
 
 const HOME = homedir();
 /** The paths of this VM's sittings (task 73's env.sh): the pinned and newest vendor builds and the vendor's client. */
@@ -245,7 +247,7 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
       process.off('SIGTERM', forward);
       process.off('SIGINT', forward);
     } else {
-      const { runOnPrivateDisplay } = await import('./gate-display.mjs');
+      const { runOnPrivateDisplay } = await import('./display.mjs');
       result = await runOnPrivateDisplay({ dir, label, script: join(root, stepScript(step)), args, cwd: root, env, out, err });
     }
   } finally {

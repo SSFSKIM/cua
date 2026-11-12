@@ -1,7 +1,7 @@
 // A gate step's private display (M4's T18), never `:0`: the harness's own X server (`startPrivateServer`: Xvfb
 // -displayfd, its watchdog, the private mark), no authority file, Openbox, and an xterm titled `person` standing for the
 // person's window, active at the start, as task 49's session and task 73's private-run.mjs set it up; `xprobe
-// order-watch` records the display for the whole step. The step's harness script runs through gate-norecord.mjs, so no
+// order-watch` records the display for the whole step. The step's harness script runs through norecord.mjs, so no
 // whole-run RECORD starts (task 41: RECORD can freeze the X server). Then the server is stopped and its watchdog's verdict
 // answered. Every line the wrapper writes carries the step's label.
 
@@ -9,10 +9,10 @@ import { execFileSync, spawn } from 'node:child_process';
 import { appendFileSync, openSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { XPROBE } from './xtools.mjs';
+import { XPROBE } from '../linux-engine-diff/xtools.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const NORECORD = new URL('./gate-norecord.mjs', import.meta.url).pathname;
+const NORECORD = new URL('./norecord.mjs', import.meta.url).pathname;
 
 /** One command on the private display: its output, or the error's first words (`xprop`, `xdotool`). */
 function x(env, cmd, args) {
@@ -24,13 +24,13 @@ function x(env, cmd, args) {
 }
 
 /**
- * `node gate-norecord.mjs <script> <args...>` on a private display of its own, from `cwd`: `{code, signal, clean,
+ * `node norecord.mjs <script> <args...>` on a private display of its own, from `cwd`: `{code, signal, clean,
  * reason}`, `clean` the display watchdog's verdict. `out` and `err` are the open log files' descriptors.
  */
 export async function runOnPrivateDisplay({ dir, label, script, args, cwd, env: base = process.env, out, err }) {
-  const { startPrivateServer } = await import('./xtools.mjs');
-  const { declareLiveRun } = await import('./xspawn.mjs');
-  declareLiveRun("a gate step's private display (gate-display.mjs)");
+  const { startPrivateServer } = await import('../linux-engine-diff/xtools.mjs');
+  const { declareLiveRun } = await import('../linux-engine-diff/xspawn.mjs');
+  declareLiveRun("a gate step's private display (scripts/linux-engine-gate/display.mjs)");
   const log = (row) => appendFileSync(join(dir, 'session.jsonl'), `${JSON.stringify({ t: new Date().toISOString(), label, ...row })}\n`);
   const server = await startPrivateServer({ out: dir });
   if (server.display === ':0') throw new Error('not a private display');

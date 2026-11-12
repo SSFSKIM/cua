@@ -22,7 +22,7 @@
 // the settle's observations, the paste and exit settle, the accept signal's false releases and the late takes, T17's
 // Electron cells, and GTK 4's covered capture.
 
-import { SCENE_OPS } from './ops.mjs';
+import { SCENE_OPS } from '../linux-engine-diff/ops.mjs';
 
 /** The M3 gate's scenes (`m3-gate-musl`), then M4's, in the frozen order. */
 export const M3_SCENES = ['desktop', 'gedit', 'chrome', 'chrome-input', 'over-budget', 'retention', 'chrome-textarea', 'chrome-address-bar', 'gnome-text-editor', 'paste-target', 'device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'device-chrome', 'device-chrome-dnd'];

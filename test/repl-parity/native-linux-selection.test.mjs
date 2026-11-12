@@ -4,7 +4,7 @@
 // CUA_LINUX_ENGINE_BIN. Nothing reaches a device.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseSelection, assertNativeEngine} from '../../scripts/repl-parity.mjs';
+import {parseSelection, assertNativeEngine, assertPreparationServes} from '../../scripts/repl-parity.mjs';
 import {nativeCommand} from '../../scripts/repl-parity/native.mjs';
 import {DEVICES} from '../../scripts/repl-parity/devices.mjs';
 
@@ -50,4 +50,17 @@ test('nativeCommand forwards the lane\'s engine to the device\'s serve, explicit
   assert.throws(() => nativeCommand(facts), /names its engine/);
   assert.throws(() => nativeCommand({...facts, engine: 'vendor', engineBin: BIN}), /--engine cua only/);
   assert.throws(() => nativeCommand({...facts, engine: 'cua', engineBin: 'cua-engine'}), /absolute/);
+});
+
+// #171 M4 (T18): `prepare --native-only` prepares a declared Linux device for the native suite alone (no profile is
+// listed or bound), and a run takes such a preparation only for the native suite.
+test('a native-only preparation is a Linux prepare, and serves the native suite alone', () => {
+  const prepare = (...rest) => parseSelection(['prepare', '--commit', 'abcdef1', ...rest]);
+  assert.equal(prepare('--device', 'cua-171', '--native-only').v['native-only'], true);
+  assert.throws(() => prepare('--device', 'cua-171', '--native-only', '--profile', 'me'), /--native-only/);
+  assert.throws(() => prepare('--device', 'mini', '--native-only'), /--native-only/);
+  assert.throws(() => run('--engine', 'cua', '--native-only'), /--native-only/);
+  assert.doesNotThrow(() => assertPreparationServes({nativeOnly: true}, 'native'));
+  assert.doesNotThrow(() => assertPreparationServes({profile: 'me'}, 'all'));
+  for (const suite of ['all', 'cells', 'api']) assert.throws(() => assertPreparationServes({nativeOnly: true}, suite), /native-only/);
 });

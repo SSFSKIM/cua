@@ -17,7 +17,8 @@
 //     cua's browser service, the same cold connections and nothing else (no warm series, no native call, no app).
 //     Every run installs the runtime and managed Node in its own private CUA_HOME, then removes that home after cleanup.
 //     --node (cua only) is a recorded diagnostic override, never accepted by compare. Ambient CUA_NODE is cleared.
-//     --display asserts the discovered display; it never guesses an X cookie or moves the run to another session.
+//     --display names the X session the run takes, that display's (a private display beside the person's, #171 M4), and
+//     the run uses that session's recorded environment; it never guesses an X cookie.
 //     --approved-runtime <CUA_HOME> (required for a macOS computer run): serve the runtime copy the owner approved in
 //     place instead of a fresh install, whose new helper copy would raise the screen-capture confirmation again; the
 //     run refuses if the serve would resolve any other copy. The home's state/ and run/ are the run's own (moved aside

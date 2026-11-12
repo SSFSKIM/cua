@@ -48,6 +48,17 @@ test('preparation rejects a fallback Node and removes the failed install', t => 
   assert.equal(existsSync(installed),false);
 });
 
+// #171 M4 (T18): `--display` names the session the run takes (a private display beside the person's `:0`), not only
+// one the first session found must match.
+test('preparation discovers the X session of the named display', t => {
+  const parent=mkdtempSync(join(tmpdir(),'native-prepare-test-'));t.after(()=>rmSync(parent,{recursive:true,force:true}));
+  const asked=[];
+  const prepared=prepareNative({device:'cua-bench',display:':7'},{directoryRoot:parent,tempRoot:'/different-tmp',desktop:display=>{asked.push(display);return xSession;},run:()=>'',inspect:({source})=>({home:source,ownNode:{path:join(source,'node/24.22.0/bin/node'),version:'v24.22.0'}})});
+  assert.deepEqual(asked,[':7']);
+  assert.equal(prepared.xSession.DISPLAY,':7');
+  cleanupNative(prepared,{directoryRoot:parent});
+});
+
 // Execute the generated shell with a harmless node double. This catches quoting, env-option ordering and inheritance.
 test('serve and gedit use the recorded X session, not an account-cookie guess', () => {
   const options={device:'cua-bench',checkout:'/tmp',home:'/scratch/cua',userHome:'/scratch/cua/home',host:'cua',platform:'linux',display:':7',xSession};

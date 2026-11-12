@@ -181,8 +181,8 @@ test('the facade suites join the gate after the private drag steps: parity, base
   assert.ok(suites.every((s) => s.display === 'own' && s.load === 'idle' && names.indexOf(s.name) > names.indexOf('D5')));
   const text = listText(parseGateArgs(['--list']), ROOT);
   for (const s of suites) assert.match(text, new RegExp(`^${s.name}\\s+${s.minutes} min\\s+own\\s+idle\\s+.*\\n\\s+.*gate\\.mjs run ${s.name} `, 'm'));
-  assert.deepEqual(suiteEnv({ candidate: '/s/cua-engine', dir: '/o/R1.release-gate', gate: true }), { ENGINE_BIN: '/s/cua-engine', OUT: '/o/R1.release-gate/run', LOGS: '/o/R1.release-gate/logs', LABEL: 'counted' });
-  assert.equal(suiteEnv({ candidate: '/c', dir: '/d', gate: false }).LABEL, 'pilot');
+  assert.deepEqual(suiteEnv({ candidate: '/s/cua-engine', dir: '/o/R1.release-gate', gate: true, logs: '/tmp/l' }), { ENGINE_BIN: '/s/cua-engine', OUT: '/o/R1.release-gate/run', LOGS: '/tmp/l', LABEL: 'counted' });
+  assert.equal(suiteEnv({ candidate: '/c', dir: '/d', gate: false, logs: '/tmp/l' }).LABEL, 'pilot');
   assert.equal(stepScript(stepNamed('R2')), FACADE_SCRIPT);
 });
 
@@ -190,7 +190,7 @@ test("a suite step runs facade.sh's part with the candidate as ENGINE_BIN, its o
   const root = fresh('root');
   mkdirSync(join(root, FACADE_SCRIPT, '..'), { recursive: true });
   // facade.sh's stand-in: records its part and environment
-  writeFileSync(join(root, FACADE_SCRIPT), '#!/bin/bash\necho "part=$1 engine=$ENGINE_BIN out=$OUT logs=$LOGS label=$LABEL" > "$OUT/seen"\n');
+  writeFileSync(join(root, FACADE_SCRIPT), '#!/bin/bash\necho "part=$1 engine=$ENGINE_BIN out=$OUT label=$LABEL" > "$OUT/seen"\necho "$LOGS" > "$OUT/logs-path"\nmkdir -p "$LOGS/accept" && echo kept > "$LOGS/accept/facade.log"\n');
   const candidate = join(fresh('c'), 'cua-engine');
   writeFileSync(candidate, 'x');
   const out = fresh('out');
@@ -198,7 +198,12 @@ test("a suite step runs facade.sh's part with the candidate as ENGINE_BIN, its o
   const exit = await runStep(a, { root, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate });
   assert.equal(exit, 0);
   const dir = join(out, 'R3.development-run.pilot');
-  assert.equal(readFileSync(join(dir, 'run', 'seen'), 'utf8').trim(), `part=accept engine=${candidate} out=${dir}/run logs=${dir}/logs label=pilot`);
+  assert.equal(readFileSync(join(dir, 'run', 'seen'), 'utf8').trim(), `part=accept engine=${candidate} out=${dir}/run label=pilot`);
+  // the logs went to a short scratch directory (a session bus's socket lies under it: 108 bytes), then into the step's
+  const logs = readFileSync(join(dir, 'run', 'logs-path'), 'utf8').trim();
+  assert.ok(logs.length < 60 && !logs.startsWith(dir), `a short log directory, not ${logs}`);
+  assert.equal(existsSync(logs), false, 'the scratch is removed');
+  assert.equal(readFileSync(join(dir, 'logs', 'accept', 'facade.log'), 'utf8'), 'kept\n');
   for (const sub of ['run', 'logs']) assert.equal(readFileSync(join(dir, sub, 'LABEL'), 'utf8'), 'development run, not a release gate\n');
   const record = JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8'));
   assert.equal(record.exit, 0);

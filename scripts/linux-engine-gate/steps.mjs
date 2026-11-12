@@ -174,10 +174,12 @@ export function stepArgs(step, { paths, gate, pilot = null }) {
 export const stepScript = (step) => ({ facade: 'scripts/linux-engine-diff/services.mjs', suite: FACADE_SCRIPT })[step.kind] ?? 'scripts/linux-engine-diff.mjs';
 
 /**
- * A suite step's environment for facade.sh: the candidate (a gate's the checked copy), its out and log directories in
- * the step's labelled directory, and its label (`counted`, which refuses an unclean tree, or `pilot`).
+ * A suite step's environment for facade.sh: the candidate (a gate's the checked copy), its out directory in the step's
+ * labelled directory, its log directory `logs` (a short scratch one: facade.sh starts the private desktop's session bus
+ * under it, and a socket's path has 108 bytes; the pilot's R3 and R4 met "Socket name too long"), and its label
+ * (`counted`, which refuses an unclean tree, or `pilot`).
  */
-export const suiteEnv = ({ candidate, dir, gate }) => ({ ENGINE_BIN: candidate, OUT: `${dir}/run`, LOGS: `${dir}/logs`, LABEL: gate ? 'counted' : 'pilot' });
+export const suiteEnv = ({ candidate, dir, gate, logs }) => ({ ENGINE_BIN: candidate, OUT: `${dir}/run`, LOGS: logs, LABEL: gate ? 'counted' : 'pilot' });
 
 /** The planned minutes: in all, per display (`:0`, and private, the experiments' own servers included) and per load. */
 export function totals(steps = STEPS) {

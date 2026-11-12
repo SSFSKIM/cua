@@ -29,7 +29,7 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -235,10 +235,12 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
       throw error;
     }
   }
-  // a suite's out is facade.sh's environment (`suiteEnv`), every other script's its --out
+  // a suite's out is facade.sh's environment (`suiteEnv`), every other script's its --out; a suite's logs are written to
+  // a short scratch directory (its session bus's socket lies there) and copied into the step's `logs/` at its end
   const args = [...stepArgs(step, { paths: { ...a, candidate: candidatePath }, gate: a.gate, pilot: a.pilot }), ...(step.kind === 'suite' ? [] : ['--out', join(dir, 'run')])];
   record.argv = [stepScript(step), ...args];
-  if (step.kind === 'suite') record.env = suiteEnv({ candidate: candidatePath, dir, gate: a.gate });
+  const suiteLogs = step.kind === 'suite' ? mkdtempSync(join(tmpdir(), 'cua171-gl-')) : null;
+  if (suiteLogs) record.env = suiteEnv({ candidate: candidatePath, dir, gate: a.gate, logs: suiteLogs });
   record.started = new Date().toISOString();
   writeRecord(dir, record);
   const out = labelledLog(join(dir, 'stdout.log'), label);
@@ -256,7 +258,7 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
         }
       }
       const [command, argv] = suite ? ['bash', [join(root, stepScript(step)), ...args]] : [process.execPath, [join(root, stepScript(step)), ...args]];
-      const childEnv = suite ? { ...own, ...suiteEnv({ candidate: candidatePath, dir, gate: a.gate }) } : own;
+      const childEnv = suite ? { ...own, ...suiteEnv({ candidate: candidatePath, dir, gate: a.gate, logs: suiteLogs }) } : own;
       const child = spawn(command, argv, { cwd: root, env: childEnv, stdio: ['ignore', out, err] });
       const forward = (signal) => child.kill(signal);
       process.on('SIGTERM', forward);
@@ -270,6 +272,11 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
     }
   } finally {
     if (store) rmSync(store, { recursive: true, force: true });
+    if (suiteLogs) {
+      // the logs kept with the step, the sockets left behind (a bus's socket is no log)
+      cpSync(suiteLogs, join(dir, 'logs'), { recursive: true, filter: (src) => !lstatSync(src).isSocket() });
+      rmSync(suiteLogs, { recursive: true, force: true });
+    }
   }
   const exit = result.code === 0 && result.clean ? 0 : result.code === 2 ? 2 : 1;
   Object.assign(record, { finished: new Date().toISOString(), exit, child_exit: result.code ?? result.signal, ...(step.display === 'private' ? { display_watchdog: result.clean ? 'clean' : result.reason } : {}) });

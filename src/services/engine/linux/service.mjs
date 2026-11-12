@@ -42,8 +42,24 @@ export function createService({env = process.env, settler = new ActionSettler()}
   let engine = null;
   let methods = null;
   const handles = new Map();
-  // the handles whose start is pending (waiting for the settle, the engine's start, or the engine's answer)
-  const starting = new Set();
+  // the handles whose start is pending (waiting for the settle, the engine's start, or the engine's answer), each with
+  // its start's outcome
+  const starting = new Map();
+
+  // The stored handle a move or an end names, once every start issued before it and still pending has its outcome (the
+  // re-review of the stale-handle fix): the engine holds one handle and the wire names none, so a request written behind
+  // another handle's start would act on that handle. A start that succeeds makes this one stale (refused, nothing
+  // sent); one that fails leaves it usable; a reset in the meantime forgets it. The wait is on starts alone, which end
+  // by themselves or at a reset, never on this request.
+  async function stored(id) {
+    const handle = handles.get(id);
+    if (handle == null) throw new Error('Sky drag handle has not been started');
+    const earlier = [...starting.values()];
+    if (earlier.length === 0) return handle;
+    await Promise.allSettled(earlier);
+    if (handles.get(id) !== handle) throw new Error('Sky drag handle has not been started');
+    return handle;
+  }
 
   function client() {
     if (methods) return methods;
@@ -73,23 +89,27 @@ export function createService({env = process.env, settler = new ActionSettler()}
       }
       case 'drag_start': {
         const handle = handles.get(message.handle_id) ?? client().drag_handle();
-        starting.add(handle);
-        try {
+        // the start's whole outcome, the other handles' stale marks included, is what a later request waits for
+        const started = (async () => {
           await handle.start(message.point);
+          // the engine holds one handle: every other one stored is no longer held (./methods.mjs dragHandle)
+          for (const other of handles.values()) if (other !== handle) other.supersede();
+          handles.set(message.handle_id, handle);
+        })();
+        starting.set(handle, started);
+        try {
+          await started;
         } finally {
           starting.delete(handle);
         }
-        handles.set(message.handle_id, handle);
         return undefined;
       }
       case 'drag_move': {
-        const handle = handles.get(message.handle_id);
-        if (handle == null) throw new Error('Sky drag handle has not been started');
+        const handle = await stored(message.handle_id);
         return handle.move_to(message.point);
       }
       case 'drag_end': {
-        const handle = handles.get(message.handle_id);
-        if (handle == null) throw new Error('Sky drag handle has not been started');
+        const handle = await stored(message.handle_id);
         await handle.end();
         handles.delete(message.handle_id);
         return undefined;
@@ -111,7 +131,7 @@ export function createService({env = process.env, settler = new ActionSettler()}
   // runs requests one at a time, in order); either start then rejects, and its handle is never stored. With no handle
   // stored and no start written nothing is sent, and nothing is started.
   async function releaseHandles() {
-    const written = [...starting].map(handle => handle.abandon()).some(Boolean);
+    const written = [...starting.keys()].map(handle => handle.abandon()).some(Boolean);
     starting.clear();
     if (handles.size === 0 && !written) return;
     handles.clear();

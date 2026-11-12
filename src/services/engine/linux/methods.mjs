@@ -38,6 +38,14 @@ export const CANNOT = {
 const inputRoute = request => (request?.window != null ? 'input.background' : 'input.desktop');
 // A drag handle's start that a kernel reset overtook (dragHandle's `abandon`).
 const ABANDONED = 'drag handle was let go: the kernel that started it was reset';
+// A move or an end of a handle the engine no longer holds (dragHandle's `supersede`, and an answer of the engine's idle
+// release), refused with nothing sent.
+export const STALE_HANDLE = {
+  later: 'this drag handle is no longer held: a later drag handle started since; this request was not run. Start a new handle to drag again',
+  expired: 'this drag handle is no longer held: cua released it after it got no request for its idle bound; this request was not run. Start a new handle to drag again',
+};
+// cua-engine's answers that its handle was released for its idle bound: the timeout's pending refusal, then the expiry.
+const IDLE_RELEASED = /^Pending from your last drag, a drag handle released by timeout: |^your drag handle in .* is no longer held: it got no request for /;
 
 // `engine` (./client.mjs), `settler` (./settle.mjs), `ids` (./ids.mjs) -> {method: function}, in the vendor's order.
 export function createLinuxMethods({engine, settler, ids}) {
@@ -76,13 +84,34 @@ export function createLinuxMethods({engine, settler, ids}) {
   // written (the engine's request check, with nothing awaited before the write), so it never presses; one already written
   // is the reset's to release, and `abandon` answers whether there is one. Either way the start then rejects, so the
   // service never stores a handle of a kernel that is gone.
+  //
+  // The engine holds at most one handle, and the wire names none, so a move or an end goes to whichever handle the engine
+  // holds. A handle is stale, and its move and end are refused here with nothing sent, once another handle's start
+  // succeeded (`supersede`, which the service calls) or once one of its own requests came back with the engine's idle
+  // release (the design session's ruling on the whole-branch review of M4): a stale handle's move would otherwise drag
+  // the later handle the agent never named. The check comes again where the request would be written, so a move waiting
+  // for the settle while another handle started is refused too.
   function dragHandle() {
     let state = 'idle';
     let abandoned = false;
     let startWritten = false;
+    let stale = null;
+    const fresh = () => {
+      if (stale) throw new Error(stale);
+    };
     const step = async (input, check) => {
       await settler.wait();
       await engine.request('drag_handle', input, check);
+    };
+    // a move's or an end's step: refused once stale; an answer of the engine's idle release makes it stale
+    const held = async input => {
+      fresh();
+      try {
+        await step(input, fresh);
+      } catch (error) {
+        if (IDLE_RELEASED.test(error.message)) stale = STALE_HANDLE.expired;
+        throw error;
+      }
     };
     return {
       async start(point) {
@@ -100,14 +129,17 @@ export function createLinuxMethods({engine, settler, ids}) {
         abandoned = true;
         return startWritten;
       },
+      supersede() {
+        if (state === 'dragging') stale ??= STALE_HANDLE.later;
+      },
       async move_to(point) {
         if (state !== 'dragging') throw new Error('drag handle must be started before moving');
-        await step(Object.assign({action: 'move_to'}, point));
+        await held(Object.assign({action: 'move_to'}, point));
         settler.defer('drag_handle');
       },
       async end() {
         if (state !== 'dragging') throw new Error('drag handle must be started before ending');
-        await step({action: 'end'});
+        await held({action: 'end'});
         state = 'ended';
         settler.defer('drag_handle');
       },

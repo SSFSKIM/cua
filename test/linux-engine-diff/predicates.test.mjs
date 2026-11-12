@@ -80,19 +80,23 @@ test("a run's effect is read whatever it answered: one unread is no proof, a ref
   assert.deepEqual(judgeCase(leave, [...leftRuns('cua', 19), ...leftRuns('cua', 1, { took: null })]).failed, [`cua ran 19 valid of ${LEAVE_RUNS}: the effect not read on 1`]);
 });
 
-test("the manifest: Gecko's four pointer kinds at every pointer place, allowed only with the pointer in the window", () => {
+test("the manifest: Gecko's five pointer kinds at every pointer place, allowed only with the pointer in the window", () => {
   const keys = PREDICATE_CASES.map(caseKey);
   assert.equal(new Set(keys).size, keys.length, 'each case once');
   const places = Object.values(OCCLUSION_PARKS).flat().length;
-  assert.equal(PREDICATE_CASES.length, places * 4 + 4, 'every place, and the four leave cases');
+  assert.equal(PREDICATE_CASES.length, places * 5 + 5, 'every place, and the five leave cases');
   for (const c of PREDICATE_CASES) {
     assert.equal(c.family, 'firefox');
     assert.equal(c.expect, c.park === 'in' ? 'allowed' : c.park === 'leave' ? 'honest' : 'refused', caseKey(c));
     assert.ok(c.why);
   }
-  assert.deepEqual(PREDICATE_CASES.filter((c) => c.expect === 'honest').map(caseKey), ['firefox click visible pointer-leave', 'firefox scroll visible pointer-leave', 'firefox move visible pointer-leave', 'firefox select visible pointer-leave']);
+  assert.deepEqual(PREDICATE_CASES.filter((c) => c.expect === 'honest').map(caseKey), ['firefox click visible pointer-leave', 'firefox scroll visible pointer-leave', 'firefox move visible pointer-leave', 'firefox select visible pointer-leave', 'firefox dnd visible pointer-leave']);
+  // Firefox's HTML5 drag and drop on the drag page (ffdnd-fix): its own drag-and-drop grab is no leave
+  const dnd = PREDICATE_CASES.filter((c) => c.kind === 'dnd');
+  assert.ok(dnd.every((c) => c.group === 'drag'), 'on the drag page');
+  assert.deepEqual(dnd.filter((c) => c.expect === 'allowed').map(caseKey), ['firefox dnd visible pointer-in', 'firefox dnd partial pointer-in']);
   // the newly allowed case the window rule refused: a half-covered window with the pointer in its visible part
-  for (const kind of ['click', 'scroll', 'move', 'select']) {
+  for (const kind of ['click', 'scroll', 'move', 'select', 'dnd']) {
     assert.ok(keys.includes(`firefox ${kind} partial pointer-in`), `${kind}: newly allowed`);
     assert.equal(PREDICATE_CASES.find((c) => caseKey(c) === `firefox ${kind} visible pointer-out`).expect, 'refused', `${kind}: the false success, now refused`);
   }
@@ -110,6 +114,7 @@ test('the lanes: cua as it ships and the pinned build; the pointer-unjudged lane
   assert.ok(predicatePlan({ ops: ['move'] }).every((c) => c.kind === 'move'));
   assert.throws(() => predicatePlan({ plan: 'pointer' }), /pointer-route/);
   assert.deepEqual(predicatePlan({ plan: 'leave', ops: ['click', 'scroll'] }).map(caseKey), ['firefox click visible pointer-leave', 'firefox scroll visible pointer-leave'], 'the leave cases alone');
+  assert.deepEqual(predicatePlan({ ops: ['dnd'] }).filter((c) => c.expect !== 'refused').map(caseKey), ['firefox dnd visible pointer-in', 'firefox dnd partial pointer-in', 'firefox dnd visible pointer-leave'], "the drag and drop's cases by --ops");
 });
 
 test('a leave case passes while no run answers ok with no effect: each took, was refused, or says the pointer left', () => {

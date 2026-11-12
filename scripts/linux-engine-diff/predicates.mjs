@@ -29,8 +29,15 @@ export const REFUSED_RUNS = 10;
 /** The runs of a leave case (the pointer moved out during the request): each answers honestly. */
 export const LEAVE_RUNS = 20;
 
+/**
+ * The scene groups and their kinds: pointer-route.mjs's, and Firefox's HTML5 drag and drop on the drag page (ffdnd-fix:
+ * its drag and drop's own pointer grab crosses the pointer out of the window without moving it, which T19's watch took
+ * for a leave until the take of `XdndSelection` by the window's own client was paired with it).
+ */
+export const PREDICATE_GROUPS = ROUTE_GROUPS.map(({ group, kinds }) => ({ group, kinds: group === 'drag' ? [...kinds, 'dnd'] : kinds }));
+
 /** The kinds, each with the scene group pointer-route.mjs measures it in. */
-export const PREDICATE_KINDS = ROUTE_GROUPS.flatMap(({ group, kinds }) => kinds.map((kind) => ({ kind, group })));
+export const PREDICATE_KINDS = PREDICATE_GROUPS.flatMap(({ group, kinds }) => kinds.map((kind) => ({ kind, group })));
 
 const why = {
   in: 'the real pointer in the window (unless_pointer_within), whatever covers the rest of it',
@@ -45,7 +52,7 @@ export const PREDICATE_CASES = [
     parks.flatMap((park) => PREDICATE_KINDS.map(({ kind, group }) => ({ family: 'firefox', group, kind, occlusion, park, expect: park === 'in' ? 'allowed' : 'refused', why: why[park] }))),
   ),
   // the pointer leaving during the request (T19's watch, engine/within.rs): never ok with no effect
-  ...leavePlan(['firefox']).map((c) => ({ ...c, expect: 'honest', why: why.leave })),
+  ...leavePlan(['firefox'], PREDICATE_GROUPS).map((c) => ({ ...c, expect: 'honest', why: why.leave })),
 ];
 
 export const caseKey = cellKey;

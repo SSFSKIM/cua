@@ -323,6 +323,10 @@ pub(super) struct DragMeasure<'a> {
     /// `XdndSelection`, and what it read there.
     pub(super) drop_cursor: Option<&'a mut crate::drop_cursor::DropCursor>,
     pub(super) at_release: &'a mut Option<crate::drop_cursor::AtRelease>,
+    /// On a route whose input is XTEST's (the desktop and foreground routes): where the real pointer was, read with the
+    /// cursor just before the release (None: on another screen, or not read), which is where the release goes and so
+    /// the window the drop's confirmation is held to (the third review of task 73, P3).
+    pub(super) release_point: Option<&'a mut Option<(i16, i16)>>,
 }
 
 /// The wall clock in milliseconds since the epoch (`--stats` only: the harness lines a drag up with its own watchers).
@@ -544,10 +548,21 @@ fn drag_along(
                 Some(json!({ "steps_after_take": left, "release_after_take_ms": at.elapsed().as_secs_f64() * 1000.0 }));
         }
         crate::desktop::drag_hooks::before_release();
-        // an Electron drop under way: the drag loop's cursor shown at the release itself, which confirms it or not
+        // an Electron drop under way: the drag loop's cursor shown at the release itself, which confirms it or not, and
+        // on an XTEST route the real pointer beside it, where the release goes whatever the path asked (a person's
+        // motion since the last sample moves the drop)
         if taken.is_some()
             && let Some(cursor) = measure.drop_cursor
         {
+            if let Some(slot) = measure.release_point {
+                *slot = x
+                    .conn
+                    .query_pointer(x.root)
+                    .ok()
+                    .and_then(|c| c.reply().ok())
+                    .filter(|p| p.same_screen)
+                    .map(|p| (p.root_x, p.root_y));
+            }
             let take = hold.as_ref().and_then(|(watch, _)| watch.taken_time());
             *measure.at_release = Some(cursor.at_release(take));
         }
@@ -949,6 +964,10 @@ impl Engine {
             _ => false,
         };
         let mut at_release = None;
+        // where the real pointer was at the release, read on the routes whose input is XTEST's: the background route's
+        // input is synthetic and leaves the real pointer where it is, so its release is the path's end
+        let xtest_route = !matches!(target, Target::Window(_));
+        let mut release_point = None;
         let after_take = self.cfg.dnd_after_take;
         let mut scheduled = None;
         let bound = self.cfg.dnd_hold;
@@ -1014,6 +1033,7 @@ impl Engine {
                     accept_record: &mut accept_record,
                     drop_cursor: drop_cursor.as_mut().and_then(|c| c.as_mut().ok()),
                     at_release: &mut at_release,
+                    release_point: xtest_route.then_some(&mut release_point),
                 },
             );
             if let Some(event) = route.event_time()
@@ -1104,16 +1124,27 @@ impl Engine {
                 });
                 // and an accept only over a window that takes drag and drop: Chromium keeps its last status's accept
                 // when the path leaves for one that does not (the bare root, an xterm), and drops nowhere (the design
-                // session's ruling, 2026-11-11), as a handle's
+                // session's ruling, 2026-11-11), as a handle's. The window is the one under the release: on an XTEST
+                // route where the real pointer was at the button-up, which a person's motion may have taken off the
+                // path's end (the third review, P3), and on the background route the path's end
                 let mut over_aware = None;
                 if cursor == Some(Some(true)) {
-                    let end_root = input.path.last().and_then(|p| match input.window {
-                        Some(target) => self.x.desktop_position(target.id, p.x, p.y).ok(),
-                        None => Some((p.x, p.y)),
-                    });
-                    let under = end_root.and_then(|(rx, ry)| self.x.managed_client_at(rx, ry));
+                    let release = match (xtest_route, input.path.last()) {
+                        (true, _) => release_point,
+                        (false, Some(p)) => match input.window {
+                            Some(target) => self.x.desktop_position(target.id, p.x, p.y).ok(),
+                            None => Some((p.x, p.y)),
+                        },
+                        (false, None) => None,
+                    };
+                    let under = release.and_then(|(rx, ry)| self.x.managed_client_at(rx, ry));
                     let aware = under.is_some_and(|window| self.x.xdnd_aware(window));
-                    over_aware = Some(json!({ "under": under, "xdnd_aware": aware }));
+                    over_aware = Some(json!({
+                        "at": release,
+                        "read": if xtest_route { "pointer" } else { "path_end" },
+                        "under": under,
+                        "xdnd_aware": aware,
+                    }));
                     cursor = Some(crate::drop_cursor::over_drop_target(Some(true), aware));
                 }
                 let confirming = super::handle::confirming(confirm, supported, cursor);

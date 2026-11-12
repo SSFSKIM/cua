@@ -205,3 +205,15 @@ test('the events experiment can go through the vendor JavaScript, which needs it
   assert.throws(() => parseArgs(['--experiment', 'events', '--cua', 'c', '--out', 'o', '--vendor', 'v', '--newest', 'n', '--via', 'vendor-js']), /--vendor-js/);
   assert.equal(parseArgs(['--experiment', 'events', '--cua', 'c', '--out', 'o', '--vendor', 'v', '--newest', 'n', '--via', 'vendor-js', '--vendor-js', 's']).via, 'vendor-js');
 });
+
+test("each scenario's pointer is parked at its start on the experiment's own display, verified there on the bare root", async () => {
+  const { POINTER_START, parkAtStart } = await import('../../scripts/linux-engine-diff/events.mjs');
+  const { ParkRefused } = await import('../../scripts/linux-engine-diff/park.mjs');
+  const [x, y] = POINTER_START;
+  const moves = [];
+  assert.deepEqual(parkAtStart({ DISPLAY: ':93' }, { move: (p) => moves.push(p), read: () => ({ x, y, same_screen: true, chain: [] }) }).chain, []);
+  assert.deepEqual(moves, [{ x, y }]);
+  // a window left under the start (an earlier scenario's recorder not yet gone) would take the motions: refused
+  assert.throws(() => parkAtStart({ DISPLAY: ':93' }, { move: () => {}, read: () => ({ x, y, same_screen: true, chain: [0x600003] }) }), ParkRefused);
+  assert.throws(() => parkAtStart({ DISPLAY: ':93' }, { move: () => {}, read: () => ({ x: x + 1, y, chain: [] }), pause: () => {} }), /not at \(300, 300\)/);
+});

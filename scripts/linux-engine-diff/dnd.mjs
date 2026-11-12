@@ -27,6 +27,8 @@ import { PAGE, locate, readEffect, runPath } from './drag.mjs';
 import { Engine } from './engine.mjs';
 import { FAMILIES, openFamily } from './families.mjs';
 import { Oracle } from './oracle.mjs';
+import { verifiedScene } from './app-identity.mjs';
+import { parkAt } from './park.mjs';
 import { DND_REFUSAL } from './deviations.mjs';
 import { desktopState } from './device.mjs';
 import { negativeCheck, openScene } from './run.mjs';
@@ -178,9 +180,9 @@ async function coldSeries(ctx, lanes, scenes, family, n, { coverMs = 0, prelude 
         await sleep(coverMs);
       }
       if (ctx.parkPointer) {
-        // only onto the root or a live window of the run's (scenes.mjs `pointerSafeAt`)
-        if (!desktop.pointerSafeAt(ctx.parkPointer)) throw new Error(`--park-pointer ${ctx.parkPointer.x},${ctx.parkPointer.y} is over a window the run did not open`);
-        xdotool('mousemove', '--sync', ctx.parkPointer.x, ctx.parkPointer.y);
+        // only onto the root or a live window of the run's, and verified where it landed: over the run's window on top
+        // at the point, or the bare root (park.mjs `parkAt`); a park refused stops the run
+        parkAt(desktop, ctx.parkPointer);
       }
       // the device case's `alreadyInFront`: the front window back in its corner, the window raised, then activated
       desktop.arrangeFront('visible');
@@ -371,7 +373,8 @@ export async function runDnd(args, { desktop, emit }) {
       try {
         const geometry = family === 'firefox' ? FAMILIES.firefox.geometry : null;
         for (const l of lanes) {
-          scenes[l.label] = await openFamily(desktop, oracle, family, `dnd${l.label.replace(/[^a-z0-9]+/gi, '')}`, { page: PAGE, geometry });
+          // the family's application verified before its runs count (app-identity.mjs)
+          scenes[l.label] = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, `dnd${l.label.replace(/[^a-z0-9]+/gi, '')}`, { page: PAGE, geometry }), family);
           scenes[l.label].kindOf = 'page';
         }
         desktop.arrangeFront(args.occlusion === 'covered' ? 'covered' : 'visible');

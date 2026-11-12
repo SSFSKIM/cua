@@ -21,6 +21,7 @@ import { desktopEntry } from './desktop-entry.mjs';
 import { SPEED_GAPS, declaredDeviation, declaredSpeedGap } from './deviations.mjs';
 import { runTmp } from './app-env.mjs';
 import { Engine, runEngines } from './engine.mjs';
+import { ROOT, displayTools, parkPointer } from './park.mjs';
 import { XPROBE } from './scenes.mjs';
 import { median, noiseVerdict, speedLabel } from './stats.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
@@ -33,6 +34,16 @@ const PASSING = ['faster', 'same (within noise)', 'within the bound'];
 export const RECORDER = { x: 100, y: 100, width: 800, height: 600 };
 /** Where the real pointer is put before each desktop scenario: inside the top-level, outside its child. */
 export const POINTER_START = [300, 300];
+
+/**
+ * The real pointer put at `POINTER_START` on the experiment's own display (`env`), before the scenario's recorder or
+ * the motion listener's window exists, and verified there on the bare root (park.mjs): every step is judged from that
+ * position, so a pointer elsewhere, or a window left under it, refuses the run (`ParkRefused`). `options` are
+ * `parkPointer`'s, given only by the tests.
+ */
+export function parkAtStart(env, options = {}) {
+  return parkPointer({ x: POINTER_START[0], y: POINTER_START[1] }, ROOT, { ...displayTools(env), ...options });
+}
 
 const W = '$W';
 const k = (key, extra = {}) => ({ command: 'press_key', input: { window: W, key, ...extra } });
@@ -272,7 +283,7 @@ async function motionListener(engines, env, emit) {
   const rows = [];
   for (const mode of ['core', 'xi2']) {
     for (const engine of engines) {
-      xExecFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
+      parkAtStart(env);
       const watch = xSpawn(XPROBE, ['motion-watch', '0', '0', '1280', '800', mode], { env, stdio: ['pipe', 'pipe', 'inherit'] });
       const lines = [];
       const waiters = [];
@@ -458,7 +469,7 @@ export async function settleFocus(events, { open = 0, mark, sleep = (ms) => new 
  * closed (`settleFocus`).
  */
 async function runScenario(scenario, engine, env, { via = 'wire', skyDir } = {}) {
-  xExecFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
+  parkAtStart(env);
   const recorder = new Recorder(env, { focus: scenario.route === 'desktop', fragile: scenario.fragile, fragileKey: scenario.fragileKey });
   const window = await recorder.ready();
   const engineEnv = scenario.apps ? { ...env, XDG_DATA_HOME: env.EVENTS_APPS, XDG_DATA_DIRS: '' } : env;
@@ -676,7 +687,7 @@ async function desktopBlocks(engines, env, emit, { rounds = FIRST_ROUNDS, firstR
     for (const sequence of sequences) {
       const order = [...engines.slice(r % engines.length), ...engines.slice(0, r % engines.length)];
       for (const engine of order) {
-        xExecFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
+        parkAtStart(env);
         const process_ = new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env }).start();
         try {
           await new Promise((resolve) => setTimeout(resolve, ENGINE_SETTLE_MS));

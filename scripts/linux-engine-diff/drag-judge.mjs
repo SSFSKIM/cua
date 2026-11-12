@@ -4,6 +4,7 @@
 // landed counts, the held-move cells' no-press control, and the run's verdict for the shipped lane with each cell's
 // judges in one summary cell.
 
+import { declaredDragGap } from './deviations.mjs';
 import { medianDifferenceInterval } from './events.mjs';
 import { TOP_UP_SAMPLES, judgeSeriesSpeed } from './stats.mjs';
 
@@ -86,6 +87,20 @@ export function controlVerdict(runs) {
 
 const pxShown = (v) => (v === null || v === undefined ? '–' : Math.round(v * 10) / 10);
 
+/**
+ * The declared gap a lane's failed speed falls within (deviations.mjs DRAG_SPEED_GAPS): the cell's family, kind and
+ * route declared, and the upper end of its interval (cua − bar) at most the declared bound. Answers `{gap, within}`, or
+ * null when the speed did not fail or nothing declares the cell.
+ */
+export function speedGap(cell, lane) {
+  const speed = cell.speed?.[lane];
+  if (speed?.verdict !== 'fail') return null;
+  const gap = declaredDragGap(cell);
+  if (!gap) return null;
+  const upper = speed.interval?.[1];
+  return { gap, within: typeof upper === 'number' && upper <= gap.bound_ms };
+}
+
 /** Why a cell fails one lane: its effect, or under load its counts; the thumb judge; the long path's speed. */
 export function laneFailures(cell, lane) {
   const l = cell.lanes?.[lane];
@@ -108,7 +123,10 @@ export function laneFailures(cell, lane) {
     failed.push(`${at} short of the pinned build's mean distance (${pxShown(cell.reach.pinned_mean)} px) on ${reach.n - reach.reached} of ${reach.n} runs (shortest ${pxShown(reach.shortest)} px, mean ${pxShown(reach.mean)} px)`);
   }
   const speed = cell.speed?.[lane];
-  if (speed?.verdict === 'fail') failed.push(`${at} speed: ${speed.reasons.join('; ')}`);
+  const declared = speedGap(cell, lane);
+  // a declared gap excuses its own measured loss within its bound, never a missed effect or an undecided series
+  if (declared && !declared.within) failed.push(`${at} speed beyond its declared gap (${declared.gap.issue}, ${declared.gap.bound_ms} ms): the interval [${speed.interval?.join(', ') ?? 'none'}]; ${speed.reasons.join('; ')}`);
+  else if (!declared && speed?.verdict === 'fail') failed.push(`${at} speed: ${speed.reasons.join('; ')}`);
   if (speed?.verdict === 'undetermined') failed.push(`${at} speed undetermined after the top-ups${speed.reasons.length ? `: ${speed.reasons.join('; ')}` : ''}`);
   return failed;
 }
@@ -121,13 +139,28 @@ export function laneFailures(cell, lane) {
  */
 export function dragVerdict(cells, { lane = 'cua' } = {}) {
   const failed = [];
+  // the cells whose speed is a declared gap: listed apart, never a pass (Acceptance 3)
+  const declared = [];
   for (const cell of cells) {
-    failed.push(...laneFailures(cell, lane));
+    const own = laneFailures(cell, lane);
+    failed.push(...own);
+    const gap = speedGap(cell, lane);
+    if (gap?.within && !own.length) {
+      const s = cell.speed[lane];
+      declared.push(`${cell.family} ${cell.drag}: ${lane} declared speed gap (${gap.gap.issue}): ${lane} ${s.candidate} ms against ${s.against}'s ${s.bar} ms, the interval [${s.interval.join(', ')}] within the declared ${gap.gap.bound_ms} ms`);
+    }
     if (cell.control && !cell.control.pass) failed.push(`${cell.family} ${cell.drag}: CONTROL NON-DISCRIMINATING: the no-press control took ${cell.control.took} of ${cell.control.n}`);
     const ref = cell.select_reference;
     if (ref && (ref.n === 0 || ref.covers < ref.n)) failed.push(`${cell.family} ${cell.drag}: REFERENCE MISMATCH: the unprimed judge took ${ref.covers} of the select cell's ${ref.n} even runs that took`);
   }
-  return { pass: failed.length === 0, failed };
+  return { pass: failed.length === 0, failed, declared };
+}
+
+/** A cell's verdict for one lane, as the summary shows it: PASS, a declared speed gap (never a pass), or **FAIL**. */
+export function cellVerdict(cell, lane) {
+  if (laneFailures(cell, lane).length) return '**FAIL**';
+  const gap = speedGap(cell, lane);
+  return gap?.within ? `declared speed gap (${gap.gap.issue})` : 'PASS';
 }
 
 const r1 = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : '–');
@@ -142,6 +175,8 @@ export function judgeNotes(row, cuaLanes) {
       const iv = s.interval ? ` [${s.interval.join(', ')}]` : '';
       if (s.verdict === 'pass') return `${l} ${s.label}${iv}, ${s.candidate} ms against ${s.against}'s ${s.bar} ms`;
       if (s.verdict === 'no bar') return `${l} no vendor bar (${s.reasons.join('; ')})`;
+      const gap = speedGap(row, l);
+      if (gap?.within) return `${l} **declared speed gap (${gap.gap.issue})**${iv}: ${s.reasons.join('; ')}`;
       return `${l} **${s.verdict}**${iv}: ${s.reasons.join('; ')}`;
     };
     notes.push(`speed (warm): ${cuaLanes.map(one).join('; ')}${row.speed[cuaLanes[0]]?.failed_bar?.length ? `; gave the bar up: ${row.speed[cuaLanes[0]].failed_bar.map((f) => `${f.engine} ${f.usable} usable of ${f.sampled}`).join(', ')}` : ''}`);

@@ -408,6 +408,41 @@ export function declaredSpeedGap({ op, route, series }, list = SPEED_GAPS) {
 }
 
 /**
+ * The drag experiment's declared speed gaps (drag-judge.mjs): a long path's warm speed loss, keyed by family, kind and
+ * route (`in-front` for a cell every lane drags with its window in front, drag.mjs IN_FRONT_CELLS; else `background`).
+ * A declared cell whose speed fails reads "declared speed gap", listed apart and never a pass, while the upper end of
+ * its interval (cua − bar) stays within `bound_ms`; past it, or with its effect missed, it fails. `closes` names what
+ * closes the gap (Acceptance 3): a milestone (`'M5'`), or, for a gap with no closing route, `{ticket, route: 'none'}`.
+ * `[{family, kind, route, issue, bound_ms, reason, section, closes}]`.
+ */
+export const DRAG_SPEED_GAPS = [
+  {
+    // measured: T11's final-idle 365.1 against the newest build's 339 (interval [23.6, 32.2]); T14 368.8 against 339;
+    // T18's pilot 366.1 against 338.2 (interval [25.5, 30]). 40 ms leaves the largest measured upper end 7.8 ms of room
+    family: 'chrome',
+    kind: 'dnd',
+    route: 'in-front',
+    issue: '#358',
+    bound_ms: 40,
+    reason: 'declared gap, no closing route (the floor and hold keep drops honest; no never-take signal); owner informed 2026-11-10; tracked by #358',
+    section: 'Decision Log, T14 (#263, #264, #269): Chromium drops, built (2026-11-10); Decision Log, T18: a declared speed gap with no closing route (2026-11-12), amending Acceptance 3',
+    closes: { ticket: '#358', route: 'none' },
+  },
+];
+
+/** The drag speed gap that declares this cell's loss, or null. */
+export function declaredDragGap({ family, drag, route }, list = DRAG_SPEED_GAPS) {
+  return list.find((g) => g.family === family && g.kind === drag && g.route === route) ?? null;
+}
+
+/** What closes a declared gap, in words: its milestone, or its ticket when it has no closing route. */
+export function closesText(closes) {
+  if (typeof closes === 'string' && /^M\d/.test(closes)) return `closed by ${closes}`;
+  if (closes && typeof closes === 'object' && /^#\d+$/.test(closes.ticket ?? '') && closes.route === 'none') return `no closing route; tracked by ${closes.ticket}`;
+  throw new Error(`a declared gap's closes is a milestone or {ticket: '#N', route: 'none'}, not ${JSON.stringify(closes)}`);
+}
+
+/**
  * The declared parity list (Acceptance 3's parity rule): an operation whose work is identical by construction in every
  * engine and cannot be made faster. Above the bar, its verdict is **parity** (listed apart, never a pass, not a
  * failure) only while cua's median lies within the spread of the bar build's own samples of that series in that run,

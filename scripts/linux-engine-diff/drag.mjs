@@ -44,7 +44,7 @@
 
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
 
-import { LOAD_RUNS, controlVerdict, dragSpeed, dragVerdict, judgeNotes, laneFailures, loadCounts, thumbReach, topUpRuns } from './drag-judge.mjs';
+import { LOAD_RUNS, cellVerdict, controlVerdict, dragSpeed, dragVerdict, judgeNotes, loadCounts, thumbReach, topUpRuns } from './drag-judge.mjs';
 import { Engine } from './engine.mjs';
 import { FAMILIES, familyNames, openFamily, readGtk4Status } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -741,6 +741,8 @@ export function judgeDragCell(family, kind, runs, { cuaLanes, vendors, laneLabel
     kind: 'drag-cell',
     family,
     drag: kind,
+    // the route a declared speed gap is keyed by (deviations.mjs DRAG_SPEED_GAPS)
+    route: inFront(family, kind) ? 'in-front' : 'background',
     expected: judged.expected,
     ...cell,
     ms: Object.fromEntries(labels.map((l) => [l, ms(l)])),
@@ -850,7 +852,7 @@ export async function runDrag(args, { desktop, emit }) {
     cells.push(row);
     if (kind === 'select') selectRuns[family] = judged;
     const took = (label) => `${judged.filter((r) => r.engine === label && r.took).length}/${judged.filter((r) => r.engine === label).length}`;
-    const verdict = !row.reference && !row.load ? (row.pinned_took === 0 ? 'no vendor effect: not judged' : 'no usable pinned reference: not judged') : cuaLanes.map((l) => `${l} ${laneFailures(row, l).length ? '**FAIL**' : 'PASS'}`).join(', ');
+    const verdict = !row.reference && !row.load ? (row.pinned_took === 0 ? 'no vendor effect: not judged' : 'no usable pinned reference: not judged') : cuaLanes.map((l) => `${l} ${cellVerdict(row, l)}`).join(', ');
     const witnessClean = judged.every((r) => r.witness) ? 'clean' : '**changed**';
     md.push(`| ${FAMILIES[family].title} | ${kind} | ${lanes.map((l) => took(l.label)).join(' | ')} | ${lanes.slice(1).map((l) => r1(row.ms[l.label])).join(' | ')} | ${r1(row.ms.pinned)} | ${witnessClean} | ${judgeNotes(row, cuaLanes)} | ${verdict} |`);
     process.stdout.write(`${md.at(-1)}\n`);
@@ -945,5 +947,7 @@ export async function runDrag(args, { desktop, emit }) {
   const verdict = dragVerdict(cells);
   const completeness = dragCompleteness(plan, cells, errors);
   md.push('', cuaLanes.includes('cua') ? `The judges' verdict for \`cua\`: ${verdict.pass ? 'PASS' : `**FAIL**: ${verdict.failed.join('; ')}`}.` : 'No shipped `cua` lane: measured, not judged.');
+  // a declared speed gap is listed apart, never a pass (deviations.mjs DRAG_SPEED_GAPS)
+  if (verdict.declared.length) md.push('', `Declared speed gaps (listed apart, not passes): ${verdict.declared.join('; ')}.`);
   return { md, complete: completeness.complete, pass: verdict.pass, failed: [...completeness.failed, ...verdict.failed] };
 }

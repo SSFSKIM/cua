@@ -258,7 +258,7 @@ const cellOf = (over = {}) => ({
 });
 
 test("a run's drag verdict: the shipped lane's misses, short thumbs and slow long paths fail it; a measurement lane's never do", () => {
-  assert.deepEqual(T10.dragVerdict([cellOf()]), { pass: true, failed: [] }, 'cua:0ms misses: a measured outcome');
+  assert.deepEqual(T10.dragVerdict([cellOf()]), { pass: true, failed: [], declared: [] }, 'cua:0ms misses: a measured outcome');
   const short = cellOf({ reach: { pinned_mean: 133.4, lanes: { cua: { reached: 27, n: 30, shortest: 108, mean: 131.2 } } } });
   assert.match(T10.dragVerdict([short]).failed.join(), /chrome scroller: cua short of the pinned build's mean distance \(133\.4 px\) on 3 of 30 runs/);
   const slow = cellOf({ drag: 'canvas', speed: { cua: { verdict: 'fail', reasons: ['cua: 646 ms > bar 517 ms'] } } });

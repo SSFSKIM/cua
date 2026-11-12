@@ -1790,6 +1790,11 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m4/drag-handle/` (README, `fix/`, `fix2/`, `fix3/`); the task-73 report (local); `ci-gate` GREEN on df988aa5, 2d76095c, 69d095f8, 1df5d015 and 2c65f88a (the last after reruns of two flaky hosted macOS tests).
   Date/Author: 2026-11-12, the plan-executor (session linux171), from task 73's proposal, build, three fix waves and four reviews (reviewer-medium), and the design session's rulings.
 
+- Decision (2026-11-12, M4, T18: a declared speed gap with no closing route): Acceptance 3 says a declared speed gap names the milestone that closes it. T18's gate pilot failed D1, Chrome's long drag and drop, on speed (cua 366 ms against the newest build's 338; interval [25.5, 30]). That is #358, which T14 declared but no judge listed. #358 has no closing milestone. T14 traced the gap to the drop floor and the press hold, which keep drops honest, and no never-take signal exists to shorten them.
+  - Acceptance 3 is amended: a declared gap with no closing route names its ticket instead of a milestone. It is still listed apart and never counts as a pass. An undeclared loss, or a missed effect, still fails.
+  - #358's declaration reads: "declared gap, no closing route (the floor and hold keep drops honest; no never-take signal); owner informed 2026-11-10; tracked by #358". The owner has not ruled on it; they were told it ships declared unless they object. #269's short drop is declared the same way if any gate step judges it.
+  Date/Author: 2026-11-12, the plan-executor (session linux171), on the design session's ruling.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

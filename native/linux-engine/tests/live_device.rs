@@ -497,7 +497,8 @@ struct GeckoDrag {
 /// the grab taken, makes that window `XdndSelection`'s owner; the release ends the grab and the selection. A grab that
 /// another client holds already fails, and then no drag and drop begins, as GTK's `gtk_drag_begin` gives up. The real
 /// pointer, parked in the window, crosses out of it in mode `Grab` and back in mode `Ungrab` without moving. `pressed`
-/// is told when the press arrives. One drag; the window stays until it is told to stop, then answers what it saw.
+/// is told when the press arrives. One drag; the window stays until it is told to stop and has read the release, then
+/// answers what it saw.
 fn gecko_dragging_window(
     start_after: Duration,
     pressed: Option<mpsc::Sender<()>>,
@@ -531,8 +532,17 @@ fn gecko_dragging_window(
         let selection = conn.intern_atom(false, b"XdndSelection").unwrap().reply().unwrap().atom;
         conn.sync().unwrap();
         ready.send(probe.id).unwrap();
-        let (mut inputs, mut began, mut press) = (Vec::new(), false, None);
-        while stopped.try_recv().is_err() {
+        let (mut inputs, mut began, mut press, mut released) = (Vec::new(), false, None, false);
+        // told to stop, it still reads on to the drag's release (a background drag sends some 1,800 events, which the
+        // server holds until the window reads them: task 75), within a bound
+        let mut stop_by = None;
+        loop {
+            if stop_by.is_none() && stopped.try_recv().is_ok() {
+                stop_by = Some(Instant::now() + Duration::from_secs(10));
+            }
+            if stop_by.is_some_and(|by| released || Instant::now() > by) {
+                break;
+            }
             let Some(event) = conn.poll_for_event().unwrap() else {
                 sleep(Duration::from_millis(1));
                 continue;
@@ -573,6 +583,7 @@ fn gecko_dragging_window(
                         conn.sync().unwrap();
                     }
                     press = None;
+                    released = true;
                 }
                 _ => {}
             }

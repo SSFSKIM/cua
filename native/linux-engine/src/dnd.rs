@@ -407,8 +407,9 @@ enum Note {
     /// [`DROP_CONFIRM`], for the target's confirmation of its drop, when the watch confirms drops.
     Released { at: Instant, taken: bool },
     /// The button was released at `at` by a thread that read no take (a held handle's idle bound while the engine was
-    /// busy, `engine/idle_watchdog.rs`): a take the watch had read by the time this came counts as before the release,
-    /// any later one as late, so a take the server handled just before the release but read after this is cancelled.
+    /// busy, `engine/idle_watchdog.rs`): a take the watch read before `at` counts as before the release, any read at or
+    /// after it as late, however long this note took to come, so a take the server handled just before the release but
+    /// read after it is cancelled (doubt counts as late).
     ReleasedUnread { at: Instant },
     /// The drag ended otherwise (cancelled in time, an error): nothing more to watch.
     Done,
@@ -623,7 +624,10 @@ fn watch_loop(
                 on_release();
             }
             Ok(Note::ReleasedUnread { at }) => {
-                released = Some((at, taken.is_some()));
+                // ordered against the release's own stamp, not against this notice, which comes only after the release's
+                // round trip: a take read before the stamp was handled before the button-up was even sent; one read at
+                // or after it may be a late start, so it counts as late (the third review of task 73, P1)
+                released = Some((at, taken.is_some_and(|(_, seen)| seen < at)));
                 on_release();
             }
             Ok(Note::Done) | Err(std::sync::mpsc::TryRecvError::Disconnected) => return WatchEnd::Quiet,
@@ -1445,6 +1449,38 @@ mod tests {
         notes.send(Note::ReleasedUnread { at: Instant::now() }).unwrap();
         let end = watch_loop(&inbox, false, || {}, || Ok(took(7)), || Ok(()), |_| true);
         assert!(matches!(end, WatchEnd::Late(LateDrop { escaped: true, .. })), "{end:?}");
+    }
+
+    #[test]
+    fn a_take_read_after_the_release_but_before_its_notice_is_late_not_a_drop_under_way() {
+        // the third review (P1): the watchdog stamps its release, sends the button-up, and tells the watch only after
+        // its round trip; a take the watch reads in between was read after the release, so it may be a late start and
+        // is cancelled, whatever the notice's own arrival says. The order exactly: the release stamped, the take read,
+        // then the notice processed
+        let (notes, inbox) = std::sync::mpsc::channel();
+        let at = Instant::now();
+        let mut looks = 0;
+        let mut escaped = None;
+        let end = watch_loop(
+            &inbox,
+            true,
+            || {},
+            || {
+                looks += 1;
+                if looks == 1 {
+                    notes.send(Note::ReleasedUnread { at }).unwrap();
+                    return Ok(took(7));
+                }
+                Ok(Seen::default())
+            },
+            || Ok(()),
+            |time| {
+                escaped = Some(time);
+                true
+            },
+        );
+        assert!(matches!(end, WatchEnd::Late(LateDrop { escaped: true, .. })), "{end:?}");
+        assert_eq!(escaped, Some(7), "the Escape went out, stamped with the take's time");
     }
 
     #[test]

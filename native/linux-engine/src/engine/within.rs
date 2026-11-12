@@ -4,11 +4,17 @@
 //! the application then ignores them. So a background click, scroll, move or drag into such a window is watched, on
 //! the press watch's connection (`stray.rs`), from just before a second read of the pointer until a round trip after
 //! its events went out, and the pointer is read again at the end: a request the pointer left the window during, or
-//! ended outside it, answers that the application may not have taken it, never success.
+//! ended outside it, answers that the application may not have taken it, never success. A drag that begins the
+//! application's own drag and drop is the one exception the watch makes (ffdnd-fix; the design session's ruling on T19,
+//! 2026-11-12): GTK's drag source grabs the pointer for it, which crosses the pointer out of the window in mode `Grab`
+//! though it never moved, and that leave is excused when the window's own client took `XdndSelection` while the grab
+//! held (`stray::leaves`). Another client's grab still counts.
 //!
-//! Known limit: the watch ends a round trip after the events reached the server, so they are in the application's queue
+//! Known limits: the watch ends a round trip after the events reached the server, so they are in the application's queue
 //! ahead of any later crossing; an application that reads the pointer's state again when it handles them, after a later
-//! leave, is not seen.
+//! leave, is not seen. And while the application's own drag-and-drop grab holds, the server reports the pointer's
+//! crossings to that application alone: a pointer that leaves and comes back during it is not seen, one that stays out
+//! is, by the read at the end.
 
 use anyhow::{Result, anyhow};
 use serde_json::json;
@@ -81,7 +87,7 @@ impl Engine {
                 }),
             ));
         }
-        let _ = watch.finish(watching);
+        let _ = watch.finish_leaves(watching);
         self.stray_watch = Some(watch).filter(StrayWatch::healthy);
         // judged outside on this read, never read a third time: a pointer back by then would take the background
         // route with no watch, and a leave during the request would answer success
@@ -102,26 +108,31 @@ impl Engine {
         // test builds only: the desktop changed between the events' sending and the watch's reading
         #[cfg(test)]
         crate::fault::identity(crate::fault::Identity::PointerSent);
-        let seen = watch.finish(watching);
+        let seen = watch.finish_leaves(watching);
         let inside_at_end = self.pointer_within(window);
         self.stray_watch = Some(watch).filter(StrayWatch::healthy);
         let app = self
             .x
             .get_window(window)
             .map_or_else(|_| format!("window {window}"), |w| w.app);
-        let (leaves, answer) = match seen {
+        let (leaves, own_drag_grabs, answer) = match seen {
             Ok(leaves) => (
-                json!(leaves.count()),
-                (leaves.count() > 0 || !inside_at_end).then(|| anyhow!(pointer_left(&app, what))),
+                json!(leaves.left),
+                json!(leaves.own_drag_grabs),
+                (leaves.left > 0 || !inside_at_end).then(|| anyhow!(pointer_left(&app, what))),
             ),
             Err(error) => {
                 let why = format!("{error:#}");
-                (json!(why), Some(anyhow!(pointer_watch_failed(&app, what, &why))))
+                (
+                    json!(why),
+                    json!(null),
+                    Some(anyhow!(pointer_watch_failed(&app, what, &why))),
+                )
             }
         };
         self.extra.insert(
             "pointer_watch".into(),
-            json!({ "leaves": leaves, "inside_at_end": inside_at_end }),
+            json!({ "leaves": leaves, "own_drag_grabs": own_drag_grabs, "inside_at_end": inside_at_end }),
         );
         answer
     }

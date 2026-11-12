@@ -121,6 +121,8 @@ pub struct StrayWatch {
     root: Window,
     /// The XTEST pointer device, whose motion is the drag's own on the XTEST routes.
     xtest_pointer: Option<u16>,
+    /// `XdndSelection`, interned once the first Gecko request watched its owner changes (XFixes asked for then).
+    xdnd_selection: Option<u32>,
     /// One of its requests failed: the engine opens a new connection for the next drag.
     broken: bool,
 }
@@ -130,15 +132,63 @@ pub struct Watching {
     target: Window,
     own_source: Option<u16>,
     strays: Strays,
-    /// Only the real pointer leaving the target counts (`StrayWatch::begin_leaves`), not every stray.
-    leaves: bool,
+    /// A Gecko request's watch (`StrayWatch::begin_leaves`): only the target's crossings and its own client's takes of
+    /// `XdndSelection` are kept, in the server's order, not every stray.
+    crossed: Option<Vec<Crossed>>,
 }
 
 /// Whether a crossing the watch saw is the real pointer leaving `target` itself (T19, Gecko's drags): a `LeaveNotify`
 /// of the target whose pointer went to no window inside it, in any mode, since a grab that takes the pointer from the
-/// window takes it out as surely as a motion does. A move into one of its own child windows is not a leave.
+/// window takes it out as surely as a motion does ([`leaves`] excuses only the target's own drag and drop's grab). A
+/// move into one of its own child windows is not a leave.
 pub fn left_window(target: Window, event: Window, detail: NotifyDetail) -> bool {
     event == target && detail != NotifyDetail::INFERIOR
+}
+
+/// What a Gecko request's watch saw that bears on whether the real pointer left the target, in the server's order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Crossed {
+    /// The pointer left the target to no window inside it ([`left_window`]), in this mode.
+    Left(NotifyMode),
+    /// It entered the target, in this mode.
+    Entered(NotifyMode),
+    /// The target's own X client took `XdndSelection` (`dnd::taken_by_target`): its drag and drop began.
+    OwnDragAndDrop,
+}
+
+/// The leaves a Gecko request's watch counts ([`leaves`]).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Leaves {
+    /// The real pointer leaving the target: the request answers that the application may not have taken it.
+    pub left: usize,
+    /// Grabs excused as the target's own drag and drop's.
+    pub own_drag_grabs: usize,
+}
+
+/// The leaves among what a Gecko request's watch saw, in order (ffdnd-fix; the design session's ruling on T19,
+/// 2026-11-12). Every leave counts, in any mode, but one: a leave in mode `Grab` during whose grab (up to the next
+/// crossing of the target in mode `Ungrab`, or the next leave) the target's own client took `XdndSelection`. That grab
+/// is its own drag and drop's: GTK's drag source grabs the pointer as Gecko's HTML5 drag and drop begins and takes the
+/// selection once it holds the grab, and the pointer crosses out of the window without moving. Another client's grab, a
+/// grab with no take while it held, or a take before the grab, is a leave.
+pub fn leaves(crossed: &[Crossed]) -> Leaves {
+    let mut out = Leaves::default();
+    for (i, seen) in crossed.iter().enumerate() {
+        let Crossed::Left(mode) = *seen else {
+            continue;
+        };
+        let own = mode == NotifyMode::GRAB
+            && crossed[i + 1..]
+                .iter()
+                .take_while(|c| !matches!(c, Crossed::Entered(NotifyMode::UNGRAB) | Crossed::Left(_)))
+                .any(|c| *c == Crossed::OwnDragAndDrop);
+        if own {
+            out.own_drag_grabs += 1;
+        } else {
+            out.left += 1;
+        }
+    }
+    out
 }
 
 impl StrayWatch {
@@ -168,6 +218,7 @@ impl StrayWatch {
             conn,
             root,
             xtest_pointer,
+            xdnd_selection: None,
             broken: false,
         })
     }
@@ -193,16 +244,61 @@ impl StrayWatch {
             target,
             own_source: if xtest_route { self.xtest_pointer } else { None },
             strays: Strays::default(),
-            leaves: false,
+            crossed: None,
         })
     }
 
-    /// Starts watching a background drag into `target` for the real pointer leaving it (T19): [`StrayWatch::begin`]'s
-    /// selections, of which only the target's leaves are kept (`left_window`).
+    /// Starts watching a background request into `target` for the real pointer leaving it (T19): the owner changes of
+    /// `XdndSelection` selected, then [`StrayWatch::begin`]'s selections and round trip, so a take before the request is
+    /// dropped with everything else; of what follows, only the target's crossings (its leaves by `left_window`) and its
+    /// own client's takes of the selection are kept ([`leaves`]).
     pub fn begin_leaves(&mut self, target: Window) -> Result<Watching> {
+        let selected = self.select_owners(true);
+        self.broken |= selected.is_err();
+        selected.context("the drag's pointer watch could not start")?;
         let mut watching = self.begin(target, false)?;
-        watching.leaves = true;
+        watching.crossed = Some(Vec::new());
         Ok(watching)
+    }
+
+    /// Ends a Gecko request's watch as [`StrayWatch::finish`] ends a drag's (a round trip, then its selections dropped,
+    /// the selection's owner changes with them), answering the leaves it counts.
+    pub fn finish_leaves(&mut self, mut watching: Watching) -> Result<Leaves> {
+        let finished = self.read(&mut watching, Phase::Released).and_then(|()| {
+            self.select(watching.target, false)?;
+            self.select_owners(false)?;
+            self.conn.flush()?;
+            Ok(())
+        });
+        self.broken |= finished.is_err();
+        finished.map(|()| leaves(watching.crossed.as_deref().unwrap_or_default()))
+    }
+
+    /// The owner changes of `XdndSelection` selected on the root, or no longer; XFixes and the atom asked for the first
+    /// time.
+    fn select_owners(&mut self, on: bool) -> Result<()> {
+        use x11rb::protocol::xfixes::{ConnectionExt as _, SelectionEventMask};
+        let selection = match self.xdnd_selection {
+            Some(selection) => selection,
+            None => {
+                self.conn
+                    .xfixes_query_version(4, 0)?
+                    .reply()
+                    .context("the drag's pointer watch needs the XFixes extension")?;
+                let selection = self.conn.intern_atom(false, b"XdndSelection")?.reply()?.atom;
+                *self.xdnd_selection.insert(selection)
+            }
+        };
+        let owners = if on {
+            SelectionEventMask::SET_SELECTION_OWNER
+        } else {
+            SelectionEventMask::default()
+        };
+        let selected = self.conn.xfixes_select_selection_input(self.root, selection, owners)?;
+        if on {
+            selected.check()?;
+        }
+        Ok(())
     }
 
     /// Reads what reached the watch up to now, just before the drag's release: a round trip, so every event the server
@@ -228,16 +324,22 @@ impl StrayWatch {
 
     fn read(&mut self, watching: &mut Watching, phase: Phase) -> Result<()> {
         self.conn.get_input_focus()?.reply()?;
+        let mask = self.conn.setup().resource_id_mask;
         while let Some(event) = self.conn.poll_for_event()? {
-            if watching.leaves {
-                if let Event::LeaveNotify(e) = &event
-                    && left_window(watching.target, e.event, e.detail)
-                {
-                    watching.strays.0.push(Seen::Crossing {
-                        window: e.event,
-                        enter: false,
-                        mode: e.mode,
-                    });
+            if let Some(crossed) = watching.crossed.as_mut() {
+                let target = watching.target;
+                match event {
+                    Event::LeaveNotify(e) if left_window(target, e.event, e.detail) => {
+                        crossed.push(Crossed::Left(e.mode));
+                    }
+                    Event::EnterNotify(e) if e.event == target => crossed.push(Crossed::Entered(e.mode)),
+                    Event::XfixesSelectionNotify(e)
+                        if Some(e.selection) == self.xdnd_selection
+                            && crate::dnd::taken_by_target(e.owner, target, mask) =>
+                    {
+                        crossed.push(Crossed::OwnDragAndDrop);
+                    }
+                    _ => {}
                 }
                 continue;
             }
@@ -480,6 +582,51 @@ mod tests {
         assert!(
             !left_window(TARGET, TARGET + 1, NotifyDetail::NONLINEAR),
             "another window's leave"
+        );
+    }
+
+    #[test]
+    fn a_grab_is_a_leave_unless_the_target_s_own_drag_and_drop_began_while_it_held() {
+        use Crossed::{Entered, Left, OwnDragAndDrop};
+        let (grab, ungrab, normal) = (NotifyMode::GRAB, NotifyMode::UNGRAB, NotifyMode::NORMAL);
+        let counted = |left, own_drag_grabs| Leaves { left, own_drag_grabs };
+        // Firefox's dnd cell, as traced (ffdnd-fix): its drag source's grab, its take, its ungrab after or past the end
+        assert_eq!(leaves(&[Left(grab), OwnDragAndDrop, Entered(ungrab)]), counted(0, 1));
+        assert_eq!(
+            leaves(&[Left(grab), OwnDragAndDrop]),
+            counted(0, 1),
+            "the ungrab after the watch's end"
+        );
+        assert_eq!(leaves(&[]), counted(0, 0));
+        assert_eq!(leaves(&[Left(grab)]), counted(1, 0), "another client's grab: no take");
+        assert_eq!(
+            leaves(&[Left(grab), Entered(ungrab), Left(grab), OwnDragAndDrop]),
+            counted(1, 1),
+            "another client's grab, ended, then the target's own"
+        );
+        assert_eq!(
+            leaves(&[Left(grab), OwnDragAndDrop, Entered(ungrab), Left(grab)]),
+            counted(1, 1),
+            "the target's own, ended, then another client's"
+        );
+        assert_eq!(
+            leaves(&[OwnDragAndDrop, Left(grab)]),
+            counted(1, 0),
+            "a take before the grab is not the grab's"
+        );
+        assert_eq!(leaves(&[Left(normal), OwnDragAndDrop]), counted(1, 0), "a real leave");
+        assert_eq!(
+            leaves(&[Left(grab), Left(normal), OwnDragAndDrop]),
+            counted(2, 0),
+            "the take came after another leave"
+        );
+        for mode in [NotifyMode::NORMAL, NotifyMode::WHILE_GRABBED, NotifyMode::UNGRAB] {
+            assert_eq!(leaves(&[Left(mode), OwnDragAndDrop]), counted(1, 0), "{mode:?}");
+        }
+        assert_eq!(
+            leaves(&[Entered(normal), Left(grab), Entered(normal), OwnDragAndDrop]),
+            counted(0, 1),
+            "an enter in another mode does not end the grab"
         );
     }
 

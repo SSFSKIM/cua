@@ -484,6 +484,195 @@ fn a_gecko_drag_the_real_pointer_leaves_while_it_runs_is_reported() {
     }
 }
 
+/// What a [`gecko_dragging_window`] did with one drag: the input events it received, and whether its drag and drop
+/// began (its pointer grab succeeded and it took `XdndSelection`).
+struct GeckoDrag {
+    inputs: Vec<Input>,
+    began: bool,
+}
+
+/// A window of the test's own, classed `firefox`, whose client begins an HTML5 drag and drop as GTK's drag source does
+/// under Gecko (the trace of ffdnd-fix, Firefox's dnd cell): at the first motion with the button held, `start_after` or
+/// more after the press, it grabs the pointer on an input-only window of its own off the screen (GTK's ipc window) and,
+/// the grab taken, makes that window `XdndSelection`'s owner; the release ends the grab and the selection. A grab that
+/// another client holds already fails, and then no drag and drop begins, as GTK's `gtk_drag_begin` gives up. The real
+/// pointer, parked in the window, crosses out of it in mode `Grab` and back in mode `Ungrab` without moving. `pressed`
+/// is told when the press arrives. One drag; the window stays until it is told to stop, then answers what it saw.
+fn gecko_dragging_window(
+    start_after: Duration,
+    pressed: Option<mpsc::Sender<()>>,
+) -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<GeckoDrag>) {
+    use x11rb::protocol::xproto::{ChangeWindowAttributesAux, GrabMode, GrabStatus};
+    let (ready, window) = mpsc::channel();
+    let (stop, stopped) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let probe = Probe::open("firefox", (0, 0, 400, 300));
+        let conn = &probe.conn;
+        let events = EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE | EventMask::BUTTON_MOTION;
+        conn.change_window_attributes(probe.id, &ChangeWindowAttributesAux::new().event_mask(events))
+            .unwrap();
+        let ipc = conn.generate_id().unwrap();
+        let aux = CreateWindowAux::new().override_redirect(1);
+        conn.create_window(
+            0,
+            ipc,
+            probe.root,
+            -100,
+            -100,
+            10,
+            10,
+            0,
+            WindowClass::INPUT_ONLY,
+            0,
+            &aux,
+        )
+        .unwrap();
+        conn.map_window(ipc).unwrap();
+        let selection = conn.intern_atom(false, b"XdndSelection").unwrap().reply().unwrap().atom;
+        conn.sync().unwrap();
+        ready.send(probe.id).unwrap();
+        let (mut inputs, mut began, mut press) = (Vec::new(), false, None);
+        while stopped.try_recv().is_err() {
+            let Some(event) = conn.poll_for_event().unwrap() else {
+                sleep(Duration::from_millis(1));
+                continue;
+            };
+            let sent = event.sent_event();
+            match event {
+                Event::ButtonPress(e) => {
+                    inputs.push(Input::ButtonPress { button: e.detail, sent });
+                    press = Some(Instant::now());
+                    if let Some(cue) = &pressed {
+                        let _ = cue.send(());
+                    }
+                }
+                Event::MotionNotify(_) if !began && press.is_some_and(|at| at.elapsed() >= start_after) => {
+                    let mask = EventMask::BUTTON_RELEASE | EventMask::POINTER_MOTION;
+                    let (none, now, mode) = (x11rb::NONE, x11rb::CURRENT_TIME, GrabMode::ASYNC);
+                    let status = conn
+                        .grab_pointer(false, ipc, mask, mode, mode, none, none, now)
+                        .unwrap()
+                        .reply()
+                        .unwrap()
+                        .status;
+                    if status == GrabStatus::SUCCESS {
+                        conn.set_selection_owner(ipc, selection, now).unwrap();
+                        conn.sync().unwrap();
+                        began = true;
+                    } else {
+                        // GTK gives the drag up: nothing more is tried for this press
+                        press = None;
+                    }
+                }
+                Event::ButtonRelease(e) => {
+                    inputs.push(Input::ButtonRelease { button: e.detail, sent });
+                    if began {
+                        conn.ungrab_pointer(x11rb::CURRENT_TIME).unwrap();
+                        conn.set_selection_owner(x11rb::NONE, selection, x11rb::CURRENT_TIME)
+                            .unwrap();
+                        conn.sync().unwrap();
+                    }
+                    press = None;
+                }
+                _ => {}
+            }
+        }
+        let _ = conn.destroy_window(ipc);
+        GeckoDrag { inputs, began }
+    });
+    (window.recv().unwrap(), stop, handle)
+}
+
+/// A Gecko drag that begins Gecko's own drag and drop answers success with the real pointer in the window all along
+/// (ffdnd-fix; the design session's ruling on T19, 2026-11-12): GTK's drag source grabs the pointer, which crosses out of
+/// the window in mode `Grab` though it never moved, and the target's own client takes `XdndSelection` while that grab
+/// holds, so the crossing is its own drag and drop's, not a leave. Another client's grab during the same drag is still
+/// a leave, and so is a pointer that leaves and stays out.
+#[test]
+fn a_gecko_drag_that_begins_its_own_drag_and_drop_with_the_pointer_in_its_window_answers_success() {
+    use x11rb::protocol::xproto::GrabMode;
+    // a zigzag, every corner a rest of the browsers' pacing: a drag of a few hundred milliseconds
+    let path: Vec<Value> = (0..12)
+        .map(|i| json!({"x": 20 + 30 * i, "y": if i % 2 == 0 { 40 } else { 200 }}))
+        .collect();
+    let pressed_and_released = [
+        Input::ButtonPress { button: 1, sent: true },
+        Input::ButtonRelease { button: 1, sent: true },
+    ];
+
+    let (window, stop, dragged) = gecko_dragging_window(Duration::ZERO, None);
+    let mut shared = Engine::start();
+    let app = app_of(&mut shared, window);
+    pointer_to(350, 280);
+    let answer = shared.request("drag", json!({"window": {"id": window}, "path": path}));
+    stop.send(()).unwrap();
+    let seen = dragged.join().unwrap();
+    assert!(seen.began, "the window's drag and drop began");
+    assert_eq!(seen.inputs, pressed_and_released, "the background route");
+    assert_eq!(answer, Ok(Value::Null), "the pointer in the window all along");
+
+    // control: another client grabs the pointer during the drag, before the window's drag and drop begins, and lets
+    // it go; the window's own grab and take come after, in the same request
+    let (cue, pressed) = mpsc::channel();
+    let (window, stop, dragged) = gecko_dragging_window(Duration::from_millis(150), Some(cue));
+    let foreign = std::thread::spawn(move || {
+        let (conn, screen) = x11rb::connect(None).expect("an X connection");
+        let root = conn.setup().roots[screen].root;
+        pressed.recv_timeout(Duration::from_secs(10)).expect("the press");
+        sleep(Duration::from_millis(20));
+        let (none, now, mode) = (x11rb::NONE, x11rb::CURRENT_TIME, GrabMode::ASYNC);
+        let status = conn
+            .grab_pointer(false, root, EventMask::BUTTON_PRESS, mode, mode, none, none, now)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .status;
+        sleep(Duration::from_millis(40));
+        conn.ungrab_pointer(x11rb::CURRENT_TIME).unwrap();
+        conn.sync().unwrap();
+        status
+    });
+    pointer_to(350, 280);
+    let answer = shared.request("drag", json!({"window": {"id": window}, "path": path}));
+    assert_eq!(
+        foreign.join().unwrap(),
+        x11rb::protocol::xproto::GrabStatus::SUCCESS,
+        "the foreign grab was taken"
+    );
+    stop.send(()).unwrap();
+    let seen = dragged.join().unwrap();
+    assert!(
+        seen.began,
+        "the window's drag and drop began after the foreign grab ended"
+    );
+    assert_eq!(seen.inputs, pressed_and_released);
+    let error = answer.expect_err("another client's grab is a leave");
+    assert!(
+        error.starts_with(&format!("{app} may not have taken the drag")),
+        "{error}"
+    );
+
+    // the window's drag and drop began, and the real pointer left during it and stayed out
+    let (cue, pressed) = mpsc::channel();
+    let (window, stop, dragged) = gecko_dragging_window(Duration::ZERO, Some(cue));
+    pointer_to(350, 280);
+    let mover = std::thread::spawn(move || {
+        pressed.recv_timeout(Duration::from_secs(10)).expect("the press");
+        sleep(Duration::from_millis(60));
+        pointer_to(600, 500);
+    });
+    let answer = shared.request("drag", json!({"window": {"id": window}, "path": path}));
+    mover.join().unwrap();
+    stop.send(()).unwrap();
+    let seen = dragged.join().unwrap();
+    assert!(seen.began);
+    let error = answer.expect_err("a pointer that left and stayed out");
+    assert!(
+        error.starts_with(&format!("{app} may not have taken the drag")),
+        "{error}"
+    );
+}
+
 /// `--ignore-cover`, a measurement flag (T19's sitting): no cover condition refuses or reroutes, so a Chromium drag
 /// along a covered path (`unless_path_unobscured`) goes out on the background route in shared mode, and the harness
 /// measures what the application does with it.

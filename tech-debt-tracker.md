@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-11-12 — A stale drag handle can move a later one (minor, #171 M4, the whole-branch review's discovery at a43b64cd).** The wire's drag handles carry no id. A stale service handle A, still stored as dragging after its expiry and refused `end`, can move a later handle B once B's start clears the engine's expired record. It is deterministic, and it predates M4's fix wave. Fix: give handles an id, or invalidate the service's handle object when the engine reports its expiry. Check: `grep -n handle_id native/linux-engine/src/wire.rs` prints nothing.
+
 - **2026-11-12 — Four gaps left by moving the harness onto its shared helpers (minor, #171 M4 T18, task 74).** T16's `park.mjs` and `app-identity.mjs` now guard every gate runner (`m4/harness-helpers/`). Left behind:
   - (1) `experiments.mjs` (capture-readiness, key-pace, `familyRuns`) and `record-wire.mjs` open scenes without `app-identity.mjs`. Fix: wrap each opener in `verifiedScene`. Check: `grep -n verifiedScene scripts/linux-engine-diff/experiments.mjs scripts/linux-engine-diff/record-wire.mjs` prints nothing.
   - (2) `pointer-route.mjs` keeps its own park, since T19's judge depends on not moving a pointer that is already in place (a motion to the pointer's own position still reaches the app, T9). Fix: verify its landing with `parkVerdict` after its own move, without moving again.

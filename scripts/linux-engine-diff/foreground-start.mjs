@@ -35,9 +35,10 @@ export async function foregroundStart(desktop, target, { active = activeWindow, 
     if (Number.isSafeInteger(id) && id > 0 && !exempt.has(clientOf(id)) && !others.has(clientOf(id))) others.set(clientOf(id), id);
   }
   if (others.size === 0) return null;
-  const now0 = now();
   const activatedFront = Boolean(desktop.front?.id) && others.has(clientOf(active()));
   if (activatedFront) desktop.focusFront();
+  // the quiet wait's own time, from the front window's activation on
+  const now0 = now();
   const ids = [...others.values()];
   let open = popups(ids);
   const atStart = open.length;

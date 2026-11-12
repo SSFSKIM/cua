@@ -62,7 +62,10 @@ export function renderSummary(lines) {
     const rows = lines.filter((l) => l.run === run);
     const meta = rows.find((r) => r.kind === 'meta');
     if (meta?.experiment) {
-      out.push(`## ${run} (experiment ${meta.experiment})`, '');
+      // an experiment run since T18 says whether it was a release gate (`--gate`) or a development run; one from before, nothing
+      const label = gateLabel(meta.gate);
+      out.push(`## ${run} (experiment ${meta.experiment}${label ? `; ${label}` : ''})`, '');
+      if (meta.candidate) out.push(candidateLine(meta.candidate), '');
       // a matrix is rendered from its rows with the current judgement; other experiments keep their own summary
       if (meta.experiment === 'matrix') out.push(...matrixMarkdown(rows), '');
       else for (const r of rows.filter((x) => x.kind === 'experiment-summary')) out.push(...r.markdown, '');

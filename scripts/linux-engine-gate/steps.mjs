@@ -14,7 +14,8 @@
 // device-chrome-dnd, and V5 under the gate's Chrome ballast so its drops meet M3's window load); the over-budget scene
 // through the facade; the drag cells (every family and kind 30 of 30, Chrome's and Firefox's canvas, Chrome's drag and
 // drop, the thumbs, Writer unprimed since T16 removed the priming); the events experiment's `move`; the settle through
-// the service as shipped (T8, T16's 25 ms drag); T7 revised's acceptance on the shipped engine (the focus-timer
+// the service as shipped (T8, T16's 25 ms drag); the facade suites on the candidate (repl-parity, native-baseline with
+// compare --engines, linux-native, linux-device-mode: w5's facade.sh); T7 revised's acceptance on the shipped engine (the focus-timer
 // experiment's shipped lane and its stops); the device cases of #263 and #264 (V5's device-chrome-dnd, and the real late
 // takes of `t14-late`, which the device scene cannot produce); T19's predicates manifest; T17's Electron cells
 // (`t17-fix3`, judged by drop-signals-judge.mjs `electronDropVerdict`). Apart in the same sitting, at twice the load
@@ -35,6 +36,10 @@ const GEDIT_TEXT = ['type_text', 'type_text_selection', 'type_text_dedicated', '
 const verdict = (name, minutes, scenes, what, { only = {}, ballast = false } = {}) => ({ name, kind: 'verdict', display: ':0', load: 'idle', minutes, scenes, only, ballast, what });
 const experiment = (name, display, load, minutes, args, what, { pilot = null } = {}) => ({ name, kind: 'experiment', display, load, minutes, args, what, pilot });
 const LOAD2 = ['--load-factor', '2'];
+/** w5's runner of the facade suites (T18), relative to the checkout. */
+export const FACADE_SCRIPT = 'docs/evidence/2026-10-28-own-linux-engine/m4/facade/scripts/facade.sh';
+/** A facade suite's part, run by facade.sh on a private desktop of its own; its pilot is the part itself. */
+const suite = (name, minutes, part, what) => ({ name, kind: 'suite', display: 'own', load: 'idle', minutes, args: [part], what, pilot: (args) => args });
 
 /** A drag step under load: `--trials` under 40 is refused at load (T10), so its pilot drops the load. */
 const dragLoadPilot = (args, n) => [...args.filter((a, i) => a !== '--load-factor' && args[i - 1] !== '--load-factor'), '--trials', String(n)];
@@ -67,6 +72,12 @@ export const STEPS = [
   experiment('D3', 'private', 'idle', 30, drag('firefox'), "Firefox's drag cells, the pointer parked inside (T19), its canvas judged on speed"),
   experiment('D4', 'private', 'idle', 25, drag('gedit,gtk-scale,gnome-text-editor,kate,qtcreator'), 'the GTK and Qt editors\' drag cells'),
   experiment('D5', 'private', 'idle', 25, drag('writer,xterm,xterm-allow,gtk4-input,gnome-terminal,writer-gen'), 'Writer (unprimed, T16), the terminals, GTK 4\'s scale, Writer through gen'),
+  // the facade suites on the candidate (the design session's requirement, 2026-11-12): w5's facade.sh, each part on a
+  // private desktop it starts itself, the candidate as its ENGINE_BIN; they count only when they pass on the artifact
+  suite('R1', 40, 'parity', "repl-parity's native suite on both engine lanes, and the diff against its expected differences"),
+  suite('R2', 35, 'baseline', 'native-baseline, three runs a lane interleaved, and compare --engines'),
+  suite('R3', 5, 'accept', "scripts/accept/linux-native.mjs on the candidate, in a home of the run's"),
+  suite('R4', 3, 'device', 'scripts/accept/linux-device-mode.mjs on the candidate'),
   { name: 'FB', kind: 'facade', display: 'private', load: 'idle', minutes: 5, args: ['--scenes', 'over-budget'], what: 'the over-budget scene through the real facade: the truncation line in getAXState and the combined observation (T3)', pilot: asIs },
   experiment('E1', 'own', 'idle', 8, ['--experiment', 'events', '--vendor', '{vendor}', '--newest', '{newest}'], "the events experiment: desktop move's later requests at or below the bar (T9)", { pilot: eventsPilot }),
   experiment('S1', 'own', 'idle', 39, settle('chrome,electron'), "the settle through cua's service as shipped: Chrome's and Electron's cells, audited"),
@@ -145,13 +156,21 @@ export function stepArgs(step, { paths, gate, pilot = null }) {
     ];
   }
   if (step.kind === 'facade') return ['--vendor-js', paths.vendorJs, '--engine', paths.candidate, ...step.args];
+  // the suite's part alone: its engine, out and label are facade.sh's environment (`suiteEnv`)
+  if (step.kind === 'suite') return [...step.args];
   const base = fill(step.args);
   const sized = pilot ? (step.pilot ?? ((args, n) => [...args, '--trials', String(n)]))(base, pilot) : base;
   return [...sized, '--cua', paths.candidate, '--run', run, ...(gate ? ['--gate'] : [])];
 }
 
 /** The harness script a step runs, relative to the checkout. */
-export const stepScript = (step) => (step.kind === 'facade' ? 'scripts/linux-engine-diff/services.mjs' : 'scripts/linux-engine-diff.mjs');
+export const stepScript = (step) => ({ facade: 'scripts/linux-engine-diff/services.mjs', suite: FACADE_SCRIPT })[step.kind] ?? 'scripts/linux-engine-diff.mjs';
+
+/**
+ * A suite step's environment for facade.sh: the candidate (a gate's the checked copy), its out and log directories in
+ * the step's labelled directory, and its label (`counted`, which refuses an unclean tree, or `pilot`).
+ */
+export const suiteEnv = ({ candidate, dir, gate }) => ({ ENGINE_BIN: candidate, OUT: `${dir}/run`, LOGS: `${dir}/logs`, LABEL: gate ? 'counted' : 'pilot' });
 
 /** The planned minutes: in all, per display (`:0`, and private, the experiments' own servers included) and per load. */
 export function totals(steps = STEPS) {

@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { GateRefused, checkCheckout, launchCommand, listText, parseGateArgs, printStep, runStep, stepDir } from '../../scripts/linux-engine-gate/gate.mjs';
-import { GATE_SCENES, MAX_STEP_MINUTES, STEPS, stepArgs, stepNamed, totals, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
+import { FACADE_SCRIPT, GATE_SCENES, MAX_STEP_MINUTES, STEPS, stepArgs, stepNamed, stepScript, suiteEnv, totals, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { planOps } from '../../scripts/linux-engine-diff/run.mjs';
 
@@ -133,12 +133,13 @@ test('a :0 step is printed as task 50\'s guarded sitting under the host lock, an
   await assert.rejects(runStep(run, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false }), /runs on :0.*never runs on the person's display/);
 });
 
-test('the runner starts nothing while the host is held, under a running load, into an existing step directory, or from an unclean checkout', async () => {
+test('the runner starts nothing without the harness\'s X client, while the host is held, under a running load, into an existing step directory, or from an unclean checkout', async () => {
   const candidate = join(fresh('c'), 'cua-engine');
   writeFileSync(candidate, 'x');
   const out = fresh('out');
   const a = parseGateArgs(['run', 'D1', '--candidate', candidate, '--out', out]);
-  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false };
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate };
+  await assert.rejects(runStep(a, { ...deps, xprobe: '/nowhere/xprobe' }), /the harness's X client is not built: cargo build --release/);
   await assert.rejects(runStep(a, { ...deps, held: () => true }), /held for sittings/);
   await assert.rejects(runStep(a, { ...deps, loadRunning: () => true }), /stress-ng is running/);
   await assert.rejects(runStep(a, { ...deps, git: cleanGit(' M scripts/x.mjs\n') }), /has 1 changes/);
@@ -171,4 +172,36 @@ test('--list prints every step\'s minutes, display and command, and the totals p
   assert.equal(text.split('\n').filter((l) => /locked\.sh t18-gate /.test(l)).length, STEPS.length);
   const t = totals();
   assert.match(text, new RegExp(`total ${t.all} min .*per display: :0 ${t.display[':0']} min, private ${t.display.private} min; per load: idle ${t.load.idle} min, gate-windows ${t.load['gate-windows']} min, load2 ${t.load.load2} min`));
+});
+
+test('the facade suites join the gate after the private drag steps: parity, baseline, linux-native and linux-device-mode, each listed', () => {
+  const names = STEPS.map((s) => s.name);
+  const suites = STEPS.filter((s) => s.kind === 'suite');
+  assert.deepEqual(suites.map((s) => [s.name, s.args[0]]), [['R1', 'parity'], ['R2', 'baseline'], ['R3', 'accept'], ['R4', 'device']]);
+  assert.ok(suites.every((s) => s.display === 'own' && s.load === 'idle' && names.indexOf(s.name) > names.indexOf('D5')));
+  const text = listText(parseGateArgs(['--list']), ROOT);
+  for (const s of suites) assert.match(text, new RegExp(`^${s.name}\\s+${s.minutes} min\\s+own\\s+idle\\s+.*\\n\\s+.*gate\\.mjs run ${s.name} `, 'm'));
+  assert.deepEqual(suiteEnv({ candidate: '/s/cua-engine', dir: '/o/R1.release-gate', gate: true }), { ENGINE_BIN: '/s/cua-engine', OUT: '/o/R1.release-gate/run', LOGS: '/o/R1.release-gate/logs', LABEL: 'counted' });
+  assert.equal(suiteEnv({ candidate: '/c', dir: '/d', gate: false }).LABEL, 'pilot');
+  assert.equal(stepScript(stepNamed('R2')), FACADE_SCRIPT);
+});
+
+test("a suite step runs facade.sh's part with the candidate as ENGINE_BIN, its out and logs labelled in the step's directory", async () => {
+  const root = fresh('root');
+  mkdirSync(join(root, FACADE_SCRIPT, '..'), { recursive: true });
+  // facade.sh's stand-in: records its part and environment
+  writeFileSync(join(root, FACADE_SCRIPT), '#!/bin/bash\necho "part=$1 engine=$ENGINE_BIN out=$OUT logs=$LOGS label=$LABEL" > "$OUT/seen"\n');
+  const candidate = join(fresh('c'), 'cua-engine');
+  writeFileSync(candidate, 'x');
+  const out = fresh('out');
+  const a = parseGateArgs(['run', 'R3', '--candidate', candidate, '--out', out, '--dev', '--pilot', '2']);
+  const exit = await runStep(a, { root, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate });
+  assert.equal(exit, 0);
+  const dir = join(out, 'R3.development-run.pilot');
+  assert.equal(readFileSync(join(dir, 'run', 'seen'), 'utf8').trim(), `part=accept engine=${candidate} out=${dir}/run logs=${dir}/logs label=pilot`);
+  for (const sub of ['run', 'logs']) assert.equal(readFileSync(join(dir, sub, 'LABEL'), 'utf8'), 'development run, not a release gate\n');
+  const record = JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8'));
+  assert.equal(record.exit, 0);
+  assert.equal(record.env.LABEL, 'pilot');
+  assert.equal(record.run_name, null);
 });

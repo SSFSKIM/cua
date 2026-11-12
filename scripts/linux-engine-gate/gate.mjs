@@ -35,7 +35,7 @@ import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { REPO_ROOT, candidateLine, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
-import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, totals } from './steps.mjs';
+import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
 
 const HOME = homedir();
 /** The paths of this VM's sittings (task 73's env.sh): the pinned and newest vendor builds and the vendor's client. */
@@ -51,6 +51,8 @@ export const DEFAULTS = {
 };
 /** Task 50's guards for a `:0` step, as T19's sitting ran them (pointer-route/scripts). */
 const GUARDS = 'docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts';
+/** The harness's X client, built in the checkout (xtools.mjs `XPROBE`). */
+const XPROBE_BUILT = 'scripts/linux-engine-diff/xprobe/target/release/xprobe';
 
 /** A step the runner will not start, with the reason. */
 export class GateRefused extends Error {
@@ -157,7 +159,7 @@ function writeRecord(dir, record) {
     '',
     `- what: ${r.what}`,
     `- display: ${r.display}; load: ${r.load}; estimated ${r.minutes} min`,
-    `- run: ${r.run_name ? `\`${r.run_name}\`` : 'the facade instrument (no run name)'}; the harness's output in \`run/\``,
+    `- run: ${r.run_name ? `\`${r.run_name}\`` : 'a facade instrument or suite (no run name)'}; the harness's output in \`run/\``,
     `- checkout: ${r.checkout.root} at ${r.checkout.commit ?? 'an unread commit'}${r.checkout.clean ? ', clean' : r.checkout.clean === false ? ', **not clean**' : ''}`,
     `- candidate: ${r.candidate.path} (sha256 ${r.candidate.sha256} as given)${r.candidate.record ? `; ${candidateLine(r.candidate.record)}` : ''}`,
     `- command: \`${r.command}\``,
@@ -177,7 +179,7 @@ function stepRecord(step, a, { root, checkout, command }) {
   } catch {
     // a missing candidate: the record says so, and `run` refuses it
   }
-  return { label, step: step.name, pilot, what: step.what, display: step.display, load: step.load, minutes: step.minutes, run_name: step.kind === 'facade' ? null : runName(step, a), checkout: { root, ...checkout }, candidate: { path: a.candidate, sha256: digest }, command };
+  return { label, step: step.name, pilot, what: step.what, display: step.display, load: step.load, minutes: step.minutes, run_name: ['facade', 'suite'].includes(step.kind) ? null : runName(step, a), checkout: { root, ...checkout }, candidate: { path: a.candidate, sha256: digest }, command };
 }
 
 /** `print`: the step's labelled directory and README, and its command. */
@@ -202,12 +204,14 @@ function labelledLog(path, label) {
  * step directory that exists, or (a gate) from an unclean checkout. Answers the step's exit code: the harness's, or 1
  * when its private display's watchdog was not clean.
  */
-export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng') } = {}) {
+export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT) } = {}) {
   const step = stepNamed(a.step);
   if (step.display === ':0') throw new GateRefused(`${step.name} runs on :0, in the declared sitting under task 50's guards: launch it with \`gate.mjs print ${step.name} ...\`'s command; this runner never runs on the person's display`);
   if (held()) throw new GateRefused(`${a.hold} exists: the host is held for sittings, and nothing starts`);
   if (loadRunning()) throw new GateRefused('stress-ng is running: a step starts only on a host with no load running');
   if (!existsSync(a.candidate)) throw new GateRefused(`no candidate at ${a.candidate}`);
+  // the harness's own X client (the display's watchdog, the witness): a fresh checkout has none until it is built
+  if (!existsSync(xprobe)) throw new GateRefused(`the harness's X client is not built: cargo build --release --manifest-path ${join(root, 'scripts/linux-engine-diff/xprobe/Cargo.toml')}`);
   const checkout = checkCheckout({ root, out: a.out, gate: a.gate, git });
   const dir = stepDir(step, a);
   if (existsSync(dir)) throw new GateRefused(`${dir} exists: each execution of a step writes a directory of its own`);
@@ -218,7 +222,7 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   // the facade step's script has no candidate checks of its own: a gate's runs here, its copy removed at the end
   let store = null;
   let candidatePath = a.candidate;
-  if (step.kind === 'facade' && a.gate) {
+  if (['facade', 'suite'].includes(step.kind) && a.gate) {
     store = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
     try {
       const prepared = await prepareCandidate({ source: a.candidate, gate: true, dir: store, root });
@@ -229,8 +233,10 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
       throw error;
     }
   }
-  const args = [...stepArgs(step, { paths: { ...a, candidate: candidatePath }, gate: a.gate, pilot: a.pilot }), '--out', join(dir, 'run')];
+  // a suite's out is facade.sh's environment (`suiteEnv`), every other script's its --out
+  const args = [...stepArgs(step, { paths: { ...a, candidate: candidatePath }, gate: a.gate, pilot: a.pilot }), ...(step.kind === 'suite' ? [] : ['--out', join(dir, 'run')])];
   record.argv = [stepScript(step), ...args];
+  if (step.kind === 'suite') record.env = suiteEnv({ candidate: candidatePath, dir, gate: a.gate });
   record.started = new Date().toISOString();
   writeRecord(dir, record);
   const out = labelledLog(join(dir, 'stdout.log'), label);
@@ -239,7 +245,17 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   try {
     if (step.display === 'own') {
       const { DISPLAY, XAUTHORITY, ...own } = env;
-      const child = spawn(process.execPath, [join(root, stepScript(step)), ...args], { cwd: root, env: own, stdio: ['ignore', out, err] });
+      // a suite is facade.sh's part, its out and logs in the step's directory, each with the label beside it
+      const suite = step.kind === 'suite';
+      if (suite) {
+        for (const sub of ['run', 'logs']) {
+          mkdirSync(join(dir, sub), { recursive: true });
+          writeFileSync(join(dir, sub, 'LABEL'), `${label}\n`);
+        }
+      }
+      const [command, argv] = suite ? ['bash', [join(root, stepScript(step)), ...args]] : [process.execPath, [join(root, stepScript(step)), ...args]];
+      const childEnv = suite ? { ...own, ...suiteEnv({ candidate: candidatePath, dir, gate: a.gate }) } : own;
+      const child = spawn(command, argv, { cwd: root, env: childEnv, stdio: ['ignore', out, err] });
       const forward = (signal) => child.kill(signal);
       process.on('SIGTERM', forward);
       process.on('SIGINT', forward);

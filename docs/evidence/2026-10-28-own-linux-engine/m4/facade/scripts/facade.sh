@@ -91,7 +91,7 @@ case "$part" in
     exit $a ;;
   inner-services)
     SKY="$HOME/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky"
-    rm -rf "$OUT/services/run"
+    rm -rf "$OUT/services/run"; mkdir -p "$OUT/services/run"   # the instrument writes its watchdog file there before it creates the directory
     node scripts/linux-engine-diff/services.mjs --vendor-js "$SKY" --engine "$ENGINE_BIN" --out "$OUT/services/run" --scenes gedit,chrome,over-budget > "$L/services.out" 2>&1
     s=$?; log "services exit $s"
     exit $s ;;

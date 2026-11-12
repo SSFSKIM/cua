@@ -1,0 +1,2 @@
+{"kind":"ready","ms":1794477134624,"display":":1","interval_ms":2000,"bound_ms":5000,"pid":1782667}
+{"kind":"stall","ms":1794479546749,"display":":1","bound_ms":5000,"round_trips":1206,"reason":"Broken pipe (os error 32)","killed":[],"stopped":1782655}

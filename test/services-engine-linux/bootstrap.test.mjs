@@ -38,10 +38,10 @@ const bootstrap = env => new Promise(resolve => {
 });
 
 test('with an engine older than MIN_ENGINE_VERSION the facade\'s bootstrap completes and every computer call answers with the version sentence', async t => {
-  const engine = fakeLinuxEngine(t, {version: 'cua-engine 0.2.0 (8b49b6825ae5)'});
+  const engine = fakeLinuxEngine(t, {version: 'cua-engine 0.3.0 (cd4c929758ca)'});
   const {code, result, stderr} = await bootstrap({CUA_ENGINE_BIN: engine.path});
   assert.equal(code, 0, stderr);
-  const sentence = 'cua-engine 0.2.0 is older than 0.3.0, which this cua needs; run cua install --engine';
+  const sentence = 'cua-engine 0.3.0 is older than 0.4.0, which this cua needs; run cua install --engine';
   assert.deepEqual(result, {bootstrap: 'done', target: 'linux', getApp: 'function', refusals: [sentence, sentence, sentence], unhandled: []});
   assert.deepEqual(engine.spawns(), [], 'nothing was started, so nothing was sent');
 });

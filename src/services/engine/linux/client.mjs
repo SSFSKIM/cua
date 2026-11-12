@@ -2,7 +2,7 @@
 // service" and "Process model"; Interfaces): the service's one cua-engine, a stdio child of the trusted worker.
 //
 // Starting. Before each start the client runs `<engine> --version` and refuses an engine older than
-// MIN_ENGINE_VERSION, the oldest whose wire this service relies on (0.3.0: `capabilities` and `--desktop`), or one whose
+// MIN_ENGINE_VERSION, the oldest whose wire this service relies on (0.4.0: `animated_action`, which the settle reads), or one whose
 // version line it cannot read; nothing is spawned then. It spawns `<engine> server --desktop <mode>` and sends
 // `capabilities` as the new process's first request, keeping that process's answer. A request may carry a check of the
 // report, made against the process the request is then written to. Requests made while it starts wait for it, in call
@@ -23,7 +23,7 @@
 import {execFile, spawn} from 'node:child_process';
 import {heldRecordStdio} from './held-record.mjs';
 
-export const MIN_ENGINE_VERSION = '0.3.0';
+export const MIN_ENGINE_VERSION = '0.4.0';
 const STDERR_TAIL = 8192;
 const VERSION_TIMEOUT_MS = 5000;
 const REMEDY = 'run cua install --engine';

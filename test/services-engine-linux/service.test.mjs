@@ -49,8 +49,8 @@ test('setup answers the vendor\'s target and its 20 methods in order, starting t
 });
 
 test('an engine the service cannot drive: setup still answers the methods, every method then refuses with the sentence before anything is sent, and the next call retries', async t => {
-  const OLD = 'cua-engine 0.2.0 is older than 0.3.0, which this cua needs; run cua install --engine';
-  const old = fakeLinuxEngine(t, {version: 'cua-engine 0.2.0 (8b49b6825ae5)'});
+  const OLD = 'cua-engine 0.3.0 is older than 0.4.0, which this cua needs; run cua install --engine';
+  const old = fakeLinuxEngine(t, {version: 'cua-engine 0.3.0 (cd4c929758ca)'});
   const svc = service(t, old);
   assert.deepEqual(await svc.handleRpc({type: 'setup'}), {target: 'linux', methods: LINUX_METHODS}, 'the facade gets its methods, never a rejected setup');
   for (const [method, input] of [['list_windows'], ['click', {window: W, x: 1, y: 1}], ['clipboard_release', {handle: 'h'}], ['get_window_state', {window: W}], ['type_text', {window: W, text: 'x'}]])
@@ -58,7 +58,7 @@ test('an engine the service cannot drive: setup still answers the methods, every
   await assert.rejects(svc.handleRpc({type: 'drag_start', handle_id: 'h', point: {x: 1, y: 1}}), {message: OLD});
   assert.deepEqual(old.spawns(), [], 'no server was started, so nothing was sent');
   // Installing the right engine needs no new session: the next call checks the version again and starts it.
-  old.setVersion('cua-engine 0.3.0 (fixed000)');
+  old.setVersion('cua-engine 0.4.0 (fixed000)');
   assert.deepEqual(await execute(svc, 'list_windows'), WINDOWS);
   assert.equal(old.spawns().length, 1);
 
@@ -77,6 +77,29 @@ test('an engine the service cannot drive: setup still answers the methods, every
   const shared = fakeLinuxEngine(t);
   await service(t, shared).handleRpc({type: 'setup'});
   assert.deepEqual(shared.spawns()[0].args, ['server', '--desktop', 'shared'], 'shared when the launch names none');
+});
+
+test('a 0.3.0 engine, which names no animated action, is refused before any settle applies: GTK 4\'s and Qt\'s element actions never settle at the element click\'s 10 ms', async t => {
+  // T8 (Decision Log, 2026-11-07, binding on T18): `animated_action` is new in 0.4.0, so a 0.3.0 engine answers an
+  // element action with null, and GTK 4's and Qt's actions would settle as a plain element click. No fallback is built;
+  // the version gate refuses that engine instead, before anything is sent and before the settler defers anything.
+  const OLD = 'cua-engine 0.3.0 is older than 0.4.0, which this cua needs; run cua install --engine';
+  const old = fakeLinuxEngine(t, {version: 'cua-engine 0.3.0 (cd4c929758ca)'});
+  const events = [];
+  const svc = service(t, old, {settler: recordingSettler(events)});
+  await svc.handleRpc({type: 'setup'});
+  for (const [method, input] of [['click', {window: W, element_id: 'n'}], ['perform_secondary_action', {window: W, element_id: 'n', action: 'click'}], ['click', {window: W, x: 1, y: 1}]]) {
+    events.length = 0;
+    await assert.rejects(execute(svc, method, input), {message: OLD}, method);
+    assert.deepEqual(events.filter(e => e.startsWith('defer')), [], `${method}: nothing deferred, so no settle applies`);
+  }
+  await assert.rejects(svc.handleRpc({type: 'drag_start', handle_id: 'h', point: {x: 1, y: 1}}), {message: OLD});
+  assert.deepEqual(old.spawns(), [], 'no server was started, so nothing was sent');
+  // the same service with a 0.4.0 engine settles the element action as T8 measured it
+  old.setVersion('cua-engine 0.4.0 (cafe0000)');
+  events.length = 0;
+  await execute(svc, 'click', {window: W, element_id: 'n'});
+  assert.deepEqual(events, ['wait', 'defer click_element']);
 });
 
 test('the capability is checked against the engine that receives the command: one restarted while a call waits for the settle is judged by its own report', async t => {

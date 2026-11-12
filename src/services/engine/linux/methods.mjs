@@ -37,7 +37,7 @@ export const CANNOT = {
 };
 const inputRoute = request => (request?.window != null ? 'input.background' : 'input.desktop');
 // A drag handle's start that a kernel reset overtook (dragHandle's `abandon`).
-const ABANDONED = 'drag handle was let go: the kernel that started it was reset';
+export const ABANDONED = 'drag handle was let go: the kernel that started it was reset';
 // A move or an end of a handle the engine no longer holds (dragHandle's `supersede`, and an answer of the engine's idle
 // release), refused with nothing sent.
 export const STALE_HANDLE = {
@@ -79,11 +79,11 @@ export function createLinuxMethods({engine, settler, ids}) {
     return engine.request(command, {});
   };
 
-  // A drag handle. Beside the vendor's three steps it has `abandon`, which the service calls at a kernel reset while the
-  // handle's start is pending (./service.mjs): a start not yet written to the engine is then refused where it would be
-  // written (the engine's request check, with nothing awaited before the write), so it never presses; one already written
-  // is the reset's to release, and `abandon` answers whether there is one. Either way the start then rejects, so the
-  // service never stores a handle of a kernel that is gone.
+  // A drag handle. Beside the vendor's three steps it has `abandon`, which the service calls at a kernel reset
+  // (./service.mjs): a step not yet written to the engine is then refused where it would be written (the engine's
+  // request check, with nothing awaited before the write), so nothing of the handle reaches the wire after the reset's
+  // release; a start already written is the reset's to release, and `abandon` answers whether there is one. A start then
+  // rejects either way, so the service never stores a handle of a kernel that is gone.
   //
   // The engine holds at most one handle, and the wire names none, so a move or an end goes to whichever handle the engine
   // holds. A handle is stale, and its move and end are refused here with nothing sent, once another handle's start
@@ -97,6 +97,7 @@ export function createLinuxMethods({engine, settler, ids}) {
     let startWritten = false;
     let stale = null;
     const fresh = () => {
+      if (abandoned) throw new Error(ABANDONED);
       if (stale) throw new Error(stale);
     };
     const step = async (input, check) => {

@@ -467,6 +467,52 @@ test('a handle\'s other failures leave it held: only the timeout and the expiry 
   assert.deepEqual(sent(engine).map(([, input]) => input.action), ['start', 'move_to', 'move_to', 'end']);
 });
 
+// A move or an end pipelined behind a later handle's start (the re-review of a70db70e): the stale mark came only once
+// the start's answer was back, so the move passed both checks and was written behind the start, and the engine applied
+// it to the later handle. A request on a stored handle now waits for the outcome of every start issued before it.
+test('a move or an end pipelined behind a later handle\'s start waits for it: refused once the start succeeds, nothing sent', async t => {
+  for (const step of [svc => svc.handleRpc({type: 'drag_move', handle_id: 'A', point: {x: 9, y: 9}}), svc => svc.handleRpc({type: 'drag_end', handle_id: 'A'})]) {
+    const engine = fakeLinuxEngine(t);
+    const svc = service(t, engine);
+    await svc.handleRpc({type: 'drag_start', handle_id: 'A', point: {x: 1, y: 2}});
+    const [startB, onA] = await Promise.allSettled([svc.handleRpc({type: 'drag_start', handle_id: 'B', point: {x: 3, y: 4}}), step(svc)]);
+    assert.equal(startB.status, 'fulfilled');
+    assert.equal(onA.status, 'rejected', 'the stale handle is refused');
+    assert.equal(onA.reason.message, 'this drag handle is no longer held: a later drag handle started since; this request was not run. Start a new handle to drag again');
+    assert.deepEqual(sent(engine), [['drag_handle', {action: 'start', x: 1, y: 2}], ['drag_handle', {action: 'start', x: 3, y: 4}]], 'nothing of A after B\'s start');
+  }
+});
+
+test('a move pipelined behind a later handle\'s start that fails runs on its own handle, after it', async t => {
+  const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command, input) {
+    if (command === 'drag_handle' && input.action === 'start' && input.x === 3) return {error: 'a drag handle is held; end it before sending desktop pointer input (a handle that gets no request for 30 s is released where it is)'};
+  }`});
+  const svc = service(t, engine);
+  await svc.handleRpc({type: 'drag_start', handle_id: 'A', point: {x: 1, y: 2}});
+  const [startB, moveA] = await Promise.allSettled([svc.handleRpc({type: 'drag_start', handle_id: 'B', point: {x: 3, y: 4}}), svc.handleRpc({type: 'drag_move', handle_id: 'A', point: {x: 9, y: 9}})]);
+  assert.equal(startB.status, 'rejected');
+  assert.equal(moveA.status, 'fulfilled', 'A is still the engine\'s handle');
+  await svc.handleRpc({type: 'drag_end', handle_id: 'A'});
+  assert.deepEqual(sent(engine).map(([, input]) => [input.action, input.x]), [['start', 1], ['start', 3], ['move_to', 9], ['end', undefined]]);
+});
+
+test('a move waiting for a later start that a reset lets go neither deadlocks nor sends: its handle is forgotten too', async t => {
+  const engine = fakeLinuxEngine(t);
+  const settler = heldSettler();
+  const svc = service(t, engine, {settler});
+  await svc.handleRpc({type: 'drag_start', handle_id: 'A', point: {x: 1, y: 2}});
+  settler.hold();
+  const startB = svc.handleRpc({type: 'drag_start', handle_id: 'B', point: {x: 3, y: 4}});
+  const moveA = svc.handleRpc({type: 'drag_move', handle_id: 'A', point: {x: 9, y: 9}});
+  await settler.waiting();
+  await svc.kernelReset();
+  settler.release();
+  const [b, a] = await Promise.allSettled([startB, moveA]);
+  assert.equal(b.reason?.message, 'drag handle was let go: the kernel that started it was reset');
+  assert.equal(a.reason?.message, 'Sky drag handle has not been started', 'forgotten at the reset');
+  assert.deepEqual(sent(engine), [['drag_handle', {action: 'start', x: 1, y: 2}], ['release_handle', {}]]);
+});
+
 test('a kernel reset whose release fails forgets the handles and resolves; one before the engine was ever started starts nothing', async t => {
   const engine = fakeLinuxEngine(t, {behaviour: 'export function answer(command) { if (command === \'release_handle\') return {error: \'unknown command `release_handle`\'}; }'});
   const svc = service(t, engine);

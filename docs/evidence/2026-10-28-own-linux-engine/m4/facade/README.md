@@ -45,7 +45,7 @@ What each suite runs on:
 | repl-parity `--suite native`, vendor lane | `parity/vendor/` | complete, `RECORDED_VENDOR_DEFECT`: 31 of 34 cases covered, the 3 declared vendor defects (`app/typetext`, `app/paste`, `getaxstate/minimized`) |
 | repl-parity `--suite native`, cua lane | `parity/cua/` | complete, **PASS**, 34 of 34 |
 | `repl-parity diff … --expected native-linux.json` | `parity/diff.json` | **ok**, 0 differences. Declared: `linux-text-typetext-m2`, `linux-text-paste-m2`, `linux-getaxstate-minimized-m4` |
-| native-baseline, 3 runs a lane interleaved, `compare --engines` | `baseline/`, `baseline/engines.md`, `baseline/engines-acceptance3.md` | every run complete, "Problems: none: both sides are complete, attested and comparable". **VERDICT: FAIL** under the original rule (`warm.getState` and `warm.listApps`, by 0.3 and 0.4 ms), and **VERDICT: FAIL** under Acceptance 3's rule (`warm.listApps` alone, undetermined; below) |
+| native-baseline, 3 runs a lane interleaved, `compare --engines` | `baseline/`, `baseline/engines.md`, `baseline/engines-acceptance3.md`; the top-up `baseline-topup/` | every run complete, "Problems: none: both sides are complete, attested and comparable". The counted sitting alone: **VERDICT: FAIL** under the original rule (`warm.getState` and `warm.listApps`, by 0.3 and 0.4 ms), and under Acceptance 3's rule (`warm.listApps` alone, undetermined). With the design session's top-up, `warm.listApps` pooled at 180 a side resolves: **pass, same (within noise)**, [-0.16, 0.732] ms against a 1 ms bound, so every operation passes (below) |
 
 Both repl-parity lanes recorded which engine answered on every native case:
 - The vendor lane: `sky_linux_x64`, the trusted worker's child, behind `@oai/sky`.
@@ -88,15 +88,42 @@ The stored records (`baseline/cv/`, `baseline/cc/`) were judged twice. There was
   median rule.
 - macOS (#117) is untouched: its comparisons are pinned byte for byte (`test/native-baseline/fixtures/macos-lanes.json`).
 
-**What the remaining FAIL is.** `warm.listApps`'s interval includes 0 and reaches 0.124 ms past its 1 ms bound, so the
-rule cannot call it a tie at 90 samples a side. The evidence still points to a tie:
-- The per-run medians interleave: cv 17.2, 14.1 and 18.2 ms against cc 17.5, 16.7 and 18.0.
-- Inside the cell, cua is faster: 3.43 against 3.88 ms.
-- The pilot at 41070184 had cua below the vendor (17.2 against 17.5).
-- On M3's `:0`, where the vendor paid for the person's windows, the vendor took 23.8 ms against cua's 17.8.
+**The counted sitting's remaining FAIL.** At 90 samples a side, `warm.listApps`'s interval includes 0 and reaches
+0.124 ms past its 1 ms bound, so the rule could not decide it.
 
-Neither rule's verdict was rerun to make it pass. Whether to sample further, declare a speed gap, or rule otherwise is
-the T18 executor's and the coordinator's call.
+### The top-up: `warm.listApps` at 180 a side (`baseline-topup/`)
+
+The design session ruled for Acceptance 3's own remedy, more samples, with no second change to the judge.
+- **The sitting:** three more default-plan runs a lane, interleaved as the counted sitting's were.
+  - The same head (8ab1cc75, checked out detached for the step) and the same build (`17a3893e…`), on the private `:1`,
+    as one idle locked step. native-baseline has no way to run one operation alone, so each run measured its whole
+    plan; only `warm.listApps` is pooled.
+  - Every run was complete: "Problems: none: both sides are complete, attested and comparable".
+- **The top-up on its own** (`baseline-topup/engines-acceptance3.md`, judged at bbaff26d): **VERDICT: PASS**.
+  `warm.listApps` [-0.589, 0.735], `warm.getState` [-0.825, 0.551], both same (within noise).
+  `baseline-topup/engines-original-rule.md` is the old rule's own output at 8ab1cc75, kept as a record.
+- **Pooled** (`baseline-topup/pooled-listapps.json`, by `scripts/pool-listapps.mjs`): the committed rule's own calls,
+  exactly as `linuxEngineSpeed` makes them, on both sittings' successful samples. `compare` takes three runs a side.
+
+| `warm.listApps` | samples a side | vendor wall | cua wall | vendor in-cell | cua in-cell | vendor outside | cua outside | interval of cua minus vendor, ms | bound | verdict |
+|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|
+| the counted sitting | 90 | 16.83 | 17.20 | 3.88 | 3.43 | 13.08 | 13.75 | [-0.227, 1.124] | 1 | fail, undetermined |
+| the top-up sitting | 90 | 17.12 | 17.28 | 3.92 | 3.54 | 13.22 | 13.68 | [-0.589, 0.735] | 1 | pass, same (within noise) |
+| **pooled** | **180** | 16.99 | 17.24 | 3.90 | 3.50 | 13.10 | 13.70 | **[-0.16, 0.732]** | 1 | **pass, same (within noise)** |
+
+**The verdict:** `warm.listApps` passes as same (within noise), and with it every operation of the native baseline's
+engine comparison passes under Acceptance 3's rule.
+
+**The construction**, from the list_apps check (task 74, w5):
+- The two engines run the same desktop-entry algorithm and give the same output.
+- cua does less X work. It pipelines its requests and caches atoms; the vendor makes one round trip per request, with
+  an InternAtom on every use.
+- Over the wire, warm `list_apps` takes 5.2, 7.3 and 7.4 ms on cua against 60.8–127.4 ms on the vendor builds. The runs
+  are `m4/drops/device-idle/run/`, `m4/settle/fix/device/idle/run/` and `m4/foreground-raise/final/device/`, each judged
+  faster.
+- In the facade, cua is faster inside the cell in both sittings (3.43 and 3.54 against 3.88 and 3.92 ms). The small
+  wall difference sits in the transport code both lanes share, outside the cell, and `warm.noop` shows the opposite
+  sign there (cua 14.20 against the vendor's 14.53 ms).
 
 ## Harness changes (fe0a26b4, cf785980, 75377a53, 41070184)
 
@@ -147,7 +174,14 @@ the driver checked `hold-sittings` and waited for a 1-minute load below 0.8. No 
 2026-11-13T07:01:58Z release task74-w5 status=0 load=1.29 1.32 1.27 render-host=none :: facade.sh parity
 2026-11-13T07:02:48Z acquire task74-w5 load=0.77 1.17 1.23 render-host=none :: facade.sh baseline
 2026-11-13T07:24:09Z release task74-w5 status=1 load=0.33 0.51 0.74 render-host=none :: facade.sh baseline
+2026-11-13T07:58:20Z acquire task74-w5 load=0.27 0.39 0.38 render-host=none :: facade.sh baseline   (the top-up)
+2026-11-13T08:19:44Z release task74-w5 status=1 load=0.25 0.48 0.52 render-host=none :: facade.sh baseline   (the top-up)
 ```
+
+Both baseline steps released with status 1 because their built-in `compare` ran the old rule at 8ab1cc75 (the
+counted step: FAIL on `warm.getState` and `warm.listApps`; the top-up: FAIL on `warm.listApps` alone, cua 17.3 against
+17.1 ms). Every run in both completed. The verdicts above are the
+committed rule's.
 
 ## Pilots (before the final head, not counted)
 

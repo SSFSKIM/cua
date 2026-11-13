@@ -454,15 +454,23 @@ async function measureSample(s, ctx) {
  */
 export async function negativeCheck(desktop, witness, stubScene, emit, { audit = false, foreign = [] } = {}) {
   const proxy = audit ? await startProxy() : null;
-  const stub = new Engine({ label: 'stub-activating', bin: join(here, 'stub-activating.mjs'), env: proxy?.env }).start();
-  const { value, witness: w } = await witness.span('stub', () => stub.request('press_key', { window: { id: stubScene.id }, key: 'x' }));
-  await stub.close();
-  desktop.focusFront();
+  let value;
+  let w;
+  let text = null;
+  try {
+    const stub = new Engine({ label: 'stub-activating', bin: join(here, 'stub-activating.mjs'), env: proxy?.env }).start();
+    ({ value, witness: w } = await witness.span('stub', () => stub.request('press_key', { window: { id: stubScene.id }, key: 'x' })));
+    await stub.close();
+    desktop.focusFront();
+  } finally {
+    // the proxy stopped however the check goes
+    if (proxy) text = await proxy.stop();
+  }
   const witnessFailed = !w.clean;
   let audited = null;
   let stubForeign = [];
   if (proxy) {
-    const trace = parseXtrace(await proxy.stop());
+    const trace = parseXtrace(text);
     audited = auditRequests(trace);
     stubForeign = auditForeign(trace, { registered: desktop.registry(), root: desktop.root }).foreign;
     foreign.push(...stubForeign.map((f) => `stub-activating: ${foreignLine(f)}`));

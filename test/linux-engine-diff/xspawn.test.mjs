@@ -294,8 +294,11 @@ test("the private server's own clients, its watchdog, its mark and the run's rec
 // ---------------------------------------------------------------------------------------------------------------
 // the source: no X-facing start goes around the spawner
 
-/** What reaches an X display when the harness starts it: its X tools, the engines, the applications, the bus daemon. */
-const X_FACING = new Set(["'xtrace'", "'xprop'", "'xdotool'", "'xwininfo'", "'xclip'", "'xdpyinfo'", "'xauth'", "'Xvfb'", "'dbus-daemon'", 'XPROBE', 'xprobe', 'this.bin', 'values.engine', 'args.cua', 'cmd', 'CHROME_COMMAND']);
+/**
+ * What reaches an X display when the harness starts it: its X tools (xtrace among them, started through `setpriv` for
+ * its parent-death signal, audit.mjs), the engines, the applications, the bus daemon.
+ */
+const X_FACING = new Set(["'xtrace'", "'setpriv'", "'xprop'", "'xdotool'", "'xwininfo'", "'xclip'", "'xdpyinfo'", "'xauth'", "'Xvfb'", "'dbus-daemon'", 'XPROBE', 'xprobe', 'this.bin', 'values.engine', 'args.cua', 'cmd', 'CHROME_COMMAND']);
 
 /**
  * What the harness starts that reaches no X display: the bus tools, its load and its build steps, and the run's
@@ -322,7 +325,7 @@ test('every start of an X-facing tool goes through the spawner, and nothing else
   assert.deepEqual(unguarded.map(({ file, line, command }) => `${file}:${line}: ${command}`), [], 'an X-facing start, or an unknown one, outside the spawner');
   const unknown = starts.filter((s) => !X_FACING.has(s.command) && !NOT_X_FACING.has(s.command));
   assert.deepEqual(unknown.map(({ file, line, command }) => `${file}:${line}: ${command}`), [], 'every command the harness starts is known to reach a display or not');
-  for (const tool of ["'xtrace'", "'xprop'", "'xdotool'", "'xwininfo'", "'xclip'", "'Xvfb'", "'dbus-daemon'", 'XPROBE', 'this.bin', 'cmd', 'CHROME_COMMAND']) {
+  for (const tool of ["'setpriv'", "'xprop'", "'xdotool'", "'xwininfo'", "'xclip'", "'Xvfb'", "'dbus-daemon'", 'XPROBE', 'this.bin', 'cmd', 'CHROME_COMMAND']) {
     assert.ok(starts.some((s) => s.command === tool && s.guarded), `${tool} is started, through the spawner`);
   }
 });

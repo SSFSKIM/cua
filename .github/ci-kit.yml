@@ -78,13 +78,15 @@ gates:
   # gate's hosted macOS has no dbus-daemon; here, on GitHub's Ubuntu runner with dbus installed,
   # CUA171_DBUS_TESTS=required turns a missing tool into a failure, never a skip. Through the suite's cleanup check, with
   # its own test (a stand-in left behind its bus) and the session bus's tests beside them. No X display is started.
+  # The trace proxy's lifetime tests (audit-proxy-lifetime.test.mjs: setpriv's parent-death signal, /proc) are
+  # Linux's too, and run here beside them.
   - name: harness-dbus
     lane: hosted
     timeout: 15
     run: |
       sudo apt-get update -y
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends dbus dbus-bin
-      CUA171_DBUS_TESTS=required node test/linux-engine-diff/suite-check.mjs test/linux-engine-diff/a11y-stub.test.mjs test/linux-engine-diff/leak-check.test.mjs test/linux-engine-diff/session-bus.test.mjs
+      CUA171_DBUS_TESTS=required node test/linux-engine-diff/suite-check.mjs test/linux-engine-diff/a11y-stub.test.mjs test/linux-engine-diff/leak-check.test.mjs test/linux-engine-diff/session-bus.test.mjs test/linux-engine-diff/audit-proxy-lifetime.test.mjs
     paths:
       - "scripts/linux-engine-diff/**"
       - "test/linux-engine-diff/**"

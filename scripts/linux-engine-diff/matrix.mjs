@@ -168,6 +168,7 @@ async function auditPass(ctx, spec, scene) {
     const error = response.ok === true ? null : String(response.error);
     answers.push({ command, ok: response.ok === true, ...(error === null ? {} : { error: error.slice(0, 300), refused: DEVICE_REFUSAL.test(error) }) });
   };
+  let trace;
   try {
     for (const key of scene.kindOf === 'terminal' ? ['x', 'x'] : ['x', 'BackSpace']) await ask('press_key', { window: { id: scene.id }, key });
     for (let i = 0; i < 2; i++) {
@@ -175,9 +176,14 @@ async function auditPass(ctx, spec, scene) {
       await sleep(600);
     }
   } finally {
-    await engine.close();
+    // the proxy stopped however the pass goes: a family's failure is caught and the run goes on
+    try {
+      await engine.close();
+    } finally {
+      trace = await proxy.stop();
+    }
   }
-  const audited = auditAnswered(parseXtrace(await proxy.stop()), proxy.marks, answers);
+  const audited = auditAnswered(parseXtrace(trace), proxy.marks, answers);
   const ok = answers.every((a) => a.ok);
   const exercised = answers.length > 0 && answers.every((a) => a.ok || a.refused);
   emit({ kind: 'matrix-audit', family, engine: spec.label, ok, exercised, refused: answers.filter((a) => a.refused).length, answers, clean: audited.clean, traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.slice(0, 10) });

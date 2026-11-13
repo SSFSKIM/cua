@@ -302,7 +302,7 @@ test('an application whose own variables the environment refuses is never starte
  * (engines are not applications, task 45), the candidate's preparation commands, git, and node as the run's
  * org.a11y.Bus stand-in (a11y-stub.mjs; xspawn.test.mjs holds `process.execPath` to that one start).
  */
-const TOOLS = new Set(["'xdotool'", "'xprop'", "'xwininfo'", "'xclip'", "'busctl'", "'dbus-monitor'", "'dbus-daemon'", "'xtrace'", "'Xvfb'", "'stress-ng'", "'git'", "'pgrep'", "'sleep'", 'XPROBE', 'xprobe', 'this.bin', 'values.engine', 'args.cua', 'command', 'cmd', 'process.execPath']);
+const TOOLS = new Set(["'xdotool'", "'xprop'", "'xwininfo'", "'xclip'", "'busctl'", "'dbus-monitor'", "'dbus-daemon'", "'xtrace'", "'setpriv'", "'Xvfb'", "'stress-ng'", "'git'", "'pgrep'", "'sleep'", 'XPROBE', 'xprobe', 'this.bin', 'values.engine', 'args.cua', 'command', 'cmd', 'process.execPath']);
 
 test('no application start bypasses the launch environment: every process start is a tool, an engine, or one of the two application launchers', () => {
   const modules = harnessModules();

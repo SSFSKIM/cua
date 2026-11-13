@@ -425,6 +425,27 @@ export async function watchAncestry(proxy, window, { spawn = spawnProcess, ready
   };
 }
 
+/**
+ * The proxies this process runs, each one's `end` (its xtrace killed, its socket and its directory removed), all run when
+ * the process exits however it exits: by `process.exit` (a signal's stop hook ends the harness so, stop.mjs), by an
+ * error thrown past a proxy's stop, or with a stop never reached (the run's cleanup failing before it: the leak's four
+ * orphans, each beside a run directory that cleanup never removed). A proxy is the process's, never longer.
+ */
+const live = new Set();
+
+function endAtExit(end) {
+  if (live.size === 0) process.on('exit', endAll);
+  live.add(end);
+  return () => {
+    live.delete(end);
+    if (live.size === 0) process.off('exit', endAll);
+  };
+}
+
+function endAll() {
+  for (const end of live) end();
+}
+
 function freeDisplay(socketDir) {
   for (let n = 40; n < 100; n++) {
     if (!existsSync(`${socketDir}/X${n}`) && !existsSync(`/tmp/.X${n}-lock`)) return n;
@@ -450,6 +471,10 @@ function freeDisplay(socketDir) {
  * The display it forwards to must be one the run may reach (xspawn.mjs: one it created, or any in a declared live run),
  * checked before anything is made or started, whatever `spawn` is; the proxy in front of a display the run created is
  * then the run's too, until its stop.
+ * The proxy never outlives this process: its xtrace is ended, and its socket and directory removed, at the process's
+ * exit, whatever way it exits without the stop (`endAtExit`); and xtrace is started with the kernel's parent-death
+ * signal (setpriv's `--pdeathsig`), so a harness killed outright (SIGKILL, or a signal it has no handler for), which runs
+ * nothing of its own, still ends it. Its socket is then a file nothing listens on.
  * `spawn` and `socketDir` (where the proxy's socket appears) are the display-free tests' own.
  */
 export async function startProxy({ display = process.env.DISPLAY, privateDisplay, env = process.env, spawn = spawnProcess, socketDir = '/tmp/.X11-unix' } = {}) {
@@ -466,11 +491,16 @@ export async function startProxy({ display = process.env.DISPLAY, privateDisplay
   // lists, the bulk of a whole run's trace (T4b's audit round), and no audit reads that far into a list
   let child;
   try {
-    child = guard(spawn)('xtrace', ['-k', '-m', '256', '-d', display, '-D', `:${n}`, ...credentials, '-o', log], { stdio: ['ignore', 'ignore', 'pipe'] });
+    child = guard(spawn)('setpriv', ['--pdeathsig', 'KILL', '--', 'xtrace', '-k', '-m', '256', '-d', display, '-D', `:${n}`, ...credentials, '-o', log], { stdio: ['ignore', 'ignore', 'pipe'] });
   } catch (error) {
     rmSync(dir, { recursive: true, force: true });
     throw error;
   }
+  const forget = endAtExit(() => {
+    if (child.exitCode === null && child.signalCode == null) child.kill('SIGKILL');
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(socket, { force: true });
+  });
   let stderr = '';
   let failed = null;
   child.on?.('error', (error) => {
@@ -487,6 +517,7 @@ export async function startProxy({ display = process.env.DISPLAY, privateDisplay
       if (child.exitCode === null && !failed) child.kill('SIGKILL');
       rmSync(dir, { recursive: true, force: true });
       rmSync(socket, { force: true });
+      forget();
       throw new Error(`xtrace did not start: ${failed ? failed.message : stderr.trim()}`);
     }
     await new Promise((r) => setTimeout(r, 20));
@@ -537,6 +568,7 @@ export async function startProxy({ display = process.env.DISPLAY, privateDisplay
         rmSync(dir, { recursive: true, force: true });
         // xtrace leaves its display's socket behind when it is ended; the next pass would find the number taken
         rmSync(socket, { force: true });
+        forget();
       }
     },
   };

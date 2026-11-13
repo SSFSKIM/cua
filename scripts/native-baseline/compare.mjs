@@ -36,6 +36,8 @@
 import {isDeepStrictEqual} from 'node:util';
 import {attestation, DEFAULT_PLAN, isDefaultPlan, operationRank, summarize, surfaceOf} from './summary.mjs';
 import {comparisonEnvironment, environmentProblems, sameEnvironmentValue} from './environment.mjs';
+import {MIN_NOISE_SAMPLES, judgeSeriesSpeed} from '../linux-engine-diff/stats.mjs';
+import {medianDifferenceInterval} from '../linux-engine-diff/events.mjs';
 
 const LINUX_TEXT_METHODS = new Set(['method.typeText', 'method.paste']);
 
@@ -76,12 +78,17 @@ function sideOf(label, recorded, expectedHost, usage = 'compare <vendor-dir> <cu
   const host = hosts.length === 1 ? hosts[0] ?? null : null;
   if (host && host !== expectedHost) problems.push(`the ${label} attests the ${host} host, not ${expectedHost} (${usage})`);
   const ssh = summary.operations.find(o => o.op === 'ssh.roundtrip')?.wall?.median ?? null;
-  const methodRows = new Map();
+  const methodRows = new Map(), okWall = new Map();
   for (const run of runs) for (const row of run.rows) if (typeof row.op === 'string' && row.op.startsWith('method.')) {
     if (!methodRows.has(row.op)) methodRows.set(row.op, []);
     methodRows.get(row.op).push(row);
   }
-  return {label, summary, host, ssh, methodRows, problems, commits: [...new Set(runs.map(r => r.meta.commit))],
+  // each operation's successful wall times, the samples Linux's interval rule resamples (linuxEngineSpeed)
+  for (const run of runs) for (const row of run.rows) if (typeof row.op === 'string' && row.ok === true && typeof row.wallMs === 'number') {
+    if (!okWall.has(row.op)) okWall.set(row.op, []);
+    okWall.get(row.op).push(row.wallMs);
+  }
+  return {label, summary, host, ssh, methodRows, okWall, problems, commits: [...new Set(runs.map(r => r.meta.commit))],
     serverInfo: [...new Set(runs.flatMap(r => (r.meta.hostAttestations ?? []).map(a => `${a?.serverInfo?.name ?? '?'} ${a?.serverInfo?.version ?? '?'}`)))]};
 }
 
@@ -264,6 +271,31 @@ export const LINUX_LANE_MODES = Object.freeze({
 // comparison also fails when cua's median is above the vendor engine's (Acceptance 10). The cold phases, warm.noop and
 // the binder's own refusals never reach an engine, so they keep the tolerance rule alone.
 export const ENGINE_ANSWERED = Object.freeze(['warm.getState', 'warm.listApps', 'bind.getApp', 'warm.getAXState', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.clear', 'task.total', 'method.typeText', 'method.paste']);
+// How Linux judges the speed of an operation the engine answers (#171 M4 T18, the design session's ruling): by
+// Acceptance 3's speed rule, as the gate applies it, so the suite is never stricter than the bar it serves. With at least
+// MIN_NOISE_SAMPLES successful samples a side, the series is judged only through the interval
+// (../linux-engine-diff/stats.mjs judgeSeriesSpeed over events.mjs medianDifferenceInterval): it passes when the upper
+// end of the bootstrap 95% interval of cua's median minus the vendor engine's is within max(5% of the vendor's median,
+// 1 ms), labelled `faster`, `same (within noise)` or `within the bound`, and fails otherwise; a comparison cannot top a
+// series up, so the samples it has are final. A series with fewer a side (the bind and the method cases, a few samples a
+// run) keeps Acceptance 10's median rule: cua's median at most the vendor's. -> {rule, samples, interval, bound, label,
+// verdict, reason}.
+function linuxEngineSpeed(o, baseline, candidate) {
+  const b = baseline.okWall.get(o.op) ?? [], c = candidate.okWall.get(o.op) ?? [];
+  const samples = {vendor: b.length, cua: c.length};
+  if (b.length >= MIN_NOISE_SAMPLES && c.length >= MIN_NOISE_SAMPLES) {
+    const s = judgeSeriesSpeed({vendor: {usable: b, sampled: b.length}, cua: {usable: c, sampled: c.length}},
+      {vendors: ['vendor'], candidate: 'cua', interval: medianDifferenceInterval, cap: MIN_NOISE_SAMPLES});
+    const verdict = s.verdict === 'pass' ? 'pass' : 'fail';
+    // a failing interval is a loss when it lies wholly above 0, else undetermined: it includes 0 but reaches past the bound
+    const label = s.label ?? (s.interval[0] > 0 ? 'loss' : 'undetermined');
+    return {rule: 'interval', samples, interval: s.interval, bound: s.bound, label, verdict,
+      reason: verdict === 'pass' ? null : `the bootstrap 95% interval [${s.interval.join(', ')}] ms of cua's median minus the vendor engine's (cua ${s.candidate} ms, vendor ${s.bar} ms, ${b.length} / ${c.length} samples) reaches past the bound ${s.bound} ms, max(5% of the vendor's median, 1 ms), on an operation the engine answers: ${label === 'loss' ? 'a loss' : `undetermined at ${Math.min(b.length, c.length)} samples a side, which Acceptance 3 fails once a series has ${MIN_NOISE_SAMPLES}, as a comparison cannot top it up`} (Acceptance 3's speed rule, Acceptance 10)`};
+  }
+  const verdict = o.candidate.judgedMs > o.baseline.judgedMs ? 'fail' : 'pass';
+  return {rule: 'median', samples, interval: null, bound: null, label: null, verdict,
+    reason: verdict === 'pass' ? null : `cua's median ${o.candidate.judgedMs} ms is above the vendor engine's ${o.baseline.judgedMs} ms on an operation the engine answers, with fewer than ${MIN_NOISE_SAMPLES} samples a side for Acceptance 3's interval rule (Acceptance 10)`};
+}
 // The attested fields a lane comparison holds equal unless its mode permits them to differ, in report order.
 const LANE_FIELDS = {device: 'device', commit: 'commit', host: 'REPL host', engine: 'engine', service: 'native service', sandbox: 'sandbox',
   approvedEngine: 'approved engine', release: 'runtime release', hardware: 'hardware', os: 'OS', display: 'display', plan: 'sample plan'};
@@ -313,14 +345,16 @@ export function compareLanes(mode, baselineRuns, candidateRuns) {
   const ops = [...new Set([...baseline.summary.operations, ...candidate.summary.operations].map(o => o.op))]
     .sort((a, b) => operationRank(a) - operationRank(b) || a.localeCompare(b));
   const operations = ops.map(op => (op.startsWith('method.') ? judgeMethod(op, baseline, candidate, {linux: lane.linux}) : judgeOperation(op, baseline, candidate)));
-  // Linux (Acceptance 10): no cua median above the vendor engine's on an operation the engine answers; every operation
-  // where cua's median is above is listed, whichever rule judged it.
-  const above = lane.linux ? operations.filter(o => o.verdict !== 'not judged' && o.baseline?.judgedMs != null && o.candidate?.judgedMs != null && o.candidate.judgedMs > o.baseline.judgedMs)
-    .map(o => ({op: o.op, baseline: o.baseline.judgedMs, candidate: o.candidate.judgedMs, engineAnswered: ENGINE_ANSWERED.includes(o.op)})) : null;
-  for (const a of above ?? []) {
-    const o = operations.find(each => each.op === a.op);
-    if (a.engineAnswered && o.verdict === 'pass') { o.verdict = 'fail'; o.reasons.push(`cua's median ${a.candidate} ms is above the vendor engine's ${a.baseline} ms on an operation the engine answers (Acceptance 10)`); }
+  // Linux (Acceptance 10): an operation the engine answers is also judged on its speed (linuxEngineSpeed); one cua fails
+  // by any other rule stays failed. Every operation where cua's median is above the vendor engine's is listed, whichever
+  // rule judged it.
+  const timed = o => o.verdict !== 'not judged' && o.baseline?.judgedMs != null && o.candidate?.judgedMs != null;
+  if (lane.linux) for (const o of operations.filter(o => timed(o) && ENGINE_ANSWERED.includes(o.op))) {
+    o.speed = linuxEngineSpeed(o, baseline, candidate);
+    if (o.speed.verdict === 'fail') { o.verdict = 'fail'; o.reasons.push(o.speed.reason); }
   }
+  const above = lane.linux ? operations.filter(o => timed(o) && o.candidate.judgedMs > o.baseline.judgedMs)
+    .map(o => ({op: o.op, baseline: o.baseline.judgedMs, candidate: o.candidate.judgedMs, engineAnswered: ENGINE_ANSWERED.includes(o.op), ...(o.speed ? {speed: o.speed} : {})})) : null;
   const ruled = problems.length ? 'NO VERDICT' : operations.some(o => o.verdict === 'fail') ? 'FAIL' : 'PASS';
   const diagnostic = plainPlan([...baselineRuns, ...candidateRuns], ruled);
   const describe = side => ({host: side.host, serverInfo: side.serverInfo, commits: side.commits, runs: side.summary.runs, attestation: side.summary.attestation, sshMedianMs: side.ssh});
@@ -347,7 +381,7 @@ export function renderComparison(result) {
     `| Runs | ${b.runs.map(r => r.name).join(', ')} | ${c.runs.map(r => r.name).join(', ')} |`,
     `| ssh.roundtrip median | ${fmt(b.sshMedianMs)} | ${fmt(c.sshMedianMs)} |`, '',
     lane
-      ? `Rule (${lane.linux ? '#171' : '#117'} comparison ${lane.id}, ${lane.title}): the baseline runs ${flags(lane.baseline)}, the candidate ${flags(lane.candidate)}; three complete, attested runs a side of one sitting covering the same plan, every attested field equal but ${lane.differ.join(', ')} (below). ${lane.note} Per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median.${lane.linux ? ` On an operation the engine answers (${ENGINE_ANSWERED.join(', ')}) the candidate\'s judged median must also be at most the baseline\'s (Acceptance 10), and every cua typeText and paste sample must return without an error, survive and read back its text (Plan of Work M2); the ordinary better-outcome rule accepts this improvement over the vendor engine\'s text failures, with no failure waived on cua.` : ''} ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
+      ? `Rule (${lane.linux ? '#171' : '#117'} comparison ${lane.id}, ${lane.title}): the baseline runs ${flags(lane.baseline)}, the candidate ${flags(lane.candidate)}; three complete, attested runs a side of one sitting covering the same plan, every attested field equal but ${lane.differ.join(', ')} (below). ${lane.note} Per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median.${lane.linux ? ` On an operation the engine answers (${ENGINE_ANSWERED.join(', ')}) the candidate\'s speed is also judged by Acceptance 3\'s rule (Acceptance 10): with at least ${MIN_NOISE_SAMPLES} samples a side, the upper end of the bootstrap 95% interval of its median minus the baseline\'s must be within max(5% of the baseline\'s median, 1 ms); with fewer, its judged median must be at most the baseline\'s, and every cua typeText and paste sample must return without an error, survive and read back its text (Plan of Work M2); the ordinary better-outcome rule accepts this improvement over the vendor engine\'s text failures, with no failure waived on cua.` : ''} ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
       : sameHost
       ? `Rule (#115 acceptance 11): one host, three complete, attested runs a side covering the same plan, on the same machine and configuration except the permitted differences below; the judged rows are ${SAME_HOST_JUDGED.join(' and ')}: the candidate\'s median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples. Every other row is reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
       : 'Rule (acceptance 8): three complete, attested runs a side covering the same plan; per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples. The judged median is wall time around the MCP call; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median. ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.', '',
@@ -361,8 +395,14 @@ export function renderComparison(result) {
     ...methods.map(o => `| ${o.op} | ${o.baseline?.samples ?? 0} | ${o.baseline?.outcomes.join('<br>') || '–'} | ${o.candidate?.samples ?? 0} | ${o.candidate?.outcomes.join('<br>') || '–'} | ${triple(o.baseline?.wall)} | ${triple(o.candidate?.wall)} | ${fmt(o.limitMs)} | ${o.verdict} |`));
   if (sameHost) lines.push('', '## Permitted configuration differences', '',
     ...(result.permitted.length ? result.permitted.map(p => `- ${p.field}: ${p.baseline} -> ${p.candidate} (${p.reason})`) : ['None: the configuration is unchanged.']));
+  const speeds = result.operations.filter(o => o.speed);
+  if (speeds.length) lines.push('', '## Speed of the operations the engine answers (Acceptance 3\'s rule)', '',
+    `With at least ${MIN_NOISE_SAMPLES} successful samples a side, the bootstrap 95% interval of cua\'s median minus the vendor engine\'s passes when its upper end is within the bound, max(5% of the vendor\'s median, 1 ms); with fewer, cua\'s judged median must be at most the vendor\'s (the median rule).`, '',
+    '| Operation | Samples (vendor / cua) | Vendor judged | cua judged | Interval of cua minus vendor, ms | Bound, ms | Label | Verdict |', '|---|---|---|---|---|---|---|---|',
+    ...speeds.map(o => `| ${o.op} | ${o.speed.samples.vendor} / ${o.speed.samples.cua} | ${fmt(o.baseline.judgedMs)} | ${fmt(o.candidate.judgedMs)} | ${o.speed.interval ? `[${o.speed.interval.join(', ')}]` : '–'} | ${o.speed.bound ?? '–'} | ${o.speed.label ?? (o.speed.rule === 'median' ? 'median rule' : '–')} | ${o.speed.verdict} |`));
+  const judgedBy = s => (s.rule === 'interval' ? `judged by Acceptance 3's interval rule, ${s.verdict}` : `judged by the median rule, fewer than ${MIN_NOISE_SAMPLES} samples a side, ${s.verdict}`);
   if (result.above) lines.push('', '## Where cua\'s median is above the vendor engine\'s', '',
-    ...(result.above.length ? result.above.map(a => `- ${a.op}: cua ${fmt(a.candidate)} ms, vendor ${fmt(a.baseline)} ms (${a.engineAnswered ? 'an operation the engine answers: it fails' : 'no engine answers it: judged by the tolerance alone'})`) : ['None: no cua median is above the vendor engine\'s.']));
+    ...(result.above.length ? result.above.map(a => `- ${a.op}: cua ${fmt(a.candidate)} ms, vendor ${fmt(a.baseline)} ms (${a.engineAnswered ? `an operation the engine answers: ${judgedBy(a.speed)}` : 'no engine answers it: judged by the tolerance alone'})`) : ['None: no cua median is above the vendor engine\'s.']));
   if (lane) lines.push('', '## What differs, by design', '',
     ...result.permitted.map(p => `- ${p.field}: ${p.baseline ?? '–'} -> ${p.candidate ?? '–'}${p.same ? ' (the same in these runs)' : ''}`));
   const notes = result.operations.filter(o => o.reasons.length).map(o => `- ${o.op} (${o.verdict}): ${o.reasons.join('; ')}`);

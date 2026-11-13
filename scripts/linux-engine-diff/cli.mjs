@@ -11,7 +11,7 @@ export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
       [--dev] [--ballast gate] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
-      [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
+      [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>] [--trace-engine (with --dev)]
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route|writer-drag --cua <bin> --out <dir> [--run <name>] [--gate]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short | --dnd-select] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] [--lanes <list>] [--trace] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop, qt-activation)
@@ -92,6 +92,9 @@ export function parseArgs(argv) {
     else if (flag === '--scenarios') a.scenarios = need().split(',').filter(Boolean);
     // the focus-timer experiment's series runs each through xtrace, a missed run's trace kept (a sitting of its own)
     else if (flag === '--trace') a.trace = true;
+    // a development verdict run's engine through an xtrace proxy in its timed samples, each series's trace kept (V5's
+    // reproduction: what the engine sent, against what the page received)
+    else if (flag === '--trace-engine') a.traceEngine = true;
     // the stop runs' exit settle, 0 included
     else if (flag === '--exit-settle-ms') {
       const n = Number(need());
@@ -184,6 +187,8 @@ export function parseArgs(argv) {
   if (a.dndCold) a.coverMs ??= 0;
   if (a.dev && a.mode !== 'run') throw new Error('--dev is the verdict run\'s: an experiment is a development run unless --gate');
   if (a.gate && a.mode !== 'experiment') throw new Error('--gate is the experiments\': a verdict run is a release gate unless --dev');
+  // the proxy is on the timed path: a measurement, never a gate's
+  if (a.traceEngine && !(a.mode === 'run' && a.dev)) throw new Error("--trace-engine is a development run's (--dev): its proxy is on the timed path");
   const require = (...keys) => {
     for (const key of keys) {
       const flag = Object.entries({ ...VALUE_FLAGS }).find(([, k]) => k === key)?.[0] ?? `--${key}`;

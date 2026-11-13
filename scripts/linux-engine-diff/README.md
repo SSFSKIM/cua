@@ -787,6 +787,16 @@ variants included; their evidence is written either way. The run's `end` row kee
   before the request, and the witness allows the pointer field alone, `pointerMoves`). In dedicated mode the pointer
   parked outside takes the foreground route and the short drop lands. A parked pointer goes back where the case found
   it in the sample's cleanup.
+  Since V5's three false successes (M4's release gate, 2026-11-13), every sample is diagnosable from its own row: the
+  engine's whole `--stats` record of the request (`engine_stats`, with the request's id) and the engine's own lines
+  written between requests (`untied_stats`); a drop case's page counts carry the pointer log of every source's press,
+  the in-zone source's included, and the page's received-motion record (`received`), and the judge fails a sample whose
+  log is not its own press's; the drop and late cases read, after the watch's lifetime, the window's notice and the
+  next acting request's answer (`preflight`, run whatever the read carried) with the engine's raw record of the watch
+  (`late_watch`: the read's `notice`, the refused request's `late_dnd`). The late cases drag along a path that lingers
+  in the zone (`dnd-linger`), so Chrome takes before the release, and a sample Chrome took nothing for by its release is
+  unexercised, a failure of its case. A development run (`--dev --trace-engine`) puts each cua series's engine behind
+  an xtrace proxy of its own, its trace under `xtrace/` and each sample's span in it on the row (`xtrace`).
 - **Minimized windows** (M4's T4, `minimized.mjs`, the scenes `minimized` (gedit), `minimized-xterm` and
   `minimized-recorder`): cua alone, each sample's window minimized with `xprobe minimize` (the harness's front window
   takes the focus first, so the window manager's focus fallback lands on a harness window; the active window afterwards

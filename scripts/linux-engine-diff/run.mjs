@@ -295,6 +295,61 @@ export async function withRouteAudit({ openProxy, watch, startEngine, after = as
   return { trace, ancestry, watcher, proxy };
 }
 
+/**
+ * A sample's fields from its request's `--stats` record (null for an engine without it): the ones the judges read, and
+ * the whole record as the engine wrote it (`engine_stats`, its `id` the request's), so a sample nobody foresaw needing
+ * is still diagnosable from its row (V5's false successes, 2026-11-13); with the engine's own lines written since the
+ * previous request (`untied_stats`, engine.mjs), where there were any.
+ */
+export function statsFields(stats, untied) {
+  const row = {};
+  if (stats) {
+    row.stats = { calls: stats.bus.calls, waits_alone: stats.bus.waits_alone, max_in_flight: stats.bus.max_in_flight, connections: stats.bus.connections };
+    if (stats.tree) row.stats.tree = stats.tree;
+    if (stats.capture) row.stats.capture = stats.capture;
+    if (stats.paste) row.stats.paste = { confirmed: stats.paste.confirmed, confirm_ms: stats.paste.confirm_ms, transfer: stats.paste.transfer, clicked: stats.paste.clicked, restored: stats.paste.restored, focus_ms: stats.paste.focus_ms, clicks: stats.paste.clicks };
+    if (stats.route) row.route = stats.route;
+    if (stats.dnd) row.dnd = stats.dnd;
+    if (stats.event_time) row.event_time = stats.event_time;
+    if (stats.hold) row.hold = stats.hold;
+    if (stats.after_take) row.after_take = stats.after_take;
+    // a Chromium drag's atomic press and what its watch saw (task 20: stray.rs)
+    if (stats.press) row.press = stats.press;
+    // an activation that set the focus again once its window was mapped (M4 T4: how long it waited for the map)
+    if (stats.activation) row.activation = stats.activation;
+    row.engine_stats = stats;
+  }
+  if (untied.length) row.untied_stats = untied;
+  return row;
+}
+
+/**
+ * A development run's X trace of an engine's own connection through a series's timed samples (`--trace-engine`, for
+ * localizing V5's lost motion): a proxy of its own (audit.mjs `startProxy`) whose display the engine connects to (`env`),
+ * each sample's span marked in it (`span(i, fn)` answers `fn()`'s value with `xtrace: {file, from, to}`, the span's byte
+ * offsets in the trace), and the trace and its marks written into `dir` as `<name>.xtrace` and `<name>.marks.json` when
+ * the series ends (`close`). Its marks wait for the trace to go quiet, so they fall between samples, never inside one.
+ */
+export async function openSeriesTrace({ dir, name, open = () => startProxy() }) {
+  const proxy = await open();
+  const file = `${name}.xtrace`;
+  return {
+    env: { DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY },
+    async span(i, fn) {
+      const from = await proxy.mark(`sample ${i} start`);
+      const value = await fn();
+      const to = await proxy.mark(`sample ${i} end`);
+      return { value, xtrace: { file, from, to } };
+    },
+    async close() {
+      const text = await proxy.stop();
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, file), text);
+      writeFileSync(join(dir, `${name}.marks.json`), JSON.stringify(proxy.marks));
+    },
+  };
+}
+
 async function measureSample(s, ctx) {
   const { witness, engine, target, op, i } = s;
   const def = OPS[op];
@@ -381,21 +436,7 @@ async function measureSample(s, ctx) {
   row.request_ms = Math.round(ms * 100) / 100;
   row.ok = response.ok === true;
   if (!row.ok) row.error = String(response.error).slice(0, 300);
-  if (stats) {
-    row.stats = { calls: stats.bus.calls, waits_alone: stats.bus.waits_alone, max_in_flight: stats.bus.max_in_flight, connections: stats.bus.connections };
-    if (stats.tree) row.stats.tree = stats.tree;
-    if (stats.capture) row.stats.capture = stats.capture;
-    if (stats.paste) row.stats.paste = { confirmed: stats.paste.confirmed, confirm_ms: stats.paste.confirm_ms, transfer: stats.paste.transfer, clicked: stats.paste.clicked, restored: stats.paste.restored, focus_ms: stats.paste.focus_ms, clicks: stats.paste.clicks };
-    if (stats.route) row.route = stats.route;
-    if (stats.dnd) row.dnd = stats.dnd;
-    if (stats.event_time) row.event_time = stats.event_time;
-    if (stats.hold) row.hold = stats.hold;
-    if (stats.after_take) row.after_take = stats.after_take;
-    // a Chromium drag's atomic press and what its watch saw (task 20: stray.rs)
-    if (stats.press) row.press = stats.press;
-    // an activation that set the focus again once its window was mapped (M4 T4: how long it waited for the map)
-    if (stats.activation) row.activation = stats.activation;
-  }
+  Object.assign(row, statsFields(stats, answered.value.untied ?? []));
   if (def.after) await def.after(ctx, response);
   if (def.effect && row.ok && def.read && !def.follow) {
     row.effect = await pollEffect(() => def.read(ctx), (after) => def.effect(ctx, input, before, after));
@@ -770,6 +811,7 @@ async function openSceneWindow(desktop, scene, role, { text = false } = {}) {
     opened.kindOf = 'page';
     opened.dndAt = await locate({ desktop, oracle: desktop.oracle }, opened, ['dnd']);
     opened.dndPath = runPath(opened.dndAt, 'dnd', 0);
+    opened.dndLingerPath = runPath(opened.dndAt, 'dnd-linger', 0);
     opened.dndShortPath = runPath(opened.dndAt, 'dnd-short', 0);
     opened.dndInzonePath = runPath(opened.dndAt, 'dnd-inzone', 0);
     opened.dndLongLeftPath = runPath(opened.dndAt, 'dnd-long-left', 0);
@@ -1052,6 +1094,7 @@ async function diffRun(args, candidate, { handoff }) {
     samples_input: args.samplesInput,
     occlusion: args.occlusion,
     ...(args.ballast ? { ballast: args.ballast } : {}),
+    ...(args.traceEngine ? { trace_engine: true } : {}),
     started: new Date().toISOString(),
   });
   // Every scene label of this run: equivalent windows differ in their own label and list each other's (gedit's
@@ -1118,15 +1161,24 @@ async function diffRun(args, candidate, { handoff }) {
       const spec = engineSpecFor(engines.find((e) => e.label === label), op, sceneName);
       let target = measuredTarget(windows, sceneName, op, label);
       if (target && args.occlusion === 'visible') desktop.raise(target);
-      const env = OPS[op].apps ? launch.env : undefined;
+      // a development run's candidate engine through a trace proxy of the series's own (`--trace-engine`), each sample's
+      // span in the trace kept on its row
+      const trace = args.traceEngine && !VENDORS.includes(label) ? await openSeriesTrace({ dir: join(args.out, 'xtrace'), name: `${sceneName}.${op}.${label.replace(/[^a-z0-9]+/gi, '_')}.${block}` }) : null;
+      const env = trace ? { ...(OPS[op].apps ? launch.env : {}), ...trace.env } : OPS[op].apps ? launch.env : undefined;
       let engine = makeEngine(spec, env);
+      const sample = (i) => runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion });
+      const traced = (i) =>
+        trace.span(i, () => sample(i)).then(({ value, xtrace }) => {
+          if (value.row) value.row.xtrace = xtrace;
+          return value;
+        });
       try {
         for (let i = 0; i < n; i++) {
           // the gate's rule for a harness-side preparation failure (prepare.mjs): one resample in the sample's condition,
           // a cold sample's on a fresh engine, a text window's after the backstop restored the lane's scene (task 24)
           const taken = await sampleUnderRule({
             cold: i === 0,
-            take: () => runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion }),
+            take: () => (trace ? traced(i) : sample(i)),
             renew: async () => {
               await engine.close();
               engine = makeEngine(spec, env);
@@ -1194,6 +1246,7 @@ async function diffRun(args, candidate, { handoff }) {
         }
       } finally {
         await engine.close();
+        if (trace) await trace.close();
       }
       if (target) target.retainedBy = null;
       if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });

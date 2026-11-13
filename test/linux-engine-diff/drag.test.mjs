@@ -671,3 +671,33 @@ test("a Gecko drag cell parks the real pointer in its window, away from every pa
   for (const occlusion of ['covered', 'partial-top']) parkInside(safe, scene, 'firefox', { ...options, occlusion });
   assert.throws(() => parkInside(safe, scene, 'firefox', { ...options, occlusion: 'partial' }), ParkRefused, "the bottom half's cover leaves the point in the window");
 });
+
+test("the pointer log covers every drag-and-drop source, the in-zone source's press included (V5's in-zone sample read a stale log)", async () => {
+  for (const source of ['source', 'near', 'inzone']) {
+    const page = await dragPage();
+    page.fire('pointerdown', { target: source });
+    page.fire('pointermove', { clientX: 6 });
+    page.fire('pointerup', { target: source });
+    const log = parseDragStatus([page.text('s-moves')]).moves;
+    assert.equal(log?.n, 1, `${source}: its press logged`);
+    assert.equal(log.moves[0].dx, 6);
+  }
+  const words = await dragPage();
+  words.fire('pointerdown', { target: 'words' });
+  words.fire('pointerup', { target: 'words' });
+  assert.equal(parseDragStatus([words.text('s-moves')]).moves, null, 'a press off every source writes no log');
+});
+
+test("a drag and drop's read keeps the page's count of the motions the browser received beside its counts and pointer log", async () => {
+  const { readEffect } = await import('../../scripts/linux-engine-diff/drag.mjs');
+  const lines = [
+    'dnd starts 48 drops 32 downs 52 detail 1 gap 6453 selects 3 ends 48 effect 1 lat 0 dur 374 ups 16 at 607147489',
+    'moves seq 52 n 1 start -1 up 250.0/234.1 cancel -1 end -1 m 0.0/86.9/0/0/1/1',
+    'received seq 60 target near raw 1 moves 1 raw_events 1 move_events 1',
+  ];
+  const desktop = { state: async () => ({ ax_tree: { name: 'page', children: lines.map((name) => ({ name })) } }) };
+  const read = await readEffect({ desktop, oracle: null }, { id: 1 }, { page: true }, 'dnd');
+  assert.equal(read.downs, 52);
+  assert.equal(read.log.seq, 52);
+  assert.deepEqual(read.received, { seq: 60, target: 'near', raw: 1, moves: 1, raw_events: 1, move_events: 1 });
+});

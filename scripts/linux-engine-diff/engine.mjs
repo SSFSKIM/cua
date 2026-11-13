@@ -1,7 +1,8 @@
 // An engine over the wire: one process, `<bin> server [flags]`, one JSON request per line on stdin, one response
 // per line on stdout. Requests go one at a time; each is timed from its write to its answer, and the first also
 // from the process's spawn (the cold sample a service pays on first use). cua-engine's `--stats` lines on stderr are
-// matched to their requests by id.
+// matched to their requests by id; the lines it writes with no request (`"id": null`: an after-release watch run out
+// between requests, engine.rs `tick`) are kept, in order, with the next request's answer.
 
 import { engineEnvironment } from './app-env.mjs';
 import { xSpawn } from './xspawn.mjs';
@@ -74,6 +75,8 @@ export class Engine {
     this.nextId = 1;
     this.pending = new Map();
     this.statsById = new Map();
+    // the engine's own `--stats` lines, written with no request, since the last answer that took them
+    this.untied = [];
     this.stderrTail = '';
   }
 
@@ -113,7 +116,8 @@ export class Engine {
           this.stderrTail = `${this.stderrTail}unparsable --stats line: ${line.slice(0, 200)}\n`.slice(-4000);
           return;
         }
-        this.statsById.set(stats?.id, stats);
+        if (stats?.id === null) this.untied.push(stats);
+        else this.statsById.set(stats?.id, stats);
       } else {
         this.stderrTail = `${this.stderrTail}${line}\n`.slice(-4000);
       }
@@ -127,7 +131,10 @@ export class Engine {
     return this;
   }
 
-  /** Sends one request and waits for its answer: `{response, ms, sinceSpawnMs, stats}`. */
+  /**
+   * Sends one request and waits for its answer: `{id, response, ms, sinceSpawnMs, stats, untied}`, `untied` the
+   * engine's own `--stats` lines written since the previous answer (empty without `--stats`).
+   */
   async request(command, input = {}, { timeoutMs = 120000 } = {}) {
     const id = this.nextId++;
     const first = id === 1;
@@ -151,7 +158,9 @@ export class Engine {
       stats = this.statsById.get(id) ?? null;
       this.statsById.delete(id);
     }
-    return { response, ms: at - sentAt, sinceSpawnMs: first ? at - this.spawnedAt : null, stats };
+    // read once this request's own line is in, so every line the engine wrote before it is too (stderr keeps its order)
+    const untied = this.untied.splice(0);
+    return { id, response, ms: at - sentAt, sinceSpawnMs: first ? at - this.spawnedAt : null, stats, untied };
   }
 
   /** Writes several requests at once (pipelined) and waits for every answer. */

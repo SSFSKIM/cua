@@ -1,17 +1,14 @@
 # #171 M4 T18: the facade suites on the final sources
 
-DRAFT. The pilots are below. The counted runs come once the T18 executor names the final head; their results replace
-the pilot tables here.
+On the #171 VM (`dc-linux171-1e68`, Ubuntu 24.04, x86-64, 8 vCPU), 2026-11-13, at the final head **8ab1cc75**, with the
+tree clean. Every suite ran on that one head and one engine build.
 
-On the #171 VM (`dc-linux171-1e68`, Ubuntu 24.04, x86-64, 8 vCPU). The suites are Acceptance 10's facade suites and
-T18's row:
-- repl-parity's native suite on both engine lanes, with `getaxstate/minimized`, and its diff against
-  `scripts/repl-parity/expected/native-linux.json`;
-- native-baseline on both lanes, then `compare --engines`;
-- `scripts/accept/linux-native.mjs` with `CUA_NATIVE_ENGINE=cua`;
-- `scripts/accept/linux-device-mode.mjs`;
-- the two-services instrument (`scripts/linux-engine-diff/services.mjs`), whose over-budget row carries the truncation
-  line.
+**The engine:** `cua-engine 0.4.0 (8ab1cc758983)`, SHA-256
+`17a3893ed543bd05e99e2938a77d7c875a9bb80c79da19d7f9443f772539ac5f`, static-pie (`engine/`). It is a musl build of
+8ab1cc75 made the release workflow's way: `cargo build --release --locked --target x86_64-unknown-linux-musl`, a
+hermetic Cargo home, the remapped paths, the commit stamped, then stripped. It was named by `--engine-bin` for the
+suites and by `CUA_LINUX_ENGINE_BIN` for the fixtures. The installed engine is 0.3.0, which the service refuses
+(`MIN_ENGINE_VERSION` 0.4.0).
 
 ## The change of venue
 
@@ -21,8 +18,9 @@ no profile, so the numbers are not like for like with M3's.**
 
 What each suite runs on:
 - **The display.** It is the harness's own private X server (`startPrivateServer`: Xvfb `-displayfd`, 1280x800x24,
-  watched by the run watchdog and marked `CUA171_PRIVATE_DISPLAY`) with Openbox. It is never `:0`. Each suite's
-  `session.json` names the display and records the watchdog's verdict.
+  watched by the run watchdog and marked `CUA171_PRIVATE_DISPLAY`) with Openbox. It is never `:0`. Every suite ran on
+  `:1`. Each suite's `session.json` names the display, its environment, and the watchdog's verdict, which was clean for
+  all five.
 - **The session.** repl-parity, native-baseline and both acceptance fixtures run under a session bus of the run's
   (`startPrivateSession`), which can start only the accessibility bus launcher and has accessibility switched on. The
   two-services instrument starts its own session, as its `Desktop` does on any private display.
@@ -30,15 +28,113 @@ What each suite runs on:
   - repl-parity prepares with `--native-only`: no profile listing, no Chrome backend alias, profile null. Its native and
     fixture serves bind no profile in M3 either.
   - native-baseline installs into its own home, as before.
-  - `linux-native.mjs` and `linux-device-mode.mjs` run in a run-owned HOME, XDG directories and CUA_HOME, with an empty
-    `~/.config/claude-secrets` seeded, so the confinement check still probes a real store.
+  - `linux-native.mjs` and `linux-device-mode.mjs` run in a run-owned HOME, XDG directories and CUA_HOME (`cua install`
+    there), with an empty `~/.config/claude-secrets` seeded, so the confinement check still probes a real store.
   - The services instrument keeps the differential harness's own run-profile Chrome (`chrome.mjs`).
-- **The engine.** It is a musl build of the final head made the release workflow's way, named by `--engine-bin` and
-  `CUA_LINUX_ENGINE_BIN`. The installed engine is 0.3.0, which the service refuses.
+- **What the change does to the numbers.** The private display holds only the run's windows. The vendor engine's
+  inventory calls, which on the person's `:0` paid for every window there (M3: `warm.getState` and `warm.listApps` at
+  24.3 and 23.8 ms against cua's 16.8 and 17.8), now take about as long as cua's (below).
+
+## Results
+
+| suite | evidence | result |
+|---|---|---|
+| `scripts/accept/linux-native.mjs`, `CUA_NATIVE_ENGINE=cua` | `accept/` | **PASS**, 11 of 11 steps. Over 3,360 samples of the process table, sky_linux was never seen. Both cua-engine processes were the build, one the trusted worker's child, one the supervisor's launcher shim |
+| `scripts/accept/linux-device-mode.mjs` | `device/` | **PASS**, 18 of 18 steps, both negative controls included. sky_linux was never seen. All four cua-engine processes (two per device mode) were the build |
+| two-services, `scripts/linux-engine-diff/services.mjs` (gedit, Chrome, over-budget) | `services/run/` | **PASS**, 26 of 26 steps, exit 0. The over-budget row: `getAXState`, `getAXState` after the query and the combined observation each end with the truncation line (`truncated {nodes 1263, depth 2, failed 0}`, line 1265) |
+| repl-parity `--suite native`, vendor lane | `parity/vendor/` | complete, `RECORDED_VENDOR_DEFECT`: 31 of 34 cases covered, the 3 declared vendor defects (`app/typetext`, `app/paste`, `getaxstate/minimized`) |
+| repl-parity `--suite native`, cua lane | `parity/cua/` | complete, **PASS**, 34 of 34 |
+| `repl-parity diff … --expected native-linux.json` | `parity/diff.json` | **ok**, 0 differences. Declared: `linux-text-typetext-m2`, `linux-text-paste-m2`, `linux-getaxstate-minimized-m4` |
+| native-baseline, 3 runs a lane interleaved, `compare --engines` | `baseline/`, `baseline/engines.md`, `baseline/engines-acceptance3.md`; the top-up `baseline-topup/` | every run complete, "Problems: none: both sides are complete, attested and comparable". The counted sitting alone: **VERDICT: FAIL** under the original rule (`warm.getState` and `warm.listApps`, by 0.3 and 0.4 ms), and under Acceptance 3's rule (`warm.listApps` alone, undetermined). With the design session's top-up, `warm.listApps` pooled at 180 a side resolves: **pass, same (within noise)**, [-0.16, 0.732] ms against a 1 ms bound, so every operation passes (below) |
+
+Both repl-parity lanes recorded which engine answered on every native case:
+- The vendor lane: `sky_linux_x64`, the trusted worker's child, behind `@oai/sky`.
+- The cua lane: the build, the trusted worker's child, behind cua's service. Beside it, the build again as
+  `launcher-shim`, the supervisor's child, naming its real parent (judged by 41070184, below).
+
+### The native baseline's comparison, under two rules
+
+The stored records (`baseline/cv/`, `baseline/cc/`) were judged twice. There was no new sitting.
+
+1. **Acceptance 10's original rule** (`baseline/engines.md`, from the counted step): an engine-answered operation failed
+   whenever cua's median was above the vendor's. **VERDICT: FAIL**, on `warm.getState` and `warm.listApps`, by 0.3 and
+   0.4 ms.
+2. **Acceptance 3's speed rule, as the design session ruled** (`baseline/engines-acceptance3.md`, the same records
+   re-judged at bc67d611, the commit that adopted the rule): **VERDICT: FAIL**, on `warm.listApps` alone.
+
+| operation (engine-answered) | samples a side | vendor, ms | cua, ms | interval of cua minus vendor, ms | bound, ms | old rule | Acceptance 3's rule |
+|---|---:|---:|---:|---|---:|---|---|
+| warm.getState | 90 | 17.6 | 17.9 | [-0.122, 0.834] | 1 | **fail** | pass, same (within noise) |
+| warm.listApps | 90 | 16.8 | 17.2 | [-0.227, 1.124] | 1 | **fail** | **fail**, undetermined |
+| bind.getApp | 3 | 580.6 | 123.3 | (median rule) | | pass | pass |
+| warm.getAXState | 90 | 490.6 | 94.8 | [-409.197, -382.225] | 24.53 | pass | pass, faster |
+| warm.getScreenshot | 90 | 632.6 | 117.7 | [-531.118, -491.918] | 31.63 | pass | pass, faster |
+| task.act | 30 | 16743.6 | 4501.6 | [-12292.949, -12210.384] | 837.18 | pass | pass, faster |
+| task.verify | 30 | 585.6 | 192.3 | [-449.001, -380.708] | 29.28 | pass | pass, faster |
+| task.clear | 30 | 1320.1 | 308.1 | [-1032.288, -987.975] | 66.01 | pass | pass, faster |
+| task.total (the pressKey task) | 30 | 18700.0 | 5003.1 | [-13818.763, -13633.258] | 935 | pass | pass, faster |
+| method.typeText | 3 | 10247.9, every sample `editable Paste did not insert text` | 60.7, every sample returned, gedit alive, the text read back | (median rule) | | pass | pass |
+| method.paste | 3 | 10231.4, the same failure | 59.9, the same success | (median rule) | | pass | pass |
+
+**How Acceptance 3's rule is applied here** (`scripts/native-baseline/compare.mjs` `linuxEngineSpeed`, Linux only):
+- It reuses the gate's own implementation: `scripts/linux-engine-diff/stats.mjs` `judgeSeriesSpeed` over `events.mjs`
+  `medianDifferenceInterval` (2,000 rounds, seed 171, unstratified, as the gate's per-operation series are).
+- With at least 20 successful samples a side, a series passes only when the upper end of the bootstrap 95% interval of
+  cua's median minus the vendor engine's is within max(5% of the vendor's median, 1 ms). It is labelled `faster`,
+  `same (within noise)` or `within the bound`.
+- A comparison cannot top a series up, so the samples it has are final. An interval that includes 0 but reaches past
+  the bound is undetermined, and fails, as Acceptance 3 fails one still undetermined at 40.
+- A series with fewer than 20 a side (`bind.getApp` and the method cases, one sample a run) keeps Acceptance 10's
+  median rule.
+- macOS (#117) is untouched: its comparisons are pinned byte for byte (`test/native-baseline/fixtures/macos-lanes.json`).
+
+**The counted sitting's remaining FAIL.** At 90 samples a side, `warm.listApps`'s interval includes 0 and reaches
+0.124 ms past its 1 ms bound, so the rule could not decide it.
+
+### The top-up: `warm.listApps` at 180 a side (`baseline-topup/`)
+
+The design session ruled for Acceptance 3's own remedy, more samples, with no second change to the judge.
+- **The sitting:** three more default-plan runs a lane, interleaved as the counted sitting's were.
+  - The same head (8ab1cc75, checked out detached for the step) and the same build (`17a3893e…`), on the private `:1`,
+    as one idle locked step. native-baseline has no way to run one operation alone, so each run measured its whole
+    plan; only `warm.listApps` is pooled.
+  - Every run was complete: "Problems: none: both sides are complete, attested and comparable".
+- **The top-up on its own** (`baseline-topup/engines-acceptance3.md`, judged at bbaff26d): **VERDICT: PASS**.
+  `warm.listApps` [-0.589, 0.735], `warm.getState` [-0.825, 0.551], both same (within noise).
+  `baseline-topup/engines-original-rule.md` is the old rule's own output at 8ab1cc75, kept as a record.
+- **Pooled** (`baseline-topup/pooled-listapps.json`, by `scripts/pool-listapps.mjs`): the committed rule's own calls,
+  exactly as `linuxEngineSpeed` makes them, on both sittings' successful samples. `compare` takes three runs a side.
+
+| `warm.listApps` | samples a side | vendor wall | cua wall | vendor in-cell | cua in-cell | vendor outside | cua outside | interval of cua minus vendor, ms | bound | verdict |
+|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|
+| the counted sitting | 90 | 16.83 | 17.20 | 3.88 | 3.43 | 13.08 | 13.75 | [-0.227, 1.124] | 1 | fail, undetermined |
+| the top-up sitting | 90 | 17.12 | 17.28 | 3.92 | 3.54 | 13.22 | 13.68 | [-0.589, 0.735] | 1 | pass, same (within noise) |
+| **pooled** | **180** | 16.99 | 17.24 | 3.90 | 3.50 | 13.10 | 13.70 | **[-0.16, 0.732]** | 1 | **pass, same (within noise)** |
+
+**The verdict:** `warm.listApps` passes as same (within noise), and with it every operation of the native baseline's
+engine comparison passes under Acceptance 3's rule.
+
+**The construction**, from the list_apps check (task 74, w5):
+- The two engines run the same desktop-entry algorithm and give the same output.
+- cua does less X work. It pipelines its requests and caches atoms; the vendor makes one round trip per request, with
+  an InternAtom on every use.
+- Over the wire, warm `list_apps` takes 5.2, 7.3 and 7.4 ms on cua against 60.8–127.4 ms on the vendor builds. The runs
+  are `m4/drops/device-idle/run/`, `m4/settle/fix/device/idle/run/` and `m4/foreground-raise/final/device/`, each judged
+  faster.
+- In the facade, cua is faster inside the cell in both sittings (3.43 and 3.54 against 3.88 and 3.92 ms). The small
+  wall difference sits in the transport code both lanes share, outside the cell, and `warm.noop` shows the opposite
+  sign there (cua 14.20 against the vendor's 14.53 ms).
 
 ## Harness changes (fe0a26b4, cf785980, 75377a53, 41070184)
 
 Only the last one changes what a suite judges, and the coordinator accepted it with conditions.
+- `discoverDesktopEnvironment(fs, {display})` (`scripts/repl-parity/desktop.mjs`) takes the session on the named
+  display. Before, it took the first openbox in `/proc`, which is the person's.
+- repl-parity's device shells (`topology.mjs` `linuxSessionFor`) name the controller's `CUA_PARITY_DISPLAY`, which must
+  be `:N` and never `:0`.
+- native-baseline's `--display` now names the session the run takes. Before, it only asserted it.
+- `repl-parity prepare --native-only` is for a declared Linux device and refuses `--profile`. A run refuses any suite
+  but `native` on such a preparation. The engine-lane diff does not compare `meta.profile`.
 - **The launcher shim (41070184).** Since T7b fix 4 (81ae2732, task 57), the supervisor starts the trusted worker's
   launcher through `cua-engine launcher-shim <its own pid> …`. That makes the shim a `cua-engine` child of
   `supervisor.mjs` on the cua lane. The engine-answered judge (`scripts/repl-parity/engine-answered.mjs`, which
@@ -50,53 +146,45 @@ Only the last one changes what a suite judges, and the coordinator accepted it w
   - The vendor lane's launch sets no `CUA_ENGINE_BIN`, so no shim runs there, and a shim seen there fails.
   - No cua-lane facade pass is claimed after 81ae2732. The only M4 runs with engine observations are T4's
     `m4/minimized/parity*/`, from 2026-11-02, before the shim.
-- `discoverDesktopEnvironment(fs, {display})` (`scripts/repl-parity/desktop.mjs`) takes the session on the named
-  display. Before, it took the first openbox in `/proc`, which is the person's.
-- repl-parity's device shells (`topology.mjs` `linuxSessionFor`) name the controller's `CUA_PARITY_DISPLAY`, which must
-  be `:N` and never `:0`.
-- native-baseline's `--display` now names the session the run takes. Before, it only asserted it.
-- `repl-parity prepare --native-only` is for a declared Linux device and refuses `--profile`. A run refuses any suite
-  but `native` on such a preparation. The engine-lane diff does not compare `meta.profile`.
 - The runner, in `scripts/` beside this file:
   - `private-desktop.mjs` brings the private desktop up around one suite and down after it.
   - `facade.sh` runs the five parts.
   - `watch.mjs` is M3's 50 ms process sampler.
+  - `driver.txt` records the order the counted steps ran in.
 - **Not changed, and worth knowing:** `linux-native.mjs`'s confinement check probes `$XDG_RUNTIME_DIR/bus`, which is the
   person's session-bus path, not the run's private bus. It still shows that the kernel cannot connect to a session bus,
   but not to this run's bus.
 
-## Pilots (not counted)
-
-Engine `cua-engine 0.4.0 (cc18a6f7cd58)`, SHA-256 `df5a257a3ea1f496e56dcc5a291e526e8baa1c9fe23abc41f5556f9ad6a822ab`,
-built from cc18a6f7. The harness heads were cc18a6f7 for accept, 75377a53 for services, and 41070184 for parity and baseline. The later two
-change only the runner and the judge. The tree was clean apart from this draft.
-
-| suite | result |
-|---|---|
-| `linux-native.mjs` | PASS, 11 of 11 steps. sky_linux was never seen. Both cua-engine processes were the build, children of the run home's supervisor and trusted worker. Private `:1`, watchdog clean |
-| `linux-device-mode.mjs` (earlier pilot, fe0a26b4, engine 292b6509) | PASS, 18 of 18 steps. sky_linux 0. Every cua-engine was the build. Watchdog clean |
-| two-services | PASS, 26 of 26 steps. On the over-budget page, `truncated {nodes 1263, depth 2, failed 0}`, line 1265 |
-| repl-parity native | vendor lane complete, `RECORDED_VENDOR_DEFECT`: 31 of 34 cases covered, 3 declared defects (typetext, paste, getaxstate/minimized). cua lane complete, **PASS**, 34 of 34. `diff --expected native-linux.json`: **ok**, 0 differences. The prepared preparation's profile was null; the session was the private `:1` with the run's bus |
-| native-baseline `compare --engines` | **VERDICT: PASS**, "both sides are complete, attested and comparable". Medians, vendor against cua: getAXState 504.3 / 97.0 ms, getScreenshot 664.8 / 118.4 ms, bind.getApp 601.6 / 143.0 ms, task.total 18715.6 / 5033.6 ms. typeText and paste: the vendor threw `editable Paste did not insert text` (10.2 s) on every sample; cua returned with the text inserted on every sample (63 and 70 ms) |
-
 ## Host lock (`~/.local/share/cua-171/host-lock.log`)
 
-mawsd's render host ran during none of these steps (`render-host=none`).
+Each suite was its own locked step. mawsd's render host ran during none of them (`render-host=none`). Before each step
+the driver checked `hold-sittings` and waited for a 1-minute load below 0.8. No load at acquire or release is more than
+1.0 above idle, so no step was rerun.
 
 ```
-2026-11-12T09:48:53Z acquire task74-w5 load=15.63 6.24 2.47 render-host=none :: facade.sh accept
-2026-11-12T09:52:13Z release task74-w5 status=0 load=1.23 3.58 2.14 render-host=none :: facade.sh accept
-2026-11-12T10:34:17Z acquire task74-w5 load=1.43 1.10 1.18 render-host=none :: facade.sh services
-2026-11-12T10:34:37Z release task74-w5 status=0 load=1.71 1.18 1.21 render-host=none :: facade.sh services
-2026-11-12T11:37:04Z acquire task74-w5 load=0.97 1.01 1.17 render-host=none :: facade.sh baseline
-2026-11-12T11:58:37Z release task74-w5 status=0 load=0.25 0.41 0.66 render-host=none :: facade.sh baseline
-2026-11-12T12:51:06Z acquire task74-w5 load=0.69 0.51 0.72 render-host=none :: facade.sh parity
-2026-11-12T13:28:41Z release task74-w5 status=0 load=1.20 1.27 1.22 render-host=none :: facade.sh parity
+2026-11-13T06:13:13Z acquire task74-w5 load=0.80 0.38 0.36 render-host=none :: build-musl.sh 8ab1cc75…
+2026-11-13T06:14:05Z release task74-w5 status=0 load=1.33 0.63 0.45 render-host=none :: build-musl.sh 8ab1cc75…
+2026-11-13T06:14:43Z acquire task74-w5 load=0.68 0.55 0.43 render-host=none :: facade.sh accept
+2026-11-13T06:18:03Z release task74-w5 status=0 load=1.04 0.83 0.57 render-host=none :: facade.sh accept
+2026-11-13T06:19:43Z acquire task74-w5 load=0.79 0.86 0.62 render-host=none :: facade.sh device
+2026-11-13T06:20:43Z release task74-w5 status=0 load=1.18 0.98 0.68 render-host=none :: facade.sh device
+2026-11-13T06:23:13Z acquire task74-w5 load=0.74 1.01 0.74 render-host=none :: facade.sh services
+2026-11-13T06:23:35Z release task74-w5 status=0 load=1.31 1.13 0.79 render-host=none :: facade.sh services
+2026-11-13T06:24:25Z acquire task74-w5 load=0.71 1.00 0.76 render-host=none :: facade.sh parity
+2026-11-13T07:01:58Z release task74-w5 status=0 load=1.29 1.32 1.27 render-host=none :: facade.sh parity
+2026-11-13T07:02:48Z acquire task74-w5 load=0.77 1.17 1.23 render-host=none :: facade.sh baseline
+2026-11-13T07:24:09Z release task74-w5 status=1 load=0.33 0.51 0.74 render-host=none :: facade.sh baseline
+2026-11-13T07:58:20Z acquire task74-w5 load=0.27 0.39 0.38 render-host=none :: facade.sh baseline   (the top-up)
+2026-11-13T08:19:44Z release task74-w5 status=1 load=0.25 0.48 0.52 render-host=none :: facade.sh baseline   (the top-up)
 ```
 
-The first parity pilot (11:24Z, judged before the shim fix) failed its cua lane on the shim, as described above. A
-rerun at 12:07Z stopped at setup: a longer log path pushed the bus socket path past the Unix limit of 108 bytes. The
-counted runs use a short root.
+Both baseline steps released with status 1 because their built-in `compare` ran the old rule at 8ab1cc75 (the
+counted step: FAIL on `warm.getState` and `warm.listApps`; the top-up: FAIL on `warm.listApps` alone, cua 17.3 against
+17.1 ms). Every run in both completed. The verdicts above are the
+committed rule's.
 
-The accept pilot took the lock at a 1-minute load of 15.63, left by the previous holder. That is far above the idle load
-(about 0.2 to 1.5), so a counted sitting taken that way would be rerun. A pilot stands as it is.
+## Pilots (before the final head, not counted)
+
+All five suites were piloted on the same kind of private display: on the engine cc18a6f7, and device-mode on 292b6509.
+Each passed, the native baseline included (VERDICT: PASS). The first parity pilot failed its cua lane on the launcher
+shim, which led to 41070184.

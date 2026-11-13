@@ -208,3 +208,20 @@ test('a bind retried on one side is judged as the first attempt plus the retry, 
   const failed = judge(t, 'engines', triple(VV), triple(VC, {edit: (m, rows) => { retried(5200, 700)(m, rows); rows.find(r => r.op === 'bind.getApp.retry').ok = false; }}));
   assert.match(op(failed, 'bind.getApp').reasons.join(), /0\/3 succeeded, the baseline 3\/3/);
 });
+
+// #171 M4 T18: the Linux engine comparison's speed rule moved to Acceptance 3's interval rule; the macOS comparisons
+// (#117), whose speed bar waits on the owner's open #192 decision, must judge and render byte for byte as before. The
+// pinned outputs are those of the rule before that change (fixtures/macos-lanes.json); regenerate them only when the
+// macOS rule changes on purpose: CUA_PIN_MACOS_LANES=write node --test test/native-baseline/compare-lanes.test.mjs
+test('the macOS comparisons judge and render exactly as pinned', t => {
+  const pin = fileURLToPath(new URL('./fixtures/macos-lanes.json', import.meta.url));
+  const cases = {
+    engines: judge(t, 'engines', triple(VV), triple(VC)),
+    hosts: judge(t, 'hosts', triple(VC), triple(CC)),
+    'end-to-end': judge(t, 'end-to-end', triple(VV), triple(CC)),
+    'engines, slower': judge(t, 'engines', triple(VV), triple(VC, {scale: 1.25})),
+  };
+  const now = Object.fromEntries(Object.entries(cases).map(([name, result]) => [name, {verdict: result.verdict, operations: result.operations.map(o => [o.op, o.verdict, o.reasons]), text: renderComparison(result)}]));
+  if (process.env.CUA_PIN_MACOS_LANES === 'write') { mkdirSync(join(pin, '..'), {recursive: true}); writeFileSync(pin, JSON.stringify(now, null, 1) + '\n'); }
+  assert.deepEqual(now, JSON.parse(readFileSync(pin, 'utf8')));
+});

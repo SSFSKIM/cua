@@ -1,0 +1,71 @@
+[
+ {
+  "label": "counted sitting",
+  "op": "warm.listApps",
+  "vendor": {
+   "n": 90,
+   "wall": 16.83,
+   "inCell": 3.88,
+   "outside": 13.08
+  },
+  "cua": {
+   "n": 90,
+   "wall": 17.2,
+   "inCell": 3.43,
+   "outside": 13.75
+  },
+  "verdict": "fail",
+  "label_": "undetermined",
+  "interval": [
+   -0.227,
+   1.124
+  ],
+  "bound": 1
+ },
+ {
+  "label": "top-up sitting",
+  "op": "warm.listApps",
+  "vendor": {
+   "n": 90,
+   "wall": 17.12,
+   "inCell": 3.92,
+   "outside": 13.22
+  },
+  "cua": {
+   "n": 90,
+   "wall": 17.28,
+   "inCell": 3.54,
+   "outside": 13.68
+  },
+  "verdict": "pass",
+  "label_": "same (within noise)",
+  "interval": [
+   -0.589,
+   0.735
+  ],
+  "bound": 1
+ },
+ {
+  "label": "pooled",
+  "op": "warm.listApps",
+  "vendor": {
+   "n": 180,
+   "wall": 16.99,
+   "inCell": 3.9,
+   "outside": 13.1
+  },
+  "cua": {
+   "n": 180,
+   "wall": 17.24,
+   "inCell": 3.5,
+   "outside": 13.7
+  },
+  "verdict": "pass",
+  "label_": "same (within noise)",
+  "interval": [
+   -0.16,
+   0.732
+  ],
+  "bound": 1
+ }
+]

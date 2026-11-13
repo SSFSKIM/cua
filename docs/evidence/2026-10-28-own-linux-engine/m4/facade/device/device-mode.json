@@ -1,0 +1,738 @@
+{
+ "engine": "cua",
+ "engineBin": "/Users/new/.local/share/cua-171/task74/w5/engine/8ab1cc758983/cua-engine",
+ "text": "cua171 안녕 é 🙂\nline2",
+ "steps": [
+  {
+   "name": "preconditions",
+   "status": "PASS",
+   "detail": {
+    "display": ":1",
+    "engine": "cua",
+    "xprobe": true
+   }
+  },
+  {
+   "name": "shared: bind the gnome-text-editor window by X11 id",
+   "status": "PASS",
+   "detail": {
+    "windowId": 8388612,
+    "app": "org.gnome.TextEditor"
+   }
+  },
+  {
+   "name": "shared: click is refused with the device sentence; nothing reached the field, and the witness saw the desktop left alone for the whole call",
+   "status": "PASS",
+   "detail": {
+    "what": "click",
+    "answer": {
+     "ok": false,
+     "error": "org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first"
+    },
+    "before": {
+     "text": "",
+     "caret": 0,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "after": {
+     "text": "",
+     "caret": 0,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "strict": {
+     "clean": true,
+     "fields": [],
+     "samples": 72,
+     "max_gap_ms": 5.1
+    },
+    "foreground": {
+     "clean": true,
+     "fields": [],
+     "allowed": []
+    },
+    "span": {
+     "changes": [],
+     "restacks": 0,
+     "focus": 0,
+     "samples": 72
+    }
+   }
+  },
+  {
+   "name": "shared: pressKey is refused with the device sentence; nothing reached the field, and the witness saw the desktop left alone for the whole call",
+   "status": "PASS",
+   "detail": {
+    "what": "pressKey",
+    "answer": {
+     "ok": false,
+     "error": "org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first"
+    },
+    "before": {
+     "text": "",
+     "caret": 0,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "after": {
+     "text": "",
+     "caret": 0,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "strict": {
+     "clean": true,
+     "fields": [],
+     "samples": 72,
+     "max_gap_ms": 5.9
+    },
+    "foreground": {
+     "clean": true,
+     "fields": [],
+     "allowed": []
+    },
+    "span": {
+     "changes": [],
+     "restacks": 0,
+     "focus": 0,
+     "samples": 72
+    }
+   }
+  },
+  {
+   "name": "shared: typeText is refused with the device sentence; nothing reached the field, and the witness saw the desktop left alone for the whole call",
+   "status": "PASS",
+   "detail": {
+    "what": "typeText",
+    "answer": {
+     "ok": false,
+     "error": "org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first"
+    },
+    "before": {
+     "text": "",
+     "caret": 0,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "after": {
+     "text": "",
+     "caret": 0,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "strict": {
+     "clean": true,
+     "fields": [],
+     "samples": 72,
+     "max_gap_ms": 6.4
+    },
+    "foreground": {
+     "clean": true,
+     "fields": [],
+     "allowed": []
+    },
+    "span": {
+     "changes": [],
+     "restacks": 2,
+     "focus": 0,
+     "samples": 72
+    }
+   }
+  },
+  {
+   "name": "shared, negative control: the editor activated and the front window restored during a shared call fails the shared judge",
+   "status": "PASS",
+   "detail": {
+    "what": "control",
+    "answer": {
+     "ok": false,
+     "error": "org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first"
+    },
+    "before": {
+     "text": "",
+     "caret": 0,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "after": {
+     "text": "",
+     "caret": 0,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "strict": {
+     "clean": false,
+     "fields": [
+      "stacking",
+      "active",
+      "focus"
+     ],
+     "samples": 110,
+     "max_gap_ms": 5.6
+    },
+    "foreground": {
+     "clean": false,
+     "fields": [
+      "stacking",
+      "focus",
+      "active"
+     ],
+     "allowed": []
+    },
+    "span": {
+     "changes": [
+      {
+       "field": "stacking",
+       "t_ms": 45,
+       "notify": true
+      },
+      {
+       "field": "stacking",
+       "t_ms": 45.5,
+       "from_len": 2,
+       "to_len": 2,
+       "from": [
+        8388612,
+        10485772
+       ],
+       "to": [
+        10485772,
+        8388612
+       ]
+      },
+      {
+       "field": "active",
+       "t_ms": 45.5,
+       "notify": true
+      },
+      {
+       "field": "active",
+       "t_ms": 45.5,
+       "from": [
+        10485772
+       ],
+       "to": [
+        8388612
+       ]
+      },
+      {
+       "field": "active",
+       "t_ms": 45.5,
+       "notify": true
+      },
+      {
+       "field": "focus",
+       "t_ms": 45.6,
+       "from": 10485772,
+       "to": 8388613
+      },
+      {
+       "field": "stacking",
+       "t_ms": 160,
+       "notify": true
+      },
+      {
+       "field": "stacking",
+       "t_ms": 160.1,
+       "from_len": 2,
+       "to_len": 2,
+       "from": [
+        10485772,
+        8388612
+       ],
+       "to": [
+        8388612,
+        10485772
+       ]
+      }
+     ],
+     "restacks": 2,
+     "focus": 11,
+     "samples": 110
+    }
+   }
+  },
+  {
+   "name": "shared: end_task",
+   "status": "PASS",
+   "detail": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "c462e659-181b-4fbc-bd77-92024d95414e"
+   }
+  },
+  {
+   "name": "shared: the window's app was asked once and accepted, nothing else asked",
+   "status": "PASS",
+   "detail": {
+    "asked": [
+     {
+      "method": "elicitation/create",
+      "app": "org.gnome.TextEditor",
+      "action": "accept"
+     }
+    ],
+    "otherRequests": 0
+   }
+  },
+  {
+   "name": "shared: cua serve exited cleanly",
+   "status": "PASS",
+   "detail": {
+    "code": 0,
+    "signal": null
+   }
+  },
+  {
+   "name": "dedicated: bind the gnome-text-editor window by X11 id",
+   "status": "PASS",
+   "detail": {
+    "windowId": 12582916,
+    "app": "org.gnome.TextEditor"
+   }
+  },
+  {
+   "name": "dedicated: typeText of Acceptance 6's string reads back exactly, once, and the witness saw the editor brought forward from behind the front window",
+   "status": "PASS",
+   "detail": {
+    "what": "typeText",
+    "answer": {
+     "ok": true
+    },
+    "before": {
+     "text": "",
+     "caret": 0,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "after": {
+     "text": "cua171 안녕 é 🙂\nline2",
+     "caret": 20,
+     "active": "0xc00004",
+     "frontActive": false,
+     "targetActive": true,
+     "frontAbove": false
+    },
+    "strict": {
+     "clean": false,
+     "fields": [
+      "stacking",
+      "active",
+      "focus"
+     ],
+     "samples": 81,
+     "max_gap_ms": 6.1
+    },
+    "foreground": {
+     "clean": true,
+     "fields": [],
+     "allowed": [
+      "stacking",
+      "active",
+      "focus"
+     ]
+    },
+    "span": {
+     "changes": [
+      {
+       "field": "stacking",
+       "t_ms": 30.1,
+       "notify": true
+      },
+      {
+       "field": "stacking",
+       "t_ms": 30.1,
+       "from_len": 3,
+       "to_len": 3,
+       "from": [
+        8388612,
+        12582916,
+        10485772
+       ],
+       "to": [
+        8388612,
+        10485772,
+        12582916
+       ]
+      },
+      {
+       "field": "stacking",
+       "t_ms": 30.1,
+       "notify": true
+      },
+      {
+       "field": "active",
+       "t_ms": 30.2,
+       "notify": true
+      },
+      {
+       "field": "active",
+       "t_ms": 30.2,
+       "from": [
+        10485772
+       ],
+       "to": [
+        12582916
+       ]
+      },
+      {
+       "field": "active",
+       "t_ms": 30.2,
+       "notify": true
+      },
+      {
+       "field": "focus",
+       "t_ms": 30.3,
+       "from": 10485772,
+       "to": 12582917
+      }
+     ],
+     "restacks": 4,
+     "focus": 6,
+     "samples": 81
+    }
+   }
+  },
+  {
+   "name": "dedicated: a key takes effect (BackSpace removes the last character), the editor brought forward again",
+   "status": "PASS",
+   "detail": {
+    "what": "pressKey",
+    "answer": {
+     "ok": true
+    },
+    "before": {
+     "text": "cua171 안녕 é 🙂\nline2",
+     "caret": 20,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "after": {
+     "text": "cua171 안녕 é 🙂\nline",
+     "caret": 19,
+     "active": "0xc00004",
+     "frontActive": false,
+     "targetActive": true,
+     "frontAbove": false
+    },
+    "strict": {
+     "clean": false,
+     "fields": [
+      "stacking",
+      "active",
+      "focus"
+     ],
+     "samples": 72,
+     "max_gap_ms": 5.2
+    },
+    "foreground": {
+     "clean": true,
+     "fields": [],
+     "allowed": [
+      "stacking",
+      "active",
+      "focus"
+     ]
+    },
+    "span": {
+     "changes": [
+      {
+       "field": "stacking",
+       "t_ms": 25,
+       "notify": true
+      },
+      {
+       "field": "stacking",
+       "t_ms": 25.1,
+       "from_len": 3,
+       "to_len": 3,
+       "from": [
+        8388612,
+        12582916,
+        10485772
+       ],
+       "to": [
+        8388612,
+        10485772,
+        12582916
+       ]
+      },
+      {
+       "field": "stacking",
+       "t_ms": 25.1,
+       "notify": true
+      },
+      {
+       "field": "active",
+       "t_ms": 25.1,
+       "notify": true
+      },
+      {
+       "field": "active",
+       "t_ms": 25.2,
+       "from": [
+        10485772
+       ],
+       "to": [
+        12582916
+       ]
+      },
+      {
+       "field": "active",
+       "t_ms": 25.2,
+       "notify": true
+      },
+      {
+       "field": "focus",
+       "t_ms": 25.3,
+       "from": 10485772,
+       "to": 12582917
+      }
+     ],
+     "restacks": 1,
+     "focus": 6,
+     "samples": 72
+    }
+   }
+  },
+  {
+   "name": "dedicated: a coordinate click takes effect (the caret moves from the end to the click, near the field's start), the editor brought forward again",
+   "status": "PASS",
+   "detail": {
+    "what": "click",
+    "answer": {
+     "ok": true
+    },
+    "before": {
+     "text": "cua171 안녕 é 🙂\nline",
+     "caret": 19,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "after": {
+     "text": "cua171 안녕 é 🙂\nline",
+     "caret": 1,
+     "active": "0xc00004",
+     "frontActive": false,
+     "targetActive": true,
+     "frontAbove": false
+    },
+    "strict": {
+     "clean": false,
+     "fields": [
+      "stacking",
+      "active",
+      "focus",
+      "pointer"
+     ],
+     "samples": 91,
+     "max_gap_ms": 5.7
+    },
+    "foreground": {
+     "clean": true,
+     "fields": [],
+     "allowed": [
+      "stacking",
+      "active",
+      "focus",
+      "pointer"
+     ]
+    },
+    "span": {
+     "changes": [
+      {
+       "field": "stacking",
+       "t_ms": 30,
+       "notify": true
+      },
+      {
+       "field": "stacking",
+       "t_ms": 30.1,
+       "from_len": 3,
+       "to_len": 3,
+       "from": [
+        8388612,
+        12582916,
+        10485772
+       ],
+       "to": [
+        8388612,
+        10485772,
+        12582916
+       ]
+      },
+      {
+       "field": "stacking",
+       "t_ms": 30.1,
+       "notify": true
+      },
+      {
+       "field": "active",
+       "t_ms": 30.1,
+       "notify": true
+      },
+      {
+       "field": "active",
+       "t_ms": 30.2,
+       "from": [
+        10485772
+       ],
+       "to": [
+        12582916
+       ]
+      },
+      {
+       "field": "active",
+       "t_ms": 30.2,
+       "notify": true
+      },
+      {
+       "field": "focus",
+       "t_ms": 30.2,
+       "from": 10485772,
+       "to": 12582917
+      },
+      {
+       "field": "pointer",
+       "t_ms": 30.2,
+       "from": [
+        640,
+        400
+       ],
+       "to": [
+        579,
+        395
+       ]
+      }
+     ],
+     "restacks": 1,
+     "focus": 8,
+     "samples": 91
+    }
+   }
+  },
+  {
+   "name": "dedicated, negative control: a call that activates nothing fails the dedicated judge, even granted its effect",
+   "status": "PASS",
+   "detail": {
+    "what": "control",
+    "answer": {
+     "ok": true
+    },
+    "before": {
+     "text": "cua171 안녕 é 🙂\nline",
+     "caret": 1,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "after": {
+     "text": "cua171 안녕 é 🙂\nline",
+     "caret": 1,
+     "active": "0xa0000c",
+     "frontActive": true,
+     "targetActive": false,
+     "frontAbove": true
+    },
+    "strict": {
+     "clean": true,
+     "fields": [],
+     "samples": 89,
+     "max_gap_ms": 5.1
+    },
+    "foreground": {
+     "clean": true,
+     "fields": [],
+     "allowed": []
+    },
+    "span": {
+     "changes": [],
+     "restacks": 0,
+     "focus": 0,
+     "samples": 89
+    }
+   }
+  },
+  {
+   "name": "dedicated: end_task",
+   "status": "PASS",
+   "detail": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "829c204c-f2a5-47aa-ac84-9f6c595f420b"
+   }
+  },
+  {
+   "name": "dedicated: the window's app was asked once and accepted, nothing else asked",
+   "status": "PASS",
+   "detail": {
+    "asked": [
+     {
+      "method": "elicitation/create",
+      "app": "org.gnome.TextEditor",
+      "action": "accept"
+     }
+    ],
+    "otherRequests": 0
+   }
+  },
+  {
+   "name": "dedicated: cua serve exited cleanly",
+   "status": "PASS",
+   "detail": {
+    "code": 0,
+    "signal": null
+   }
+  },
+  {
+   "name": "cleanup: every process the fixture started has exited, the witness stopped, and its directory removed after them",
+   "status": "PASS",
+   "detail": {
+    "processes": [
+     {
+      "what": "front xterm",
+      "pid": 4068434,
+      "outcome": "terminated"
+     },
+     {
+      "what": "gnome-text-editor (shared)",
+      "pid": 4068685,
+      "outcome": "terminated"
+     },
+     {
+      "what": "gnome-text-editor (dedicated)",
+      "pid": 4069354,
+      "outcome": "terminated"
+     }
+    ],
+    "witnessStopped": true,
+    "removed": true
+   }
+  }
+ ],
+ "status": "PASS"
+}

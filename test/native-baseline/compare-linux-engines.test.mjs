@@ -79,7 +79,8 @@ test('an operation the engine answers fails when cua\'s median is above the vend
   const result = judge(t, triple('vendor'), triple('cua', {scale: {...FASTER, 'warm.getAXState': 1.05}}));
   assert.equal(result.verdict, 'FAIL');
   assert.equal(op(result, 'warm.getAXState').verdict, 'fail');
-  assert.match(op(result, 'warm.getAXState').reasons.join(' '), /above the vendor engine's .* an operation the engine answers/);
+  // 90 samples a side: judged by Acceptance 3's interval rule, a 5% loss reaching past max(5% of the bar, 1 ms)
+  assert.match(op(result, 'warm.getAXState').reasons.join(' '), /bootstrap 95% interval .* of cua's median minus the vendor engine's .* past the bound .* an operation the engine answers/);
   // An operation the engine is not in is judged by the tolerance alone, and listed when cua's median is above.
   const noise = judge(t, triple('vendor'), triple('cua', {scale: {...FASTER, 'warm.noop': 1.05}}));
   assert.equal(op(noise, 'warm.noop').verdict, 'pass');
@@ -131,4 +132,54 @@ test('the Linux comparison refuses the macOS modes, a lane of the wrong engine, 
   const vendorService = judge(t, triple('vendor'), triple('cua', {scale: FASTER, edit: meta => { meta.nativeEngine.observed[0].service = 'vendor'; }}));
   assert.equal(vendorService.verdict, 'NO VERDICT');
   assert.ok(vendorService.problems.some(p => /the vendor service drove the engine, not the cua lane's/.test(p)), JSON.stringify(vendorService.problems));
+});
+
+// #171 M4 T18 (the design session's ruling): the Linux engine comparison judges an operation the engine answers by
+// Acceptance 3's speed rule, the gate's own (scripts/linux-engine-diff/stats.mjs judgeSeriesSpeed over events.mjs
+// medianDifferenceInterval): with at least 20 samples a side, it passes when the upper end of the bootstrap 95% interval
+// of cua's median minus the vendor's is within max(5% of the vendor's median, 1 ms). Its basis is the counted sitting at
+// 8ab1cc75 (docs/evidence/2026-10-28-own-linux-engine/m4/facade/baseline/): warm.getState and warm.listApps, cua's medians
+// 0.3 and 0.4 ms above the vendor's, a tie the old rule (no cua median above) failed.
+const SITTING = fileURLToPath(new URL('../../docs/evidence/2026-10-28-own-linux-engine/m4/facade/baseline/', import.meta.url));
+const sitting = side => readRuns(join(SITTING, side));
+// The old rule failed both ties. Acceptance 3's passes warm.getState's (its interval includes 0 and stays within the
+// 1 ms bound) and leaves warm.listApps's undetermined (its interval includes 0 but reaches past the bound), which at 90
+// samples a side fails.
+test('the counted sitting re-judged by Acceptance 3\'s interval rule: getState\'s tie passes, listApps\'s interval reaches past the bound', () => {
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'));
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.operations.filter(o => o.verdict === 'fail').map(o => o.op), ['warm.listApps']);
+  const state = op(result, 'warm.getState'), apps = op(result, 'warm.listApps');
+  assert.equal(state.verdict, 'pass');
+  assert.deepEqual([state.speed.rule, state.speed.samples, state.speed.label], ['interval', {vendor: 90, cua: 90}, 'same (within noise)']);
+  assert.ok(state.speed.interval[0] <= 0 && state.speed.interval[1] <= state.speed.bound, JSON.stringify(state.speed));
+  assert.equal(apps.speed.label, 'undetermined');
+  assert.ok(apps.speed.interval[0] <= 0 && apps.speed.interval[1] > apps.speed.bound, JSON.stringify(apps.speed));
+  assert.match(apps.reasons.join(' '), /undetermined at 90 samples a side/);
+  for (const name of ['warm.getState', 'warm.listApps']) assert.ok(result.above.some(a => a.op === name && a.engineAnswered), name);
+  // every other operation the engine answers passes, the series with 20 samples or more as faster
+  for (const name of ['warm.getAXState', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.clear', 'task.total']) assert.deepEqual([op(result, name).verdict, op(result, name).speed.label], ['pass', 'faster'], name);
+  for (const name of ['bind.getApp', 'method.typeText', 'method.paste']) assert.deepEqual([op(result, name).verdict, op(result, name).speed.rule], ['pass', 'median'], name);
+  const text = renderComparison(result);
+  assert.match(text, /## Speed of the operations the engine answers/);
+  assert.match(text, /\| warm\.getState \| 90 \/ 90 \|.*\| same \(within noise\) \| pass \|/);
+  assert.match(text, /\| warm\.listApps \| 90 \/ 90 \|.*\| undetermined \| fail \|/);
+  assert.match(text, /- warm\.getState: cua 17\.9 ms, vendor 17\.6 ms \(an operation the engine answers: judged by Acceptance 3's interval rule, pass\)/);
+});
+
+test('a clear cua loss beyond the bound still fails by the interval rule, as does a cua median above on a series too short for it', () => {
+  const slower = sitting('cc').map(run => ({...run, rows: run.rows.map(r => (r.op === 'warm.getState' && r.ok ? {...r, wallMs: r.wallMs + 5} : r))}));
+  const result = compareLanes('engines', sitting('cv'), slower);
+  assert.equal(result.verdict, 'FAIL');
+  const o = op(result, 'warm.getState');
+  assert.equal(o.verdict, 'fail');
+  assert.ok(o.speed.interval[0] > o.speed.bound, JSON.stringify(o.speed));
+  assert.equal(o.speed.label, 'loss');
+  assert.match(o.reasons.join(' '), /bootstrap 95% interval .* of cua's median minus the vendor engine's .* past the bound .*: a loss/);
+  // bind.getApp has 3 samples a side, fewer than the interval rule's 20: it keeps the median rule
+  const bind = sitting('cc').map(run => ({...run, rows: run.rows.map(r => (r.op === 'bind.getApp' && r.ok ? {...r, wallMs: 700} : r))}));
+  const short = compareLanes('engines', sitting('cv'), bind);
+  assert.equal(op(short, 'bind.getApp').verdict, 'fail');
+  assert.equal(op(short, 'bind.getApp').speed.rule, 'median');
+  assert.match(op(short, 'bind.getApp').reasons.join(' '), /above the vendor engine's .* fewer than 20 samples a side/);
 });

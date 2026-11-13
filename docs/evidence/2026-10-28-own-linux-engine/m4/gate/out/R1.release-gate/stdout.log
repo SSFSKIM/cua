@@ -1,0 +1,9 @@
+release gate
+2026-11-13T11:35:29Z == parity head 514f5c62dd6c74b1ed24c48f112ca9c35a70eece label counted dirty=no engine cua-engine 0.4.0 (514f5c62dd6c) sha256 f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937
+2026-11-13T11:36:11Z prepared on :1 unix:path=/tmp/cua171-gl-oQhlfF/parity/desktop/session/bus/dbus-DnaCY6Xb6J,guid=71978af54cac0ff2ef7eb8446af6f602 null
+2026-11-13T11:55:15Z vendor exit 0 {"out":"/Users/new/.local/share/cua-171/gate/out/R1.release-gate/run/parity/vendor","cases":34,"pending":0,"pendingEnvironmentCells":0,"pendingObligations":[],"complete":true,"assertions":"RECORDED_VENDOR_DEFECT","coveredCases":31,"recordedVendorDefects":3,"engine":"vendor"}
+2026-11-13T12:13:02Z cua exit 0 {"out":"/Users/new/.local/share/cua-171/gate/out/R1.release-gate/run/parity/cua","cases":34,"pending":0,"pendingEnvironmentCells":0,"pendingObligations":[],"complete":true,"assertions":"PASS","coveredCases":34,"recordedVendorDefects":0,"engine":"cua"}
+2026-11-13T12:13:02Z diff exit 0
+2026-11-13T12:13:03Z cleanup exit 0
+2026-11-13T12:13:03Z == parity exit 0
+release gate: R1 exit 0

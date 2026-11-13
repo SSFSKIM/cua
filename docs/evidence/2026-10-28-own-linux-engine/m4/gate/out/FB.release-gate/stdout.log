@@ -1,0 +1,11 @@
+release gate
+PASS equal expected=true/true over-budget window
+PASS equal expected=true/true over-budget state truncated {"depth":2,"failed":0,"nodes":1263} line 1265
+PASS equal expected=true/true over-budget tree (5000 nodes) truncated {"depth":2,"failed":0,"nodes":1263}
+PASS equal expected=true/true over-budget query truncated {"depth":2,"failed":0,"nodes":1263}
+PASS equal expected=true/true over-budget state-after-query truncated {"depth":2,"failed":0,"nodes":1263} line 1265
+PASS equal expected=true/true over-budget screenshot truncated {"depth":2,"failed":0,"nodes":1263} line 1265
+PASS equal expected=true/true over-budget unknown-id [Unknown element ID 999999 for this window; refresh get_window_state()]
+PASS equal expected=true/true over-budget unknown-action [AT-SPI action "cua171-no-such-action" is unavailable; available actions: ["doDefault", "showContextMenu"]]
+VERDICT: every step passes
+release gate: FB exit 0

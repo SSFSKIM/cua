@@ -1,0 +1,7 @@
+owner pid=2546101 start=51157914
+tmproot /tmp/c71-53fCF9
+args: --experiment drag --vendor /Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --occlusion visible --family firefox,writer --ops dnd,select --cua /Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64 --run m4-gate-Z0 --gate
+started 2026-11-13T22:20:41Z finished 2026-11-13T22:31:27Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: [/tmp/cua171-run-7nTGZK /tmp/cua171-run-AdXsUJ /tmp/cua171-run-OJWaJi /tmp/cua171-run-lLeOBG /tmp/cua171-run-q8ExPO ]
+owner side: no difference

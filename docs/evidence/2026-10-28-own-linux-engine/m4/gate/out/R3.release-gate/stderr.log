@@ -1,0 +1,2 @@
+release gate
+private-desktop: :1 session; command exit 0; watchdog clean

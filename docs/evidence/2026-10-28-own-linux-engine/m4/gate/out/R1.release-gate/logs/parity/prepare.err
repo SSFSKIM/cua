@@ -1,0 +1,2 @@
+Previous HEAD position was 8ab1cc75 #171 M4: an effect not read before or after a run counts as none, in the load judge and the predicates
+HEAD is now at 514f5c62 #171 M4 T18: R2's top-up judges its own sitting, and pools only clean series

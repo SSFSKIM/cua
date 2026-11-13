@@ -1,0 +1,17 @@
+{
+ "DISPLAY": ":0",
+ "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/gate/out/V5.release-gate/decoy/session.sock",
+ "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/gate/out/V5.release-gate/decoy/a11y.sock",
+ "HOME": "/Users/new",
+ "XDG_RUNTIME_DIR": "/run/user/501",
+ "XDG_CONFIG_HOME": null,
+ "XDG_DATA_HOME": null,
+ "XDG_CACHE_HOME": null,
+ "XDG_STATE_HOME": null,
+ "GSETTINGS_BACKEND": null,
+ "XAUTHORITY": "/Users/new/.Xauthority",
+ "ACCESSIBILITY_ENABLED": null,
+ "GNOME_ACCESSIBILITY": null,
+ "SESSION_MANAGER": null,
+ "TMPDIR": "/tmp/c71-0XlEX2"
+}

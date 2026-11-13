@@ -1,0 +1,11 @@
+owner pid=2546101 start=51157914
+tmproot /tmp/c71-40LtRt
+args: --vendor /Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64 --scene chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target,device-gtk4,device-xterm,device-qt --ops type_text,focus_change,focus_change_takeover,silent_owner,concurrent,contention,late_page,ignored_page,restore_refused,gte_type_text_shared,stalled_incr,late_convert,unreadable,gtk4_click_shared,gtk4_click_dedicated,gtk4_key_shared,gtk4_key_dedicated,gtk4_key_down_shared,gtk4_right_click_shared,gtk4_element_click,gtk4_scroll_shared,gtk4_scroll_dedicated,gtk4_move_shared,gtk4_move_dedicated,gtk4_drag_shared,gtk4_drag_dedicated,xterm_key_shared,xterm_key_dedicated,xterm_click_shared,qt_scroll_shared,qt_scroll_dedicated --blocks 3 --run m4-gate-V4
+started 2026-11-13T21:11:42Z finished 2026-11-13T21:37:58Z wrap exit 0
+tmproot left: []
+/tmp/cua171-run-* left: [/tmp/cua171-run-7nTGZK /tmp/cua171-run-AdXsUJ /tmp/cua171-run-OJWaJi /tmp/cua171-run-lLeOBG /tmp/cua171-run-q8ExPO ]
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1794604235.832376472
+---
+> mtime ~/.config/google-chrome 1794604581.339792987

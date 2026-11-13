@@ -1,0 +1,15 @@
+# m4-gate-P6's dnd cases re-judged: an allowed case's honest misses by one-sided Fisher against the pinned build (p >= 0.05), ok with no effect hard (/Users/new/.local/share/cua-171/gate/out/P6.release-gate/run/results.jsonl)
+label: release gate; candidate f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937 (cua-engine 0.4.0 (514f5c62dd6c))
+
+| case | expect | n | took | honest misses | ok with no effect | error yet took | pinned took | p | verdict | why |
+|---|---|---:|---:|---:|---:|---:|---|---|---|---|
+| firefox dnd visible pointer-in | allowed | 30 | 29 | 1 | 0 | 0 | 30 of 30 | 0.5000 | PASS | the manifest's judge, honest misses by Fisher |
+| firefox dnd visible pointer-out | refused | 10 | 0 | – | 0 | – | 0 of 10 | – | PASS | the manifest's judge |
+| firefox dnd partial pointer-in | allowed | 30 | 30 | 0 | 0 | 0 | 30 of 30 | 1.0000 | PASS | the manifest's judge, honest misses by Fisher |
+| firefox dnd partial pointer-under | refused | 10 | 0 | – | 0 | – | 0 of 10 | – | PASS | the manifest's judge |
+| firefox dnd partial pointer-out | refused | 10 | 0 | – | 0 | – | 0 of 10 | – | PASS | the manifest's judge |
+| firefox dnd covered pointer-under | refused | 10 | 0 | – | 0 | – | 0 of 10 | – | PASS | the manifest's judge |
+| firefox dnd covered pointer-out | refused | 10 | 0 | – | 0 | – | 0 of 10 | – | PASS | the manifest's judge |
+| firefox dnd visible pointer-leave | honest | 20 | 20 | – | 0 | – | 0 of 20 | – | PASS | the manifest's judge |
+
+cases: 8; VERDICT (the manifest's judge, allowed dnd cases' honest misses by Fisher at 0.05): PASS

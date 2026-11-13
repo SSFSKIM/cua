@@ -1,0 +1,12 @@
+# F1a (release gate)
+
+**release gate.**
+
+- what: T7 revised on the shipped engine: burst, A-B-A, key then paste
+- display: own; load: idle; estimated 20 min
+- run: `m4-gate-F1a`; the harness's output in `run/`
+- checkout: /Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/ at 514f5c62dd6c74b1ed24c48f112ca9c35a70eece, clean
+- candidate: /Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64 (sha256 f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937 as given)
+- command: `/Users/new/.local/share/cua-171/locked.sh t18-gate /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/scripts/linux-engine-gate/gate.mjs run F1a --candidate /Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64 --out /Users/new/.local/share/cua-171/gate/out`
+- started 2026-11-13T14:48:49.717Z
+- finished 2026-11-13T15:05:14.291Z; exit 0

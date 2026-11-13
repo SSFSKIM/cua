@@ -1,0 +1,109 @@
+# m4-gate-S1 re-judged with #302 encoded (/Users/new/.local/share/cua-171/gate/out/S1.release-gate/run/results.jsonl)
+label: release gate; candidate f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937 (cua-engine 0.4.0 (514f5c62dd6c)); load factor none
+
+## electron-input press_key background (shipped, load 0)
+  trial 0: pass
+  trial 1: pass
+  trial 2: #302 (key-up seen 207.4 ms after the answer)
+  trial 3: pass
+  trial 4: pass
+  trial 5: pass
+  trial 6: #302 (key-up seen 207.1 ms after the answer)
+  trial 7: pass
+  trial 8: pass
+  trial 9: #302 (key-up seen 214.5 ms after the answer)
+  trial 10: pass
+  trial 11: #302 (key-up seen 208.8 ms after the answer)
+  trial 12: pass
+  trial 13: pass
+  trial 14: pass
+  trial 15: #302 (key-up seen 210 ms after the answer)
+  trial 16: pass
+  trial 17: #302 (key-up seen 206.9 ms after the answer)
+  trial 18: pass
+  trial 19: pass
+  trial 20: pass
+  trial 21: pass
+  trial 22: pass
+  trial 23: pass
+  trial 24: pass
+  trial 25: #302 (key-up seen 216.6 ms after the answer)
+  trial 26: pass
+  trial 27: pass
+  trial 28: #302 (key-up seen 218.7 ms after the answer)
+  trial 29: #302 (key-up seen 215 ms after the answer)
+  trial 30: pass
+  trial 31: #302 (key-up seen 209.7 ms after the answer)
+  runs 32, pass 22, #302 10, failing 0; streak 32 of 30 needed (reached); audits pass
+  verdict: PASS
+
+## electron-text press_key background (shipped, load 0)
+  trial 0: pass
+  trial 1: pass
+  trial 2: pass
+  trial 3: pass
+  trial 4: pass
+  trial 5: pass
+  trial 6: pass
+  trial 7: pass
+  trial 8: pass
+  trial 9: pass
+  trial 10: pass
+  trial 11: pass
+  trial 12: pass
+  trial 13: pass
+  trial 14: pass
+  trial 15: pass
+  trial 16: pass
+  trial 17: pass
+  trial 18: pass
+  trial 19: pass
+  trial 20: pass
+  trial 21: pass
+  trial 22: pass
+  trial 23: pass
+  trial 24: pass
+  trial 25: pass
+  trial 26: pass
+  trial 27: pass
+  trial 28: pass
+  trial 29: pass
+  runs 30, pass 30, #302 0, failing 0; streak 30 of 30 needed (reached); audits pass
+  verdict: PASS
+
+## electron-input press_key desktop (shipped, load 0)
+  trial 0: pass
+  trial 1: pass
+  trial 2: pass
+  trial 3: pass
+  trial 4: pass
+  trial 5: pass
+  trial 6: pass
+  trial 7: pass
+  trial 8: pass
+  trial 9: pass
+  trial 10: pass
+  trial 11: pass
+  trial 12: pass
+  trial 13: pass
+  trial 14: pass
+  trial 15: pass
+  trial 16: pass
+  trial 17: pass
+  trial 18: pass
+  trial 19: pass
+  trial 20: pass
+  trial 21: pass
+  trial 22: pass
+  trial 23: pass
+  trial 24: pass
+  trial 25: pass
+  trial 26: pass
+  trial 27: pass
+  trial 28: pass
+  trial 29: pass
+  runs 30, pass 30, #302 0, failing 0; streak 30 of 30 needed (reached); audits none
+  verdict: PASS
+
+#302 counts per Electron press_key cell: [{"cell":"electron-input press_key background","lane":"shipped","load":0,"runs":32,"#302":10,"failing":0,"verdict":"pass"},{"cell":"electron-text press_key background","lane":"shipped","load":0,"runs":30,"#302":0,"failing":0,"verdict":"pass"},{"cell":"electron-input press_key desktop","lane":"shipped","load":0,"runs":30,"#302":0,"failing":0,"verdict":"pass"}]
+cells: 48; VERDICT (the lane's rule with #302 encoded): PASS

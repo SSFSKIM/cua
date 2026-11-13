@@ -1,0 +1,2 @@
+[1658051:1113/145054.244520:ERROR:content/browser/network_service_instance_impl.cc:650] Network service crashed or was terminated, restarting service.
+[1658051:1113/145054.296953:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote

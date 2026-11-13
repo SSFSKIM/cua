@@ -1,0 +1,42 @@
+# linux-engine-diff summary
+
+## m4-gate-F1b (experiment focus-timer; release gate)
+
+candidate: sha256 f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937, x86_64-unknown-linux-musl static-pie, cua-engine 0.4.0 (514f5c62dd6c); attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/43405393873/attempts/1, built from 514f5c62dd6c74b1ed24c48f112ca9c35a70eece (refs/heads/feat/171-m4) on a github-hosted runner
+
+| family | lane | scenario | runs | misses | passing streak at the end | verdict | raw misses | raw streak | median burst ms |
+|---|---|---|---:|---:|---:|---|---:|---:|---:|
+| chrome | shipped | click-paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 103.3 |
+| chrome | shipped | click-field | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 97.2 |
+| electron | shipped | click-paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 79 |
+| electron | shipped | click-field | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 77.3 |
+| gedit | shipped | click-paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 86.7 |
+| kate | shipped | click-paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 105.8 |
+| qtcreator | shipped | click-paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 163.9 |
+| writer | shipped | click-paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 211.9 |
+| gnome-terminal | shipped | click-paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 91.1 |
+
+| family | lane | scenario | engine flags | audit | FocusOuts attributed (deferred) | sessions as expected | problems |
+|---|---|---|---|---|---:|---|---|
+| chrome | shipped | click-paste | – | clean | 2 (0) | yes | – |
+| chrome | shipped | click-field | – | clean | 2 (0) | yes | – |
+| electron | shipped | click-paste | – | clean | 2 (0) | yes | – |
+| electron | shipped | click-field | – | clean | 2 (0) | yes | – |
+| gedit | shipped | click-paste | – | clean | 2 (0) | yes | – |
+| kate | shipped | click-paste | – | clean | 2 (0) | yes | – |
+| qtcreator | shipped | click-paste | – | clean | 2 (0) | yes | – |
+| writer | shipped | click-paste | – | clean | 2 (0) | yes | – |
+| gnome-terminal | shipped | click-paste | – | clean | 2 (0) | yes | – |
+
+| family | scenario | not applicable |
+|---|---|---|
+| gedit | click-field | the family's scene has one text field a window |
+| kate | click-field | the family's scene has one text field a window |
+| qtcreator | click-field | the family's scene has one text field a window |
+| firefox | click-paste | a background click moves no Gecko caret (refused while covered, taken but caret unmoved while fully unobscured) |
+| firefox | click-field | the family's scene has one text field a window |
+| writer | click-field | the family's scene has one text field a window |
+| gnome-terminal | click-field | the family's scene has one text field a window |
+
+desktop: started with no window active, ended with 0x00a0000c active (harness), neither acted on; holder none; the harness's own trace: 2434 requests, 314 changes of a window, every one of its own; the run's record: not run (the display is a private one, and the run's caller declined to start the whole-run RECORD on it)
+

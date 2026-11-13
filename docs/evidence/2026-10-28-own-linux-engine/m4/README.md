@@ -98,13 +98,13 @@ This is restated from the top of this file, because the design session asked for
 `:0` through device `cua-171`, with the person's `me` profile. M4 runs them on a private display, with a run-owned
 profile. Their numbers are not like for like.
 
-### The clean-head suites (the frozen head cb3661b3, then 8ab1cc75)
+### The clean-head suites (the frozen head cb3661b3, and the fixes merged after it, up to 4c532708)
 
 | Suite | Result | Note |
 |---|---|---|
 | Engine, the gate's own commands | fmt and both clippy runs clean; live suite 601 tests, 0 failed, 1 ignored; two-screens 3 of 3 | Lock 05:39:54–05:49:24Z on 2026-11-13, load 0.44 at acquire and 0.36 at release, render host none |
 | Services and doctor | 76 of 76 | |
-| REPL host | 196 pass, 1 fail, 11 skipped | `serve-own-host` fails `sandbox_unavailable`: its temporary home has no sandbox helper (tech debt, 2026-11-04) |
-| Harness, at 8ab1cc75 | 973 of 975 | The 2 private-server failures come from stale `/tmp/.X11-unix/X42` and `X43` sockets (tech debt). Lock 06:12:41–06:13:13Z |
+| REPL host | 196 pass, 1 fail, 11 skipped on cb3661b3; 192 pass, 0 fail, 16 skipped after ed939416 | On cb3661b3, `serve-own-host` failed with `sandbox_unavailable`: its temporary home held no sandbox helper. ed939416 fixed the test's setup, and its tech-debt entry is resolved |
+| Harness, at 4c532708 | 981 of 981 | Lock 07:54:06–07:54:39Z on 2026-11-13, load 0.54 at acquire and 0.64 at release. At 8ab1cc75 it had passed 973 of 975: the private-server tests failed on sockets that leaked xtrace proxies had left behind, and audit-leak-fix (4c532708) stops the leak |
 
 The counted facade suites, on the engine built at the final head, are in `facade/README.md`.

@@ -45,37 +45,58 @@ What each suite runs on:
 | repl-parity `--suite native`, vendor lane | `parity/vendor/` | complete, `RECORDED_VENDOR_DEFECT`: 31 of 34 cases covered, the 3 declared vendor defects (`app/typetext`, `app/paste`, `getaxstate/minimized`) |
 | repl-parity `--suite native`, cua lane | `parity/cua/` | complete, **PASS**, 34 of 34 |
 | `repl-parity diff … --expected native-linux.json` | `parity/diff.json` | **ok**, 0 differences. Declared: `linux-text-typetext-m2`, `linux-text-paste-m2`, `linux-getaxstate-minimized-m4` |
-| native-baseline, 3 runs a lane interleaved, `compare --engines` | `baseline/`, `baseline/engines.md` | every run complete. **VERDICT: FAIL**, on `warm.getState` and `warm.listApps` alone, by 0.3 and 0.4 ms (below). "Problems: none: both sides are complete, attested and comparable" |
+| native-baseline, 3 runs a lane interleaved, `compare --engines` | `baseline/`, `baseline/engines.md`, `baseline/engines-acceptance3.md` | every run complete, "Problems: none: both sides are complete, attested and comparable". **VERDICT: FAIL** under the original rule (`warm.getState` and `warm.listApps`, by 0.3 and 0.4 ms), and **VERDICT: FAIL** under Acceptance 3's rule (`warm.listApps` alone, undetermined; below) |
 
 Both repl-parity lanes recorded which engine answered on every native case:
 - The vendor lane: `sky_linux_x64`, the trusted worker's child, behind `@oai/sky`.
 - The cua lane: the build, the trusted worker's child, behind cua's service. Beside it, the build again as
   `launcher-shim`, the supervisor's child, naming its real parent (judged by 41070184, below).
 
-### The native baseline's comparison
+### The native baseline's comparison, under two rules
 
-| operation (engine-answered) | vendor median, ms | cua median, ms | rule's verdict |
-|---|---:|---:|---|
-| warm.noop (no engine) | 14.5 | 14.2 | pass |
-| warm.getState | 17.6 | 17.9 | **fail** |
-| warm.listApps | 16.8 | 17.2 | **fail** |
-| bind.getApp | 580.6 | 123.3 | pass |
-| warm.getAXState | 490.6 | 94.8 | pass |
-| warm.getScreenshot | 632.6 | 117.7 | pass |
-| task.total (the pressKey task) | 18700.0 | 5003.1 | pass |
-| method.typeText | 10247.9, every sample `editable Paste did not insert text` | 60.7, every sample returned, gedit alive, the text read back | pass |
-| method.paste | 10231.4, the same failure | 59.9, the same success | pass |
+The stored records (`baseline/cv/`, `baseline/cc/`) were judged twice. There was no new sitting.
 
-**The FAIL.** Acceptance 10's rule fails an engine-answered operation whenever cua's median is above the vendor's.
-On `warm.getState` and `warm.listApps` the two lanes are tied within noise on the private display:
-- Per run, the medians interleave: getState cv 17.2, 17.4 and 19.3 ms against cc 18.4, 16.4 and 18.4; listApps cv
-  17.2, 14.1 and 18.2 against cc 17.5, 16.7 and 18.0.
-- Inside the cell, cua is the faster on both: getState 3.60 against 3.94 ms, listApps 3.43 against 3.88.
-- The pilot at 41070184 on the same kind of display had cua below the vendor on both (17.4 against 17.5, 17.2 against
-  17.5).
+1. **Acceptance 10's original rule** (`baseline/engines.md`, from the counted step): an engine-answered operation failed
+   whenever cua's median was above the vendor's. **VERDICT: FAIL**, on `warm.getState` and `warm.listApps`, by 0.3 and
+   0.4 ms.
+2. **Acceptance 3's speed rule, as the design session ruled** (`baseline/engines-acceptance3.md`, the same records
+   re-judged at bc67d611, the commit that adopted the rule): **VERDICT: FAIL**, on `warm.listApps` alone.
 
-The run was not repeated to get a passing verdict. How to judge a tie that the change of venue produced is the T18
-executor's and the coordinator's call.
+| operation (engine-answered) | samples a side | vendor, ms | cua, ms | interval of cua minus vendor, ms | bound, ms | old rule | Acceptance 3's rule |
+|---|---:|---:|---:|---|---:|---|---|
+| warm.getState | 90 | 17.6 | 17.9 | [-0.122, 0.834] | 1 | **fail** | pass, same (within noise) |
+| warm.listApps | 90 | 16.8 | 17.2 | [-0.227, 1.124] | 1 | **fail** | **fail**, undetermined |
+| bind.getApp | 3 | 580.6 | 123.3 | (median rule) | | pass | pass |
+| warm.getAXState | 90 | 490.6 | 94.8 | [-409.197, -382.225] | 24.53 | pass | pass, faster |
+| warm.getScreenshot | 90 | 632.6 | 117.7 | [-531.118, -491.918] | 31.63 | pass | pass, faster |
+| task.act | 30 | 16743.6 | 4501.6 | [-12292.949, -12210.384] | 837.18 | pass | pass, faster |
+| task.verify | 30 | 585.6 | 192.3 | [-449.001, -380.708] | 29.28 | pass | pass, faster |
+| task.clear | 30 | 1320.1 | 308.1 | [-1032.288, -987.975] | 66.01 | pass | pass, faster |
+| task.total (the pressKey task) | 30 | 18700.0 | 5003.1 | [-13818.763, -13633.258] | 935 | pass | pass, faster |
+| method.typeText | 3 | 10247.9, every sample `editable Paste did not insert text` | 60.7, every sample returned, gedit alive, the text read back | (median rule) | | pass | pass |
+| method.paste | 3 | 10231.4, the same failure | 59.9, the same success | (median rule) | | pass | pass |
+
+**How Acceptance 3's rule is applied here** (`scripts/native-baseline/compare.mjs` `linuxEngineSpeed`, Linux only):
+- It reuses the gate's own implementation: `scripts/linux-engine-diff/stats.mjs` `judgeSeriesSpeed` over `events.mjs`
+  `medianDifferenceInterval` (2,000 rounds, seed 171, unstratified, as the gate's per-operation series are).
+- With at least 20 successful samples a side, a series passes only when the upper end of the bootstrap 95% interval of
+  cua's median minus the vendor engine's is within max(5% of the vendor's median, 1 ms). It is labelled `faster`,
+  `same (within noise)` or `within the bound`.
+- A comparison cannot top a series up, so the samples it has are final. An interval that includes 0 but reaches past
+  the bound is undetermined, and fails, as Acceptance 3 fails one still undetermined at 40.
+- A series with fewer than 20 a side (`bind.getApp` and the method cases, one sample a run) keeps Acceptance 10's
+  median rule.
+- macOS (#117) is untouched: its comparisons are pinned byte for byte (`test/native-baseline/fixtures/macos-lanes.json`).
+
+**What the remaining FAIL is.** `warm.listApps`'s interval includes 0 and reaches 0.124 ms past its 1 ms bound, so the
+rule cannot call it a tie at 90 samples a side. The evidence still points to a tie:
+- The per-run medians interleave: cv 17.2, 14.1 and 18.2 ms against cc 17.5, 16.7 and 18.0.
+- Inside the cell, cua is faster: 3.43 against 3.88 ms.
+- The pilot at 41070184 had cua below the vendor (17.2 against 17.5).
+- On M3's `:0`, where the vendor paid for the person's windows, the vendor took 23.8 ms against cua's 17.8.
+
+Neither rule's verdict was rerun to make it pass. Whether to sample further, declare a speed gap, or rule otherwise is
+the T18 executor's and the coordinator's call.
 
 ## Harness changes (fe0a26b4, cf785980, 75377a53, 41070184)
 

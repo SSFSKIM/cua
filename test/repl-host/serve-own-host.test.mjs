@@ -1,49 +1,56 @@
 // A real cua connection (src/mcp/connection.mjs) on cua's own REPL host: the proxy, its anchor-owned process group,
 // the supervisor and kernel, the scoped sandbox state the proxy stamps, end_task's turn_ended completion and the
 // connection's teardown. The installed runtime is a forged home (test/fixtures/installed-home.mjs) whose sandbox
-// launcher is the recording double (on macOS in place of sandbox-exec, elsewhere of the Codex CLI); no vendor process
-// runs. The production banner imports cua's own facade
-// (src/cua-api/bootstrap.mjs), so the chain banner -> kernel -> host -> trusted worker -> cua's browser wrapper and
-// service runs for real and the first cell carries the first-call document. Needs Node 24 or later for the kernel
-// (CUA_NODE).
+// launcher is the recording double (on macOS in place of sandbox-exec, on Linux of the pinned codex-linux-sandbox,
+// standing where `cua install` places it and named with its own SHA-256 as the pinned one); no vendor process runs.
+// The production banner imports cua's own facade (src/cua-api/bootstrap.mjs), so the chain banner -> kernel -> host ->
+// trusted worker -> cua's browser wrapper and service runs for real and the first cell carries the first-call document.
+// Needs Node 24 or later for the kernel (CUA_NODE).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {copyFileSync, chmodSync, readFileSync, realpathSync} from 'node:fs';
-import {join} from 'node:path';
+import {copyFileSync, chmodSync, mkdirSync, readFileSync, realpathSync} from 'node:fs';
+import {dirname, join} from 'node:path';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {scratchUserHome} from '../fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported, NO_SCOPED_LAUNCH} from '../fixtures/installed-home.mjs';
-import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {openConnection} from '../../src/mcp/connection.mjs';
 import {homeLayout} from '../../src/runtime/layout.mjs';
 import {kernelNode} from './kernel-harness.mjs';
 import {launches, sandboxDouble} from './supervisor-harness.mjs';
 import {REPL_HOST_META_KEY, REPL_HOST_NAME, REPL_HOST_VERSION} from '../../src/repl-host/identity.mjs';
 import {toolOverrides} from '../../src/repl-host/instructions.mjs';
+import {helperFor, sha256Of, verifyHelper as verifyLinuxHelper} from '../../src/sandbox/linux.mjs';
 
 const {node, skip: noNode} = kernelNode();
 const skip = noNode || (!installedHomeSupported && 'no checked-in pin for this host') || NO_SCOPED_LAUNCH;
 
 test('an explicitly selected own host answers a real connection: handshake, cells, reset, end_task and an owned teardown', {skip}, async t => {
   const home = fakeInstalledHome(t);
-  const runtime = resolveRuntime({home});
   const records = join(home, 'double');
-  // Linux's own host still launches through the Codex CLI (until #115 M3); the darwin layout names none since M2.
-  if (runtime.paths.codexCli) {
-    copyFileSync(sandboxDouble(home, {records}), runtime.paths.codexCli);
-    chmodSync(runtime.paths.codexCli, 0o755);
-  }
   const execDouble = sandboxDouble(home, {records, exec: true});
-  // cua's own sandbox (macOS) runs sandbox-exec, which the double stands in for: the launch record's one seam.
-  const prepareLaunch = launch => (launch.env.CUA_REPL_SANDBOX_EXEC ? {...launch, env: {...launch.env, CUA_REPL_SANDBOX_EXEC: execDouble}} : launch);
+  // On Linux the helper double stands where `cua install` places the pinned helper, and the launch names its SHA-256 as
+  // the pinned one: the connection's preflight and the supervisor's check before each child verify the double's bytes.
+  const helper = process.platform === 'linux' ? helperFor({home, arch: process.arch}) : null;
+  let helperSha = null;
+  if (helper) {
+    mkdirSync(dirname(helper.path), {recursive: true});
+    copyFileSync(sandboxDouble(dirname(helper.path), {records}), helper.path);
+    chmodSync(helper.path, 0o755);
+    helperSha = sha256Of(readFileSync(helper.path));
+  }
+  const verifyHelper = helper && (named => verifyLinuxHelper({...named, sha256: helperSha}));
+  // cua's own sandbox runs sandbox-exec (macOS) or the pinned helper (Linux), which the doubles stand in for: the launch
+  // record's one seam.
+  const prepareLaunch = launch => (launch.env.CUA_REPL_SANDBOX_EXEC ? {...launch, env: {...launch.env, CUA_REPL_SANDBOX_EXEC: execDouble}}
+    : launch.env.CUA_REPL_SANDBOX_HELPER === helper?.path ? {...launch, env: {...launch.env, CUA_REPL_SANDBOX_HELPER_SHA256: helperSha}} : launch);
   const env = {PATH: '/usr/bin:/bin', HOME: scratchUserHome(t), TMPDIR: process.env.TMPDIR, CUA_REPL_HOST: 'cua', CUA_NODE: node,
     CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', CUA_RUNTIME_IDLE_MS: '0'};
   const input = new PassThrough(), output = new PassThrough();
   const pending = new Map();
   createInterface({input: output}).on('line', line => { const msg = JSON.parse(line); pending.get(msg.id)?.(msg); });
-  const connection = await openConnection({home, env, sessionId: randomUUID(), input, output, diagnostics: () => {}, chrome: {profiles: []}, listBackends: async () => ({backends: []}), prepareLaunch});
+  const connection = await openConnection({home, env, sessionId: randomUUID(), input, output, diagnostics: () => {}, chrome: {profiles: []}, listBackends: async () => ({backends: []}), prepareLaunch, ...(verifyHelper ? {verifyHelper} : {})});
   t.after(() => connection.close('test end'));
   let id = 0;
   const request = (method, params) => new Promise(resolve => { const n = ++id; pending.set(n, resolve); input.write(`${JSON.stringify({jsonrpc: '2.0', id: n, method, params})}\n`); });
@@ -74,12 +81,24 @@ test('an explicitly selected own host answers a real connection: handshake, cell
   const run = join(homeLayout(realpathSync(home)).run);
   for (const child of [launch, workerLaunch]) {
     if (process.platform === 'darwin') assert.ok(child.argv.some(a => a.startsWith('-DWRITABLE_ROOT_1=') && a.startsWith(`-DWRITABLE_ROOT_1=${run}/`)), 'the scoped policy the proxy sent, for both children: the run directory writable');
-    else assert.match(child.argv[6], /":tmpdir" = "write", ":workspace_roots" = \{"\." = "write"\}\}, network = \{enabled = false\}\}$/, 'the scoped policy the proxy sent, for both children');
+    else {
+      // The helper's argv (src/sandbox/linux.mjs linuxCommand): the run directory as the policy's cwd, its project root.
+      const [policyCwdFlag, policyCwd, commandCwdFlag, commandCwd, profileFlag, , separator] = child.argv;
+      assert.deepEqual([policyCwdFlag, commandCwdFlag, profileFlag, separator], ['--sandbox-policy-cwd', '--command-cwd', '--permission-profile', '--']);
+      assert.ok(policyCwd.startsWith(`${run}/`) && commandCwd === policyCwd, 'the scoped policy the proxy sent, for both children: the run directory its cwd');
+      const {network, file_system: {entries}} = JSON.parse(child.argv[5]);
+      assert.equal(network, 'restricted');
+      for (const kind of ['project_roots', 'tmpdir']) assert.ok(entries.some(e => e.path.type === 'special' && e.path.value.kind === kind && e.access === 'write'), `${kind} writable`);
+    }
   }
   if (process.platform === 'darwin') {
     const excluded = argv => argv.some(a => /^-DREADABLE_ROOT_\d+_EXCLUDED_\d+=/.test(a) && a.endsWith(`=${realpathSync(home)}`));
     assert.ok(excluded(launch.argv), 'the kernel is denied the cua home');
     assert.ok(!excluded(workerLaunch.argv), 'the worker is not');
+  } else {
+    const denied = argv => JSON.parse(argv[5]).file_system.entries.filter(e => e.access === 'none' && e.path.type === 'path').map(e => e.path.path);
+    assert.ok(['run', 'state'].every(dir => denied(launch.argv).includes(join(realpathSync(home), dir))), 'the kernel is denied the cua home\'s state and runs');
+    assert.deepEqual(denied(workerLaunch.argv), [], 'the worker is not');
   }
   assert.match(workerLaunch.argv.at(-2), /src\/repl-host\/trusted-worker\.mjs$/);
   assert.equal((await call('js_reset')).content[0].text, 'js kernel reset');

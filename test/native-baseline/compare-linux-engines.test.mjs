@@ -254,6 +254,43 @@ test('a series the top-up shows cua slower beyond the bound fails', () => {
   assert.deepEqual(result.topUp.undetermined, []);
 });
 
+// The review of 2d5cfeb5 (the coordinator, 2026-11-13): a top-up's failed requests must never vanish from the verdict.
+// Its sitting is judged by every rule the counted sitting is (outcomes, verification, method cases, latency), each failure
+// carried into the result, and a series is pooled only when both of its top-up sides lost no sample.
+const failing = (runs, name) => runs.map(run => ({...run, rows: run.rows.map(r => (r.op === name ? {...r, ok: false, error: 'the request failed'} : r))}));
+test('a top-up whose candidate warm.listApps requests all failed fails, never pooling to a passing interval', () => {
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: {baseline: topUpSitting('cv'), candidate: failing(topUpSitting('cc'), 'warm.listApps')}});
+  assert.equal(result.verdict, 'FAIL');
+  const apps = op(result, 'warm.listApps');
+  assert.equal(apps.verdict, 'fail');
+  assert.match(apps.reasons.join(' '), /top-up: 0\/90 succeeded, the baseline 90\/90/);
+  assert.match(apps.reasons.join(' '), /not pooled: its top-up's candidate lost 90 of 90 samples/);
+  assert.equal(apps.speed.verdict, 'fail');
+  assert.equal(apps.speed.toppedUp, undefined, 'the series was not pooled');
+  assert.deepEqual(apps.speed.samples, {vendor: 90, cua: 90});
+  assert.deepEqual(result.topUp.pooled, []);
+});
+
+test('a top-up whose task.verify requests all failed fails the comparison, though the counted sitting\'s verify passed', () => {
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: {baseline: topUpSitting('cv'), candidate: failing(topUpSitting('cc'), 'task.verify')}});
+  assert.equal(result.verdict, 'FAIL');
+  const verify = op(result, 'task.verify');
+  assert.equal(verify.verdict, 'fail');
+  assert.match(verify.reasons.join(' '), /top-up: 0\/30 succeeded, the baseline 30\/30/);
+  // the undetermined series itself was clean on both sides, so it is still pooled and judged
+  assert.deepEqual(op(result, 'warm.listApps').speed.samples, {vendor: 180, cua: 180});
+});
+
+test('a series whose top-up lost a sample on either side is not pooled, even when both sides lost alike', () => {
+  const one = runs => runs.map((run, k) => ({...run, rows: run.rows.map(r => (k === 0 && r.op === 'warm.listApps' && r.sample === run.rows.find(x => x.op === 'warm.listApps').sample ? {...r, ok: false, error: 'the request failed'} : r))}));
+  const result = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: {baseline: one(topUpSitting('cv')), candidate: one(topUpSitting('cc'))}});
+  assert.equal(result.verdict, 'FAIL');
+  const apps = op(result, 'warm.listApps');
+  assert.equal(apps.verdict, 'fail');
+  assert.match(apps.reasons.join(' '), /not pooled: its top-up's baseline lost 1 of 90 samples .* candidate lost 1 of 90/);
+  assert.deepEqual(result.topUp.pooled, []);
+});
+
 test('at most one top-up: it pools each undetermined series once, must match its sitting, and is Linux\'s alone', () => {
   // the pooled series is the counted sitting's samples and one top-up's, never more: a second top-up has no way in
   const result = compareLanes('engines', sitting('cv'), sitting('cc'), {topUp: {baseline: topUpSitting('cv'), candidate: topUpSitting('cc')}});

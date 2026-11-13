@@ -280,7 +280,8 @@ export const ENGINE_ANSWERED = Object.freeze(['warm.getState', 'warm.listApps', 
 // but reaches past the bound is undetermined, and Acceptance 3's remedy is more samples: the gate's R2 (the design
 // session, 2026-11-13) gives the comparison one top-up, three more runs a lane of the same candidate and display
 // (`topUp`, the top-up's two sides), and a series this sitting left undetermined is judged again by the same calls on
-// both sittings' samples pooled. Pooled, it passes or fails as above, except that one still undetermined is reported as
+// both sittings' samples pooled, when both of its top-up sides lost no sample (else it fails, unpooled; the top-up's
+// sitting is also judged by every other rule, in compareLanes). Pooled, it passes or fails as above, except that one still undetermined is reported as
 // undetermined, with its interval, and is not a failure; it is never topped up again. A series with fewer a side (the
 // bind and the method cases, a few samples a run) keeps Acceptance 10's median rule: cua's median at most the vendor's.
 // -> {rule, samples, interval, bound, label, verdict ('pass', 'fail', or after a top-up 'undetermined'), reason, and for
@@ -303,6 +304,13 @@ function linuxEngineSpeed(o, baseline, candidate, topUp = null) {
     if (own.label !== 'undetermined' || !topUp) {
       return {...own, reason: own.verdict === 'pass' ? null : `${past} ${beyond(own.bound)}: ${own.label === 'loss' ? 'a loss' : `undetermined at ${Math.min(b.length, c.length)} samples a side, failing unless its one top-up (three more runs a lane) decides it`} ${RULE}`};
     }
+    // pooled only when both top-up sides are clean for the operation: a side that lost samples to failures fails, and
+    // never shrinks to a passing interval
+    const lost = ['baseline', 'candidate'].map(side => {
+      const f = topUp[side].summary.operations.find(x => x.op === o.op);
+      return f && f.samples > 0 && f.ok === f.samples ? null : `its top-up's ${side} lost ${f ? f.samples - f.ok : 0} of ${f?.samples ?? 0} samples to failures`;
+    }).filter(Boolean);
+    if (lost.length) return {...own, verdict: 'fail', reason: `${past} ${beyond(own.bound)}: undetermined at ${Math.min(b.length, c.length)} samples a side, and not pooled: ${lost.join(', and ')}; a series is pooled only when both of its top-up sides lost no sample (the design session, 2026-11-13) ${RULE}`};
     const {past: pooledPast, ...pooled} = intervalSpeed([...b, ...(topUp.baseline.okWall.get(o.op) ?? [])], [...c, ...(topUp.candidate.okWall.get(o.op) ?? [])]);
     const toppedUp = {samples: own.samples, interval: own.interval, bound: own.bound, label: own.label};
     const n = Math.min(pooled.samples.vendor, pooled.samples.cua);
@@ -410,6 +418,21 @@ export function compareLanes(mode, baselineRuns, candidateRuns, {topUp} = {}) {
     if (o.speed.verdict === 'undetermined') o.reasons.push(o.speed.reason);
     if (alone && !o.speed.toppedUp && o.speed.label === 'undetermined') undecided.push(o.op);
   }
+  // A sound top-up's own sitting is judged by every rule this sitting is (outcomes, verification, method cases, latency;
+  // speed is judged only on the pooled series above), and each of its failures fails the operation here: no failed
+  // request of the top-up drops out of the verdict.
+  if (pool) {
+    const upOps = [...new Set([...pool.baseline.summary.operations, ...pool.candidate.summary.operations].map(o => o.op))];
+    for (const name of upOps) {
+      const u = name.startsWith('method.') ? judgeMethod(name, pool.baseline, pool.candidate, {linux: true}) : judgeOperation(name, pool.baseline, pool.candidate);
+      if (u.verdict !== 'fail') continue;
+      let o = operations.find(x => x.op === name);
+      if (!o) operations.push(o = {...u, reasons: []});
+      o.verdict = 'fail';
+      o.reasons.push(`top-up: ${u.reasons.join('; ')}`);
+    }
+    operations.sort((a, b) => operationRank(a.op) - operationRank(b.op) || a.op.localeCompare(b.op));
+  }
   const speeds = operations.filter(o => o.speed);
   const failing = operations.filter(o => o.verdict === 'fail').map(o => o.op);
   const topUpRecord = lane.linux ? {given: Boolean(extra),
@@ -467,7 +490,7 @@ export function renderComparison(result) {
   const sides = s => `${s.vendor} / ${s.cua}`;
   if (up?.needed.length) lines.push('', '## Top-up', '', `Undetermined at the samples of this sitting, and so failing until its one top-up (three more runs a lane, the same candidate and display) decides it: ${up.needed.join(', ')}.`);
   if (up?.given) lines.push('', '## Top-up', '',
-    'One top-up, three more runs a lane of the same candidate and display, pooled with this sitting\'s samples for each series this sitting left undetermined and judged by the same rule: a pooled series passes within the bound and fails as a loss; one still undetermined is reported, not failed, and is never topped up again (the design session, 2026-11-13).', '',
+    'One top-up, three more runs a lane of the same candidate and display, pooled with this sitting\'s samples for each series this sitting left undetermined and judged by the same rule: a pooled series passes within the bound and fails as a loss; one still undetermined is reported, not failed, and is never topped up again. A series is pooled only when both of its top-up sides lost no sample, and the top-up\'s sitting is judged by every other rule this one is, each of its failures failing the operation here (the design session, 2026-11-13).', '',
     ...(up.pooled.length ? speeds.filter(o => o.speed.toppedUp).map(o => `- ${o.op}: ${o.speed.toppedUp.label} at ${sides(o.speed.toppedUp.samples)}, [${o.speed.toppedUp.interval.join(', ')}] ms; pooled at ${sides(o.speed.samples)}, [${o.speed.interval.join(', ')}] ms against the bound ${o.speed.bound} ms: ${o.speed.label}, ${o.speed.verdict}`)
       : ['- None pooled: this sitting left no series undetermined, or the top-up was unsound (Problems).']),
     ...(up.undetermined.length ? ['', `Still undetermined after its top-up, reported and not a failure: ${up.undetermined.map(u => `${u.op} [${u.interval.join(', ')}] ms against the bound ${u.bound} ms`).join('; ')}.`] : []));

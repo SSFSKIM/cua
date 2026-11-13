@@ -107,4 +107,33 @@ profile. Their numbers are not like for like.
 | REPL host | 196 pass, 1 fail, 11 skipped on cb3661b3; 192 pass, 0 fail, 16 skipped after ed939416 | On cb3661b3, `serve-own-host` failed with `sandbox_unavailable`: its temporary home held no sandbox helper. ed939416 fixed the test's setup, and its tech-debt entry is resolved |
 | Harness, at 4c532708 | 981 of 981 | Lock 07:54:06–07:54:39Z on 2026-11-13, load 0.54 at acquire and 0.64 at release. At 8ab1cc75 it had passed 973 of 975: the private-server tests failed on sockets that leaked xtrace proxies had left behind, and audit-leak-fix (4c532708) stops the leak |
 
-The counted facade suites, on the engine built at the final head, are in `facade/README.md`.
+### The counted facade suites (`facade/`)
+
+All five pass. They ran at 8ab1cc75, one head and one engine build: `cua-engine 0.4.0 (8ab1cc758983)`, sha256
+`17a3893e…`, a musl build made the release workflow's way. The suites ran on a private display, and in no run did
+`sky_linux` appear. Between 8ab1cc75 and the final head, `scripts/repl-parity`, `scripts/accept`,
+`scripts/native-baseline` and `src` are unchanged.
+
+| Suite | Result |
+|---|---|
+| `scripts/accept/linux-native.mjs`, `CUA_NATIVE_ENGINE=cua` | PASS, 11 of 11 |
+| `scripts/accept/linux-device-mode.mjs` | PASS, 18 of 18, with both negative controls |
+| The two-services over-budget row (`services.mjs`) | PASS, 26 of 26. The truncation line reads `{1263, 2, 0}`, and line 1265 says "at least 1265 elements not shown" |
+| repl-parity `--suite native`, vendor lane | `RECORDED_VENDOR_DEFECT`, 31 of 34, plus the 3 declared vendor defects (`app/typetext`, `app/paste`, `getaxstate/minimized`) |
+| repl-parity `--suite native`, cua lane | PASS, 34 of 34 |
+| repl-parity `diff`, against `native-linux.json` | ok, 0 differences |
+| native-baseline `compare --engines` | PASS, once `warm.listApps` was topped up to 180 a side, the remedy Acceptance 3 prescribes |
+
+Two harness decisions shape these results. Both are recorded in `facade/README.md`.
+- **The engine-answered judge tells T7b's launcher shim apart** (41070184). A `cua-engine launcher-shim` under
+  `supervisor.mjs` is exempt, strictly identified, and never counts as the engine that answered. Without this, no
+  cua lane could pass after 81ae2732.
+- **On Linux, `compare --engines` judges an engine-answered operation by Acceptance 3's speed rule** (bc67d611,
+  bbaff26d). That is the gate's `judgeSeriesSpeed`, with a bound of max(5% of the vendor's median, 1 ms) and at least
+  20 samples a side; a series with fewer keeps the median rule. macOS is unchanged.
+
+Under that rule, the counted sitting alone left `warm.listApps` undetermined at 90 a side: [-0.227, 1.124] ms against
+a 1 ms bound. Pooled with a top-up of 90 more a side, on the same head and build, it is "same (within noise)" at
+[-0.16, 0.732] ms. Inside the cell, cua is faster, 3.50 ms against 3.90 ms pooled. The wall-time difference lies in
+the transport code both lanes share. Every other engine-answered operation passes, and cua is faster on all but
+`warm.getState`, which is same (within noise).

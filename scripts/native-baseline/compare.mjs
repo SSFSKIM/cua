@@ -276,21 +276,40 @@ export const ENGINE_ANSWERED = Object.freeze(['warm.getState', 'warm.listApps', 
 // MIN_NOISE_SAMPLES successful samples a side, the series is judged only through the interval
 // (../linux-engine-diff/stats.mjs judgeSeriesSpeed over events.mjs medianDifferenceInterval): it passes when the upper
 // end of the bootstrap 95% interval of cua's median minus the vendor engine's is within max(5% of the vendor's median,
-// 1 ms), labelled `faster`, `same (within noise)` or `within the bound`, and fails otherwise; a comparison cannot top a
-// series up, so the samples it has are final. A series with fewer a side (the bind and the method cases, a few samples a
-// run) keeps Acceptance 10's median rule: cua's median at most the vendor's. -> {rule, samples, interval, bound, label,
-// verdict, reason}.
-function linuxEngineSpeed(o, baseline, candidate) {
+// 1 ms), labelled `faster`, `same (within noise)` or `within the bound`, and fails otherwise. An interval that includes 0
+// but reaches past the bound is undetermined, and Acceptance 3's remedy is more samples: the gate's R2 (the design
+// session, 2026-11-13) gives the comparison one top-up, three more runs a lane of the same candidate and display
+// (`topUp`, the top-up's two sides), and a series this sitting left undetermined is judged again by the same calls on
+// both sittings' samples pooled. Pooled, it passes or fails as above, except that one still undetermined is reported as
+// undetermined, with its interval, and is not a failure; it is never topped up again. A series with fewer a side (the
+// bind and the method cases, a few samples a run) keeps Acceptance 10's median rule: cua's median at most the vendor's.
+// -> {rule, samples, interval, bound, label, verdict ('pass', 'fail', or after a top-up 'undetermined'), reason, and for
+// a pooled series medians (pooled, {vendor, cua}) and toppedUp: this sitting's own {samples, interval, bound, label}}.
+const intervalSpeed = (b, c) => {
+  const s = judgeSeriesSpeed({vendor: {usable: b, sampled: b.length}, cua: {usable: c, sampled: c.length}},
+    {vendors: ['vendor'], candidate: 'cua', interval: medianDifferenceInterval, cap: MIN_NOISE_SAMPLES});
+  // a failing interval is a loss when it lies wholly above 0, else undetermined: it includes 0 but reaches past the bound
+  const label = s.label ?? (s.interval[0] > 0 ? 'loss' : 'undetermined');
+  const past = `the bootstrap 95% interval [${s.interval.join(', ')}] ms of cua's median minus the vendor engine's (cua ${s.candidate} ms, vendor ${s.bar} ms, ${b.length} / ${c.length} samples)`;
+  return {rule: 'interval', samples: {vendor: b.length, cua: c.length}, medians: {vendor: s.bar, cua: s.candidate}, interval: s.interval, bound: s.bound, label, verdict: s.verdict === 'pass' ? 'pass' : 'fail', past};
+};
+const RULE = '(Acceptance 3\'s speed rule, Acceptance 10)';
+function linuxEngineSpeed(o, baseline, candidate, topUp = null) {
   const b = baseline.okWall.get(o.op) ?? [], c = candidate.okWall.get(o.op) ?? [];
   const samples = {vendor: b.length, cua: c.length};
   if (b.length >= MIN_NOISE_SAMPLES && c.length >= MIN_NOISE_SAMPLES) {
-    const s = judgeSeriesSpeed({vendor: {usable: b, sampled: b.length}, cua: {usable: c, sampled: c.length}},
-      {vendors: ['vendor'], candidate: 'cua', interval: medianDifferenceInterval, cap: MIN_NOISE_SAMPLES});
-    const verdict = s.verdict === 'pass' ? 'pass' : 'fail';
-    // a failing interval is a loss when it lies wholly above 0, else undetermined: it includes 0 but reaches past the bound
-    const label = s.label ?? (s.interval[0] > 0 ? 'loss' : 'undetermined');
-    return {rule: 'interval', samples, interval: s.interval, bound: s.bound, label, verdict,
-      reason: verdict === 'pass' ? null : `the bootstrap 95% interval [${s.interval.join(', ')}] ms of cua's median minus the vendor engine's (cua ${s.candidate} ms, vendor ${s.bar} ms, ${b.length} / ${c.length} samples) reaches past the bound ${s.bound} ms, max(5% of the vendor's median, 1 ms), on an operation the engine answers: ${label === 'loss' ? 'a loss' : `undetermined at ${Math.min(b.length, c.length)} samples a side, which Acceptance 3 fails once a series has ${MIN_NOISE_SAMPLES}, as a comparison cannot top it up`} (Acceptance 3's speed rule, Acceptance 10)`};
+    const {past, medians: _medians, ...own} = intervalSpeed(b, c);
+    const beyond = bound => `reaches past the bound ${bound} ms, max(5% of the vendor's median, 1 ms), on an operation the engine answers`;
+    if (own.label !== 'undetermined' || !topUp) {
+      return {...own, reason: own.verdict === 'pass' ? null : `${past} ${beyond(own.bound)}: ${own.label === 'loss' ? 'a loss' : `undetermined at ${Math.min(b.length, c.length)} samples a side, failing unless its one top-up (three more runs a lane) decides it`} ${RULE}`};
+    }
+    const {past: pooledPast, ...pooled} = intervalSpeed([...b, ...(topUp.baseline.okWall.get(o.op) ?? [])], [...c, ...(topUp.candidate.okWall.get(o.op) ?? [])]);
+    const toppedUp = {samples: own.samples, interval: own.interval, bound: own.bound, label: own.label};
+    const n = Math.min(pooled.samples.vendor, pooled.samples.cua);
+    const at = `pooled with its top-up at ${n} samples a side (undetermined at ${Math.min(b.length, c.length)} in this sitting, [${own.interval.join(', ')}] ms)`;
+    if (pooled.label === 'undetermined') return {...pooled, verdict: 'undetermined', toppedUp,
+      reason: `${pooledPast}, ${at}, includes 0 and reaches past the bound ${pooled.bound} ms: still undetermined after its one top-up, at ${n} samples a side: reported, not a failure (the design session, 2026-11-13) ${RULE}`};
+    return {...pooled, toppedUp, reason: pooled.verdict === 'pass' ? null : `${pooledPast}, ${at}, ${beyond(pooled.bound)}: a loss ${RULE}`};
   }
   const verdict = o.candidate.judgedMs > o.baseline.judgedMs ? 'fail' : 'pass';
   return {rule: 'median', samples, interval: null, bound: null, label: null, verdict,
@@ -307,26 +326,57 @@ function laneValue(meta, key) {
   return `${a.sandbox ?? '–'}, launcher ${launch?.launcher ?? '–'}, TMPDIR ${launch?.tmpdir ?? '–'}`;
 }
 
+// One side of a lane comparison: sideOf's, with the lane's engine attestation, environment and launch witness checked.
+function laneSide(label, runs, expected, usage, lane) {
+  const side = sideOf(label, runs, expected.host, usage, `comparison ${lane.id}`);
+  for (const run of runs) if (!run.meta.nativeEngine) side.problems.push(`${label}: ${run.name} has no requested engine (recorded before engine attestation; remeasure it)`);
+  const engines = [...new Set(runs.map(r => r.meta.nativeEngine?.requested).filter(Boolean))];
+  if (engines.length > 1) side.problems.push(`${label}: its runs requested ${engines.join(' and ')} engines`);
+  else if (engines.length && engines[0] !== expected.engine) side.problems.push(`the ${label} attests the ${engines[0]} engine, not ${expected.engine} (${usage})`);
+  side.problems.push(...environmentProblems(runs.map(r => ({...r, name: `${label} ${r.name}`}))));
+  for (const run of runs.slice(1)) if (!isDeepStrictEqual(run.meta.sandboxLaunch, runs[0].meta.sandboxLaunch)) side.problems.push(`${label}: ${run.name} records another sandbox launch witness than ${runs[0].name}`);
+  return side;
+}
+// The private desktop's per-session paths: a top-up in a desktop of its own has others, and nothing it measures differs.
+const SESSION_PATHS = ['XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS'];
+const sittingEnvironment = meta => {
+  const env = comparisonEnvironment(meta);
+  const kept = vars => vars && Object.fromEntries(Object.entries(vars).filter(([key]) => !SESSION_PATHS.includes(key)));
+  return {...env, xSession: kept(env.xSession), environment: kept(env.environment)};
+};
+// A top-up's sides (the gate's R2, the design session, 2026-11-13): each a whole lane side of its own, and the sitting's
+// over again: every attested field and the environment equal to that side's in the sitting it tops up (the same
+// candidate, display, commit and experiment), but the private desktop's session paths. Its problems are the result's.
+function topUpSides(topUp, sitting, lane, usage) {
+  if (Array.isArray(topUp) || !topUp?.baseline?.length || !topUp?.candidate?.length) throw new Error('a comparison takes one top-up: {baseline, candidate}, the runs of each lane');
+  const sides = [['baseline', topUp.baseline, lane.baseline], ['candidate', topUp.candidate, lane.candidate]].map(([label, runs, expected]) => laneSide(label, runs, expected, usage, lane));
+  const problems = sides.flatMap(side => side.problems);
+  for (const [label, runs, own] of [['baseline', topUp.baseline, sitting.baseline], ['candidate', topUp.candidate, sitting.candidate]]) {
+    for (const [key, field] of Object.entries(LANE_FIELDS)) {
+      const [s, t] = [own[0].meta, runs[0].meta].map(meta => laneValue(meta, key));
+      if (s !== t) problems.push(`the ${label}'s ${field} differs from its sitting's (sitting ${s ?? '–'}, top-up ${t ?? '–'})`);
+    }
+    const [s, t] = [own[0].meta, runs[0].meta].map(sittingEnvironment);
+    for (const key of Object.keys(s)) if (!sameEnvironmentValue(key, s[key], t[key])) problems.push(`the ${label}'s ${key} environment differs from its sitting's`);
+  }
+  return {baseline: sides[0], candidate: sides[1], problems: problems.map(p => `top-up: ${p}`)};
+}
+
 // -> compare()'s result for the lanes `mode` (a LANE_MODES key) names, with `mode`, `lane` (the mode), `permitted` (each
-// field the mode lets differ, {field, label, baseline, candidate, same}) and the DIAGNOSTIC rule of compareSameHost.
-export function compareLanes(mode, baselineRuns, candidateRuns) {
+// field the mode lets differ, {field, label, baseline, candidate, same}) and the DIAGNOSTIC rule of compareSameHost. On
+// Linux also `topUp`: {given, needed (the series this sitting left undetermined, when only they fail it and a top-up
+// would decide the verdict), pooled (the series a given top-up pooled), undetermined (those still undetermined after it,
+// {op, samples, interval, bound})}. `topUp` (Linux's alone, one at most): the top-up's {baseline, candidate} runs.
+export function compareLanes(mode, baselineRuns, candidateRuns, {topUp} = {}) {
   const linux = baselineRuns[0]?.meta?.platform === 'linux';
   const lane = (linux ? LINUX_LANE_MODES : LANE_MODES)[mode];
   if (!lane && linux) throw new Error(`Linux has one host, cua's own, so one lane comparison: compare --engines ${LINUX_LANE_MODES.engines.usage}`);
   if (!lane) throw new Error(`no lane comparison ${mode}; the modes are ${Object.keys(LANE_MODES).join(', ')}`);
+  if (topUp !== undefined && !lane.linux) throw new Error('a top-up is the Linux engine comparison\'s alone (Acceptance 3\'s interval rule); the macOS comparisons take none');
   const usage = `compare ${lane.flag} ${lane.usage}`;
-  const sides = [['baseline', baselineRuns, lane.baseline], ['candidate', candidateRuns, lane.candidate]].map(([label, runs, expected]) => {
-    const side = sideOf(label, runs, expected.host, usage, `comparison ${lane.id}`);
-    for (const run of runs) if (!run.meta.nativeEngine) side.problems.push(`${label}: ${run.name} has no requested engine (recorded before engine attestation; remeasure it)`);
-    const engines = [...new Set(runs.map(r => r.meta.nativeEngine?.requested).filter(Boolean))];
-    if (engines.length > 1) side.problems.push(`${label}: its runs requested ${engines.join(' and ')} engines`);
-    else if (engines.length && engines[0] !== expected.engine) side.problems.push(`the ${label} attests the ${engines[0]} engine, not ${expected.engine} (${usage})`);
-    side.problems.push(...environmentProblems(runs.map(r => ({...r, name: `${label} ${r.name}`}))));
-    for (const run of runs.slice(1)) if (!isDeepStrictEqual(run.meta.sandboxLaunch, runs[0].meta.sandboxLaunch)) side.problems.push(`${label}: ${run.name} records another sandbox launch witness than ${runs[0].name}`);
-    return side;
-  });
-  const [baseline, candidate] = sides;
-  const problems = [...baseline.problems, ...candidate.problems];
+  const [baseline, candidate] = [['baseline', baselineRuns, lane.baseline], ['candidate', candidateRuns, lane.candidate]].map(([label, runs, expected]) => laneSide(label, runs, expected, usage, lane));
+  const extra = topUp === undefined ? null : topUpSides(topUp, {baseline: baselineRuns, candidate: candidateRuns}, lane, usage);
+  const problems = [...baseline.problems, ...candidate.problems, ...(extra?.problems ?? [])];
   const before = baselineRuns[0].meta, after = candidateRuns[0].meta;
   const only = `comparison ${lane.id} permits only ${lane.differ.join(' and ').replace(/ and (?=.* and )/g, ', ')} to differ`;
   for (const [key, label] of Object.entries(LANE_FIELDS)) {
@@ -349,17 +399,30 @@ export function compareLanes(mode, baselineRuns, candidateRuns) {
   // by any other rule stays failed. Every operation where cua's median is above the vendor engine's is listed, whichever
   // rule judged it.
   const timed = o => o.verdict !== 'not judged' && o.baseline?.judgedMs != null && o.candidate?.judgedMs != null;
+  // A series undetermined here is pooled with a given top-up only when the top-up is sound; one still undetermined after
+  // it is noted, not failed.
+  const pool = extra && !extra.problems.length ? extra : null;
+  const undecided = [];
   if (lane.linux) for (const o of operations.filter(o => timed(o) && ENGINE_ANSWERED.includes(o.op))) {
-    o.speed = linuxEngineSpeed(o, baseline, candidate);
+    const alone = o.verdict !== 'fail';
+    o.speed = linuxEngineSpeed(o, baseline, candidate, pool);
     if (o.speed.verdict === 'fail') { o.verdict = 'fail'; o.reasons.push(o.speed.reason); }
+    if (o.speed.verdict === 'undetermined') o.reasons.push(o.speed.reason);
+    if (alone && !o.speed.toppedUp && o.speed.label === 'undetermined') undecided.push(o.op);
   }
+  const speeds = operations.filter(o => o.speed);
+  const failing = operations.filter(o => o.verdict === 'fail').map(o => o.op);
+  const topUpRecord = lane.linux ? {given: Boolean(extra),
+    needed: !extra && !problems.length && failing.length > 0 && failing.every(op => undecided.includes(op)) ? undecided : [],
+    pooled: speeds.filter(o => o.speed.toppedUp).map(o => o.op),
+    undetermined: speeds.filter(o => o.speed.verdict === 'undetermined').map(o => ({op: o.op, samples: o.speed.samples, interval: o.speed.interval, bound: o.speed.bound}))} : null;
   const above = lane.linux ? operations.filter(o => timed(o) && o.candidate.judgedMs > o.baseline.judgedMs)
     .map(o => ({op: o.op, baseline: o.baseline.judgedMs, candidate: o.candidate.judgedMs, engineAnswered: ENGINE_ANSWERED.includes(o.op), ...(o.speed ? {speed: o.speed} : {})})) : null;
   const ruled = problems.length ? 'NO VERDICT' : operations.some(o => o.verdict === 'fail') ? 'FAIL' : 'PASS';
   const diagnostic = plainPlan([...baselineRuns, ...candidateRuns], ruled);
   const describe = side => ({host: side.host, serverInfo: side.serverInfo, commits: side.commits, runs: side.summary.runs, attestation: side.summary.attestation, sshMedianMs: side.ssh});
   return {mode, lane, baseline: describe(baseline), candidate: describe(candidate), operations, permitted, problems, ...(above ? {above} : {}),
-    verdict: diagnostic ? 'DIAGNOSTIC' : ruled, ...(diagnostic ? {diagnostic} : {})};
+    ...(topUpRecord ? {topUp: topUpRecord} : {}), verdict: diagnostic ? 'DIAGNOSTIC' : ruled, ...(diagnostic ? {diagnostic} : {})};
 }
 
 const fmt = value => (value === null || value === undefined ? '–' : value < 10 ? value.toFixed(2) : value.toFixed(1));
@@ -399,7 +462,15 @@ export function renderComparison(result) {
   if (speeds.length) lines.push('', '## Speed of the operations the engine answers (Acceptance 3\'s rule)', '',
     `With at least ${MIN_NOISE_SAMPLES} successful samples a side, the bootstrap 95% interval of cua\'s median minus the vendor engine\'s passes when its upper end is within the bound, max(5% of the vendor\'s median, 1 ms); with fewer, cua\'s judged median must be at most the vendor\'s (the median rule).`, '',
     '| Operation | Samples (vendor / cua) | Vendor judged | cua judged | Interval of cua minus vendor, ms | Bound, ms | Label | Verdict |', '|---|---|---|---|---|---|---|---|',
-    ...speeds.map(o => `| ${o.op} | ${o.speed.samples.vendor} / ${o.speed.samples.cua} | ${fmt(o.baseline.judgedMs)} | ${fmt(o.candidate.judgedMs)} | ${o.speed.interval ? `[${o.speed.interval.join(', ')}]` : '–'} | ${o.speed.bound ?? '–'} | ${o.speed.label ?? (o.speed.rule === 'median' ? 'median rule' : '–')} | ${o.speed.verdict} |`));
+    ...speeds.map(o => `| ${o.op} | ${o.speed.samples.vendor} / ${o.speed.samples.cua} | ${fmt(o.speed.toppedUp ? o.speed.medians.vendor : o.baseline.judgedMs)} | ${fmt(o.speed.toppedUp ? o.speed.medians.cua : o.candidate.judgedMs)} | ${o.speed.interval ? `[${o.speed.interval.join(', ')}]` : '–'} | ${o.speed.bound ?? '–'} | ${o.speed.label ?? (o.speed.rule === 'median' ? 'median rule' : '–')} | ${o.speed.verdict} |`));
+  const up = result.topUp;
+  const sides = s => `${s.vendor} / ${s.cua}`;
+  if (up?.needed.length) lines.push('', '## Top-up', '', `Undetermined at the samples of this sitting, and so failing until its one top-up (three more runs a lane, the same candidate and display) decides it: ${up.needed.join(', ')}.`);
+  if (up?.given) lines.push('', '## Top-up', '',
+    'One top-up, three more runs a lane of the same candidate and display, pooled with this sitting\'s samples for each series this sitting left undetermined and judged by the same rule: a pooled series passes within the bound and fails as a loss; one still undetermined is reported, not failed, and is never topped up again (the design session, 2026-11-13).', '',
+    ...(up.pooled.length ? speeds.filter(o => o.speed.toppedUp).map(o => `- ${o.op}: ${o.speed.toppedUp.label} at ${sides(o.speed.toppedUp.samples)}, [${o.speed.toppedUp.interval.join(', ')}] ms; pooled at ${sides(o.speed.samples)}, [${o.speed.interval.join(', ')}] ms against the bound ${o.speed.bound} ms: ${o.speed.label}, ${o.speed.verdict}`)
+      : ['- None pooled: this sitting left no series undetermined, or the top-up was unsound (Problems).']),
+    ...(up.undetermined.length ? ['', `Still undetermined after its top-up, reported and not a failure: ${up.undetermined.map(u => `${u.op} [${u.interval.join(', ')}] ms against the bound ${u.bound} ms`).join('; ')}.`] : []));
   const judgedBy = s => (s.rule === 'interval' ? `judged by Acceptance 3's interval rule, ${s.verdict}` : `judged by the median rule, fewer than ${MIN_NOISE_SAMPLES} samples a side, ${s.verdict}`);
   if (result.above) lines.push('', '## Where cua\'s median is above the vendor engine\'s', '',
     ...(result.above.length ? result.above.map(a => `- ${a.op}: cua ${fmt(a.candidate)} ms, vendor ${fmt(a.baseline)} ms (${a.engineAnswered ? `an operation the engine answers: ${judgedBy(a.speed)}` : 'no engine answers it: judged by the tolerance alone'})`) : ['None: no cua median is above the vendor engine\'s.']));

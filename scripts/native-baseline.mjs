@@ -51,6 +51,10 @@
 //     #117's comparisons A (engine and service), B (host only) and C (end to end), each between two triples of one
 //     sitting, every row the default compare judges, and only the attested fields its mode names allowed to differ
 //     (compare.mjs compareLanes).
+//   node scripts/native-baseline.mjs compare --engines <cv-dir> <cc-dir> --top-up-baseline <cv-dir> --top-up-candidate <cc-dir> [--out comparison.md]
+//     Linux, the gate's R2 (#171 M4 T18): the one top-up of the series the sitting left undetermined, three more runs a
+//     lane of the same candidate and display, pooled by Acceptance 3's rule (compare.mjs linuxEngineSpeed). Without it,
+//     the comparison prints `TOP-UP NEEDED: <op> ...` when only such series fail it.
 //
 // A run writes results.jsonl (one row per sample: op, sample, ok, wallMs, inCellMs, the service's cua/serviceMs and cua's
 // engine's cua/engineMs where the result carried them, and the sample's counts) and
@@ -437,13 +441,18 @@ export function summary(dir) {
 // Compares the vendor host's runs under `baselineDir` with cua's under `candidateDir`; with `sameHost` one host's runs
 // before a change with its runs after it; with `lanes` (a LANE_MODES key: engines, hosts, end-to-end) the two lanes that
 // comparison names (scripts/native-baseline/compare.mjs). Prints the comparison, or writes it to `out`, and the verdict
-// line. -> 0 only on a PASS verdict.
-export function compareDirs(baselineDir, candidateDir, {out, sameHost = false, lanes} = {}) {
+// line. A Linux engine comparison also prints the series a top-up would decide (`TOP-UP NEEDED: <op> ...`), and, given
+// one (`topUp`, its {baseline, candidate} directories: the gate's R2), each series still undetermined after it
+// (`UNDETERMINED AFTER TOP-UP ...`). -> 0 only on a PASS verdict.
+export function compareDirs(baselineDir, candidateDir, {out, sameHost = false, lanes, topUp} = {}) {
   const [baseline, candidate] = [baselineDir, candidateDir].map(dir => readRuns(resolve(dir)));
-  const result = lanes ? compareLanes(lanes, baseline, candidate) : (sameHost ? compareSameHost : compare)(baseline, candidate);
+  const extra = topUp && {baseline: readRuns(resolve(topUp.baseline)), candidate: readRuns(resolve(topUp.candidate))};
+  const result = lanes ? compareLanes(lanes, baseline, candidate, extra ? {topUp: extra} : {}) : (sameHost ? compareSameHost : compare)(baseline, candidate);
   const text = renderComparison(result);
   if (out) writeFileSync(resolve(out), text); else process.stdout.write(text);
   for (const problem of result.problems) console.error(`problem: ${problem}`);
+  if (result.topUp?.needed.length) console.error(`TOP-UP NEEDED: ${result.topUp.needed.join(' ')}`);
+  for (const u of result.topUp?.undetermined ?? []) console.error(`UNDETERMINED AFTER TOP-UP (reported, not a failure): ${u.op} [${u.interval.join(', ')}] ms, bound ${u.bound} ms, ${u.samples.vendor} / ${u.samples.cua} samples`);
   console.error(`VERDICT: ${result.verdict}`);
   return result.verdict === 'PASS' ? 0 : 1;
 }
@@ -451,7 +460,7 @@ export function compareDirs(baselineDir, candidateDir, {out, sameHost = false, l
 export async function main(argv = process.argv.slice(2)) {
   const {values, positionals} = parseArgs({args: argv, allowPositionals: true, options: {
     device: {type: 'string'}, host: {type: 'string'}, engine: {type: 'string'}, 'engine-bin': {type: 'string'}, node: {type: 'string'}, display: {type: 'string'}, experiment: {type:'string'}, commit:{type:'string'}, out: {type: 'string'},
-    surfaces: {type: 'string', default: 'computer'}, 'same-host': {type: 'boolean', default: false}, 'approved-runtime': {type: 'string'}, 'approved-engine': {type: 'string'},
+    surfaces: {type: 'string', default: 'computer'}, 'same-host': {type: 'boolean', default: false}, 'top-up-baseline': {type: 'string', multiple: true}, 'top-up-candidate': {type: 'string', multiple: true}, 'approved-runtime': {type: 'string'}, 'approved-engine': {type: 'string'},
     ...Object.fromEntries(Object.keys(LANE_MODES).map(mode => [mode, {type: 'boolean', default: false}])),
     samples: {type: 'string', default: String(DEFAULT_PLAN.samples)}, cold: {type: 'string', default: String(DEFAULT_PLAN.cold)}, tasks: {type: 'string', default: String(DEFAULT_PLAN.tasks)}}});
   const [action, dir, other] = positionals;
@@ -462,9 +471,11 @@ export async function main(argv = process.argv.slice(2)) {
     if (modes.length > 1) throw new Error(`compare takes one of --same-host, ${Object.values(LANE_MODES).map(m => m.flag).join(', ')}, not ${modes.map(m => `--${m}`).join(' and ')}`);
     const lanes = modes[0] && modes[0] !== 'same-host' ? modes[0] : undefined;
     if (!dir || !other) throw new Error(lanes ? `compare ${LANE_MODES[lanes].flag} requires ${LANE_MODES[lanes].usage}` : values['same-host'] ? 'compare --same-host requires <before-dir> <after-dir>' : 'compare requires <vendor-dir> <cua-dir>');
-    return compareDirs(dir, other, {out: values.out, sameHost: values['same-host'], lanes});
+    const [upB = [], upC = []] = [values['top-up-baseline'], values['top-up-candidate']];
+    if ((upB.length || upC.length) && (lanes !== 'engines' || upB.length !== 1 || upC.length !== 1)) throw new Error('compare --engines takes one top-up at most: --top-up-baseline and --top-up-candidate, one directory each (the gate\'s R2)');
+    return compareDirs(dir, other, {out: values.out, sameHost: values['same-host'], lanes, ...(upB.length ? {topUp: {baseline: upB[0], candidate: upC[0]}} : {})});
   }
-  if (action !== 'run') throw new Error('Usage: native-baseline.mjs prepare --device <declared alias> --commit <SHA> | run --device <declared alias> --experiment <sitting-id> --host vendor|cua [--engine vendor|cua --approved-engine <cua Engine.app>, macOS computer runs] [--host cua --engine vendor|cua [--engine-bin <cua-engine on the device>], Linux computer runs] [--surfaces computer|browser] [--approved-runtime <CUA_HOME>, macOS computer runs] [--node <diagnostic override, cua only>] [--display <X display assertion>] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>] | compare --same-host <before-dir> <after-dir> [--out <file>] | compare --engines <vv-dir> <vc-dir> | --hosts <vc-dir> <cc-dir> | --end-to-end <vv-dir> <cc-dir> [--out <file>]');
+  if (action !== 'run') throw new Error('Usage: native-baseline.mjs prepare --device <declared alias> --commit <SHA> | run --device <declared alias> --experiment <sitting-id> --host vendor|cua [--engine vendor|cua --approved-engine <cua Engine.app>, macOS computer runs] [--host cua --engine vendor|cua [--engine-bin <cua-engine on the device>], Linux computer runs] [--surfaces computer|browser] [--approved-runtime <CUA_HOME>, macOS computer runs] [--node <diagnostic override, cua only>] [--display <X display assertion>] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>] | compare --same-host <before-dir> <after-dir> [--out <file>] | compare --engines <vv-dir> <vc-dir> | --hosts <vc-dir> <cc-dir> | --end-to-end <vv-dir> <cc-dir> [--out <file>] | compare --engines <cv-dir> <cc-dir> --top-up-baseline <cv-dir> --top-up-candidate <cc-dir> [--out <file>], Linux');
   if (!values.device || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(values.device)) throw new Error('run requires --device <ssh alias>');
   if (!HOSTS.includes(values.host)) throw new Error('run requires --host vendor|cua');
   if (!values.out) throw new Error('run requires --out');

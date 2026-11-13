@@ -4,7 +4,10 @@
 # host lock (locked.sh), one at a time.
 #   parity    repl-parity's native suite on both engine lanes, prepared --native-only, and the diff against
 #             scripts/repl-parity/expected/native-linux.json                                   (--session)
-#   baseline  native-baseline, three runs a lane interleaved, summaries and compare --engines  (--session)
+#   baseline  native-baseline, three runs a lane interleaved, summaries and compare --engines  (--session); when the
+#             comparison names series only a top-up can decide (TOP-UP NEEDED), one top-up: three more runs a lane,
+#             the same candidate and display, under $OUT/baseline-topup/, and compare --engines with it, whose verdict
+#             is the part's (the gate's R2, the design session, 2026-11-13)
 #   accept    scripts/accept/linux-native.mjs, CUA_NATIVE_ENGINE=cua, in a home of the run's   (--session)
 #   device    scripts/accept/linux-device-mode.mjs, in the same kind of home                   (--session)
 #   services  the two-services instrument on gedit, Chrome and the over-budget page            (bare: its Desktop
@@ -68,14 +71,28 @@ case "$part" in
     if pgrep -x gedit > /dev/null; then log "a gedit runs: the baseline refuses; not started"; exit 1; fi
     EXPERIMENT="171-m4-$(date -u +%Y%m%d)"
     node scripts/native-baseline.mjs prepare --device "$DEVICE" --commit "$SHA" > "$L/prepare.out" 2>&1 || { log "prepare failed"; exit 1; }
-    rm -rf "$OUT/baseline/cv" "$OUT/baseline/cc"
-    for n in 1 2 3; do
-      node scripts/native-baseline.mjs run --device "$DEVICE" --experiment "$EXPERIMENT" --display "$CUA_PARITY_DISPLAY" --host cua --engine vendor --out "$OUT/baseline/cv/run-$n" > "$L/cv-run-$n.out" 2>&1; log "cv run-$n exit $?"
-      node scripts/native-baseline.mjs run --device "$DEVICE" --experiment "$EXPERIMENT" --display "$CUA_PARITY_DISPLAY" --host cua --engine cua --engine-bin "$ENGINE_BIN" --out "$OUT/baseline/cc/run-$n" > "$L/cc-run-$n.out" 2>&1; log "cc run-$n exit $?"
-    done
-    node scripts/native-baseline.mjs summary "$OUT/baseline/cv" > "$L/summary-cv.out" 2>&1; log "summary cv exit $?"
-    node scripts/native-baseline.mjs summary "$OUT/baseline/cc" > "$L/summary-cc.out" 2>&1; log "summary cc exit $?"
+    # three runs a lane interleaved into $1 (cv, cc), each side summarised; the logs prefixed $2
+    sitting() {
+      rm -rf "$1/cv" "$1/cc"
+      for n in 1 2 3; do
+        node scripts/native-baseline.mjs run --device "$DEVICE" --experiment "$EXPERIMENT" --display "$CUA_PARITY_DISPLAY" --host cua --engine vendor --out "$1/cv/run-$n" > "$L/${2}cv-run-$n.out" 2>&1; log "${2}cv run-$n exit $?"
+        node scripts/native-baseline.mjs run --device "$DEVICE" --experiment "$EXPERIMENT" --display "$CUA_PARITY_DISPLAY" --host cua --engine cua --engine-bin "$ENGINE_BIN" --out "$1/cc/run-$n" > "$L/${2}cc-run-$n.out" 2>&1; log "${2}cc run-$n exit $?"
+      done
+      node scripts/native-baseline.mjs summary "$1/cv" > "$L/${2}summary-cv.out" 2>&1; log "${2}summary cv exit $?"
+      node scripts/native-baseline.mjs summary "$1/cc" > "$L/${2}summary-cc.out" 2>&1; log "${2}summary cc exit $?"
+    }
+    sitting "$OUT/baseline" ""
     node scripts/native-baseline.mjs compare --engines "$OUT/baseline/cv" "$OUT/baseline/cc" --out "$OUT/baseline/engines.md" > "$L/compare.out" 2>&1; c=$?; log "compare exit $c $(grep -m1 VERDICT "$L/compare.out")"
+    # Acceptance 3's remedy, once: the series the sitting left undetermined, when only they fail it, pooled with one
+    # top-up of the same candidate and display (the same private desktop and experiment); never a second
+    need=$(sed -n 's/^TOP-UP NEEDED: //p' "$L/compare.out")
+    if [ "$c" -ne 0 ] && [ -n "$need" ]; then
+      log "top-up for $need"
+      sitting "$OUT/baseline-topup" "topup-"
+      node scripts/native-baseline.mjs compare --engines "$OUT/baseline/cv" "$OUT/baseline/cc" --top-up-baseline "$OUT/baseline-topup/cv" --top-up-candidate "$OUT/baseline-topup/cc" --out "$OUT/baseline/engines-topped-up.md" > "$L/compare-topped-up.out" 2>&1; c=$?
+      while read -r undetermined; do log "$undetermined"; done < <(grep '^UNDETERMINED AFTER TOP-UP' "$L/compare-topped-up.out")
+      log "compare with its top-up exit $c $(grep -m1 VERDICT "$L/compare-topped-up.out")"
+    fi
     exit $c ;;
   inner-accept)
     run_home || exit 1

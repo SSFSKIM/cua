@@ -224,4 +224,8 @@ test('the macOS comparisons judge and render exactly as pinned', t => {
   const now = Object.fromEntries(Object.entries(cases).map(([name, result]) => [name, {verdict: result.verdict, operations: result.operations.map(o => [o.op, o.verdict, o.reasons]), text: renderComparison(result)}]));
   if (process.env.CUA_PIN_MACOS_LANES === 'write') { mkdirSync(join(pin, '..'), {recursive: true}); writeFileSync(pin, JSON.stringify(now, null, 1) + '\n'); }
   assert.deepEqual(now, JSON.parse(readFileSync(pin, 'utf8')));
+  // the top-up of an undetermined series (#171 M4 T18, the gate's R2) is the Linux interval rule's remedy alone: a macOS
+  // comparison refuses one, and carries no top-up record
+  assert.equal('topUp' in cases.engines, false);
+  assert.throws(() => compareLanes('engines', readRuns(dir(t, triple(VV))), readRuns(dir(t, triple(VC))), {topUp: {baseline: readRuns(dir(t, triple(VV))), candidate: readRuns(dir(t, triple(VC)))}}), /a top-up is the Linux engine comparison's alone/);
 });

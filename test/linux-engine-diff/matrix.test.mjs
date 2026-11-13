@@ -307,6 +307,8 @@ test("the matrix's audit pass marks each request in its trace and judges it by i
   const source = readFileSync(new URL('../../scripts/linux-engine-diff/matrix.mjs', import.meta.url), 'utf8');
   const pass = source.slice(source.indexOf('async function auditPass'), source.indexOf('const targetsOf'));
   assert.match(pass, /await proxy\.mark\(`request:\$\{i\}`\);\n\s*const \{ response \} = await engine\.request\(command, input\);\n\s*await proxy\.mark\(`answered:\$\{i\}`\);/);
-  assert.match(pass, /auditAnswered\(parseXtrace\(await proxy\.stop\(\)\), proxy\.marks, answers\)/);
+  // the proxy stopped however the pass goes, its trace then judged
+  assert.match(pass, /\} finally \{\n\s*trace = await proxy\.stop\(\);/);
+  assert.match(pass, /auditAnswered\(parseXtrace\(trace\), proxy\.marks, answers\)/);
   assert.match(pass, /exercised,/);
 });

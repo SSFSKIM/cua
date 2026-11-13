@@ -464,3 +464,18 @@ test("the freeze cell's browser: the run's profile and no child type, its title 
     rmSync(proc, { recursive: true });
   }
 });
+
+test("V5's motion-loss cells: the run's browser stopped from the drag's send, a plain drop and one whose path outlasts the stop", async () => {
+  const { CELLS, PLANS, T14_SOURCE, freezeOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  assert.deepEqual(freezeOf('prefreeze-150'), { from: 0, to: 150 }, 'stopped before the press goes out');
+  assert.deepEqual(freezeOf('prefreeze-linger-150'), { from: 0, to: 150 });
+  assert.deepEqual(freezeOf('freeze-250'), { from: 60, to: 250 }, "T13's cells unchanged");
+  assert.deepEqual(CELLS['prefreeze-150'](0), CELLS.plain(0), 'the plain short drop');
+  const linger = CELLS['prefreeze-linger-150'](0);
+  assert.deepEqual(linger.slice(0, 2), CELLS.plain(0));
+  const length = linger.slice(1).reduce((n, [x, y], k) => n + Math.hypot(x - linger[k][0], y - linger[k][1]), 0);
+  assert.ok(length > 400, `${length} px: steps go on well after the stop ends`);
+  assert.ok(linger.slice(1).every(([x, y]) => x >= 560 && x <= 960 && y >= 100 && y <= 620), 'over the zone');
+  for (const cell of ['prefreeze-150', 'prefreeze-linger-150']) assert.equal(T14_SOURCE[cell], 'plain', cell);
+  assert.deepEqual(PLANS['v5-loss'].map(([lane, cell]) => `${lane} ${cell}`), ['cua plain', 'cua prefreeze-150', 'cua prefreeze-linger-150']);
+});

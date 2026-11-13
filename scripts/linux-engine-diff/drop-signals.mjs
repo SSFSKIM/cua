@@ -61,6 +61,11 @@ export const CELLS = {
   // (`freezeOf`): the renderer's drag start, and the release, wait for the browser (#264's late take, by a lagging
   // browser)
   ...Object.fromEntries(FREEZE_ENDS.map((to) => [`freeze-${to}`, () => [[530, 312], [570, 312]]])),
+  // V5's lost motion (2026-11-13): the plain short drop with the run's browser stopped from the drag's send to 150 ms,
+  // so the press and every step queue unread; and the same press with a path over the zone that goes on long after the
+  // stop ends, so the steps sent once the browser reads again come one by one (`freezeOf`)
+  'prefreeze-150': () => [[530, 128], [570, 128]],
+  'prefreeze-linger-150': () => [[530, 128], [570, 128], [700, 128], [570, 160], [700, 160], [575, 128]],
   'dragstart-400': () => [[530, 358], [570, 358]],
   'press-400': () => [[530, 404], [570, 404]],
   link: () => [[530, 450], [570, 450]],
@@ -188,7 +193,10 @@ export function t14Outcome(cell, before, after) {
  */
 export const freezeOf = (cell) => {
   const m = /^freeze-(\d+)$/.exec(cell);
-  return m ? { from: 60, to: Number(m[1]) } : null;
+  if (m) return { from: 60, to: Number(m[1]) };
+  // stopped from the send, before the engine's press goes out (V5's lost motion)
+  const pre = /^prefreeze(?:-linger)?-(\d+)$/.exec(cell);
+  return pre ? { from: 0, to: Number(pre[1]) } : null;
 };
 
 /** The covered-path cells' paths: long enough that a cover of the middle touches neither end. */
@@ -298,6 +306,9 @@ export const PLANS = {
   ],
   // the freeze sweep: where a lagging browser's thaw falls against the release
   freeze: FREEZE_ENDS.map((to) => ['cua', `freeze-${to}`, 10]),
+  // V5's lost motion: a browser that reads the X stream only after the drag's steps are all queued (Chromium's core
+  // MotionNotify coalescing), against the plain drop and a path that outlasts the stop
+  'v5-loss': [['cua', 'plain', 30], ['cua', 'prefreeze-150', 30], ['cua', 'prefreeze-linger-150', 30]],
   // T14's live counts for the release at the accept (the design session, 2026-11-10): a second source, the long drag
   // and drop, 300 drops; the accepted-then-left control and the press inside the zone, 30 each. Task 69 ran them on an
   // engine that shipped the release (f9bdb5c2, the lane `cua` there); the press-inside control's false release reverted

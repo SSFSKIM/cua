@@ -60,9 +60,39 @@ export function topUpRuns(speed, sampled) {
   return Math.max(0, Math.min(10, TOP_UP_SAMPLES - sampled));
 }
 
+/** The load lane's tolerance: a lane landing fewer than the pinned build passes while chance explains it at this level. */
+export const LOAD_P = 0.05;
+
+/** ln C(n, k). */
+const logChoose = (n, k) => {
+  let s = 0;
+  for (let j = 1; j <= k; j++) s += Math.log(n - k + j) - Math.log(j);
+  return s;
+};
+
 /**
- * The load lane's judge (#265; Decision Log, M4 pre-flight, "Drags"): under load a lane passes when it landed at least as
- * many runs as the pinned build, 40 a side, never judged on fewer; each side's distances are reported.
+ * Fisher's exact test, one-sided: given both sides' margins, how likely side A misses `missA` of its `nA` runs or more,
+ * against side B's `missB` of `nB` (the hypergeometric tail). 1 when A missed no more often than B.
+ */
+export function fisherMissesAtLeast(missA, nA, missB, nB) {
+  const misses = missA + missB;
+  if (missA * nB <= missB * nA) return 1;
+  const all = logChoose(nA + nB, misses);
+  let p = 0;
+  for (let k = missA; k <= Math.min(misses, nA); k++) p += Math.exp(logChoose(nA, k) + logChoose(nB, misses - k) - all);
+  return Math.min(1, p);
+}
+
+/**
+ * The load lane's judge (#265; Decision Log, M4 pre-flight, "Drags"; the design session's ruling on ffdnd-fix,
+ * 2026-11-13), 40 a side, never judged on fewer, each side's distances reported. A lane fails on any false success: a
+ * run answered ok whose effect did not happen (`no_effect`) or landed on another target than the one asked for
+ * (`wrong_target`; judgeRuns marks both, drag.mjs `falseSuccess`). Otherwise its landings decide: at least the pinned
+ * build's, or fewer by chance, the one-sided Fisher test of its misses against the pinned build's at `LOAD_P` or above.
+ * A landing miss is an honest answer (not ok) or the right target's effect at the wrong magnitude (a thumb short or
+ * over, a stroke cut short), which load makes in every engine: exact equality failed T19's Firefox drop at twice the
+ * load on 38 of 40 honest answers, against a pinned 40 (ffdnd-fix's sittings). The pinned build's own runs are its
+ * record, never judged.
  */
 export function loadCounts(runs, lanes) {
   const side = (engine) => {
@@ -73,8 +103,22 @@ export function loadCounts(runs, lanes) {
   const out = {};
   for (const lane of lanes) {
     const mine = side(lane);
-    const enough = mine.n >= LOAD_RUNS && pinned.n >= LOAD_RUNS;
-    out[lane] = { ...mine, pass: enough && mine.took >= pinned.took, ...(enough ? {} : { reason: `fewer than ${LOAD_RUNS} a side (${mine.n} and the pinned build's ${pinned.n})` }) };
+    const own = runs.filter((r) => r.engine === lane && r.ok === true);
+    const noEffect = own.filter((r) => r.no_effect).map((r) => r.i);
+    const elsewhere = own.filter((r) => !r.no_effect && r.wrong_target).map((r) => r.i);
+    if (mine.n < LOAD_RUNS || pinned.n < LOAD_RUNS) {
+      out[lane] = { ...mine, pass: false, judged: false, no_effect_runs: noEffect, wrong_target_runs: elsewhere, reason: `fewer than ${LOAD_RUNS} a side (${mine.n} and the pinned build's ${pinned.n})` };
+      continue;
+    }
+    const p = fisherMissesAtLeast(mine.n - mine.took, mine.n, pinned.n - pinned.took, pinned.n);
+    const landed = mine.took >= pinned.took || p >= LOAD_P;
+    const runsText = (is) => `(run${is.length > 1 ? 's' : ''} ${is.join(' ')})`;
+    const failures = [
+      ...(noEffect.length ? [`${noEffect.length} answered ok with no effect ${runsText(noEffect)}`] : []),
+      ...(elsewhere.length ? [`${elsewhere.length} answered ok with the effect on another target ${runsText(elsewhere)}`] : []),
+      ...(landed ? [] : [`landed ${mine.took} of ${mine.n} against the pinned build's ${pinned.took} of ${pinned.n} (one-sided Fisher p = ${p.toFixed(4)})`]),
+    ];
+    out[lane] = { ...mine, p, pass: failures.length === 0, judged: true, no_effect_runs: noEffect, wrong_target_runs: elsewhere, ...(failures.length ? { reason: failures.join('; ') } : {}) };
   }
   return { pinned, lanes: out };
 }
@@ -110,7 +154,13 @@ export function laneFailures(cell, lane) {
   const witnessed = l.witness === true || !cell.pinned_witness;
   if (cell.load) {
     const c = cell.load.lanes?.[lane];
-    if (c && !c.pass) failed.push(c.reason ? `${at} not judged under load: ${c.reason}` : `${at} landed ${c.took} of ${c.n} against the pinned build's ${cell.load.pinned.took} of ${cell.load.pinned.n}`);
+    if (c && !c.pass) {
+      const runsText = (is) => `run${is.length > 1 ? 's' : ''} ${is.join(' ')}`;
+      if (c.judged === false) failed.push(`${at} not judged under load: ${c.reason}`);
+      if (c.no_effect_runs?.length) failed.push(`${at} answered ok with no effect under load: ${runsText(c.no_effect_runs)}`);
+      if (c.wrong_target_runs?.length) failed.push(`${at} answered ok with the effect on another target under load: ${runsText(c.wrong_target_runs)}`);
+      if (c.judged !== false && c.took < cell.load.pinned.took && !(c.p >= LOAD_P)) failed.push(`${at} landed ${c.took} of ${c.n} against the pinned build's ${cell.load.pinned.took} of ${cell.load.pinned.n} (one-sided Fisher p = ${typeof c.p === 'number' ? c.p.toFixed(4) : '–'})`);
+    }
     if (!witnessed) failed.push(`${at}'s witness changed`);
     return failed;
   }
@@ -181,7 +231,7 @@ export function judgeNotes(row, cuaLanes) {
     };
     notes.push(`speed (warm): ${cuaLanes.map(one).join('; ')}${row.speed[cuaLanes[0]]?.failed_bar?.length ? `; gave the bar up: ${row.speed[cuaLanes[0]].failed_bar.map((f) => `${f.engine} ${f.usable} usable of ${f.sampled}`).join(', ')}` : ''}`);
   }
-  if (row.load) notes.push(`load: pinned ${row.load.pinned.took}/${row.load.pinned.n} (mean ${r1(row.load.pinned.mean)}), ${cuaLanes.map((l) => `${l} ${row.load.lanes[l].took}/${row.load.lanes[l].n} (mean ${r1(row.load.lanes[l].mean)}, shortest ${r1(row.load.lanes[l].shortest)})`).join(', ')}`);
+  if (row.load) notes.push(`load: pinned ${row.load.pinned.took}/${row.load.pinned.n} (mean ${r1(row.load.pinned.mean)}), ${cuaLanes.map((l) => `${l} ${row.load.lanes[l].took}/${row.load.lanes[l].n} (mean ${r1(row.load.lanes[l].mean)}, shortest ${r1(row.load.lanes[l].shortest)}${typeof row.load.lanes[l].p === 'number' && row.load.lanes[l].took < row.load.pinned.took ? `, Fisher p ${row.load.lanes[l].p.toFixed(3)}` : ''})`).join(', ')}`);
   if (row.control) notes.push(`control (no press) took ${row.control.took}/${row.control.n}`);
   if (row.select_reference) notes.push(`the judge took ${row.select_reference.covers}/${row.select_reference.n} of the select cell's even runs`);
   if (row.received) notes.push(`received, coalesced samples (events), raw/moves, median: ${Object.entries(row.received).map(([l, v]) => `${l} ${r1(v.raw)} (${r1(v.raw_events)})/${r1(v.moves)} (${r1(v.move_events)})`).join(', ')}`);

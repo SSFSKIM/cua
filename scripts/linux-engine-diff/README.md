@@ -561,8 +561,12 @@ variants included; their evidence is written either way. The run's `end` row kee
     path or Gecko window is a declared refusal.
   - *Chrome's drag and drop* runs in front for every lane (raised and activated before each drag), as its drop needs.
   - *Under load* (`--load` or `--load-factor <n>`, the load lane, 40 drags a side by default and never fewer): the
-    landed counts decide, `cua`'s at least the pinned build's, with every side's distances reported (`loadCounts`);
-    speed and the thumb reach are reported, not judged. The load lane of #265:
+    landed counts decide, `cua`'s at least the pinned build's or fewer by chance (the one-sided Fisher test of its
+    misses against the pinned build's, p >= 0.05; the design session's ruling on ffdnd-fix, 2026-11-13), with every
+    side's distances reported (`loadCounts`). A false success fails the lane whatever its counts: a run answered ok whose
+    effect did not happen, or landed on another target than the one asked for (drag.mjs `falseSuccess`, per kind). An
+    honest miss (not ok) and the right target's effect at the wrong magnitude are landing misses, under the tolerance.
+    Speed and the thumb reach are reported, not judged. The load lane of #265:
     `--experiment drag --load-factor 2 --family chrome,electron --ops scroller,range --occlusion visible --lanes pinned,cua`.
   - *The motions the browser received*: `pages/drag.html` counts, per press, the coalesced samples of the
     `pointerrawupdate` events (which Chrome dispatches as it takes each motion, a scrollbar drag's included, where no

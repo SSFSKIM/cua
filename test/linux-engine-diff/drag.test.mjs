@@ -274,12 +274,15 @@ test("a run's drag verdict: the shipped lane's misses, short thumbs and slow lon
   assert.equal(T10.dragVerdict([cellOf({ lanes: { 'cua:0ms': { pass: false, misses: [1] } } })]).pass, true, 'no shipped lane: nothing to judge');
 });
 
-test("under load the landed counts decide, 40 a side: cua at least the pinned build's, with fewer than 40 never judged", () => {
+test("under load cua lands at least the pinned build's count, or fewer by chance (one-sided Fisher, p >= 0.05), 40 a side", () => {
   const runsOf = (engine, took, n = 40) => Array.from({ length: n }, (_, i) => ({ engine, i, took: i < took, ok: true, witness: true, before: 0, after: i < took ? 140 : 90 }));
   const pass = T10.loadCounts([...runsOf('pinned', 38), ...runsOf('cua', 38)], ['cua']);
   assert.equal(pass.lanes.cua.pass, true);
   const fewer = T10.loadCounts([...runsOf('pinned', 40), ...runsOf('cua', 39)], ['cua']);
-  assert.equal(fewer.lanes.cua.pass, false, 'one landed fewer than the pinned build fails');
+  assert.equal(fewer.lanes.cua.pass, true, 'one short thumb fewer than the pinned build: within chance (p = 0.5)');
+  assert.equal(fewer.lanes.cua.p.toFixed(4), '0.5000');
+  const loss = T10.loadCounts([...runsOf('pinned', 40), ...runsOf('cua', 33)], ['cua']);
+  assert.equal(loss.lanes.cua.pass, false, 'seven short of 40 is no chance');
   const short = T10.loadCounts([...runsOf('pinned', 20, 20), ...runsOf('cua', 20, 20)], ['cua']);
   assert.equal(short.lanes.cua.pass, false);
   assert.match(short.lanes.cua.reason, /fewer than 40/);
@@ -289,7 +292,89 @@ test("under load the landed counts decide, 40 a side: cua at least the pinned bu
   // a cell under load is judged by its counts, not by every run taking
   const cell = cellOf({ load: pass, lanes: { cua: { took: 38, n: 40, misses: [38, 39], witness: true, pass: false } } });
   assert.equal(T10.dragVerdict([cell]).pass, true);
-  assert.match(T10.dragVerdict([cellOf({ load: fewer })]).failed.join(), /landed 39 of 40 against the pinned build's 40 of 40/);
+  assert.match(T10.dragVerdict([cellOf({ load: loss })]).failed.join(), /landed 33 of 40 against the pinned build's 40 of 40 \(one-sided Fisher p = 0\.0059\)/);
+});
+
+test('under load an ok run with no effect, or with its effect on another target, fails the cell whatever the counts (ffdnd-fix)', () => {
+  // judgeRuns marks each run: `took` (it landed as the pinned build's do), `no_effect`, `wrong_target`
+  const run = (engine, i, over = {}) => ({ engine, i, ok: true, took: true, no_effect: false, wrong_target: false, witness: true, ...over });
+  const side = (engine, n, misses = {}) => Array.from({ length: n }, (_, i) => run(engine, i, misses[i]));
+  const pinned = side('pinned', 40);
+  const judge = (misses) => T10.loadCounts([...pinned, ...side('cua', 40, misses)], ['cua']).lanes.cua;
+  const honest = { ok: false, took: false };
+  // Firefox's drop at twice the load: 38 of 40, each miss answered not ok, against the pinned 40 of 40
+  const thirtyEight = judge({ 3: honest, 9: honest });
+  assert.equal(thirtyEight.pass, true, '38 of 40, honest');
+  assert.equal(thirtyEight.p.toFixed(4), '0.2468');
+  // a clear loss: 30 of 40
+  const thirty = judge(Object.fromEntries(Array.from({ length: 10 }, (_, k) => [k, honest])));
+  assert.equal(thirty.pass, false);
+  assert.match(thirty.reason, /landed 30 of 40 against the pinned build's 40 of 40 \(one-sided Fisher p = 0\.0005\)/);
+  // the right target with the wrong magnitude (a thumb that overshoots, a stroke cut short): a landing miss, to the tolerance
+  assert.equal(judge({ 24: { took: false } }).pass, true);
+  // an ok with no effect: a false success, a hard failure
+  const none = judge({ 5: { took: false, no_effect: true } });
+  assert.equal(none.pass, false);
+  assert.match(none.reason, /1 answered ok with no effect \(run 5\)/);
+  // an ok whose effect landed on another target: a false success, a hard failure
+  const elsewhere = judge({ 7: { took: false, wrong_target: true } });
+  assert.equal(elsewhere.pass, false);
+  assert.match(elsewhere.reason, /1 answered ok with the effect on another target \(run 7\)/);
+  assert.match(T10.dragVerdict([cellOf({ load: T10.loadCounts([...pinned, ...side('cua', 40, { 5: { took: false, no_effect: true } })], ['cua']) })]).failed.join(), /cua answered ok with no effect under load/);
+  assert.equal(judge({}).pass, true, '40 of 40');
+  // the pinned build's own false successes are its record, never judged
+  assert.equal(T10.loadCounts([...side('pinned', 40, { 1: { took: false, no_effect: true } }), ...side('cua', 40)], ['cua']).lanes.cua.pass, true);
+});
+
+test('judgeRuns marks an ok run that changed nothing, or changed another target, per kind', () => {
+  const mark = (kind, before, after, i = 0, extra = {}) => {
+    const r = T10.judgeRuns(kind, [{ engine: 'cua', i, ok: true, before, after, ...extra }]).runs[0];
+    return r.no_effect ? 'none' : r.wrong_target ? 'elsewhere' : 'effect';
+  };
+  // the drop: no drop; the page has one drop target, so no other target to land on
+  assert.equal(mark('dnd', { drops: 3 }, { drops: 3 }), 'none');
+  assert.equal(mark('dnd', { drops: 3 }, { drops: 4 }), 'effect');
+  assert.equal(mark('handle-dnd', { drops: 3 }, { drops: 3 }), 'none');
+  assert.equal(mark('dnd', { drops: 3 }, null), 'none', 'an effect not read shows none');
+  // the stroke: no new stroke; a stroke off its corners is the right canvas, the wrong magnitude
+  assert.equal(mark('canvas', { strokes: 2, dev: 0 }, { strokes: 2, dev: 0 }), 'none');
+  assert.equal(mark('canvas', { strokes: 2 }, { strokes: 3, dev: 40 }), 'effect');
+  assert.equal(mark('handle-canvas', { strokes: 2 }, { strokes: 2 }), 'none');
+  // the thumbs and the values: no scroll, no change; an overshoot or a short value is the wrong magnitude
+  assert.equal(mark('scroller', 0, 0), 'none');
+  assert.equal(mark('scroller', 0, 169), 'effect');
+  assert.equal(mark('scrollbar', 120, 121), 'none', 'within a pixel is no scroll');
+  assert.equal(mark('range', 50, 50), 'none');
+  assert.equal(mark('range', 50, 63), 'effect');
+  assert.equal(mark('scale4', 25, 75), 'effect');
+  // the selection: unchanged is none; one that holds none of the requested stretch is another target
+  assert.equal(mark('select', 'none', 'none'), 'none');
+  assert.equal(mark('select', 'none', 'pha_bravo_charlie_'), 'effect', 'run 0 asks for characters 2 to 20');
+  assert.equal(mark('select', 'none', 'pha_br'), 'effect', 'short of the stretch, inside it: the wrong magnitude');
+  assert.equal(mark('select', 'none', 'a_echo_foxtrot_g'), 'elsewhere', "run 1's stretch, for run 0: another target");
+  assert.equal(mark('select', 'pha_bravo_charlie_', 'a_echo_foxtrot_g', 1), 'effect');
+  assert.equal(mark('select', 'none', 'line 7 of the cua171 drag scene'), 'elsewhere', 'another line');
+  assert.equal(mark('select', '', 'charlie delta echo foxtrot golf\nline 2 of the cua171 drag scene'), 'effect', 'over the stretch and on: the wrong magnitude');
+  assert.equal(mark('select-short', 'none', 'golf', 0), 'elsewhere', 'select-short asks for characters 2 to 6');
+  assert.equal(mark('select-short', 'none', 'pha_', 0), 'effect');
+  assert.equal(mark('select-unprimed', '', 'a_echo_foxtrot_g', 1), 'elsewhere', 'the unprimed drag always asks for the even stretch');
+  // Writer through gen: its pixels unchanged is none; which text its pixels show is not read
+  assert.equal(mark('select', 'x', { capture: 'a' }, 0, { pixels_changed: false }), 'none');
+  assert.equal(mark('select', 'x', { capture: 'a' }, 0, { pixels_changed: true }), 'effect');
+  // a run that did not answer ok is never a false success, whatever it did
+  const notOk = T10.judgeRuns('dnd', [{ engine: 'cua', i: 0, ok: false, before: { drops: 3 }, after: { drops: 3 } }]).runs[0];
+  assert.equal(notOk.no_effect || notOk.wrong_target, false);
+});
+
+test("Fisher's exact test, one-sided: how likely a side misses at least as often as it did, given both sides' margins", () => {
+  // 38 of 40 against 40 of 40: 2 misses of 2, both on cua's side
+  assert.equal(Math.round(T10.fisherMissesAtLeast(2, 40, 0, 40) * 1e4) / 1e4, 0.2468);
+  assert.equal(T10.fisherMissesAtLeast(0, 40, 0, 40), 1, 'no miss on either side');
+  assert.equal(T10.fisherMissesAtLeast(0, 40, 3, 40), 1, 'fewer misses than the other side');
+  // 30 of 40 against 40 of 40: a clear loss
+  assert.ok(T10.fisherMissesAtLeast(10, 40, 0, 40) < 0.001);
+  // ffdnd-fix's first comparison: 4 misses in 80 against none in 40
+  assert.equal(Math.round(T10.fisherMissesAtLeast(4, 80, 0, 40) * 1e4) / 1e4, 0.1925);
 });
 
 test("the drag page's received line: the motions Chrome dispatched between a press and its release", () => {

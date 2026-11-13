@@ -29,7 +29,9 @@
 // - Chrome's and Electron's scrollbar thumbs (`reachJudged`): every run lands at or past the pinned build's mean distance
 //   in the same sitting (`thumbReach`), beside the tolerance judge.
 // - Under load (`--load`, `--load-factor`; 40 drags a side, `dragTrials`) the landed counts decide in place of every run
-//   taking: cua's at least the pinned build's, with the distances reported (`loadCounts`). Speed is judged idle only.
+//   taking: cua's at least the pinned build's, or fewer by chance (one-sided Fisher, p >= 0.05), with no false success
+//   (an ok run with no effect or its effect on another target, `falseSuccess`) and the distances reported
+//   (`loadCounts`). Speed is judged idle only.
 // - Chrome's drag and drop runs in front for every lane (`inFront`), as its drop needs; a covered path stays a declared
 //   refusal.
 // - The page reports the motions the browser received between a press and its release (`received`: the coalesced
@@ -537,7 +539,60 @@ export function judgeRuns(kind, runs) {
     const want = expected[r.i % 2];
     return want !== null && want !== undefined && same(r.after, want);
   };
-  return { expected, runs: runs.map((r) => ({ ...r, took: took(r) })) };
+  return { expected, runs: runs.map((r) => ({ ...r, took: took(r), ...falseSuccess(kind, r) })) };
+}
+
+/** The selection kinds, whose runs ask for a stretch of the first line (`selectStretch`). */
+const SELECT_KINDS = ['select', 'select-short', 'select-unprimed'];
+
+/** The first line's characters `[a, b)` a selection run asks for: `select`'s by parity, `select-short`'s 40 px, the unprimed drag's even run. */
+export function selectStretch(kind, i) {
+  if (kind === 'select-short') return i % 2 === 0 ? [2, 6] : [24, 28];
+  return selectOffsets(kind === 'select-unprimed' ? 0 : i);
+}
+
+/**
+ * Whether a selection holds some of the first line's stretch `[a, b)`: its first line (a page shows spaces as `_`) sits
+ * on the first line (`WORDS`) over a part of the stretch, and a selection that runs on to later lines ends the first.
+ */
+export function holdsStretch(text, [a, b]) {
+  const t = text.replaceAll('_', ' ');
+  const first = t.split('\n')[0];
+  if (!first) return false;
+  const runsOn = t.includes('\n');
+  for (let at = WORDS.indexOf(first); at !== -1; at = WORDS.indexOf(first, at + 1)) {
+    if (runsOn && at + first.length !== WORDS.length) continue;
+    if (at < b && at + first.length > a) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether a run answered ok without its effect: a false success, which fails a load lane whatever its counts
+ * (drag-judge.mjs `loadCounts`; the design session's ruling on ffdnd-fix, 2026-11-13). Per kind, from the outcome the
+ * run read:
+ * - `no_effect`: nothing happened: no new drop (`dnd`, `handle-dnd`), no new stroke (`canvas`, `handle-canvas`), the
+ *   thumb or value where it was (within a pixel: `scroller`, `scrollbar`, `range`, `scale`, `scale4`), the selection
+ *   unchanged (`select`, `select-short`, `select-unprimed`), Writer's pixels unchanged; an effect not read shows none.
+ * - `wrong_target`: something happened, but to another target than the one asked for: a selection that holds none of
+ *   the stretch its path spans (another word, another line). The drag page has one drop target, one slider, one scroller
+ *   and one canvas, and an editor's scroll bar is its only one, so those kinds have no other target to land on.
+ * The right target's effect at the wrong magnitude (a thumb short or over, a stroke off its corners, a selection longer
+ * or shorter than its stretch) is a landing miss, judged by the load lane's tolerance. A run not answered ok is never a
+ * false success.
+ */
+export function falseSuccess(kind, r) {
+  if (r.ok !== true) return { no_effect: false, wrong_target: false };
+  const base = baseKind(kind);
+  const { before, after } = r;
+  let none;
+  if (after === null || after === undefined) none = true;
+  else if (after?.capture !== undefined) none = r.pixels_changed !== true;
+  else if (base === 'dnd') none = after.drops === before?.drops;
+  else if (base === 'canvas') none = after.strokes === before?.strokes;
+  else none = same(after, before);
+  const wrong = !none && SELECT_KINDS.includes(kind) && typeof after === 'string' && !holdsStretch(after, selectStretch(kind, r.i));
+  return { no_effect: none, wrong_target: wrong };
 }
 
 /**

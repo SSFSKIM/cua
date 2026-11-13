@@ -1,0 +1,34 @@
+{
+  "mode": "bare",
+  "harness": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a29fe8eecf4a69f10",
+  "command": [
+    "docs/evidence/2026-10-28-own-linux-engine/m4/facade/scripts/facade.sh",
+    "inner-services"
+  ],
+  "started": "2026-11-13T06:23:14.045Z",
+  "display": ":1",
+  "server": 4073250,
+  "openbox": 4073257,
+  "environment": {
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-4073240-56a6f0177443",
+    "DBUS_SESSION_BUS_ADDRESS": null,
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "result": {
+    "code": 0,
+    "signal": null
+  },
+  "watchdog": {
+    "clean": true,
+    "reason": null
+  },
+  "finished": "2026-11-13T06:23:35.084Z",
+  "ended": [
+    {
+      "what": "openbox",
+      "pid": 4073257
+    }
+  ]
+}

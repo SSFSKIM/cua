@@ -1,0 +1,1 @@
+/Users/new/.local/share/cua-171/task74/w5/engine/8ab1cc758983/cua-engine: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=461f92d979dab26fb16aa8406f693973e6938abd, stripped

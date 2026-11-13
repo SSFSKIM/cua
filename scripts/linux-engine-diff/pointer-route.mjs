@@ -136,11 +136,14 @@ export function parkHeld(park, where, point, window) {
 
 /**
  * Whether an HTML5 drag and drop took, whatever the engine answered: the page counts one more drop than before it
- * (drag.mjs `judgeRuns`'s rule). Null when the count was not read after it.
+ * (drag.mjs `judgeRuns`'s rule). Null when the count was not read before it or after it: a status line missing parses
+ * to a null count (drag.mjs `parseDragStatus`), which shows neither a drop nor its absence.
  */
 export function dndTook(run) {
-  if (!run.after || typeof run.after !== 'object') return null;
-  return run.after.drops === (run.before?.drops ?? -2) + 1;
+  const before = run.before?.drops;
+  const after = run.after?.drops;
+  if (!Number.isFinite(before) || !Number.isFinite(after)) return null;
+  return after === before + 1;
 }
 
 /**
@@ -148,12 +151,16 @@ export function dndTook(run) {
  * selection, read after it, is the stretch of the line its path spans (drag.mjs
  * `selectionCovers`), and on a page the press reached the page (`received`, the drag's own motion record). A page
  * shows the selection with its spaces as `_`. gedit's selection is cleared before each run, so an old one cannot count.
- * Null when the selection was not read: no observation either way.
+ * Null when the selection was not read, or on a page it is the stretch but the motion record was not read after the
+ * drag (`received_read` false): no observation either way.
  */
 export function selectTook(run, page) {
   if (typeof run.after !== 'string') return null;
-  if (page && !run.received) return false;
-  return selectionCovers(page ? run.after.replaceAll('_', ' ') : run.after, run.i);
+  const covers = selectionCovers(page ? run.after.replaceAll('_', ' ') : run.after, run.i);
+  if (!page || !covers) return covers;
+  if (run.received) return true;
+  // the stretch selected, but the page's motion record not read: whether this drag's press made it is not known
+  return run.received_read === false ? null : false;
 }
 
 /**

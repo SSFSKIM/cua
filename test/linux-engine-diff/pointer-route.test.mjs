@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
+import { parseDragStatus } from '../../scripts/linux-engine-diff/drag.mjs';
 import { caretMoved } from '../../scripts/linux-engine-diff/kinds.mjs';
 import { LEAVE_AFTER_S, OCCLUSION_PARKS, OUT_POINT, ROUTE_FAMILIES, arrangeCell, leavePlan, cellCounts, cellKey, parkHeld, parkPoint, placeOf, routeLanes, routeMarkdown, routePlan, dndTook, selectTook } from '../../scripts/linux-engine-diff/pointer-route.mjs';
 
@@ -83,6 +84,18 @@ test('a drag and drop took when the page counts one drop more than before it, wh
   assert.equal(dndTook({ ok: true, before, after: { drops: 3 } }), false, 'no drop');
   assert.equal(dndTook({ ok: true, before, after: { drops: 5 } }), false, 'not one drop');
   assert.equal(dndTook({ ok: false, before, after: null }), null, 'a count not read is no observation');
+  // a status line missing parses to null counters (drag.mjs parseDragStatus), not to a null effect
+  const unread = { ...parseDragStatus([]).dnd, log: null };
+  assert.equal(dndTook({ ok: false, before, after: unread }), null, 'the count not read after it');
+  assert.equal(dndTook({ ok: false, before: unread, after: { drops: 4 } }), null, 'the count not read before it');
+  assert.equal(dndTook({ ok: false, before: null, after: { drops: 4 } }), null, 'no reading before it');
+});
+
+test("a selection on a page whose motion record could not be read after it is no observation, unless it is no stretch's", () => {
+  const page = { ok: false, i: 0, after: 'pha_bravo_charlie_d', received: null, received_read: false };
+  assert.equal(selectTook(page, true), null, 'the selection is there, but whether the press reached the page is not known');
+  assert.equal(selectTook({ ...page, after: 'none' }, true), false, 'no selection of the stretch, whatever reached the page');
+  assert.equal(selectTook({ ...page, received_read: true }, true), false, 'read, and no press of its own');
 });
 
 test("a cell's counts say per lane how many took, answered ok, answered ok with no effect, changed the witness and found the park held", () => {

@@ -366,6 +366,35 @@ test('judgeRuns marks an ok run that changed nothing, or changed another target,
   assert.equal(notOk.no_effect || notOk.wrong_target, false);
 });
 
+test('an ok run whose effect could not be read, before or after it, shows none: a false success, never a magnitude miss', () => {
+  const mark = (kind, before, after) => (T10.judgeRuns(kind, [{ engine: 'cua', i: 0, ok: true, before, after }]).runs[0].no_effect ? 'none' : 'effect');
+  // a status line missing parses to null counters, not to a null effect
+  const unread = parseDragStatus([]);
+  assert.equal(mark('dnd', { drops: 3 }, { ...unread.dnd, log: null }), 'none', 'the drop count not read after it');
+  assert.equal(mark('dnd', { ...unread.dnd, log: null }, { drops: 4 }), 'none', 'the drop count not read before it');
+  assert.equal(mark('handle-dnd', { drops: 3 }, { ...unread.dnd, log: null }), 'none');
+  assert.equal(mark('canvas', { strokes: 2, dev: 0 }, unread.canvas), 'none', 'the stroke count not read after it');
+  assert.equal(mark('canvas', unread.canvas, { strokes: 3, dev: 0 }), 'none', 'the stroke count not read before it');
+  assert.equal(mark('handle-canvas', { strokes: 2 }, unread.canvas), 'none');
+  // the values and the selections: one side not read
+  assert.equal(mark('scroller', unread.scroller, 169), 'none');
+  assert.equal(mark('range', unread.range, 63), 'none');
+  assert.equal(mark('scrollbar', 120, Number.NaN), 'none');
+  assert.equal(mark('scale4', null, 75), 'none');
+  assert.equal(mark('select', unread.select, 'pha_bravo_charlie_'), 'none');
+
+  // the reviewer's reproduction: 40 pinned drops and strokes, 39 of cua's and one ok with nothing read
+  for (const [kind, count, extra] of [['dnd', 'drops', { log: null }], ['canvas', 'strokes', { dev: 0 }]]) {
+    const run = (engine, i, after) => ({ engine, i, ok: true, witness: true, before: { [count]: i, ...extra }, after: after ?? { [count]: i + 1, ...extra } });
+    const missing = kind === 'dnd' ? { ...unread.dnd, log: null } : unread.canvas;
+    const runs = [...Array.from({ length: 40 }, (_, i) => run('pinned', i)), ...Array.from({ length: 39 }, (_, i) => run('cua', i)), run('cua', 39, missing)];
+    const lane = T10.loadCounts(T10.judgeRuns(kind, runs).runs, ['cua']).lanes.cua;
+    assert.equal(lane.pass, false, kind);
+    assert.deepEqual(lane.no_effect_runs, [39], kind);
+    assert.match(lane.reason, /1 answered ok with no effect \(run 39\)/, kind);
+  }
+});
+
 test("Fisher's exact test, one-sided: how likely a side misses at least as often as it did, given both sides' margins", () => {
   // 38 of 40 against 40 of 40: 2 misses of 2, both on cua's side
   assert.equal(Math.round(T10.fisherMissesAtLeast(2, 40, 0, 40) * 1e4) / 1e4, 0.2468);

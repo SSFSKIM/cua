@@ -475,6 +475,8 @@ export async function readEffect(ctx, scene, at, cellKind) {
 }
 
 const same = (a, b) => (typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) <= 1 : JSON.stringify(a) === JSON.stringify(b));
+/** Whether an effect's value was read: a count, a position or a selection's text (an unread one is null, or NaN). */
+const readValue = (v) => typeof v === 'string' || Number.isFinite(v);
 
 /** The effect once it settles: two equal reads 150 ms apart, after it changed or 1.2 s passed; at most 2.5 s. */
 async function settled(read, before) {
@@ -573,7 +575,8 @@ export function holdsStretch(text, [a, b]) {
  * run read:
  * - `no_effect`: nothing happened: no new drop (`dnd`, `handle-dnd`), no new stroke (`canvas`, `handle-canvas`), the
  *   thumb or value where it was (within a pixel: `scroller`, `scrollbar`, `range`, `scale`, `scale4`), the selection
- *   unchanged (`select`, `select-short`, `select-unprimed`), Writer's pixels unchanged; an effect not read shows none.
+ *   unchanged (`select`, `select-short`, `select-unprimed`), Writer's pixels unchanged; an effect not read, before the run or
+ *   after it, shows none.
  * - `wrong_target`: something happened, but to another target than the one asked for: a selection that holds none of
  *   the stretch its path spans (another word, another line). The drag page has one drop target, one slider, one scroller
  *   and one canvas, and an editor's scroll bar is its only one, so those kinds have no other target to land on.
@@ -585,12 +588,14 @@ export function falseSuccess(kind, r) {
   if (r.ok !== true) return { no_effect: false, wrong_target: false };
   const base = baseKind(kind);
   const { before, after } = r;
+  // a new effect is one read on both sides of the run: a status line missing parses to a null counter (parseDragStatus)
+  const countChanged = (key) => readValue(before?.[key]) && readValue(after[key]) && after[key] !== before[key];
   let none;
   if (after === null || after === undefined) none = true;
   else if (after?.capture !== undefined) none = r.pixels_changed !== true;
-  else if (base === 'dnd') none = after.drops === before?.drops;
-  else if (base === 'canvas') none = after.strokes === before?.strokes;
-  else none = same(after, before);
+  else if (base === 'dnd') none = !countChanged('drops');
+  else if (base === 'canvas') none = !countChanged('strokes');
+  else none = !(readValue(before) && readValue(after) && !same(after, before));
   const wrong = !none && SELECT_KINDS.includes(kind) && typeof after === 'string' && !holdsStretch(after, selectStretch(kind, r.i));
   return { no_effect: none, wrong_target: wrong };
 }
@@ -736,12 +741,16 @@ export async function series(ctx, spec, scene, at, kind, n, { start = 0, readFai
       if (at.text?.pixels) run.pixels_changed = ok ? pixelsChanged(before.capture, after.capture) : false;
       if (at.page && (ok || readFailed)) {
         // the record is published when the press ends: a drag's own is looked for a little, then counted missing
-        let received = freshReceived(receivedBefore, await readReceived(ctx, scene));
+        let last = await readReceived(ctx, scene);
+        let received = freshReceived(receivedBefore, last);
         for (let tries = 0; !received && !spec.handleControl && tries < 5; tries++) {
           await sleep(100);
-          received = freshReceived(receivedBefore, await readReceived(ctx, scene));
+          last = await readReceived(ctx, scene);
+          received = freshReceived(receivedBefore, last);
         }
         run.received = received;
+        // no record of its own because none could be read is not a press that missed the page (pointer-route.mjs selectTook)
+        run.received_read = last !== null;
       }
       runs.push(run);
       // what the application changed (Chrome's drag and drop activates and restacks, the control activates) is put

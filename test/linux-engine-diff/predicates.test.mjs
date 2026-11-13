@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { OCCLUSION_PARKS } from '../../scripts/linux-engine-diff/pointer-route.mjs';
+import { parseDragStatus } from '../../scripts/linux-engine-diff/drag.mjs';
+import { OCCLUSION_PARKS, dndTook } from '../../scripts/linux-engine-diff/pointer-route.mjs';
 import { ALLOWED_RUNS, LEAVE_RUNS, PREDICATE_CASES, REFUSED_RUNS, caseKey, caseLanes, judgeCase, judgePredicates, predicatePlan, predicatesMarkdown } from '../../scripts/linux-engine-diff/predicates.mjs';
 
 const SENTENCE = 'firefox does not accept background input; use a dedicated desktop or activate the window first';
@@ -78,6 +79,18 @@ test("a run's effect is read whatever it answered: one unread is no proof, a ref
   const refusedTook = judgeCase(leave, [...leftRuns('cua', 19), ...refusedRuns('cua', 1, { took: true })]);
   assert.deepEqual(refusedTook.failed, ['1 were refused and took effect']);
   assert.deepEqual(judgeCase(leave, [...leftRuns('cua', 19), ...leftRuns('cua', 1, { took: null })]).failed, [`cua ran 19 valid of ${LEAVE_RUNS}: the effect not read on 1`]);
+});
+
+test('a refused drag and drop whose drop count was not read is no proof that nothing dropped', () => {
+  // the reviewer's reproduction: a P6 refused case, 10 refusals answered, 10 drop counts not read after them
+  const refusedDnd = PREDICATE_CASES.find((c) => c.kind === 'dnd' && c.expect === 'refused');
+  const unread = { ...parseDragStatus([]).dnd, log: null };
+  const runs = refusedRuns('cua', 10).map((r) => ({ ...r, before: { drops: 3 }, after: unread })).map((r) => ({ ...r, took: dndTook(r) }));
+  const row = judgeCase(refusedDnd, runs);
+  assert.equal(row.pass, false);
+  assert.equal(row.counts.cua.unread, 10);
+  assert.equal(row.counts.cua.n, 0);
+  assert.deepEqual(row.failed, [`cua ran 0 valid of ${REFUSED_RUNS}: the effect not read on 10`]);
 });
 
 test("the manifest: Gecko's five pointer kinds at every pointer place, allowed only with the pointer in the window", () => {

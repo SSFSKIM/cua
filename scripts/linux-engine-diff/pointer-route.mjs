@@ -82,9 +82,9 @@ export const cellKey = (c) => `${c.family} ${c.kind} ${c.occlusion} pointer-${c.
  * moved out to the front window while it runs (`LEAVE_AFTER_S` after the request starts, so it lands inside each kind's
  * request), so a request the pointer leaves is seen. Each kind in the group pointer-route.mjs measures it in.
  */
-export const LEAVE_AFTER_S = { click: 0.004, scroll: 0.03, move: 0, select: 0.05 };
-export function leavePlan(families = ['firefox']) {
-  return families.flatMap((family) => ROUTE_GROUPS.flatMap(({ group, kinds }) => kinds.map((kind) => ({ family, group, kind, occlusion: 'visible', park: 'leave' }))));
+export const LEAVE_AFTER_S = { click: 0.004, scroll: 0.03, move: 0, select: 0.05, dnd: 0.05 };
+export function leavePlan(families = ['firefox'], groups = ROUTE_GROUPS) {
+  return families.flatMap((family) => groups.flatMap(({ group, kinds }) => kinds.map((kind) => ({ family, group, kind, occlusion: 'visible', park: 'leave' }))));
 }
 
 /**
@@ -132,6 +132,15 @@ export function parkHeld(park, where, point, window) {
   if (park === 'in' || park === 'leave') return where === 'scene';
   if (park === 'under') return where === 'cover' && inside(point, window);
   return !inside(point, window) && ['harness', 'root'].includes(where);
+}
+
+/**
+ * Whether an HTML5 drag and drop took, whatever the engine answered: the page counts one more drop than before it
+ * (drag.mjs `judgeRuns`'s rule). Null when the count was not read after it.
+ */
+export function dndTook(run) {
+  if (!run.after || typeof run.after !== 'object') return null;
+  return run.after.drops === (run.before?.drops ?? -2) + 1;
 }
 
 /**
@@ -329,7 +338,7 @@ export async function measureRoute(args, { desktop, emit }, plan, { lanesOf, run
           if (group === 'drag') {
             for (const l of lanes) {
               desktop.raise(scenes[l.label]);
-              at[l.label] = await locate({ desktop, oracle }, scenes[l.label], ['select']);
+              at[l.label] = await locate({ desktop, oracle }, scenes[l.label], [...new Set(cells.map((c) => c.kind))]);
             }
           }
           // each lane's runs alternate their paths from one cell to the next
@@ -340,13 +349,13 @@ export async function measureRoute(args, { desktop, emit }, plan, { lanesOf, run
             const runs = [];
             for (const spec of lanesOf(c)) {
               const scene = scenes[spec.label];
-              Object.assign(state, { scene, park: c.park, kind: c.kind, requests: [], clearSelection: group === 'drag' && scene.kindOf === 'editor' ? at[spec.label].text.id : null });
+              Object.assign(state, { scene, park: c.park, kind: c.kind, requests: [], clearSelection: c.kind === 'select' && scene.kindOf === 'editor' ? at[spec.label].text.id : null });
               const ctx = { desktop: seenDesktop, oracle, witness: seenWitness, emit, family, occlusion: c.occlusion, cua: args.cua, dir: desktop.dir, pointFor };
-              const own = group === 'drag' ? await dragSeries(ctx, spec, scene, at[spec.label], 'select', n, { start: next[spec.label], readFailed: true }) : await kindSeries(ctx, spec, scene, c.kind, n, { readFailed: true });
+              const own = group === 'drag' ? await dragSeries(ctx, spec, scene, at[spec.label], c.kind, n, { start: next[spec.label], readFailed: true }) : await kindSeries(ctx, spec, scene, c.kind, n, { readFailed: true });
               next[spec.label] += n;
               own.forEach((r, k) => {
                 r.pointer = state.requests[k] ?? null;
-                if (group === 'drag') r.took = selectTook(r, scene.kindOf === 'page');
+                if (group === 'drag') r.took = c.kind === 'dnd' ? dndTook(r) : selectTook(r, scene.kindOf === 'page');
                 const row = { ...r, kind: 'pointer-route-run', case: cellKey(c), family, input: c.kind, occlusion: c.occlusion, park: c.park, engine: spec.label };
                 emit(row);
                 runs.push(row);

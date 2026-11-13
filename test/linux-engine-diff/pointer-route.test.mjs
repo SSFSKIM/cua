@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { caretMoved } from '../../scripts/linux-engine-diff/kinds.mjs';
-import { LEAVE_AFTER_S, OCCLUSION_PARKS, OUT_POINT, ROUTE_FAMILIES, arrangeCell, leavePlan, cellCounts, cellKey, parkHeld, parkPoint, placeOf, routeLanes, routeMarkdown, routePlan, selectTook } from '../../scripts/linux-engine-diff/pointer-route.mjs';
+import { LEAVE_AFTER_S, OCCLUSION_PARKS, OUT_POINT, ROUTE_FAMILIES, arrangeCell, leavePlan, cellCounts, cellKey, parkHeld, parkPoint, placeOf, routeLanes, routeMarkdown, routePlan, dndTook, selectTook } from '../../scripts/linux-engine-diff/pointer-route.mjs';
 
 const window = { x: 0, y: 30, width: 1050, height: 760 };
 
@@ -74,6 +74,15 @@ test("a selection took only when it is the stretch its path spans, and on a page
   assert.equal(selectTook({ ...page, received: { seq: 3 } }, true), true);
   assert.equal(selectTook({ ...page, received: null }, true), false, 'no press of its own reached the page');
   assert.equal(selectTook({ ok: true, i: 0, after: 'none', received: { seq: 3 } }, true), false);
+});
+
+test('a drag and drop took when the page counts one drop more than before it, whatever the engine answered', () => {
+  const before = { drops: 3 };
+  assert.equal(dndTook({ ok: true, before, after: { drops: 4 } }), true);
+  assert.equal(dndTook({ ok: false, before, after: { drops: 4 } }), true, 'the effect, whatever the engine answered');
+  assert.equal(dndTook({ ok: true, before, after: { drops: 3 } }), false, 'no drop');
+  assert.equal(dndTook({ ok: true, before, after: { drops: 5 } }), false, 'not one drop');
+  assert.equal(dndTook({ ok: false, before, after: null }), null, 'a count not read is no observation');
 });
 
 test("a cell's counts say per lane how many took, answered ok, answered ok with no effect, changed the witness and found the park held", () => {

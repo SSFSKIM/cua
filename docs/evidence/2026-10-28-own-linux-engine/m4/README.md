@@ -73,7 +73,7 @@ Its findings come back under the T17 convergence line. The task's report is
   engine's synthetic FocusIn. When that request's own session synthesized the FocusIn, the engine re-reads the same
   window's focused element every 2 ms, up to 50 ms. The longest lag measured was 15.3 ms. The test now passes 100 of
   100 run alone, under contention, and under 16 stress-ng workers.
-- **The `engine-linux` gate runs `cargo clippy`** (two lints) **and `tests/two-screens.sh` on a hosted runner**
+- **The `engine-linux` gate runs `cargo clippy`** (two runs: with `--all-targets --features live`, and the shipped build alone) **and `tests/two-screens.sh` on a hosted runner**
   (6047aa88, e83b69a0): Xorg on :100, and the review fixes' resizable server on :101.
 - **The harness on its shared helpers.** Every gate runner parks the real pointer through `park.mjs` and verifies
   the application under test through `app-identity.mjs` (`harness-helpers/`). `pointer-route.mjs` keeps its own park,

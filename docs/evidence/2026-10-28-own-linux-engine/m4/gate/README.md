@@ -158,6 +158,12 @@ refused at resolution), R2–R4, FB, E1; S3, L3d, L3e (their secondary actions n
 Lock lines are from `~/.local/share/cua-171/host-lock.log`, holder `t18-gate`. Load is the 1-, 5- and 15-minute
 average. mawsd's render host ran during none of them. Each step's labelled directory is `<out>/<step>.release-gate/`.
 
+A verdict step's speed tally counts each series once, from its `run/summary.md` (`c3-c55c8e08/scripts/speed-tally.py`):
+the cua rows that pass, and the series their verdicts name faster, within the bound or the same within noise. This
+record's first version doubled candidate 1's V1, V2 and V4 series counts: they were counted as `"label"` fields in
+`results.jsonl`, where every cua verdict row carries each series' label twice (`intervals[].label` and
+`labels[].label`). The row counts were right.
+
 ### Candidate 1 (task 76, 2026-11-13; `out/`, `out-rerun1/`)
 
 The STOP file held the driver after C1, before the twice-the-load block.
@@ -191,10 +197,10 @@ The STOP file held the driver after C1, before the twice-the-load block.
 | H1 | out | 17:57:53 | 18:15:45 | 17.9 | 0 | 0.55 0.44 0.43 | 0.48 0.35 0.40 | none | PASS (findings below) |
 | H2 | out | 18:15:45 | 18:34:06 | 18.4 | 0 | 0.48 0.35 0.40 | 0.27 0.34 0.39 | none | PASS (findings below) |
 | C1 | out | 18:34:06 | 18:35:56 | 1.8 | 0 | 0.27 0.34 0.39 | 0.52 0.42 0.42 | none | PASS (11 late takes, 11 reported) |
-| V1 | out | 19:30:54 | 20:07:58 | 37.1 | 0 | 0.17 0.13 0.09 | 0.63 0.43 0.37 | none | PASS (14 faster, 2 within the bound, 6 pass) |
-| V2 | out | 20:09:42 | 20:34:15 | 24.6 | 0 | 0.22 0.34 0.34 | 1.31 1.51 1.22 | none | PASS (52 faster, 2 same, 2 within the bound, 15 pass) |
+| V1 | out | 19:30:54 | 20:07:58 | 37.1 | 0 | 0.17 0.13 0.09 | 0.63 0.43 0.37 | none | PASS (6 cua rows pass; their speed series 7 faster, 1 within the bound) |
+| V2 | out | 20:09:42 | 20:34:15 | 24.6 | 0 | 0.22 0.34 0.34 | 1.31 1.51 1.22 | none | PASS (15 cua rows pass; their speed series 26 faster, 1 same within noise, 1 within the bound) |
 | V3 | out | 20:34:32 | 21:10:41 | 36.1 | 1 | 1.02 1.44 1.20 | 0.86 1.03 1.07 | none | PASS by ruling: activate_window #373 (below) |
-| V4 | out | 21:11:41 | 21:38:13 | 26.5 | 0 | 0.39 0.87 1.01 | 1.03 0.88 0.81 | none | PASS (8 faster, 22 pass; every paste case) |
+| V4 | out | 21:11:41 | 21:38:13 | 26.5 | 0 | 0.39 0.87 1.01 | 1.03 0.88 0.81 | none | PASS (22 cua rows pass; their speed series 4 faster; every paste case) |
 | V5 | out | 21:39:01 | 21:41:02 | 2.0 | 1 | 0.48 0.76 0.77 | 0.35 0.69 0.75 | none | environment fault (the snap's firefox), rerun |
 | V5 | out-rerun1 | 21:42:39 | 22:19:16 | 36.6 | 1 | 0.62 0.66 0.73 | 1.57 1.10 0.95 | none | **FAIL: two false successes, one dishonest answer; work reopened** (below) |
 | Z0 | out | 22:20:40 | 22:31:42 | 11.0 | 0 | 0.56 0.89 0.89 | 0.61 0.94 0.98 | none | PASS (Firefox's plain drop 30/30 on :0; Writer 30/30) |
@@ -264,7 +270,7 @@ time, every edit failing.
 | 1 | V5 | environment fault: the snap's `/usr/bin/firefox` started instead of task 59's Mozilla Firefox and failed in the guard ("cannot create transient scope … org.freedesktop.systemd1"). No verdict made, 0 flags, screen as found. Rerun into `out-rerun1/V5.release-gate`: FAIL (the false successes below) | the design session (relayed), sminos 668 | the launcher fix (`run-zero2.sh`) | `out/V5.release-gate/run/apps/*firefox-device_cua.stderr`, `wrap.out` |
 | 2 | S1 | electron-input press_key background: 33 runs, 26 pass, **7 #302** (key-up 205.7–222.9 ms after the answer), 0 failing; streak 33 of 30; audits pass. 48 cells | #302, sminos 659 | `scripts/rejudge-302.mjs` | `c2-f9692898/out/S1.rejudge-302.txt` |
 | 2 | V5 | device-chrome-dnd `chrome_dnd_late_take_shared` sample 2/0: an honest answer (a plain drag at 164.97 ms, the notice on the read, the next acting request refused, the late drag and drop escaped 1.4 ms after the release), but its dragend came 201 ms after the press, after the witness span closed (the answer + 20 ms), so the drop's activation fell outside it. 52 rows, 0 failing, 2/0 as the span's limit | **the witness span's limit on a late take's drop**, a mechanical re-judge; the witness tail is tech debt; sminos 680 | `scripts/rejudge-late-take-window.mjs`; controls `scripts/rejudge-late-take-controls.mjs` (the notice missing, the next acting request not refused, the drop early with a clean witness, no witnessed drop: each fails) | `c2-f9692898/out/V5.rejudge-late-take-window.txt`, `V5.rejudge-late-take-controls.txt` |
-| 2 | L3a | chrome-text `clipboard_read` 28 of 31 refused, `clipboard_write` 31 invalid: one Copy timed out (trial 3), then every Copy on that window "context menu did not open". 0 answered ok; the clipboard unchanged; `desktop_clean` throughout. **Not passed** | the trigger a declared load limit (#375, 681); the stuck state a defect (683, 684), fixed in candidate 3, where L3a reran and passed | analysis `c2-f9692898/scripts/l3a-clip.py`, `l3a-clip2.py`; reproductions `c2-f9692898/l3a-repro/` | `c2-f9692898/out/L3a.release-gate/` |
+| 2 | L3a | chrome-text `clipboard_read` 28 of 31 refused, `clipboard_write` 31 invalid: one Copy timed out (trial 3), then every Copy on that window "context menu did not open". 0 answered ok; the clipboard unchanged; `desktop_clean` throughout. **Not passed** | the trigger a declared load limit (#375, 681); the stuck state a defect (683, 684), fixed in candidate 3. Candidate 3's L3a passed on its own judge, so it has no row here (its step table) | analysis `c2-f9692898/scripts/l3a-clip.py`, `l3a-clip2.py`; reproductions `c2-f9692898/l3a-repro/` | `c2-f9692898/out/L3a.release-gate/` |
 | 2 | L3b | electron-input press_key background: 57 runs, 55 pass, **2 #302** (232.3–251.1 ms); electron-input press_key **desktop**: 31 runs, 25 pass, **6 #302** (238.8–316.8 ms), 0 failing; electron-text 30/30. 23 cells | #302 covers both routes (659, confirmed by 682). The script's desktop condition amended to `desktop_clean === true && front_active !== false` (a desktop-route cell has no front window), in 05733962; candidate 1's S1 re-judged identically, candidate 2's unchanged | `scripts/rejudge-302.mjs` as amended (the earlier copy `c2-f9692898/scripts/rejudge-302.before-amend.mjs`); controls `scripts/rejudge-302-amend-controls.mjs` (desktop_clean false, front_active false: each fails) | `c2-f9692898/out/L3b.rejudge-302.txt`, `rejudge-302-amend-controls.txt`, `S1-candidate1.rejudge-302-amended.txt` |
 | 3 | S1 | electron-input press_key background: 32 runs, 27 pass, **5 #302** (206.4–222.7 ms), 0 failing; streak 32 of 30; audits pass. 50 cells | #302, sminos 659 | `scripts/rejudge-302.mjs` (amended); controls `scripts/rejudge-302-c3-controls.mjs` | `c3-c55c8e08/out/S1.rejudge-302.txt`, `rejudge-302-c3-controls.txt` |
 | 3 | L3b | electron-input press_key background: 59 runs, 58 pass, **1 #302** (314.5 ms); electron-input press_key **desktop**: 34 runs, 25 pass, **9 #302** (229.8–294.7 ms), 0 failing; electron-text 30/30. 24 cells | #302 on both routes (659, 682) | `scripts/rejudge-302.mjs` (amended); controls `scripts/rejudge-302-c3-controls.mjs` (on each route's first #302 run, in S1 and L3b: a lost key, each of the three criteria, a refusal, the desktop changed, the front window not active; 23 controls, each as expected) | `c3-c55c8e08/out/L3b.rejudge-302.txt`, `rejudge-302-c3-controls.txt` |
@@ -410,7 +416,8 @@ every time. The owner's Chrome kept the same pid, 2546101, throughout every sitt
   connections, no leftovers; the stub check failed by both witness and audit; owner-watch 220 checks, no change; the
   owner's Chrome's one difference its profile's mtime; the pointer restored to 142,130; the only client window left on
   `:0` the owner's own, no Firefox, and the run's TMPDIR gone. The vendor bar resolved: no speed series undetermined
-  (22 faster; the losses are activate_window's, #373, and the two declared cells', not judged on speed). No
+  (41 cua rows: 37 pass, their speed series 20 faster; the losses are activate_window's, #373, and the two declared
+  cells', not judged on speed). No
   `witness_allowed` focus move occurred.
 
 ## Launcher fixes (outside the candidates' trees)

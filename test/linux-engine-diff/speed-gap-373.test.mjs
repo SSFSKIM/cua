@@ -29,8 +29,17 @@ test("the declaration: activate_window's cold and warm requests on the window ro
 // ---------------------------------------------------------------------------------------------------------------
 // the stored records
 
-/** The audits as the run held them (run.mjs), from the record's audit rows: per engine. */
-const auditsOf = (rows, scene, op) => Object.fromEntries(rows.filter((a) => a.kind === 'audit' && a.scene === scene && a.op === op).map((a) => [a.engine, { clean: a.clean, oks: a.oks, answered: a.answered, forbidden: a.forbidden.map((f) => f.what), foreign: a.foreign ?? [] }]));
+/**
+ * The audits as the run holds them (run.mjs), from the record's audit rows, per engine: `forbidden` the judge's one
+ * collection (the requests' names, the foreign changes and the watcher's error), and beside it the engine's own
+ * forbidden requests (`sent`), the foreign changes, and whether the audit observed at all (`observed`).
+ */
+const auditsOf = (rows, scene, op) => Object.fromEntries(rows.filter((a) => a.kind === 'audit' && a.scene === scene && a.op === op).map((a) => {
+  const sent = a.forbidden.map((f) => f.what);
+  const foreign = a.foreign ?? [];
+  const error = typeof a.ancestry === 'string' ? a.ancestry : null;
+  return [a.engine, { clean: a.clean, oks: a.oks, answered: a.answered, forbidden: [...new Set([...sent, ...foreign, ...(error ? [error] : [])])], sent, foreign, observed: { traced: a.traced, watched: error === null, error } }];
+}));
 
 /** One operation of a stored verdict run judged again as run.mjs judges it: its samples, speed decisions and audits. */
 function judgeOp(rows, scene, op) {
@@ -80,6 +89,10 @@ for (const candidate of [1, 3]) {
       'an audit that did not answer ok': (r) => { at(r, 'audit', 'cua')[0].oks = [true, false]; },
       'no audit of cua': (r) => { r.splice(r.indexOf(at(r, 'audit', 'cua')[0]), 1); },
       "the output differs from the vendor's": (r) => { at(r, 'sample', 'cua')[2].equal = false; },
+      // an observer that failed in every lane is no request the vendor builds send too (the review's reproduction)
+      "the ancestry watcher failed to start in every lane's audit": (r) => { for (const a of r.filter((x) => x.kind === 'audit' && x.scene === 'chrome-input' && x.op === 'activate_window')) a.ancestry = 'the ancestry watcher did not start: xprobe watch exited 1'; },
+      "the ancestry watcher failed in cua's audit alone": (r) => { at(r, 'audit', 'cua')[0].ancestry = 'the ancestry watcher ended before the audit did (exit 1)'; },
+      "the trace saw no request in any lane's audit": (r) => { for (const a of r.filter((x) => x.kind === 'audit' && x.scene === 'chrome-input' && x.op === 'activate_window')) a.traced = false; },
     };
     for (const [name, edit] of Object.entries(opControls)) {
       const rows = gateRows(CANDIDATES[candidate], 'V3');

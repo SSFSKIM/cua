@@ -1393,7 +1393,7 @@ async function diffRun(args, candidate, { handoff }) {
           // a watcher that did not watch to the end leaves the judge's knowledge of the window's end unproven
           const clean = audited.clean && foreign.length === 0 && ancestry.watched;
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
-          audits[`${sceneName}|${op}|${spec.label}`] = { clean, oks, answered, foreground: foregroundAudit, kind: auditKind, foreign: foreign.map(foreignLine), forbidden: [...new Set([...audited.forbidden.map((f) => f.what), ...foreign.map(foreignLine), ...(ancestry.error ? [ancestry.error] : [])])] };
+          audits[`${sceneName}|${op}|${spec.label}`] = { clean, oks, answered, foreground: foregroundAudit, kind: auditKind, sent: audited.forbidden.map((f) => f.what), foreign: foreign.map(foreignLine), observed: { traced: audited.traced, watched: ancestry.watched, error: ancestry.error ?? null }, forbidden: [...new Set([...audited.forbidden.map((f) => f.what), ...foreign.map(foreignLine), ...(ancestry.error ? [ancestry.error] : [])])] };
           emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(foreign.some((f) => 'parent' in f) ? { foreign_parents: foreign.slice(0, 10).map((f) => f.parent ?? null) } : {}), ...(watch ? { ancestry: ancestry.error ?? watch.chain } : {}), ...(judgedForeign.unplaced ? { xtest_unplaced: judgedForeign.unplaced } : {}) });
           desktop.focusFront();
         }
@@ -1668,8 +1668,10 @@ export function declaredRefusalVerdict(verdict, mine, refusal, candidate) {
  * hold as the vendor builds' do: every candidate sample answered ok with its effect, as many as the run timed; the
  * candidate's audit answered ok, with no request the vendor builds' audits of the operation do not show (the activation
  * itself) and no foreign change; and its witness saw no field change that the vendor builds' samples did not. Anything
- * else fails. `rows`: the operation's samples, every engine's; `audits`: engine to the run's audit (`{oks, forbidden,
- * foreign}`, forbidden as the requests' names). Returns `{pass, verdict, reasons, gap, declared_gap}` or null.
+ * else fails, and so does an audit that did not observe (no request traced, or its window watcher failed), shared by
+ * every lane or not. `rows`: the operation's samples, every engine's; `audits`: engine to the run's audit (`{oks, sent,
+ * foreign, observed: {traced, watched, error}}`, `sent` the engine's own forbidden requests by name). Returns `{pass,
+ * verdict, reasons, gap, declared_gap}` or null.
  */
 export function declaredGapVerdict(verdict, { op, candidate, rows, audits, vendors = VENDORS, gaps = SPEED_GAPS }) {
   if (verdict.verdict !== 'fail') return null;
@@ -1688,9 +1690,15 @@ export function declaredGapVerdict(verdict, { op, candidate, rows, audits, vendo
   const audit = audits?.[candidate];
   if (!audit) kept.push(`${candidate}: no audit`);
   else {
+    // an audit that did not observe proves nothing, whatever the vendor builds' audits show: its trace with no request of
+    // the engine, or the window's watcher that failed (`clean` is not asked: the activation's own requests make it false)
+    const seen = audit.observed;
+    if (seen?.traced !== true) kept.push(`${candidate}: the audit's trace holds no request of the engine`);
+    if (!seen || seen.watched === false || seen.error) kept.push(`${candidate}: the audit's window watcher failed${seen?.error ? ` (${seen.error})` : ''}`);
     if (!audit.oks?.length || !audit.oks.every(Boolean)) kept.push(`${candidate}: the audit's requests did not answer ok`);
-    const vendorSent = new Set(vendors.flatMap((v) => audits[v]?.forbidden ?? []));
-    const extra = [...new Set(audit.forbidden ?? [])].filter((w) => !vendorSent.has(w));
+    // the engines' own forbidden requests by name, compared; never the observers' failures
+    const vendorSent = new Set(vendors.flatMap((v) => audits[v]?.sent ?? []));
+    const extra = [...new Set(audit.sent ?? [])].filter((w) => !vendorSent.has(w));
     if (extra.length) kept.push(`${candidate}: the audit shows requests the vendor builds' do not: ${extra.join(', ')}`);
     if (audit.foreign?.length) kept.push(`${candidate}: the audit shows ${audit.foreign.length} foreign change(s)`);
   }

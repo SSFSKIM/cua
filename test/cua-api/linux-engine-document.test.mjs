@@ -54,6 +54,35 @@ test('every answer the Linux documents quote is the text that answers it', () =>
   assert.match(file('src/services/engine/linux/client.mjs'), /export const MIN_ENGINE_VERSION = '0\.4\.0'/);
 });
 
+// The behaviour the documents narrow their promises to, where the engine decides it (the T8 review's fix wave 1):
+// [the claim, which documents make it (a phrase they must carry), the file, the code that makes it true].
+const CLAIMS = [
+  ['only an element\'s showContextMenu action checks for a menu', [[LINUX_DOCUMENT, 'Only a request that runs an element\'s `showContextMenu` action checks for the menu'],
+    [README, 'Only an element\'s `showContextMenu` accessibility action checks for the menu']],
+  'native/linux-engine/src/engine/elements.rs', 'if !name.eq_ignore_ascii_case("showcontextmenu") { return act(t)?.map_err(anyhow::Error::msg); }'],
+  ['a right click with no visible point falls back to showContextMenu', [[LINUX_DOCUMENT, 'a right click on an element with no visible point runs it'],
+    [README, 'the fallback of a right click on an element with no visible point']],
+  'native/linux-engine/src/engine/elements.rs', 'Err(RightClick::Point(error)) => { // The fallback: exactly one action named showContextMenu'],
+  ['a right click at a visible point is button 3, unchecked', [[LINUX_DOCUMENT, 'a right click at an element\'s visible point answers once it is sent'],
+    [README, 'a button-3 click that answers once it is released, with no menu check']],
+  'native/linux-engine/src/engine/elements.rs', 'route.press(x, 3, pressing)?; std::thread::sleep(CLICK_HOLD); route.release_button(x, 3)'],
+  ['the drop guard: shared mode, a family whose drop changes the desktop, unless in front', [[README, 'unless the window is already active, focused and fully unobscured']],
+    'native/linux-engine/src/engine/pointer.rs',
+    'if self.cfg.desktop == DesktopMode::Shared && self.family_of(window).is_some_and(|f| f.drop_changes_desktop) => { let standing = self.x.standing(window); let in_front = standing.active && standing.focused && self.x.unobscured(window);'],
+  ['Qt ignores the background wheel always', [[README, 'Qt** ignores synthetic wheel events in the background']], 'native/linux-engine/src/families.rs',
+    'name: "Qt", toolkit: Some("Qt"), toolkit_major: None, classes: &[], drag: DragPacing::NONE, paste: DEFAULT_PASTE, ignores: &[Ignored { kind: Kind::Scroll, when: When::Always, }],'],
+];
+
+test('every behaviour the Linux documents narrow a promise to is the engine\'s', () => {
+  for (const [claim, documents, path, code] of CLAIMS) {
+    assert.ok(source(path).includes(flat(code)), `${path} no longer does it: ${claim}`);
+    for (const [document, phrase] of documents) assert.ok(flat(file(document)).includes(flat(phrase)), `${document} does not say: ${phrase}`);
+  }
+  // Chrome is the one family whose drop changes the desktop, so Electron's and Firefox's drags are never guarded.
+  assert.equal(file('native/linux-engine/src/families.rs').match(/drop_changes_desktop: true/g).length, 1);
+  assert.match(flat(file('native/linux-engine/src/families.rs')), /name: "Chrome",(?:(?!name: ")[^])*drop_changes_desktop: true/, 'and it is Chrome\'s entry');
+});
+
 test('the README\'s Chromium menu line is the engine README\'s, word for word', () => {
   const engine = flat(file('native/linux-engine/README.md'));
   const start = engine.indexOf('In Chromium, a context menu requested on a window that is not focused');

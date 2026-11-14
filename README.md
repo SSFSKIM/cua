@@ -1304,24 +1304,35 @@ and stopped. `accessibility.enabled` checks `IsEnabled`. While the vendor engine
 - **Firefox** takes background pointer input only while the real pointer is inside its window; otherwise `shared` mode
   refuses it with the same sentence (#353, its residue #362). **xterm** ignores background keys, so they are refused in
   `shared` mode.
-- **Context menus.** A requested context menu answers ok only once a menu is seen. Otherwise:
-  `showContextMenu was sent and no menu was seen within 1 s; the application may have shown its own menu or ignored
-  the request; read the window before retrying`. A page that draws its own menu gets this answer (#377). GTK 4's,
-  Firefox's and Qt's menus are not detected (#379).
+- **Context menus.** Only an element's `showContextMenu` accessibility action checks for the menu it asks for (also
+  when it is the fallback of a right click on an element with no visible point): it answers ok only once a menu is
+  seen, and otherwise `showContextMenu was sent and no menu was seen within 1 s; the application may have shown its
+  own menu or ignored the request; read the window before retrying`. A page that draws its own menu gets this answer
+  (#377). GTK 4's, Firefox's and Qt's menus are not detected (#379). A right click at an element's visible point is a
+  button-3 click that answers once it is released, with no menu check.
 - **Chromium's menus** (#378), as the engine states it: In Chromium, a context menu requested on a window that is not
   focused (perform_secondary_action showContextMenu, the right-button fallback, or a window-bound right click) does not
   stay open after the request. To use a menu item, focus the window first where you may (on a shared desktop, only when
   the person allows it), or use the clipboard operations for copy and paste.
 - **A context-menu Copy** that Chrome does not serve within 2 s answers `clipboard update timed out`, and that window's
   menus may then stop opening (#375, #376).
-- **Chromium drags** are refused on a `shared` desktop unless their whole path is visible. A drag into Chrome on a
-  `shared` desktop that starts an HTML5 drag and drop is cancelled before the drop, unless Chrome is already in front.
-- **Late drops.** A drop that lands after the engine answered is reported at the next reply, and the next acting request
-  is refused once. Electron drops answer unconfirmed in 6 to 7.5% of landings (#364). Stated races: #365, #372.
-- **Qt.** Wheel scrolling is ignored by the toolkit. A paste into kate or Qt Creator lands and answers unconfirmed.
-- **Minimized and duplicate windows** refuse input: `Window <id> is minimized; activate it first`, and
-  `Window <id> matches several accessibility windows; close or retitle the duplicates` for duplicates that cannot be
-  told apart.
+- **Chromium drags** are refused on a `shared` desktop unless their whole path is visible. A window-targeted drag on a
+  `shared` desktop into a family whose drop changes the desktop (Chrome; not Electron or Firefox) is watched for a
+  drag and drop, unless the window is already active, focused and fully unobscured: one that starts is cancelled
+  before the drop, or the answer says the cancel may have come too late and the drop may have happened.
+- **Late drops.** A drag that may not have ended as it answered (a drag and drop that started late, a drop its target
+  did not confirm, a failed watch, an idle drag handle released) is reported at the next reply, and the next acting
+  request is refused once. In M4's final drag-handle proof on Electron, 6 of 100 handle drops that landed answered
+  unconfirmed at the gate's window load and 6 of 100 at twice the load, each a block's cold first handle; plain drags
+  and idle drops had none (`docs/evidence/2026-10-28-own-linux-engine/m4/drag-handle/fix3/README.md`, #364). Stated
+  races: #365, #372.
+- **Qt** ignores synthetic wheel events in the background, so on a `shared` desktop a scroll to a Qt window is refused
+  with the device-mode sentence; on a `dedicated` one it activates the window and scrolls through the desktop's own
+  input. A paste into kate or Qt Creator lands and answers unconfirmed.
+- **Minimized windows** refuse input with `Window <id> is minimized; activate it first`. **Duplicate windows** that
+  cannot be told apart refuse reads and the inputs that act through the window's accessibility frame with
+  `Window <id> matches several accessibility windows; close or retitle the duplicates`; an input that needs no
+  accessibility association, such as `pressKey`, is still sent.
 - **Speed.** The measured bar is met except for these declared gaps against the vendor: Chrome's long drop (#358),
   `activate_window` (#373), the hold in a Chromium drop (#263) and the short drop (#269). An Electron key
   release can show in the tree only after the settle (#302).

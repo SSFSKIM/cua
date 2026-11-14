@@ -91,6 +91,9 @@ pub trait Transport {
     fn try_recv(&mut self) -> Result<Option<(u32, CallResult)>>;
     fn in_flight(&self) -> usize;
     fn staged_bytes(&self) -> usize;
+    /// Sends one call and waits for its reply no later than `deadline`, whatever the bus's silence timeout. None
+    /// when the deadline passes first: the call is then abandoned, and its late reply discarded when it comes.
+    fn call_until(&mut self, obj: &ObjRef, field: Field, deadline: std::time::Instant) -> Result<Option<CallResult>>;
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -279,6 +279,17 @@ impl Transport for FakeBus {
     fn staged_bytes(&self) -> usize {
         self.staged()
     }
+
+    /// Every call is answered at once, so every deadline is met.
+    fn call_until(&mut self, obj: &ObjRef, field: Field, _deadline: std::time::Instant) -> Result<Option<CallResult>> {
+        let token = self.send(obj, field)?;
+        loop {
+            let (got, result) = self.recv()?;
+            if got == token {
+                return Ok(Some(result));
+            }
+        }
+    }
 }
 
 const W64: Window = Window { calls: 64, ..WINDOW };

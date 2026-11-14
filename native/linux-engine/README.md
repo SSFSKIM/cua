@@ -80,8 +80,11 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   runs `showContextMenu` (`perform_secondary_action` naming it, a right click's fallback to it when the element has no
   visible point, or a primary click whose action 0 it is) answers ok only once a menu appears: a child of the
   element's application that was not among its children just before the action, holding a `menu item`, polled every
-  20 ms for up to 1 s, the detection the context-menu Copy uses. A menu already open when the action is asked for
-  confirms nothing by itself. When none appears the answer is `menuUnconfirmed`, an error sent after the action, like
+  20 ms for up to 1 s, the detection the context-menu Copy uses. The 1 s is one deadline over every read after the
+  action, the menu's search included: a read still unanswered then is abandoned, so an application that answers
+  slowly or not at all is answered at 1 s, and a menu not seen by then counts as none. A menu already open when the
+  action is asked for confirms nothing by itself. When none appears the answer is `menuUnconfirmed`, an error sent
+  after the action, like
   the paste's unconfirmed answer: `showContextMenu was sent and no menu was seen within 1 s; the application may have
   shown its own menu or ignored the request; read the window before retrying`. A page that handles `contextmenu`
   itself (its own HTML menu) gets that answer too, which says so. The vendor answers ok as soon as the action is asked

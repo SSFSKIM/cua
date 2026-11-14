@@ -273,7 +273,10 @@ pub fn copy(bus: &mut Bus, element: &ObjRef, guard: Guard) -> Result<std::result
             if let Some(sentence) = menu_refused {
                 return Ok(Err(sentence.into()));
             }
-            return Ok(context_menu_item(bus, element, *index as u32, "Copy")?.map(|()| CopyRoute::Menu));
+            return Ok(
+                context_menu_item(bus, element, *index as u32, "Copy", crate::atspi::do_action)?
+                    .map(|()| CopyRoute::Menu),
+            );
         }
     }
     Ok(Err(Refused::from(
@@ -339,19 +342,18 @@ fn editable_copy(
 
 /// Opens the element's context menu and activates its item labelled `label` ([`open_menu`]). Which window opened a
 /// menu the application's children do not say, so only the vendor's own association takes this route.
-fn context_menu_item(
-    bus: &mut Bus,
+fn context_menu_item<T: Transport>(
+    t: &mut T,
     element: &ObjRef,
     action: u32,
     label: &str,
+    do_action: impl Fn(&mut T, &ObjRef, u32) -> Result<std::result::Result<(), String>>,
 ) -> Result<std::result::Result<(), Refused>> {
-    let menu = open_menu(bus, element, Some(label), MENU_WAIT, |bus| {
-        crate::atspi::do_action(bus, element, action)
-    })?;
+    let menu = open_menu(t, element, Some(label), MENU_WAIT, |t| do_action(t, element, action))?;
     Ok(match menu {
         Err(sentence) => Err(sentence.into()),
         // the menu is open: a refusal now says so, and the caller closes it
-        Ok(Menu::Item(item)) => crate::atspi::do_action(bus, &item, 0)?.map_err(|sentence| Refused {
+        Ok(Menu::Item(item)) => do_action(t, &item, 0)?.map_err(|sentence| Refused {
             sentence,
             menu_open: true,
         }),
@@ -384,6 +386,10 @@ pub enum Menu {
 /// one, the new children are searched for the item of that name until it is found or the wait ends. A menu already
 /// open when the action is asked for is among the children before, so it confirms nothing by itself: only a menu
 /// that appears beside it, or replaces it as a new child, does. `open`'s refusal is the answer, with no wait.
+///
+/// The wait is one deadline over every read after `open`, the search included: a read it cuts off is abandoned, not
+/// waited for, and none starts after it. So an application that answers slowly or not at all is answered at the
+/// wait's end, and a menu not seen by then counts as none, whatever a later read would have shown.
 pub fn open_menu<T: Transport>(
     t: &mut T,
     element: &ObjRef,
@@ -395,7 +401,7 @@ pub fn open_menu<T: Transport>(
         bus: element.bus.clone(),
         path: ROOT_PATH.into(),
     };
-    let before: HashSet<ObjRef> = children(t, &app)?.into_iter().collect();
+    let before: HashSet<ObjRef> = children_of(&call_one(t, &app, Field::Children)?).into_iter().collect();
     if let Err(sentence) = open(t)? {
         return Ok(Err(sentence));
     }
@@ -403,20 +409,18 @@ pub fn open_menu<T: Transport>(
     crate::fault::identity(crate::fault::Identity::MenuLookup);
     let deadline = Instant::now() + wait;
     let mut opened = false;
-    loop {
-        for frame in children(t, &app)?.into_iter().filter(|c| !before.contains(c)) {
-            match search_menu(t, &frame, label)? {
+    while let Some(listed) = call_by(t, &app, Field::Children, deadline)? {
+        for frame in children_of(&listed).into_iter().filter(|c| !before.contains(c)) {
+            match search_menu(t, &frame, label, deadline)? {
                 Search::Item(item) => return Ok(Ok(Menu::Item(item))),
                 Search::Items if label.is_none() => return Ok(Ok(Menu::Opened)),
                 Search::Items => opened = true,
                 Search::Nothing => {}
             }
         }
-        if Instant::now() >= deadline {
-            return Ok(Ok(if opened { Menu::Opened } else { Menu::Absent }));
-        }
-        std::thread::sleep(MENU_POLL);
+        std::thread::sleep(MENU_POLL.min(deadline.saturating_duration_since(Instant::now())));
     }
+    Ok(Ok(if opened { Menu::Opened } else { Menu::Absent }))
 }
 
 /// One call, awaited alone: nothing else is in flight while a menu is looked for.
@@ -430,8 +434,12 @@ fn call_one<T: Transport>(t: &mut T, obj: &ObjRef, field: Field) -> Result<CallR
     }
 }
 
-fn children<T: Transport>(t: &mut T, obj: &ObjRef) -> Result<Vec<ObjRef>> {
-    Ok(children_of(&call_one(t, obj, Field::Children)?))
+/// One call, awaited alone no later than `deadline`; None once the deadline has passed, with nothing sent after it.
+fn call_by<T: Transport>(t: &mut T, obj: &ObjRef, field: Field, deadline: Instant) -> Result<Option<CallResult>> {
+    if Instant::now() >= deadline {
+        return Ok(None);
+    }
+    t.call_until(obj, field, deadline)
 }
 
 /// What a search of a new child found: the item asked for, menu items but not it, or no menu item at all.
@@ -441,8 +449,9 @@ enum Search {
     Nothing,
 }
 
-/// A preorder search of `frame` for a `menu item`: the first one when `label` is None, else one named `label`.
-fn search_menu<T: Transport>(t: &mut T, frame: &ObjRef, label: Option<&str>) -> Result<Search> {
+/// A preorder search of `frame` for a `menu item`: the first one when `label` is None, else one named `label`. The
+/// deadline ends it as it ends the wait, with what it had found by then.
+fn search_menu<T: Transport>(t: &mut T, frame: &ObjRef, label: Option<&str>, deadline: Instant) -> Result<Search> {
     let mut stack = vec![(frame.clone(), 0u32)];
     let mut seen = 0;
     let mut items = false;
@@ -451,13 +460,17 @@ fn search_menu<T: Transport>(t: &mut T, frame: &ObjRef, label: Option<&str>) -> 
         if seen > MENU_NODES {
             break;
         }
-        let role = call_one(t, &obj, Field::Role)?;
+        let Some(role) = call_by(t, &obj, Field::Role, deadline)? else {
+            break;
+        };
         if role.as_ref().ok().and_then(|v| v.first()).and_then(Value::as_str) == Some("menu item") {
             let Some(label) = label else {
                 return Ok(Search::Items);
             };
             items = true;
-            let name = call_one(t, &obj, Field::Name)?;
+            let Some(name) = call_by(t, &obj, Field::Name, deadline)? else {
+                break;
+            };
             if let Some(Value::Str(name)) = name.as_ref().ok().and_then(|v| v.first()).map(Value::unvariant)
                 && menu_item_is(name, label)
             {
@@ -466,7 +479,10 @@ fn search_menu<T: Transport>(t: &mut T, frame: &ObjRef, label: Option<&str>) -> 
             continue;
         }
         if depth < MENU_DEPTH {
-            stack.extend(children(t, &obj)?.into_iter().rev().map(|c| (c, depth + 1)));
+            let Some(children) = call_by(t, &obj, Field::Children, deadline)? else {
+                break;
+            };
+            stack.extend(children_of(&children).into_iter().rev().map(|c| (c, depth + 1)));
         }
     }
     Ok(if items { Search::Items } else { Search::Nothing })
@@ -574,6 +590,13 @@ pub(crate) mod tests {
 
         fn staged_bytes(&self) -> usize {
             0
+        }
+
+        fn call_until(&mut self, obj: &ObjRef, field: Field, _deadline: Instant) -> Result<Option<CallResult>> {
+            let serial = self.send(obj, field)?;
+            let (got, result) = self.recv()?;
+            assert_eq!(got, serial, "nothing else is in flight");
+            Ok(Some(result))
         }
     }
 
@@ -697,13 +720,19 @@ pub(crate) mod tests {
 
     /// A fake bus for the context-menu detection: objects with a role, a name and children, answering `GetRoleName`,
     /// the name and `GetChildren` one call at a time. `appear` holds children the application gains at its `n`th
-    /// read of its children after the action, as a menu that takes a few polls to open.
+    /// read of its children after the action, as a menu that takes a few polls to open; `appear_after` one it gains
+    /// at its first read that long after the action. After the action, `latency` delays each reply, and `hung` stops
+    /// the application answering at all, so a wait without a deadline ends only at the bus's silence timeout.
     #[derive(Default)]
     pub(crate) struct MenuBus {
         nodes: HashMap<String, (&'static str, &'static str, Vec<String>)>,
         pub(crate) appear: Vec<(u32, String)>,
+        pub(crate) appear_after: Option<(Duration, String)>,
+        pub(crate) latency: Option<fn(&str, Field) -> Duration>,
+        pub(crate) hung: bool,
         pub(crate) app_reads: u32,
         pub(crate) acted: bool,
+        acted_at: Option<Instant>,
         sent: VecDeque<(u32, String, Field)>,
         /// The calls sent so far.
         pub(crate) next: u32,
@@ -736,10 +765,57 @@ pub(crate) mod tests {
             &mut self.nodes.get_mut(APP).expect("the application").2
         }
 
-        /// The action: the children `appear` lists from their read on.
+        /// The action: the children `appear` and `appear_after` list from their read on.
         pub(crate) fn act(&mut self) -> Result<std::result::Result<(), String>> {
             self.acted = true;
+            self.acted_at = Some(Instant::now());
             Ok(Ok(()))
+        }
+
+        /// How long the reply to a call sent now takes; None when it never comes.
+        fn delay(&self, path: &str, field: Field) -> Option<Duration> {
+            match (self.acted, self.hung, self.latency) {
+                (true, true, _) => None,
+                (true, false, Some(latency)) => Some(latency(path, field)),
+                _ => Some(Duration::ZERO),
+            }
+        }
+
+        fn answer(&mut self, path: &str, field: Field) -> CallResult {
+            if path == APP
+                && field == Field::Children
+                && let Some(acted_at) = self.acted_at
+            {
+                self.app_reads += 1;
+                let reads = self.app_reads;
+                let mut due: Vec<String> = self
+                    .appear
+                    .iter()
+                    .filter(|(n, _)| *n == reads)
+                    .map(|(_, c)| c.clone())
+                    .collect();
+                if let Some((after, child)) = self.appear_after.clone()
+                    && acted_at.elapsed() >= after
+                    && !self.app_children().contains(&child)
+                {
+                    due.push(child);
+                }
+                self.app_children().extend(due);
+            }
+            let Some((role, name, children)) = self.nodes.get(path).cloned() else {
+                return Err("unknown object".into());
+            };
+            match field {
+                Field::Role => Ok(vec![Value::Str(role.into())]),
+                Field::Name => Ok(vec![Value::Variant(Box::new(Value::Str(name.into())))]),
+                Field::Children => Ok(vec![Value::Array(
+                    children
+                        .iter()
+                        .map(|c| Value::Struct(vec![Value::Str(":1.2".into()), Value::Path(c.clone())]))
+                        .collect(),
+                )]),
+                other => panic!("unexpected {other:?}"),
+            }
         }
     }
 
@@ -751,34 +827,19 @@ pub(crate) mod tests {
             Ok(serial)
         }
 
+        /// Waits as `Bus::recv` does: a reply that has not come within the bus's silence timeout fails its call.
         fn recv(&mut self) -> Result<(u32, CallResult)> {
             let (serial, path, field) = self.sent.pop_front().expect("a call is outstanding");
-            if path == APP && field == Field::Children && self.acted {
-                self.app_reads += 1;
-                let reads = self.app_reads;
-                let due: Vec<String> = self
-                    .appear
-                    .iter()
-                    .filter(|(n, _)| *n == reads)
-                    .map(|(_, c)| c.clone())
-                    .collect();
-                self.app_children().extend(due);
+            match self.delay(&path, field) {
+                Some(delay) if delay < crate::dbus::IO_TIMEOUT => {
+                    std::thread::sleep(delay);
+                    Ok((serial, self.answer(&path, field)))
+                }
+                _ => {
+                    std::thread::sleep(crate::dbus::IO_TIMEOUT);
+                    Ok((serial, Err("Resource temporarily unavailable (os error 11)".into())))
+                }
             }
-            let Some((role, name, children)) = self.nodes.get(&path).cloned() else {
-                return Ok((serial, Err("unknown object".into())));
-            };
-            let result: CallResult = match field {
-                Field::Role => Ok(vec![Value::Str(role.into())]),
-                Field::Name => Ok(vec![Value::Variant(Box::new(Value::Str(name.into())))]),
-                Field::Children => Ok(vec![Value::Array(
-                    children
-                        .iter()
-                        .map(|c| Value::Struct(vec![Value::Str(":1.2".into()), Value::Path(c.clone())]))
-                        .collect(),
-                )]),
-                other => panic!("unexpected {other:?}"),
-            };
-            Ok((serial, result))
         }
 
         fn try_recv(&mut self) -> Result<Option<(u32, CallResult)>> {
@@ -792,6 +853,23 @@ pub(crate) mod tests {
         fn staged_bytes(&self) -> usize {
             0
         }
+
+        /// Waits as `Bus::calls_until` does: until the reply or the deadline, whichever is first, and a reply that
+        /// would come after the deadline is abandoned.
+        fn call_until(&mut self, obj: &ObjRef, field: Field, deadline: Instant) -> Result<Option<CallResult>> {
+            self.next += 1;
+            let left = deadline.saturating_duration_since(Instant::now());
+            match self.delay(&obj.path, field) {
+                Some(delay) if delay <= left => {
+                    std::thread::sleep(delay);
+                    Ok(Some(self.answer(&obj.path, field)))
+                }
+                _ => {
+                    std::thread::sleep(left);
+                    Ok(None)
+                }
+            }
+        }
     }
 
     /// The application holding its main window, with `/m` and `/m2` menus ready to appear.
@@ -803,7 +881,10 @@ pub(crate) mod tests {
             .menu("/m2", &["Back", "Inspect"])
     }
 
-    const WAIT: Duration = Duration::from_millis(60);
+    pub(crate) const WAIT: Duration = Duration::from_millis(100);
+    /// How long past the deadline an answer may come: the call in flight then is abandoned, not waited for, so this
+    /// is a wake-up's time, far under the bus's 2 s silence timeout that an unbounded read waits.
+    pub(crate) const ABANDON: Duration = Duration::from_millis(50);
 
     fn open(bus: &mut MenuBus, label: Option<&str>) -> std::result::Result<Menu, String> {
         open_menu(bus, &obj("/main/button"), label, WAIT, MenuBus::act).unwrap()
@@ -890,6 +971,81 @@ pub(crate) mod tests {
         // no menu at all
         let mut bus = app();
         assert_eq!(open(&mut bus, Some("Copy")), Ok(Menu::Absent));
+    }
+
+    /// `open_menu` on `bus` for `label`, with how long it took from just before the action.
+    fn timed(bus: &mut MenuBus, label: Option<&str>) -> (std::result::Result<Menu, String>, Duration) {
+        let started = Instant::now();
+        let menu = open(bus, label);
+        (menu, started.elapsed())
+    }
+
+    #[test]
+    fn a_reply_that_would_come_after_the_deadline_is_no_menu_and_is_not_waited_for() {
+        for label in [None, Some("Copy")] {
+            // the application's children, read after the action, answer 500 ms late, with the menu among them
+            let mut bus = app();
+            bus.appear = vec![(1, "/m".into())];
+            bus.latency = Some(|path, field| {
+                if path == APP && field == Field::Children {
+                    Duration::from_millis(500)
+                } else {
+                    Duration::ZERO
+                }
+            });
+            let (menu, took) = timed(&mut bus, label);
+            assert_eq!(menu, Ok(Menu::Absent), "{label:?}");
+            assert!(took >= WAIT && took < WAIT + ABANDON, "{label:?}: {took:?}");
+        }
+    }
+
+    #[test]
+    fn a_menu_first_visible_after_the_deadline_is_no_menu() {
+        for label in [None, Some("Copy")] {
+            let mut bus = app();
+            bus.appear_after = Some((WAIT, "/m".into()));
+            let (menu, took) = timed(&mut bus, label);
+            assert_eq!(menu, Ok(Menu::Absent), "{label:?}");
+            assert!(took >= WAIT && took < WAIT + ABANDON, "{label:?}: {took:?}");
+        }
+    }
+
+    #[test]
+    fn a_search_the_deadline_cuts_off_is_no_menu() {
+        for label in [None, Some("Copy")] {
+            // the menu is a new child at once, but each role in it takes 40 ms: the deadline comes before its items
+            let mut bus = app();
+            bus.appear = vec![(1, "/m".into())];
+            bus.latency = Some(|_, field| {
+                if field == Field::Role {
+                    Duration::from_millis(40)
+                } else {
+                    Duration::ZERO
+                }
+            });
+            let (menu, took) = timed(&mut bus, label);
+            assert_eq!(menu, Ok(Menu::Absent), "{label:?}");
+            assert!(took >= WAIT && took < WAIT + ABANDON, "{label:?}: {took:?}");
+        }
+    }
+
+    #[test]
+    fn an_application_that_stops_answering_after_the_action_is_answered_at_the_wait_s_end() {
+        // the context-menu Copy: refused as no menu, at MENU_WAIT plus one call's abandonment, not after the bus's
+        // silence timeout
+        let mut bus = app();
+        bus.hung = true;
+        let started = Instant::now();
+        let copied = context_menu_item(&mut bus, &obj("/main/button"), 1, "Copy", |bus, _, _| bus.act()).unwrap();
+        let took = started.elapsed();
+        assert_eq!(
+            copied,
+            Err(Refused::from(
+                "context menu did not open; no clipboard action was sent".to_string()
+            ))
+        );
+        assert!(bus.acted, "the action was sent");
+        assert!(took >= MENU_WAIT && took < MENU_WAIT + ABANDON, "{took:?}");
     }
 
     #[test]

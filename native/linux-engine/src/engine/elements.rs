@@ -491,7 +491,7 @@ mod tests {
         );
     }
 
-    const WAIT: std::time::Duration = std::time::Duration::from_millis(60);
+    const WAIT: std::time::Duration = crate::copy::tests::WAIT;
 
     fn run(bus: &mut crate::copy::tests::MenuBus, name: &str) -> std::result::Result<(), String> {
         let target = crate::copy::tests::obj("/main/button");
@@ -523,6 +523,38 @@ mod tests {
         let mut bus = crate::copy::tests::app();
         bus.app_children().push("/m".into());
         assert_eq!(run(&mut bus, "showContextMenu"), Err(menu_unconfirmed()));
+    }
+
+    #[test]
+    fn a_requested_context_menu_in_an_application_that_stops_answering_is_menu_unconfirmed_at_the_wait_s_end() {
+        // after the action, no call is answered: the answer comes at MENU_WAIT plus one call's abandonment, not
+        // after the bus's silence timeout
+        let target = crate::copy::tests::obj("/main/button");
+        let mut bus = crate::copy::tests::app();
+        bus.hung = true;
+        let started = std::time::Instant::now();
+        let answer = run_action(
+            &mut bus,
+            &target,
+            "showContextMenu",
+            copy::MENU_WAIT,
+            crate::copy::tests::MenuBus::act,
+        );
+        let took = started.elapsed();
+        assert_eq!(answer.unwrap_err().to_string(), menu_unconfirmed());
+        assert!(bus.acted, "the action was sent");
+        assert!(
+            took >= copy::MENU_WAIT && took < copy::MENU_WAIT + crate::copy::tests::ABANDON,
+            "{took:?}"
+        );
+        // a menu that a late reply would have shown is no menu either
+        let mut bus = crate::copy::tests::app();
+        bus.appear = vec![(1, "/m".into())];
+        bus.latency = Some(|_, _| std::time::Duration::from_millis(500));
+        let started = std::time::Instant::now();
+        assert_eq!(run(&mut bus, "showContextMenu"), Err(menu_unconfirmed()));
+        let took = started.elapsed();
+        assert!(took >= WAIT && took < WAIT + crate::copy::tests::ABANDON, "{took:?}");
     }
 
     #[test]

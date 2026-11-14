@@ -36,6 +36,13 @@ impl Transport for Bus {
     fn staged_bytes(&self) -> usize {
         Bus::staged_bytes(self)
     }
+
+    fn call_until(&mut self, obj: &ObjRef, field: Field, deadline: std::time::Instant) -> Result<Option<CallResult>> {
+        let results = tree::with_call(obj, field, |call| {
+            Bus::calls_until(self, std::slice::from_ref(call), deadline)
+        })?;
+        Ok(results.map(|mut results| results.remove(0)))
+    }
 }
 
 /// The accessibility bus address: the root window's `AT_SPI_BUS` property, else `org.a11y.Bus.GetAddress` on the

@@ -56,25 +56,28 @@ impl Engine {
                 },
             )
         });
-        if let Err(refused) = copied? {
-            if refused.menu_open {
-                // The menu the Copy opened is closed, so the request leaves none behind: Escape through the
-                // background route. The refusal stays the answer, saying whether the Escape was sent.
-                let Engine { x, inputs, .. } = self;
-                let escape = inputs.with_route(x, Target::Window(info.id), |x, route, _| {
-                    let held = route.acquire(x, &chord_keycodes(x, "Escape")?)?;
-                    route.release(x, &held)
-                });
-                bail!(copy::after_escape(&refused.sentence, escape.as_ref().map(|_| ())));
+        let route = match copied? {
+            Ok(route) => route,
+            Err(refused) => {
+                if refused.menu_open {
+                    // The menu the Copy opened is closed, so the request leaves none behind: Escape through the
+                    // background route. The refusal stays the answer, saying whether the Escape was sent.
+                    let Engine { x, inputs, .. } = self;
+                    let escape = inputs.with_route(x, Target::Window(info.id), |x, route, _| {
+                        let held = route.acquire(x, &chord_keycodes(x, "Escape")?)?;
+                        route.release(x, &held)
+                    });
+                    bail!(copy::after_escape(&refused.sentence, escape.as_ref().map(|_| ())));
+                }
+                bail!(refused.sentence);
             }
-            bail!(refused.sentence);
-        }
+        };
         let clipboard = self
             .clipboard
             .as_mut()
             .ok_or_else(|| anyhow!("clipboard connection is gone"))?;
         if !clipboard.wait_for_change(before, COPY_WAIT)? {
-            bail!("clipboard update timed out");
+            bail!(copy::timed_out(route));
         }
         if clipboard.owner_window()? == x11rb::NONE {
             bail!("Copy cleared the clipboard");

@@ -9,6 +9,8 @@ mod handle;
 mod identity_faults;
 mod idle_watchdog;
 mod keyboard;
+#[cfg(test)]
+mod menu_faults;
 mod paste;
 #[cfg(test)]
 mod paste_faults;

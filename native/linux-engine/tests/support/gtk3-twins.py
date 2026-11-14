@@ -14,7 +14,11 @@ when its first entry takes the focus, `{"focus": "other", "window": n}` when its
 | "closed", "window": n}` as a context menu opens and once it has closed and gone, and `{"copied": n}` when a menu's Copy is activated, so the test reads what each window did.
 
 It reads commands on stdin, one a line: `popup <n>` opens window n's context menu as its action would, `popdown`
-closes every open context menu, `focus <entry|other> <n>` moves window n's focus to that entry. Killed by the test.
+closes every open context menu, `focus <entry|other> <n>` moves window n's focus to that entry; and, for the menu's
+detection (candidate 3): `ignore` makes `showContextMenu` answer true and open nothing, as an application that ignores
+it does, `unshow <n>` takes `showing` from `menu-n`'s states, so a right click on it finds no visible point and falls
+back to the action, and `late <ms>` delays a menu Copy's clipboard change by `ms`, as Chrome served one late once
+continued (task 77's forced stall). Killed by the test.
 
 usage: gtk3-twins.py <title> <count> <width> <height> [entry|menu] [labels, comma-separated]
 """
@@ -43,6 +47,7 @@ def say(record):
 
 menus = {}
 widgets = {}
+behaviour = {'ignore': False, 'late': 0}
 
 
 def popup(n):
@@ -61,8 +66,16 @@ def popup(n):
 
 
 def copy(n):
+    if behaviour['late']:
+        GLib.timeout_add(behaviour['late'], copied, n)
+    else:
+        copied(n)
+
+
+def copied(n):
     Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(f'menu-copy-{n}', -1)
     say({'copied': n})
+    return False
 
 
 def closed(n):
@@ -87,8 +100,15 @@ class MenuAccessible(Gtk.WidgetAccessible, Atk.Action):
     def do_do_action(self, i):
         if i != 0:
             return False
-        GLib.idle_add(popup, self.get_widget().window_n)
+        if not behaviour['ignore']:
+            GLib.idle_add(popup, self.get_widget().window_n)
         return True
+
+    def do_ref_state_set(self):
+        states = Gtk.WidgetAccessible.do_ref_state_set(self)
+        if getattr(self.get_widget(), 'unshown', False):
+            states.remove_state(Atk.StateType.SHOWING)
+        return states
 
 
 # Atk.Action's get_name shares its name with Atk.Object's, which PyGObject cannot tell apart in a subclass, so it is
@@ -119,6 +139,12 @@ def command(source, _condition):
             menu.deactivate()  # pops it down and says so, as an Escape or a click elsewhere would
     elif words[:1] == ['focus']:
         widgets[int(words[2])][words[1]].grab_focus()
+    elif words[:1] == ['ignore']:
+        behaviour['ignore'] = True
+    elif words[:1] == ['unshow']:
+        widgets[int(words[1])]['menu'].unshown = True
+    elif words[:1] == ['late']:
+        behaviour['late'] = int(words[1])
     return True
 
 

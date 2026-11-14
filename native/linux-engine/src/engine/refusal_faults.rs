@@ -35,7 +35,7 @@ fn after_click(cause: &str) -> String {
 }
 
 /// One window of the fixture, active and focused, read by a fresh engine, the clipboard holding the fixture's `before`.
-fn single(tag: &str, args: &[&str]) -> Option<(Engine, Fixture, u32)> {
+pub(super) fn single(tag: &str, args: &[&str]) -> Option<(Engine, Fixture, u32)> {
     let fixture = fixture(tag, 1, args)?;
     let window = fixture.windows[0];
     x_focus(window);
@@ -82,7 +82,7 @@ fn paste_into(engine: &mut Engine, window: u32, value: &str) -> Result<Value, St
 }
 
 /// The fixture's records with `key`.
-fn records(fixture: &Fixture, key: &str) -> Vec<Value> {
+pub(super) fn records(fixture: &Fixture, key: &str) -> Vec<Value> {
     sleep(Duration::from_millis(200));
     fixture
         .log

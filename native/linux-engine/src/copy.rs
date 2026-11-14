@@ -20,7 +20,7 @@ const FOCUSED: u32 = 12;
 /// Calls in flight at most while the focus is looked for: the tree read's W.
 const IN_FLIGHT: usize = 32;
 /// How long a context menu may take to open and list its items.
-const MENU_WAIT: Duration = Duration::from_secs(1);
+pub const MENU_WAIT: Duration = Duration::from_secs(1);
 const MENU_POLL: Duration = Duration::from_millis(20);
 /// A context menu's own tree is small; these bound the search in a frame that is not one.
 const MENU_NODES: usize = 500;
@@ -221,8 +221,30 @@ pub struct Guard<'a, 'c> {
     pub menu_refused: Option<String>,
 }
 
-/// Copies from the focused element by the vendor's route choice; why not when it cannot, or when `guard` refuses.
-pub fn copy(bus: &mut Bus, element: &ObjRef, guard: Guard) -> Result<std::result::Result<(), Refused>> {
+/// The route a Copy took: the element's own `CopyText`, or its context menu's Copy item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyRoute {
+    Text,
+    Menu,
+}
+
+/// The answer to a Copy whose clipboard change did not come within `COPY_WAIT`. The application may still serve it
+/// later; and after a context-menu Copy, Chrome's menus on that window have been seen to stay unresponsive (task 77's
+/// L3a: every later Copy then found no menu). Nothing is sent to recover, since no recovery is proven harmless to the
+/// page (an Escape with no menu up reaches it).
+pub fn timed_out(route: CopyRoute) -> &'static str {
+    match route {
+        CopyRoute::Text => "clipboard update timed out",
+        CopyRoute::Menu => {
+            "clipboard update timed out; the application may still complete the Copy later, and its menus on this \
+             window may stay unresponsive"
+        }
+    }
+}
+
+/// Copies from the focused element by the vendor's route choice, answering the route it took; why not when it cannot,
+/// or when `guard` refuses.
+pub fn copy(bus: &mut Bus, element: &ObjRef, guard: Guard) -> Result<std::result::Result<CopyRoute, Refused>> {
     let Guard {
         window,
         confirm,
@@ -234,7 +256,9 @@ pub fn copy(bus: &mut Bus, element: &ObjRef, guard: Guard) -> Result<std::result
         _ => Vec::new(),
     };
     if interfaces.iter().any(|i| i == EDITABLE_TEXT) {
-        return Ok(editable_copy(bus, element, window, confirm)?.map_err(Refused::from));
+        return Ok(editable_copy(bus, element, window, confirm)?
+            .map(|()| CopyRoute::Text)
+            .map_err(Refused::from));
     }
     if interfaces.iter().any(|i| i == tree::ACTION)
         && let Ok(names) = crate::atspi::action_names(bus, element)?
@@ -249,7 +273,7 @@ pub fn copy(bus: &mut Bus, element: &ObjRef, guard: Guard) -> Result<std::result
             if let Some(sentence) = menu_refused {
                 return Ok(Err(sentence.into()));
             }
-            return context_menu_item(bus, element, *index as u32, "Copy");
+            return Ok(context_menu_item(bus, element, *index as u32, "Copy")?.map(|()| CopyRoute::Menu));
         }
     }
     Ok(Err(Refused::from(
@@ -313,90 +337,143 @@ fn editable_copy(
     .map(|_| ()))
 }
 
-/// Opens the element's context menu and activates its item labelled `label`: the menu is a new child of the
-/// element's application, searched for a `menu item` of that name until it appears or the wait ends. Which window
-/// opened a menu the application's children do not say, so only the vendor's own association takes this route.
+/// Opens the element's context menu and activates its item labelled `label` ([`open_menu`]). Which window opened a
+/// menu the application's children do not say, so only the vendor's own association takes this route.
 fn context_menu_item(
     bus: &mut Bus,
     element: &ObjRef,
     action: u32,
     label: &str,
 ) -> Result<std::result::Result<(), Refused>> {
+    let menu = open_menu(bus, element, Some(label), MENU_WAIT, |bus| {
+        crate::atspi::do_action(bus, element, action)
+    })?;
+    Ok(match menu {
+        Err(sentence) => Err(sentence.into()),
+        // the menu is open: a refusal now says so, and the caller closes it
+        Ok(Menu::Item(item)) => crate::atspi::do_action(bus, &item, 0)?.map_err(|sentence| Refused {
+            sentence,
+            menu_open: true,
+        }),
+        Ok(Menu::Opened) => Err(Refused {
+            sentence: format!("native menu opened without an available {label}; no clipboard action was sent"),
+            menu_open: true,
+        }),
+        // A menu that opens after the wait is not seen, and so not closed: an Escape sent without one open would
+        // reach the application itself.
+        Ok(Menu::Absent) => Err("context menu did not open; no clipboard action was sent"
+            .to_string()
+            .into()),
+    })
+}
+
+/// What a context menu asked for showed ([`open_menu`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Menu {
+    /// A menu appeared, holding the item asked for.
+    Item(ObjRef),
+    /// A menu appeared; when an item was asked for, it holds none of that label.
+    Opened,
+    /// No menu appeared within the wait.
+    Absent,
+}
+
+/// Asks for `element`'s context menu with `open` (its `showContextMenu` action) and watches for it: the detection
+/// every caller of that action shares. A menu is a child of the element's application that was not among its
+/// children just before `open`, holding at least one `menu item`. Without `label` the first such menu confirms; with
+/// one, the new children are searched for the item of that name until it is found or the wait ends. A menu already
+/// open when the action is asked for is among the children before, so it confirms nothing by itself: only a menu
+/// that appears beside it, or replaces it as a new child, does. `open`'s refusal is the answer, with no wait.
+pub fn open_menu<T: Transport>(
+    t: &mut T,
+    element: &ObjRef,
+    label: Option<&str>,
+    wait: Duration,
+    open: impl FnOnce(&mut T) -> Result<std::result::Result<(), String>>,
+) -> Result<std::result::Result<Menu, String>> {
     let app = ObjRef {
         bus: element.bus.clone(),
         path: ROOT_PATH.into(),
     };
-    let app_children = |bus: &mut Bus| -> Result<Vec<ObjRef>> {
-        Ok(children_of(&tree::with_call(&app, Field::Children, |c| bus.call(c))?))
-    };
-    let before: HashSet<ObjRef> = app_children(bus)?.into_iter().collect();
-    if let Err(e) = crate::atspi::do_action(bus, element, action)? {
-        return Ok(Err(e.into()));
+    let before: HashSet<ObjRef> = children(t, &app)?.into_iter().collect();
+    if let Err(sentence) = open(t)? {
+        return Ok(Err(sentence));
     }
     #[cfg(test)]
     crate::fault::identity(crate::fault::Identity::MenuLookup);
-    let deadline = Instant::now() + MENU_WAIT;
+    let deadline = Instant::now() + wait;
     let mut opened = false;
     loop {
-        for frame in app_children(bus)?.into_iter().filter(|c| !before.contains(c)) {
-            let (item, items) = find_menu_item(bus, &frame, label)?;
-            opened |= items > 0;
-            if let Some(item) = item {
-                // the menu is open: a refusal now says so, and the caller closes it
-                return Ok(crate::atspi::do_action(bus, &item, 0)?.map_err(|sentence| Refused {
-                    sentence,
-                    menu_open: true,
-                }));
+        for frame in children(t, &app)?.into_iter().filter(|c| !before.contains(c)) {
+            match search_menu(t, &frame, label)? {
+                Search::Item(item) => return Ok(Ok(Menu::Item(item))),
+                Search::Items if label.is_none() => return Ok(Ok(Menu::Opened)),
+                Search::Items => opened = true,
+                Search::Nothing => {}
             }
         }
         if Instant::now() >= deadline {
-            return Ok(Err(if opened {
-                Refused {
-                    sentence: format!("native menu opened without an available {label}; no clipboard action was sent"),
-                    menu_open: true,
-                }
-            } else {
-                // A menu that opens after the wait is not seen, and so not closed: an Escape sent without one open
-                // would reach the application itself.
-                "context menu did not open; no clipboard action was sent"
-                    .to_string()
-                    .into()
-            }));
+            return Ok(Ok(if opened { Menu::Opened } else { Menu::Absent }));
         }
         std::thread::sleep(MENU_POLL);
     }
 }
 
-/// A preorder search of `frame` for a `menu item` named `label`; also how many menu items it saw.
-fn find_menu_item(bus: &mut Bus, frame: &ObjRef, label: &str) -> Result<(Option<ObjRef>, usize)> {
+/// One call, awaited alone: nothing else is in flight while a menu is looked for.
+fn call_one<T: Transport>(t: &mut T, obj: &ObjRef, field: Field) -> Result<CallResult> {
+    let token = t.send(obj, field)?;
+    loop {
+        let (got, result) = t.recv()?;
+        if got == token {
+            return Ok(result);
+        }
+    }
+}
+
+fn children<T: Transport>(t: &mut T, obj: &ObjRef) -> Result<Vec<ObjRef>> {
+    Ok(children_of(&call_one(t, obj, Field::Children)?))
+}
+
+/// What a search of a new child found: the item asked for, menu items but not it, or no menu item at all.
+enum Search {
+    Item(ObjRef),
+    Items,
+    Nothing,
+}
+
+/// A preorder search of `frame` for a `menu item`: the first one when `label` is None, else one named `label`.
+fn search_menu<T: Transport>(t: &mut T, frame: &ObjRef, label: Option<&str>) -> Result<Search> {
     let mut stack = vec![(frame.clone(), 0u32)];
     let mut seen = 0;
-    let mut items = 0;
+    let mut items = false;
     while let Some((obj, depth)) = stack.pop() {
         seen += 1;
         if seen > MENU_NODES {
             break;
         }
-        if crate::atspi::role_name(bus, &obj)?.as_deref() == Some("menu item") {
-            items += 1;
-            let name = tree::with_call(&obj, Field::Name, |c| bus.call(c))?;
+        let role = call_one(t, &obj, Field::Role)?;
+        if role.as_ref().ok().and_then(|v| v.first()).and_then(Value::as_str) == Some("menu item") {
+            let Some(label) = label else {
+                return Ok(Search::Items);
+            };
+            items = true;
+            let name = call_one(t, &obj, Field::Name)?;
             if let Some(Value::Str(name)) = name.as_ref().ok().and_then(|v| v.first()).map(Value::unvariant)
                 && menu_item_is(name, label)
             {
-                return Ok((Some(obj), items));
+                return Ok(Search::Item(obj));
             }
             continue;
         }
         if depth < MENU_DEPTH {
-            let children = children_of(&tree::with_call(&obj, Field::Children, |c| bus.call(c))?);
-            stack.extend(children.into_iter().rev().map(|c| (c, depth + 1)));
+            stack.extend(children(t, &obj)?.into_iter().rev().map(|c| (c, depth + 1)));
         }
     }
-    Ok((None, items))
+    Ok(if items { Search::Items } else { Search::Nothing })
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::collections::VecDeque;
 
@@ -500,7 +577,7 @@ mod tests {
         }
     }
 
-    fn obj(path: &str) -> ObjRef {
+    pub(crate) fn obj(path: &str) -> ObjRef {
         ObjRef {
             bus: ":1.2".into(),
             path: path.into(),
@@ -615,6 +692,213 @@ mod tests {
             focused(&mut t, &obj("/d0")).unwrap(),
             None,
             "a focus deeper than 63 is not reached"
+        );
+    }
+
+    /// A fake bus for the context-menu detection: objects with a role, a name and children, answering `GetRoleName`,
+    /// the name and `GetChildren` one call at a time. `appear` holds children the application gains at its `n`th
+    /// read of its children after the action, as a menu that takes a few polls to open.
+    #[derive(Default)]
+    pub(crate) struct MenuBus {
+        nodes: HashMap<String, (&'static str, &'static str, Vec<String>)>,
+        pub(crate) appear: Vec<(u32, String)>,
+        pub(crate) app_reads: u32,
+        pub(crate) acted: bool,
+        sent: VecDeque<(u32, String, Field)>,
+        /// The calls sent so far.
+        pub(crate) next: u32,
+    }
+
+    const APP: &str = "/org/a11y/atspi/accessible/root";
+
+    impl MenuBus {
+        fn node(mut self, path: &str, role: &'static str, name: &'static str, children: &[&str]) -> MenuBus {
+            self.nodes.insert(
+                path.into(),
+                (role, name, children.iter().map(|c| c.to_string()).collect()),
+            );
+            self
+        }
+
+        /// A menu of `items` (menu item names) under a window `path`, not yet the application's child.
+        fn menu(self, path: &str, items: &[&'static str]) -> MenuBus {
+            let menu = format!("{path}/menu");
+            let paths: Vec<String> = (0..items.len()).map(|i| format!("{menu}/{i}")).collect();
+            let refs: Vec<&str> = paths.iter().map(String::as_str).collect();
+            let mut bus = self.node(path, "window", "", &[&menu]).node(&menu, "menu", "", &refs);
+            for (p, name) in paths.iter().zip(items) {
+                bus = bus.node(p, "menu item", name, &[]);
+            }
+            bus
+        }
+
+        pub(crate) fn app_children(&mut self) -> &mut Vec<String> {
+            &mut self.nodes.get_mut(APP).expect("the application").2
+        }
+
+        /// The action: the children `appear` lists from their read on.
+        pub(crate) fn act(&mut self) -> Result<std::result::Result<(), String>> {
+            self.acted = true;
+            Ok(Ok(()))
+        }
+    }
+
+    impl Transport for MenuBus {
+        fn send(&mut self, obj: &ObjRef, field: Field) -> Result<u32> {
+            let serial = self.next;
+            self.next += 1;
+            self.sent.push_back((serial, obj.path.clone(), field));
+            Ok(serial)
+        }
+
+        fn recv(&mut self) -> Result<(u32, CallResult)> {
+            let (serial, path, field) = self.sent.pop_front().expect("a call is outstanding");
+            if path == APP && field == Field::Children && self.acted {
+                self.app_reads += 1;
+                let reads = self.app_reads;
+                let due: Vec<String> = self
+                    .appear
+                    .iter()
+                    .filter(|(n, _)| *n == reads)
+                    .map(|(_, c)| c.clone())
+                    .collect();
+                self.app_children().extend(due);
+            }
+            let Some((role, name, children)) = self.nodes.get(&path).cloned() else {
+                return Ok((serial, Err("unknown object".into())));
+            };
+            let result: CallResult = match field {
+                Field::Role => Ok(vec![Value::Str(role.into())]),
+                Field::Name => Ok(vec![Value::Variant(Box::new(Value::Str(name.into())))]),
+                Field::Children => Ok(vec![Value::Array(
+                    children
+                        .iter()
+                        .map(|c| Value::Struct(vec![Value::Str(":1.2".into()), Value::Path(c.clone())]))
+                        .collect(),
+                )]),
+                other => panic!("unexpected {other:?}"),
+            };
+            Ok((serial, result))
+        }
+
+        fn try_recv(&mut self) -> Result<Option<(u32, CallResult)>> {
+            Ok(None)
+        }
+
+        fn in_flight(&self) -> usize {
+            self.sent.len()
+        }
+
+        fn staged_bytes(&self) -> usize {
+            0
+        }
+    }
+
+    /// The application holding its main window, with `/m` and `/m2` menus ready to appear.
+    pub(crate) fn app() -> MenuBus {
+        MenuBus::default()
+            .node(APP, "application", "app", &["/main"])
+            .node("/main", "frame", "main", &[])
+            .menu("/m", &["Back", "Copy Ctrl+C", "Inspect"])
+            .menu("/m2", &["Back", "Inspect"])
+    }
+
+    const WAIT: Duration = Duration::from_millis(60);
+
+    fn open(bus: &mut MenuBus, label: Option<&str>) -> std::result::Result<Menu, String> {
+        open_menu(bus, &obj("/main/button"), label, WAIT, MenuBus::act).unwrap()
+    }
+
+    #[test]
+    fn a_menu_that_appears_as_a_new_child_of_the_application_confirms_the_request() {
+        let mut bus = app();
+        bus.appear = vec![(1, "/m".into())];
+        assert_eq!(open(&mut bus, None), Ok(Menu::Opened));
+        // a menu that takes a few polls to open is still seen
+        let mut bus = app();
+        bus.appear = vec![(4, "/m".into())];
+        let started = Instant::now();
+        assert_eq!(open(&mut bus, None), Ok(Menu::Opened));
+        assert!(started.elapsed() < WAIT + MENU_POLL * 2, "{:?}", started.elapsed());
+    }
+
+    #[test]
+    fn no_new_menu_within_the_wait_is_absent() {
+        // nothing appears
+        let mut bus = app();
+        let started = Instant::now();
+        assert_eq!(open(&mut bus, None), Ok(Menu::Absent));
+        assert!(bus.acted, "the action was asked for");
+        assert!(started.elapsed() >= WAIT, "{:?}", started.elapsed());
+        // a new child that holds no menu item (a tooltip's window) is no menu
+        let mut bus = app()
+            .node("/tip", "window", "", &["/tip/label"])
+            .node("/tip/label", "label", "tip", &[]);
+        bus.appear = vec![(1, "/tip".into())];
+        assert_eq!(open(&mut bus, None), Ok(Menu::Absent));
+        // a menu that opens only after the wait is not seen
+        let mut bus = app();
+        bus.appear = vec![(1000, "/m".into())];
+        assert_eq!(open(&mut bus, None), Ok(Menu::Absent));
+    }
+
+    #[test]
+    fn a_menu_already_open_when_asked_for_confirms_nothing_by_itself() {
+        // the menu is open before the action, and the action leaves it as it was: no new menu, absent
+        let mut bus = app();
+        bus.app_children().push("/m".into());
+        assert_eq!(open(&mut bus, None), Ok(Menu::Absent));
+        // the action replaces it with a new one, a new child of the application: confirmed
+        let mut bus = app();
+        bus.app_children().push("/m".into());
+        bus.appear = vec![(2, "/m2".into())];
+        assert_eq!(open(&mut bus, None), Ok(Menu::Opened));
+    }
+
+    #[test]
+    fn an_action_refused_is_the_answer_with_no_wait() {
+        let mut bus = app();
+        let started = Instant::now();
+        let refused = open_menu(&mut bus, &obj("/main/button"), None, Duration::from_secs(5), |_| {
+            Ok(Err(
+                "AT-SPI element refused action 1; refresh get_window_state() to check its state".into(),
+            ))
+        })
+        .unwrap();
+        assert_eq!(
+            refused,
+            Err("AT-SPI element refused action 1; refresh get_window_state() to check its state".into())
+        );
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_labelled_search_finds_its_item_or_says_a_menu_opened_without_it() {
+        let mut bus = app();
+        bus.appear = vec![(1, "/m".into())];
+        assert_eq!(open(&mut bus, Some("Copy")), Ok(Menu::Item(obj("/m/menu/1"))));
+        // a menu without the item: opened, said at the wait's end
+        let mut bus = app();
+        bus.appear = vec![(1, "/m2".into())];
+        let started = Instant::now();
+        assert_eq!(open(&mut bus, Some("Copy")), Ok(Menu::Opened));
+        assert!(started.elapsed() >= WAIT, "{:?}", started.elapsed());
+        // the item found in a second menu that appears after a first without it
+        let mut bus = app();
+        bus.appear = vec![(1, "/m2".into()), (3, "/m".into())];
+        assert_eq!(open(&mut bus, Some("Copy")), Ok(Menu::Item(obj("/m/menu/1"))));
+        // no menu at all
+        let mut bus = app();
+        assert_eq!(open(&mut bus, Some("Copy")), Ok(Menu::Absent));
+    }
+
+    #[test]
+    fn a_timed_out_copy_names_its_risks_by_its_route() {
+        assert_eq!(timed_out(CopyRoute::Text), "clipboard update timed out");
+        assert_eq!(
+            timed_out(CopyRoute::Menu),
+            "clipboard update timed out; the application may still complete the Copy later, and its menus on this \
+             window may stay unresponsive"
         );
     }
 }

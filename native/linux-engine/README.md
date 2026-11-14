@@ -76,6 +76,19 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   each `FocusOut` is reported (`focus_out`: window, cause `request`, `watch` or `exit`, the time since the session's input
   ended, and the request whose input it ends): on the line of the request it went out in, or for the exit's and one a
   watch's end sent between requests on a line of its own (`"id": null`).
+- **A requested context menu** (`engine/elements.rs`, `copy.rs` `open_menu`; candidate 3): an element action that
+  runs `showContextMenu` (`perform_secondary_action` naming it, a right click's fallback to it when the element has no
+  visible point, or a primary click whose action 0 it is) answers ok only once a menu appears: a child of the
+  element's application that was not among its children just before the action, holding a `menu item`, polled every
+  20 ms for up to 1 s, the detection the context-menu Copy uses. A menu already open when the action is asked for
+  confirms nothing by itself. When none appears the answer is `menuUnconfirmed`, an error sent after the action, like
+  the paste's unconfirmed answer: `showContextMenu was sent and no menu was seen within 1 s; the application may have
+  shown its own menu or ignored the request; read the window before retrying`. A page that handles `contextmenu`
+  itself (its own HTML menu) gets that answer too, which says so. The vendor answers ok as soon as the action is asked
+  for (behaviour §7.2), menu or none. In Chromium, a context menu requested on a window that is not focused
+  (perform_secondary_action showContextMenu, the right-button fallback, or a window-bound right click) does not stay
+  open after the request. To use a menu item, focus the window first where you may (on a shared desktop, only when the
+  person allows it), or use the clipboard operations for copy and paste.
 - **The paste's settle** (`settle.rs`, `engine/paste.rs`): a paste observes its field before it acts, and keys its
   window took just before may not have landed yet, so the observation reads the field short and the paste is refused
   with nothing sent, or lands at a caret the confirmation did not expect (task 59). So a paste whose window took a key
@@ -401,7 +414,11 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   `EditableText.CopyText` of its one selection, else its context menu's Copy item; then CLIPBOARD's new contents are
   snapshotted under a handle (`<pid>-<nanoseconds>-<n>`, at most 32 and 256 MiB). The application's copy stays on
   CLIPBOARD. `clipboard_release` frees a handle, an unknown one without error. A context menu the Copy opened and
-  found no Copy in is closed with Escape through the background route, so the request leaves no menu open.
+  found no Copy in is closed with Escape through the background route, so the request leaves no menu open. A Copy
+  whose clipboard change does not come within 2 s is `clipboard update timed out`; after a context-menu Copy the
+  answer adds that the application may still complete the Copy later and that its menus on the window may stay
+  unresponsive (task 77: Chrome under load once served a Copy late, and once left every later menu unopened). Nothing
+  is sent to recover: an Escape with no menu up reaches the page.
 - **The paste route** (`engine/paste.rs`, `paste.rs`, `field.rs`): `type_text` and `clipboard_write` (a handle's
   snapshot into the window's focused element). In order: text over 64 MiB is refused; while an earlier unconfirmed
   paste's `CurrentTime` refusal runs, a new paste is refused (`a previous paste could not be confirmed and may still

@@ -1,7 +1,11 @@
 //! Element actions (behaviour §7): the primary click through action 0, the right click at the element's visible
 //! point with its `showContextMenu` fallback, named actions (`perform_secondary_action`) and the element scroll.
 //! Each resolves the element afresh (§6.2), then opens the window's input session, as the vendor does even when no
-//! X input is sent.
+//! X input is sent. An action that asks for the element's context menu (`showContextMenu`, whichever caller runs it)
+//! answers ok only once a menu is seen to appear, and `menuUnconfirmed` otherwise ([`run_action`]; Decision Log,
+//! 2026-11-14, candidate 3), where the vendor answers ok as soon as it is asked for.
+
+use std::time::Duration;
 
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
@@ -10,12 +14,13 @@ use super::Engine;
 use super::pointer::{CLICK_HOLD, check_wheel, wheel};
 use super::way::Way;
 use crate::atspi::{self, Associated};
+use crate::copy::{self, Menu};
 use crate::dbus::Bus;
 use crate::families::{Family, Kind};
 use crate::focus_ack::{FocusAck, nothing_pressed, press_ack};
 use crate::resolve;
 use crate::route::{Inputs, Target};
-use crate::tree::ObjRef;
+use crate::tree::{ObjRef, Transport};
 use crate::vcl;
 use crate::wire::{MouseButton, ScrollInput, SecondaryActionInput, parse_input};
 use crate::x11::{WindowInfo, X11};
@@ -155,7 +160,7 @@ impl Engine {
                         .map(|(i, _)| i)
                         .collect();
                     let [index] = matches.as_slice() else { return Err(error) };
-                    do_action(x, bus, inputs, element, *index)?;
+                    do_action(x, bus, inputs, element, *index, &names[*index])?;
                     Ok(Value::Null)
                 }
             },
@@ -164,7 +169,7 @@ impl Engine {
                 if names.is_empty() {
                     bail!("element has no primary accessibility action");
                 }
-                do_action(x, bus, inputs, element, 0)?;
+                do_action(x, bus, inputs, element, 0, &names[0])?;
                 Ok(Value::Null)
             }
         }
@@ -178,7 +183,7 @@ impl Engine {
         let (x, bus, inputs) = self.parts()?;
         let names = atspi::action_names(bus, &element.target)?.map_err(anyhow::Error::msg)?;
         let index = choose_action(&names, &input.action).map_err(anyhow::Error::msg)?;
-        do_action(x, bus, inputs, &element, index)?;
+        do_action(x, bus, inputs, &element, index, &names[index])?;
         // a named action may be the element's first, its primary action (the vendor's choice of name allows it too)
         Ok(action_answer(self.family_of(input.window.id), index))
     }
@@ -239,12 +244,53 @@ fn action_answer(family: Option<&Family>, index: usize) -> Value {
     }
 }
 
-/// `DoAction(index)` inside the window's input session, once the window's association is confirmed again.
-fn do_action(x: &mut X11, bus: &mut Bus, inputs: &mut Inputs, element: &Element, index: usize) -> Result<()> {
+/// `DoAction(index)` of the action named `name` inside the window's input session, once the window's association is
+/// confirmed again ([`run_action`]).
+fn do_action(
+    x: &mut X11,
+    bus: &mut Bus,
+    inputs: &mut Inputs,
+    element: &Element,
+    index: usize,
+    name: &str,
+) -> Result<()> {
     inputs.with_route(x, Target::Window(element.info.id), |x, _, _| {
-        element.associated.confirm_before_acting(bus, x)?;
-        atspi::do_action(bus, &element.target, index as u32)?.map_err(anyhow::Error::msg)
+        run_action(bus, &element.target, name, copy::MENU_WAIT, |bus| {
+            element.associated.confirm_before_acting(bus, x)?;
+            atspi::do_action(bus, &element.target, index as u32)
+        })
     })
+}
+
+/// The answer to an element action that asked for a context menu none was seen to open within the wait
+/// (`menuUnconfirmed`): the request was sent, and the application may have drawn a menu of its own (a page's
+/// `contextmenu` handler) or ignored it, which nothing on the bus tells apart.
+pub(super) fn menu_unconfirmed() -> String {
+    format!(
+        "showContextMenu was sent and no menu was seen within {} s; the application may have shown its own menu or \
+         ignored the request; read the window before retrying",
+        copy::MENU_WAIT.as_secs()
+    )
+}
+
+/// Runs `act`, the element's action named `name`. One that asks for its context menu (`showContextMenu`, matched as
+/// the vendor matches action names) answers only once a menu appears within `wait` (`copy::open_menu`, the detection
+/// the Copy's context menu uses), and [`menu_unconfirmed`] when none does. Any other action is `act` alone. A refusal
+/// of the action itself is its own sentence.
+fn run_action<T: Transport>(
+    t: &mut T,
+    target: &ObjRef,
+    name: &str,
+    wait: Duration,
+    act: impl FnOnce(&mut T) -> Result<std::result::Result<(), String>>,
+) -> Result<()> {
+    if !name.eq_ignore_ascii_case("showcontextmenu") {
+        return act(t)?.map_err(anyhow::Error::msg);
+    }
+    match copy::open_menu(t, target, None, wait, act)?.map_err(anyhow::Error::msg)? {
+        Menu::Absent => bail!(menu_unconfirmed()),
+        Menu::Opened | Menu::Item(_) => Ok(()),
+    }
 }
 
 /// A right click at the element's visible point, clipped by the window and by every `viewport` and `scroll pane`
@@ -443,5 +489,68 @@ mod tests {
                 .to_string(),
             "element has no visible bounds in this window"
         );
+    }
+
+    const WAIT: std::time::Duration = std::time::Duration::from_millis(60);
+
+    fn run(bus: &mut crate::copy::tests::MenuBus, name: &str) -> std::result::Result<(), String> {
+        let target = crate::copy::tests::obj("/main/button");
+        run_action(bus, &target, name, WAIT, crate::copy::tests::MenuBus::act).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn a_requested_context_menu_answers_only_once_a_menu_appears() {
+        let mut bus = crate::copy::tests::app();
+        bus.appear = vec![(2, "/m".into())];
+        assert_eq!(run(&mut bus, "showContextMenu"), Ok(()));
+        // matched as the vendor matches an action name, ASCII case-insensitively
+        let mut bus = crate::copy::tests::app();
+        bus.appear = vec![(1, "/m".into())];
+        assert_eq!(run(&mut bus, "SHOWCONTEXTMENU"), Ok(()));
+    }
+
+    #[test]
+    fn a_requested_context_menu_none_appears_for_is_menu_unconfirmed_after_it_was_sent() {
+        let mut bus = crate::copy::tests::app();
+        assert_eq!(run(&mut bus, "showContextMenu"), Err(menu_unconfirmed()));
+        assert!(bus.acted, "the action was sent");
+        assert_eq!(
+            menu_unconfirmed(),
+            "showContextMenu was sent and no menu was seen within 1 s; the application may have shown its own menu \
+             or ignored the request; read the window before retrying"
+        );
+        // a menu already open when asked for, which the action leaves as it was: no new menu was seen
+        let mut bus = crate::copy::tests::app();
+        bus.app_children().push("/m".into());
+        assert_eq!(run(&mut bus, "showContextMenu"), Err(menu_unconfirmed()));
+    }
+
+    #[test]
+    fn a_requested_context_menu_the_element_refuses_is_the_element_s_refusal() {
+        let target = crate::copy::tests::obj("/main/button");
+        let mut bus = crate::copy::tests::app();
+        let refused = run_action(&mut bus, &target, "showContextMenu", WAIT, |_| {
+            Ok(Err(
+                "AT-SPI element refused action 1; refresh get_window_state() to check its state".into(),
+            ))
+        });
+        assert_eq!(
+            refused.unwrap_err().to_string(),
+            "AT-SPI element refused action 1; refresh get_window_state() to check its state"
+        );
+    }
+
+    #[test]
+    fn any_other_action_runs_as_it_did_with_no_menu_looked_for() {
+        for name in ["press", "click", "showMenu", "doDefault", "showContextMenu2"] {
+            let mut bus = crate::copy::tests::app();
+            assert_eq!(run(&mut bus, name), Ok(()), "{name}");
+            assert!(bus.acted, "{name} was sent");
+            assert_eq!(bus.next, 0, "{name}: nothing was read for a menu");
+        }
+        let target = crate::copy::tests::obj("/main/button");
+        let mut bus = crate::copy::tests::app();
+        let refused = run_action(&mut bus, &target, "press", WAIT, |_| Ok(Err("refused".into())));
+        assert_eq!(refused.unwrap_err().to_string(), "refused");
     }
 }

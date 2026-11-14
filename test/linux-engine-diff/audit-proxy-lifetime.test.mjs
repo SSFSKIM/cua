@@ -11,6 +11,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -131,6 +132,41 @@ for (const c of cases) {
       assert.equal(left.dir, false, "the proxy's directory removed");
     } finally {
       // a failing run's leftovers are the test's to remove
+      if (started) rmSync(dirname(started.log), { recursive: true, force: true });
+      rmSync(h.dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// the proxy removes only the socket its own xtrace made: an xtrace that ended early leaves its socket, another run may
+// clean that up and listen at the same display number, and the harness's end must leave that run's socket alone; so
+// too where the file was replaced under an xtrace still running (each on a file system that may hand the freed inode
+// straight to the new socket)
+for (const early of [true, false]) {
+  test(`a harness whose proxy's socket was replaced by another run's${early ? ' after its xtrace ended early' : ', its xtrace still running,'} leaves the replacement in place`, { skip }, async () => {
+    const h = harness({ end: 'wait', hooked: true });
+    let started = null;
+    let other = null;
+    try {
+      started = await h.started;
+      const [name] = readdirSync(h.sockets);
+      const socket = join(h.sockets, name);
+      if (early) {
+        process.kill(started.pid, 'SIGKILL');
+        assert.equal(await survives(started.pid), false, 'the stand-in xtrace ended');
+      }
+      rmSync(socket, { force: true });
+      other = createServer();
+      await new Promise((resolve) => other.listen(socket, resolve));
+      h.proc.kill('SIGTERM');
+      assert.deepEqual(await h.exited, { code: 143, signal: null }, h.stderr());
+      assert.ok(existsSync(socket), "the other run's socket is left in place");
+      assert.equal(await survives(started.pid), false, 'its xtrace ended with the harness');
+      assert.equal(existsSync(dirname(started.log)), false, "the proxy's directory removed");
+    } finally {
+      if (h.proc.exitCode === null && h.proc.signalCode === null) h.proc.kill('SIGKILL');
+      if (started && running(started.pid)) process.kill(started.pid, 'SIGKILL');
+      other?.close();
       if (started) rmSync(dirname(started.log), { recursive: true, force: true });
       rmSync(h.dir, { recursive: true, force: true });
     }

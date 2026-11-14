@@ -7,7 +7,7 @@
 import './hermetic.mjs';
 
 import { spawn as spawnProcess } from 'node:child_process';
-import { createReadStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -446,6 +446,32 @@ function endAll() {
   for (const end of live) end();
 }
 
+/**
+ * The proxy's socket as its xtrace made it: `made()` records the file at `path` (its device, inode and birth time, since
+ * a file system may give a freed inode straight to the next file), and `remove()` unlinks it only while the file there
+ * is still that one, once: after it, or with nothing recorded, it removes nothing.
+ */
+function ownSocket(path) {
+  let made = null;
+  const identity = () => {
+    try {
+      const { dev, ino, birthtimeNs } = lstatSync(path, { bigint: true });
+      return `${dev}:${ino}:${birthtimeNs}`;
+    } catch {
+      return null;
+    }
+  };
+  return {
+    made() {
+      made = identity();
+    },
+    remove() {
+      if (made !== null && identity() === made) rmSync(path, { force: true });
+      made = null;
+    },
+  };
+}
+
 function freeDisplay(socketDir) {
   for (let n = 40; n < 100; n++) {
     if (!existsSync(`${socketDir}/X${n}`) && !existsSync(`/tmp/.X${n}-lock`)) return n;
@@ -475,6 +501,9 @@ function freeDisplay(socketDir) {
  * exit, whatever way it exits without the stop (`endAtExit`); and xtrace is started with the kernel's parent-death
  * signal (setpriv's `--pdeathsig`), so a harness killed outright (SIGKILL, or a signal it has no handler for), which runs
  * nothing of its own, still ends it. Its socket is then a file nothing listens on.
+ * Only the socket its own xtrace made is ever removed (`ownSocket`): an xtrace that ends early leaves its socket, which
+ * the proxy removes as soon as it sees the end, and if that file is gone and another run listens at the same number by
+ * then, neither that nor the stop or the exit removes the other run's socket.
  * `spawn` and `socketDir` (where the proxy's socket appears) are the display-free tests' own.
  */
 export async function startProxy({ display = process.env.DISPLAY, privateDisplay, env = process.env, spawn = spawnProcess, socketDir = '/tmp/.X11-unix' } = {}) {
@@ -496,10 +525,11 @@ export async function startProxy({ display = process.env.DISPLAY, privateDisplay
     rmSync(dir, { recursive: true, force: true });
     throw error;
   }
+  const own = ownSocket(socket);
   const forget = endAtExit(() => {
     if (child.exitCode === null && child.signalCode == null) child.kill('SIGKILL');
     rmSync(dir, { recursive: true, force: true });
-    rmSync(socket, { force: true });
+    own.remove();
   });
   let stderr = '';
   let failed = null;
@@ -509,19 +539,24 @@ export async function startProxy({ display = process.env.DISPLAY, privateDisplay
   child.stderr?.on('data', (d) => {
     stderr += d;
   });
-  const exited = new Promise((resolve) => child.once('exit', resolve));
+  // xtrace leaves its display's socket behind when it ends, ended by the stop or early: removed at once while it is its own
+  const exited = new Promise((resolve) => child.once('exit', resolve)).then((code) => {
+    own.remove();
+    return code;
+  });
   const deadline = Date.now() + 5000;
   while (!existsSync(socket)) {
     if (Date.now() > deadline || child.exitCode !== null || failed) {
-      // nothing of a start that failed is left: the proxy, its directory with whatever xtrace wrote, its socket
+      // nothing of a start that failed is left: the proxy, its directory with whatever xtrace wrote (its socket never
+      // appeared, so whatever listens at that number later is not the proxy's)
       if (child.exitCode === null && !failed) child.kill('SIGKILL');
       rmSync(dir, { recursive: true, force: true });
-      rmSync(socket, { force: true });
       forget();
       throw new Error(`xtrace did not start: ${failed ? failed.message : stderr.trim()}`);
     }
     await new Promise((r) => setTimeout(r, 20));
   }
+  own.made();
   // in front of a display the run created, the proxy is the run's own display too (a live run's needs no entry), and its
   // clients read the proxy's own authority file (xspawn.mjs `authorityFor`)
   const release = isCreatedDisplay(display) ? registerDisplay(`:${n}`, `the run's trace proxy in front of ${display}`, { authority: auth }) : () => {};
@@ -565,9 +600,8 @@ export async function startProxy({ display = process.env.DISPLAY, privateDisplay
         if (parse) return await parse(log);
         return existsSync(log) ? readFileSync(log, 'utf8') : '';
       } finally {
+        // its socket went when xtrace ended (`exited`), so the next pass finds the number free
         rmSync(dir, { recursive: true, force: true });
-        // xtrace leaves its display's socket behind when it is ended; the next pass would find the number taken
-        rmSync(socket, { force: true });
         forget();
       }
     },

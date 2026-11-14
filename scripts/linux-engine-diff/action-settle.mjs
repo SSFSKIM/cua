@@ -47,7 +47,7 @@ import { POINTER_INSIDE, parkInside } from './drag.mjs';
 import { AsyncOracle } from './bus-client.mjs';
 import { startOwner, startReader } from './clip.mjs';
 import {
-  ACTIVATING, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, answersAsExpected, auditVerdict, cellName, cellsFor, chosenPlan, judgeSettleSeries, judgesLateKeyUp, landed, laneSettles, planLanes,
+  ACTIVATING, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, answersAsExpected, auditVerdict, cellName, cellsFor, chosenPlan, judgeSettleSeries, landed, laneSettles, planLanes,
   runClass, runPasses, settleOf, settledFields, sittingVerdict,
 } from './action-settle-cells.mjs';
 import { Engine, runTmpdirInProcess } from './engine.mjs';
@@ -644,9 +644,9 @@ async function series(ctx, cell, sc, lane) {
   } finally {
     svc.close();
   }
-  const { runs, misses, streak, reached, late_302: late302, failing } = judgeSettleSeries(judged, { need: ctx.need, max });
-  // a #302 cell's runs that failed outside it, each of which fails the series whatever its streak
-  const verdict = { runs, misses, streak, reached, late_302: late302, ...(judgesLateKeyUp({ scene: cell.scene, input: cell.kind, lane }) ? { outside_302: failing } : {}) };
+  // a false ok fails the series whatever its streak (ruling 650, in every cell by ruling 707)
+  const { runs, misses, streak, reached, late_302: late302, false_ok: falseOk } = judgeSettleSeries(judged, { need: ctx.need, max });
+  const verdict = { runs, misses, streak, reached, late_302: late302, false_ok: falseOk };
   const missed = rows.filter((r) => !r.ok);
   const classes = rows.map(runClass);
   const count = (c) => classes.filter((x) => x === c).length;

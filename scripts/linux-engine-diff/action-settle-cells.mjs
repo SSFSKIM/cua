@@ -478,16 +478,18 @@ function caughtUpMiss(run, next) {
  * A series' runs (in order) judged by the lane's rule, with #302 where the cell takes it (`judgesLateKeyUp`). Each run
  * is `pass` (the lane's own rule, `runPasses`), `#302` (`lateKeyUpMiss`, its next before-read the series' next run, or
  * `next` after the last: the run after the series on the same page, where a stored record shows one), `pending` (#302
- * but for a next before-read not taken yet) or `fail`. A #302 run counts toward the streak, listed apart in
- * `late_302`. In a cell #302 judges, the series passes only when every run is a pass or #302 (the ruling: a lost key, a
- * refusal, an invalid run or any other miss fails, never covered by a later streak); a pending run left at the end is
- * unproven, so it fails too. Every other cell keeps the lane's rule, 30 consecutive passes in at most 60.
- * `oks` counts a pending run as a miss and `hopeful` as a pass; `lost` says no later run can pass the series, for the
- * live stop rule. Returns `{judged, oks, hopeful, runs, misses, streak, reached, late_302, failing, lost}`.
+ * but for a next before-read not taken yet), `false ok` (`falseOk`) or `fail`. One rule for every cell (the design
+ * session's ruling 707): a #302 run counts toward the streak, listed apart in `late_302`; any other miss is honest and
+ * breaks the streak, which a later one may cover, the lane's 30 consecutive passes in at most 60 (a pending run counts
+ * as such a miss until its next before-read comes); and a false ok fails the series whatever streak follows (ruling
+ * 650's hard failure), listed in `false_ok`. `oks` counts a pending run as a miss and `hopeful` as a pass; `lost` says
+ * no later run can pass the series, for the live stop rule. Returns `{judged, oks, hopeful, runs, misses, streak,
+ * reached, late_302, false_ok, lost}`.
  */
 export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, next } = {}) {
   const judged = rows.map((r, i) => {
     if (r.ok) return { trial: r.trial, cls: 'pass' };
+    if (falseOk(r)) return { trial: r.trial, cls: 'false ok', why: 'answered ok with no effect' };
     if (!judgesLateKeyUp(r)) return { trial: r.trial, cls: 'fail', why: `class ${runClass(r)}` };
     const own = ownLateKeyUpMiss(r);
     if (own) return { trial: r.trial, cls: 'fail', why: own };
@@ -498,15 +500,27 @@ export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, ne
     return why === null ? { trial: r.trial, cls: '#302', late_ms: r.late_ms } : { trial: r.trial, cls: 'fail', why };
   });
   const oks = judged.map((j) => j.cls === 'pass' || j.cls === '#302');
-  const hopeful = judged.map((j) => j.cls !== 'fail');
-  const strict = rows.length > 0 && judgesLateKeyUp(rows[0]);
-  const failing = judged.filter((j) => j.cls === 'fail' || j.cls === 'pending');
+  const hopeful = judged.map((j) => j.cls === 'pass' || j.cls === '#302' || j.cls === 'pending');
+  const falseOks = judged.filter((j) => j.cls === 'false ok');
   const verdict = seriesVerdict(oks, need);
-  const reached = verdict.reached && (!strict || failing.length === 0);
-  const lost = !reached && ((strict && judged.some((j) => j.cls === 'fail')) || hopeless(hopeful, need, max));
+  const reached = verdict.reached && falseOks.length === 0;
+  const lost = !reached && (falseOks.length > 0 || hopeless(hopeful, need, max));
   // the lane's misses, a #302 run among them: it is listed apart, never hidden
   const misses = judged.filter((j) => j.cls !== 'pass').length;
-  return { judged, oks, hopeful, ...verdict, misses, reached, late_302: judged.filter((j) => j.cls === '#302').map(({ trial, late_ms }) => ({ trial, late_ms })), failing, lost };
+  return { judged, oks, hopeful, ...verdict, misses, reached, late_302: judged.filter((j) => j.cls === '#302').map(({ trial, late_ms }) => ({ trial, late_ms })), false_ok: falseOks, lost };
+}
+
+/**
+ * Whether a run answered ok and had no effect at all (ruling 650's hard failure, which ruling 707 makes the settle
+ * lane's in every cell): every answer a success, nothing invalid, no effect within the late bound, and the reading after
+ * the input the same as the one before it, every field. A partial effect (a scroll that took two of three wheel steps,
+ * a key-down with no key-up) changes the reading: a landing miss, honest, not this. An effect on another target than
+ * the cell's reads, in the scene's readings, as either: nothing changed, or the wrong field did. A control's expected
+ * error is no ok.
+ */
+function falseOk(run) {
+  if (runClass(run) !== 'never' || run.expected_error || !run.answers?.length || !run.answers.every((a) => a.ok === true)) return false;
+  return run.before != null && run.after != null && JSON.stringify(run.before) === JSON.stringify(run.after);
 }
 
 /** Whether a series can no longer reach `need` consecutive passes in `max` runs. */
@@ -623,9 +637,9 @@ export function settleVerdict(series, { search, cells }) {
     } else {
       for (const s of mine) {
         if (s.reached) continue;
-        // a cell #302 judges fails on any run outside it (judgeSettleSeries), whatever its streak
-        const outside = (s.outside_302 ?? []).slice(0, 5).map((f) => `trial ${f.trial}: ${f.cls === 'pending' ? 'late, with no next before-read' : f.why}`);
-        failed.push(`${name} (${s.lane}): ${outside.length ? `${s.outside_302.length} of ${s.runs} runs failed outside #302 (${outside.join('; ')})` : `no ${s.need} consecutive passing runs in ${s.runs}`}`);
+        // a false ok fails the series whatever its streak (judgeSettleSeries)
+        const falseOk = s.false_ok?.length ? `${s.false_ok.length} of ${s.runs} runs answered ok with no effect (trial ${s.false_ok.slice(0, 5).map((f) => f.trial).join(', ')})` : null;
+        failed.push(`${name} (${s.lane}): ${falseOk ?? `no ${s.need} consecutive passing runs in ${s.runs}`}`);
       }
     }
   }

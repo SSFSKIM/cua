@@ -464,3 +464,34 @@ test("the freeze cell's browser: the run's profile and no child type, its title 
     rmSync(proc, { recursive: true });
   }
 });
+
+test("V5's motion-loss cells: the run's browser stopped from the drag's send, a plain drop and one whose path outlasts the stop", async () => {
+  const { CELLS, PLANS, T14_SOURCE, freezeOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  assert.deepEqual(freezeOf('prefreeze-150'), { from: 0, to: 150 }, 'stopped before the press goes out');
+  assert.deepEqual(freezeOf('prefreeze-linger-150'), { from: 0, to: 150 });
+  assert.deepEqual(freezeOf('freeze-250'), { from: 60, to: 250 }, "T13's cells unchanged");
+  assert.deepEqual(CELLS['prefreeze-150'](0), CELLS.plain(0), 'the plain short drop');
+  const linger = CELLS['prefreeze-linger-150'](0);
+  assert.deepEqual(linger.slice(0, 2), CELLS.plain(0));
+  const length = linger.slice(1).reduce((n, [x, y], k) => n + Math.hypot(x - linger[k][0], y - linger[k][1]), 0);
+  assert.ok(length > 400, `${length} px: steps go on well after the stop ends`);
+  assert.ok(linger.slice(1).every(([x, y]) => x >= 560 && x <= 960 && y >= 100 && y <= 620), 'over the zone');
+  for (const cell of ['prefreeze-150', 'prefreeze-linger-150']) assert.equal(T14_SOURCE[cell], 'plain', cell);
+  assert.deepEqual(PLANS['v5-loss'].map(([lane, cell]) => `${lane} ${cell}`), ['cua plain', 'cua prefreeze-150', 'cua prefreeze-linger-150']);
+});
+
+test("the lost motion's bound and the guarded route: a sweep of stops past the hold's refresh, and the same stops on a drag the engine watches", async () => {
+  const { CELLS, LANES, PLANS, PREFREEZE_ENDS, T14_SOURCE, freezeOf } = await import('../../scripts/linux-engine-diff/drop-signals.mjs');
+  assert.deepEqual(PREFREEZE_ENDS, [30, 40, 150, 200, 215, 230, 260, 300]);
+  for (const to of PREFREEZE_ENDS) {
+    assert.deepEqual(freezeOf(`prefreeze-${to}`), { from: 0, to });
+    assert.deepEqual(CELLS[`prefreeze-${to}`](0), CELLS.plain(0));
+    assert.equal(T14_SOURCE[`prefreeze-${to}`], 'plain');
+  }
+  // where the stop ends against the hold (press + 250, its last refresh a rest before): before the refresh stops, in
+  // the rest, past the release
+  assert.deepEqual(PLANS['v5-bound'].map(([lane, cell, n]) => `${lane} ${cell} ${n}`), ['cua prefreeze-150 20', 'cua prefreeze-200 20', 'cua prefreeze-215 20', 'cua prefreeze-230 20', 'cua prefreeze-260 20', 'cua prefreeze-300 20']);
+  // the guarded route: Chrome raised and not activated, so the engine watches the drag and releases at its path's end
+  assert.deepEqual(LANES['cua:guarded'], { args: [], guarded: true });
+  assert.deepEqual(PLANS['v5-guarded'].map(([lane, cell, n]) => `${lane} ${cell} ${n}`), ['cua:guarded plain 20', 'cua:guarded prefreeze-30 20', 'cua:guarded prefreeze-40 20', 'cua:guarded prefreeze-150 20']);
+});

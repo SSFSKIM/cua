@@ -168,6 +168,11 @@ export function pagePath(kind, i) {
       return [[313, 160], [313, 220]];
     case 'dnd':
       return [[410, 155], [440, 160], [660, 170]];
+    case 'dnd-linger':
+      // the same into the zone, then back and forth across it, clear of the in-zone source, about 750 px more: the late
+      // cases' path, whose take must come before the release (V5: at the gate's load the renderer began a drag 164 ms
+      // after the press, past the plain path's release)
+      return [[410, 155], [440, 160], [660, 170], [750, 135], [575, 205], [750, 135], [575, 205], [660, 170]];
     case 'dnd-short':
       // the near source to 10 px inside the target: a short drag and drop, 40 px (task 18)
       return [[530, 185], [570, 185]];
@@ -457,8 +462,9 @@ export async function readEffect(ctx, scene, at, cellKind) {
   if (at.page) {
     const nodes = preorder((await desktop.state(scene)).ax_tree);
     const status = parseDragStatus(nodes.flatMap((n) => [n.name, n.value, n.text].filter((s) => typeof s === 'string')));
-    // a drag and drop's counts carry the pointer log of the source's last press (task 20)
-    return kind === 'dnd' ? { ...status.dnd, log: status.moves } : kind === 'canvas' ? status.canvas : status[kind];
+    // a drag and drop's counts carry the pointer log of the source's last press (task 20) and the motions the browser
+    // received during the page's last press (T10's record; V5's false successes)
+    return kind === 'dnd' ? { ...status.dnd, log: status.moves, received: status.received } : kind === 'canvas' ? status.canvas : status[kind];
   }
   if (kind === 'scale4') return (await readGtk4Status(desktop, scene))?.scale ?? null;
   if (kind === 'select' && at.text.pixels) return { capture: await captureWindow(ctx.cua, scene, desktop.dir) };

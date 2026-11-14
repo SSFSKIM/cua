@@ -1276,6 +1276,163 @@ fn a_take_after_a_short_path_s_end_is_held_for_and_its_floor_filled_with_motions
     }
 }
 
+/// What a [`coalescing_source`] dispatched: each motion it handed on (window-relative, with its button state), and when
+/// it took `XdndSelection` after the press (None: never).
+#[derive(Debug, Default)]
+struct Coalesced {
+    dispatched: Vec<(i16, i16, u16)>,
+    take_after_press: Option<Duration>,
+}
+
+/// A window of the test's own, classed `Google-chrome`, whose client reads input as Chromium's X11 window does with
+/// core `MotionNotify` (`ui/base/x/x11_util.cc` `CoalescePendingMotionEvents`, Chrome 156; V5's lost motion): busy for
+/// `stall` from the press, reading nothing, then, at each motion it reads, every matching motion already queued behind
+/// it (same window, child and state; other events without coordinates skipped over) thrown away, and the one read
+/// dispatched. It takes `XdndSelection` at the first dispatched motion with button 1 held at least 4 px from the press,
+/// as Blink starts its drag and drop. It runs until told to stop.
+fn coalescing_source(stall: Duration) -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<Coalesced>) {
+    let (ready, window) = mpsc::channel();
+    let (stop, stopped) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
+        let mask = EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE | EventMask::BUTTON1_MOTION;
+        probe
+            .conn
+            .change_window_attributes(
+                probe.id,
+                &x11rb::protocol::xproto::ChangeWindowAttributesAux::new().event_mask(mask),
+            )
+            .unwrap();
+        let selection = probe
+            .conn
+            .intern_atom(false, b"XdndSelection")
+            .unwrap()
+            .reply()
+            .unwrap()
+            .atom;
+        probe.conn.sync().unwrap();
+        ready.send(probe.id).unwrap();
+        let mut out = Coalesced::default();
+        let mut queue: std::collections::VecDeque<Event> = std::collections::VecDeque::new();
+        let mut pressed: Option<(Instant, i16, i16)> = None;
+        let mut stalled = false;
+        while stopped.try_recv().is_err() {
+            while let Some(event) = probe.conn.poll_for_event().unwrap() {
+                queue.push_back(event);
+            }
+            while let Some(event) = queue.pop_front() {
+                match event {
+                    Event::ButtonPress(e) => {
+                        pressed = Some((Instant::now(), e.event_x, e.event_y));
+                        if !stalled {
+                            // busy from the press: everything the engine sends meanwhile queues unread
+                            stalled = true;
+                            sleep(stall);
+                            while let Some(event) = probe.conn.poll_for_event().unwrap() {
+                                queue.push_back(event);
+                            }
+                        }
+                    }
+                    Event::MotionNotify(m) => {
+                        // `conn->ReadResponses()`, then the walk: matching motions moved out, the rest left
+                        while let Some(event) = probe.conn.poll_for_event().unwrap() {
+                            queue.push_back(event);
+                        }
+                        let mut kept = std::collections::VecDeque::new();
+                        let mut walking = true;
+                        for next in queue.drain(..) {
+                            if walking {
+                                match &next {
+                                    Event::MotionNotify(n)
+                                        if n.event == m.event && n.child == m.child && n.state == m.state =>
+                                    {
+                                        continue;
+                                    }
+                                    Event::MotionNotify(_) | Event::ButtonPress(_) | Event::ButtonRelease(_) => {
+                                        walking = false
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            kept.push_back(next);
+                        }
+                        queue = kept;
+                        let state = u16::from(m.state);
+                        out.dispatched.push((m.event_x, m.event_y, state));
+                        if let Some((at, px, py)) = pressed
+                            && out.take_after_press.is_none()
+                            && state & u16::from(x11rb::protocol::xproto::KeyButMask::BUTTON1) != 0
+                            && ((m.event_x - px).abs() >= 4 || (m.event_y - py).abs() >= 4)
+                        {
+                            probe
+                                .conn
+                                .set_selection_owner(probe.id, selection, x11rb::CURRENT_TIME)
+                                .unwrap();
+                            probe.conn.flush().unwrap();
+                            out.take_after_press = Some(at.elapsed());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            sleep(Duration::from_millis(1));
+        }
+        out
+    });
+    (window.recv().unwrap(), stop, handle)
+}
+
+/// V5's lost motion (2026-11-13): a Chromium window busy from the press until the background drag's whole short path is
+/// queued gets only the first motion it reads (Chromium's core `MotionNotify` coalescing, [`coalescing_source`]), so it
+/// never starts its drag and drop and, on 0.4.0, the drag answered success with nothing dropped. The hold now refreshes
+/// the path's end while it waits, so the motion read once the window catches up carries it: the take comes inside the
+/// hold, and the floor follows. A window that catches up only past the hold's last refresh still gets nothing (the
+/// stated residual).
+#[test]
+fn a_chromium_window_busy_through_a_background_drag_s_path_still_gets_its_end_from_the_hold() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 60, "y": 20}]);
+    let (window, stop, source) = coalescing_source(Duration::from_millis(100));
+    in_front(window);
+    let mut engine = Engine::start_with(&[]);
+    let started = Instant::now();
+    let dragged = engine.request("drag", json!({"window": {"id": window}, "path": path}));
+    let answered = started.elapsed();
+    set_active_window(None);
+    dragged.unwrap();
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    let seen = source.join().unwrap();
+    let took = seen
+        .take_after_press
+        .unwrap_or_else(|| panic!("the window took nothing: it dispatched {:?}", seen.dispatched));
+    assert!(
+        took < Duration::from_millis(220),
+        "taken {took:?} after the press, inside the hold: {:?}",
+        seen.dispatched
+    );
+    assert!(
+        answered >= took + Duration::from_millis(345),
+        "the floor after the take: answered after {answered:?}"
+    );
+    // a window that reads again only after the hold's last refresh: the first motion alone, no take (the residual)
+    let (window, stop, source) = coalescing_source(Duration::from_millis(260));
+    in_front(window);
+    let mut engine = Engine::start_with(&[]);
+    let dragged = engine.request("drag", json!({"window": {"id": window}, "path": path}));
+    set_active_window(None);
+    dragged.unwrap();
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    let seen = source.join().unwrap();
+    assert_eq!(seen.take_after_press, None, "{:?}", seen.dispatched);
+    let held = seen
+        .dispatched
+        .iter()
+        .filter(|(_, _, state)| state & u16::from(x11rb::protocol::xproto::KeyButMask::BUTTON1) != 0)
+        .count();
+    assert_eq!(held, 1, "the first held motion alone: {:?}", seen.dispatched);
+}
+
 /// The window given `WM_STATE` (normal), as a window manager marks the clients it manages, so the engine finds it as
 /// the client under a desktop point (`X11::client_at`); the test's display has no window manager to do it.
 fn managed(window: Window) {

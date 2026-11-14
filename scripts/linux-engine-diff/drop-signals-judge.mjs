@@ -5,6 +5,12 @@
 
 /** The freeze cells' browser stops end this many ms after the drag is sent (drop-signals.mjs `freezeOf`). */
 export const FREEZE_ENDS = [230, 240, 250, 255, 260, 280, 330];
+/**
+ * The ends of V5's lost-motion stops, ms after the drag's send (`prefreeze-<to>`): on the guarded route, inside the
+ * path's end rest (30, 40) and past its release; on the held route, before the hold's refresh stops (150, 200), after
+ * its last refresh (215, 230: a rest before the bound) and past the release (260, 300).
+ */
+export const PREFREEZE_ENDS = [30, 40, 150, 200, 215, 230, 260, 300];
 
 /** The page's drag sources (`data-src`), in its status line's order. */
 export const SOURCES = ['plain', 'nested', 'nested-late', 'slider', 'dragstart-150', 'press-150', 'dragstart-400', 'press-400', 'link', 'image', 'seltext', 'canvas-drag'];
@@ -69,7 +75,7 @@ export function parseDropStatus(texts) {
  */
 export const CELL_SOURCE = { 'freeze-230': 'press-150', 'freeze-240': 'press-150', 'freeze-250': 'press-150', 'freeze-255': 'press-150', 'freeze-260': 'press-150', 'freeze-280': 'press-150', 'freeze-330': 'press-150', plain: 'plain', nozone: 'plain', nested: 'nested', 'nested-late': 'nested-late', slider: 'slider', 'dragstart-150': 'dragstart-150', 'press-150': 'press-150', 'dragstart-400': 'dragstart-400', 'press-400': 'press-400', link: 'link', image: 'image', seltext: 'seltext', 'plain-long': 'plain', 'canvas-drag': 'canvas-drag', move: 'move' };
 /** T14's and T17's cells' sources (drop-signals.mjs `CELLS`): each a drop the zone never counts. */
-export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain', xterm: 'plain', other: 'plain', slow: 'plain', moved: 'plain' };
+export const T14_SOURCE = { left: 'plain', 'inzone-out': 'inzone', 'long-left': 'plain', root: 'plain', xterm: 'plain', other: 'plain', slow: 'plain', moved: 'plain', 'prefreeze-linger-150': 'plain', ...Object.fromEntries(PREFREEZE_ENDS.map((to) => [`prefreeze-${to}`, 'plain'])) };
 
 /**
  * The dropEffect code of the dragend this trial's own drag made (the page's `last` record), or null when the record is

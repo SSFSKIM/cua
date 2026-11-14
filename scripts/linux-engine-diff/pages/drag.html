@@ -112,13 +112,14 @@
   // whether the renderer saw a move past Blink's drag threshold (4 px) with the button held before the mouseup. Per
   // event, `t` its own time and `h` the time its handler ran, both ms after the press's; per move its offset from the
   // press, `buttons`, and how many platform moves the renderer coalesced into it. The line is written once, when the
-  // press ends (pointerup, or dragend once a drag started), so nothing the log does runs during the drag.
+  // press ends (pointerup, or dragend once a drag started), so nothing the log does runs during the drag. Every source
+  // the page counts presses on is logged, the in-zone one too, so a log's `seq` is always the press the counts name.
   const MAX_MOVES = 80;
   let plog = null;
   const since = (e) => `${(e.timeStamp - plog.t0).toFixed(1)}/${(performance.now() - plog.h0).toFixed(1)}`;
   const showLog = () => line('s-moves', `moves seq ${plog.seq} n ${plog.moves.length} start ${plog.start} up ${plog.up} cancel ${plog.cancel} end ${plog.end} m${plog.moves.map((m) => ` ${m}`).join('')}`);
   document.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || !['source', 'near'].includes(e.target.id)) return;
+    if (e.button !== 0 || !['source', 'near', 'inzone'].includes(e.target.id)) return;
     plog = { seq: dnd.downs + 1, t0: e.timeStamp, h0: performance.now(), x0: e.clientX, y0: e.clientY, start: -1, up: -1, cancel: -1, end: -1, moves: [], open: true };
   }, true);
   document.addEventListener('pointermove', (e) => {

@@ -37,6 +37,7 @@ import { OPS, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs'
 import { Oracle } from './oracle.mjs';
 import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, judgeWarmUps, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
 import { writeSummary } from './report.mjs';
+import { CandidateSceneEnded, judgeSceneEnds, keepLaneScene, restartLaneScene } from './scene-ended.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress, desktopEnding } from './scenes.mjs';
 import { xdotool, xprobe } from './xtools.mjs';
@@ -211,6 +212,8 @@ export function differingField(reference, candidate) {
 export async function runSample(s) {
   // `traceMark(tag)`: the audit pass's mark in its trace, so a case can attribute requests to its steps (M4's T4)
   const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness, cuaVersion: s.cuaVersion, traceMark: s.traceMark };
+  // the request that last reached the window, which an end of the window found before the next one names (scene-ended.mjs)
+  if (s.target) s.target.lastRequest = { op: s.op, block: s.block, i: s.i };
   return withSampleCleanup(ctx, () => measureSample(s, ctx));
 }
 
@@ -1073,6 +1076,8 @@ async function diffRun(args, candidate, { handoff }) {
     throw new Error("M2's text operations and paste cases run over the wire; their facade-level proof is the facade suites (repl-parity's native text cases, the native baseline)");
   }
   const blockPlan = plan.filter((p) => !isCase(p.op));
+  // whether any lane has text windows of its own (M5's T4 counts what ended them)
+  const textPlanned = blockPlan.some((p) => isText(p.op));
   const samplesFor = (op) => OPS[op].warmSamples ?? (inputOp(op) ? args.samplesInput : args.samplesTree);
 
   // the run's desktop; the window active before the run opens anything is recorded, marked, and never activated again
@@ -1142,6 +1147,25 @@ async function diffRun(args, candidate, { handoff }) {
         windows[scene].text[label] = await open(`text_${label.replace(/[^a-z0-9]+/gi, '_')}`, true);
       }
     }
+    // M5's T4 (scene-ended.mjs): a lane's own text window looked at before each request of its lane's; a vendor's that
+    // ended is restarted as the backstop restores a scene, warmed by the operation for a warm sample (`warmUp`), and a
+    // candidate's stops the run
+    const laneScene = (sceneName, label, at, warmUp = null) =>
+      keepLaneScene({
+        desktop,
+        windows,
+        sceneName,
+        label,
+        vendors: VENDORS,
+        at,
+        emit,
+        restart: () =>
+          restartLaneScene({
+            restore: (w) => restoreLaneScene({ desktop, windows, sceneName, label, occlusion: args.occlusion, warmUp: w }),
+            endedNow: () => desktop.sceneEnded(windows[sceneName].text[label]),
+            warmUp,
+          }),
+      });
     const needsStub = plan.some((p) => inputOp(p.op) || isCase(p.op));
     const stubScene = needsStub ? await desktop.openChrome('stub', 'scene.html') : null;
     await desktop.openFront(args.occlusion);
@@ -1162,6 +1186,8 @@ async function diffRun(args, candidate, { handoff }) {
     const measureSeries = async ({ sceneName, op, label, block, n }) => {
       const spec = engineSpecFor(engines.find((e) => e.label === label), op, sceneName);
       let target = measuredTarget(windows, sceneName, op, label);
+      // the series' cold sample finds its lane's text window still the run's, or a fresh one (M5's T4)
+      if (isText(op)) target = await laneScene(sceneName, label, { op, block, i: 0, series: 'cold' });
       if (target && args.occlusion === 'visible') desktop.raise(target);
       // a development run's candidate engine through a trace proxy of the series's own (`--trace-engine`), each sample's
       // span in the trace kept on its row
@@ -1169,6 +1195,9 @@ async function diffRun(args, candidate, { handoff }) {
       const env = trace ? { ...(OPS[op].apps ? launch.env : {}), ...trace.env } : OPS[op].apps ? launch.env : undefined;
       let engine = makeEngine(spec, env);
       const sample = (i) => runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion });
+      // a warm sample's fresh window brought to the series' state by the operation itself, run once untimed with its own
+      // preparation and witness, as the series' samples ran it (fix round 1): the backstop's and a restart's alike
+      const warmUpFor = (i) => async (fresh) => warmUpRecord(await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target: fresh, op, i, block, label, sceneName, cuaVersion }));
       const traced = (i) =>
         trace.span(i, () => sample(i)).then(({ value, xtrace }) => {
           if (value.row) value.row.xtrace = xtrace;
@@ -1176,6 +1205,8 @@ async function diffRun(args, candidate, { handoff }) {
         });
       try {
         for (let i = 0; i < n; i++) {
+          // each warm sample finds its lane's text window still the run's, or a fresh one warmed (M5's T4)
+          if (isText(op) && i > 0) target = await laneScene(sceneName, label, { op, block, i, series: 'warm' }, warmUpFor(i));
           // the gate's rule for a harness-side preparation failure (prepare.mjs): one resample in the sample's condition,
           // a cold sample's on a fresh engine, a text window's after the backstop restored the lane's scene (task 24)
           const taken = await sampleUnderRule({
@@ -1188,10 +1219,7 @@ async function diffRun(args, candidate, { handoff }) {
             },
             restoreScene: isText(op)
               ? async ({ cold }) => {
-                  // a warm sample's fresh window is brought to the series' state by the operation itself, run once
-                  // untimed with its own preparation and witness, as the series' samples ran it (fix round 1)
-                  const warmUp = cold ? null : async (fresh) => warmUpRecord(await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target: fresh, op, i, block, label, sceneName, cuaVersion }));
-                  const record = await restoreLaneScene({ desktop, windows, sceneName, label, occlusion: args.occlusion, warmUp });
+                  const record = await restoreLaneScene({ desktop, windows, sceneName, label, occlusion: args.occlusion, warmUp: cold ? null : warmUpFor(i) });
                   target = windows[sceneName].text[label];
                   return record;
                 }
@@ -1341,6 +1369,7 @@ async function diffRun(args, candidate, { handoff }) {
     if (args.audit) {
       for (const { scene: sceneName, op } of auditPlan(plan)) {
         for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
+          if (isText(op)) await laneScene(sceneName, spec.label, { op, block: 'audit', i: 0, series: 'cold' });
           const target = measuredTarget(windows, sceneName, op, spec.label);
           const oks = [];
           // each audited request's answer, for the device cases' judge: the expected outcome, not only a clean trace
@@ -1406,6 +1435,7 @@ async function diffRun(args, candidate, { handoff }) {
     if (args.counts && via === 'wire') {
       for (const { scene: sceneName, op } of blockPlan.filter((p) => isText(p.op))) {
         for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
+          await laneScene(sceneName, spec.label, { op, block: 'bus', i: 0, series: 'cold' });
           const target = measuredTarget(windows, sceneName, op, spec.label);
           const engine = makeEngine({ ...spec, stats: false });
           const monitor = await startMonitor(busAddress);
@@ -1427,6 +1457,12 @@ async function diffRun(args, candidate, { handoff }) {
           desktop.focusFront();
         }
       }
+    }
+
+    // The run's last look at every lane's text window (M5's T4): an end after its lane's last request is counted too, a
+    // candidate's stopping the run, and nothing is restarted
+    for (const [sceneName, { text }] of Object.entries(windows)) {
+      for (const label of Object.keys(text)) await keepLaneScene({ desktop, windows, sceneName, label, vendors: VENDORS, at: { pass: 'end' }, restart: null, emit });
     }
 
     // The paste safety cases (safety.mjs): cua alone, on windows of their own, the bus watched for the whole phase.
@@ -1612,17 +1648,23 @@ async function diffRun(args, candidate, { handoff }) {
     emit({ kind: 'text-restores', ...restores });
     // the backstop's warm-ups: a candidate's that failed fails the run (fix round 1)
     const warmUps = judgeWarmUps(after, VENDORS);
-    judged = { verdicts, options: { valid, faults, restores: restores.lanes, warmUps } };
+    // the text windows a lane ended (M5's T4): a vendor's restarts counted, never scored
+    const sceneEnds = textPlanned ? judgeSceneEnds(after, labels, VENDORS) : null;
+    if (sceneEnds) emit({ kind: 'text-scene-ends', ...sceneEnds });
+    judged = { verdicts, options: { valid, faults, restores: restores.lanes, warmUps, sceneEnds } };
   } catch (error) {
-    if (!(error instanceof CandidateTextLost)) throw error;
-    // a candidate's own text window lost its first word: a sample of its lane left the person's text wrong, so the run
-    // stops as a failure there, never put back and never absorbed (task 24)
-    const at = error.sample;
-    emit({ kind: 'text-lost', ...at, ...error.record });
+    if (!(error instanceof CandidateTextLost) && !(error instanceof CandidateSceneEnded)) throw error;
+    // a candidate's own text window lost its first word, or ended (M5's T4): a sample of its lane left the person's text
+    // wrong or ended the application, so the run stops as a failure there, never put back, restarted or absorbed (task 24)
+    const at = error.sample ?? error.record;
+    emit(error instanceof CandidateTextLost ? { kind: 'text-lost', ...at, ...error.record } : { kind: 'scene-lost', ...error.record });
     const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
     const restores = judgeTextRestores(rows, labels);
     emit({ kind: 'text-restores', ...restores });
-    judged = { verdicts: [], options: { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), stop: `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}: ${error.message}; the run stopped there` } };
+    const sceneEnds = textPlanned ? judgeSceneEnds(rows, labels, VENDORS) : null;
+    if (sceneEnds) emit({ kind: 'text-scene-ends', ...sceneEnds });
+    const where = at.op ? `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}` : `${at.scene} ${at.engine}, the ${at.pass} pass`;
+    judged = { verdicts: [], options: { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), sceneEnds, stop: `${where}: ${error.message}; the run stopped there` } };
   } finally {
     if (witness) await witness.stop();
     await desktop.closeAll();
@@ -1630,7 +1672,7 @@ async function diffRun(args, candidate, { handoff }) {
   // judged once every window of the run's is closed: its own trace covers the cleanup
   const ending = desktopEnding(desktop.ending);
   const outcome = runOutcome(judged.verdicts, { ...judged.options, foreign: [...engineForeign, ...ending.foreign] });
-  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, desktop: ending.record, finished: new Date().toISOString() });
+  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, ...(outcome.sceneEnds ? { scene_ends: outcome.sceneEnds } : {}), desktop: ending.record, finished: new Date().toISOString() });
   writeSummary(args.out);
   const label = gateLabel(candidate.gate);
   process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${label ? `${label}: ` : ''}${verdictLine(outcome)}\nresults: ${results}\n`);

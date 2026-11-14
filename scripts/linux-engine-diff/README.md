@@ -680,6 +680,19 @@ variants included; their evidence is written either way. The run's `end` row kee
     sample invalid. The caps count the resample as before.
   - Every restore counts in its lane's total: the samples', the failed preparations', the warm-ups', the audit's
     (`text_restores` on its row) and the bus pass's. None of them adds a timed sample.
+  - **A window its lane ended** (M5's T4, `scene-ended.mjs`). The pinned build's text input ended gedit on every
+    sample on arm64 (2026-10-06), so before each request of a lane's on its text window (each timed sample, the
+    audit's and the bus pass's), and once at the run's end, the harness looks whether the window is still the run's
+    (`scenes.mjs` `sceneEnded`, three reads before an end is taken).
+    - The look is the same for every lane.
+    - A vendor's ended window is restarted before its next request, as the backstop restores a scene (warmed by the
+      operation for a warm sample, and once more unwarmed when the warm-up ended it too), and recorded with the request
+      that last reached it (`scene-ended`). The request that ended it stays that build's answer; none of its later
+      requests meets a dead window, so no vendor failure the harness caused lowers the bar, and no restart counts
+      against the caps.
+    - The verdict line and the summary count the ends per lane, every lane named.
+    - A candidate's window is never restarted: a request of its lane ended the application, so the run stops as a
+      failure (`scene-lost`).
 - **A stopped run** (`stop.mjs`): SIGINT or SIGTERM stops the witness, closes every window the harness opened, and
   stops the run's Chrome and its session bus before the process exits 130 or 143. A stop during the run's start
   waits for it: the start ends what it acquired (its trace, record, session bus and watchdog) and starts nothing more.

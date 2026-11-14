@@ -18,10 +18,12 @@ export const DECLARED_LOSSES = ['declared refusal', 'declared unconfirmed'];
  * `restores` (prepare.mjs `judgeTextRestores`' `lanes`): the scene text put back per lane, carried to the verdict line;
  * `stop`: why the run stopped before its verdicts (a candidate's own text lost, task 24), one more failure.
  * `warmUps` (prepare.mjs `judgeWarmUps`): each candidate warm-up that failed is one more failure.
+ * `sceneEnds` (scene-ended.mjs `judgeSceneEnds`): the text windows a lane ended, per lane, carried to the verdict line
+ * (M5's T4); a vendor's restarts fail nothing, and each reason it gives (a candidate's restart) is one more failure.
  * `foreign`: each change of a window the harness did not open (audit.mjs `auditForeign`, by the harness or an engine
  * it drove), and each trace that could not show there was none, is one more failure, whatever the verdicts.
  */
-export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null, warmUps = null, foreign = [] }) {
+export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null, warmUps = null, sceneEnds = null, foreign = [] }) {
   const name = (v) => `${v.scene} ${v.op} ${v.candidate}`;
   const judged = verdicts.filter((v) => v.kind === 'verdict');
   const drops = dropCounts(judged);
@@ -33,11 +35,12 @@ export function runOutcome(verdicts, { valid, faults = null, restores = null, st
   // the gate's rule for harness-side preparation failures (prepare.mjs): a cap exceeded fails the run
   if (faults && !faults.pass) failed.push(`harness preparation failures over the cap (${faults.reasons.join('; ')})`);
   if (warmUps && !warmUps.pass) failed.push(...warmUps.reasons);
+  if (sceneEnds && !sceneEnds.pass) failed.push(...sceneEnds.reasons);
   if (stop) failed.push(stop);
   for (const f of foreign) failed.push(`a window the harness did not open was changed: ${f}`);
   if (drops.finding) failed.push(drops.finding);
   const pass = failed.length === 0;
-  return { valid, pass, failed, parity, refused, ...(restores ? { restores } : {}), code: valid && pass ? 0 : 1 };
+  return { valid, pass, failed, parity, refused, ...(restores ? { restores } : {}), ...(sceneEnds ? { sceneEnds: sceneEnds.lanes } : {}), code: valid && pass ? 0 : 1 };
 }
 
 /** The share of a run's landed drops left unconfirmed above which the run has a finding (the design session, 2026-11-10). */
@@ -59,11 +62,14 @@ export function dropCounts(verdicts) {
 
 /**
  * A run's verdicts in one line: its failures, else every verdict PASS; a parity verdict listed apart either way, and
- * the scene text put back per lane (task 24), every lane named, when the run counted it.
+ * the scene text put back per lane (task 24) and the text windows a lane ended (M5's T4), every lane named, when the run
+ * counted them.
  */
-export function verdictLine({ pass, failed, parity = [], refused = [], restores = null }, strong = (s) => s) {
-  const restored = restores ? `; text restores (the first word put back before a sample): ${Object.entries(restores).map(([lane, n]) => `${lane} ${n}`).join(', ')}` : '';
-  const listed = `${parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : ''}${refused.length ? `; ${strong('declared refusal')} (a loss, not a pass): ${refused.join(', ')}` : ''}${restored}`;
+export function verdictLine({ pass, failed, parity = [], refused = [], restores = null, sceneEnds = null }, strong = (s) => s) {
+  const perLane = (counts) => Object.entries(counts).map(([lane, n]) => `${lane} ${n}`).join(', ');
+  const restored = restores ? `; text restores (the first word put back before a sample): ${perLane(restores)}` : '';
+  const ended = sceneEnds ? `; text windows a lane ended (a vendor's restarted, never scored): ${perLane(sceneEnds)}` : '';
+  const listed = `${parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : ''}${refused.length ? `; ${strong('declared refusal')} (a loss, not a pass): ${refused.join(', ')}` : ''}${restored}${ended}`;
   if (!pass) return `${strong('FAIL')}: ${failed.join(', ')}${listed}`;
   return `${parity.length || refused.length ? 'no verdict FAIL' : 'every verdict PASS'}${listed}`;
 }

@@ -6,7 +6,7 @@
 //! nothing sent.
 //!
 //! They need `--features live` (an X display, AT-SPI) and python3-gi with GTK 3. Without python3-gi each says so on
-//! stderr and passes: the engine-linux gate's runner has none (`tech-debt-tracker.md`).
+//! stderr and passes, except under `CUA171_GTK_TESTS=required` (the engine-linux gate), where it fails.
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -20,7 +20,7 @@ use x11rb::protocol::xproto::{ConnectionExt as _, InputFocus};
 use x11rb::wrapper::ConnectionExt as _;
 
 use super::Engine;
-use super::identity_faults::{find, read, request};
+use super::identity_faults::{find, gtk3, read, request};
 use crate::clipboard::REQUEST_PAUSE_MS;
 use crate::clipboard::tests::{clear_clipboard, serial};
 use crate::fault::{self, Faults, Identity};
@@ -82,17 +82,9 @@ fn wait_for(log: &Log, what: &str, ready: impl Fn(&[Value]) -> bool) {
 
 /// The target with program name `prgname`, asking `delay` after each owner change, focused and read by a fresh
 /// engine (`wait`: its `--targets-wait-ms`, None for the families'); or None where python3-gi with GTK 3 is not
-/// installed.
+/// installed ([`gtk3`]).
 fn target(tag: &str, prgname: &str, delay: &str, wait: Option<Duration>) -> Option<(Engine, Target)> {
-    let gi = Command::new("python3")
-        .args([
-            "-c",
-            "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk",
-        ])
-        .stderr(Stdio::null())
-        .status();
-    if !gi.is_ok_and(|s| s.success()) {
-        eprintln!("skipped: python3-gi with GTK 3 is not installed (tech-debt-tracker.md, the identity paths in CI)");
+    if !gtk3() {
         return None;
     }
     clear_clipboard();

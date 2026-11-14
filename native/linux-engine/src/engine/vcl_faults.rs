@@ -6,7 +6,7 @@
 //! root pane, so the element itself must be read too (task 72's review, finding 1).
 //!
 //! They need `--features live` (an X display, AT-SPI) and python3-gi with GTK 3. Without python3-gi each says so on
-//! stderr and passes: the engine-linux gate's runner has none (`tech-debt-tracker.md`).
+//! stderr and passes, except under `CUA171_GTK_TESTS=required` (the engine-linux gate), where it fails.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use super::Engine;
-use super::identity_faults::{Log, find, read, request, wait_for};
+use super::identity_faults::{Log, find, gtk3, read, request, wait_for};
 use crate::clipboard::tests::serial;
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/vcl-shape.py");
@@ -41,17 +41,9 @@ impl Drop for Shape {
 }
 
 /// The fixture in a shape (`stale`, `agree` or `odd`) once its window is mapped, or None (said on stderr) where
-/// python3-gi with GTK 3 is not installed.
+/// python3-gi with GTK 3 is not installed ([`gtk3`]).
 fn shape(kind: &str) -> Option<Shape> {
-    let gi = Command::new("python3")
-        .args([
-            "-c",
-            "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk",
-        ])
-        .stderr(Stdio::null())
-        .status();
-    if !gi.is_ok_and(|s| s.success()) {
-        eprintln!("skipped: python3-gi with GTK 3 is not installed (tech-debt-tracker.md, the identity paths in CI)");
+    if !gtk3() {
         return None;
     }
     let title = format!("cua-engine-vcl-{kind}-{}", std::process::id());

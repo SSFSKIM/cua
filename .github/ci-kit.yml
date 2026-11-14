@@ -59,7 +59,7 @@ gates:
     setup: false
     run: |
       sudo apt-get update -y
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth dbus at-spi2-core yad xserver-xorg-core xserver-xorg-video-dummy
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth dbus at-spi2-core yad xserver-xorg-core xserver-xorg-video-dummy python3-gi gir1.2-gtk-3.0
       cd native/linux-engine
       rustup toolchain install
       rustup target add x86_64-unknown-linux-musl
@@ -68,7 +68,7 @@ gates:
       cargo clippy --release --locked --target x86_64-unknown-linux-musl --all-targets --features live -- -D warnings
       cargo clippy --release --locked --target x86_64-unknown-linux-musl -- -D warnings
       cargo build --release --locked --target x86_64-unknown-linux-musl
-      xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --release --locked --target x86_64-unknown-linux-musl --features live -- --test-threads 1
+      CUA171_GTK_TESTS=required xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --release --locked --target x86_64-unknown-linux-musl --features live -- --test-threads 1
       tests/two-screens.sh
     paths:
       - "native/linux-engine/**"

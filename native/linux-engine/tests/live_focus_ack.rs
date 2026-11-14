@@ -6,7 +6,7 @@
 //! it) the same clicks take the focus: the late window reproduces what twice the gate's load did to kate and qtcreator.
 //!
 //! They need python3 with PyQt5 and PyQt6 and the session's accessibility bus; without PyQt each says so on stderr and
-//! passes, as the identity fixture's tests do without python3-gi (the engine-linux gate's runner has neither).
+//! passes (the engine-linux gate installs no PyQt).
 //!
 //!   xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --features live -- --test-threads 1
 

@@ -5,7 +5,7 @@
 //! own dispatcher, so the answer is the wire's.
 //!
 //! They need `--features live` (an X display, AT-SPI) and python3-gi with GTK 3. Without python3-gi each says so on
-//! stderr and passes: the engine-linux gate's runner has none (`tech-debt-tracker.md`).
+//! stderr and passes, except under `CUA171_GTK_TESTS=required` (the engine-linux gate), where it fails.
 
 use std::thread::sleep;
 use std::time::{Duration, Instant};

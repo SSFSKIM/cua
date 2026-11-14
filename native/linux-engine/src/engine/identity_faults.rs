@@ -8,7 +8,7 @@
 //! refuse, having sent nothing.
 //!
 //! They need `--features live` (an X display, AT-SPI) and python3-gi with GTK 3. Without python3-gi each says so on
-//! stderr and passes: the engine-linux gate's runner has none (`tech-debt-tracker.md`).
+//! stderr and passes, except under `CUA171_GTK_TESTS=required` (the engine-linux gate), where it fails.
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -96,9 +96,10 @@ pub(super) fn active(log: &[Value], n: u64) -> Option<bool> {
         .and_then(|r| r["is"].as_bool())
 }
 
-/// The fixture with `count` windows of one title and `args` its optional arguments (`tests/support/gtk3-twins.py`),
-/// once every window is mapped; or None (said on stderr) where python3-gi with GTK 3 is not installed.
-pub(super) fn fixture(tag: &str, count: u64, args: &[&str]) -> Option<Fixture> {
+/// Whether python3-gi with GTK 3, which every GTK 3 fixture runs on, is installed. Where it is not, the test says so
+/// on stderr and passes, unless the run sets `CUA171_GTK_TESTS=required` (the engine-linux gate, which installs it):
+/// then the missing dependency fails the test, so the gate never passes a test it did not run.
+pub(super) fn gtk3() -> bool {
     let gi = Command::new("python3")
         .args([
             "-c",
@@ -106,8 +107,21 @@ pub(super) fn fixture(tag: &str, count: u64, args: &[&str]) -> Option<Fixture> {
         ])
         .stderr(Stdio::null())
         .status();
-    if !gi.is_ok_and(|s| s.success()) {
-        eprintln!("skipped: python3-gi with GTK 3 is not installed (tech-debt-tracker.md, the identity paths in CI)");
+    if gi.is_ok_and(|s| s.success()) {
+        return true;
+    }
+    assert!(
+        std::env::var("CUA171_GTK_TESTS").as_deref() != Ok("required"),
+        "python3-gi with GTK 3 is not installed, which this run requires (CUA171_GTK_TESTS=required)"
+    );
+    eprintln!("skipped: python3-gi with GTK 3 is not installed");
+    false
+}
+
+/// The fixture with `count` windows of one title and `args` its optional arguments (`tests/support/gtk3-twins.py`),
+/// once every window is mapped; or None (said on stderr) where python3-gi with GTK 3 is not installed ([`gtk3`]).
+pub(super) fn fixture(tag: &str, count: u64, args: &[&str]) -> Option<Fixture> {
+    if !gtk3() {
         return None;
     }
     let title = format!("cua-engine-twins-{tag}-{}", std::process::id());

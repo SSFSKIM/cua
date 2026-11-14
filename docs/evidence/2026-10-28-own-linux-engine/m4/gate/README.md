@@ -410,6 +410,11 @@ the hold (ruling 672). On candidate 2, V5 passed all three cases (9/9 each) and 
   electron-input press_key background 1 late (#302) in 59. The changed code reaches none of them.
 - **The run's verdict line** prints the declared unconfirmed cells under "declared refusal (a loss, not a pass)"
   (`stats.mjs` `verdictLine`); their rows and the summary say "declared unconfirmed". Wording only; tech debt.
+- **The load judge's raw-count shortcut** (`drag-judge.mjs` `loadCounts`: `mine.took >= pinned.took || p >= LOAD_P`)
+  agrees with Fisher only when both sides ran as many runs; tech debt. Read of the stored records (ruling 699,
+  `scripts/check-load-sides.mjs`, output `c2-f9692898/out/load-sides.txt`): 30 lane rows in 4 steps, candidate 2's L1,
+  L2a, L2b and L2c (the only steps that ran the load judge), every one 40 against 40 on both sides, and recounted from
+  the runs, so no stored verdict depends on the shortcut.
 
 ## The `:0` sittings' checks
 

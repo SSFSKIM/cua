@@ -53,8 +53,10 @@
 //     (compare.mjs compareLanes).
 //   node scripts/native-baseline.mjs compare --engines <cv-dir> <cc-dir> --top-up-baseline <cv-dir> --top-up-candidate <cc-dir> [--out comparison.md]
 //     Linux, the gate's R2 (#171 M4 T18): the one top-up of the series the sitting left undetermined, three more runs a
-//     lane of the same candidate and display, pooled by Acceptance 3's rule (compare.mjs linuxEngineSpeed). Without it,
-//     the comparison prints `TOP-UP NEEDED: <op> ...` when only such series fail it.
+//     lane of the same candidate and display, pooled by Acceptance 3's rule over the in-cell time (compare.mjs
+//     linuxEngineSpeed, #370). Without it, the comparison prints `TOP-UP NEEDED: <op> ...` when only such series fail it.
+//     A series still undetermined after it fails (F8a), unless the design session declared it a gap by name
+//     (compare.mjs DECLARED_ENGINE_GAPS): then it is unproved, listed apart and printed `UNPROVED ...`, never a pass.
 //
 // A run writes results.jsonl (one row per sample: op, sample, ok, wallMs, inCellMs, the service's cua/serviceMs and cua's
 // engine's cua/engineMs where the result carried them, and the sample's counts) and
@@ -442,17 +444,21 @@ export function summary(dir) {
 // before a change with its runs after it; with `lanes` (a LANE_MODES key: engines, hosts, end-to-end) the two lanes that
 // comparison names (scripts/native-baseline/compare.mjs). Prints the comparison, or writes it to `out`, and the verdict
 // line. A Linux engine comparison also prints the series a top-up would decide (`TOP-UP NEEDED: <op> ...`), and, given
-// one (`topUp`, its {baseline, candidate} directories: the gate's R2), each series still undetermined after it
-// (`UNDETERMINED AFTER TOP-UP ...`). -> 0 only on a PASS verdict.
-export function compareDirs(baselineDir, candidateDir, {out, sameHost = false, lanes, topUp} = {}) {
+// one (`topUp`, its {baseline, candidate} directories: the gate's R2), each series still undetermined after it, a
+// failure (`UNDETERMINED AFTER TOP-UP ...`), or unproved under a declared gap (`UNPROVED ...`, not a pass). `declared`
+// replaces compare.mjs DECLARED_ENGINE_GAPS, for tests; the command line takes no declaration. -> 0 only on a PASS
+// verdict: an unproved series is reported from the comparison's list, never from this status.
+export function compareDirs(baselineDir, candidateDir, {out, sameHost = false, lanes, topUp, declared} = {}) {
   const [baseline, candidate] = [baselineDir, candidateDir].map(dir => readRuns(resolve(dir)));
   const extra = topUp && {baseline: readRuns(resolve(topUp.baseline)), candidate: readRuns(resolve(topUp.candidate))};
-  const result = lanes ? compareLanes(lanes, baseline, candidate, extra ? {topUp: extra} : {}) : (sameHost ? compareSameHost : compare)(baseline, candidate);
+  const options = {...(extra ? {topUp: extra} : {}), ...(declared ? {declared} : {})};
+  const result = lanes ? compareLanes(lanes, baseline, candidate, options) : (sameHost ? compareSameHost : compare)(baseline, candidate);
   const text = renderComparison(result);
   if (out) writeFileSync(resolve(out), text); else process.stdout.write(text);
   for (const problem of result.problems) console.error(`problem: ${problem}`);
   if (result.topUp?.needed.length) console.error(`TOP-UP NEEDED: ${result.topUp.needed.join(' ')}`);
-  for (const u of result.topUp?.undetermined ?? []) console.error(`UNDETERMINED AFTER TOP-UP (reported, not a failure): ${u.op} [${u.interval.join(', ')}] ms, bound ${u.bound} ms, ${u.samples.vendor} / ${u.samples.cua} samples`);
+  for (const u of result.topUp?.undetermined ?? []) console.error(`UNDETERMINED AFTER TOP-UP (a failure: declared no gap): ${u.op} [${u.interval.join(', ')}] ms, bound ${u.bound} ms, ${u.samples.vendor} / ${u.samples.cua} samples`);
+  for (const u of result.unproved ?? []) console.error(`UNPROVED (a declared gap, not a pass; ${u.ruling}): ${u.op} [${u.interval.join(', ')}] ms, bound ${u.bound} ms, ${u.samples.vendor} / ${u.samples.cua} samples`);
   console.error(`VERDICT: ${result.verdict}`);
   return result.verdict === 'PASS' ? 0 : 1;
 }

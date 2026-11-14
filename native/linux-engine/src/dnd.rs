@@ -182,6 +182,52 @@ pub fn wait_for_take(mut started: impl FnMut() -> bool, deadline: Instant) -> bo
     }
 }
 
+/// The hold on the background route (V5, 2026-11-13): [`wait_for_take`] that refreshes the path's end while it waits.
+/// Chromium's X11 window dispatches the first core `MotionNotify` it reads and discards every matching one already queued
+/// behind it: `CoalescePendingMotionEvents` (`ui/base/x/x11_util.cc`) moves them out of the queue without counting them,
+/// so `CoalesceEventsIfNeeded` answers false and `X11Window::DispatchUiEvent` dispatches the first (real input is XI2,
+/// whose branch counts, so only SendEvent's core motion meets it). A browser busy until the whole path is queued gets
+/// its first motion alone: Blink sees no move past its threshold, the press becomes a click, and no take ever comes. So
+/// with no take, a motion every [`KEEPALIVE`], the path's second-to-last sample first (the last was just sent),
+/// alternating, until `stop`, with the last sample sent there if the alternation left the other: whichever motion the
+/// browser reads once it catches up carries the path's end. `stop` is a browser's rest before the bound, so the point
+/// the pointer ends on sits in a frame of its own before the release (`families.rs` `BROWSER_REST`). `look(motion)`
+/// places the motion, when there is one, then answers whether the take was seen. Answers the take and how many motions
+/// went out; a motion that fails ends the hold with its error.
+pub fn wait_for_take_refreshing(
+    mut look: impl FnMut(Option<(i16, i16)>) -> anyhow::Result<bool>,
+    before: (i16, i16),
+    last: (i16, i16),
+    stop: Instant,
+    deadline: Instant,
+) -> anyhow::Result<(bool, u32)> {
+    let mut sent = 0;
+    let mut on_last = true;
+    let mut next = Instant::now() + KEEPALIVE;
+    loop {
+        let now = Instant::now();
+        let motion = if now < stop && now >= next {
+            next = now + KEEPALIVE;
+            on_last = !on_last;
+            Some(if on_last { last } else { before })
+        } else if now >= stop && !on_last {
+            on_last = true;
+            Some(last)
+        } else {
+            None
+        };
+        sent += u32::from(motion.is_some());
+        if look(motion)? {
+            return Ok((true, sent));
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Ok((false, sent));
+        }
+        std::thread::sleep(TAKE_POLL.min(deadline - now));
+    }
+}
+
 /// The floor's motions after a take (only then, and only on a drag the engine lets drop into a Chromium window): until
 /// `due`, the path's second-to-last sample and then its last, [`KEEPALIVE`] apart, so the drag ends on its last
 /// sample. Answers how many pairs went out; a motion that fails ends it with its error.
@@ -882,6 +928,99 @@ mod tests {
         // a take seen at the path's last look (the deadline already past) still counts: the floor follows
         assert!(wait_for_take(|| true, Instant::now() - Duration::from_millis(1)));
         assert!(!wait_for_take(|| false, Instant::now() - Duration::from_millis(1)));
+    }
+
+    #[test]
+    fn the_background_hold_refreshes_the_path_s_end_until_one_rest_before_its_bound_ending_on_the_last_sample() {
+        // no take: a motion every KEEPALIVE, the path's second-to-last sample first, alternating, the last sent one
+        // rest before the bound, then none while the hold runs out
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(120);
+        let stop = deadline - Duration::from_millis(30);
+        let mut placed: Vec<((i16, i16), Instant)> = Vec::new();
+        let (taken, sent) = wait_for_take_refreshing(
+            |motion| {
+                if let Some(p) = motion {
+                    placed.push((p, Instant::now()));
+                }
+                Ok(false)
+            },
+            (39, 5),
+            (40, 5),
+            stop,
+            deadline,
+        )
+        .unwrap();
+        assert!(!taken);
+        assert!(Instant::now() >= deadline, "held to the bound");
+        assert_eq!(sent as usize, placed.len());
+        assert!(placed.len() >= 6, "{placed:?}");
+        assert_eq!(
+            placed[0].0,
+            (39, 5),
+            "the path's last sample was just sent: the other one first"
+        );
+        assert!(placed.windows(2).all(|w| w[0].0 != w[1].0), "alternating: {placed:?}");
+        assert_eq!(placed.last().unwrap().0, (40, 5), "ending on the last sample");
+        assert!(
+            placed.iter().all(|(_, at)| *at <= stop + Duration::from_millis(3)),
+            "none after one rest before the bound"
+        );
+        assert!(
+            placed
+                .windows(2)
+                .all(|w| w[1].1 - w[0].1 <= KEEPALIVE + Duration::from_millis(5)),
+            "a motion every {KEEPALIVE:?} or so"
+        );
+        // a take ends it at once, whatever was sent last (the floor's keepalives end on the last sample)
+        let mut looks = 0;
+        let (taken, _) = wait_for_take_refreshing(
+            |_| {
+                looks += 1;
+                Ok(looks == 4)
+            },
+            (39, 5),
+            (40, 5),
+            Instant::now() + Duration::from_secs(4),
+            Instant::now() + Duration::from_secs(5),
+        )
+        .unwrap();
+        assert!(taken);
+        // a path that ended past the stop: no refresh, the hold waited as before; a bound already past still looks once
+        let mut motions = 0;
+        let now = Instant::now();
+        let (taken, sent) = wait_for_take_refreshing(
+            |m| {
+                motions += usize::from(m.is_some());
+                Ok(false)
+            },
+            (39, 5),
+            (40, 5),
+            now,
+            now + Duration::from_millis(20),
+        )
+        .unwrap();
+        assert_eq!((taken, sent, motions), (false, 0, 0));
+        assert!(
+            wait_for_take_refreshing(|_| Ok(true), (39, 5), (40, 5), now, now - Duration::from_millis(1))
+                .unwrap()
+                .0
+        );
+        // a motion that fails ends the hold with its error
+        assert!(
+            wait_for_take_refreshing(
+                |m| if m.is_some() {
+                    Err(anyhow::anyhow!("BadWindow"))
+                } else {
+                    Ok(false)
+                },
+                (39, 5),
+                (40, 5),
+                Instant::now() + Duration::from_millis(60),
+                Instant::now() + Duration::from_millis(90),
+            )
+            .is_err()
+        );
     }
 
     #[test]

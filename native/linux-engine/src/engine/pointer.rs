@@ -365,7 +365,9 @@ pub(super) fn wall_ms() -> f64 {
 /// keepalive motions on the path's last two samples, ending on the last ([`crate::dnd::keepalive`]): Chrome's target
 /// accepts only on a motion (task 22). With no take by the path's end, the button stays down until the bound after the
 /// press for one (task 22), a take then, or one seen at that last look, getting the same floor; no take by then
-/// releases the drag as before. `scheduled` records a take, `held_for_take` the hold. With `accept` (measurement only,
+/// releases the drag as before. On the background route that hold refreshes the path's end, a motion every
+/// `dnd::KEEPALIVE` until a browser's rest before the bound, so a Chromium busy while the path was queued still gets it
+/// once it reads again (`dnd::wait_for_take_refreshing`; V5's lost motion, 2026-11-13). `scheduled` records a take, `held_for_take` the hold. With `accept` (measurement only,
 /// a Chrome drop the engine can confirm, `accept.rs`), the path after a take keeps its own pacing, and the floor's
 /// motions end at Chrome's accept cursor when it comes first, the release then at once. With `press` (a
 /// Chromium-family drag), the press and the samples through Blink's drag threshold, at most [`PRESS_SAMPLES_MAX`], go
@@ -479,17 +481,41 @@ fn drag_along(
             // whether the hold ran: no take by the path's end
             let held = taken.is_none();
             let mut waited = Duration::ZERO;
+            // the motions the hold sent on the background route: SendEvent's core motion, which a busy Chromium loses
+            // but for the first it reads (`dnd::wait_for_take_refreshing`); XTEST's arrives as XI2 and is kept
+            let mut refreshes = None;
             if held {
                 let since = Instant::now();
-                let looked = crate::dnd::wait_for_take(
-                    || {
-                        if let Some(cursor) = accept.as_deref_mut() {
-                            let _ = cursor.poll();
-                        }
-                        watch.started(x)
-                    },
-                    pressed_at + *bound,
-                );
+                let deadline = pressed_at + *bound;
+                let looked = if matches!(route, Route::Window(_)) {
+                    let (looked, sent) = crate::dnd::wait_for_take_refreshing(
+                        |motion| {
+                            if let Some((px, py)) = motion {
+                                route.place_again(x, px, py)?;
+                            }
+                            if let Some(cursor) = accept.as_deref_mut() {
+                                let _ = cursor.poll();
+                            }
+                            Ok(watch.started(x))
+                        },
+                        before_last,
+                        last,
+                        deadline.checked_sub(pacing.rest).unwrap_or(deadline),
+                        deadline,
+                    )?;
+                    refreshes = Some(sent);
+                    looked
+                } else {
+                    crate::dnd::wait_for_take(
+                        || {
+                            if let Some(cursor) = accept.as_deref_mut() {
+                                let _ = cursor.poll();
+                            }
+                            watch.started(x)
+                        },
+                        deadline,
+                    )
+                };
                 if looked {
                     taken = Some((Instant::now(), 0));
                 }
@@ -537,6 +563,7 @@ fn drag_along(
                 "taken": taken.is_some(),
                 "take_after_press_ms": taken.map(|(at, _)| ms(at.saturating_duration_since(pressed_at))),
                 "keepalives": keepalives,
+                "refreshes": refreshes,
             }));
         }
         std::thread::sleep(pacing.release);

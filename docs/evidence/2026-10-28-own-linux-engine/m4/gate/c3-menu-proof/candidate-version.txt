@@ -1,0 +1,27 @@
+cua-engine 0.4.0 (7c600386ced5)
+cfc60ad11338637f3c5071c58250fd6c91de98f2393c32e0e9d116ebdeeea3ef  /Users/new/.local/share/cua-171/t78/candidate/cua-engine
+7c600386ced51252c3ee98d4e45a45fe48be3965
+ M docs/doperpowers/research/2026-10-28-own-linux-engine/sky-linux-behaviour.md
+ M native/linux-engine/README.md
+ M native/linux-engine/src/copy.rs
+ M native/linux-engine/src/engine.rs
+ M native/linux-engine/src/engine/clipboard.rs
+ M native/linux-engine/src/engine/elements.rs
+ M native/linux-engine/src/engine/refusal_faults.rs
+ M native/linux-engine/tests/support/gtk3-twins.py
+ M scripts/linux-engine-diff/README.md
+ M scripts/linux-engine-diff/action-settle-cells.mjs
+ M scripts/linux-engine-diff/action-settle.mjs
+ M scripts/linux-engine-diff/deviations.mjs
+ M scripts/linux-engine-diff/families.mjs
+ M scripts/linux-engine-diff/ops.mjs
+ M scripts/linux-engine-diff/pages/electron-page/main.js
+ M scripts/linux-engine-diff/pages/input.html
+ M scripts/linux-engine-diff/rejudge.mjs
+ M scripts/linux-engine-diff/report.mjs
+ M scripts/linux-engine-diff/run.mjs
+ M scripts/linux-engine-diff/stats.mjs
+ M test/linux-engine-diff/action-settle.test.mjs
+ M test/linux-engine-diff/ops.test.mjs
+?? native/linux-engine/src/engine/menu_faults.rs
+?? test/linux-engine-diff/menu-unconfirmed.test.mjs

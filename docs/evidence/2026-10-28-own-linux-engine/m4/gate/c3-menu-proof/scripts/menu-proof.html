@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 menu proof</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; height: 4000px; }
+  button { position: absolute; left: 12px; width: 300px; height: 50px; font-size: 18px; }
+  #native { top: 120px; }
+  #cancelled { top: 180px; }
+  #custom { top: 240px; }
+  #offscreen { top: 3000px; }
+  #status { position: fixed; left: 340px; top: 120px; margin: 0; }
+  #popup { position: absolute; left: 340px; top: 240px; width: 200px; border: 1px solid #444; background: #fff; display: none; }
+</style>
+</head>
+<body>
+<!-- Task 78's live proof page (not a harness scene; a development run): Native and Offscreen let their browser's own
+     context menu open, Cancelled cancels it, Custom cancels it and shows a menu of the page's own (ARIA role=menu).
+     The status line counts the context requests, where they went, and the Escape keydowns the page gets. -->
+<p id="status">context 0 on none escapes 0 custom hidden</p>
+<button id="native" type="button">Native</button>
+<button id="cancelled" type="button">Cancelled</button>
+<button id="custom" type="button">Custom</button>
+<div id="popup" role="menu" aria-label="Page menu">
+  <div role="menuitem" tabindex="-1">Page item one</div>
+  <div role="menuitem" tabindex="-1">Page item two</div>
+</div>
+<button id="offscreen" type="button">Offscreen</button>
+<script>
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  const state = { context: 0, on: 'none', escapes: 0 };
+  const popup = document.getElementById('popup');
+  const show = () => {
+    const p = document.getElementById('status');
+    p.textContent = `context ${state.context} on ${state.on} escapes ${state.escapes} custom ${popup.style.display === 'block' ? 'shown' : 'hidden'}`;
+    p.setAttribute('aria-label', p.textContent);
+  };
+  document.addEventListener('contextmenu', (e) => {
+    state.context += 1;
+    state.on = e.target.id || e.target.tagName.toLowerCase();
+    if (e.target.id === 'cancelled' || e.target.id === 'custom') e.preventDefault();
+    if (e.target.id === 'custom') popup.style.display = 'block';
+    show();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { state.escapes += 1; popup.style.display = 'none'; }
+    show();
+  });
+  window.cuaHidePopup = () => { popup.style.display = 'none'; show(); };
+  show();
+</script>
+</body>
+</html>

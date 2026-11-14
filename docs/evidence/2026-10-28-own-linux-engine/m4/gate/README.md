@@ -279,8 +279,7 @@ verdict and count is unchanged, and each output above was replaced in place, byt
 the new lines (and P6's header, which now names the reference's minimum). The table's last column is what each rerun
 retained beyond what its ruling replaced. Every control was rerun too: the earlier ones fail as before, line for line,
 and ruling 697's new ones fail under the amended scripts and pass under the scripts as they were (all but
-compare-settle's missing cell and failed audit, which it already caught). The reruns and controls, and that check against
-the earlier scripts, are in `.doperpowers/sde/2026-10-28-own-linux-engine-design/gate-scripts-fix-report.md`.
+compare-settle's missing cell and failed audit, which it already caught).
 
 | candidate | step | counts | ruling | script | output | other terminal failures retained |
 |---|---|---|---|---|---|---|

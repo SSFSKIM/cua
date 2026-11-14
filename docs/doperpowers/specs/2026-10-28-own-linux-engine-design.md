@@ -639,6 +639,14 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - On Xvfb, XTEST's raw XI2 motion values are the requested root coordinates, and they reach a client that does not hold the grab.
   Evidence: `m4/drag-handle/` (`fix2/`, `fix3/`).
 
+- Chrome's context menus under load and on the background route (2026-11-14, M4 T18 gate, candidates 2 and 3; task 77's reproductions, task 78's proofs):
+  - **The stuck state** (#376): after one context-menu Copy was not served within COPY_WAIT at twice the load, every later Copy on that window found no menu ("context menu did not open"). That held through more than 30 s in L3a, and after 2 of 2 timeouts. No menu node and no leftover child were visible.
+  - **A plain stall is not the cause:** SIGSTOP of the browser process for 2.6 s gives the timeout but not the stuck state. Chrome then serves the Copy about 0.3 s after it resumes. So a timed-out Copy can still change the clipboard after cua has answered.
+  - **An Escape sent to Chrome's window while no menu is up reaches the page.**
+  - **A menu opened by an element action closes when the request ends** (#378): `showContextMenu` through `perform_secondary_action` or the right-button fallback, on the background session, with the pinned vendor build as with cua. The vendor's menu was open from 163 to 251 ms and answered at 256 ms; cua's was seen at 58 ms and answered at 68 ms. With Chrome focused, the menu stays open. A window-bound coordinate right click shows no menu at all, though the page gets `contextmenu`. A desktop-route right click gives a menu that stays open.
+  - **The tree:** GTK 4's and Firefox's menus show under the element's window rather than as new application children, and Qt's never reach the tree (#379). Chrome and Firefox emit `ChildrenChanged` and `StateChanged showing` for an ARIA `role=menu` once a listener registers (#377).
+  Evidence: `m4/gate/c2-f9692898/l3a-repro/`, `m4/gate/c3-menu-proof/`.
+
 ## Decision Log
 
 - Decision (2026-10-28, authoring): verification. The spec gets one independent review by the `doperpowers:adversarial-reviewer` agent (technical-heavy: a wire protocol, X11 and D-Bus semantics, a vendor bar) and, in the same round, the same agent type's buildability review of the execution section. Execution runs under a `doperpowers:plan-executor` (opus, high) with its default worker pins; each milestone's pull request gets `doperpowers:reviewer-high`; the final branch review is doperpowers:review-code at the high rung per milestone PR.
@@ -1814,7 +1822,16 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **A timed-out Copy's refusal names both risks:** Chrome may still complete the Copy later, and its menus on this window may stay unresponsive. No Escape and no other recovery is sent, because none is proven safe to the page.
   - **The stuck state is a stated limit with its own ticket** (ticket B in the PR's residue), which owns the deterministic reproduction and the probe of Chrome's menu controller. The trigger, a Copy not served within 2 s at 16 workers, is a load limit with its own ticket (ruling 681).
   - **Candidate 3 is built from the fix's head.** Its rerun set comes from the step definitions: every step and every facade or compare cell that runs a context-menu Copy, a right-button `click_element` or `perform_secondary_action` naming `showContextMenu`, or judges one, plus a D3-style cross-check. The redefined settle cells are listed as such. The design session sees the list before anything runs. The matching macOS gap, the vendor-style ok on AXShowMenu, is #374.
-  Date/Author: 2026-11-14, the plan-executor (session linux171), on the design session's rulings 681, 683, 684, 685 and 687, from task 77's checks and task 78's finding about the settle cells.
+  - **As built (task 78, b4560995..c2d2da8b; frontier review clean after one fix wave):**
+    - One detection, `copy::open_menu`, serves the Copy and every element action named `showContextMenu`, including a primary click whose action 0 it is.
+    - Every read after the action runs against one absolute deadline (`Transport::call_until`, through `Bus::calls_until`). A hung application answers between MENU_WAIT and MENU_WAIT plus 50 ms (ruling 693).
+    - A labelled search cut off after menu items were seen answers that a menu opened: the Copy's existing menu-open refusal, with the Escape to that menu.
+    - `menuUnconfirmed` is an error with a fixed sentence, as the Linux paste's unconfirmed answer is; the Linux wire carries no error names.
+    - V3's two chrome-input cells are declared in the harness's `REFUSALS` with a "declared unconfirmed" verdict, listed apart and never a pass. It holds only while every sample answers menuUnconfirmed, the page's context counter rose, and the witness is unchanged (rulings 688, 691).
+    - `input.html`'s native menu is opt-in (`?menu=native`). The harness's Escape is sent only when the client has a popup open.
+    - The hosted engine-linux gate installs GTK 3's Python bindings and requires them (`CUA171_GTK_TESTS=required`), so the GTK 3 fixture tests can no longer pass by skipping.
+    - Candidate 3's rerun set (ruling 691): S1, L3a, L3b and V3; the cross-checks S4 and S2. V4, V5 and L3c are skipped, since the changed code is unreachable in them (task 78's report).
+  Date/Author: 2026-11-14, the plan-executor (session linux171), on the design session's rulings 681, 683–685, 687, 688, 690, 691 and 693, from task 77's checks and task 78's build and proofs.
 
 ## Outcomes & Retrospective
 

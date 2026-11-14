@@ -355,3 +355,300 @@ gone. All three were fixed test-first with the reviewer's reproductions, and the
 - `gh attestation verify` prints nothing when run from a script; its `--format json` output is the record.
 - Executors whose context grew past about 450k tokens (task 16 at 663k, task 18 at 679k, task 20 at 537k) were replaced
   by fresh fixers for their fix rounds.
+
+## M4 — the measured improvements, the drags at the bar, Chrome's drops and `drag_handle`; the fourth release
+
+Branch `feat/171-m4` from main 9d3fdce6 (M3's squash). It was merged with main twice and never rebased: e112f4f3
+brought in T1's own pull request (#273, squash fc091b83), and b445fd15 brought in 30 commits of macOS engine work after
+the release, touching no frozen path. Side branches merged into the line: T19's (fast-forwarded after 3e6ed163 merged
+the line into it), T16's (770f286d), T18's workers w3–w5, the whole-branch review's fix waves and the gate's fix
+branches. T6's and T7b's fixes were cherry-picked from review worktrees. At 097cda8f the branch holds 527 commits beyond
+main, 504 of them not merges. From M4 on the plan-executor opens the pull request and the design session merges it
+(sminos 277); M4's was being drafted when this was written.
+
+The pre-flight (ea9e155c) was folded into the spec as T1–T18 (e066f444). A `doperpowers:adversarial-reviewer` pass on
+the folded plan raised seven findings (two P1); the re-check closed five, the controller resolved the three new
+conflicts it found in 1f3bebd6, and no further round ran. Loop tasks 28 to 80 then ran one at a time, with the tasks
+the work added. Ranges are `base..head`; "T" numbers are rows of the spec's M4 table. Task reviews are the loop's
+`doperpowers:task-reviewer` (on fable for tasks 51–56, while the sol and astra reviewers were out of
+quota), and `doperpowers:reviewer-medium` for tasks 59 to 73, `-low` where named.
+
+| Task | Commits | Review |
+|---|---|---|
+| 28, T1 (#267): the harness takes only the attested artifact; own branch `fix/267-attested-candidate` | 9d3fdce6..32a2e296; fixes 32a2e296..23c2709f, 23c2709f..a5f86eed | 2 rounds (a dev retry under the gate's label, a stop during preparation leaving a copy, `--version` before the eligibility check; then a stop-handler gap and an unreaped preparation command), then approved. PR #273, merged by the design session. No report file in the workspace: the row rests on the ledger |
+| 29, T2 (#268): the newest build's gedit `clipboard_write`; the apps' stderr; a guard on text mutators | 7fc17bde, c4748447, e7c62d69, 88877e2e; fixes f66725d9, 67a3494a, cf6d82f0 | commit by commit: the static guard was evadable, so a refusal at the bus's send boundary replaced it; the re-review found raw writers the source check missed; the last round was accepted without another review, its controls reproducing both counterexamples |
+| 30–32, T3: truncation from the engine | 73a196a8..f26c6c9e; task 31 merged main (e112f4f3) and fixed e112f4f3..43a89b9b; task 32 67a3494a..22fd7aa1 | approved with two Minors, fixed together with the design session's generic declaration; that round's re-review found the tree-extent oracle inexact (four counterexamples), and a fresh executor built the stats-based one; approved |
+| 33–34, T4: minimized windows | 4d6b33a7..a6a8a375; fix a6a8a375..b8b79a25 | 1 round (wrong-window and bogus-screenshot predicates passing; a release audit that did not prove release-only), by a fresh fixer (the executor at 611k); approved |
+| 35–36, T4b: the harness never changes a window it did not open | e6ed649f..84a64b3e; 84a64b3e..668252fd; 668252fd..d6853188 | 5 Important, then one audit round under the design session's stop rule; the bounded final review found 2 real foreign paths (a reused foreign Chrome id closed at cleanup; a pointer park into the owner's popup), fixed narrowly; converged by the stop rule |
+| 37–39, T5: window identity | 16bfcdc8..a5022cfd; fixes a5022cfd..6b5afbbe, 6b5afbbe..cfc7497f, cfc7497f..4e8f694d | 3 rounds by fresh fixers (the executor at 568k): a discarded `Told` state, a caption fallback and an X11 fallback; then one partial; then a context-menu Copy bound to the process, not the window; approved |
+| 40–41, 44, T4c and the RECORD guard | d61872f2..7ad6f03d (T4c's e54658b8, then task 41); fix 5ad1a30a..c56d03c3, and 619f3c2c | 7 Important (the watchdog's arming, readiness and death; two selection rules; an experiment and repro scripts outside the watchdog or the private fence) in one wave; of the re-review's two, one was fixed (a watchdog ready, then gone) and one dismissed as a stated limit the design session had ruled, the reviewer disagreeing; ended by the stop rule. Accepted live by tasks 49 and 50 |
+| 42: T4c's acceptance on a private display | none | blocked: its stub opened Chrome on the person's profile (below); report filed by the controller |
+| 43: the harness's own Chrome and a private session bus | c85389d8..76143766; fix f7f2b9e2..619f3c2c | 1 round (an inherited `AT_SPI_BUS_ADDRESS`, a stop during the session's start, an unhandled spawn error), by a fresh fixer; approved |
+| 45, 47, 48: the apps' own homes, one spawner for X tools, a private bus on `:0`, Qt's a11y-bus stub | 32e22c6f..ee703d5e; fc518b9a..4e3c25dc; 4e3c25dc..297f8c20 | task 45's 4 Important went into task 47 with the design session's rulings; its re-review found the vendor-JS lane outside the spawner, fixed in task 48; approved, two Minors to tech debt |
+| 46, 49, 50: the isolation's live checks, private and on `:0` | evidence 32e22c6f, 80f04e14, 69f3b4ac | evidence, checked by the controller against each task's live list. Their findings became fixes in task 45 (from 46), task 51 (from 49) and the judge task 53 (from 50); T4c's acceptance stands on 49 and 50 |
+| 51–52: the GTK 4 warm-up, the temp dirs, Qt's control, the judge's own-range rule | 7664513a..943085e5; fix 155be796..d778a092; 609da4e4 | on fable: 3 Important (clients reading the person's `~/.Xauthority`, unconsumed GTK 4 frames, the services' TMPDIR), by a fresh fixer; approved. Task 52 (sonnet) took the follow-ups |
+| 53–54: judge rules (XTEST placement, the witness's focus allowance, matrix refusals), proven on `:0` | e294837e..bd1be5fa; fix bd1be5fa..1525e2be; evidence abefbe06 | 1 Important (the frame clause's liveness hole), by a fresh fixer; approved. Task 54's `:0` proof checked by the controller against task 53's list |
+| 55, T6: the AT-SPI investigations | 98f48253..38975fcb; fix 38975fcb..8cdc5452 on `fix-55`, cherry-picked (55bacc6d to 24363dfa) | approved with Minors (one the design session's correction of a RECORD sentence), fixed; approved |
+| 56, T7: the `FocusOut` timer | 3695a0e8..9f3edff1; fixes 9f3edff1..76ba4842, 76ba4842..418f1e26, probe 3c99d1fe, 3c99d1fe..cbe1e95f, 45a8d03d..aad090b8, aad090b8..5f15449e | six reviews by one reviewer: 2 Important (a run index overwriting its name; consecutive runs not independent); approved three times; then the scrolled-paste rule's paste-size axis; approved. Five design escalations between rounds (the exit drain, a paste settle, the REPL host's kill, the scrolled terminal's confirmation, the never-taken paste) |
+| 57, T7b: the REPL host lets the engine drain | f59575fb..2298ea48; fixes on `fix-57` in six waves, 391c6395..4bec0315, cherry-picked onto the line (cb17afa7 to 98d3317c, f6baa4a0 to a0e58dbd); fix 7 6318c3c9..5bc37f76 | six rounds by one reviewer: the escalation budget and a fail-open experiment; a reaper race, its bounds, a panic deadlock; a launcher stranded by a supervisor SIGKILL; a forgeable held-input record (shown releasing another XTEST client's Shift), a truncating record, unbounded handoffs; two timeout-handoff faults; then approved, and the stop rule bound. Fix 7 (`reviewer-low`) correct |
+| 58–60, T7 revised: the timer measured unnecessary; a paste settle | 58: evidence c84bcd74, 6318c3c9; 59 and 60: one package 5bc37f76..e1ec6114; fix e1ec6114..ff7670e9 | 58 evidence only, stopped by its own rule (the 0 ms control cut nothing on `:0`); 59 and 60 together: incorrect (a click-then-paste regression; a control audited by lane, not scenario), by a fresh fixer; correct |
+| 61: no background press activates a window (Qt) | ff7670e9..0f046b66; fixes 0f046b66..e45a1f45, e45a1f45..a46c0cb6, a46c0cb6..82634941 | incorrect three times (a frame's active state is not its native child's, a reused session's stale snapshot; a multi-click, a modal ancestor; a cached acknowledgement, a new activation path), then a structural fix (one acknowledgement per press, a press-boundary test); correct |
+| 62, T8: the action settle | 66e21595..4996fd29; fixes 7ba4cb67..1763c662, 1763c662..85f8f691 | incorrect (7 P2), by a fresh fixer; incorrect (an audit verdict accepting a desktop change; one P2 dismissed by ruling 473), fixed with a recount of every audited sitting (0 in 403 audits); correct |
+| 63: the foreground route waits for the raise; `activate_window` answers on top | 4996fd29..2ecf6e9e; fix 2ecf6e9e..09227d09; follow-up 09227d09..dfdd38b4 | correct with no findings three times (`reviewer-low` on the follow-up); both later waves came from rulings 461 and 464 |
+| 64, T9: the remaining fixed waits | 21cc0e73..684dd4cf; fix 684dd4cf..0e018237 | incorrect (2 P2: an offscreen predicate unsafe for an occluded descendant; Gecko's held-move pause dropped without evidence; and a P3), by a fresh fixer; correct |
+| 65, T10: the drag judges | 843d3179..f27b9b5b; fix f27b9b5b..38f3ae5e | incorrect (5 P2), by the executor; its recount of Firefox's coalesced samples changed T11's premise; correct |
+| 66, T11: the motion model | 04732370..59c30d64; fix 59c30d64..f2561e8d; follow-up 8251772e | incorrect (2 P2, one a release over another screen's window), by a fresh fixer; correct. The follow-up (a repeatable two-screen command) read by the controller |
+| 67, T12 (#265): thumbs and ranges at twice the load | 7d464cb2..676a39f3 (evidence only); fix 676a39f3..aa4588cc | `reviewer-low`: incorrect on the rerun scripts alone (2 P2), fixed; correct |
+| 68, T13: Chromium drop signals, measured | 4501a3f5..2917848d; fixes 2917848d..4598425e, 4598425e..af5c01d6 | incorrect (6 P2, one a stale accept that would release falsely), by a fresh fixer; incorrect (2 P2, statements only), fixed, the third look skipped (sminos 563) |
+| 69, T14 (#263, #264, #269): Chromium drops | 54654c22..b553c5c1; fix b553c5c1..8ecf2777, with a9e0d562, 209ae2ce | incorrect (2 P2 in the confirmation watcher), by the executor; the remaining P2 dismissed by ruling 595; converged |
+| 70, T15: drag predicates | 2917848d..be009c24 on `feat/171-m4-t15` | not reviewed: closed as superseded by T19, since its point rule widened a silent no-op (T19's 1bac0061 reverts it) |
+| 71, T19 (#353): Gecko's pointer route by the real pointer | be009c24..e47fc1e3 on `feat/171-m4-t19`; fix e47fc1e3..2acc8054; merged at 3e6ed163 and 7747640f | incorrect (3 P2: an unwatched reroute answering success, unread effects, a leave judge passing missed parks), by the executor; correct. Four declared `:0` sittings: three before the build (1,400 runs), the manifest after it (32/32) |
+| 72, T16: Writer's first drag, LibreOffice's element points | 328a3bb5..770b924e on `feat/171-m4-t16`; fix 770b924e..bb161064 on `feat/171-m4-t16-fix`; merge 770f286d | incorrect (4 P2, one a root pane bypassing the check), by a fresh fixer; correct; merged by a fresh executor |
+| 73, T17 (#250): `drag_handle`, Electron's drop confirmation | the proposal ruled first (sminos 598); 6f216132..df988aa5; fixes 6e55c836..2d76095c, 2d76095c..1df5d015, 1df5d015..2c65f88a | four reviews by one reviewer. Three in a row each found new answers of ok for drops that never happened (an abandoned handle stranding pointer input; an ambiguous first accept; a late take read before the watchdog's notice), with two findings dismissed by rulings 611 and 615; the bounded fourth, under the convergence line (sminos 627), correct |
+| 75: T19's control-drag flake | the test fix in 0a83de46 (taken by T17's fixer's commit by path); evidence f9eab71e | no separate review (a test fix and evidence); T17's re-review and the whole-branch review covered it |
+| 74, T18: the close-out (0.4.0, `MIN_ENGINE_VERSION`, the plugin's bump to 0.28.0, the gate's steps, the facade suites) | fa25cb83..3529448c, five workers | no task review: its code went to the whole-branch review's slices C, D1 and D2 (below) |
+| The whole-branch review's six fix waves | f1cb9179..a43b64cd; a70db70e (merge 44264ab8); ddb62024; 34959245 (merge e0e0dda1); e1085997..e0a03b70; 8ab1cc75 | below |
+| Fixes beside the review: ffdnd-fix (from T18's gate pilot), audit-leak-fix, own-host-fix | 44264ab8..8fb5e2e2 (merge cb3661b3); 8a6e0f45 (merge 4c532708); ed939416, 85226389 | ffdnd: slice B correct; slice D1 incorrect (unread counters passing), fixed in 8ab1cc75, then correct. audit-leak-fix with the gate's scripts (task 79). own-host-fix, a test's setup, not reviewed apart |
+| 76: the gate, candidate 1 | R2's top-up 3529448c..2d5cfeb5; fix 2d5cfeb5..514f5c62; evidence 41b08b4e | slice D1's reviewer: incorrect (P1: the top-up's other outcomes unjudged), fixed; correct. The gate cut at V5 |
+| V5's investigation and fix | 41b08b4e..f9692898 (v5-telemetry merged) | slice B's reviewer on 514f5c62..9dfc33f0: correct |
+| 77: the gate, candidate 2 | evidence 866b7d01 (committed by task 79); scripts and tech debt 05733962 | the gate; cut at L3a. Its report is interim (handed back at 471k); the rest is in the ledger and `m4/gate/README.md` |
+| 78: a requested context menu is confirmed, or answers `menuUnconfirmed` | 87c1ecc5..997d2ece; fix 997d2ece..c2d2da8b; folded c55c8e08 | 2 Important (the menu deadline not bounding its reads; GTK menu tests skipped in CI), by a fresh fixer; approved |
+| 79: the gate, candidate 3, and the record of all three | 866b7d01, 049cb20b, ba0434ff; fix ba0434ff..d57c4efa, and 4d3085b3 | `reviewer-medium` on the re-judge scripts and audit-leak-fix: incorrect (3 P2), fixed, every re-judge rerun with no verdict moved; correct. The gate passed |
+| 80: the release | run 43637317960 on c55c8e08 (`release/linux-engine-v0.4.0`); pin ed5bf1bc; evidence 0193a543 | below |
+
+**Result** (`m4/README.md`, `m4/gate/README.md`, `m4/release/README.md`; what M4 built and what it costs is the spec's
+Outcomes & Retrospective, M4):
+- The release gate passed on its third candidate, the release workflow's attested build-only artifact of c55c8e08
+  (`751ec9be…`). Every step passes on the record of the latest candidate that ran it, by the gate's own judge or by a
+  ruling over stored records, and what is declared is listed apart.
+- `linux-engine-v0.4.0`'s published x64 asset is those bytes, pinned in ed5bf1bc.
+- On the released asset, in a run-owned home on a private display: the install at the pin, doctor's engine row,
+  Acceptance 1 at 11/11 with no `sky_linux` in 3,355 samples, and the device-mode fixture at 18/18. A home still on
+  0.3.0 fails doctor, and its first request is refused, both naming `cua install --engine`; after that command it
+  passes.
+- The default stays `vendor`.
+
+**How the design session steered it.** Every design call went to the design session (sminos 277 to 700 in the ledger),
+and each ruling is in the Decision Log under the task it shaped. The rulings that changed how M4 ran, rather than what
+it built:
+- one display user at a time, after T1's fix-round live check overlapped T3's run on `:0` (2026-11-02, 02:42Z);
+- a stop rule for each review loop: after its last round, only a finding of the class the loop exists for reopens it (a
+  path to the person's display, instance, bus or files; a false success; for T17, a fault reproduced with the real
+  engine on an ordinary scene, sminos 627);
+- a fresh fixer once an executor passed about 450k tokens;
+- a host-wide lock (`locked.sh`, sminos 540–541) for every counted sitting, heavy build and suite, once T14 and T15 were
+  to run side by side on one host; the desk track's maintenance windows on the same VM were taken under it;
+- the design session hears before any GO whose conditions are not literally met (582);
+- the same 403 or 429 means usage: stop dispatching, wait, resume (558);
+- concurrent executors in their own worktrees (624), with a variant for T18's workers on disjoint files (632);
+- the gate is its own rehearsal, on the attested artifact, after the whole-branch review (637); a later candidate reruns
+  only what its diff reaches, plus one cross-check (677, 691); a pass by ruling is a script over stored rows, with
+  negative controls, listed in one table (662).
+
+**What failed and why it took longest.**
+- **Two incidents on 2026-11-02, both the harness's own.** At 16:40 VM time (UTC−8) `:0` froze: Xorg looped in
+  `FlushClient` on the harness's whole-run X RECORD connection during T4c's full-manifest run, and all display work
+  stopped. The controller's recovery step (closing that descriptor under gdb) was blocked by the auto-mode classifier,
+  and the appeal confirmed that it needed the owner's own approval in this session. The owner ran the design session's
+  guarded script instead, and `:0` answered again at 20:15. Task 41 reproduced the loop on Xvfb in 255 s (Xorg
+  21.1.12, no upstream fix) and made whole-run RECORD private-only, under a watchdog. At 18:46, task 42's private run
+  opened the harness's stub as a bare `google-chrome --new-window`. It started on the person's default profile, and
+  Chrome's process singleton ended the person's frozen browser about 20 s later. The Sessions folder was backed up, and
+  the owner restarted Chrome through the design session's script. The isolation series, tasks 43–54, followed; it was
+  folded the next day (1ac5ecae).
+- **T7 was built, then measured unnecessary.** Task 56 built the `FocusOut` timer through five fix rounds and a probe,
+  and task 57 hardened the engine's drain through seven fix waves. Then task 58's `:0` sitting and the controller's
+  reading of M0's code showed that M0.3's and M0.4's cut keys came from the engine's exit unredirect, not from an early
+  `FocusOut`, and task 59 measured no cut at 0 ms on any family. The timer gave way to a paste settle (task 60). This
+  ran from 2026-11-03 to 11-05; the drain stayed.
+- **Found in sittings, fixed before the next task:** task 61, Qt windows activated by background clicks at twice the
+  load (found in task 60's sittings; four review rounds to a structural fix), and task 63, GTK 4's foreground pointer
+  input sent before the raise (found in T8's sittings).
+- **T17:** three reviews in a row each found a new path to an ok with no drop.
+- **Usage stops.** The sol and astra reviewers ran out of quota on 2026-11-03, and fable stood in. An API 403 killed
+  both running subagents for about 15 hours (11-09 09:24Z to 11-10 00:39Z). A 429 stopped work for about 2 h 20 min
+  (11-11 19:44Z to 22:05Z); its uncommitted work went to side branches (`wip/171-m4-t17-xdnd`, `wip/171-task75`), each
+  deleted once it landed.
+- **The gate ran on three candidates** (below).
+
+Lessons: the spec's Outcomes & Retrospective, M4.
+
+**Whole-branch review** (`doperpowers:reviewer-high`, before the gate, sminos 637). The branch was too large for one
+reader (414 commits and 264 code files, +56k lines, when it was planned), so it ran in slices, each given the whole spec
+and the interfaces across its boundary. Slices A (the engine core, 16k lines), B (the drag family, 10k) and C (the REPL
+host, the service, the runtime and the workflows, with T18's code, 3.6k) started from f12756ee while T18 still ran. D1
+(the gate and its judges, 7.7k lines) and D2 (the experiments and runners, 33k) started from 080caa09, once T18's gate
+pilot settled. Findings:
+- A: one P2, a held handle's idle bound unserviced while the engine's output was blocked.
+- B: three P2: an auto-expired handle answering a later move with the button up; a handle's screen size stale after a
+  RandR resize; a dedicated foreground drag confirmed against its source window.
+- C: one P1, a reset during an in-flight `drag_start` that pressed afterwards; one P2, a shell injection through TMPDIR
+  in the shim's tests.
+- D1: two P1 (Chrome's late-take steps judged by nothing; a page's stale effect that could hide a control's false ok)
+  and two P2 (a notice passing without the next request's refusal; a reused run name mixing development and gate
+  provenance). D2: one P2, the minimized judge failing a correct desktop on the person's own minimized windows.
+
+The six fix waves:
+- wbr-fix took every A, B and C finding, each RED on f12756ee's code (a43b64cd).
+- wbr-fix2 came from B's discovery that a stale handle could move a later one, ruled a fix rather than debt (sminos
+  642; 44264ab8).
+- wbr-fix3 and wbr-fix4: C's re-reviews found two more ordering holes. They were closed by one queue for handle
+  operations and a 640-interleaving invariant test, RED on 142 of 640 before it, under a one-attempt rule (sminos 644;
+  e0e0dda1).
+- harness-fix took D1's four and D2's one, then re-judged every posted figure from stored records. None changed, and
+  the one set the stored rows could not verify (T14's device controls) was rerun (e0a03b70).
+- unread-fix: D1's bounded review of ffdnd-fix found unread counters passing (8ab1cc75).
+
+Every slice's re-review was correct, and the review converged at 8ab1cc75. Later deltas had bounded reviews: the
+Linux baseline's speed rule (D1, correct), R2's top-up (D1, one P1, then correct), the V5 fix (B, correct), and the
+gate's re-judge scripts with audit-leak-fix (`reviewer-medium`: three P2, two of them ways to pass wrongly; then
+correct).
+
+**The gate.** By ruling 637 the gate is the rehearsal itself: `--gate` runs on the release workflow's attested
+build-only x64 musl artifact of a frozen head, after the whole-branch review. Every artifact is labelled "release gate"
+or "development run, not a release gate" (633). The plan was 49 steps and 1,206 minutes: 211 on `:0` in six steps
+(V1–V5, Z0) and 995 on private displays, idle and at twice the load. R2's top-up later made it 1,216. A driver ran the
+private steps under the host lock. Each `:0` sitting was announced 45 minutes ahead, the design session held its related
+sessions, and the sitting started on the design session's GO. The record of all three candidates is `m4/gate/README.md`.
+- **Candidate 1, 514f5c62** (build-only run 43405393873, `f7c12e9b…`; task 76, 2026-11-13). The idle private block and
+  the `:0` sitting ran (19:30–22:32Z); the block at twice the load was held.
+  - D2 and V5's first run were environment faults, both rerun: Electron's binary was absent, and the snap's Firefox
+    started.
+  - S1, P6 and V3 passed by rulings over stored records: #302 (659), Fisher's tolerance (662), #373 (666).
+  - V5's rerun found two Chrome drops answered ok with no drop, and the design session ruled that they reopen work
+    (669). An investigator and then a reproduction task found the mechanism at the gate's window load under xtrace, 2
+    of 102: Chromium's coalescing of core motion events throws away a busy browser's queued path. A refresh on the
+    held route fixed it (0 in 306 + 306). The guarded route went to #365 after a `_NET_WM_PING` check failed its
+    condition.
+- **Candidate 2, f9692898** (run 43553123316, `90b9650e…`; task 77, 2026-11-14). The 23 steps the fix reaches reran,
+  with D3 as a cross-check (sminos 677), and the held block ran. S1 and L3b passed by #302, V5 by the witness span's
+  limit (680). L3a found Chrome's context-menu Copy stuck under twice the load after one timed-out Copy. Every answer
+  was honest, and the design session ruled the stuck state a defect (683).
+- **Candidate 3, c55c8e08** (run 43608161213, `751ec9be…`; tasks 78 and 79). Every `showContextMenu` caller now confirms
+  a menu or answers `menuUnconfirmed`. S1, S2, S4, V3 (on `:0`), L3a and L3b reran; S2 and S4 were cross-checks, both
+  equal to candidate 1's. All passed: S1 and L3b by #302, and V3 by #373 with its two chrome-input cells declared
+  unconfirmed (688, 691). The gate passed.
+
+Every pass by ruling is a script over the stored rows, through the candidate's own judge functions, with negative
+controls. The scripts' review led to ruling 697 and the fixes 2851ce49, c204e9e4 and d57c4efa. Rerun over every stored
+record, the fixed scripts moved no verdict, and ruling 699's read of the load judge's records found nothing either
+(4d3085b3).
+
+**The release.** ci-gate on 4d3085b3 came back RED 2/8 on two known races, and the rerun was green (43636266249). Task
+80 then dispatched `linux-engine.yml` with publishing on `release/linux-engine-v0.4.0` at c55c8e08: run 43637317960,
+published 2026-11-14T20:31:38Z.
+- The x64 asset is `751ec9be…`, the gated bytes. The arm64 asset, `0cbde8f0…`, equals the build-only run's. Both
+  attestations verify.
+- The pin, ed5bf1bc, changes `runtime/engine/linux-engine.json` alone.
+- The checks on the released asset ran in a run-owned home on a private display (`:1`), not in M3's default home on
+  `:0`, so the person's installed engine was left as it was (`m4/release/`, 0193a543).
+
+Then main was merged in (b445fd15: 30 commits, no frozen path, the plugin kept at 0.28.0), and the spec folded T18
+(097cda8f). `ci-gate` on 097cda8f was RED 1/8 on `engine-swift`: BackgroundPointerTests'
+`testAFailedEnablementWriteStillOpensTheFreshWindowAndIsReported`, in main's merged macOS code (run 43639178511). Its
+rerun passed (43641035615), so every gate is green on 097cda8f. The pull request followed, with the execution report
+and two tech-debt entries in its last commit.
+
+**Declared, and the limits** (listed apart in the pull request; the reasons are the spec's):
+- gaps with no closing route: Chrome's long drop (#358, with Acceptance 3 amended) and `activate_window`'s raise wait
+  (#373);
+- #302, an Electron page's key release after the 100 ms settle (its judge is #371, for M5), and V3's two
+  `menuUnconfirmed` cells;
+- #263 and #269, taken to the owner with their numbers;
+- stated limits #362, #364, #365, #372 and #375–#379, with #374 on macOS; arm64 only in the workflow's tests (#266);
+  in-cell judging for M5 (#370).
+
+**Deferred, carried to the PR's Unresolved Review Findings.** The reviews' Minors went to `tech-debt-tracker.md`
+(through f7f2b9e2, 4e835bc0, a5ef4bff, cf1d3428, 45a8d03d, 39551c41, 9cd5f4b9, 6e55c836, 9dfc33f0, 05733962, 049cb20b
+and 4d3085b3, among others). Outside the tracker:
+- the cleanup after a lost watchdog is unwatched (task 44's re-review). It was ruled a stated limit on condition that
+  the run exits nonzero naming the loss (sminos 325, 326); the reviewer disagreed;
+- a holder the launcher shim cannot discover (task 57's last review), on the shared-display ticket (#277);
+- dismissed by rulings: T14's re-review finding that ordinary drop cases hard-fail an honest non-landing (595,
+  intended); T8's old-engine answer (473, closed by `MIN_ENGINE_VERSION` 0.4.0); T17's reset at the next setup (615,
+  built in T18 as the release at `js_reset`) and its 6.0% unconfirmed handles (611, a finding on #364).
+
+**Friction** (for a Mac session to record; `~/.claude` is pull-only on this host. The design session and the desk track
+logged some on the Mac, as marked):
+- **The controller's compact tool was unavailable** (its resume pointers from 2026-11-02 on say so), so its context ran
+  up to the harness's own auto-compaction near 867k tokens; it reached about 850k. The workaround was 21 resume pointers
+  in the ledger, each naming what ran, what was next and the standing rules, so a compaction or restart could pick up
+  from the file.
+- **The worktree-isolation guard refused commands that run no git.** It refused heredocs, loops, `$VAR` paths, any line
+  naming a path with `GitHub` in it (read as git), `diff <(…)`, `${PIPESTATUS[0]}`, a string holding `github_pat_`, and
+  once a plain `ls` of two paths.
+  - 35 task reports from task 32 to 79 recorded it, and so did three branch reviewers, at up to about ten refused calls
+    a task. Writing this section met it twice.
+  - Workaround: script files with literal paths, run by path; Write and Edit; symlinks to shorten paths.
+  - It also pins a subagent spawned without `isolation: worktree` to its parent's worktree: T15's executor could not
+    enter the worktree made for it, and T18's workers w3–w5 were relaunched with isolation. It refused `git -C` into
+    another worktree too.
+- **A subagent's Write of its report or a draft was refused** seven times (tasks 57, 60, 64, 70, 74 and 78, and the
+  review's first fix wave across worktrees). The controller saved most of them from the hand-back; one fixer appended
+  through a script.
+- **The harness forced executors to hand back mid-task** four times: task 74 at 424k, task 76 at 298k, and task 77 at
+  241k and 293k. The controller kept their state in the ledger and resumed them on the next event.
+- **A hung proof held the host lock.** Task 78's live proof held it about 19 minutes (12:17–12:36Z) after its node
+  process failed to exit when a Firefox step failed, and the gate's L4b waited 20 minutes behind it. The executor killed
+  its own pid, and its script now exits itself under a 30-minute bound.
+  - The lock's `flock` did not queue its waiters either: task 75's back-to-back blocks starved T17's fixer, and a pilot
+    took the lock ahead of the architect's hold. `locked.sh` gained a yield for any holder that released less than 90 s
+    earlier.
+  - Two builds ran outside the lock by slip (a T19 `cargo check`, a T17 build). A cargo wrapper that takes the lock went
+    into the briefs.
+- **A stale xprobe:** a worktree's xprobe binary can be older than its sources, and the harness's commands then fail
+  with a usage line (task 78). The gate's checkouts build xprobe before any step, and the gate requires it.
+- **`xdotool mousemove --sync` hangs** when the pointer is already at the target (task 78; M3 met it as a 13 s block).
+  Move the pointer elsewhere first, or move it through xprobe.
+- **electron 44.9.0 ships no install script,** so `npm ci` never fetches its binary, and the gate's D2 died at spawn in
+  15 s on candidate 1 (rerun). Every fresh checkout runs `node node_modules/electron/install.js`. A harness preflight is
+  P3 tech debt (sminos 665), and the design session logged the friction.
+- **The snap Firefox.** An unattended upgrade replaced Mozilla's Firefox deb with the snap, which cannot start on the
+  harness's bus (task 59). The unpacked deb 159.0~build1 sits first on PATH; fixing the system needs root. The `:0`
+  commands lacked that PATH, so V5's first run on candidate 1 started the snap, which failed in the guard's session (an
+  environment fault, rerun). The `:0` launcher now refuses a Firefox step unless the `firefox` on PATH is task 59's
+  (sminos 668).
+- **`npm test` fails about 51 tests on the Linux VM** for platform reasons (macOS-only fixtures, such as
+  `/usr/sbin/lsof`), so it is not evidence either way. The design session logged it
+  (`cua/live/npm-test-on-linux-vm-fails-about-51-for-platform-reasons.md`). `serve-own-host`'s `sandbox_unavailable`
+  was fixed in the test instead (ed939416).
+- **Racy hosted gates.** Each cost a rerun of the failed gates and a tech-debt entry:
+  - parity-browser's api cell (`api/browser-playwrightlocator/waitfor`, RED on ba0434ff and 4d3085b3), and its
+    keypress, scroll and waitfor cells;
+  - the macOS engine client's ping test (`services-engine-client` saw two pings against one, on 4d3085b3);
+  - `engine-swift`'s BackgroundPointerTests on 097cda8f (main's code);
+  - sandbox-denials' native-pipe cell, twice;
+  - timing flakes in remote-agent, repl-parity's mcp test, the terminal-start stubs and two engine clipboard tests.
+
+  One "flake", identity_faults (6 in 100), was a real race in the engine, fixed in T18. One run ended in ERROR ("run
+  failed though no gate did"), two overlapping runs cancelled each other's macOS jobs, and GitHub's macOS runners once
+  queued for 1 h 40 min (task 69).
+- **Orphaned audit proxies.** The harness's xtrace proxies outlived runs that ended before their stop (an exit 1 or a
+  signal).
+  - They were orphaned to pid 1 with their X sockets (X40, X41, X43, X44, from 11-08 to 11-12), beside about 620 MB of
+    scratch.
+  - The stale X42 and X43 sockets failed two `private-server.test.mjs` cells locally for days.
+  - They were killed by pid, after rereading each command line and start time, with the design session's approval
+    (sminos 651–653), and fixed in audit-leak-fix (8a6e0f45).
+  - Earlier, two `/tmp` sweeps removed 373 `cua171-*` scratch directories (among them a 1 GB `:0` xtrace log from the
+    frozen run) and stale X sockets.
+- **Others:**
+  - The auto-mode classifier blocked two gist uploads (the pre-flight for the design session, the second VM's
+    inventory), the `:0` recovery step (above), a `pkill -f` cleanup and a time-filtered `/tmp` sweep.
+  - During a maintenance window, the desk track's `devenv up maws` installed system fonts. Openbox's title bar grew
+    2 px, so fully visible Firefox scenes no longer fit the screen and were refused (31 of 31). The harness now fits
+    its scenes by frame extents. The desk track logged it:
+    `MAWS/live/devenv-up-maws-installs-system-fonts-on-a-shared-host.md`.
+  - Two executors in one checkout: a commit by path takes the whole file, so T17's fixer committed task 75's hunk, and
+    `git add -p` is interactive. Ruled: never share a checkout concurrently (sminos 624).
+  - Shell and tool traps:
+    - `pkill -f` matched its own shell again (task 73's third fix);
+    - editing a bash script while it runs breaks it (task 41);
+    - Node's test runner writes environment-bearing reports into the working directory on SIGUSR2 (task 45);
+    - this host's `python3` lacks Xlib, so probes used ctypes over libX11;
+    - a subagent cannot run a foreground sleep (task 76).
+  - The harness's `cua serve` ran `sminos who --session` with the agent's inherited session id every few seconds
+    (task 58; harness debt).
+  - A second VM for T15 was provisioned, then dropped by the owner; T15 ran beside T14 under the host lock.
+  - By the ledger's figures, 31 executors and fixers passed about 450k tokens (task 60's reached 711k). Each was
+    replaced by a fresh fixer for its next round, or kept for a narrow fix in its own code.

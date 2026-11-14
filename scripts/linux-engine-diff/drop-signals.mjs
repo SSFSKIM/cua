@@ -25,7 +25,7 @@
 
 import { GATE_BALLAST } from './dnd.mjs';
 import { locate } from './drag.mjs';
-import { FREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
+import { FREEZE_ENDS, PREFREEZE_ENDS, T14_SOURCE, acceptTable, afterReleaseTable, blockPlan, coverTable, dragOutcome, lateTakeTable, neverTakeTable, parseDropStatus, signalsOf } from './drop-signals-judge.mjs';
 import { Engine } from './engine.mjs';
 import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -64,7 +64,7 @@ export const CELLS = {
   // V5's lost motion (2026-11-13): the plain short drop with the run's browser stopped from the drag's send to 150 ms,
   // so the press and every step queue unread; and the same press with a path over the zone that goes on long after the
   // stop ends, so the steps sent once the browser reads again come one by one (`freezeOf`)
-  'prefreeze-150': () => [[530, 128], [570, 128]],
+  ...Object.fromEntries(PREFREEZE_ENDS.map((to) => [`prefreeze-${to}`, () => [[530, 128], [570, 128]]])),
   'prefreeze-linger-150': () => [[530, 128], [570, 128], [700, 128], [570, 160], [700, 160], [575, 128]],
   'dragstart-400': () => [[530, 358], [570, 358]],
   'press-400': () => [[530, 404], [570, 404]],
@@ -118,8 +118,8 @@ export function rootBeside({ x, width, pageX }) {
   throw new Error(`no bare root beside the window (${x}, width ${width}) on a ${screenWidth} px screen`);
 }
 
-/** T14's and T17's cells' sources (the judge's, drop-signals-judge.mjs `T14_SOURCE`). */
-export { T14_SOURCE };
+/** T14's and T17's cells' sources (the judge's, drop-signals-judge.mjs `T14_SOURCE`), and V5's stops' ends. */
+export { PREFREEZE_ENDS, T14_SOURCE };
 
 /** Where the `other` cell's window goes: right of the scene's, below the root cell's end (x, y, width, height). */
 export const OTHER_PLACE = [920, 250, 340, 360];
@@ -249,6 +249,9 @@ export const LANES = {
   // each drag on the desktop route: no window named, the path in screen coordinates (T17's second fix wave: the drag
   // loop's cursor watched by the source's family, wherever the path ends)
   'cua:desktop': { args: [], desktop: true },
+  // Chrome raised, not activated: a drag the engine watches (its guard) and releases at the path's end (V5's guarded
+  // lost motion)
+  'cua:guarded': { args: [], guarded: true },
 };
 
 /** One drag of a `desktop` lane: `drag` with no window, the path in screen coordinates. */
@@ -309,6 +312,11 @@ export const PLANS = {
   // V5's lost motion: a browser that reads the X stream only after the drag's steps are all queued (Chromium's core
   // MotionNotify coalescing), against the plain drop and a path that outlasts the stop
   'v5-loss': [['cua', 'plain', 30], ['cua', 'prefreeze-150', 30], ['cua', 'prefreeze-linger-150', 30]],
+  // where the hold's refresh stops reaching a browser that reads again late: the stop's end swept past the refresh,
+  // its last refresh and the release (the stated residual's bound, #365)
+  'v5-bound': [150, 200, 215, 230, 260, 300].map((to) => ['cua', `prefreeze-${to}`, 20]),
+  // the guarded route: thawed inside the path's end rest, before its second visit and after it, and past the release
+  'v5-guarded': [['cua:guarded', 'plain', 20], ...[30, 40, 150].map((to) => ['cua:guarded', `prefreeze-${to}`, 20])],
   // T14's live counts for the release at the accept (the design session, 2026-11-10): a second source, the long drag
   // and drop, 300 drops; the accepted-then-left control and the press inside the zone, 30 each. Task 69 ran them on an
   // engine that shipped the release (f9bdb5c2, the lane `cua` there); the press-inside control's false release reverted
@@ -700,7 +708,7 @@ export async function runDropSignals(args, { desktop, emit }) {
           }
           // the cover lane's drags background, as an agent's: the window raised, the focus in front
           if (k === 0 || lane.gate) desktop.arrangeFront('visible');
-          if (lane.cover) desktop.raise(scene);
+          if (lane.cover || lane.guarded) desktop.raise(scene);
           else inFront(scene);
           await sleep(lane.gate ? 1200 : 150);
           if (lane.gate) before = await readStatus(desktop, scene);

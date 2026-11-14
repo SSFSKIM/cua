@@ -4,7 +4,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {assessAssertions, vendorDefects} from '../../scripts/repl-parity/vendor-defects.mjs';
 import {compareParityRuns} from '../../scripts/repl-parity/compare.mjs';
-import {NATIVE_LINUX_EXPECTED, checkEnginePair, validateNativeLinuxExpected} from '../../scripts/repl-parity/native-linux.mjs';
+import {NATIVE_LINUX_EXPECTED, checkEnginePair, declarationsFor, validateNativeLinuxExpected} from '../../scripts/repl-parity/native-linux.mjs';
 import scenarios from './scenarios/native.mjs';
 
 const TYPE = 'native/app/typetext', PASTE = 'native/app/paste', KEY = 'native/app/presskey';
@@ -125,4 +125,35 @@ test('the minimized getAXState declaration: the vendor result fails as its defec
   };
   assert.deepEqual(assess({isError: false, content: defect.result.content}), defect.assertion);
   assert.deepEqual(assess({isError: false, content: declaration.cua.result.content}), declaration.cua.assertion);
+});
+
+// M5's T4: the declarations are per architecture. Each holds for the vendor runtime release its vendor defect names
+// (26.928.40906-linux-x64, -linux-arm64), and a diff applies only those of the runs' own release: an arm64 pair is never
+// held to x64's declarations, nor x64's to arm64's, and an architecture with none of its own fails closed.
+const ARM64 = '26.928.40906-linux-arm64';
+const arm64Defect = {...vendorDefects.find(d => d.case === TYPE && d.runtimeRelease === RELEASE), id: 'linux-arm64-vendor-engine-typetext-ended-gedit', runtimeRelease: ARM64, reason: 'a fixture: the arm64 crash, measured in M5'};
+const arm64Declaration = {...NATIVE_LINUX_EXPECTED.declarations.find(d => d.case === TYPE), id: 'linux-text-typetext-m5-arm64', vendorDefect: arm64Defect.id};
+const withArm64 = {...NATIVE_LINUX_EXPECTED, declarations: [...NATIVE_LINUX_EXPECTED.declarations, arm64Declaration]};
+
+test('the declarations a diff applies are those of the runs\' own vendor release', () => {
+  const defects = [...vendorDefects, arm64Defect];
+  assert.doesNotThrow(() => validateNativeLinuxExpected(withArm64, defects));
+  assert.deepEqual(declarationsFor(withArm64, RELEASE, defects).map(d => d.id), NATIVE_LINUX_EXPECTED.declarations.map(d => d.id));
+  assert.deepEqual(declarationsFor(withArm64, ARM64, defects).map(d => d.id), [arm64Declaration.id]);
+  assert.deepEqual(declarationsFor(NATIVE_LINUX_EXPECTED, ARM64), []);
+  // one declaration a case a release: a second for the same case and release is refused, as before
+  assert.throws(() => validateNativeLinuxExpected({...withArm64, declarations: [...withArm64.declarations, {...arm64Declaration, id: 'again'}]}, defects), /declaration/);
+});
+
+test('an x64 pair still passes on its declarations; an arm64 pair is not held to them and fails closed', () => {
+  const x64 = compareParityRuns(lane('vendor'), lane('cua'), {engineDeclarations: declarationsFor(NATIVE_LINUX_EXPECTED, RELEASE)});
+  assert.equal(x64.ok, true, JSON.stringify(x64.differences));
+  const arm = engine => {const run = lane(engine); run.meta.runtimeRelease = ARM64; return run;};
+  // the x64 declarations applied to an arm64 pair: each is reported overdeclared, which the per-release choice avoids
+  const all = compareParityRuns(arm('vendor'), arm('cua'), {engineDeclarations: NATIVE_LINUX_EXPECTED.declarations});
+  assert.ok(all.differences.some(d => d.kind === 'overdeclared'));
+  const own = compareParityRuns(arm('vendor'), arm('cua'), {engineDeclarations: declarationsFor(NATIVE_LINUX_EXPECTED, ARM64)});
+  assert.equal(own.ok, false);
+  assert.ok(!own.differences.some(d => d.kind === 'overdeclared'));
+  assert.deepEqual([...new Set(own.differences.map(d => d.case))].sort(), [PASTE, TYPE]);
 });

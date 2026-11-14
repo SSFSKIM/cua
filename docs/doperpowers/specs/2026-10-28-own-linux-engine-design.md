@@ -1795,6 +1795,23 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - #358's declaration reads: "declared gap, no closing route (the floor and hold keep drops honest; no never-take signal); owner informed 2026-11-10; tracked by #358". The owner has not ruled on it; they were told it ships declared unless they object. #269's short drop is declared the same way if any gate step judges it.
   Date/Author: 2026-11-12, the plan-executor (session linux171), on the design session's ruling.
 
+- Decision (2026-11-14, M4, T18 gate: a requested context menu is confirmed or refused; candidate 3): Gate step L3a on candidate 2 (f9692898) found Chrome's context-menu Copy stuck under twice the load. One `clipboard_read` Copy was not served within COPY_WAIT ("clipboard update timed out"). After it, every later Copy on that window refused with "context menu did not open; no clipboard action was sent". It happened after both timeouts seen: L3a's trial 3, and private reproduction r2's trial 59 of 60. Every answer was honest. The design session ruled the stuck state a defect (sminos 683), and then ruled on the fix below (684, 685).
+  - **What the checks showed** (task 77's report, sections 11–16; `m4/gate/c2-f9692898/l3a-repro/`):
+    - No menu node was showing in the stuck state, and r2 found no leftover child of the application.
+    - Escape: an Escape sent to Chrome's window while no menu is up reaches the page. A page counter went from 0 to 1. So an Escape sent blind after a timeout could close a dialog or cancel an edit, and it is ruled out.
+    - Forced stall: pausing the run's own Chrome after the Copy item's activation reproduced the timeout, but not the stuck state. Chrome recovered, and served the Copy about 0.3 s after it resumed, changing the clipboard after cua had answered "timed out". In the two real stuck cases the Copy was never served.
+    - The stuck state's mechanism is unknown. It needs load, and it is rare: 1 in about 4 reads in L3a's cell order, then 1 in 60, 0 in 35 and 0 in 150.
+  - **The change: every `showContextMenu` caller confirms that a menu appeared, or refuses.** The callers are:
+    - copy.rs `context_menu_item`, which already confirms within MENU_WAIT;
+    - `click_element` with the right button, falling back to `showContextMenu` (engine/elements.rs);
+    - `perform_secondary_action` naming `showContextMenu`.
+    The last two answered ok as soon as the action was requested, as the vendor does (behaviour §7.2). In the stuck state, or in any app that ignores the action, that is an ok with no effect: the gate's hard-failure class. This follows the owner's standing rule that cua refuses input an app ignores. So §7.2's ok now means a menu appeared, and a menu that does not appear within the wait is refused, as copy.rs refuses it.
+  - **Every family the gate drives gets the detection proven before candidate 3's rerun:** GTK3, GTK4, Qt, Electron, Firefox, LibreOffice and Chrome. copy.rs's detection (a new child of the application holding menu items) was built for Chrome. A family it misses would get a working menu refused, a regression though not a false success. The PR lists each family as confirmed, or as refused with its reason. A family whose menus never appear in its accessibility tree gets a plain refusal ("the menu could not be confirmed") and a limit ticket.
+  - **A timed-out Copy's refusal names both risks:** Chrome may still complete the Copy later, and its menus on this window may stay unresponsive. No Escape and no other recovery is sent, because none is proven safe to the page.
+  - **The stuck state is a stated limit with its own ticket** (ticket B in the PR's residue), which owns the deterministic reproduction and the probe of Chrome's menu controller. The trigger, a Copy not served within 2 s at 16 workers, is a load limit with its own ticket (ruling 681).
+  - **Candidate 3 is built from the fix's head.** Its rerun set comes from the step definitions: every step and every facade or compare cell that runs a context-menu Copy, a right-button `click_element` or `perform_secondary_action` naming `showContextMenu`, or judges one, plus a D3-style cross-check. The design session sees the list before anything runs. The design session registers the matching macOS gap itself (the vendor-style ok on AXShowMenu).
+  Date/Author: 2026-11-14, the plan-executor (session linux171), on the design session's rulings 681, 683, 684 and 685, from task 77's checks.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

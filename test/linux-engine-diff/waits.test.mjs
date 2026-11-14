@@ -9,7 +9,7 @@ import { eventSpeeds, fakeMotions, judgeMotionListener, judgeMotionStep } from '
 
 test("desktop move's later requests are no declared gap any more: a loss there fails", () => {
   assert.equal(declaredSpeedGap({ op: 'move', route: 'desktop', series: 'later' }), null);
-  assert.deepEqual(SPEED_GAPS, []);
+  assert.ok(SPEED_GAPS.every((g) => g.op !== 'move'), 'the declared gaps are another request\'s (#373)');
   const rows = (centre) => Array.from({ length: 20 }, (_, i) => ({ command: 'move', ms: centre + (i % 5) * 0.01, first: false, scenario: 's', step: 1 }));
   const [move] = eventSpeeds([], { blocks: [{ route: 'desktop', records: { pinned: rows(8.6), newest: rows(6), cua: rows(8.5) } }] });
   assert.equal(move.verdict, 'fail');

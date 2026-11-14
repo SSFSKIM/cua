@@ -25,7 +25,7 @@ import { startMonitor } from './busmon.mjs';
 import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
-import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe, setAsideMinimized, setAsideTruncation, truncationMismatch } from './deviations.mjs';
+import { DEVICE_REFUSAL, SPEED_GAPS, declaredDeviation, declaredParity, declaredRefusal, declaredSpeedGap, describe, setAsideMinimized, setAsideTruncation, truncationMismatch } from './deviations.mjs';
 import { judgeDevice } from './device.mjs';
 import { IDENTITY_OPS, identityAuditKind } from './identity.mjs';
 import { MINIMIZED_OPS, minimizedAuditKind } from './minimized.mjs';
@@ -1393,7 +1393,7 @@ async function diffRun(args, candidate, { handoff }) {
           // a watcher that did not watch to the end leaves the judge's knowledge of the window's end unproven
           const clean = audited.clean && foreign.length === 0 && ancestry.watched;
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
-          audits[`${sceneName}|${op}|${spec.label}`] = { clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set([...audited.forbidden.map((f) => f.what), ...foreign.map(foreignLine), ...(ancestry.error ? [ancestry.error] : [])])] };
+          audits[`${sceneName}|${op}|${spec.label}`] = { clean, oks, answered, foreground: foregroundAudit, kind: auditKind, foreign: foreign.map(foreignLine), forbidden: [...new Set([...audited.forbidden.map((f) => f.what), ...foreign.map(foreignLine), ...(ancestry.error ? [ancestry.error] : [])])] };
           emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(foreign.some((f) => 'parent' in f) ? { foreign_parents: foreign.slice(0, 10).map((f) => f.parent ?? null) } : {}), ...(watch ? { ancestry: ancestry.error ?? watch.chain } : {}), ...(judgedForeign.unplaced ? { xtest_unplaced: judgedForeign.unplaced } : {}) });
           desktop.focusFront();
         }
@@ -1570,6 +1570,11 @@ async function diffRun(args, candidate, { handoff }) {
           extra.refusal = describe(refusal);
           Object.assign(verdict, declaredRefusalVerdict(verdict, mine, refusal, candidate));
         }
+        // a declared speed gap (#373): its loss listed apart, only while every other part holds as the vendor builds' do;
+        // with no audit of the candidate it fails
+        const gapAudits = Object.fromEntries(labels.map((l) => [l, args.audit ? audits[`${sceneName}|${op}|${l}`] : undefined]).filter(([, a]) => a));
+        const gapped = declaredGapVerdict(verdict, { op, candidate, rows: opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), audits: gapAudits });
+        if (gapped) Object.assign(verdict, gapped);
         const row = { kind: 'verdict', scene: sceneName, op, candidate, ...verdict, ...extra };
         verdicts.push(row);
         emit(row);
@@ -1630,7 +1635,7 @@ async function diffRun(args, candidate, { handoff }) {
   // judged once every window of the run's is closed: its own trace covers the cleanup
   const ending = desktopEnding(desktop.ending);
   const outcome = runOutcome(judged.verdicts, { ...judged.options, foreign: [...engineForeign, ...ending.foreign] });
-  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, desktop: ending.record, finished: new Date().toISOString() });
+  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, declared: outcome.declared, restores: outcome.restores, desktop: ending.record, finished: new Date().toISOString() });
   writeSummary(args.out);
   const label = gateLabel(candidate.gate);
   process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${label ? `${label}: ` : ''}${verdictLine(outcome)}\nresults: ${results}\n`);
@@ -1654,6 +1659,48 @@ export function declaredRefusalVerdict(verdict, mine, refusal, candidate) {
   const what = `declared ${refusal.unconfirmed ? 'unconfirmed answer' : 'refusal'} with ${refusal.effect ? 'its effect and ' : ''}the witness unchanged`;
   if (bad.length) kept.unshift(`${candidate}: ${bad.length} of ${mine.length} samples not the ${what}`);
   return kept.length ? { pass: false, verdict: 'fail', reasons: kept } : { pass: false, verdict: refusal.unconfirmed ? 'declared unconfirmed' : 'declared refusal', reasons: [] };
+}
+
+/**
+ * A declared speed gap's verdict (deviations.mjs `SPEED_GAPS`; #373's ruling, the design session, sminos 666): null
+ * where no gap declares a speed loss of the failing verdict, so it stands. Otherwise **declared gap** (a loss, listed
+ * apart, never a pass) when every reason is a speed loss of a series a gap declares, and the operation's other parts
+ * hold as the vendor builds' do: every candidate sample answered ok with its effect, as many as the run timed; the
+ * candidate's audit answered ok, with no request the vendor builds' audits of the operation do not show (the activation
+ * itself) and no foreign change; and its witness saw no field change that the vendor builds' samples did not. Anything
+ * else fails. `rows`: the operation's samples, every engine's; `audits`: engine to the run's audit (`{oks, forbidden,
+ * foreign}`, forbidden as the requests' names). Returns `{pass, verdict, reasons, gap, declared_gap}` or null.
+ */
+export function declaredGapVerdict(verdict, { op, candidate, rows, audits, vendors = VENDORS, gaps = SPEED_GAPS }) {
+  if (verdict.verdict !== 'fail') return null;
+  const gapOf = (reason) => {
+    const series = SPEED_REASON.exec(reason)?.[1];
+    return series ? declaredSpeedGap({ op, route: 'window', series }, gaps) : null;
+  };
+  const covered = verdict.reasons.filter(gapOf);
+  if (!covered.length) return null;
+  const kept = verdict.reasons.filter((r) => !gapOf(r));
+  const mine = rows.filter((r) => r.engine === candidate);
+  const theirs = rows.filter((r) => vendors.includes(r.engine));
+  const timed = (verdict.engines?.[candidate]?.n_cold ?? 0) + (verdict.engines?.[candidate]?.n_warm ?? 0);
+  const effected = mine.filter((r) => r.ok === true && r.effect === true).length;
+  if (effected !== mine.length || mine.length < timed) kept.push(`${candidate}: effect ${effected} of ${mine.length} samples (${timed} timed)`);
+  const audit = audits?.[candidate];
+  if (!audit) kept.push(`${candidate}: no audit`);
+  else {
+    if (!audit.oks?.length || !audit.oks.every(Boolean)) kept.push(`${candidate}: the audit's requests did not answer ok`);
+    const vendorSent = new Set(vendors.flatMap((v) => audits[v]?.forbidden ?? []));
+    const extra = [...new Set(audit.forbidden ?? [])].filter((w) => !vendorSent.has(w));
+    if (extra.length) kept.push(`${candidate}: the audit shows requests the vendor builds' do not: ${extra.join(', ')}`);
+    if (audit.foreign?.length) kept.push(`${candidate}: the audit shows ${audit.foreign.length} foreign change(s)`);
+  }
+  const fields = (rs) => new Set(rs.flatMap((r) => (r.witness_changes ?? []).map((c) => c.field)));
+  const vendorFields = fields(theirs);
+  const extraFields = [...fields(mine)].filter((f) => !vendorFields.has(f));
+  if (extraFields.length) kept.push(`${candidate}: the witness saw ${extraFields.join(', ')} change, which the vendor builds' did not`);
+  const gap = describe(gapOf(covered[0]));
+  if (kept.length) return { pass: false, verdict: 'fail', reasons: kept, gap, declared_gap: covered };
+  return { pass: false, verdict: 'declared gap', reasons: [], gap, declared_gap: covered };
 }
 
 /** Whether `response` is the answer a declaration with `effect` names for the operation on the scene (its effect then read). */

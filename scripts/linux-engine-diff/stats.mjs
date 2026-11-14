@@ -7,8 +7,11 @@ export function median(values) {
   return xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
 }
 
-/** The verdicts of a declared loss against the vendor (deviations.mjs REFUSALS): listed apart, never a pass, not a failure. */
-export const DECLARED_LOSSES = ['declared refusal', 'declared unconfirmed'];
+/**
+ * The verdicts of a declared loss against the vendor (deviations.mjs REFUSALS and SPEED_GAPS): listed apart, never a
+ * pass, not a failure.
+ */
+export const DECLARED_LOSSES = ['declared refusal', 'declared unconfirmed', 'declared gap'];
 
 /**
  * A run's outcome from its verdict rows (Interfaces: exit 0 only when the negative check held and every verdict
@@ -26,9 +29,10 @@ export function runOutcome(verdicts, { valid, faults = null, restores = null, st
   const judged = verdicts.filter((v) => v.kind === 'verdict');
   const drops = dropCounts(judged);
   const parity = judged.filter((v) => !v.pass && v.verdict === 'parity').map(name);
-  // a declared refusal or unconfirmed answer (deviations.mjs REFUSALS) is a recorded loss: listed apart, never a pass,
-  // not a failure
+  // a declared refusal, unconfirmed answer or speed gap (deviations.mjs REFUSALS, SPEED_GAPS) is a recorded loss: listed
+  // apart, never a pass, not a failure; `declared` names each by its verdict, `refused` all of them
   const refused = judged.filter((v) => !v.pass && DECLARED_LOSSES.includes(v.verdict)).map(name);
+  const declared = Object.fromEntries(DECLARED_LOSSES.map((d) => [d, judged.filter((v) => !v.pass && v.verdict === d).map(name)]).filter(([, names]) => names.length));
   const failed = judged.filter((v) => !v.pass && !['parity', ...DECLARED_LOSSES].includes(v.verdict)).map(name);
   // the gate's rule for harness-side preparation failures (prepare.mjs): a cap exceeded fails the run
   if (faults && !faults.pass) failed.push(`harness preparation failures over the cap (${faults.reasons.join('; ')})`);
@@ -37,7 +41,7 @@ export function runOutcome(verdicts, { valid, faults = null, restores = null, st
   for (const f of foreign) failed.push(`a window the harness did not open was changed: ${f}`);
   if (drops.finding) failed.push(drops.finding);
   const pass = failed.length === 0;
-  return { valid, pass, failed, parity, refused, ...(restores ? { restores } : {}), code: valid && pass ? 0 : 1 };
+  return { valid, pass, failed, parity, refused, declared, ...(restores ? { restores } : {}), code: valid && pass ? 0 : 1 };
 }
 
 /** The share of a run's landed drops left unconfirmed above which the run has a finding (the design session, 2026-11-10). */
@@ -61,9 +65,11 @@ export function dropCounts(verdicts) {
  * A run's verdicts in one line: its failures, else every verdict PASS; a parity verdict listed apart either way, and
  * the scene text put back per lane (task 24), every lane named, when the run counted it.
  */
-export function verdictLine({ pass, failed, parity = [], refused = [], restores = null }, strong = (s) => s) {
+export function verdictLine({ pass, failed, parity = [], refused = [], declared = null, restores = null }, strong = (s) => s) {
   const restored = restores ? `; text restores (the first word put back before a sample): ${Object.entries(restores).map(([lane, n]) => `${lane} ${n}`).join(', ')}` : '';
-  const listed = `${parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : ''}${refused.length ? `; ${strong('declared refusal')} (a loss, not a pass): ${refused.join(', ')}` : ''}${restored}`;
+  // each declared loss by its own verdict; an end row from before `declared` names them all declared refusals
+  const losses = Object.entries(declared ?? (refused.length ? { 'declared refusal': refused } : {}));
+  const listed = `${parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : ''}${losses.map(([d, names]) => `; ${strong(d)} (a loss, not a pass): ${names.join(', ')}`).join('')}${restored}`;
   if (!pass) return `${strong('FAIL')}: ${failed.join(', ')}${listed}`;
   return `${parity.length || refused.length ? 'no verdict FAIL' : 'every verdict PASS'}${listed}`;
 }

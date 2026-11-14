@@ -229,8 +229,18 @@ flip (sminos 704).
   - the report records the mode, the selection and its reason.
 - Its negative control is the unflipped default. T10 lands as two commits: the mode first, with the default still
   `vendor`, where it must fail naming `vendor` and `default`; then the flip, where it passes.
-- Two more homes, in the same mode on the flip commit: one with no engine, and one holding 0.3.0. Each must run the
-  vendor's engine, with doctor's `warn` naming the reason and `cua install --engine`.
+- **The fallback homes get their own probe**, not the cua-default mode's checks: that mode requires `selected` `cua`
+  and no `sky_linux`, so a fallback home could never pass it. R3 also requires a `typeText` into gedit, which the
+  pinned vendor build fails, or crashes on arm64. Three homes on the flip commit: one with no engine, one holding
+  0.3.0, and one holding a 0.4.0 `install.json` beside a 0.3.0 executable (F5a). For each, the probe:
+  - asserts the same unset selection inputs as the default mode;
+  - requires doctor's `engine` row to say `vendor`, with a `warn` naming the reason (no engine, older than 0.4.0, or a
+    record that doesn't match its executable) and `cua install --engine`;
+  - requires the trusted worker's engine child to be the pinned vendor's `sky_linux`, and no `cua-engine`;
+  - runs one observation the vendor build supports: list the apps, bind a harness window, and read its tree. It sends
+    no input.
+
+  The full R3 and R4 checks and the zero-`sky_linux` assertion stay with the home that holds the current engine.
 
 **What the owner sees before deciding**: one page, `m5/README.md`, "For the owner".
 
@@ -349,10 +359,10 @@ SHAs. The x64 VM spends the wait on its pilot, which costs a few hours and prove
 
 | F | Proposal | Why |
 |---|---|---|
-| **F8a** | In M5, an engine-answered series still undetermined after its one top-up **fails R2**. The exception is a series the design session declares a gap by name. A declared series is reported as **unproved**, listed apart, and read from the comparison's own list, never inferred from R2's exit status | Item 3 tells undetermined apart from a pass: at 40 a side it "fails or stands as a declared speed gap" (L196). `compare.mjs` reports it and passes, which was M4's concession inside the release window (L1911–1918). M5 has no such window. T3 carries a negative fixture whose pooled interval still crosses the bound |
-| **F5a** | For F5, the installed engine's version is read from the home's `install.json` (`readEngineRecord`), not by running the engine. A home whose record cannot be read counts as older, so it too keeps the vendor's engine with the warning | Selection runs at every launch and today reads only the file's metadata. A record is written by `cua install` and by `cua engine build`. The safe side of an unreadable record is the engine that still works |
-| **§8.1's supersession rule** | A harness fix after the freeze replaces H by M4's scoped rerun with a cross-check, on both architectures, or by a full rerun where the cross-check differs or shared code changed | T5 and T7 must end on one SHA, and the rule says which evidence is regenerated |
-| **F6a** | The arm64 VM stays about 8 hours past the unjudged passes, for T10's live checks, and goes at about hour 78. Read strictly, F6 deletes it at about hour 70, and the default is then shown live on x64 only | The default flips for arm64 too, and the review asked that it be shown by a mode that proves the selection. The 8 hours are inside the lease and cost about €0.30 |
+| **F8a** (approved, sminos 705) | In M5, an engine-answered series still undetermined after its one top-up **fails R2**. The exception is a series the design session declares a gap by name. A declared series is reported as **unproved**, listed apart, and read from the comparison's own list, never inferred from R2's exit status | Item 3 tells undetermined apart from a pass: at 40 a side it "fails or stands as a declared speed gap" (L196). `compare.mjs` reports it and passes, which was M4's concession inside the release window (L1911–1918). M5 has no such window. T3 carries a negative fixture whose pooled interval still crosses the bound |
+| **F5a** (approved, sminos 705; digest binding added from the re-review) | For F5, the installed engine's version is read from the home's `install.json`, not by running the engine, and it is trusted only when the record's digest matches the executable, as `inspectLinuxEngine` already requires (`src/runtime/linux-engine.mjs` L175). A record that cannot be read, or whose digest doesn't match, counts as older, so that home too keeps the vendor's engine with the warning. Tests cover the unreadable record, and a valid newer record beside an older executable | Selection runs at every launch. `readEngineRecord` checks only the record's shape, and `placeLinuxEngine` replaces the executable before writing the record (L159), so an interrupted downgrade can leave an old engine beside a valid newer record. Trusting that record would select cua and then refuse the first request, which is the break F5 prevents. Hashing the executable at launch costs one read of about 2 MB (the x64 0.4.0 asset is 2,130,784 bytes). The safe side of any doubt is the engine that still works |
+| **§8.1's supersession rule** (approved, sminos 705) | A harness fix after the freeze replaces H by M4's scoped rerun with a cross-check, on both architectures, or by a full rerun where the cross-check differs or shared code changed | T5 and T7 must end on one SHA, and the rule says which evidence is regenerated |
+| **F6a** (approved, sminos 705) | The arm64 VM stays about 8 hours past the unjudged passes, for T10's live checks, and goes at about hour 78. Read strictly, F6 deletes it at about hour 70, and the default is then shown live on x64 only | The default flips for arm64 too, and the review asked that it be shown by a mode that proves the selection. The 8 hours are inside the lease and cost about €0.30 |
 
 ### F7's ticket, drafted
 

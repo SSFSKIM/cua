@@ -20,6 +20,7 @@
 //   unjudged, the count of what the refusal keeps from being sent (Gecko ignores it: the refusal is no loss).
 
 import { DEVICE_REFUSAL, GECKO_POINTER_LEFT } from './deviations.mjs';
+import { LOAD_P, fisherMissesAtLeast } from './drag-judge.mjs';
 import { OCCLUSION_PARKS, ROUTE_GROUPS, cellKey, leavePlan, measureRoute } from './pointer-route.mjs';
 
 /** The runs of an allowed case, every one of which must take effect (the row's proof: 30 of 30). */
@@ -81,7 +82,8 @@ const effectRead = (r) => typeof r.took === 'boolean';
  * One case judged from its runs (each `{engine, ok, error, took, witness, pointer}`, the effect read whatever the
  * answer). Only a valid run counts: its park held at the request (`pointer.held`) and its effect was read; the others
  * are left out, counted as such, and a case short of its valid runs fails. An allowed case passes when cua has
- * `ALLOWED_RUNS` valid runs or more, every one ok and taking effect; a refused one `REFUSED_RUNS`, every one the Device
+ * `ALLOWED_RUNS` valid runs or more, every one ok and taking effect, but a drag and drop's honest misses, which
+ * `dndLanding` judges against the pinned build; a refused one `REFUSED_RUNS`, every one the Device
  * mode sentence with no effect; a leave case `LEAVE_RUNS`, none ok with no effect and no refusal taking effect. Every
  * run of cua's, valid or not, must leave the witness unchanged. The other lanes' counts stand beside it, never judged.
  */
@@ -117,7 +119,11 @@ export function judgeCase(c, runs, { allowedRuns = ALLOWED_RUNS, refusedRuns = R
   }
   const unclean = all.filter((r) => r.witness !== true).length;
   if (unclean) failed.push(`the witness changed on ${unclean}`);
-  if (c.expect === 'allowed') {
+  let landing;
+  if (c.expect === 'allowed' && c.kind === 'dnd') {
+    landing = dndLanding(counts, mine, allowedRuns);
+    failed.push(...landing.failed);
+  } else if (c.expect === 'allowed') {
     const missed = mine.filter((r) => r.ok !== true || r.took !== true).length;
     if (missed) failed.push(`${missed} did not take effect`);
   } else if (c.expect === 'honest') {
@@ -134,7 +140,32 @@ export function judgeCase(c, runs, { allowedRuns = ALLOWED_RUNS, refusedRuns = R
     const took = mine.filter((r) => r.took === true).length;
     if (took) failed.push(`${took} took effect`);
   }
-  return { kind: 'predicate-case', ...c, counts, pass: failed.length === 0, failed };
+  return { kind: 'predicate-case', ...c, counts, ...(landing ? { landing: landing.row } : {}), pass: failed.length === 0, failed };
+}
+
+/**
+ * An allowed drag and drop's landing (P6's rule: the design session, sminos 662, on ruling 650's principle, and 697).
+ * Firefox's drag source can end a drag mid-path under the real pointer's parked position (#372), in every engine, so
+ * an honest miss (cua answered an error, and no drop landed) is a landing miss, as the load judge counts one: cua's
+ * misses must not be more often than the pinned build's beyond chance, the one-sided Fisher test at `LOAD_P`
+ * (drag-judge.mjs). Fisher alone: it answers 1 wherever cua missed no more often, and a shortcut on raw landings is
+ * wrong where the two lanes' valid runs differ. The pinned build's reference must be a full side, `allowedRuns` valid
+ * runs, the count cua needs too, so a few lucky runs, or none, excuse nothing. An ok with no effect fails hard, and so
+ * does an error that took effect. `counts` and `mine` as `judgeCase` keeps them (valid runs alone). Returns
+ * `{failed, row}`, the row the case's record carries.
+ */
+function dndLanding(counts, mine, allowedRuns) {
+  const cua = counts.cua ?? { n: 0, took: 0, ok_no_effect: 0 };
+  const pinned = counts.pinned ?? { n: 0, took: 0 };
+  const honest = mine.filter((r) => r.ok !== true && r.took !== true).length;
+  const errorTook = mine.filter((r) => r.ok !== true && r.took === true).length;
+  const failed = [];
+  if (cua.ok_no_effect) failed.push(`${cua.ok_no_effect} answered ok with no effect`);
+  if (errorTook) failed.push(`${errorTook} answered an error and took effect`);
+  if (pinned.n < allowedRuns) failed.push(`the pinned build's reference is ${pinned.n} valid runs, under the ${allowedRuns} a side the landing is judged on`);
+  const p = fisherMissesAtLeast(cua.n - cua.took, cua.n, pinned.n - pinned.took, pinned.n);
+  if (cua.n && !(p >= LOAD_P)) failed.push(`landed ${cua.took} of ${cua.n} against the pinned build's ${pinned.took} of ${pinned.n} (one-sided Fisher p = ${p.toFixed(4)})`);
+  return { failed, row: { honest, error_took: errorTook, pinned: { n: pinned.n, took: pinned.took }, p: cua.n ? Math.round(p * 1e4) / 1e4 : null, p_needed: LOAD_P } };
 }
 
 /** Every case of the manifest judged; a case with no runs fails as unmeasured. */
@@ -156,6 +187,8 @@ export function predicatesMarkdown(rows) {
     if (!c) return '–';
     const out = c.park_missed || c.unread ? `; left out: park missed ${c.park_missed}, effect not read ${c.unread}` : '';
     if (row.expect === 'honest') return `ok and took ${c.ok_took}, left ${c.left} (${c.left_took} took), refused ${c.refused} (${c.refused_took} took), ok with no effect ${c.ok_no_effect} (of ${c.n})${out}`;
+    const { landing: l } = row;
+    if (l) return `took ${c.took}/${c.n}, ${l.honest} honest miss${l.honest === 1 ? '' : 'es'}, one-sided Fisher p = ${l.p === null ? '–' : l.p.toFixed(4)} against the pinned build${out}`;
     return (row.expect === 'allowed' ? `took ${c.took}/${c.n}` : `refused ${c.refused}/${c.n}, ${c.took} took`) + out;
   };
   return [
@@ -193,7 +226,7 @@ export async function runPredicates(args, { desktop, emit }) {
   const verdict = judgePredicates(plan, runs);
   for (const row of verdict.rows) emit({ ...row, kind: 'predicate-verdict' });
   const md = [
-    `T19's adopted cases (predicates.mjs): Gecko's pointer kinds by the real pointer. Each run's effect is read whatever it answered, and a run counts only when its park held at the request and its effect was read (the rest are left out and listed). Each allowed case ${ALLOWED_RUNS} such runs of cua as it ships, every one taking effect; each still-refused counterexample ${REFUSED_RUNS}, every one the Device mode sentence with no effect; each leave case (the pointer moved out during the request) ${LEAVE_RUNS}, none answered ok with no effect and no refusal taking effect; every run with the witness unchanged. Beside them the pinned build's counts and, on a refused case, cua's own events with the pointer unjudged (\`cua:any-pointer\`, \`--ignore-pointer\`).`,
+    `T19's adopted cases (predicates.mjs): Gecko's pointer kinds by the real pointer. Each run's effect is read whatever it answered, and a run counts only when its park held at the request and its effect was read (the rest are left out and listed). Each allowed case ${ALLOWED_RUNS} such runs of cua as it ships, every one taking effect, but a drag and drop's honest misses, judged by one-sided Fisher against the pinned build's ${ALLOWED_RUNS} or more at p ≥ ${LOAD_P} (P6's rule; an ok with no effect fails); each still-refused counterexample ${REFUSED_RUNS}, every one the Device mode sentence with no effect; each leave case (the pointer moved out during the request) ${LEAVE_RUNS}, none answered ok with no effect and no refusal taking effect; every run with the witness unchanged. Beside them the pinned build's counts and, on a refused case, cua's own events with the pointer unjudged (\`cua:any-pointer\`, \`--ignore-pointer\`).`,
     '',
     ...predicatesMarkdown(verdict.rows),
     '',

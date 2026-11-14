@@ -1,0 +1,7 @@
+{"watch":"activations","pid":28625}
+{"at":1793557153335,"pid":42698,"kind":"activated","bundleId":"com.google.chrome.for.testing"}
+{"bundleId":"io.github.ssfskim.cua.fixture.electron","kind":"deactivated","at":1793557153347,"pid":43755}
+{"at":1793557155424,"kind":"activated","pid":41418,"bundleId":"com.apple.TextEdit"}
+{"at":1793557155426,"kind":"deactivated","pid":42698,"bundleId":"com.google.chrome.for.testing"}
+{"at":1793557156143,"kind":"activated","pid":42698,"bundleId":"com.google.chrome.for.testing"}
+{"at":1793557156143,"kind":"deactivated","pid":41418,"bundleId":"com.apple.TextEdit"}

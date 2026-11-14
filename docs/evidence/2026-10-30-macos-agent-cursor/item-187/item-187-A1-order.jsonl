@@ -1,0 +1,6 @@
+{"at":1793555790692.0549,"back":53108,"front":53106,"intervalMs":5,"kind":"start","pid":2406,"realtime":true,"state":"front-above"}
+{"at":1793555804168.4351,"kind":"end","lastRead":1793555804168.0022,"lateSamples":42,"maxGapMs":220.40000000000001,"samples":2551,"state":"front-above","why":"SIGTERM"}
+{"at":1793555991160.575,"back":53108,"front":53106,"intervalMs":5,"kind":"start","pid":54723,"realtime":true,"state":"front-above"}
+{"at":1793556325345.9622,"kind":"end","lastRead":1793556325345.2129,"lateSamples":765,"maxGapMs":132,"samples":64959,"state":"front-above","why":"SIGTERM"}
+{"at":1793556504630.9351,"back":53108,"front":53106,"intervalMs":5,"kind":"start","pid":83089,"realtime":true,"state":"front-above"}
+{"at":1793556891323.2551,"kind":"end","lastRead":1793556891322.8821,"lateSamples":934,"maxGapMs":283.89999999999998,"samples":74148,"state":"front-above","why":"SIGTERM"}

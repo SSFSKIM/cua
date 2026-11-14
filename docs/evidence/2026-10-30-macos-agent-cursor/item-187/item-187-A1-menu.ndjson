@@ -1,0 +1,8 @@
+{"at":1793555997035.3022,"kind":"start","pid":56197,"registered":true,"target":42698}
+{"at":1793556118864.0508,"kind":"end","why":"SIGTERM"}
+{"at":1793556138625.6553,"kind":"start","pid":94725,"registered":true,"target":42698}
+{"at":1793556323595.5979,"kind":"end","why":"SIGTERM"}
+{"at":1793556529545.1179,"kind":"start","pid":88757,"registered":true,"target":42698}
+{"at":1793556688286.6741,"kind":"end","why":"SIGTERM"}
+{"at":1793556703582.459,"kind":"start","pid":29100,"registered":true,"target":42698}
+{"at":1793556888608.906,"kind":"end","why":"SIGTERM"}

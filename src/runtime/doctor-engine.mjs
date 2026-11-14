@@ -12,7 +12,8 @@
 // its records, the signature as a match and a kind (never the identity), and an engine's `status`, which gives the
 // three grants (Input Monitoring the intervention tap's), whether the socket's owner is the approved bundle, the probe
 // mode's ability, the route-4 overrides the engine read at launch, the apps `routeAdvice` names and the agent cursor's
-// device switch (`cursor: on`, or `cursor: off (engine.json)`; #235), the running engine's, else engine.json's. An
+// device switch (`cursor: on`, or `cursor: off (engine.json)`; #235), the running engine's, else engine.json's, and the
+// device mode sessions here run it in (#282: launch.mjs desktopModeFor, as on Linux; an invalid one fails the row). An
 // engine already running is read and left alone. Only when sessions do drive cua's engine does inspectEngine launch the approved bundle
 // to read it, and stop it after (never a pending or unapproved one). When the vendor's engine is preferred, nothing is
 // launched, connected to or signed: the row says so, how to select cua's, and what the approved location holds, from
@@ -124,7 +125,19 @@ export async function engineCheck({env, platform, arch = process.arch, home, ses
   if (preferred.engine === 'vendor') return vendorRow(selection, records({env}));
   const facts = await inspect({env, mayLaunch: selection.selected === 'cua', location: engine.location});
   const settings = settingsOf(config);
-  return selection.selected === 'cua' ? installedRow(selection, facts, settings) : notInUseRow(selection, facts, settings);
+  return selection.selected === 'cua' ? installedRow(selection, facts, settings, deviceMode({env, config})) : notInUseRow(selection, facts, settings);
+}
+
+// The device mode sessions here run cua's engine in (launch.mjs desktopModeFor; Linux since #171, macOS since #282) ->
+// {desktop: {mode, reason} | null, words, verdict: 'fail' | null}; an invalid one fails the row, as every session's launch.
+function deviceMode({env, config}) {
+  try {
+    const desktop = desktopModeFor({env, config});
+    return {desktop, words: `device mode ${desktop.mode} (${DESKTOP_WORDS[desktop.reason](desktop.mode)})`, verdict: null};
+  } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    return {desktop: null, words: error.message, verdict: 'fail'};
+  }
 }
 
 const SOURCE_WORDS = {
@@ -208,14 +221,9 @@ async function linuxRow(selection, {env, config, session, facts, readCapabilitie
   const runs = bin.source === 'override'
     ? say('warn', `${bin.path}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), ${SERVICE_WORDS}; installed: ${held}`)
     : `${held}, ${SERVICE_WORDS}`;
-  let desktop = null, mode;
-  try {
-    desktop = desktopModeFor({env, config});
-    mode = `device mode ${desktop.mode} (${DESKTOP_WORDS[desktop.reason](desktop.mode)})`;
-  } catch (error) {
-    if (!(error instanceof CuaError)) throw error;
-    mode = say('fail', error.message);
-  }
+  const device = deviceMode({env, config});
+  const desktop = device.desktop;
+  const mode = device.verdict ? say(device.verdict, device.words) : device.words;
   // An invalid device mode has failed the row already, and no session starts the engine in it.
   const caps = desktop ? await linuxCapabilities({bin, facts, desktop: desktop.mode, env, readCapabilities}) : {report: null, unread: 'the device mode is invalid', words: ''};
   if (caps.verdict) verdicts.push(caps.verdict);
@@ -308,8 +316,8 @@ function installState(facts) {
   return `the bundle at ${at} (build ${shortBuild(facts.build)}) is not approved: run cua engine approve with the owner at the console`;
 }
 
-function installedRow(selection, facts, settings) {
-  const report = factsReport(selection, facts, settings);
+function installedRow(selection, facts, settings, device) {
+  const report = {...factsReport(selection, facts, settings), desktop: device.desktop};
   const verdicts = [];
   const say = (status, text) => { verdicts.push(status); return text; };
   const parts = [`the approved cua Engine.app at ${facts.bundlePath} (version ${facts.engineVersion}, build ${shortBuild(facts.build)})`];
@@ -322,7 +330,8 @@ function installedRow(selection, facts, settings) {
   }
   parts.push(...routeWords(report, settings, facts.status, say));
   parts.push(...cursorWords(report, settings, facts.status));
-  return {row: result('engine', worst(verdicts), `cua's engine is selected (${SOURCE_WORDS[selection.preferred.reason]('cua')}): ${parts.join('; ')}`), report};
+  parts.push(device.verdict ? say(device.verdict, device.words) : device.words);
+  return {row: result('engine', worst(verdicts),`cua's engine is selected (${SOURCE_WORDS[selection.preferred.reason]('cua')}): ${parts.join('; ')}`), report};
 }
 
 // The agent cursor's device switch, as `cua engine status` says it too; a file the running engine has not read is noted.

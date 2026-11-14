@@ -1,0 +1,8729 @@
+{
+ "config": {
+  "imageOS": "macos26",
+  "imageVersion": "20261102.0473.1",
+  "runnerName": "GitHub Actions 1000035896",
+  "macOS": "ProductName: macOS ProductVersion: 26.7.2 BuildVersion: 25G332",
+  "chrome": "Google Chrome for Testing 156.0.8078.80",
+  "mainEngine": "/Users/runner/work/_temp/eng/debug/cua-engine",
+  "branchEngine": "/Users/runner/work/_temp/eng-fix/debug/cua-engine",
+  "mainCommit": "5fd8915b14182413f6643773a252cdf3110cb70b",
+  "branchCommit": "2c016f7b89155325e97791f1729b50e740de3a82",
+  "probeCommit": "3cf49c49a80330cae76558917f8752433b294d0f",
+  "rep": "2"
+ },
+ "cells": [
+  {
+   "label": "main/fresh/input",
+   "engine": "main",
+   "timing": "fresh",
+   "target": "input",
+   "chromePid": 7179,
+   "expected": {
+    "field": "input",
+    "offset": 14,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "routeAdvice": [],
+    "engineVersion": "0.1.0",
+    "inputMonitoring": true,
+    "holders": [],
+    "screenRecording": true,
+    "accessibility": true,
+    "canPostHid": true,
+    "build": "unbundled",
+    "connections": 0,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_fresh_input.sock",
+    "pid": 7617,
+    "routes": {},
+    "cursor": "on",
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "cursorDebug": null
+   },
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observationMs": 1754,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 233
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 202
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "x": 400,
+     "width": 620,
+     "height": 674
+    },
+    "webArea": {
+     "x": 400,
+     "y": 174,
+     "width": 620,
+     "height": 531
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 233
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 31,
+      "owner": "Google Chrome for Testing",
+      "pid": 7179
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 263,
+   "click": {
+    "error": {
+     "meta": {
+      "receivedAt": 1793933503092,
+      "inputRoute": 3,
+      "startedAt": null,
+      "elementClick": {
+       "walkStopped": "editable",
+       "plan": "synthesized",
+       "walk": [
+        "AXTextField"
+       ],
+       "reason": "webArea"
+      },
+      "coordinateClick": {
+       "frameBeforePost": null,
+       "windowPoint": {
+        "y": 202,
+        "x": 153
+       },
+       "screenshotPoint": {
+        "x": 153,
+        "y": 202
+       },
+       "postedLocation": {
+        "x": 553,
+        "y": 233
+       },
+       "postedWindowLocation": {
+        "x": 153,
+        "y": 202
+       },
+       "windowFrame": {
+        "width": 620,
+        "height": 674,
+        "y": 31,
+        "x": 400
+       }
+      },
+      "activationJoin": "fresh",
+      "endedAt": null,
+      "hidIdleMs": null
+     },
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "errorName": "backgroundClickRefused",
+     "code": -10005
+    },
+    "jsonrpc": "2.0",
+    "id": 4
+   },
+   "clickMs": 20,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 31,
+      "owner": "Google Chrome for Testing",
+      "pid": 7179
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "startedAt": 1793933503984,
+      "endedAt": 1793933504009,
+      "hidIdleMs": null,
+      "inputRoute": "2'",
+      "receivedAt": 1793933503974,
+      "entered": 2
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 5
+   },
+   "typeMs": 38,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": -1,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "alpha bravo charlie delta echo foxtrot",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 987,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 999,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": 0,
+     "end": 0
+    },
+    "atExpected": false,
+    "typedAt": -1,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/fresh/textarea",
+   "engine": "main",
+   "timing": "fresh",
+   "target": "textarea",
+   "chromePid": 7841,
+   "expected": {
+    "field": "textarea",
+    "offset": 38,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "inputMonitoring": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_fresh_textarea.sock",
+    "pid": 8586,
+    "engineVersion": "0.1.0",
+    "accessibility": true,
+    "routeAdvice": [],
+    "routes": {},
+    "connections": 0,
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "cursor": "on",
+    "holders": [],
+    "cursorDebug": null,
+    "build": "unbundled",
+    "canPostHid": true,
+    "screenRecording": true
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observationMs": 537,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 289
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 258
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "height": 679,
+     "x": 400,
+     "width": 620
+    },
+    "webArea": {
+     "height": 536,
+     "x": 400,
+     "width": 620,
+     "y": 174
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 289
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 52,
+      "owner": "Google Chrome for Testing",
+      "pid": 7841
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 134,
+   "click": {
+    "error": {
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "meta": {
+      "inputRoute": 3,
+      "receivedAt": 1793933516541,
+      "elementClick": {
+       "walk": [
+        "AXTextArea"
+       ],
+       "walkStopped": "editable",
+       "reason": "webArea",
+       "plan": "synthesized"
+      },
+      "coordinateClick": {
+       "screenshotPoint": {
+        "y": 258,
+        "x": 153
+       },
+       "windowFrame": {
+        "x": 400,
+        "width": 620,
+        "height": 679,
+        "y": 31
+       },
+       "postedLocation": {
+        "x": 553,
+        "y": 289
+       },
+       "frameBeforePost": null,
+       "windowPoint": {
+        "y": 258,
+        "x": 153
+       },
+       "postedWindowLocation": {
+        "x": 153,
+        "y": 258
+       }
+      },
+      "startedAt": null,
+      "endedAt": null,
+      "activationJoin": "fresh",
+      "hidIdleMs": null
+     },
+     "code": -10005,
+     "errorName": "backgroundClickRefused"
+    },
+    "id": 4,
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 6,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 52,
+      "owner": "Google Chrome for Testing",
+      "pid": 7841
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "inputRoute": "2'",
+      "startedAt": 1793933517395,
+      "endedAt": 1793933517407,
+      "receivedAt": 1793933517392,
+      "hidIdleMs": null,
+      "entered": 2
+     }
+    },
+    "id": 5,
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 18,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": -1,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "first line of the notes\nsecond line holds more words\nthird line sits below\nfourth and final line",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 878,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 878,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXTextArea"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": 0,
+     "end": 0
+    },
+    "atExpected": false,
+    "typedAt": -1,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/fresh/ce",
+   "engine": "main",
+   "timing": "fresh",
+   "target": "ce",
+   "chromePid": 8715,
+   "expected": {
+    "field": "ce",
+    "offset": 19,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "screenRecording": true,
+    "build": "unbundled",
+    "holders": [],
+    "engineVersion": "0.1.0",
+    "accessibility": true,
+    "cursorDebug": null,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_fresh_ce.sock",
+    "connections": 0,
+    "inputMonitoring": true,
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "canPostHid": true,
+    "pid": 9158,
+    "routes": {},
+    "cursor": "on",
+    "routeAdvice": []
+   },
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observationMs": 450,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 600.9078125,
+     "y": 364.5
+    },
+    "screenshotPixel": {
+     "x": 201,
+     "y": 334
+    },
+    "scale": 1,
+    "window": {
+     "width": 620,
+     "y": 31,
+     "height": 679,
+     "x": 400
+    },
+    "webArea": {
+     "y": 174,
+     "width": 620,
+     "height": 536,
+     "x": 400
+    },
+    "clickScreen": {
+     "x": 601,
+     "y": 365
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 68,
+      "owner": "Google Chrome for Testing",
+      "pid": 8715
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 150,
+   "click": {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "error": {
+     "errorName": "backgroundClickRefused",
+     "meta": {
+      "startedAt": null,
+      "elementClick": {
+       "walk": [
+        "AXStaticText"
+       ],
+       "plan": "synthesized",
+       "reason": "webArea",
+       "walkStopped": "editable"
+      },
+      "activationJoin": "fresh",
+      "receivedAt": 1793933528348,
+      "hidIdleMs": null,
+      "inputRoute": 3,
+      "coordinateClick": {
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "y": 334,
+        "x": 201
+       },
+       "windowPoint": {
+        "y": 334,
+        "x": 201
+       },
+       "postedLocation": {
+        "x": 601,
+        "y": 365
+       },
+       "postedWindowLocation": {
+        "y": 334,
+        "x": 201
+       },
+       "windowFrame": {
+        "height": 679,
+        "width": 620,
+        "x": 400,
+        "y": 31
+       }
+      },
+      "endedAt": null
+     },
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "code": -10005
+    }
+   },
+   "clickMs": 6,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 68,
+      "owner": "Google Chrome for Testing",
+      "pid": 8715
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+     "meta": {
+      "endedAt": 1793933529215,
+      "receivedAt": 1793933529199,
+      "hidIdleMs": null,
+      "entered": 2,
+      "inputRoute": "2'",
+      "startedAt": 1793933529202
+     }
+    }
+   },
+   "typeMs": 19,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": null,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "golf hotel india juliet kilo lima mike",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 888,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 889,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXStaticText"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "atExpected": false,
+    "typedAt": null,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/fresh/mce-t1",
+   "engine": "main",
+   "timing": "fresh",
+   "target": "mce-t1",
+   "chromePid": 9282,
+   "expected": {
+    "field": "mce",
+    "offset": 15,
+    "node": {
+     "idx": 1,
+     "off": 3
+    },
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "screenRecording": true,
+    "routeAdvice": [],
+    "build": "unbundled",
+    "canPostHid": true,
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "inputMonitoring": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_fresh_mce-t1.sock",
+    "connections": 0,
+    "routes": {},
+    "engineVersion": "0.1.0",
+    "pid": 9729,
+    "accessibility": true,
+    "cursor": "on",
+    "holders": [],
+    "cursorDebug": null
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observationMs": 535,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 562.3765625,
+     "y": 400.5
+    },
+    "screenshotPixel": {
+     "x": 162,
+     "y": 370
+    },
+    "scale": 1,
+    "window": {
+     "width": 620,
+     "x": 400,
+     "height": 679,
+     "y": 31
+    },
+    "webArea": {
+     "x": 400,
+     "y": 174,
+     "width": 620,
+     "height": 536
+    },
+    "clickScreen": {
+     "x": 562,
+     "y": 401
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 83,
+      "owner": "Google Chrome for Testing",
+      "pid": 9282
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 147,
+   "click": {
+    "error": {
+     "code": -10005,
+     "errorName": "backgroundClickRefused",
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "meta": {
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "endedAt": null,
+      "startedAt": null,
+      "receivedAt": 1793933539699,
+      "inputRoute": 3,
+      "coordinateClick": {
+       "frameBeforePost": null,
+       "windowPoint": {
+        "y": 370,
+        "x": 162
+       },
+       "windowFrame": {
+        "height": 679,
+        "x": 400,
+        "y": 31,
+        "width": 620
+       },
+       "postedLocation": {
+        "y": 401,
+        "x": 562
+       },
+       "screenshotPoint": {
+        "x": 162,
+        "y": 370
+       },
+       "postedWindowLocation": {
+        "x": 162,
+        "y": 370
+       }
+      },
+      "elementClick": {
+       "plan": "synthesized",
+       "walkStopped": "editable",
+       "reason": "webArea",
+       "walk": [
+        "AXStaticText"
+       ]
+      }
+     }
+    },
+    "id": 4,
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 7,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 83,
+      "owner": "Google Chrome for Testing",
+      "pid": 9282
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "id": 5,
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "endedAt": 1793933540562,
+      "inputRoute": "2'",
+      "entered": 2,
+      "startedAt": 1793933540547,
+      "receivedAt": 1793933540544
+     }
+    },
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 21,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": null,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": [
+     "alpha bravo ",
+     "charlie delta",
+     "echo foxtrot ",
+     "golf hotel",
+     " india"
+    ],
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 879,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 880,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXStaticText"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "atExpected": false,
+    "typedAt": null,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/fresh/mce-t2",
+   "engine": "main",
+   "timing": "fresh",
+   "target": "mce-t2",
+   "chromePid": 9854,
+   "expected": {
+    "field": "mce",
+    "offset": 33,
+    "node": {
+     "idx": 2,
+     "off": 7
+    },
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "holders": [],
+    "canPostHid": true,
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "pid": 10313,
+    "accessibility": true,
+    "engineVersion": "0.1.0",
+    "screenRecording": true,
+    "routeAdvice": [],
+    "cursor": "on",
+    "build": "unbundled",
+    "routes": {},
+    "connections": 0,
+    "cursorDebug": null,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_fresh_mce-t2.sock",
+    "inputMonitoring": true
+   },
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observationMs": 446,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 485.3140625,
+     "y": 420.5
+    },
+    "screenshotPixel": {
+     "x": 85,
+     "y": 390
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "width": 620,
+     "height": 679,
+     "x": 400
+    },
+    "webArea": {
+     "x": 400,
+     "width": 620,
+     "height": 536,
+     "y": 174
+    },
+    "clickScreen": {
+     "x": 485,
+     "y": 421
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 98,
+      "owner": "Google Chrome for Testing",
+      "pid": 9854
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 137,
+   "click": {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "error": {
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "code": -10005,
+     "errorName": "backgroundClickRefused",
+     "meta": {
+      "hidIdleMs": null,
+      "startedAt": null,
+      "inputRoute": 3,
+      "activationJoin": "fresh",
+      "coordinateClick": {
+       "frameBeforePost": null,
+       "postedLocation": {
+        "x": 485,
+        "y": 421
+       },
+       "windowFrame": {
+        "y": 31,
+        "width": 620,
+        "x": 400,
+        "height": 679
+       },
+       "windowPoint": {
+        "y": 390,
+        "x": 85
+       },
+       "screenshotPoint": {
+        "y": 390,
+        "x": 85
+       },
+       "postedWindowLocation": {
+        "x": 85,
+        "y": 390
+       }
+      },
+      "elementClick": {
+       "walk": [
+        "AXStaticText"
+       ],
+       "walkStopped": "editable",
+       "plan": "synthesized",
+       "reason": "webArea"
+      },
+      "receivedAt": 1793933551087,
+      "endedAt": null
+     }
+    }
+   },
+   "clickMs": 7,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 98,
+      "owner": "Google Chrome for Testing",
+      "pid": 9854
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "id": 5,
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "endedAt": 1793933551953,
+      "entered": 2,
+      "inputRoute": "2'",
+      "receivedAt": 1793933551937,
+      "startedAt": 1793933551940
+     }
+    },
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 19,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": null,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": [
+     "alpha bravo ",
+     "charlie delta",
+     "echo foxtrot ",
+     "golf hotel",
+     " india"
+    ],
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 882,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 883,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXStaticText"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "atExpected": false,
+    "typedAt": null,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/fresh/pw",
+   "engine": "main",
+   "timing": "fresh",
+   "target": "pw",
+   "chromePid": 10438,
+   "expected": {
+    "field": "pw",
+    "offset": null,
+    "node": null,
+    "prior": null,
+    "secure": true,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "routeAdvice": [],
+    "build": "unbundled",
+    "connections": 0,
+    "pid": 10887,
+    "cursor": "on",
+    "screenRecording": true,
+    "canPostHid": true,
+    "accessibility": true,
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "holders": [],
+    "inputMonitoring": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_fresh_pw.sock",
+    "cursorDebug": null,
+    "engineVersion": "0.1.0",
+    "routes": {}
+   },
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observationMs": 452,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 446.78828125,
+     "y": 457
+    },
+    "screenshotPixel": {
+     "x": 47,
+     "y": 426
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "x": 400,
+     "width": 620,
+     "height": 679
+    },
+    "webArea": {
+     "height": 536,
+     "x": 400,
+     "width": 620,
+     "y": 174
+    },
+    "clickScreen": {
+     "x": 447,
+     "y": 457
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 113,
+      "owner": "Google Chrome for Testing",
+      "pid": 10438
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 139,
+   "click": {
+    "jsonrpc": "2.0",
+    "error": {
+     "errorName": "backgroundClickRefused",
+     "code": -10005,
+     "meta": {
+      "hidIdleMs": null,
+      "startedAt": null,
+      "elementClick": {
+       "plan": "synthesized",
+       "walkStopped": "editable",
+       "reason": "webArea",
+       "walk": [
+        "AXTextField"
+       ]
+      },
+      "endedAt": null,
+      "inputRoute": 3,
+      "activationJoin": "fresh",
+      "receivedAt": 1793933562387,
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "y": 426,
+        "x": 47
+       },
+       "windowPoint": {
+        "y": 426,
+        "x": 47
+       },
+       "postedLocation": {
+        "x": 447,
+        "y": 457
+       },
+       "screenshotPoint": {
+        "y": 426,
+        "x": 47
+       },
+       "windowFrame": {
+        "y": 31,
+        "height": 679,
+        "x": 400,
+        "width": 620
+       },
+       "frameBeforePost": null
+      }
+     },
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop"
+    },
+    "id": 4
+   },
+   "clickMs": 6,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 113,
+      "owner": "Google Chrome for Testing",
+      "pid": 10438
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "receivedAt": 1793933563242,
+      "inputRoute": "2'",
+      "hidIdleMs": null,
+      "startedAt": 1793933563245,
+      "entered": 2,
+      "endedAt": 1793933563257
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 5
+   },
+   "typeMs": 16,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": null,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "[password: length only]",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 882,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 883,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": 0,
+     "end": 0
+    },
+    "atExpected": false,
+    "typedAt": "pw unchanged",
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/fresh/prior",
+   "engine": "main",
+   "timing": "fresh",
+   "target": "prior",
+   "chromePid": 11009,
+   "expected": {
+    "field": "input",
+    "offset": 14,
+    "node": null,
+    "prior": 6,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 6,
+    "end": 6
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "inputMonitoring": true,
+    "pid": 11482,
+    "build": "unbundled",
+    "routeAdvice": [],
+    "cursor": "on",
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_fresh_prior.sock",
+    "cursorDebug": null,
+    "accessibility": true,
+    "routes": {},
+    "engineVersion": "0.1.0",
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "holders": [],
+    "screenRecording": true,
+    "canPostHid": true,
+    "connections": 0
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observationMs": 347,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 233
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 202
+    },
+    "scale": 1,
+    "window": {
+     "x": 400,
+     "width": 620,
+     "y": 31,
+     "height": 679
+    },
+    "webArea": {
+     "x": 400,
+     "height": 536,
+     "width": 620,
+     "y": 174
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 233
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 128,
+      "owner": "Google Chrome for Testing",
+      "pid": 11009
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 6,
+     "end": 6
+    }
+   },
+   "clickAfterObservationMs": 139,
+   "click": {
+    "jsonrpc": "2.0",
+    "error": {
+     "meta": {
+      "hidIdleMs": null,
+      "elementClick": {
+       "walkStopped": "editable",
+       "plan": "synthesized",
+       "walk": [
+        "AXTextField"
+       ],
+       "reason": "webArea"
+      },
+      "coordinateClick": {
+       "postedLocation": {
+        "y": 233,
+        "x": 553
+       },
+       "windowPoint": {
+        "x": 153,
+        "y": 202
+       },
+       "postedWindowLocation": {
+        "y": 202,
+        "x": 153
+       },
+       "screenshotPoint": {
+        "x": 153,
+        "y": 202
+       },
+       "windowFrame": {
+        "height": 679,
+        "y": 31,
+        "width": 620,
+        "x": 400
+       },
+       "frameBeforePost": null
+      },
+      "activationJoin": "fresh",
+      "inputRoute": 3,
+      "receivedAt": 1793933573407,
+      "startedAt": null,
+      "endedAt": null
+     },
+     "code": -10005,
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "errorName": "backgroundClickRefused"
+    },
+    "id": 4
+   },
+   "clickMs": 5,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 128,
+      "owner": "Google Chrome for Testing",
+      "pid": 11009
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": 6,
+     "end": 6
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "entered": 2,
+      "receivedAt": 1793933574255,
+      "endedAt": 1793933574274,
+      "inputRoute": "2'",
+      "startedAt": 1793933574260
+     }
+    },
+    "id": 5,
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 21,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": 6,
+     "end": 6
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": -1,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "alpha bravo charlie delta echo foxtrot",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 880,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 880,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": 6,
+     "end": 6
+    },
+    "atExpected": false,
+    "typedAt": -1,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/late/input",
+   "engine": "main",
+   "timing": "late",
+   "target": "input",
+   "chromePid": 11764,
+   "expected": {
+    "field": "input",
+    "offset": 14,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "engineVersion": "0.1.0",
+    "accessibility": true,
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "inputMonitoring": true,
+    "build": "unbundled",
+    "routeAdvice": [],
+    "canPostHid": true,
+    "pid": 12482,
+    "cursor": "on",
+    "connections": 0,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_late_input.sock",
+    "holders": [],
+    "cursorDebug": null,
+    "routes": {},
+    "screenRecording": true
+   },
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observationMs": 380,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 233
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 202
+    },
+    "scale": 1,
+    "window": {
+     "height": 679,
+     "width": 620,
+     "y": 31,
+     "x": 400
+    },
+    "webArea": {
+     "x": 400,
+     "y": 174,
+     "height": 536,
+     "width": 620
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 233
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 144,
+      "owner": "Google Chrome for Testing",
+      "pid": 11764
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 3038,
+   "click": {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "error": {
+     "code": -10005,
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "meta": {
+      "elementClick": {
+       "walk": [
+        "AXTextField"
+       ],
+       "reason": "webArea",
+       "walkStopped": "editable",
+       "plan": "synthesized"
+      },
+      "inputRoute": 3,
+      "hidIdleMs": null,
+      "coordinateClick": {
+       "windowFrame": {
+        "y": 31,
+        "width": 620,
+        "height": 679,
+        "x": 400
+       },
+       "frameBeforePost": null,
+       "postedWindowLocation": {
+        "y": 202,
+        "x": 153
+       },
+       "windowPoint": {
+        "y": 202,
+        "x": 153
+       },
+       "postedLocation": {
+        "y": 233,
+        "x": 553
+       },
+       "screenshotPoint": {
+        "x": 153,
+        "y": 202
+       }
+      },
+      "receivedAt": 1793933587533,
+      "endedAt": null,
+      "activationJoin": "fresh",
+      "startedAt": null
+     },
+     "errorName": "backgroundClickRefused"
+    }
+   },
+   "clickMs": 6,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 144,
+      "owner": "Google Chrome for Testing",
+      "pid": 11764
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "entered": 2,
+      "inputRoute": "2'",
+      "startedAt": 1793933588389,
+      "endedAt": 1793933588404,
+      "hidIdleMs": null,
+      "receivedAt": 1793933588386
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 5
+   },
+   "typeMs": 19,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": -1,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "alpha bravo charlie delta echo foxtrot",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 885,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 886,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": 0,
+     "end": 0
+    },
+    "atExpected": false,
+    "typedAt": -1,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/late/textarea",
+   "engine": "main",
+   "timing": "late",
+   "target": "textarea",
+   "chromePid": 12665,
+   "expected": {
+    "field": "textarea",
+    "offset": 38,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "pid": 13047,
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "screenRecording": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_late_textarea.sock",
+    "build": "unbundled",
+    "routes": {},
+    "cursor": "on",
+    "cursorDebug": null,
+    "holders": [],
+    "engineVersion": "0.1.0",
+    "routeAdvice": [],
+    "canPostHid": true,
+    "accessibility": true,
+    "inputMonitoring": true,
+    "connections": 0
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observationMs": 375,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 289
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 258
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "x": 400,
+     "height": 679,
+     "width": 620
+    },
+    "webArea": {
+     "x": 400,
+     "width": 620,
+     "y": 174,
+     "height": 536
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 289
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 158,
+      "owner": "Google Chrome for Testing",
+      "pid": 12665
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 3038,
+   "click": {
+    "id": 4,
+    "error": {
+     "errorName": "backgroundClickRefused",
+     "code": -10005,
+     "meta": {
+      "receivedAt": 1793933601644,
+      "hidIdleMs": null,
+      "startedAt": null,
+      "elementClick": {
+       "plan": "synthesized",
+       "reason": "webArea",
+       "walk": [
+        "AXTextArea"
+       ],
+       "walkStopped": "editable"
+      },
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "x": 153,
+        "y": 258
+       },
+       "windowFrame": {
+        "height": 679,
+        "x": 400,
+        "y": 31,
+        "width": 620
+       },
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "x": 153,
+        "y": 258
+       },
+       "windowPoint": {
+        "y": 258,
+        "x": 153
+       },
+       "postedLocation": {
+        "y": 289,
+        "x": 553
+       }
+      },
+      "activationJoin": "fresh",
+      "endedAt": null,
+      "inputRoute": 3
+     },
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop"
+    },
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 5,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 158,
+      "owner": "Google Chrome for Testing",
+      "pid": 12665
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "id": 5,
+    "result": {
+     "meta": {
+      "inputRoute": "2'",
+      "startedAt": 1793933602499,
+      "hidIdleMs": null,
+      "receivedAt": 1793933602496,
+      "entered": 2,
+      "endedAt": 1793933602513
+     }
+    },
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 17,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": -1,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "first line of the notes\nsecond line holds more words\nthird line sits below\nfourth and final line",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 871,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 880,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXTextArea"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": 0,
+     "end": 0
+    },
+    "atExpected": false,
+    "typedAt": -1,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/late/ce",
+   "engine": "main",
+   "timing": "late",
+   "target": "ce",
+   "chromePid": 13488,
+   "expected": {
+    "field": "ce",
+    "offset": 19,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "routes": {},
+    "connections": 0,
+    "routeAdvice": [],
+    "screenRecording": true,
+    "engineVersion": "0.1.0",
+    "canPostHid": true,
+    "build": "unbundled",
+    "accessibility": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_late_ce.sock",
+    "cursor": "on",
+    "holders": [],
+    "cursorDebug": null,
+    "inputMonitoring": true,
+    "pid": 13627
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observationMs": 446,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 600.9078125,
+     "y": 364.5
+    },
+    "screenshotPixel": {
+     "x": 201,
+     "y": 334
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "height": 679,
+     "x": 400,
+     "width": 620
+    },
+    "webArea": {
+     "x": 400,
+     "y": 174,
+     "width": 620,
+     "height": 536
+    },
+    "clickScreen": {
+     "x": 601,
+     "y": 365
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 173,
+      "owner": "Google Chrome for Testing",
+      "pid": 13488
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 3042,
+   "click": {
+    "error": {
+     "code": -10005,
+     "errorName": "backgroundClickRefused",
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "meta": {
+      "coordinateClick": {
+       "windowFrame": {
+        "x": 400,
+        "width": 620,
+        "height": 679,
+        "y": 31
+       },
+       "screenshotPoint": {
+        "x": 201,
+        "y": 334
+       },
+       "windowPoint": {
+        "x": 201,
+        "y": 334
+       },
+       "postedWindowLocation": {
+        "y": 334,
+        "x": 201
+       },
+       "postedLocation": {
+        "x": 601,
+        "y": 365
+       },
+       "frameBeforePost": null
+      },
+      "endedAt": null,
+      "startedAt": null,
+      "inputRoute": 3,
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "elementClick": {
+       "reason": "webArea",
+       "walkStopped": "editable",
+       "walk": [
+        "AXStaticText"
+       ],
+       "plan": "synthesized"
+      },
+      "receivedAt": 1793933616212
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 4
+   },
+   "clickMs": 6,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 173,
+      "owner": "Google Chrome for Testing",
+      "pid": 13488
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "entered": 2,
+      "receivedAt": 1793933617049,
+      "startedAt": 1793933617052,
+      "hidIdleMs": null,
+      "inputRoute": "2'",
+      "endedAt": 1793933617066
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 5
+   },
+   "typeMs": 19,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": null,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "golf hotel india juliet kilo lima mike",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 874,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 875,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXStaticText"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "atExpected": false,
+    "typedAt": null,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/late/mce-t1",
+   "engine": "main",
+   "timing": "late",
+   "target": "mce-t1",
+   "chromePid": 14115,
+   "expected": {
+    "field": "mce",
+    "offset": 15,
+    "node": {
+     "idx": 1,
+     "off": 3
+    },
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "engineVersion": "0.1.0",
+    "cursorDebug": null,
+    "routes": {},
+    "accessibility": true,
+    "screenRecording": true,
+    "pid": 14265,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_late_mce-t1.sock",
+    "routeAdvice": [],
+    "connections": 0,
+    "holders": [],
+    "cursor": "on",
+    "canPostHid": true,
+    "build": "unbundled",
+    "inputMonitoring": true,
+    "bundlePath": "/Users/runner/work/_temp/eng/debug"
+   },
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observationMs": 473,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 562.3765625,
+     "y": 400.5
+    },
+    "screenshotPixel": {
+     "x": 162,
+     "y": 370
+    },
+    "scale": 1,
+    "window": {
+     "x": 400,
+     "y": 31,
+     "height": 679,
+     "width": 620
+    },
+    "webArea": {
+     "y": 174,
+     "width": 620,
+     "height": 536,
+     "x": 400
+    },
+    "clickScreen": {
+     "x": 562,
+     "y": 401
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 188,
+      "owner": "Google Chrome for Testing",
+      "pid": 14115
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 3046,
+   "click": {
+    "id": 4,
+    "jsonrpc": "2.0",
+    "error": {
+     "errorName": "backgroundClickRefused",
+     "meta": {
+      "activationJoin": "fresh",
+      "inputRoute": 3,
+      "coordinateClick": {
+       "screenshotPoint": {
+        "x": 162,
+        "y": 370
+       },
+       "postedLocation": {
+        "x": 562,
+        "y": 401
+       },
+       "postedWindowLocation": {
+        "y": 370,
+        "x": 162
+       },
+       "frameBeforePost": null,
+       "windowPoint": {
+        "x": 162,
+        "y": 370
+       },
+       "windowFrame": {
+        "x": 400,
+        "width": 620,
+        "y": 31,
+        "height": 679
+       }
+      },
+      "endedAt": null,
+      "elementClick": {
+       "reason": "webArea",
+       "walkStopped": "editable",
+       "plan": "synthesized",
+       "walk": [
+        "AXStaticText"
+       ]
+      },
+      "hidIdleMs": null,
+      "startedAt": null,
+      "receivedAt": 1793933630558
+     },
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "code": -10005
+    }
+   },
+   "clickMs": 7,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 188,
+      "owner": "Google Chrome for Testing",
+      "pid": 14115
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "id": 5,
+    "result": {
+     "meta": {
+      "receivedAt": 1793933631407,
+      "endedAt": 1793933631419,
+      "inputRoute": "2'",
+      "hidIdleMs": null,
+      "entered": 2,
+      "startedAt": 1793933631411
+     }
+    },
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 14,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": null,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": [
+     "alpha bravo ",
+     "charlie delta",
+     "echo foxtrot ",
+     "golf hotel",
+     " india"
+    ],
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 878,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 879,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXStaticText"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "atExpected": false,
+    "typedAt": null,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/late/mce-t2",
+   "engine": "main",
+   "timing": "late",
+   "target": "mce-t2",
+   "chromePid": 14727,
+   "expected": {
+    "field": "mce",
+    "offset": 33,
+    "node": {
+     "idx": 2,
+     "off": 7
+    },
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "holders": [],
+    "cursorDebug": null,
+    "accessibility": true,
+    "pid": 15211,
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "routeAdvice": [],
+    "engineVersion": "0.1.0",
+    "connections": 0,
+    "canPostHid": true,
+    "build": "unbundled",
+    "routes": {},
+    "inputMonitoring": true,
+    "cursor": "on",
+    "screenRecording": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_late_mce-t2.sock"
+   },
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observationMs": 376,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 485.3140625,
+     "y": 420.5
+    },
+    "screenshotPixel": {
+     "x": 85,
+     "y": 390
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "width": 620,
+     "x": 400,
+     "height": 679
+    },
+    "webArea": {
+     "y": 174,
+     "x": 400,
+     "width": 620,
+     "height": 536
+    },
+    "clickScreen": {
+     "x": 485,
+     "y": 421
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 203,
+      "owner": "Google Chrome for Testing",
+      "pid": 14727
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 3050,
+   "click": {
+    "id": 4,
+    "error": {
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "meta": {
+      "startedAt": null,
+      "hidIdleMs": null,
+      "inputRoute": 3,
+      "endedAt": null,
+      "elementClick": {
+       "plan": "synthesized",
+       "walk": [
+        "AXStaticText"
+       ],
+       "reason": "webArea",
+       "walkStopped": "editable"
+      },
+      "coordinateClick": {
+       "frameBeforePost": null,
+       "windowPoint": {
+        "y": 390,
+        "x": 85
+       },
+       "postedLocation": {
+        "x": 485,
+        "y": 421
+       },
+       "postedWindowLocation": {
+        "y": 390,
+        "x": 85
+       },
+       "screenshotPoint": {
+        "x": 85,
+        "y": 390
+       },
+       "windowFrame": {
+        "height": 679,
+        "x": 400,
+        "y": 31,
+        "width": 620
+       }
+      },
+      "receivedAt": 1793933644249,
+      "activationJoin": "fresh"
+     },
+     "errorName": "backgroundClickRefused",
+     "code": -10005
+    },
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 6,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 203,
+      "owner": "Google Chrome for Testing",
+      "pid": 14727
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "id": 5,
+    "result": {
+     "meta": {
+      "startedAt": 1793933645104,
+      "hidIdleMs": null,
+      "inputRoute": "2'",
+      "endedAt": 1793933645119,
+      "receivedAt": 1793933645101,
+      "entered": 2
+     }
+    },
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 20,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": null,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": [
+     "alpha bravo ",
+     "charlie delta",
+     "echo foxtrot ",
+     "golf hotel",
+     " india"
+    ],
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 874,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 875,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXStaticText"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": null,
+     "end": null,
+     "node": null
+    },
+    "atExpected": false,
+    "typedAt": null,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/late/pw",
+   "engine": "main",
+   "timing": "late",
+   "target": "pw",
+   "chromePid": 15510,
+   "expected": {
+    "field": "pw",
+    "offset": null,
+    "node": null,
+    "prior": null,
+    "secure": true,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "holders": [],
+    "connections": 0,
+    "routeAdvice": [],
+    "screenRecording": true,
+    "routes": {},
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "cursor": "on",
+    "canPostHid": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_late_pw.sock",
+    "inputMonitoring": true,
+    "accessibility": true,
+    "pid": 16209,
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "cursorDebug": null
+   },
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observationMs": 387,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 446.78828125,
+     "y": 457
+    },
+    "screenshotPixel": {
+     "x": 47,
+     "y": 426
+    },
+    "scale": 1,
+    "window": {
+     "x": 400,
+     "y": 31,
+     "width": 620,
+     "height": 679
+    },
+    "webArea": {
+     "y": 174,
+     "width": 620,
+     "height": 536,
+     "x": 400
+    },
+    "clickScreen": {
+     "x": 447,
+     "y": 457
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 218,
+      "owner": "Google Chrome for Testing",
+      "pid": 15510
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 3054,
+   "click": {
+    "error": {
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "meta": {
+      "elementClick": {
+       "plan": "synthesized",
+       "walk": [
+        "AXTextField"
+       ],
+       "walkStopped": "editable",
+       "reason": "webArea"
+      },
+      "startedAt": null,
+      "activationJoin": "fresh",
+      "coordinateClick": {
+       "windowPoint": {
+        "y": 426,
+        "x": 47
+       },
+       "postedWindowLocation": {
+        "x": 47,
+        "y": 426
+       },
+       "postedLocation": {
+        "x": 447,
+        "y": 457
+       },
+       "frameBeforePost": null,
+       "windowFrame": {
+        "height": 679,
+        "y": 31,
+        "width": 620,
+        "x": 400
+       },
+       "screenshotPoint": {
+        "x": 47,
+        "y": 426
+       }
+      },
+      "inputRoute": 3,
+      "endedAt": null,
+      "hidIdleMs": null,
+      "receivedAt": 1793933658684
+     },
+     "code": -10005,
+     "errorName": "backgroundClickRefused"
+    },
+    "id": 4,
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 9,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 218,
+      "owner": "Google Chrome for Testing",
+      "pid": 15510
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "entered": 2,
+      "endedAt": 1793933659559,
+      "receivedAt": 1793933659540,
+      "hidIdleMs": null,
+      "startedAt": 1793933659544,
+      "inputRoute": "2'"
+     }
+    },
+    "id": 5,
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 21,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": null,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "[password: length only]",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 887,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 891,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": 0,
+     "end": 0
+    },
+    "atExpected": false,
+    "typedAt": "pw unchanged",
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "main/late/prior",
+   "engine": "main",
+   "timing": "late",
+   "target": "prior",
+   "chromePid": 16666,
+   "expected": {
+    "field": "input",
+    "offset": 14,
+    "node": null,
+    "prior": 6,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 6,
+    "end": 6
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "accessibility": true,
+    "engineVersion": "0.1.0",
+    "screenRecording": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/main_late_prior.sock",
+    "routeAdvice": [],
+    "bundlePath": "/Users/runner/work/_temp/eng/debug",
+    "build": "unbundled",
+    "holders": [],
+    "inputMonitoring": true,
+    "routes": {},
+    "cursor": "on",
+    "pid": 16790,
+    "canPostHid": true,
+    "cursorDebug": null,
+    "connections": 0
+   },
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observationMs": 518,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 233
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 202
+    },
+    "scale": 1,
+    "window": {
+     "height": 679,
+     "x": 400,
+     "y": 31,
+     "width": 620
+    },
+    "webArea": {
+     "height": 536,
+     "y": 174,
+     "x": 400,
+     "width": 620
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 233
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 233,
+      "owner": "Google Chrome for Testing",
+      "pid": 16666
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 6,
+     "end": 6
+    }
+   },
+   "clickAfterObservationMs": 3046,
+   "click": {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "error": {
+     "code": -10005,
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "errorName": "backgroundClickRefused",
+     "meta": {
+      "receivedAt": 1793933672723,
+      "inputRoute": 3,
+      "elementClick": {
+       "walkStopped": "editable",
+       "walk": [
+        "AXTextField"
+       ],
+       "plan": "synthesized",
+       "reason": "webArea"
+      },
+      "startedAt": null,
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "coordinateClick": {
+       "frameBeforePost": null,
+       "postedWindowLocation": {
+        "x": 153,
+        "y": 202
+       },
+       "windowPoint": {
+        "y": 202,
+        "x": 153
+       },
+       "screenshotPoint": {
+        "y": 202,
+        "x": 153
+       },
+       "postedLocation": {
+        "x": 553,
+        "y": 233
+       },
+       "windowFrame": {
+        "y": 31,
+        "width": 620,
+        "height": 679,
+        "x": 400
+       }
+      },
+      "endedAt": null
+     }
+    }
+   },
+   "clickMs": 7,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 233,
+      "owner": "Google Chrome for Testing",
+      "pid": 16666
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "BODY",
+    "caret": {
+     "start": 6,
+     "end": 6
+    },
+    "focusAfterClickMs": null,
+    "focusTo": null,
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "inputRoute": "2'",
+      "hidIdleMs": null,
+      "receivedAt": 1793933673561,
+      "startedAt": 1793933673564,
+      "endedAt": 1793933673575,
+      "entered": 2
+     }
+    },
+    "id": 5,
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 16,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "BODY",
+    "caret": {
+     "start": 6,
+     "end": 6
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 0
+    },
+    "mark": -1,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "alpha bravo charlie delta echo foxtrot",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 865,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    },
+    {
+     "dt": 869,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "BODY"
+    }
+   ],
+   "verdict": {
+    "answer": "error backgroundClickRefused",
+    "reason": "webArea",
+    "caretClaim": null,
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": "editable",
+    "note": null,
+    "focused": false,
+    "pageCaret": {
+     "start": 6,
+     "end": 6
+    },
+    "atExpected": false,
+    "typedAt": -1,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/fresh/input",
+   "engine": "branch",
+   "timing": "fresh",
+   "target": "input",
+   "chromePid": 17274,
+   "expected": {
+    "field": "input",
+    "offset": 14,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "routeAdvice": [],
+    "screenRecording": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_fresh_input.sock",
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "holders": [],
+    "routes": {},
+    "cursorDebug": null,
+    "pid": 17398,
+    "accessibility": true,
+    "connections": 0,
+    "canPostHid": true,
+    "engineVersion": "0.1.0",
+    "inputMonitoring": true,
+    "cursor": "on",
+    "build": "unbundled"
+   },
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observationMs": 556,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 233
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 202
+    },
+    "scale": 1,
+    "window": {
+     "width": 620,
+     "x": 400,
+     "y": 31,
+     "height": 679
+    },
+    "webArea": {
+     "y": 174,
+     "width": 620,
+     "height": 536,
+     "x": 400
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 233
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 248,
+      "owner": "Google Chrome for Testing",
+      "pid": 17274
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 168,
+   "click": {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+     "meta": {
+      "receivedAt": 1793933683712,
+      "elementClick": {
+       "walk": [
+        "AXTextField"
+       ],
+       "pressedRole": "AXTextField",
+       "caret": "placed",
+       "reason": "focusField",
+       "pressed": "hit",
+       "plan": "action",
+       "action": "AXFocused"
+      },
+      "endedAt": 1793933685167,
+      "activationJoin": "fresh",
+      "hidIdleMs": null,
+      "startedAt": 1793933683720,
+      "inputRoute": 1,
+      "coordinateClick": {
+       "windowPoint": {
+        "y": 202,
+        "x": 153
+       },
+       "screenshotPoint": {
+        "x": 153,
+        "y": 202
+       },
+       "postedLocation": {
+        "y": 233,
+        "x": 553
+       },
+       "postedWindowLocation": {
+        "x": 153,
+        "y": 202
+       },
+       "windowFrame": {
+        "width": 620,
+        "height": 679,
+        "x": 400,
+        "y": 31
+       },
+       "frameBeforePost": null
+      }
+     },
+     "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click."
+    }
+   },
+   "clickMs": 1496,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 262,
+      "owner": "cua-engine",
+      "pid": 17398
+     },
+     {
+      "number": 248,
+      "owner": "Google Chrome for Testing",
+      "pid": 17274
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-input",
+    "caret": {
+     "start": 14,
+     "end": 14
+    },
+    "focusAfterClickMs": 17,
+    "focusTo": "field-input",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+     "meta": {
+      "endedAt": 1793933686072,
+      "startedAt": 1793933686059,
+      "entered": 2,
+      "hidIdleMs": null,
+      "receivedAt": 1793933686055,
+      "inputRoute": "2'"
+     }
+    }
+   },
+   "typeMs": 20,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-input",
+    "caret": {
+     "start": 16,
+     "end": 16
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": 14,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "alpha bravo chQZarlie delta echo foxtrot",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 17,
+     "ev": "active",
+     "to": "field-input"
+    },
+    {
+     "dt": 18,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 1454,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 2375,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 2388,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 2388,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 2390,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 2395,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusField",
+    "caretClaim": "placed",
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click.",
+    "focused": true,
+    "pageCaret": {
+     "start": 14,
+     "end": 14
+    },
+    "atExpected": true,
+    "typedAt": 14,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/fresh/textarea",
+   "engine": "branch",
+   "timing": "fresh",
+   "target": "textarea",
+   "chromePid": 17879,
+   "expected": {
+    "field": "textarea",
+    "offset": 38,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "build": "unbundled",
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "routeAdvice": [],
+    "engineVersion": "0.1.0",
+    "connections": 0,
+    "routes": {},
+    "cursor": "on",
+    "holders": [],
+    "cursorDebug": null,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_fresh_textarea.sock",
+    "accessibility": true,
+    "canPostHid": true,
+    "inputMonitoring": true,
+    "pid": 18093,
+    "screenRecording": true
+   },
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observationMs": 378,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 289
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 258
+    },
+    "scale": 1,
+    "window": {
+     "width": 620,
+     "height": 679,
+     "x": 400,
+     "y": 31
+    },
+    "webArea": {
+     "y": 174,
+     "height": 536,
+     "x": 400,
+     "width": 620
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 289
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 264,
+      "owner": "Google Chrome for Testing",
+      "pid": 17879
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 135,
+   "click": {
+    "jsonrpc": "2.0",
+    "result": {
+     "meta": {
+      "activationJoin": "fresh",
+      "receivedAt": 1793933696168,
+      "endedAt": 1793933697895,
+      "hidIdleMs": null,
+      "inputRoute": 1,
+      "startedAt": 1793933696175,
+      "elementClick": {
+       "caret": "placed",
+       "pressedRole": "AXTextArea",
+       "action": "AXFocused",
+       "plan": "action",
+       "pressed": "hit",
+       "reason": "focusField",
+       "walk": [
+        "AXTextArea"
+       ]
+      },
+      "coordinateClick": {
+       "windowPoint": {
+        "y": 258,
+        "x": 153
+       },
+       "screenshotPoint": {
+        "x": 153,
+        "y": 258
+       },
+       "postedWindowLocation": {
+        "x": 153,
+        "y": 258
+       },
+       "windowFrame": {
+        "width": 620,
+        "x": 400,
+        "height": 679,
+        "y": 31
+       },
+       "postedLocation": {
+        "x": 553,
+        "y": 289
+       },
+       "frameBeforePost": null
+      }
+     },
+     "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click."
+    },
+    "id": 4
+   },
+   "clickMs": 1766,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 278,
+      "owner": "cua-engine",
+      "pid": 18093
+     },
+     {
+      "number": 264,
+      "owner": "Google Chrome for Testing",
+      "pid": 17879
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-textarea",
+    "caret": {
+     "start": 38,
+     "end": 38
+    },
+    "focusAfterClickMs": 8,
+    "focusTo": "field-textarea",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "jsonrpc": "2.0",
+    "result": {
+     "meta": {
+      "inputRoute": "2'",
+      "receivedAt": 1793933698783,
+      "startedAt": 1793933698787,
+      "endedAt": 1793933698801,
+      "hidIdleMs": null,
+      "entered": 2
+     }
+    },
+    "id": 5
+   },
+   "typeMs": 20,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-textarea",
+    "caret": {
+     "start": 40,
+     "end": 40
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": 38,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "first line of the notes\nsecond line hoQZlds more words\nthird line sits below\nfourth and final line",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 8,
+     "ev": "active",
+     "to": "field-textarea"
+    },
+    {
+     "dt": 9,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 1728,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 2652,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 2654,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 2654,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 2655,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 2657,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusField",
+    "caretClaim": "placed",
+    "walk": [
+     "AXTextArea"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click.",
+    "focused": true,
+    "pageCaret": {
+     "start": 38,
+     "end": 38
+    },
+    "atExpected": true,
+    "typedAt": 38,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/fresh/ce",
+   "engine": "branch",
+   "timing": "fresh",
+   "target": "ce",
+   "chromePid": 18481,
+   "expected": {
+    "field": "ce",
+    "offset": 19,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "accessibility": true,
+    "holders": [],
+    "inputMonitoring": true,
+    "screenRecording": true,
+    "build": "unbundled",
+    "cursor": "on",
+    "canPostHid": true,
+    "connections": 0,
+    "routeAdvice": [],
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_fresh_ce.sock",
+    "engineVersion": "0.1.0",
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "cursorDebug": null,
+    "pid": 18964,
+    "routes": {}
+   },
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observationMs": 421,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 600.9078125,
+     "y": 364.5
+    },
+    "screenshotPixel": {
+     "x": 201,
+     "y": 334
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "x": 400,
+     "height": 679,
+     "width": 620
+    },
+    "webArea": {
+     "y": 174,
+     "x": 400,
+     "width": 620,
+     "height": 536
+    },
+    "clickScreen": {
+     "x": 601,
+     "y": 365
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 280,
+      "owner": "Google Chrome for Testing",
+      "pid": 18481
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 133,
+   "click": {
+    "id": 4,
+    "result": {
+     "meta": {
+      "endedAt": 1793933708932,
+      "coordinateClick": {
+       "frameBeforePost": null,
+       "windowFrame": {
+        "x": 400,
+        "y": 31,
+        "width": 620,
+        "height": 679
+       },
+       "postedWindowLocation": {
+        "x": 201,
+        "y": 334
+       },
+       "postedLocation": {
+        "y": 365,
+        "x": 601
+       },
+       "windowPoint": {
+        "y": 334,
+        "x": 201
+       },
+       "screenshotPoint": {
+        "x": 201,
+        "y": 334
+       }
+      },
+      "startedAt": 1793933708931,
+      "activationJoin": "fresh",
+      "hidIdleMs": null,
+      "receivedAt": 1793933708927,
+      "inputRoute": 1,
+      "elementClick": {
+       "reason": "focusedNotPlaced",
+       "caret": "noCharacterBoxes",
+       "walk": [
+        "AXStaticText",
+        "AXTextArea"
+       ],
+       "action": "AXFocused",
+       "pressedRole": "AXTextArea",
+       "pressed": "ancestor",
+       "plan": "action"
+      }
+     },
+     "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent."
+    },
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 2139,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 294,
+      "owner": "cua-engine",
+      "pid": 18964
+     },
+     {
+      "number": 280,
+      "owner": "Google Chrome for Testing",
+      "pid": 18481
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-ce",
+    "caret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "focusAfterClickMs": 7,
+    "focusTo": "field-ce",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "id": 5,
+    "result": {
+     "meta": {
+      "inputRoute": "2'",
+      "entered": 2,
+      "hidIdleMs": null,
+      "startedAt": 1793933711912,
+      "endedAt": 1793933711925,
+      "receivedAt": 1793933711909
+     }
+    },
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 17,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-ce",
+    "caret": {
+     "start": 2,
+     "end": 2,
+     "node": {
+      "idx": 0,
+      "off": 2
+     }
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": {
+     "idx": 0,
+     "off": 0,
+     "flat": 0
+    },
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "QZgolf hotel india juliet kilo lima mike",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 5,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 7,
+     "ev": "active",
+     "to": "field-ce"
+    },
+    {
+     "dt": 3009,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-ce"
+    },
+    {
+     "dt": 3011,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-ce"
+    },
+    {
+     "dt": 3012,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-ce"
+    },
+    {
+     "dt": 3012,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-ce"
+    },
+    {
+     "dt": 3014,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusedNotPlaced",
+    "caretClaim": "noCharacterBoxes",
+    "walk": [
+     "AXStaticText",
+     "AXTextArea"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+    "focused": true,
+    "pageCaret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "atExpected": false,
+    "typedAt": 0,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/fresh/mce-t1",
+   "engine": "branch",
+   "timing": "fresh",
+   "target": "mce-t1",
+   "chromePid": 19082,
+   "expected": {
+    "field": "mce",
+    "offset": 15,
+    "node": {
+     "idx": 1,
+     "off": 3
+    },
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "routes": {},
+    "cursorDebug": null,
+    "inputMonitoring": true,
+    "accessibility": true,
+    "holders": [],
+    "canPostHid": true,
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "build": "unbundled",
+    "screenRecording": true,
+    "cursor": "on",
+    "pid": 19800,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_fresh_mce-t1.sock",
+    "engineVersion": "0.1.0",
+    "routeAdvice": [],
+    "connections": 0
+   },
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observationMs": 387,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 562.3765625,
+     "y": 400.5
+    },
+    "screenshotPixel": {
+     "x": 162,
+     "y": 370
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "height": 679,
+     "width": 620,
+     "x": 400
+    },
+    "webArea": {
+     "x": 400,
+     "width": 620,
+     "height": 536,
+     "y": 174
+    },
+    "clickScreen": {
+     "x": 562,
+     "y": 401
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 296,
+      "owner": "Google Chrome for Testing",
+      "pid": 19082
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 147,
+   "click": {
+    "result": {
+     "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+     "meta": {
+      "startedAt": 1793933721783,
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "x": 162,
+        "y": 370
+       },
+       "postedLocation": {
+        "y": 401,
+        "x": 562
+       },
+       "windowPoint": {
+        "x": 162,
+        "y": 370
+       },
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "x": 162,
+        "y": 370
+       },
+       "windowFrame": {
+        "x": 400,
+        "y": 31,
+        "height": 679,
+        "width": 620
+       }
+      },
+      "receivedAt": 1793933721775,
+      "endedAt": 1793933721783,
+      "activationJoin": "fresh",
+      "inputRoute": 1,
+      "elementClick": {
+       "walk": [
+        "AXStaticText",
+        "AXTextArea"
+       ],
+       "pressedRole": "AXTextArea",
+       "pressed": "ancestor",
+       "caret": "noCharacterBoxes",
+       "plan": "action",
+       "action": "AXFocused",
+       "reason": "focusedNotPlaced"
+      },
+      "hidIdleMs": null
+     }
+    },
+    "id": 4,
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 2076,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 310,
+      "owner": "cua-engine",
+      "pid": 19800
+     },
+     {
+      "number": 296,
+      "owner": "Google Chrome for Testing",
+      "pid": 19082
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-mce",
+    "caret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "focusAfterClickMs": 9,
+    "focusTo": "field-mce",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+     "meta": {
+      "entered": 2,
+      "receivedAt": 1793933724694,
+      "inputRoute": "2'",
+      "startedAt": 1793933724697,
+      "endedAt": 1793933724708,
+      "hidIdleMs": null
+     }
+    }
+   },
+   "typeMs": 17,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-mce",
+    "caret": {
+     "start": 2,
+     "end": 2,
+     "node": {
+      "idx": 0,
+      "off": 2
+     }
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": {
+     "idx": 0,
+     "off": 0,
+     "flat": 0
+    },
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": [
+     "QZalpha bravo ",
+     "charlie delta",
+     "echo foxtrot ",
+     "golf hotel",
+     " india"
+    ],
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 9,
+     "ev": "active",
+     "to": "field-mce"
+    },
+    {
+     "dt": 9,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 2942,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 2943,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 2945,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 2954,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 2955,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 2957,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusedNotPlaced",
+    "caretClaim": "noCharacterBoxes",
+    "walk": [
+     "AXStaticText",
+     "AXTextArea"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+    "focused": true,
+    "pageCaret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "atExpected": false,
+    "typedAt": 0,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/fresh/mce-t2",
+   "engine": "branch",
+   "timing": "fresh",
+   "target": "mce-t2",
+   "chromePid": 20185,
+   "expected": {
+    "field": "mce",
+    "offset": 33,
+    "node": {
+     "idx": 2,
+     "off": 7
+    },
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_fresh_mce-t2.sock",
+    "engineVersion": "0.1.0",
+    "routes": {},
+    "cursorDebug": null,
+    "accessibility": true,
+    "canPostHid": true,
+    "pid": 20553,
+    "routeAdvice": [],
+    "inputMonitoring": true,
+    "cursor": "on",
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "build": "unbundled",
+    "connections": 0,
+    "holders": [],
+    "screenRecording": true
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observationMs": 337,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 485.3140625,
+     "y": 420.5
+    },
+    "screenshotPixel": {
+     "x": 85,
+     "y": 390
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "width": 620,
+     "height": 679,
+     "x": 400
+    },
+    "webArea": {
+     "y": 174,
+     "x": 400,
+     "height": 536,
+     "width": 620
+    },
+    "clickScreen": {
+     "x": 485,
+     "y": 421
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 312,
+      "owner": "Google Chrome for Testing",
+      "pid": 20185
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 136,
+   "click": {
+    "result": {
+     "meta": {
+      "receivedAt": 1793933734772,
+      "hidIdleMs": null,
+      "coordinateClick": {
+       "windowFrame": {
+        "width": 620,
+        "y": 31,
+        "height": 679,
+        "x": 400
+       },
+       "windowPoint": {
+        "y": 390,
+        "x": 85
+       },
+       "frameBeforePost": null,
+       "postedWindowLocation": {
+        "x": 85,
+        "y": 390
+       },
+       "screenshotPoint": {
+        "x": 85,
+        "y": 390
+       },
+       "postedLocation": {
+        "x": 485,
+        "y": 421
+       }
+      },
+      "endedAt": 1793933734779,
+      "activationJoin": "fresh",
+      "startedAt": 1793933734779,
+      "inputRoute": 1,
+      "elementClick": {
+       "walk": [
+        "AXStaticText",
+        "AXTextArea"
+       ],
+       "reason": "focusedNotPlaced",
+       "action": "AXFocused",
+       "caret": "noCharacterBoxes",
+       "pressed": "ancestor",
+       "plan": "action",
+       "pressedRole": "AXTextArea"
+      }
+     },
+     "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent."
+    },
+    "id": 4,
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 2143,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 326,
+      "owner": "cua-engine",
+      "pid": 20553
+     },
+     {
+      "number": 312,
+      "owner": "Google Chrome for Testing",
+      "pid": 20185
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-mce",
+    "caret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "focusAfterClickMs": 7,
+    "focusTo": "field-mce",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "id": 5,
+    "jsonrpc": "2.0",
+    "result": {
+     "meta": {
+      "entered": 2,
+      "inputRoute": "2'",
+      "startedAt": 1793933737770,
+      "endedAt": 1793933737783,
+      "receivedAt": 1793933737767,
+      "hidIdleMs": null
+     }
+    }
+   },
+   "typeMs": 18,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-mce",
+    "caret": {
+     "start": 2,
+     "end": 2,
+     "node": {
+      "idx": 0,
+      "off": 2
+     }
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": {
+     "idx": 0,
+     "off": 0,
+     "flat": 0
+    },
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": [
+     "QZalpha bravo ",
+     "charlie delta",
+     "echo foxtrot ",
+     "golf hotel",
+     " india"
+    ],
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 7,
+     "ev": "active",
+     "to": "field-mce"
+    },
+    {
+     "dt": 7,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 3030,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3031,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3031,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3032,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3033,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusedNotPlaced",
+    "caretClaim": "noCharacterBoxes",
+    "walk": [
+     "AXStaticText",
+     "AXTextArea"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+    "focused": true,
+    "pageCaret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "atExpected": false,
+    "typedAt": 0,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/fresh/pw",
+   "engine": "branch",
+   "timing": "fresh",
+   "target": "pw",
+   "chromePid": 21006,
+   "expected": {
+    "field": "pw",
+    "offset": null,
+    "node": null,
+    "prior": null,
+    "secure": true,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "inputMonitoring": true,
+    "canPostHid": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_fresh_pw.sock",
+    "routeAdvice": [],
+    "cursorDebug": null,
+    "routes": {},
+    "holders": [],
+    "connections": 0,
+    "build": "unbundled",
+    "accessibility": true,
+    "engineVersion": "0.1.0",
+    "pid": 21130,
+    "screenRecording": true,
+    "cursor": "on",
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug"
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observationMs": 398,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 446.78828125,
+     "y": 457
+    },
+    "screenshotPixel": {
+     "x": 47,
+     "y": 426
+    },
+    "scale": 1,
+    "window": {
+     "width": 620,
+     "x": 400,
+     "y": 31,
+     "height": 679
+    },
+    "webArea": {
+     "height": 536,
+     "width": 620,
+     "y": 174,
+     "x": 400
+    },
+    "clickScreen": {
+     "x": 447,
+     "y": 457
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 328,
+      "owner": "Google Chrome for Testing",
+      "pid": 21006
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 138,
+   "click": {
+    "jsonrpc": "2.0",
+    "result": {
+     "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+     "meta": {
+      "elementClick": {
+       "reason": "focusedNotPlaced",
+       "walk": [
+        "AXTextField"
+       ],
+       "pressedRole": "AXTextField",
+       "pressed": "hit",
+       "plan": "action",
+       "action": "AXFocused",
+       "caret": "secure"
+      },
+      "startedAt": 1793933747880,
+      "activationJoin": "fresh",
+      "coordinateClick": {
+       "windowFrame": {
+        "height": 679,
+        "x": 400,
+        "y": 31,
+        "width": 620
+       },
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "y": 426,
+        "x": 47
+       },
+       "postedLocation": {
+        "x": 447,
+        "y": 457
+       },
+       "windowPoint": {
+        "x": 47,
+        "y": 426
+       },
+       "postedWindowLocation": {
+        "x": 47,
+        "y": 426
+       }
+      },
+      "endedAt": 1793933747880,
+      "receivedAt": 1793933747875,
+      "hidIdleMs": null,
+      "inputRoute": 1
+     }
+    },
+    "id": 4
+   },
+   "clickMs": 33,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 342,
+      "owner": "cua-engine",
+      "pid": 21130
+     },
+     {
+      "number": 328,
+      "owner": "Google Chrome for Testing",
+      "pid": 21006
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-pw",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "focusAfterClickMs": 6,
+    "focusTo": "field-pw",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "entered": 2,
+      "startedAt": 1793933748762,
+      "endedAt": 1793933748775,
+      "receivedAt": 1793933748758,
+      "inputRoute": "2'",
+      "hidIdleMs": null
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 5
+   },
+   "typeMs": 19,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-pw",
+    "caret": {
+     "start": 2,
+     "end": 2
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": null,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 10,
+    "value": "[password: length only]",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 6,
+     "ev": "active",
+     "to": "field-pw"
+    },
+    {
+     "dt": 6,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 908,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-pw"
+    },
+    {
+     "dt": 909,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-pw"
+    },
+    {
+     "dt": 910,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 920,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-pw"
+    },
+    {
+     "dt": 921,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-pw"
+    },
+    {
+     "dt": 924,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusedNotPlaced",
+    "caretClaim": "secure",
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+    "focused": true,
+    "pageCaret": {
+     "start": 0,
+     "end": 0
+    },
+    "atExpected": false,
+    "typedAt": "pw+2",
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/fresh/prior",
+   "engine": "branch",
+   "timing": "fresh",
+   "target": "prior",
+   "chromePid": 21580,
+   "expected": {
+    "field": "input",
+    "offset": 14,
+    "node": null,
+    "prior": 6,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 6,
+    "end": 6
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "screenRecording": true,
+    "holders": [],
+    "canPostHid": true,
+    "build": "unbundled",
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "cursor": "on",
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_fresh_prior.sock",
+    "cursorDebug": null,
+    "routes": {},
+    "pid": 21704,
+    "engineVersion": "0.1.0",
+    "connections": 0,
+    "accessibility": true,
+    "inputMonitoring": true,
+    "routeAdvice": []
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observationMs": 402,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 233
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 202
+    },
+    "scale": 1,
+    "window": {
+     "width": 620,
+     "height": 679,
+     "y": 31,
+     "x": 400
+    },
+    "webArea": {
+     "width": 620,
+     "x": 400,
+     "y": 174,
+     "height": 536
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 233
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 344,
+      "owner": "Google Chrome for Testing",
+      "pid": 21580
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 6,
+     "end": 6
+    }
+   },
+   "clickAfterObservationMs": 134,
+   "click": {
+    "jsonrpc": "2.0",
+    "result": {
+     "meta": {
+      "inputRoute": 1,
+      "receivedAt": 1793933758625,
+      "coordinateClick": {
+       "windowFrame": {
+        "width": 620,
+        "x": 400,
+        "height": 679,
+        "y": 31
+       },
+       "screenshotPoint": {
+        "y": 202,
+        "x": 153
+       },
+       "postedLocation": {
+        "y": 233,
+        "x": 553
+       },
+       "postedWindowLocation": {
+        "y": 202,
+        "x": 153
+       },
+       "frameBeforePost": null,
+       "windowPoint": {
+        "y": 202,
+        "x": 153
+       }
+      },
+      "endedAt": 1793933760304,
+      "elementClick": {
+       "pressedRole": "AXTextField",
+       "pressed": "hit",
+       "caret": "placed",
+       "walk": [
+        "AXTextField"
+       ],
+       "plan": "action",
+       "action": "AXFocused",
+       "reason": "focusField"
+      },
+      "hidIdleMs": null,
+      "startedAt": 1793933758630,
+      "activationJoin": "fresh"
+     },
+     "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click."
+    },
+    "id": 4
+   },
+   "clickMs": 1770,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 358,
+      "owner": "cua-engine",
+      "pid": 21704
+     },
+     {
+      "number": 344,
+      "owner": "Google Chrome for Testing",
+      "pid": 21580
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-input",
+    "caret": {
+     "start": 14,
+     "end": 14
+    },
+    "focusAfterClickMs": 7,
+    "focusTo": "field-input",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+     "meta": {
+      "entered": 2,
+      "receivedAt": 1793933761241,
+      "startedAt": 1793933761245,
+      "inputRoute": "2'",
+      "hidIdleMs": null,
+      "endedAt": 1793933761258
+     }
+    }
+   },
+   "typeMs": 19,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-input",
+    "caret": {
+     "start": 16,
+     "end": 16
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": 14,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "alpha bravo chQZarlie delta echo foxtrot",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 7,
+     "ev": "active",
+     "to": "field-input"
+    },
+    {
+     "dt": 7,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 1680,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 2638,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 2639,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 2639,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 2639,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 2640,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusField",
+    "caretClaim": "placed",
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click.",
+    "focused": true,
+    "pageCaret": {
+     "start": 14,
+     "end": 14
+    },
+    "atExpected": true,
+    "typedAt": 14,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/late/input",
+   "engine": "branch",
+   "timing": "late",
+   "target": "input",
+   "chromePid": 22154,
+   "expected": {
+    "field": "input",
+    "offset": 14,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_late_input.sock",
+    "inputMonitoring": true,
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "routes": {},
+    "cursor": "on",
+    "screenRecording": true,
+    "holders": [],
+    "pid": 22279,
+    "accessibility": true,
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "canPostHid": true,
+    "routeAdvice": [],
+    "connections": 0,
+    "cursorDebug": null
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled",
+    "engineVersion": "0.1.0"
+   },
+   "observationMs": 383,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 233
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 202
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "x": 400,
+     "height": 679,
+     "width": 620
+    },
+    "webArea": {
+     "x": 400,
+     "width": 620,
+     "y": 174,
+     "height": 536
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 233
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 360,
+      "owner": "Google Chrome for Testing",
+      "pid": 22154
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 3041,
+   "click": {
+    "id": 4,
+    "jsonrpc": "2.0",
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "startedAt": 1793933773999,
+      "activationJoin": "fresh",
+      "receivedAt": 1793933773993,
+      "elementClick": {
+       "reason": "focusField",
+       "plan": "action",
+       "pressed": "hit",
+       "pressedRole": "AXTextField",
+       "caret": "placed",
+       "action": "AXFocused",
+       "walk": [
+        "AXTextField"
+       ]
+      },
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "y": 202,
+        "x": 153
+       },
+       "frameBeforePost": null,
+       "windowPoint": {
+        "x": 153,
+        "y": 202
+       },
+       "postedLocation": {
+        "x": 553,
+        "y": 233
+       },
+       "screenshotPoint": {
+        "y": 202,
+        "x": 153
+       },
+       "windowFrame": {
+        "y": 31,
+        "x": 400,
+        "height": 679,
+        "width": 620
+       }
+      },
+      "inputRoute": 1,
+      "endedAt": 1793933774026
+     },
+     "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click."
+    }
+   },
+   "clickMs": 77,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 374,
+      "owner": "cua-engine",
+      "pid": 22279
+     },
+     {
+      "number": 360,
+      "owner": "Google Chrome for Testing",
+      "pid": 22154
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-input",
+    "caret": {
+     "start": 14,
+     "end": 14
+    },
+    "focusAfterClickMs": 7,
+    "focusTo": "field-input",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "startedAt": 1793933774908,
+      "entered": 2,
+      "inputRoute": "2'",
+      "receivedAt": 1793933774904,
+      "endedAt": 1793933774918
+     }
+    }
+   },
+   "typeMs": 17,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-input",
+    "caret": {
+     "start": 16,
+     "end": 16
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": 14,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "alpha bravo chQZarlie delta echo foxtrot",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 7,
+     "ev": "active",
+     "to": "field-input"
+    },
+    {
+     "dt": 8,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 34,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 941,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 943,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 942,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 943,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 945,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusField",
+    "caretClaim": "placed",
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click.",
+    "focused": true,
+    "pageCaret": {
+     "start": 14,
+     "end": 14
+    },
+    "atExpected": true,
+    "typedAt": 14,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/late/textarea",
+   "engine": "branch",
+   "timing": "late",
+   "target": "textarea",
+   "chromePid": 22761,
+   "expected": {
+    "field": "textarea",
+    "offset": 38,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "cursorDebug": null,
+    "holders": [],
+    "inputMonitoring": true,
+    "accessibility": true,
+    "screenRecording": true,
+    "connections": 0,
+    "engineVersion": "0.1.0",
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_late_textarea.sock",
+    "canPostHid": true,
+    "routeAdvice": [],
+    "routes": {},
+    "cursor": "on",
+    "pid": 22886,
+    "build": "unbundled"
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observationMs": 343,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 289
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 258
+    },
+    "scale": 1,
+    "window": {
+     "width": 620,
+     "height": 679,
+     "y": 31,
+     "x": 400
+    },
+    "webArea": {
+     "height": 536,
+     "width": 620,
+     "x": 400,
+     "y": 174
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 289
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 376,
+      "owner": "Google Chrome for Testing",
+      "pid": 22761
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 3045,
+   "click": {
+    "result": {
+     "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click.",
+     "meta": {
+      "endedAt": 1793933787717,
+      "receivedAt": 1793933787638,
+      "hidIdleMs": null,
+      "elementClick": {
+       "pressed": "hit",
+       "caret": "placed",
+       "reason": "focusField",
+       "action": "AXFocused",
+       "pressedRole": "AXTextArea",
+       "plan": "action",
+       "walk": [
+        "AXTextArea"
+       ]
+      },
+      "coordinateClick": {
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "y": 258,
+        "x": 153
+       },
+       "postedLocation": {
+        "x": 553,
+        "y": 289
+       },
+       "postedWindowLocation": {
+        "x": 153,
+        "y": 258
+       },
+       "windowFrame": {
+        "y": 31,
+        "x": 400,
+        "width": 620,
+        "height": 679
+       },
+       "windowPoint": {
+        "y": 258,
+        "x": 153
+       }
+      },
+      "activationJoin": "fresh",
+      "inputRoute": 1,
+      "startedAt": 1793933787645
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 4
+   },
+   "clickMs": 173,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 390,
+      "owner": "cua-engine",
+      "pid": 22886
+     },
+     {
+      "number": 376,
+      "owner": "Google Chrome for Testing",
+      "pid": 22761
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-textarea",
+    "caret": {
+     "start": 38,
+     "end": 38
+    },
+    "focusAfterClickMs": 7,
+    "focusTo": "field-textarea",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+     "meta": {
+      "receivedAt": 1793933788659,
+      "inputRoute": "2'",
+      "hidIdleMs": null,
+      "entered": 2,
+      "startedAt": 1793933788662,
+      "endedAt": 1793933788675
+     }
+    }
+   },
+   "typeMs": 17,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-textarea",
+    "caret": {
+     "start": 40,
+     "end": 40
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": 38,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "first line of the notes\nsecond line hoQZlds more words\nthird line sits below\nfourth and final line",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 7,
+     "ev": "active",
+     "to": "field-textarea"
+    },
+    {
+     "dt": 7,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 79,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 1046,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 1047,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 1048,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 1054,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 1055,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 1059,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusField",
+    "caretClaim": "placed",
+    "walk": [
+     "AXTextArea"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click.",
+    "focused": true,
+    "pageCaret": {
+     "start": 38,
+     "end": 38
+    },
+    "atExpected": true,
+    "typedAt": 38,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/late/ce",
+   "engine": "branch",
+   "timing": "late",
+   "target": "ce",
+   "chromePid": 23647,
+   "expected": {
+    "field": "ce",
+    "offset": 19,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "screenRecording": true,
+    "routes": {},
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "routeAdvice": [],
+    "canPostHid": true,
+    "inputMonitoring": true,
+    "cursor": "on",
+    "cursorDebug": null,
+    "connections": 0,
+    "accessibility": true,
+    "holders": [],
+    "pid": 24277,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_late_ce.sock"
+   },
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observationMs": 321,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 600.9078125,
+     "y": 364.5
+    },
+    "screenshotPixel": {
+     "x": 201,
+     "y": 334
+    },
+    "scale": 1,
+    "window": {
+     "width": 620,
+     "y": 31,
+     "height": 679,
+     "x": 400
+    },
+    "webArea": {
+     "height": 536,
+     "y": 174,
+     "x": 400,
+     "width": 620
+    },
+    "clickScreen": {
+     "x": 601,
+     "y": 365
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 392,
+      "owner": "Google Chrome for Testing",
+      "pid": 23647
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 3041,
+   "click": {
+    "result": {
+     "meta": {
+      "inputRoute": 1,
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "receivedAt": 1793933801582,
+      "elementClick": {
+       "reason": "focusedNotPlaced",
+       "caret": "noCharacterBoxes",
+       "pressedRole": "AXTextArea",
+       "pressed": "ancestor",
+       "plan": "action",
+       "walk": [
+        "AXStaticText",
+        "AXTextArea"
+       ],
+       "action": "AXFocused"
+      },
+      "endedAt": 1793933801587,
+      "startedAt": 1793933801587,
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "x": 201,
+        "y": 334
+       },
+       "windowFrame": {
+        "width": 620,
+        "height": 679,
+        "x": 400,
+        "y": 31
+       },
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "x": 201,
+        "y": 334
+       },
+       "windowPoint": {
+        "y": 334,
+        "x": 201
+       },
+       "postedLocation": {
+        "y": 365,
+        "x": 601
+       }
+      }
+     },
+     "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent."
+    },
+    "id": 4,
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 2130,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 406,
+      "owner": "cua-engine",
+      "pid": 24277
+     },
+     {
+      "number": 392,
+      "owner": "Google Chrome for Testing",
+      "pid": 23647
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-ce",
+    "caret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "focusAfterClickMs": 7,
+    "focusTo": "field-ce",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "jsonrpc": "2.0",
+    "result": {
+     "meta": {
+      "inputRoute": "2'",
+      "endedAt": 1793933804575,
+      "receivedAt": 1793933804559,
+      "hidIdleMs": null,
+      "entered": 2,
+      "startedAt": 1793933804562
+     }
+    },
+    "id": 5
+   },
+   "typeMs": 19,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-ce",
+    "caret": {
+     "start": 2,
+     "end": 2,
+     "node": {
+      "idx": 0,
+      "off": 2
+     }
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": {
+     "idx": 0,
+     "off": 0,
+     "flat": 0
+    },
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "QZgolf hotel india juliet kilo lima mike",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 6,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 7,
+     "ev": "active",
+     "to": "field-ce"
+    },
+    {
+     "dt": 3004,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-ce"
+    },
+    {
+     "dt": 3005,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-ce"
+    },
+    {
+     "dt": 3006,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 3014,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-ce"
+    },
+    {
+     "dt": 3015,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-ce"
+    },
+    {
+     "dt": 3016,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusedNotPlaced",
+    "caretClaim": "noCharacterBoxes",
+    "walk": [
+     "AXStaticText",
+     "AXTextArea"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+    "focused": true,
+    "pageCaret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "atExpected": false,
+    "typedAt": 0,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/late/mce-t1",
+   "engine": "branch",
+   "timing": "late",
+   "target": "mce-t1",
+   "chromePid": 24734,
+   "expected": {
+    "field": "mce",
+    "offset": 15,
+    "node": {
+     "idx": 1,
+     "off": 3
+    },
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "connections": 0,
+    "cursorDebug": null,
+    "build": "unbundled",
+    "screenRecording": true,
+    "engineVersion": "0.1.0",
+    "pid": 24859,
+    "cursor": "on",
+    "routes": {},
+    "canPostHid": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_late_mce-t1.sock",
+    "routeAdvice": [],
+    "holders": [],
+    "inputMonitoring": true,
+    "accessibility": true
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observationMs": 328,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 562.3765625,
+     "y": 400.5
+    },
+    "screenshotPixel": {
+     "x": 162,
+     "y": 370
+    },
+    "scale": 1,
+    "window": {
+     "x": 400,
+     "y": 31,
+     "width": 620,
+     "height": 679
+    },
+    "webArea": {
+     "width": 620,
+     "y": 174,
+     "height": 536,
+     "x": 400
+    },
+    "clickScreen": {
+     "x": 562,
+     "y": 401
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 408,
+      "owner": "Google Chrome for Testing",
+      "pid": 24734
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 3050,
+   "click": {
+    "id": 4,
+    "jsonrpc": "2.0",
+    "result": {
+     "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+     "meta": {
+      "endedAt": 1793933817270,
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "y": 370,
+        "x": 162
+       },
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "x": 162,
+        "y": 370
+       },
+       "windowPoint": {
+        "y": 370,
+        "x": 162
+       },
+       "postedLocation": {
+        "y": 401,
+        "x": 562
+       },
+       "windowFrame": {
+        "x": 400,
+        "y": 31,
+        "height": 679,
+        "width": 620
+       }
+      },
+      "activationJoin": "fresh",
+      "receivedAt": 1793933817265,
+      "elementClick": {
+       "reason": "focusedNotPlaced",
+       "pressedRole": "AXTextArea",
+       "pressed": "ancestor",
+       "walk": [
+        "AXStaticText",
+        "AXTextArea"
+       ],
+       "caret": "noCharacterBoxes",
+       "plan": "action",
+       "action": "AXFocused"
+      },
+      "inputRoute": 1,
+      "startedAt": 1793933817270,
+      "hidIdleMs": null
+     }
+    }
+   },
+   "clickMs": 2146,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 422,
+      "owner": "cua-engine",
+      "pid": 24859
+     },
+     {
+      "number": 408,
+      "owner": "Google Chrome for Testing",
+      "pid": 24734
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-mce",
+    "caret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "focusAfterClickMs": 6,
+    "focusTo": "field-mce",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "startedAt": 1793933820257,
+      "receivedAt": 1793933820253,
+      "endedAt": 1793933820271,
+      "entered": 2,
+      "inputRoute": "2'"
+     }
+    },
+    "id": 5,
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 19,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-mce",
+    "caret": {
+     "start": 2,
+     "end": 2,
+     "node": {
+      "idx": 0,
+      "off": 2
+     }
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": {
+     "idx": 0,
+     "off": 0,
+     "flat": 0
+    },
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": [
+     "QZalpha bravo ",
+     "charlie delta",
+     "echo foxtrot ",
+     "golf hotel",
+     " india"
+    ],
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 6,
+     "ev": "active",
+     "to": "field-mce"
+    },
+    {
+     "dt": 7,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 3019,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3021,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3021,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3022,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3025,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusedNotPlaced",
+    "caretClaim": "noCharacterBoxes",
+    "walk": [
+     "AXStaticText",
+     "AXTextArea"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+    "focused": true,
+    "pageCaret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "atExpected": false,
+    "typedAt": 0,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/late/mce-t2",
+   "engine": "branch",
+   "timing": "late",
+   "target": "mce-t2",
+   "chromePid": 25344,
+   "expected": {
+    "field": "mce",
+    "offset": 33,
+    "node": {
+     "idx": 2,
+     "off": 7
+    },
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": null,
+    "end": null,
+    "node": null
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "inputMonitoring": true,
+    "routeAdvice": [],
+    "build": "unbundled",
+    "connections": 0,
+    "routes": {},
+    "holders": [],
+    "cursorDebug": null,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_late_mce-t2.sock",
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "accessibility": true,
+    "engineVersion": "0.1.0",
+    "canPostHid": true,
+    "cursor": "on",
+    "screenRecording": true,
+    "pid": 25481
+   },
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observationMs": 411,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 485.3140625,
+     "y": 420.5
+    },
+    "screenshotPixel": {
+     "x": 85,
+     "y": 390
+    },
+    "scale": 1,
+    "window": {
+     "width": 620,
+     "x": 400,
+     "y": 31,
+     "height": 679
+    },
+    "webArea": {
+     "y": 174,
+     "height": 536,
+     "width": 620,
+     "x": 400
+    },
+    "clickScreen": {
+     "x": 485,
+     "y": 421
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 424,
+      "owner": "Google Chrome for Testing",
+      "pid": 25344
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": null,
+     "end": null,
+     "node": null
+    }
+   },
+   "clickAfterObservationMs": 3048,
+   "click": {
+    "jsonrpc": "2.0",
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "endedAt": 1793933833067,
+      "inputRoute": 1,
+      "receivedAt": 1793933833062,
+      "activationJoin": "fresh",
+      "startedAt": 1793933833067,
+      "elementClick": {
+       "action": "AXFocused",
+       "caret": "noCharacterBoxes",
+       "pressed": "ancestor",
+       "reason": "focusedNotPlaced",
+       "pressedRole": "AXTextArea",
+       "walk": [
+        "AXStaticText",
+        "AXTextArea"
+       ],
+       "plan": "action"
+      },
+      "coordinateClick": {
+       "windowPoint": {
+        "x": 85,
+        "y": 390
+       },
+       "postedLocation": {
+        "x": 485,
+        "y": 421
+       },
+       "screenshotPoint": {
+        "y": 390,
+        "x": 85
+       },
+       "windowFrame": {
+        "y": 31,
+        "x": 400,
+        "width": 620,
+        "height": 679
+       },
+       "postedWindowLocation": {
+        "y": 390,
+        "x": 85
+       },
+       "frameBeforePost": null
+      }
+     },
+     "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent."
+    },
+    "id": 4
+   },
+   "clickMs": 2208,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 438,
+      "owner": "cua-engine",
+      "pid": 25481
+     },
+     {
+      "number": 424,
+      "owner": "Google Chrome for Testing",
+      "pid": 25344
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-mce",
+    "caret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "focusAfterClickMs": 6,
+    "focusTo": "field-mce",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+     "meta": {
+      "inputRoute": "2'",
+      "receivedAt": 1793933836118,
+      "hidIdleMs": null,
+      "startedAt": 1793933836121,
+      "entered": 2,
+      "endedAt": 1793933836136
+     }
+    }
+   },
+   "typeMs": 20,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-mce",
+    "caret": {
+     "start": 2,
+     "end": 2,
+     "node": {
+      "idx": 0,
+      "off": 2
+     }
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": {
+     "idx": 0,
+     "off": 0,
+     "flat": 0
+    },
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": [
+     "QZalpha bravo ",
+     "charlie delta",
+     "echo foxtrot ",
+     "golf hotel",
+     " india"
+    ],
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 6,
+     "ev": "active",
+     "to": "field-mce"
+    },
+    {
+     "dt": 6,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 3090,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3091,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3092,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3092,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-mce"
+    },
+    {
+     "dt": 3093,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusedNotPlaced",
+    "caretClaim": "noCharacterBoxes",
+    "walk": [
+     "AXStaticText",
+     "AXTextArea"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+    "focused": true,
+    "pageCaret": {
+     "start": 0,
+     "end": 0,
+     "node": {
+      "idx": 0,
+      "off": 0
+     }
+    },
+    "atExpected": false,
+    "typedAt": 0,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/late/pw",
+   "engine": "branch",
+   "timing": "late",
+   "target": "pw",
+   "chromePid": 25949,
+   "expected": {
+    "field": "pw",
+    "offset": null,
+    "node": null,
+    "prior": null,
+    "secure": true,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "routeAdvice": [],
+    "accessibility": true,
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "screenRecording": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_late_pw.sock",
+    "holders": [],
+    "routes": {},
+    "pid": 26413,
+    "inputMonitoring": true,
+    "connections": 0,
+    "canPostHid": true,
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "cursor": "on",
+    "cursorDebug": null
+   },
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observationMs": 317,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 446.78828125,
+     "y": 457
+    },
+    "screenshotPixel": {
+     "x": 47,
+     "y": 426
+    },
+    "scale": 1,
+    "window": {
+     "x": 400,
+     "width": 620,
+     "y": 31,
+     "height": 679
+    },
+    "webArea": {
+     "height": 536,
+     "y": 174,
+     "width": 620,
+     "x": 400
+    },
+    "clickScreen": {
+     "x": 447,
+     "y": 457
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 440,
+      "owner": "Google Chrome for Testing",
+      "pid": 25949
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 3046,
+   "click": {
+    "jsonrpc": "2.0",
+    "result": {
+     "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+     "meta": {
+      "inputRoute": 1,
+      "activationJoin": "fresh",
+      "elementClick": {
+       "reason": "focusedNotPlaced",
+       "action": "AXFocused",
+       "pressedRole": "AXTextField",
+       "walk": [
+        "AXTextField"
+       ],
+       "pressed": "hit",
+       "caret": "secure",
+       "plan": "action"
+      },
+      "receivedAt": 1793933849050,
+      "endedAt": 1793933849055,
+      "hidIdleMs": null,
+      "coordinateClick": {
+       "postedLocation": {
+        "y": 457,
+        "x": 447
+       },
+       "windowFrame": {
+        "height": 679,
+        "y": 31,
+        "width": 620,
+        "x": 400
+       },
+       "postedWindowLocation": {
+        "x": 47,
+        "y": 426
+       },
+       "screenshotPoint": {
+        "x": 47,
+        "y": 426
+       },
+       "frameBeforePost": null,
+       "windowPoint": {
+        "x": 47,
+        "y": 426
+       }
+      },
+      "startedAt": 1793933849055
+     }
+    },
+    "id": 4
+   },
+   "clickMs": 72,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 454,
+      "owner": "cua-engine",
+      "pid": 26413
+     },
+     {
+      "number": 440,
+      "owner": "Google Chrome for Testing",
+      "pid": 25949
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-pw",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "focusAfterClickMs": 8,
+    "focusTo": "field-pw",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "entered": 2,
+      "receivedAt": 1793933849974,
+      "inputRoute": "2'",
+      "startedAt": 1793933849977,
+      "endedAt": 1793933849991,
+      "hidIdleMs": null
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 5
+   },
+   "typeMs": 19,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-pw",
+    "caret": {
+     "start": 2,
+     "end": 2
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": null,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 10,
+    "value": "[password: length only]",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 6,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 8,
+     "ev": "active",
+     "to": "field-pw"
+    },
+    {
+     "dt": 951,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-pw"
+    },
+    {
+     "dt": 952,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-pw"
+    },
+    {
+     "dt": 953,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-pw"
+    },
+    {
+     "dt": 953,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-pw"
+    },
+    {
+     "dt": 954,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusedNotPlaced",
+    "caretClaim": "secure",
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+    "focused": true,
+    "pageCaret": {
+     "start": 0,
+     "end": 0
+    },
+    "atExpected": false,
+    "typedAt": "pw+2",
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/late/prior",
+   "engine": "branch",
+   "timing": "late",
+   "target": "prior",
+   "chromePid": 26868,
+   "expected": {
+    "field": "input",
+    "offset": 14,
+    "node": null,
+    "prior": 6,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 6,
+    "end": 6
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "canPostHid": true,
+    "cursor": "on",
+    "engineVersion": "0.1.0",
+    "screenRecording": true,
+    "holders": [],
+    "routes": {},
+    "connections": 0,
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_late_prior.sock",
+    "accessibility": true,
+    "build": "unbundled",
+    "routeAdvice": [],
+    "inputMonitoring": true,
+    "pid": 26992,
+    "cursorDebug": null
+   },
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observationMs": 371,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 552.74921875,
+     "y": 233
+    },
+    "screenshotPixel": {
+     "x": 153,
+     "y": 202
+    },
+    "scale": 1,
+    "window": {
+     "height": 679,
+     "width": 620,
+     "x": 400,
+     "y": 31
+    },
+    "webArea": {
+     "x": 400,
+     "y": 174,
+     "height": 536,
+     "width": 620
+    },
+    "clickScreen": {
+     "x": 553,
+     "y": 233
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 456,
+      "owner": "Google Chrome for Testing",
+      "pid": 26868
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 6,
+     "end": 6
+    }
+   },
+   "clickAfterObservationMs": 3034,
+   "click": {
+    "id": 4,
+    "result": {
+     "meta": {
+      "endedAt": 1793933862838,
+      "hidIdleMs": null,
+      "receivedAt": 1793933862739,
+      "activationJoin": "fresh",
+      "elementClick": {
+       "walk": [
+        "AXTextField"
+       ],
+       "action": "AXFocused",
+       "pressedRole": "AXTextField",
+       "pressed": "hit",
+       "reason": "focusField",
+       "plan": "action",
+       "caret": "placed"
+      },
+      "startedAt": 1793933862745,
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "x": 153,
+        "y": 202
+       },
+       "postedLocation": {
+        "x": 553,
+        "y": 233
+       },
+       "windowPoint": {
+        "x": 153,
+        "y": 202
+       },
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "x": 153,
+        "y": 202
+       },
+       "windowFrame": {
+        "y": 31,
+        "height": 679,
+        "x": 400,
+        "width": 620
+       }
+      },
+      "inputRoute": 1
+     },
+     "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click."
+    },
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 194,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 470,
+      "owner": "cua-engine",
+      "pid": 26992
+     },
+     {
+      "number": 456,
+      "owner": "Google Chrome for Testing",
+      "pid": 26868
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-input",
+    "caret": {
+     "start": 14,
+     "end": 14
+    },
+    "focusAfterClickMs": 9,
+    "focusTo": "field-input",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "entered": 2,
+      "endedAt": 1793933863800,
+      "receivedAt": 1793933863781,
+      "inputRoute": "2'",
+      "startedAt": 1793933863785
+     }
+    },
+    "id": 5,
+    "jsonrpc": "2.0"
+   },
+   "typeMs": 20,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-input",
+    "caret": {
+     "start": 16,
+     "end": 16
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": 14,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "alpha bravo chQZarlie delta echo foxtrot",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 7,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 9,
+     "ev": "active",
+     "to": "field-input"
+    },
+    {
+     "dt": 100,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 1071,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 1072,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 1074,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 1075,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 1077,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusField",
+    "caretClaim": "placed",
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click.",
+    "focused": true,
+    "pageCaret": {
+     "start": 14,
+     "end": 14
+    },
+    "atExpected": true,
+    "typedAt": 14,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/late/past-end",
+   "engine": "branch",
+   "timing": "late",
+   "target": "past-end",
+   "chromePid": 27889,
+   "expected": {
+    "field": "textarea",
+    "offset": 52,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": null
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "screenRecording": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_late_past-end.sock",
+    "connections": 0,
+    "routeAdvice": [],
+    "engineVersion": "0.1.0",
+    "inputMonitoring": true,
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "pid": 28014,
+    "cursor": "on",
+    "canPostHid": true,
+    "cursorDebug": null,
+    "holders": [],
+    "routes": {},
+    "build": "unbundled",
+    "accessibility": true
+   },
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observationMs": 382,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 803.20234375,
+     "y": 289
+    },
+    "screenshotPixel": {
+     "x": 403,
+     "y": 258
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "x": 400,
+     "height": 679,
+     "width": 620
+    },
+    "webArea": {
+     "height": 536,
+     "x": 400,
+     "y": 174,
+     "width": 620
+    },
+    "clickScreen": {
+     "x": 803,
+     "y": 289
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 472,
+      "owner": "Google Chrome for Testing",
+      "pid": 27889
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 3033,
+   "click": {
+    "result": {
+     "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click.",
+     "meta": {
+      "endedAt": 1793933876914,
+      "receivedAt": 1793933876823,
+      "elementClick": {
+       "walk": [
+        "AXTextArea"
+       ],
+       "pressedRole": "AXTextArea",
+       "action": "AXFocused",
+       "reason": "focusField",
+       "pressed": "hit",
+       "plan": "action",
+       "caret": "placed"
+      },
+      "inputRoute": 1,
+      "startedAt": 1793933876830,
+      "activationJoin": "fresh",
+      "coordinateClick": {
+       "windowPoint": {
+        "y": 258,
+        "x": 403
+       },
+       "postedLocation": {
+        "y": 289,
+        "x": 803
+       },
+       "screenshotPoint": {
+        "y": 258,
+        "x": 403
+       },
+       "windowFrame": {
+        "height": 679,
+        "x": 400,
+        "y": 31,
+        "width": 620
+       },
+       "frameBeforePost": null,
+       "postedWindowLocation": {
+        "x": 403,
+        "y": 258
+       }
+      },
+      "hidIdleMs": null
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 4
+   },
+   "clickMs": 183,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 486,
+      "owner": "cua-engine",
+      "pid": 28014
+     },
+     {
+      "number": 472,
+      "owner": "Google Chrome for Testing",
+      "pid": 27889
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-textarea",
+    "caret": {
+     "start": 52,
+     "end": 52
+    },
+    "focusAfterClickMs": 9,
+    "focusTo": "field-textarea",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+     "meta": {
+      "inputRoute": "2'",
+      "endedAt": 1793933877872,
+      "hidIdleMs": null,
+      "startedAt": 1793933877859,
+      "entered": 2,
+      "receivedAt": 1793933877855
+     }
+    }
+   },
+   "typeMs": 19,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-textarea",
+    "caret": {
+     "start": 54,
+     "end": 54
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": 52,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "first line of the notes\nsecond line holds more wordsQZ\nthird line sits below\nfourth and final line",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 8,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 9,
+     "ev": "active",
+     "to": "field-textarea"
+    },
+    {
+     "dt": 93,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 1061,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 1063,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 1063,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 1063,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-textarea"
+    },
+    {
+     "dt": 1064,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusField",
+    "caretClaim": "placed",
+    "walk": [
+     "AXTextArea"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click.",
+    "focused": true,
+    "pageCaret": {
+     "start": 52,
+     "end": 52
+    },
+    "atExpected": true,
+    "typedAt": 52,
+    "problems": []
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "branch/late/padding",
+   "engine": "branch",
+   "timing": "late",
+   "target": "padding",
+   "chromePid": 28497,
+   "expected": {
+    "field": "input",
+    "offset": null,
+    "node": null,
+    "prior": null,
+    "secure": false,
+    "notPlaced": "pointOutsideText"
+   },
+   "loadCaret": {
+    "start": 0,
+    "end": 0
+   },
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "status": {
+    "cursor": "on",
+    "cursorDebug": null,
+    "pid": 28970,
+    "engineVersion": "0.1.0",
+    "bundlePath": "/Users/runner/work/_temp/eng-fix/debug",
+    "accessibility": true,
+    "holders": [],
+    "routes": {},
+    "screenRecording": true,
+    "socket": "/Users/runner/work/_temp/probe-283/sock/branch_late_padding.sock",
+    "canPostHid": true,
+    "build": "unbundled",
+    "inputMonitoring": true,
+    "connections": 0,
+    "routeAdvice": []
+   },
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observationMs": 370,
+   "observation": {
+    "enablementPrior": "false",
+    "enablementWrite": "failed"
+   },
+   "point": {
+    "screen": {
+     "x": 411.4,
+     "y": 233
+    },
+    "screenshotPixel": {
+     "x": 11,
+     "y": 202
+    },
+    "scale": 1,
+    "window": {
+     "y": 31,
+     "width": 620,
+     "x": 400,
+     "height": 679
+    },
+    "webArea": {
+     "width": 620,
+     "y": 174,
+     "height": 536,
+     "x": 400
+    },
+    "clickScreen": {
+     "x": 411,
+     "y": 233
+    }
+   },
+   "orderBefore": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 1,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 488,
+      "owner": "Google Chrome for Testing",
+      "pid": 28497
+     }
+    ]
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "active": "BODY",
+    "caret": {
+     "start": 0,
+     "end": 0
+    }
+   },
+   "clickAfterObservationMs": 3049,
+   "click": {
+    "id": 4,
+    "result": {
+     "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+     "meta": {
+      "endedAt": 1793933890610,
+      "receivedAt": 1793933890604,
+      "inputRoute": 1,
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "y": 202,
+        "x": 11
+       },
+       "windowFrame": {
+        "x": 400,
+        "height": 679,
+        "width": 620,
+        "y": 31
+       },
+       "postedLocation": {
+        "x": 411,
+        "y": 233
+       },
+       "frameBeforePost": null,
+       "windowPoint": {
+        "y": 202,
+        "x": 11
+       },
+       "screenshotPoint": {
+        "x": 11,
+        "y": 202
+       }
+      },
+      "elementClick": {
+       "reason": "focusedNotPlaced",
+       "pressedRole": "AXTextField",
+       "walk": [
+        "AXTextField"
+       ],
+       "action": "AXFocused",
+       "pressed": "hit",
+       "caret": "pointOutsideText",
+       "plan": "action"
+      },
+      "startedAt": 1793933890609
+     }
+    },
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 40,
+   "frontAfterClick": "com.apple.TextEdit",
+   "orderAfterClick": {
+    "frontOwner": "TextEdit",
+    "pidIndex": 2,
+    "textEditIndex": 0,
+    "top": [
+     {
+      "number": 45,
+      "owner": "TextEdit",
+      "pid": 7378
+     },
+     {
+      "number": 502,
+      "owner": "cua-engine",
+      "pid": 28970
+     },
+     {
+      "number": 488,
+      "owner": "Google Chrome for Testing",
+      "pid": 28497
+     }
+    ]
+   },
+   "afterClick": {
+    "active": "field-input",
+    "caret": {
+     "start": 0,
+     "end": 0
+    },
+    "focusAfterClickMs": 7,
+    "focusTo": "field-input",
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 0,
+     "input": 0
+    }
+   },
+   "type": {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+     "meta": {
+      "startedAt": 1793933891491,
+      "receivedAt": 1793933891488,
+      "hidIdleMs": null,
+      "inputRoute": "2'",
+      "endedAt": 1793933891504,
+      "entered": 2
+     }
+    }
+   },
+   "typeMs": 19,
+   "frontAfterType": "com.apple.TextEdit",
+   "afterType": {
+    "active": "field-input",
+    "caret": {
+     "start": 2,
+     "end": 2
+    },
+    "pointer": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "pointermove": 0,
+     "mousemove": 0,
+     "keydown": 2,
+     "input": 2
+    },
+    "mark": 0,
+    "pwLengthBefore": 8,
+    "pwLengthAfter": 8,
+    "value": "QZalpha bravo charlie delta echo foxtrot",
+    "otherFieldsChanged": []
+   },
+   "pointerTotal": 0,
+   "events": [
+    {
+     "dt": 7,
+     "ev": "active",
+     "to": "field-input"
+    },
+    {
+     "dt": 7,
+     "ev": "selectionchange"
+    },
+    {
+     "dt": 903,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 904,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 906,
+     "ev": "keydown",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 906,
+     "ev": "input",
+     "trusted": true,
+     "target": "field-input"
+    },
+    {
+     "dt": 929,
+     "ev": "selectionchange"
+    }
+   ],
+   "verdict": {
+    "answer": "success",
+    "reason": "focusedNotPlaced",
+    "caretClaim": "pointOutsideText",
+    "walk": [
+     "AXTextField"
+    ],
+    "walkStopped": null,
+    "note": "Google Chrome for Testing's text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent.",
+    "focused": true,
+    "pageCaret": {
+     "start": 0,
+     "end": 0
+    },
+    "atExpected": false,
+    "typedAt": 0,
+    "problems": []
+   },
+   "engineStderr": ""
+  }
+ ]
+}

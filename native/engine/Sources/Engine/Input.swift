@@ -17,9 +17,13 @@ import Foundation
 // startedAt, endedAt, receivedAt, hidIdleMs}, startedAt/endedAt null while nothing was posted, inputRoute null until a
 // route is chosen; the guard's duration rides as activationGuardMs when route 3 ran one, `intervention: "off"` when
 // detection is off, `entered` on a type_text that keyed (never a concealed one), and `routeAdvice` once route 3's guard
-// has failed three actions in a row for the app; route 3's pointer actions add `delivery` (#200), the paste route its
+// has failed three actions in a row for the app; route 3's pointer actions and the paste route add `delivery` (#200), the paste route its
 // value-free diagnostics as `paste` (#187, Paste.swift), and every result on a
 // connection whose after-action watch has repaired carries `afterActionRepairs` (Activation.swift AfterActionWatches).
+// Route 3's left pointers follow the connection's device mode (#282, Routes.swift): in shared mode one into a Chromium web
+// area is refused as backgroundClickRefused with nothing posted, or a plain click there is carried by the hit's own
+// action (`elementClick.reason` webArea); one whose own down consumed the activation's arm in a view not known to accept
+// first mouse answers clickUnconfirmed after its events.
 // The settle an action arms runs at the next get_app_state (markActed).
 // Spike-only arguments, which the facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘
 // post, is reachable only this way), `spikeEventSource` ("private", post keys from a private event source instead of
@@ -67,8 +71,13 @@ struct InputMeta {
   var startedAt: Int64? = nil
   var endedAt: Int64? = nil
   var activationGuardMs: Double? = nil
-  /// What route 3's activation click did when an activation ran: posted, or why it was skipped.
+  /// What the inert-point rule decided at the activation point when an activation ran: posted there, or why not.
   var activationClick: ActivationClick? = nil
+  /// The click that activation posted (at the activation point, the inert one outside the frame, or none and why).
+  var activationClickKind: ActivationClickKind? = nil
+  /// How the request came by a held activation (`HeldActivations`: a new one, shared, re-armed, or a spent one replaced);
+  /// the last acquire or refresh of the request's wins. Nil when it reached none.
+  var activationJoin: ActivationJoin? = nil
   /// A synthesized element click whose hit-test answered nothing or only a container of the element, so the point
   /// could not be confirmed to reach it; reported as `pointUnconfirmed: true`.
   var pointUnconfirmed = false
@@ -87,6 +96,19 @@ struct InputMeta {
   var paste: PasteDiagnostics?
   /// An element click's plan, the ladder's reason and the hit-test's answer (#188, Routes.swift ElementClickRecord).
   var elementClick: ElementClickRecord?
+  /// set_value's and select_text's focus of a WebKit page's field by its caret, then its press (#324,
+  /// `focusByCaretFirst`): the last step and its read-back, and the caret write's AXError when it was not success.
+  var fieldFocus: TextEntryFocusRecord?
+  /// The sentence a success carries to the model beside the meta (the result's `note`; a focusing click's, #283).
+  var note: String? = nil
+  /// A coordinate click's placement, from the screenshot point to the posted events (#259, Routes.swift).
+  var coordinateClick: CoordinateClickRecord?
+  /// #288's establishment of a page tree not yet seen, before a left click's walk (Routes.swift `establishedPointerView`).
+  var pointerEstablish: PointerEstablishRecord?
+  /// #296's stale-point guard at a coordinate pointer's point (StalePoint.swift): kept or refused and why, rechecked after an element route's wait.
+  var stalePoint: StalePointRecord?
+  /// #328's scroll confirmation (ScrollConfirm.swift): the container read, the move seen, the end, the fallback's write.
+  var scroll: ScrollConfirmRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -131,6 +153,8 @@ struct InputMeta {
     ]
     if let activationGuardMs { wire["activationGuardMs"] = activationGuardMs }
     if let activationClick { wire["activationClick"] = activationClick.rawValue }
+    if let activationClickKind { wire["activationClickKind"] = activationClickKind.wire }
+    if let activationJoin { wire["activationJoin"] = activationJoin.rawValue }
     if pointUnconfirmed { wire["pointUnconfirmed"] = true }
     if interventionOff { wire["intervention"] = "off" }
     if let entered { wire["entered"] = entered }
@@ -139,6 +163,15 @@ struct InputMeta {
     if let delivery { wire["delivery"] = delivery.wire }
     if let paste { wire["paste"] = paste.wire }
     if let elementClick { wire["elementClick"] = elementClick.wire }
+    if let fieldFocus {
+      var focus: [String: Any] = ["focus": fieldFocus.focus.rawValue, "focusStep": fieldFocus.step.rawValue]
+      if let error = fieldFocus.caretWriteError { focus["caretWriteError"] = Int(error) }
+      wire["fieldFocus"] = focus
+    }
+    if let coordinateClick { wire["coordinateClick"] = coordinateClick.wire }
+    if let pointerEstablish { wire["pointerEstablish"] = pointerEstablish.wire }
+    if let stalePoint { wire["stalePoint"] = stalePoint.wire }
+    if let scroll { wire["scroll"] = scroll.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }
@@ -160,13 +193,34 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
 /// click); `announce` (the agent cursor's hook, which only enqueues) runs after it, as the events are about to go out.
 /// The meta carries the route from the start, so a refusal names the route that failed.
 func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton, count: Int, activation: FakeActivation?,
-                  activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil, targetActive: () -> Bool,
+                  activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil,
+                  pointer: PointerTarget = .acceptingFirstMouse, targetActive: () -> Bool,
                   beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
                   post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
-  try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, foreground: foreground,
-                     beforeActivating: beforeActivating, beforePosting: beforePosting, announce: announce, post: post, meta: &meta) {
+  try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, postsLeftMouseDown: button == .left,
+                     foreground: foreground, pointer: pointer, beforeActivating: beforeActivating, beforePosting: beforePosting,
+                     announce: announce, post: post, meta: &meta) {
     clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
   }
+}
+
+/// What a left pointer action aims at, for #282's rules (Routes.swift): the view its point hits, the app's name for the
+/// sentences, the action's noun, and the element route a refused plain click takes instead (the hit's own action, which
+/// fills the meta it is given; nil where there is none, and the action is refused).
+struct PointerTarget {
+  let view: PointerView
+  let app: String
+  var noun = "click"
+  /// The page engine of the app the pointer aims at (#315): its refusal names what still works there
+  /// (`backgroundFieldAlternative`).
+  var engine: PageEngine = .other
+  var elementRoute: ((inout InputMeta) throws -> Void)? = nil
+  /// #296's refusal of a stale point (StalePoint.swift), thrown before anything is posted on every path that would post
+  /// the pointer's events; nil when the guard kept the point or did not run (an element's own point).
+  var staleRefusal: EngineError? = nil
+
+  /// The unit tests' default: a view known to accept first mouse, where a pointer's path is the one before #282.
+  static var acceptingFirstMouse: PointerTarget { PointerTarget(view: .acceptsFirstMouse, app: "the app") }
 }
 
 /// A synthesized pointer action's delivery (a click's, a drag's), as `deliverClick` describes it: `events` makes the
@@ -176,24 +230,64 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
 /// behind another holder's activation stops it before its activation and activation click; `beforePosting` runs again
 /// just before the events, and `announce` once they are made and about to be posted. Under route 3 the events go out
 /// through the standing activation's delivery guard (`FakeActivation.deliver`, #200), inside the activation's own
-/// screen-update hold when this action ran it, on the window the events name.
+/// screen-update hold when this action ran it, on the window the events name; in shared mode held until the window order
+/// reads back, to a 200 ms cap after the events under a 300 ms ceiling from the hold's start (#324), when that
+/// activation clicked its in-window activation point (#321). An action whose
+/// events open with a left mouse down (`postsLeftMouseDown`: a left click, a drag) lets that consume the activation's
+/// arm, as before #187's inert click: no inert click goes before it, and one goes at the release only when none went (a
+/// stop before the events); the click that consumed it rides in the meta when this action ran the activation or
+/// consumed its arm.
+///
+/// #282 (Routes.swift), by the connection's device mode, for a left pointer (`postsLeftMouseDown`) under route 3: in
+/// shared mode one into a Chromium or (#315) Gecko web area, or such a hit not established outside one (`pointer.view.mayBeWebArea`), meeting an activation that clicks no activation point is
+/// refused by the registry before anything is posted, and answers by `pointer.elementRoute` when it has one, else as
+/// `backgroundClickRefused`; only one into a view known to accept first mouse re-arms a spent hold. In dedicated mode the
+/// arm's inert click goes early, no hold is re-armed, and the events go out with no delivery guard and no after-action
+/// watch: the window may come forward and stays so. Everywhere, events whose own mouse down consumed the arm into a view
+/// not known to accept first mouse answer `clickUnconfirmed` once they are out.
+///
+/// #296: a pointer whose point the stale-point guard refused (`pointer.staleRefusal`) throws that refusal before anything
+/// is posted, activated, withdrawn or pressed, #282's element route included (the design session's ruling 1ea561bc
+/// ca82a6f4); a kept point's element route checks again what it presses (StalePoint.swift `StalePointGate`).
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
-                    foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {},
-                    announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
+                    postsLeftMouseDown: Bool = true, foreground: ForegroundAssist? = nil, pointer: PointerTarget = .acceptingFirstMouse,
+                    beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
+                    post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
+  if let stale = pointer.staleRefusal { throw stale }
+  let shared = meta.context.connection.desktop == .shared
   // An earlier action's after-action watch ends before anything of this one happens (its activation included).
   let watches = meta.context.connection.afterAction
   watches.cancel()
   var release: (() -> Bool)?
-  defer { _ = release?() }  // every path out of the action, error or success, ends its lease
   var standing: FakeActivation?
+  var reportsArm = false
+  var consumedArm = false
+  defer {
+    _ = release?()  // every path out of the action, error or success, ends its lease
+    if reportsArm, let kind = standing?.clickKind { meta.activationClickKind = kind }  // a release's inert click included
+  }
   defer { activation?.releaseOpenHold() }  // a stop before the events ends the activation's hold with the action
   if route == .activation, let activation {
-    activation.holdsThroughDelivery = true
+    activation.holdsThroughDelivery = shared
+    activation.holdsUntilOrderReadsBack = shared  // #321: when its activation clicks its in-window activation point
+    let hold = postsLeftMouseDown
+      ? PointerHold(defersArmClick: shared, rearmsSpentArm: shared && pointer.view == .acceptsFirstMouse,
+                    refusedWithoutActivationPointClick: shared && pointer.view.mayBeWebArea)
+      : nil
     // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
-    // focusing click inside set_value's held activation).
-    release = try activations.acquire(pid: activation.pid, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
+    // focusing click inside set_value's held activation), unless the action re-arms a hold of its own connection whose
+    // arm was spent early (`HeldActivations.acquire`), whose new activation's guard and click are recorded as a run's.
+    do {
+      release = try activations.acquire(pid: activation.pid, holder: ActivationHolder(connection: meta.context.connection.id),
+                                        pointer: hold, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
+    } catch is PointerRefused {
+      guard let elementRoute = pointer.elementRoute else { throw backgroundClickRefused(pointer.app, engine: pointer.engine) }
+      try elementRoute(&meta)
+      return
+    }
     standing = activations.activation(of: activation.pid)
+    reportsArm = standing === activation
   }
   // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {
@@ -203,13 +297,20 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     announce()
     // The interval is the events' own posting, inside the delivery guard's hold when one stands: the guard's setup and its
     // samples after the events are its own time (`delivery.guardMs`), not the action's.
-    func postEvents() { meta.posting { _ = postToProcess(made, pid: pid, post: post); return true } }
-    if let standing { meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, postEvents) } else { postEvents() }
+    func postAll() { meta.posting { _ = postToProcess(made, pid: pid, post: post); return true } }
+    func postEvents() {
+      if let standing { if standing.postAction(made, postAll) { reportsArm = true; consumedArm = true } } else { postAll() }
+    }
+    // Dedicated mode puts nothing back: no delivery guard, no after-action watch (the Linux foreground route's choice).
+    if let standing, shared {
+      meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, pointer: true, ranBy: activation, postEvents)
+    } else { postEvents() }
   }
   if route == .foreground, let foreground {
     defer { meta.keyWindowRestored = foreground.keyWindowRestored }  // on a restore failure too
     try foreground.run(send)
   } else { try send() }
+  if consumedArm, pointer.view != .acceptsFirstMouse { throw clickUnconfirmed(pointer.app, noun: pointer.noun) }
 }
 
 /// Typed text keyed unit by unit (the spec's Design, "Text"): the input source checked before every event and after the
@@ -269,11 +370,15 @@ extension Engine {
   /// nested-content gate, applied to every element by cua); every other element click is synthesized by route 3 at the
   /// midpoint of the element's visible frame (`synthesizedClick`), its activation click sparing the element for any
   /// button but the left; its meta records the plan, the ladder's reason and the hit-test's answer (`elementClick`,
-  /// ElementClickRecord). A plain left click on a menu-bar item with a menu records the item (MenuRecord.swift) and
+  /// ElementClickRecord). Where the ladder chose the action for a text-entry element (#313, `textEntryClickRoute`), the action
+  /// answers clickUnconfirmed unless the field then reads focused; a WebKit page's field still unfocused gets its caret
+  /// written first and is read again. AXFocused is never written there. A plain left click on a menu-bar item with a menu records the item (MenuRecord.swift) and
   /// posts nothing; any other click on a menu-bar item or the menu bar is refused before anything is posted. A
   /// successful element click clears the app's menu record. A coordinate click is in the pixels of the last screenshot
   /// of the app's primary window on this connection, refused (`noScreenshotForCoordinates`, nothing posted) when there
-  /// is none, and goes by route 3. Route 4 takes route 3's place for an app the owner's override names. The process
+  /// is none, and goes by route 3; it is refused, nothing posted, when what that screenshot showed at the point has gone,
+  /// moved off it, or given way to another interactive element (`screenChangedSinceScreenshot`, #296, StalePoint.swift);
+  /// where #282 element-routes it, the element pressed must be that node or its control, checked again after any wait. Route 4 takes route 3's place for an app the owner's override names. The process
   /// serving the target receives the input, after the forbidden list has been checked against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
@@ -316,29 +421,57 @@ extension Engine {
           defer { meta.elementClick?.hit = pointing.taken }
           switch plan {
           case .action(let action):
-            // Route 3's held activation first when the app does not believe it has focus (FocusHold.swift).
-            let route = forced == nil ? actionRoute(for: target, app: app, connection: context.connection) : .action
-            if route == .activation {
-              try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
-            }
-            try guarding.checkInFlight()
-            if let point = pointing.point {  // route 1: the element's clickable point, as the action goes out
-              cursor.act(connection: context.connection.id, app: app.key, window: pointing.windowID, .click(point))
-            }
-            try deliverAction(action, route: route, perform: { gatedPerform(target.element, $0) }, meta: &meta)
+            // Route 3's held activation first when the app does not believe it has focus (FocusHold.swift); the cursor at
+            // the element's clickable point, as the action goes out.
+            // #313: a text-entry element's action answers success only once its focus reads back, and on a WebKit page a
+            // field still unfocused gets its caret written and is read again. Nothing writes AXFocused.
+            let element = target.element
+            let entry: TextEntryClickRoute = forced != nil ? .press : textEntryClickRoute(
+              element, role: target.entry.identity.role, engine: webAccessibility.pageEngine(app.appPath),
+              roleOf: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) })
+            try carryActionClick(entry, app: app.displayName, press: {
+              let route = forced == nil ? actionRoute(for: target, app: app, connection: context.connection) : .action
+              try elementActionClick(element, owner: target.owner, action: action, route: route, point: pointing.point,
+                                     windowID: pointing.windowID, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+            }, focused: { bool(attribute(element, kAXFocusedAttribute)) }, caretOffset: {
+              // #283's caret from the field's own boxes; a password field's value and range are never read.
+              textEntryCaretOffset(point: pointing.point, secure: {
+                secureTextField(role: attribute(element, kAXRoleAttribute) as? String, subrole: subroleRead(element))
+              }, offset: { fieldCaretOffset(element, at: $0) })
+            }, writeSelection: { offset in
+              try guarding.checkInFlight()
+              var written = AXError.success
+              _ = meta.posting { written = gatedWrite(element, kAXSelectedTextRangeAttribute, axRangeValue(CFRange(location: offset, length: 0))); return true }
+              return written
+            }, selection: {
+              guard let range = rangeWire(attribute(element, kAXSelectedTextRangeAttribute)), let location = range["location"],
+                    let length = range["length"] else { return nil }
+              return (location, length)
+            }, noted: { record in
+              meta.elementClick?.focus = record.focus.rawValue
+              meta.elementClick?.focusStep = record.step.rawValue
+              meta.elementClick?.caretWriteError = record.caretWriteError
+              guard let caret = record.caret else { return }
+              switch caret {
+              case .atPoint: meta.elementClick?.caret = "placed"
+              case .atStart(let why), .unconfirmed(let why): meta.elementClick?.caret = why.rawValue
+              }
+              meta.note = caretFocusNote(app.displayName, caret)
+            }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
           case .synthesized(let route):
             try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding,
-                                 connection: context.connection.id, meta: &meta)
+                                 context: context, meta: &meta)
           }
         }
         context.connection.clearMenuRecord(app: app.key)
       } else {
         // Each step a timing interval of its own (Signposts.swift), so a sitting can place what moves in a click.
+        let given = CGPoint(x: numberArg(args["x"])!, y: numberArg(args["y"])!)
         let placed = try signposted("click.coordinatePoint") {
-          try coordinatePoint(numberArg(args["x"])!, numberArg(args["y"])!, app: app, appPid: appPid, context: context)
+          try coordinatePlacement(given.x, given.y, app: app, appPid: appPid, context: context)
         }
         let (hit, owner) = signposted("click.hitTest") { () -> (AXUIElement?, pid_t) in
-          let hit = hitTest(window: placed.window, at: placed.point)
+          let hit = hitTest(window: placed.window, pid: appPid, at: placed.point)
           return (hit, hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid)
         }
         try signposted("click.owner") {
@@ -347,24 +480,67 @@ extension Engine {
         }
         let windowID = signposted("click.windowNumber") { windowNumber(of: placed.window, pid: appPid, frame: placed.windowFrame) }
         let target = ClickTarget(point: placed.point, windowFrame: placed.windowFrame, windowID: windowID, pid: owner)
+        // #259's record; the window's frame is read again just before the events, on every path that reaches them.
+        meta.coordinateClick = CoordinateClickRecord(screenshotPoint: given, windowPoint: placed.local, target: target)
+        var frameBeforePost: CGRect?
+        defer { meta.coordinateClick?.frameBeforePost = frameBeforePost }
         let (route, activation) = signposted("click.route") { () -> (InputRoute, FakeActivation?) in
           let route = coordinateClickRoute(forced: forced, foreground: foreground)
           let sparing = button == .left ? nil : activationSparing(button: button, target: pointArea(placed.point, hitFrame: hit.flatMap { frame(of: $0) }))
           return (route, route == .activation
             ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing) : nil)
         }
+        // What a left click by route 3 points into (#282, #315): in shared mode a Chromium or Gecko web area's plain click
+        // takes the hit's own action when it has one, any other is refused, before anything is posted.
+        var pointer = PointerTarget.acceptingFirstMouse
+        var pointerHit = hit
+        if route == .activation, button == .left {
+          let established: PointerTarget
+          (established, pointerHit) = signposted("click.pointerView") {
+            clickPointerTarget(hit: hit, window: placed.window, rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) },
+                               app: app, appPid: appPid, meta: &meta)
+          }
+          pointer = established
+        }
+        // #296: what the screenshot showed at the point is checked against what is there now (#316: and the app's windows
+        // above the screenshot's against the screenshot's window list), every button and route; a
+        // refusal is thrown before anything is posted or pressed (deliverPointer), #282's element route included.
+        let stale = signposted("click.stalePoint") {
+          stalePointGuard(at: placed.point, windowOrigin: placed.windowFrame.origin, windowID: windowID, hit: pointerHit,
+                          rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) }, app: app, appPid: appPid, context: context)
+        }
+        meta.stalePoint = stale.record
+        pointer.staleRefusal = stale.refusal
+        // The guard may have recovered a hit the first hit-test missed (a node mid-replacement, `stalePointRehits`): the
+        // route and the view it is classified by are read from that one.
+        if case .recovered(let recovered) = stalePointRouteHit(pointerHit, stale.verdict, same: { CFEqual($0, $1) }) {
+          pointerHit = recovered
+          if route == .activation, button == .left { pointer = pointerTarget(hit: recovered, app: app, appPid: appPid) }
+          pointer.staleRefusal = stale.refusal
+        }
+        if pointer.view.mayBeWebArea, let hit = pointerHit {
+          // A kept point's element route presses only the node or its control, the guard run again after any wait.
+          let gate = StalePointGate(first: stale.verdict, record: stale.record) { [self] in
+            stalePointRecheck(at: placed.point, shift: stale.shift, window: placed.window, appPid: appPid, app: app, context: context)
+          }
+          pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
+                                              appPid: appPid, guarding: guarding, context: context, stalePoint: gate)
+        }
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
           try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
             try signposted("click.deliver") { try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,
-                             foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
+                             foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil, pointer: pointer,
                              targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
-                             beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
+                             beforeActivating: guarding.checkInFlight,
+                             beforePosting: { try guarding.checkInFlight(); frameBeforePost = frame(of: placed.window) },
                              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
                              post: gatedPost, meta: &meta) }
           }
         }
       }
-      return ["meta": meta.wire]
+      var result: [String: Any] = ["meta": meta.wire]
+      if let note = meta.note { result["note"] = note }
+      return result
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }
@@ -480,7 +656,8 @@ extension Engine {
   private func forcedActivation(_ route: InputRoute?, pid: pid_t, application: AXUIElement, guarding: InterventionGuard,
                                 meta: inout InputMeta) throws -> (() -> Bool)? {
     guard route == .activation else { return nil }
-    return try heldActivations.acquire(pid: pid, beforeActivating: guarding.checkInFlight, make: {
+    return try heldActivations.acquire(pid: pid, holder: ActivationHolder(connection: meta.context.connection.id),
+                                       beforeActivating: guarding.checkInFlight, make: {
       FakeActivation(pid: pid, window: primaryWindow(of: application) ?? application)
     }, meta: &meta)
   }
@@ -534,17 +711,43 @@ func spikeRouteArg(_ args: [String: Any], usable: [InputRoute]) throws -> InputR
 /// The spike-only private event source for keys.
 func privateSourceArg(_ args: [String: Any]) -> Bool { (args["spikeEventSource"] as? String) == "private" }
 
-/// The element at a global screen point under a window, when the AX hit-test answers one.
-func hitTest(window: AXUIElement, at point: CGPoint) -> AXUIElement? {
+/// AXUIElementCopyElementAtPosition asked of `root`, which must be an application (or the system-wide element): asked
+/// of a window it answers kAXErrorIllegalArgument (-25201) and no element (#282, found live on the hosted runner).
+func elementAtPosition(_ root: AXUIElement, _ point: CGPoint) -> (AXError, AXUIElement?) {
   var hit: AXUIElement?
-  guard AXUIElementCopyElementAtPosition(window, Float(point.x), Float(point.y), &hit) == .success, let hit else { return nil }
-  return prepare(hit)
+  let error = AXUIElementCopyElementAtPosition(root, Float(point.x), Float(point.y), &hit)
+  return (error, hit.map(prepare))
+}
+
+/// The element `window`'s process answers at a global screen point, kept only when it lies in `window` (#282): asked of
+/// the process's application element, then the hit's AXWindow ancestor must be `window` itself (CFEqual). A hit in
+/// another window of the app at that point, one whose ancestry cannot be read to a window, or no answer is nil.
+func hitTest(window: AXUIElement, pid: pid_t, at point: CGPoint) -> AXUIElement? {
+  windowHit(application: prepare(AXUIElementCreateApplication(pid)), window: window, at: point, elementAt: elementAtPosition,
+            role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
+            same: { CFEqual($0, $1) })
+}
+
+/// `hitTest(window:pid:at:)` over its AX calls (the unit tests' seam): the hit-test asked of `application`, never of
+/// `window`; the hit kept when it is `window` or its first AXWindow ancestor (parents walked up to 300 levels) is.
+func windowHit<Element>(application: Element, window: Element, at point: CGPoint, elementAt: (Element, CGPoint) -> (AXError, Element?),
+                        role: (Element) -> String?, parent: (Element) -> Element?, same: (Element, Element) -> Bool) -> Element? {
+  let (error, found) = elementAt(application, point)
+  guard error == .success, let hit = found else { return nil }
+  var current = hit
+  for _ in 0...300 {
+    if role(current) == kAXWindowRole { return same(current, window) ? hit : nil }
+    guard let next = parent(current) else { return nil }
+    current = next
+  }
+  return nil
 }
 
 /// The element a process's application answers at a global screen point (the gate's hit-test: what that app would
 /// deliver a click at the point to, whatever other apps' windows lie above it).
 func hitTest(application pid: pid_t, at point: CGPoint) -> AXUIElement? {
-  hitTest(window: prepare(AXUIElementCreateApplication(pid)), at: point)
+  let (error, hit) = elementAtPosition(prepare(AXUIElementCreateApplication(pid)), point)
+  return error == .success ? hit : nil
 }
 
 /// An element's advertised actions, read now; nil when the query failed (an element with no actions answers an empty

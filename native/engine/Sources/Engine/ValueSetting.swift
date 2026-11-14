@@ -96,7 +96,7 @@ extension Engine {
                             if route == .activation {
                               try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
                             }
-                            try focusField(target, app: app, appPid: appPid, guarding: guarding, connection: context.connection, meta: &meta)
+                            try focusField(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
                           },
                           checkInFlight: guarding.checkInFlight, acted: { context.connection.markActed(app) })
       // The write was accepted (setElementValue throws otherwise): the cursor points at the element, read after the write.

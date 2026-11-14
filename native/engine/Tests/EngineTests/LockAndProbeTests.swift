@@ -62,7 +62,9 @@ final class LockScreenTests: XCTestCase {
     let locked = engine(locked: true)
     let connection = ConnectionState(id: 1, fd: -1)
     let ping = locked.handle(Request(id: 1, method: "ping", params: ["clientApiVersion": serverApiVersion]), on: connection, receivedAt: 0)
-    guard case .success = ping.result else { return XCTFail("ping refused") }
+    guard case .success(let identity) = ping.result else { return XCTFail("ping refused") }
+    XCTAssertEqual(Set(((identity as? [String: Any]) ?? [:]).keys), ["serverApiVersion", "engineVersion", "build"],
+                   "a shipping build names no variant (the control build's `control-no-inert-click`)")
     let status = locked.handle(Request(id: 2, method: "status", params: [:]), on: connection, receivedAt: 0)
     guard case .success(let answer) = status.result else { return XCTFail("status refused") }
     XCTAssertNotNil((answer as? [String: Any])?["routeAdvice"] as? [String], "doctor's list of apps route 3 failed for")

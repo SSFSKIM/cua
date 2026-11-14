@@ -1,0 +1,9 @@
+{"pid":42116,"watch":"activations"}
+{"pid":97061,"bundleId":"io.github.ssfskim.cua.fixture.electron","at":1793867248969,"kind":"activated"}
+{"pid":94356,"bundleId":"com.apple.TextEdit","kind":"deactivated","at":1793867248969}
+{"pid":94356,"bundleId":"com.apple.TextEdit","kind":"activated","at":1793867249204}
+{"pid":97061,"bundleId":"io.github.ssfskim.cua.fixture.electron","kind":"deactivated","at":1793867249204}
+{"pid":97061,"bundleId":"io.github.ssfskim.cua.fixture.electron","kind":"activated","at":1793867277362}
+{"pid":94356,"bundleId":"com.apple.TextEdit","at":1793867277363,"kind":"deactivated"}
+{"pid":94356,"bundleId":"com.apple.TextEdit","at":1793867277507,"kind":"activated"}
+{"kind":"deactivated","pid":97061,"at":1793867277509,"bundleId":"io.github.ssfskim.cua.fixture.electron"}

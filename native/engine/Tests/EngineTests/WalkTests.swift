@@ -14,6 +14,10 @@ final class FakeTree {
   var visible: [Int: [Int]] = [:]
   var frames: [Int: CGRect] = [:]
   var unreadable: Set<Int> = []
+  /// The elements whose handle reads as destroyed (kAXErrorInvalidUIElement), by id: Chromium's re-created columns (#303).
+  var gone: Set<Int> = []
+  /// How long each gone check takes, in microseconds (an app that stopped answering).
+  var goneDelay: UInt32 = 0
   /// Attributes beyond role, title and children, by id.
   var extra: [Int: [String: CFTypeRef]] = [:]
   /// What the per-element reads answer, by id: the settable attributes, the actions, the Markdown value.
@@ -27,14 +31,26 @@ final class FakeTree {
   var descriptions: [String: String] = [:]
   /// The attributes an element lists (AXUIElementCopyAttributeNames), by id; unset lists everything it carries.
   var listed: [Int: Set<String>] = [:]
+  /// How long reading an element takes, in microseconds, by id (unset: at once); and reading its frame alone.
+  var slow: [Int: UInt32] = [:]
+  var slowFrames: [Int: UInt32] = [:]
+  /// An element's own description of an action, by id then action name, over `descriptions`.
+  var elementDescriptions: [Int: [String: String]] = [:]
+  /// Called on every action-description query, by id and action name (a test's delay or count).
+  var onDescription: ((Int, String) -> Void)?
+  /// Elements whose AXChildren read fails (its slot an error, so the decoded data has none).
+  var childrenUnread: Set<Int> = []
+  /// Attributes whose read fails with an error other than absence, by id (their slots decode as none).
+  var unreadableAttributes: [Int: Set<String>] = [:]
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
 }
 
 final class FakeSource: ElementSource, @unchecked Sendable {
   let tree: FakeTree
-  /// Uncached reads by id, and settability calls by attribute.
+  /// Uncached reads by id, in the order made, and settability calls by attribute.
   var reads: [Int: Int] = [:]
+  var readOrder: [Int] = []
   var settableCalls: [String: Int] = [:]
   /// Reads through the listed attributes only (the menu bar's), by id; action-description calls by action name.
   var listedReads: [Int: Int] = [:]
@@ -46,19 +62,31 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   override func read(_ element: AXUIElement) -> ElementData? {
     let id = tree.id(element)
     reads[id, default: 0] += 1
+    readOrder.append(id)
+    if let delay = tree.slow[id] { usleep(delay) }
     if tree.unreadable.contains(id) { return nil }
     var values: [String: CFTypeRef] = ["AXRole": "AXGroup" as CFString, "AXTitle": "node \(id)" as CFString,
                                        "AXChildren": (tree.children[id] ?? []).map(Engine.element) as CFArray]
     for (name, value) in tree.extra[id] ?? [:] { values[name] = value }
+    if tree.childrenUnread.contains(id) { values.removeValue(forKey: "AXChildren") }
     if let frame = tree.frames[id] {
       var origin = frame.origin, extent = frame.size
       values["AXPosition"] = AXValueCreate(.cgPoint, &origin)!
       values["AXSize"] = AXValueCreate(.cgSize, &extent)!
     }
-    return ElementData(values: values)
+    let unreadable = tree.unreadableAttributes[id] ?? []
+    for name in unreadable { values.removeValue(forKey: name) }
+    return ElementData(values: values, unreadable: unreadable)
   }
 
   override func owner(_ element: AXUIElement) -> pid_t { tree.owners[tree.id(element)] ?? 4242 }
+  /// Gone checks by id.
+  var goneReads: [Int: Int] = [:]
+  override func isGone(_ element: AXUIElement) -> Bool {
+    goneReads[tree.id(element), default: 0] += 1
+    if tree.goneDelay > 0 { usleep(tree.goneDelay) }
+    return tree.gone.contains(tree.id(element))
+  }
   var markdownCalls = 0
   override func actions(_ element: AXUIElement) -> [String] { tree.actions[tree.id(element)] ?? [] }
   override func isSettable(_ element: AXUIElement, _ attribute: String, phase: String) -> Bool {
@@ -72,7 +100,8 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   override func document(_ element: AXUIElement) -> String? { tree.documents[tree.id(element)] }
   override func actionDescription(_ element: AXUIElement, _ action: String) -> String? {
     descriptionCalls[action, default: 0] += 1
-    return tree.descriptions[action]
+    tree.onDescription?(tree.id(element), action)
+    return tree.elementDescriptions[tree.id(element)]?[action] ?? tree.descriptions[action]
   }
   override func readListed(_ element: AXUIElement) -> ElementData? {
     let id = tree.id(element)
@@ -82,7 +111,18 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     return data
   }
   override func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? { tree.visible[tree.id(element)].map { $0.map(Engine.element) } }
-  override func readFrame(_ element: AXUIElement) -> CGRect? { tree.frames[tree.id(element)] }
+  /// Frame reads (AXPosition and AXSize, with AXRole) by id.
+  var frameReads: [Int: Int] = [:]
+  override func readFrame(_ element: AXUIElement) -> CGRect? {
+    frameReads[tree.id(element), default: 0] += 1
+    if let delay = tree.slowFrames[tree.id(element)] { usleep(delay) }
+    return tree.frames[tree.id(element)]
+  }
+  override func readFramedRole(_ element: AXUIElement) -> (frame: CGRect?, role: String?) {
+    let id = tree.id(element)
+    return (readFrame(element), tree.unreadable.contains(id) ? nil : (tree.extra[id]?["AXRole"] as? String) ?? "AXGroup")
+  }
+
   override func scrollBars(_ element: AXUIElement) -> (horizontal: Bool, vertical: Bool) {
     let id = tree.id(element)
     scrollBarReads[id, default: 0] += 1
@@ -98,9 +138,11 @@ extension Engine {
 
 func walk(_ tree: FakeTree, _ lineage: Lineage, window: Int = 0, menuBar: Int? = nil, menu: [Int] = [],
           limits: WalkLimits = WalkLimits(deadline: .infinity), visibleFrame: CGRect? = nil, source: FakeSource? = nil,
-          interactionFlags: Bool = true, chromium: Bool = false) -> TreeWalk {
+          interactionFlags: Bool = true, chromium: Bool = false, recordsScreenshot: Bool = false, wideListRules: Bool = true,
+          placesWaitingEarlier: Bool = true, clipRereadPoll: ClipRereadPoll? = nil) -> TreeWalk {
   let walk = TreeWalk(source: source ?? FakeSource(tree), lineage: lineage, limits: limits, markdown: false,
-                      interactionFlags: interactionFlags, chromium: chromium, visibleFrame: visibleFrame)
+                      interactionFlags: interactionFlags, chromium: chromium, visibleFrame: visibleFrame, recordsScreenshot: recordsScreenshot,
+                      wideListRules: wideListRules, placesWaitingEarlier: placesWaitingEarlier, clipRereadPoll: clipRereadPoll)
   walk.run(window: element(window), menuBar: menuBar.map(element), menuItems: menu.map(element))
   lineage.commit(walk.revision)
   return walk

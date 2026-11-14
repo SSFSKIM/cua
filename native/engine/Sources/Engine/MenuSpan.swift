@@ -143,6 +143,46 @@ final class ActivationSpan: @unchecked Sendable {
   }
 }
 
+/// Who holds a share of a process's activation: the connection (`ConnectionState.id`) whose request or hold acquired it,
+/// and whether the share is a recorded menu's span. A connection runs one request at a time, so a holder of the joiner's
+/// own connection is a lingering hold, never one mid-action.
+struct ActivationHolder: Equatable {
+  let connection: Int
+  var menuSpan = false
+}
+
+/// How a holder that posts its own left mouse down (a left click, a drag, focusField's fallback) takes a process's
+/// activation (#282's device mode; Routes.swift).
+struct PointerHold: Equatable {
+  /// Its own mouse down consumes the arm of an activation it runs, so no inert click goes early
+  /// (`FakeActivation.defersArmClick`; shared mode). False in dedicated mode: the inert click goes right after subtype 1,
+  /// and the down meets a key window.
+  var defersArmClick = true
+  /// It re-arms its own connection's hold whose arm was spent early (#261's hold join): only for a shared-mode pointer
+  /// into a view known to accept first mouse, where the new arm's consuming down is delivered with no ordering.
+  var rearmsSpentArm = true
+  /// It is refused (`PointerRefused`, nothing posted) wherever the activation it meets clicks no activation point: a new
+  /// one whose click plan is not the activation point's, or a held one that clicked none (shared mode, a Chromium web
+  /// area).
+  var refusedWithoutActivationPointClick = false
+}
+
+/// How an acquire or `refresh` of `HeldActivations` came by the process's activation (the input meta's `activationJoin`;
+/// absent when the request reached no held activation). Recorded before any activation runs, so a failed guard's meta
+/// names the path too.
+enum ActivationJoin: String, Equatable {
+  /// No holder had the process: a new activation ran.
+  case fresh
+  /// A current activation was shared, none run: a joiner's acquire, or a holder's `refresh` of the one it holds (a
+  /// no-click holder consuming a set arm first, recorded as its `activationClickKind`).
+  case shared
+  /// A pointer joining its own connection's hold whose arm was spent early: that activation ended and a new one ran.
+  case rearmed
+  /// The held activation was stale (a real activation cycle since) or withdrawn (a failed re-arming): a new one ran in
+  /// its place.
+  case replacedSpent
+}
+
 /// The held activations of the engine, one per target process however many holders it has: menu spans, focus holds, and
 /// the per-action activations of synthesized clicks, drags, pastes and forced keys, each for the action's duration
 /// (route 3's state is the process's, not a connection's or an action's). The first holder to acquire a process's
@@ -157,9 +197,30 @@ final class ActivationSpan: @unchecked Sendable {
 /// since: a real event before the post leaves it current, one after makes it stale, however the event interleaves with
 /// the activation's AX reads, guard or hit-test. A stale activation is replaced by the next acquire or `refresh`, and
 /// never deactivated, on its last release or its failed guard's cleanup alike, the system having withdrawn its state.
+///
+/// A pointer holder (`postsLeftMouseDown`) joining an activation whose arm an earlier holder spent early re-arms it, when
+/// every holder is of its own connection and none is a recorded menu's span (the Decision Log's "#261's hold join",
+/// 2026-11-05): its own mouse down would otherwise meet a key window of an app that believes itself active, an ordering
+/// click (#200's raise). The activation is withdrawn and a new one run in its place, the holders kept. Since #282 only a
+/// shared-mode pointer into a view known to accept first mouse re-arms (`PointerHold.rearmsSpentArm`): into any other
+/// view the new arm's consuming down may be taken as the window's activating click and lost, and the spent arm's key
+/// window delivers it, the raise left to the delivery guard; shared mode refuses a Chromium web area's before either.
+///
+/// Each acquire and `refresh` that reaches a held activation records how it did in its meta (`activationJoin`).
 final class HeldActivations: @unchecked Sendable {
+  /// One process's held activation and its holders, each by its acquire's share.
+  private struct Entry {
+    var activation: FakeActivation
+    var holders: [Int: ActivationHolder]
+    /// The shares whose holder posts its own left mouse down (`postsLeftMouseDown`).
+    var pointers: Set<Int> = []
+    /// Withdrawn by a re-arming whose new activation failed its guard: replaced as a stale one is, and never deactivated.
+    var withdrawn = false
+  }
+
   private let lock = NSLock()
-  private var held: [pid_t: (activation: FakeActivation, holders: Int)] = [:]
+  private var held: [pid_t: Entry] = [:]
+  private var shares = 0
   /// The real-activation epochs, behind their own lock: the workspace's notifications bump them from the main thread
   /// without waiting on an activation's guard under `lock`, and an activation reads its process's under its guard.
   private let epochLock = NSLock()
@@ -169,7 +230,7 @@ final class HeldActivations: @unchecked Sendable {
   func holders(_ pid: pid_t) -> Int {
     lock.lock()
     defer { lock.unlock() }
-    return held[pid]?.holders ?? 0
+    return held[pid]?.holders.count ?? 0
   }
 
   /// The activation `pid`'s holders share; nil when none holds it.
@@ -204,17 +265,33 @@ final class HeldActivations: @unchecked Sendable {
     activation.epoch.map { $0 != epoch(activation.pid) } ?? false
   }
 
+  /// Whether the entry's activation is to be replaced, never deactivated: stale, or withdrawn.
+  private func isSpent(_ entry: Entry) -> Bool { entry.withdrawn || isStale(entry.activation) }
+
+  /// Whether a pointer holder `joining` re-arms the entry's activation rather than sharing it: its arm was spent early,
+  /// and no other connection's holder (which may be mid-action under it) nor a recorded menu (which the withdrawal could
+  /// close) holds it.
+  private func rearms(_ entry: Entry, for joining: ActivationHolder) -> Bool {
+    entry.activation.armSpentOutsideActivationPoint
+      && entry.holders.values.allSatisfy { $0.connection == joining.connection && !$0.menuSpan }
+  }
+
   /// Runs a new activation, its guard time and click into `meta` (a failed guard's too); a failed guard throws with it
-  /// undone, unless a real event already withdrew it.
-  private func run(_ make: () -> FakeActivation, meta: inout InputMeta) throws -> FakeActivation {
+  /// undone, unless a real event already withdrew it (the undoing posts the kept inert click first, so its click kind is
+  /// read after it). `pointer`: the holder posts its own left mouse down (`FakeActivation.defersArmClick`, and its
+  /// refusal before subtype 1, #282); nil for one that does not.
+  private func run(_ make: () -> FakeActivation, pointer: PointerHold? = nil, meta: inout InputMeta) throws -> FakeActivation {
     let activation = make()
     let pid = activation.pid
     activation.realEpoch = { [self] in epoch(pid) }
+    activation.defersArmClick = pointer?.defersArmClick ?? false
+    activation.refusesPointerWithoutActivationPointClick = pointer?.refusedWithoutActivationPointClick ?? false
+    defer {
+      meta.activationGuardMs = activation.guardMs ?? meta.activationGuardMs
+      meta.activationClick = activation.click ?? meta.activationClick
+      meta.activationClickKind = activation.clickKind ?? meta.activationClickKind
+    }
     do {
-      defer {
-        meta.activationGuardMs = activation.guardMs ?? meta.activationGuardMs
-        meta.activationClick = activation.click ?? meta.activationClick
-      }
       try activation.activate()
     } catch {
       if !isStale(activation) { activation.deactivate() }
@@ -226,18 +303,61 @@ final class HeldActivations: @unchecked Sendable {
   /// Acquires `pid`'s activation. `beforeActivating` (the in-flight intervention check) runs once the lock is held, so a
   /// user event that lands while the request waits behind another holder's activation still stops it before anything is
   /// run, shared or recorded. When no holder has the activation, or it is stale, `make()`'s runs (a failed guard throws
-  /// with nothing more held); otherwise the running one is shared. Answers the release, which runs once and deactivates
-  /// when the last holder releases; it answers false only when that deactivation could not post.
-  func acquire(pid: pid_t, beforeActivating: () throws -> Void, make: () -> FakeActivation, meta: inout InputMeta) throws -> () -> Bool {
+  /// with nothing more held); otherwise the running one is shared, and a holder that posts no left mouse down of its own
+  /// (`postsLeftMouseDown` false) consumes its arm first when no mouse down has (the kept inert click, recorded in its
+  /// meta; after a pointer holder's events already going out, `FakeActivation.postAction`), so its keys reach a key window.
+  /// A holder that does post its own (`postsLeftMouseDown`) joining an activation whose arm was spent early, held only by
+  /// `holder`'s connection and by no recorded menu (`rearms`), re-arms it: the shared activation deactivated (subtype 2)
+  /// and `make()`'s run in its place, every holder kept, so the holder's own mouse down consumes the new arm with no
+  /// ordering. A failed guard there throws with the new one undone and the old one left withdrawn for the holders that
+  /// remain (the next acquire or `refresh` runs a new one, as for a stale one). Answers the release, which runs once and
+  /// deactivates when the last holder releases; it answers false only when that deactivation could not post. A pointer
+  /// holder's release that leaves only holders with no mouse down of their own posts the kept inert click when the arm is
+  /// still set (its events never went), so the holds that remain never hold a set arm.
+  ///
+  /// `pointer` (#282) says how a holder with its own left mouse down takes the activation; nil for one with none. One that
+  /// does not defer the arm's click (dedicated mode) joins as a no-click holder does, consuming a set arm first; only one
+  /// that `rearmsSpentArm` re-arms; and one `refusedWithoutActivationPointClick` is refused (`PointerRefused`) before
+  /// anything is posted, withdrawn or run, when the held activation it would join clicked no activation point, as a new
+  /// one is before its subtype 1 (`FakeActivation.activate`).
+  func acquire(pid: pid_t, holder: ActivationHolder, pointer: PointerHold? = nil, beforeActivating: () throws -> Void,
+               make: () -> FakeActivation, meta: inout InputMeta) throws -> () -> Bool {
     lock.lock()
     defer { lock.unlock() }
     try beforeActivating()
-    if let shared = held[pid] {
-      let activation = isStale(shared.activation) ? try run(make, meta: &meta) : shared.activation
-      held[pid] = (activation, shared.holders + 1)
+    let defers = pointer?.defersArmClick ?? false
+    if var entry = held[pid] {
+      if isSpent(entry) {
+        meta.activationJoin = .replacedSpent
+        entry.activation = try run(make, pointer: pointer, meta: &meta)
+        entry.withdrawn = false
+      } else {
+        let rearming = pointer?.rearmsSpentArm == true && rearms(entry, for: holder)
+        meta.activationJoin = rearming ? .rearmed : .shared
+        if pointer?.refusedWithoutActivationPointClick == true, entry.activation.activatedWithoutActivationPointClick { throw PointerRefused() }
+        if rearming, entry.activation.deactivate() {
+          do {
+            entry.activation = try run(make, pointer: pointer, meta: &meta)
+          } catch {
+            held[pid]?.withdrawn = true
+            throw error
+          }
+        } else {
+          meta.activationJoin = .shared
+          if !defers, entry.activation.consumeArm(.early) { meta.activationClickKind = entry.activation.clickKind }
+        }
+      }
+      shares += 1
+      entry.holders[shares] = holder
+      if defers { entry.pointers.insert(shares) }
+      held[pid] = entry
     } else {
-      held[pid] = (try run(make, meta: &meta), 1)
+      meta.activationJoin = .fresh
+      let activation = try run(make, pointer: pointer, meta: &meta)
+      shares += 1
+      held[pid] = Entry(activation: activation, holders: [shares: holder], pointers: defers ? [shares] : [])
     }
+    let share = shares
     let once = NSLock()
     var released = false
     return { [self] in
@@ -245,30 +365,43 @@ final class HeldActivations: @unchecked Sendable {
       defer { once.unlock() }
       guard !released else { return true }
       released = true
-      return release(pid)
+      return release(pid, share: share)
     }
   }
 
-  /// For a holder that already holds `pid`: when its activation went stale, `beforeActivating`, then `make()`'s run in its
-  /// place (a failed guard throws and leaves the stale one held); otherwise nothing.
+  /// For a holder that already holds `pid`: `beforeActivating` (the in-flight intervention check) once the lock is held,
+  /// as `acquire` runs it, so a user event stops the request with nothing posted; then, when its activation went stale
+  /// (or was withdrawn), `make()`'s run in its place (a failed guard throws and leaves the spent one held); otherwise the
+  /// kept inert click when the arm is still set, recorded in `meta`, as a joiner with no mouse down of its own posts it:
+  /// the holder's input never meets a set arm, whatever left it set.
   func refresh(pid: pid_t, beforeActivating: () throws -> Void, make: () -> FakeActivation, meta: inout InputMeta) throws {
     lock.lock()
     defer { lock.unlock() }
-    guard let entry = held[pid], isStale(entry.activation) else { return }
+    guard var entry = held[pid] else { return }
     try beforeActivating()
-    held[pid] = (try run(make, meta: &meta), entry.holders)
+    guard isSpent(entry) else {
+      meta.activationJoin = .shared
+      if entry.activation.consumeArm(.early) { meta.activationClickKind = entry.activation.clickKind }
+      return
+    }
+    meta.activationJoin = .replacedSpent
+    entry.activation = try run(make, meta: &meta)
+    entry.withdrawn = false
+    held[pid] = entry
   }
 
-  private func release(_ pid: pid_t) -> Bool {
+  private func release(_ pid: pid_t, share: Int) -> Bool {
     lock.lock()
     defer { lock.unlock() }
-    guard let entry = held[pid] else { return true }
-    guard entry.holders <= 1 else {
-      held[pid] = (entry.activation, entry.holders - 1)
+    guard var entry = held[pid], entry.holders.removeValue(forKey: share) != nil else { return true }
+    let pointer = entry.pointers.remove(share) != nil
+    guard entry.holders.isEmpty else {
+      if pointer, entry.pointers.isEmpty, !isSpent(entry) { entry.activation.consumeArm(.release) }
+      held[pid] = entry
       return true
     }
     held[pid] = nil
-    return isStale(entry.activation) || entry.activation.deactivate()
+    return isSpent(entry) || entry.activation.deactivate()
   }
 }
 
@@ -318,7 +451,8 @@ func menuSpanStep(method: String, app: String?, heldApp: String?, inRecordedMenu
 func recordHeldMenu(_ item: AXUIElement, app key: String, pid: pid_t, connection: ConnectionState, activations: HeldActivations,
                     activation: () -> FakeActivation, beforeActivating: () throws -> Void, announce: () -> Void = {},
                     meta: inout InputMeta) throws {
-  let release = try activations.acquire(pid: pid, beforeActivating: beforeActivating, make: activation, meta: &meta)
+  let release = try activations.acquire(pid: pid, holder: ActivationHolder(connection: connection.id, menuSpan: true),
+                                        beforeActivating: beforeActivating, make: activation, meta: &meta)
   connection.recordMenu(item, app: key, release: release)
   announce()
 }

@@ -31,12 +31,18 @@
 // unanswered cursor request is abandoned at its bound (5 s) without closing the connection, another failure is logged,
 // and an engine without the method answers methodNotFound, that connection sent no more of them.
 //
-// end_task (#237, `release`): the live connection is sent `{hide: true}` (when the session has a cursor) and closed at
-// once, neither waited for, so end_task frees the engine for other clients (its `status` stops counting the connection,
-// and `cua engine build` and `approve` proceed) without waiting on it. The engine reads the hide before the close, so
-// the cursor fades and its panel goes once the fade is over, and an after-action watch still running finishes on the
-// engine's side. Nothing is connected or launched for it, and a connect or request of the ended task still pending
-// never reaches the engine (the client's generation); the next request reconnects as after any close.
+// end_task (#237, `release`): the live connection is unpublished at once (a request after it reconnects), whatever it
+// still waits for fails at once, and it is sent `{hide: true}` (when the session has a cursor, unawaited) and then
+// `endTask` (#292), which tells the engine the task ended, so it writes back at once the web enablement no other
+// connection holds, where a close alone (a transport failure) leaves it for the engine's grace. The connection closes
+// once endTask is answered, or after at most a second (`endTaskWaitMs`), or on an error: the relay closes fully, and
+// the engine stops reading a connection whose answer it could not write, so closing before endTask was read could
+// lose it (the review of d2568c76..96c6f093). An older engine answers methodNotFound, which nothing reads. So
+// end_task frees the engine for other clients (its `status` stops counting the connection, and `cua engine build`
+// and `approve` proceed) within that second. The engine reads the hide before the close, so the cursor fades and its
+// panel goes once the fade is over, and an after-action watch still running finishes on the engine's side. Nothing is
+// connected or launched for it, and a connect or request of the ended task still pending never reaches the engine
+// (the client's generation).
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {
@@ -54,6 +60,8 @@ const PING_MS = 1_000;
 // The bound on a cursor request's answer (bookkeeping on the engine's side, answered at once); past it the request is
 // abandoned, never the connection.
 const CURSOR_MS = 5_000;
+// The bound on end_task's wait for endTask's answer before the close (#292).
+const END_TASK_MS = 1_000;
 const METHOD_NOT_FOUND = -32601;
 const UNIFIED_LOG = 'log show --last 10m --info --predicate \'subsystem == "io.github.ssfskim.cua.engine"\'';
 
@@ -139,11 +147,16 @@ class Connection {
     else waiter.reject(serverError(message.error));
   }
 
+  // Fails every request still waiting, now; a late answer to one is dropped. The connection stays open.
+  abandon(error) {
+    for (const {reject, timer} of this.pending.values()) { clearTimeout(timer); reject(error); }
+    this.pending.clear();
+  }
+
   close(error = new SkyComputerUseTransportError('cua engine connection is closed')) {
     if (this.closed) return;
     this.closed = true;
-    for (const {reject, timer} of this.pending.values()) { clearTimeout(timer); reject(error); }
-    this.pending.clear();
+    this.abandon(error);
     try { this.pipe.end(); } catch { /* already gone */ }
   }
 }
@@ -157,11 +170,13 @@ function within(promise, ms, message) {
 
 // `nodeRepl` is the trusted worker's (nativePipe, launchServices, withSuspendedTimeout); `expected` the bundle's
 // {engineVersion, build} or a function reading them (bundleIdentity by default, read at each connect, so a replaced
-// bundle is seen); `cursor` the session's cursor request params, or null for none; `log` the worker's diagnostics
-// (its stderr), told of a cursor request that failed other than as an older engine's methodNotFound.
+// bundle is seen); `cursor` the session's cursor request params, or null for none; `desktop` the session's device mode
+// ('shared' | 'dedicated', #282), which every connection's ping names so the engine applies it to that connection alone
+// (one engine serves sessions of either mode), or null to name none (the engine takes shared); `log` the worker's
+// diagnostics (its stderr), told of a cursor request that failed other than as an older engine's methodNotFound.
 export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFor(appPath), expected = () => bundleIdentity(appPath),
-  firstConnectMs = FIRST_CONNECT_MS, launchWaitMs = LAUNCH_WAIT_MS, deadlineGraceMs = DEADLINE_GRACE_MS, cursor = null, cursorWaitMs = CURSOR_MS,
-  log = line => process.stderr.write(`cua engine client: ${line}\n`)}) {
+  firstConnectMs = FIRST_CONNECT_MS, launchWaitMs = LAUNCH_WAIT_MS, deadlineGraceMs = DEADLINE_GRACE_MS, cursor = null, cursorWaitMs = CURSOR_MS, endTaskWaitMs = END_TASK_MS,
+  desktop = null, log = line => process.stderr.write(`cua engine client: ${line}\n`)}) {
   let connection = null;
   let identity = null;
   let connecting = null;
@@ -184,7 +199,9 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     if (answer.engineVersion !== want.engineVersion || answer.build !== want.build) {
       throw new Mismatch(`cua engine mismatch: the engine answering ${socketPath} is version ${answer.engineVersion} build ${answer.build}, but ${appPath} is version ${want.engineVersion} build ${want.build}; that engine was started from another build and is left running. Install this build with cua install --engine, which stops the old engine once nothing uses it`);
     }
-    return {serverApiVersion: answer.serverApiVersion, engineVersion: answer.engineVersion, build: answer.build};
+    // `variant`: a non-shipping build's name (#187's control build, `control-no-inert-click`), absent for a release.
+    return {serverApiVersion: answer.serverApiVersion, engineVersion: answer.engineVersion, build: answer.build,
+      ...(typeof answer.variant === 'string' ? {variant: answer.variant.slice(0, 64)} : {})};
   }
 
   async function attempt(budgetMs, want, born) {
@@ -204,7 +221,7 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
       else if (pipe) {
         const candidate = new Connection(pipe);
         try {
-          const answer = await candidate.call('ping', {clientApiVersion: CLIENT_API_VERSION}, PING_MS);
+          const answer = await candidate.call('ping', {clientApiVersion: CLIENT_API_VERSION, ...(desktop ? {desktop} : {})}, PING_MS);
           const checked = check(answer, want);
           releasedSince(born);  // a ping answered after release: the socket closes, nothing is published
           connection = candidate;
@@ -293,15 +310,18 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     async status() {
       return (await call('status', {}, {suspend: false})).result;
     },
-    // end_task: the hide (when the session has a cursor and the engine the method), then the close, both written now
-    // on the live connection and neither answer waited for (see the header). A request still in flight fails as on any
-    // close; a connect still in flight and the requests queued behind it belong to the ended task, and neither publishes
-    // a connection nor writes a frame. A request made after this reconnects.
-    release() {
+    // end_task (see the header): the live connection unpublished and its waiting requests failed at once, the hide
+    // (when the session has a cursor and the engine the method), then endTask, whose answer, bounded, the close waits
+    // for. Resolves once the connection is closed. A connect still in flight and the requests queued behind it belong to
+    // the ended task, and neither publishes a connection nor writes a frame. A request made after this reconnects.
+    async release() {
       epoch += 1;
       const target = connection;
       if (!target || target.closed) return;
+      connection = null;
+      target.abandon(new SkyComputerUseTransportError('cua engine connection closed by end_task before response'));
       if (cursor && !target.noCursor) sendCursor(target, {hide: true});
+      try { await target.call('endTask', {}, endTaskWaitMs, {optional: true}); } catch { /* answered or not, the close follows */ }
       target.close();
     },
     close() { connection?.close(); },

@@ -52,6 +52,22 @@ async function row(env = {}, {read = facts(), installed = true, config = {}, def
 
 const noIdentity = value => assert.ok(!JSON.stringify(value).includes(IDENTITY), 'no identity');
 
+test('#282: the macOS row reports the device mode sessions run cua\'s engine in, as on Linux; an invalid one fails it', async () => {
+  const shared = await row({CUA_NATIVE_ENGINE: 'cua'});
+  assert.equal(shared.row.status, 'pass', shared.row.detail);
+  assert.deepEqual(shared.report.desktop, {mode: 'shared', reason: 'default'});
+  assert.ok(shared.row.detail.endsWith('; device mode shared (the default: CUA_DESKTOP_MODE=dedicated, or "desktop": "dedicated" in ~/.config/cua/engine.json, gives the agent the desktop)'), shared.row.detail);
+  const explicit = await row({CUA_NATIVE_ENGINE: 'cua', CUA_DESKTOP_MODE: 'dedicated'});
+  assert.deepEqual(explicit.report.desktop, {mode: 'dedicated', reason: 'explicit'});
+  assert.ok(explicit.row.detail.includes('device mode dedicated (CUA_DESKTOP_MODE=dedicated)'), explicit.row.detail);
+  const filed = await row({CUA_NATIVE_ENGINE: 'cua'}, {config: {desktop: 'dedicated'}});
+  assert.deepEqual(filed.report.desktop, {mode: 'dedicated', reason: 'settings'});
+  const invalid = await row({CUA_NATIVE_ENGINE: 'cua', CUA_DESKTOP_MODE: 'kiosk'});
+  assert.equal(invalid.row.status, 'fail');
+  assert.equal(invalid.report.desktop, null);
+  assert.ok(invalid.row.detail.includes('CUA_DESKTOP_MODE must be shared or dedicated'), invalid.row.detail);
+});
+
 test('cua\'s engine selected, approved, already running and fully granted: pass, with acceptance 1\'s fields', async () => {
   const {row: check, report, inspected, mayLaunch} = await row({CUA_NATIVE_ENGINE: 'cua'});
   assert.equal(inspected, 1);

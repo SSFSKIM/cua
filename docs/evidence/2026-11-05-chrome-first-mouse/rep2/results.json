@@ -1,0 +1,4455 @@
+{
+ "config": {
+  "imageOS": "macos26",
+  "imageVersion": "20261026.0455.2",
+  "runnerName": "GitHub Actions 1000035580",
+  "macOS": "ProductName: macOS ProductVersion: 26.6.2 BuildVersion: 25G83",
+  "chrome": "Google Chrome for Testing 156.0.8078.47",
+  "display": "0, 0, 1024, 768",
+  "principalClass": "BrowserCrApplication",
+  "mainEngine": "/Users/runner/work/_temp/eng-main/debug/cua-engine",
+  "branchEngine": "/Users/runner/work/_temp/eng-branch/debug/cua-engine",
+  "mainCommit": "739346e5649f78fa981ca780999110218d1e2b80",
+  "branchCommit": "80c269a049d0a7db9cf947e072e7a7eaf440e931",
+  "rep": "2"
+ },
+ "cells": [
+  {
+   "label": "a-main/textarea",
+   "engine": "main",
+   "desktop": "shared (ping names none)",
+   "target": "textarea",
+   "keysFirst": null,
+   "chromePid": 3003,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n 3364  2934 /Users/runner/work/_temp/eng-main/debug/cua-engine",
+   "status": {
+    "accessibility": true,
+    "cursor": "on",
+    "bundlePath": "/Users/runner/work/_temp/eng-main/debug",
+    "screenRecording": true,
+    "canPostHid": true,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/a-main_textarea.sock",
+    "holders": [],
+    "routeAdvice": [],
+    "inputMonitoring": true,
+    "routes": {},
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "connections": 0,
+    "cursorDebug": null,
+    "pid": 3364
+   },
+   "ping": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "engineVersion": "0.1.0",
+     "build": "unbundled",
+     "serverApiVersion": "cua-engine-1"
+    }
+   },
+   "observationMs": 2009,
+   "window": {
+    "title": "probe282 page",
+    "frame": {
+     "x": 400,
+     "width": 620,
+     "y": 31,
+     "height": 674
+    },
+    "pid": 3003
+   },
+   "screenshot": {
+    "scale": 1,
+    "width": 620,
+    "height": 674,
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-a-main_textarea/cua-engine-3364-1-CBBDBF50.jpg"
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": null,
+    "enablementWriteError": null
+   },
+   "targetNode": {
+    "role": "AXTextArea",
+    "title": "Probe notes",
+    "description": "Probe notes",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "height": 156,
+     "width": 503,
+     "y": 262,
+     "x": 408
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 260,
+     "y": 309
+    },
+    "scale": 1,
+    "screen": {
+     "x": 660,
+     "y": 340
+    }
+   },
+   "hit": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXTextArea",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "m190o1dy",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 1
+   },
+   "clickAfterObservationMs": 1042,
+   "click": {
+    "result": {
+     "meta": {
+      "receivedAt": 1793925129477,
+      "endedAt": 1793925130551,
+      "hidIdleMs": null,
+      "inputRoute": 3,
+      "activationGuardMs": 48.72,
+      "activationClick": "outsideFrame",
+      "activationClickKind": {
+       "kind": "action",
+       "when": "consumedByAction"
+      },
+      "delivery": {
+       "restores": 0,
+       "capped": false,
+       "repairedAfterRelease": false,
+       "otherAppFront": false,
+       "holdStartedAt": 1793925130486,
+       "personInput": false,
+       "postedAt": 1793925130551,
+       "raiseLeft": false,
+       "frontmostRestored": false,
+       "releasedAt": 1793925130586,
+       "guardMs": 71.647,
+       "screenHoldMs": 100
+      },
+      "activationJoin": "fresh",
+      "coordinateClick": {
+       "screenshotPoint": {
+        "y": 309,
+        "x": 260
+       },
+       "postedWindowLocation": {
+        "x": 260,
+        "y": 309
+       },
+       "windowPoint": {
+        "x": 260,
+        "y": 309
+       },
+       "windowFrame": {
+        "y": 31,
+        "x": 400,
+        "width": 620,
+        "height": 674
+       },
+       "frameBeforePost": {
+        "x": 400,
+        "width": 620,
+        "height": 674,
+        "y": 31
+       },
+       "postedLocation": {
+        "y": 340,
+        "x": 660
+       }
+      },
+      "startedAt": 1793925130551
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 4
+   },
+   "clickMs": 1153,
+   "hitAfter": {
+    "appActions": [
+     "AXPress",
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXTextArea",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "after": {
+    "load": "m190o1dy",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 2,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 1
+   },
+   "delta": {
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 1,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXWebArea",
+    "title": "probe282 page",
+    "description": ""
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b-shared/checkbox",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": "checkbox",
+   "keysFirst": null,
+   "chromePid": 3705,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n 3874  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "cursorDebug": null,
+    "accessibility": true,
+    "connections": 0,
+    "holders": [],
+    "cursor": "on",
+    "engineVersion": "0.1.0",
+    "screenRecording": true,
+    "inputMonitoring": true,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/b-shared_checkbox.sock",
+    "routes": {},
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "routeAdvice": [],
+    "pid": 3874,
+    "canPostHid": true,
+    "build": "unbundled"
+   },
+   "ping": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "serverApiVersion": "cua-engine-1",
+     "build": "unbundled",
+     "engineVersion": "0.1.0"
+    }
+   },
+   "observationMs": 560,
+   "window": {
+    "title": "probe282 page",
+    "frame": {
+     "height": 679,
+     "x": 400,
+     "y": 31,
+     "width": 620
+    },
+    "pid": 3705
+   },
+   "screenshot": {
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-b-shared_checkbox/cua-engine-3874-1-F3C0EA0B.jpg",
+    "height": 679,
+    "width": 620,
+    "scale": 1
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXCheckBox",
+    "title": "Probe option",
+    "description": "",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "height": 13,
+     "x": 412,
+     "width": 13,
+     "y": 227
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 19,
+     "y": 203
+    },
+    "scale": 1,
+    "screen": {
+     "x": 419,
+     "y": 234
+    }
+   },
+   "hit": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXCheckBox",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "hqawyb2x",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 2
+   },
+   "clickAfterObservationMs": 900,
+   "click": {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "activationClickKind": {
+       "point": "activationPoint",
+       "when": "early",
+       "kind": "inertOutside"
+      },
+      "inputRoute": 3,
+      "elementClick": {
+       "plan": "action",
+       "reason": "webArea",
+       "walk": [
+        "AXCheckBox"
+       ],
+       "action": "AXPress",
+       "pressedRole": "AXCheckBox",
+       "pressed": "hit"
+      },
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "y": 203,
+        "x": 19
+       },
+       "windowFrame": {
+        "x": 400,
+        "height": 679,
+        "width": 620,
+        "y": 31
+       },
+       "postedLocation": {
+        "y": 234,
+        "x": 419
+       },
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "x": 19,
+        "y": 203
+       },
+       "windowPoint": {
+        "x": 19,
+        "y": 203
+       }
+      },
+      "activationClick": "outsideFrame",
+      "startedAt": 1793925145726,
+      "activationGuardMs": 145.899,
+      "receivedAt": 1793925144762,
+      "endedAt": 1793925145727
+     }
+    }
+   },
+   "clickMs": 967,
+   "hitAfter": {
+    "appActions": [
+     "AXPress",
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXCheckBox",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "after": {
+    "load": "hqawyb2x",
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 1,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 1,
+    "checked": true,
+    "lastClick": {
+     "trusted": true,
+     "detail": 1,
+     "target": "option"
+    },
+    "focused": true,
+    "active": "option",
+    "loads": 2
+   },
+   "delta": {
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 1,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 0,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXCheckBox",
+    "title": "Probe option",
+    "description": ""
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b-shared/checkbox-immediate",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": "checkbox",
+   "keysFirst": null,
+   "chromePid": 4243,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n 4439  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "socket": "/Users/runner/work/_temp/probe-282/sock/b-shared_checkbox-immediate.sock",
+    "routeAdvice": [],
+    "routes": {},
+    "accessibility": true,
+    "engineVersion": "0.1.0",
+    "pid": 4439,
+    "screenRecording": true,
+    "canPostHid": true,
+    "connections": 0,
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "holders": [],
+    "build": "unbundled",
+    "cursor": "on",
+    "cursorDebug": null,
+    "inputMonitoring": true
+   },
+   "ping": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "engineVersion": "0.1.0",
+     "serverApiVersion": "cua-engine-1",
+     "build": "unbundled"
+    }
+   },
+   "observationMs": 641,
+   "window": {
+    "pid": 4243,
+    "frame": {
+     "y": 31,
+     "x": 400,
+     "height": 679,
+     "width": 620
+    },
+    "title": "probe282 page"
+   },
+   "screenshot": {
+    "height": 679,
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-b-shared_checkbox-immediate/cua-engine-4439-1-A8D5CAD8.jpg",
+    "width": 620,
+    "scale": 1
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXCheckBox",
+    "title": "Probe option",
+    "description": "",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "width": 13,
+     "height": 13,
+     "y": 227,
+     "x": 412
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 19,
+     "y": 203
+    },
+    "scale": 1,
+    "screen": {
+     "x": 419,
+     "y": 234
+    }
+   },
+   "hit": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXCheckBox",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "ei7jgdaf",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 3
+   },
+   "clickAfterObservationMs": 101,
+   "click": {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+     "meta": {
+      "activationGuardMs": 122.753,
+      "activationJoin": "fresh",
+      "endedAt": 1793925160345,
+      "elementClick": {
+       "action": "AXPress",
+       "pressed": "hit",
+       "walk": [
+        "AXCheckBox"
+       ],
+       "plan": "action",
+       "reason": "webArea",
+       "pressedRole": "AXCheckBox"
+      },
+      "hidIdleMs": null,
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "x": 19,
+        "y": 203
+       },
+       "windowPoint": {
+        "y": 203,
+        "x": 19
+       },
+       "windowFrame": {
+        "y": 31,
+        "x": 400,
+        "height": 679,
+        "width": 620
+       },
+       "screenshotPoint": {
+        "y": 203,
+        "x": 19
+       },
+       "postedLocation": {
+        "x": 419,
+        "y": 234
+       },
+       "frameBeforePost": null
+      },
+      "inputRoute": 3,
+      "receivedAt": 1793925158805,
+      "startedAt": 1793925160345,
+      "activationClick": "outsideFrame",
+      "activationClickKind": {
+       "when": "early",
+       "point": "activationPoint",
+       "kind": "inertOutside"
+      }
+     }
+    }
+   },
+   "clickMs": 1544,
+   "hitAfter": {
+    "appActions": [
+     "AXPress",
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXCheckBox",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "after": {
+    "load": "ei7jgdaf",
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 1,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 1,
+    "checked": true,
+    "lastClick": {
+     "trusted": true,
+     "detail": 1,
+     "target": "option"
+    },
+    "focused": true,
+    "active": "option",
+    "loads": 3
+   },
+   "delta": {
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 1,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 0,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXCheckBox",
+    "title": "Probe option",
+    "description": ""
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b-noobs/checkbox",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": null,
+   "keysFirst": null,
+   "chromePid": 4969,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n 5628  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "routes": {},
+    "accessibility": true,
+    "engineVersion": "0.1.0",
+    "connections": 0,
+    "holders": [],
+    "routeAdvice": [],
+    "canPostHid": true,
+    "cursor": "on",
+    "build": "unbundled",
+    "socket": "/Users/runner/work/_temp/probe-282/sock/b-noobs_checkbox.sock",
+    "cursorDebug": null,
+    "inputMonitoring": true,
+    "pid": 5628,
+    "screenRecording": true
+   },
+   "ping": {
+    "result": {
+     "build": "unbundled",
+     "serverApiVersion": "cua-engine-1",
+     "engineVersion": "0.1.0"
+    },
+    "jsonrpc": "2.0",
+    "id": 2
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "tjesuugy",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 4
+   },
+   "click": {
+    "error": {
+     "code": -10005,
+     "errorName": "noScreenshotForCoordinates",
+     "message": "There is no screenshot of the app's current window to place the coordinates in. Call getScreenshot to get one, then give coordinates in its pixels.",
+     "meta": {
+      "startedAt": null,
+      "inputRoute": null,
+      "endedAt": null,
+      "hidIdleMs": null,
+      "receivedAt": 1793925173206
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 3
+   },
+   "clickMs": 14,
+   "after": {
+    "load": "tjesuugy",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 4
+   },
+   "delta": {
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 0,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "engineStderr": ""
+  },
+  {
+   "label": "b-shared/button",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": "button",
+   "keysFirst": null,
+   "chromePid": 5756,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n 6124  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "connections": 0,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/b-shared_button.sock",
+    "build": "unbundled",
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "routeAdvice": [],
+    "routes": {},
+    "cursorDebug": null,
+    "pid": 6124,
+    "cursor": "on",
+    "accessibility": true,
+    "screenRecording": true,
+    "canPostHid": true,
+    "inputMonitoring": true,
+    "holders": [],
+    "engineVersion": "0.1.0"
+   },
+   "ping": {
+    "jsonrpc": "2.0",
+    "result": {
+     "engineVersion": "0.1.0",
+     "serverApiVersion": "cua-engine-1",
+     "build": "unbundled"
+    },
+    "id": 2
+   },
+   "observationMs": 555,
+   "window": {
+    "frame": {
+     "x": 400,
+     "height": 679,
+     "width": 620,
+     "y": 31
+    },
+    "title": "probe282 page",
+    "pid": 5756
+   },
+   "screenshot": {
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-b-shared_button/cua-engine-6124-1-123A2867.jpg",
+    "width": 620,
+    "height": 679,
+    "scale": 1
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXButton",
+    "title": "Apply",
+    "description": "",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "height": 21,
+     "x": 518,
+     "y": 225,
+     "width": 50
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 143,
+     "y": 205
+    },
+    "scale": 1,
+    "screen": {
+     "x": 543,
+     "y": 236
+    }
+   },
+   "hit": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXButton",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "6tu0rqcf",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 5
+   },
+   "clickAfterObservationMs": 853,
+   "click": {
+    "jsonrpc": "2.0",
+    "result": {
+     "meta": {
+      "activationClickKind": {
+       "when": "early",
+       "kind": "inertOutside",
+       "point": "activationPoint"
+      },
+      "activationClick": "outsideFrame",
+      "startedAt": 1793925187077,
+      "endedAt": 1793925187077,
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "x": 143,
+        "y": 205
+       },
+       "screenshotPoint": {
+        "y": 205,
+        "x": 143
+       },
+       "windowFrame": {
+        "height": 679,
+        "x": 400,
+        "y": 31,
+        "width": 620
+       },
+       "postedLocation": {
+        "x": 543,
+        "y": 236
+       },
+       "frameBeforePost": null,
+       "windowPoint": {
+        "y": 205,
+        "x": 143
+       }
+      },
+      "hidIdleMs": null,
+      "receivedAt": 1793925186232,
+      "activationGuardMs": 134.058,
+      "activationJoin": "fresh",
+      "inputRoute": 3,
+      "elementClick": {
+       "action": "AXPress",
+       "pressedRole": "AXButton",
+       "walk": [
+        "AXStaticText",
+        "AXButton"
+       ],
+       "pressed": "ancestor",
+       "plan": "action",
+       "reason": "webArea"
+      }
+     }
+    },
+    "id": 4
+   },
+   "clickMs": 846,
+   "hitAfter": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXStaticText",
+     "AXButton",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "after": {
+    "load": "6tu0rqcf",
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 1,
+    "windowFocus": 1,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": {
+     "trusted": true,
+     "detail": 1,
+     "target": "apply"
+    },
+    "focused": true,
+    "active": "apply",
+    "loads": 5
+   },
+   "delta": {
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 1,
+    "windowFocus": 1,
+    "windowBlur": 0,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXButton",
+    "title": "Apply",
+    "description": ""
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b-shared/textarea",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": "textarea",
+   "keysFirst": null,
+   "chromePid": 6312,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n 6658  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "cursorDebug": null,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/b-shared_textarea.sock",
+    "inputMonitoring": true,
+    "holders": [],
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "screenRecording": true,
+    "accessibility": true,
+    "connections": 0,
+    "canPostHid": true,
+    "pid": 6658,
+    "routes": {},
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "routeAdvice": [],
+    "cursor": "on"
+   },
+   "ping": {
+    "result": {
+     "build": "unbundled",
+     "serverApiVersion": "cua-engine-1",
+     "engineVersion": "0.1.0"
+    },
+    "jsonrpc": "2.0",
+    "id": 2
+   },
+   "observationMs": 744,
+   "window": {
+    "frame": {
+     "width": 620,
+     "y": 31,
+     "x": 400,
+     "height": 679
+    },
+    "pid": 6312,
+    "title": "probe282 page"
+   },
+   "screenshot": {
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-b-shared_textarea/cua-engine-6658-1-E37A44C1.jpg",
+    "height": 679,
+    "width": 620,
+    "scale": 1
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXTextArea",
+    "title": "Probe notes",
+    "description": "Probe notes",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "x": 408,
+     "height": 156,
+     "y": 262,
+     "width": 503
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 260,
+     "y": 309
+    },
+    "scale": 1,
+    "screen": {
+     "x": 660,
+     "y": 340
+    }
+   },
+   "hit": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXTextArea",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "t314pr7v",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 6
+   },
+   "clickAfterObservationMs": 921,
+   "click": {
+    "error": {
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "errorName": "backgroundClickRefused",
+     "code": -10005,
+     "meta": {
+      "coordinateClick": {
+       "windowPoint": {
+        "x": 260,
+        "y": 309
+       },
+       "frameBeforePost": null,
+       "postedWindowLocation": {
+        "y": 309,
+        "x": 260
+       },
+       "windowFrame": {
+        "width": 620,
+        "x": 400,
+        "height": 679,
+        "y": 31
+       },
+       "screenshotPoint": {
+        "x": 260,
+        "y": 309
+       },
+       "postedLocation": {
+        "y": 340,
+        "x": 660
+       }
+      },
+      "hidIdleMs": null,
+      "inputRoute": 3,
+      "endedAt": null,
+      "activationJoin": "fresh",
+      "startedAt": null,
+      "receivedAt": 1793925202229,
+      "elementClick": {
+       "plan": "synthesized",
+       "reason": "webArea",
+       "walk": [
+        "AXTextArea"
+       ],
+       "walkStopped": "editable"
+      }
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 4
+   },
+   "clickMs": 20,
+   "hitAfter": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXTextArea",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "after": {
+    "load": "t314pr7v",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 6
+   },
+   "delta": {
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 0,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXWebArea",
+    "title": "probe282 page",
+    "description": ""
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "c-dedicated/textarea",
+   "engine": "branch",
+   "desktop": "dedicated",
+   "target": "textarea",
+   "keysFirst": null,
+   "chromePid": 6998,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n 7150  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "canPostHid": true,
+    "engineVersion": "0.1.0",
+    "socket": "/Users/runner/work/_temp/probe-282/sock/c-dedicated_textarea.sock",
+    "build": "unbundled",
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "accessibility": true,
+    "routeAdvice": [],
+    "cursorDebug": null,
+    "connections": 0,
+    "screenRecording": true,
+    "inputMonitoring": true,
+    "pid": 7150,
+    "routes": {},
+    "cursor": "on",
+    "holders": []
+   },
+   "ping": {
+    "id": 2,
+    "jsonrpc": "2.0",
+    "result": {
+     "engineVersion": "0.1.0",
+     "build": "unbundled",
+     "serverApiVersion": "cua-engine-1"
+    }
+   },
+   "observationMs": 622,
+   "window": {
+    "title": "probe282 page",
+    "frame": {
+     "height": 679,
+     "width": 620,
+     "y": 31,
+     "x": 400
+    },
+    "pid": 6998
+   },
+   "screenshot": {
+    "height": 679,
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-c-dedicated_textarea/cua-engine-7150-1-83D801A1.jpg",
+    "width": 620,
+    "scale": 1
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXTextArea",
+    "title": "Probe notes",
+    "description": "Probe notes",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "x": 408,
+     "y": 262,
+     "height": 156,
+     "width": 503
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 260,
+     "y": 309
+    },
+    "scale": 1,
+    "screen": {
+     "x": 660,
+     "y": 340
+    }
+   },
+   "hit": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXTextArea",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "yw9pemm0",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 7
+   },
+   "clickAfterObservationMs": 900,
+   "click": {
+    "result": {
+     "meta": {
+      "endedAt": 1793925216719,
+      "hidIdleMs": null,
+      "activationGuardMs": 114.592,
+      "inputRoute": 3,
+      "coordinateClick": {
+       "windowPoint": {
+        "x": 260,
+        "y": 309
+       },
+       "screenshotPoint": {
+        "y": 309,
+        "x": 260
+       },
+       "frameBeforePost": {
+        "width": 620,
+        "height": 679,
+        "x": 400,
+        "y": 31
+       },
+       "postedLocation": {
+        "x": 660,
+        "y": 340
+       },
+       "postedWindowLocation": {
+        "x": 260,
+        "y": 309
+       },
+       "windowFrame": {
+        "width": 620,
+        "height": 679,
+        "y": 31,
+        "x": 400
+       }
+      },
+      "startedAt": 1793925216719,
+      "activationClickKind": {
+       "point": "activationPoint",
+       "when": "early",
+       "kind": "inertOutside"
+      },
+      "activationJoin": "fresh",
+      "receivedAt": 1793925216586,
+      "activationClick": "outsideFrame"
+     }
+    },
+    "id": 4,
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 142,
+   "hitAfter": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXTextArea",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "after": {
+    "load": "yw9pemm0",
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 1,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 2,
+    "checked": false,
+    "lastClick": {
+     "trusted": true,
+     "detail": 1,
+     "target": "notes"
+    },
+    "focused": false,
+    "active": "notes",
+    "loads": 7
+   },
+   "delta": {
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 1,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 1,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXTextArea",
+    "title": "Probe notes",
+    "description": "Probe notes"
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b-shared/toolbar-reload",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": "reload",
+   "keysFirst": null,
+   "chromePid": 7515,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n 7766  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "engineVersion": "0.1.0",
+    "cursorDebug": null,
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "routeAdvice": [],
+    "screenRecording": true,
+    "pid": 7766,
+    "connections": 0,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/b-shared_toolbar-reload.sock",
+    "routes": {},
+    "accessibility": true,
+    "canPostHid": true,
+    "build": "unbundled",
+    "cursor": "on",
+    "holders": [],
+    "inputMonitoring": true
+   },
+   "ping": {
+    "id": 2,
+    "jsonrpc": "2.0",
+    "result": {
+     "build": "unbundled",
+     "serverApiVersion": "cua-engine-1",
+     "engineVersion": "0.1.0"
+    }
+   },
+   "observationMs": 569,
+   "window": {
+    "title": "probe282 page",
+    "frame": {
+     "width": 620,
+     "x": 400,
+     "height": 679,
+     "y": 31
+    },
+    "pid": 7515
+   },
+   "screenshot": {
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-b-shared_toolbar-reload/cua-engine-7766-1-55C914FE.jpg",
+    "width": 620,
+    "height": 679,
+    "scale": 1
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXButton",
+    "title": "Reload",
+    "description": "Reload",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "height": 34,
+     "y": 77,
+     "width": 34,
+     "x": 442
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 59,
+     "y": 63
+    },
+    "scale": 1,
+    "screen": {
+     "x": 459,
+     "y": 94
+    }
+   },
+   "hit": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXButton",
+     "AXGroup",
+     "AXToolbar",
+     "AXGroup",
+     "AXScrollArea",
+     "AXGroup",
+     "AXToolbar",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "sehj8ina",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 8
+   },
+   "clickAfterObservationMs": 967,
+   "click": {
+    "id": 4,
+    "jsonrpc": "2.0",
+    "result": {
+     "meta": {
+      "activationClick": "outsideFrame",
+      "delivery": {
+       "frontmostRestored": false,
+       "otherAppFront": false,
+       "restores": 0,
+       "guardMs": 63.488,
+       "screenHoldMs": 100,
+       "capped": false,
+       "raiseLeft": false,
+       "releasedAt": 1793925232512,
+       "personInput": false,
+       "holdStartedAt": 1793925232412,
+       "repairedAfterRelease": false,
+       "postedAt": 1793925232460
+      },
+      "inputRoute": 3,
+      "activationClickKind": {
+       "when": "consumedByAction",
+       "kind": "action"
+      },
+      "endedAt": 1793925232460,
+      "startedAt": 1793925232460,
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "coordinateClick": {
+       "windowFrame": {
+        "height": 679,
+        "width": 620,
+        "x": 400,
+        "y": 31
+       },
+       "postedWindowLocation": {
+        "y": 63,
+        "x": 59
+       },
+       "screenshotPoint": {
+        "y": 63,
+        "x": 59
+       },
+       "postedLocation": {
+        "x": 459,
+        "y": 94
+       },
+       "frameBeforePost": {
+        "y": 31,
+        "height": 679,
+        "width": 620,
+        "x": 400
+       },
+       "windowPoint": {
+        "y": 63,
+        "x": 59
+       }
+      },
+      "receivedAt": 1793925232398,
+      "activationGuardMs": 44.544
+     }
+    }
+   },
+   "clickMs": 129,
+   "hitAfter": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXButton",
+     "AXGroup",
+     "AXToolbar",
+     "AXGroup",
+     "AXScrollArea",
+     "AXGroup",
+     "AXToolbar",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "after": {
+    "load": "7q8ps9w7",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 0,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 9
+   },
+   "delta": {
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 0,
+    "loads": 1
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXWebArea",
+    "title": "probe282 page",
+    "description": ""
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b-shared/cmdL+checkbox",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": "checkbox",
+   "keysFirst": "cmd+l",
+   "chromePid": 8241,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n 8829  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "routes": {},
+    "cursorDebug": null,
+    "canPostHid": true,
+    "connections": 0,
+    "build": "unbundled",
+    "accessibility": true,
+    "inputMonitoring": true,
+    "pid": 8829,
+    "cursor": "on",
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "routeAdvice": [],
+    "holders": [],
+    "screenRecording": true,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/b-shared_cmdL_checkbox.sock",
+    "engineVersion": "0.1.0"
+   },
+   "ping": {
+    "result": {
+     "build": "unbundled",
+     "serverApiVersion": "cua-engine-1",
+     "engineVersion": "0.1.0"
+    },
+    "jsonrpc": "2.0",
+    "id": 2
+   },
+   "observationMs": 567,
+   "window": {
+    "pid": 8241,
+    "title": "probe282 page",
+    "frame": {
+     "y": 31,
+     "height": 679,
+     "x": 400,
+     "width": 620
+    }
+   },
+   "screenshot": {
+    "width": 620,
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-b-shared_cmdL_checkbox/cua-engine-8829-1-213886F0.jpg",
+    "height": 679,
+    "scale": 1
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXCheckBox",
+    "title": "Probe option",
+    "description": "",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "height": 13,
+     "x": 412,
+     "y": 227,
+     "width": 13
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 19,
+     "y": 203
+    },
+    "scale": 1,
+    "screen": {
+     "x": 419,
+     "y": 234
+    }
+   },
+   "hit": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXCheckBox",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "o0b3ssq0",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 10
+   },
+   "clickAfterObservationMs": 902,
+   "keys": {
+    "result": {
+     "meta": {
+      "endedAt": 1793925247139,
+      "hidIdleMs": null,
+      "startedAt": 1793925247138,
+      "activationClickKind": {
+       "kind": "inertOutside",
+       "point": "activationPoint",
+       "when": "early"
+      },
+      "receivedAt": 1793925247006,
+      "activationClick": "outsideFrame",
+      "activationJoin": "fresh",
+      "activationGuardMs": 109.968,
+      "inputRoute": 3
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 4
+   },
+   "click": {
+    "result": {
+     "meta": {
+      "activationJoin": "shared",
+      "inputRoute": 3,
+      "startedAt": 1793925247690,
+      "elementClick": {
+       "plan": "action",
+       "action": "AXPress",
+       "pressed": "hit",
+       "reason": "webArea",
+       "walk": [
+        "AXCheckBox"
+       ],
+       "pressedRole": "AXCheckBox"
+      },
+      "coordinateClick": {
+       "screenshotPoint": {
+        "x": 19,
+        "y": 203
+       },
+       "postedLocation": {
+        "x": 419,
+        "y": 234
+       },
+       "windowFrame": {
+        "height": 679,
+        "width": 620,
+        "y": 31,
+        "x": 400
+       },
+       "windowPoint": {
+        "y": 203,
+        "x": 19
+       },
+       "frameBeforePost": null,
+       "postedWindowLocation": {
+        "x": 19,
+        "y": 203
+       }
+      },
+      "endedAt": 1793925247692,
+      "hidIdleMs": null,
+      "receivedAt": 1793925247143
+     }
+    },
+    "jsonrpc": "2.0",
+    "id": 5
+   },
+   "clickMs": 561,
+   "hitAfter": {
+    "appActions": [
+     "AXPress",
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXCheckBox",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 2
+   },
+   "after": {
+    "load": "o0b3ssq0",
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 1,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 2,
+    "checked": true,
+    "lastClick": {
+     "trusted": true,
+     "detail": 1,
+     "target": "option"
+    },
+    "focused": false,
+    "active": "option",
+    "loads": 10
+   },
+   "delta": {
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 1,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 1,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXTextField",
+    "title": "Address and search bar",
+    "description": "Address and search bar"
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b-shared/cmdL+button",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": "button",
+   "keysFirst": "cmd+l",
+   "chromePid": 9036,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n 9353  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "connections": 0,
+    "cursor": "on",
+    "inputMonitoring": true,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/b-shared_cmdL_button.sock",
+    "routeAdvice": [],
+    "build": "unbundled",
+    "pid": 9353,
+    "holders": [],
+    "cursorDebug": null,
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "canPostHid": true,
+    "routes": {},
+    "accessibility": true,
+    "engineVersion": "0.1.0",
+    "screenRecording": true
+   },
+   "ping": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "serverApiVersion": "cua-engine-1",
+     "engineVersion": "0.1.0",
+     "build": "unbundled"
+    }
+   },
+   "observationMs": 819,
+   "window": {
+    "frame": {
+     "y": 31,
+     "x": 400,
+     "width": 620,
+     "height": 679
+    },
+    "title": "probe282 page",
+    "pid": 9036
+   },
+   "screenshot": {
+    "scale": 1,
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-b-shared_cmdL_button/cua-engine-9353-1-67FE82A5.jpg",
+    "height": 679,
+    "width": 620
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXButton",
+    "title": "Apply",
+    "description": "",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "y": 225,
+     "width": 50,
+     "height": 21,
+     "x": 518
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 143,
+     "y": 205
+    },
+    "scale": 1,
+    "screen": {
+     "x": 543,
+     "y": 236
+    }
+   },
+   "hit": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXButton",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "a6smkwwl",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 11
+   },
+   "clickAfterObservationMs": 981,
+   "keys": {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "result": {
+     "meta": {
+      "receivedAt": 1793925262594,
+      "activationGuardMs": 112.516,
+      "hidIdleMs": null,
+      "activationClickKind": {
+       "when": "early",
+       "kind": "inertOutside",
+       "point": "activationPoint"
+      },
+      "activationClick": "outsideFrame",
+      "endedAt": 1793925262722,
+      "inputRoute": 3,
+      "activationJoin": "fresh",
+      "startedAt": 1793925262721
+     }
+    }
+   },
+   "click": {
+    "jsonrpc": "2.0",
+    "id": 5,
+    "result": {
+     "meta": {
+      "receivedAt": 1793925262724,
+      "elementClick": {
+       "walk": [
+        "AXStaticText",
+        "AXButton"
+       ],
+       "plan": "action",
+       "action": "AXPress",
+       "pressed": "ancestor",
+       "pressedRole": "AXButton",
+       "reason": "webArea"
+      },
+      "hidIdleMs": null,
+      "coordinateClick": {
+       "frameBeforePost": null,
+       "windowFrame": {
+        "width": 620,
+        "x": 400,
+        "y": 31,
+        "height": 679
+       },
+       "screenshotPoint": {
+        "x": 143,
+        "y": 205
+       },
+       "postedWindowLocation": {
+        "x": 143,
+        "y": 205
+       },
+       "windowPoint": {
+        "y": 205,
+        "x": 143
+       },
+       "postedLocation": {
+        "y": 236,
+        "x": 543
+       }
+      },
+      "endedAt": 1793925263101,
+      "inputRoute": 3,
+      "activationJoin": "shared",
+      "startedAt": 1793925263091
+     }
+    }
+   },
+   "clickMs": 384,
+   "hitAfter": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXStaticText",
+     "AXButton",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 2
+   },
+   "after": {
+    "load": "a6smkwwl",
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 1,
+    "windowFocus": 1,
+    "windowBlur": 2,
+    "checked": false,
+    "lastClick": {
+     "trusted": true,
+     "detail": 1,
+     "target": "apply"
+    },
+    "focused": false,
+    "active": "apply",
+    "loads": 11
+   },
+   "delta": {
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 1,
+    "windowFocus": 1,
+    "windowBlur": 1,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXTextField",
+    "title": "Address and search bar",
+    "description": "Address and search bar"
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b-shared/cmdL+textarea",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": "textarea",
+   "keysFirst": "cmd+l",
+   "chromePid": 9703,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n 9861  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "accessibility": true,
+    "cursor": "on",
+    "inputMonitoring": true,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/b-shared_cmdL_textarea.sock",
+    "build": "unbundled",
+    "pid": 9861,
+    "routeAdvice": [],
+    "engineVersion": "0.1.0",
+    "routes": {},
+    "canPostHid": true,
+    "cursorDebug": null,
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "connections": 0,
+    "holders": [],
+    "screenRecording": true
+   },
+   "ping": {
+    "id": 2,
+    "result": {
+     "build": "unbundled",
+     "serverApiVersion": "cua-engine-1",
+     "engineVersion": "0.1.0"
+    },
+    "jsonrpc": "2.0"
+   },
+   "observationMs": 866,
+   "window": {
+    "title": "probe282 page",
+    "frame": {
+     "x": 400,
+     "y": 31,
+     "height": 679,
+     "width": 620
+    },
+    "pid": 9703
+   },
+   "screenshot": {
+    "width": 620,
+    "height": 679,
+    "scale": 1,
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-b-shared_cmdL_textarea/cua-engine-9861-1-938C7371.jpg"
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXTextArea",
+    "title": "Probe notes",
+    "description": "Probe notes",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "height": 156,
+     "x": 408,
+     "y": 262,
+     "width": 503
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 260,
+     "y": 309
+    },
+    "scale": 1,
+    "screen": {
+     "x": 660,
+     "y": 340
+    }
+   },
+   "hit": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXTextArea",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "dwo1b6m4",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 12
+   },
+   "clickAfterObservationMs": 897,
+   "keys": {
+    "id": 4,
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "activationClick": "outsideFrame",
+      "inputRoute": 3,
+      "activationClickKind": {
+       "when": "early",
+       "kind": "inertOutside",
+       "point": "activationPoint"
+      },
+      "endedAt": 1793925277611,
+      "receivedAt": 1793925277441,
+      "activationGuardMs": 151.789,
+      "activationJoin": "fresh",
+      "startedAt": 1793925277611
+     }
+    },
+    "jsonrpc": "2.0"
+   },
+   "click": {
+    "id": 5,
+    "error": {
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "errorName": "backgroundClickRefused",
+     "code": -10005,
+     "meta": {
+      "hidIdleMs": null,
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "x": 260,
+        "y": 309
+       },
+       "windowFrame": {
+        "x": 400,
+        "y": 31,
+        "width": 620,
+        "height": 679
+       },
+       "postedLocation": {
+        "y": 340,
+        "x": 660
+       },
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "x": 260,
+        "y": 309
+       },
+       "windowPoint": {
+        "y": 309,
+        "x": 260
+       }
+      },
+      "inputRoute": 3,
+      "elementClick": {
+       "walk": [
+        "AXTextArea"
+       ],
+       "walkStopped": "editable",
+       "reason": "webArea",
+       "plan": "synthesized"
+      },
+      "endedAt": null,
+      "receivedAt": 1793925277612,
+      "activationJoin": "shared",
+      "startedAt": null
+     }
+    },
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 325,
+   "hitAfter": {
+    "appActions": [
+     "AXPress",
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXTextArea",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 2
+   },
+   "after": {
+    "load": "dwo1b6m4",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 2,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 12
+   },
+   "delta": {
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 1,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXTextField",
+    "title": "Address and search bar",
+    "description": "Address and search bar"
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "geometry",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": null,
+   "keysFirst": null,
+   "chromePid": 10252,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n10522  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "routeAdvice": [],
+    "pid": 10522,
+    "routes": {},
+    "holders": [],
+    "canPostHid": true,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/geometry.sock",
+    "build": "unbundled",
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "screenRecording": true,
+    "inputMonitoring": true,
+    "cursorDebug": null,
+    "cursor": "on",
+    "connections": 0,
+    "accessibility": true,
+    "engineVersion": "0.1.0"
+   },
+   "ping": {
+    "result": {
+     "serverApiVersion": "cua-engine-1",
+     "engineVersion": "0.1.0",
+     "build": "unbundled"
+    },
+    "jsonrpc": "2.0",
+    "id": 2
+   },
+   "observationMs": 530,
+   "window": {
+    "title": "probe282 page",
+    "frame": {
+     "x": 400,
+     "width": 620,
+     "height": 679,
+     "y": 31
+    },
+    "pid": 10252
+   },
+   "screenshot": {
+    "scale": 1,
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-geometry/cua-engine-10522-1-C1C4CD44.jpg",
+    "height": 679,
+    "width": 620
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "actions": {
+    "beforeActivation": {
+     "checkbox": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ],
+     "button": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ],
+     "textarea": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "afterActivation": {
+     "checkbox": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ],
+     "button": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ],
+     "textarea": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "afterActivation2s": {
+     "checkbox": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ],
+     "button": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ],
+     "textarea": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "geometry": {
+    "afterActivation": {
+     "activationPoint": {
+      "x": -1,
+      "y": 769
+     },
+     "frame": {
+      "height": 679,
+      "width": 620,
+      "x": 400,
+      "y": 31
+     },
+     "frontmost": "com.apple.TextEdit"
+    },
+    "afterDeactivation": {
+     "activationPoint": {
+      "x": -1,
+      "y": 769
+     },
+     "frame": {
+      "height": 679,
+      "width": 620,
+      "x": 400,
+      "y": 31
+     },
+     "frontmost": "com.apple.TextEdit"
+    },
+    "before": {
+     "activationPoint": {
+      "x": -1,
+      "y": 769
+     },
+     "frame": {
+      "height": 679,
+      "width": 620,
+      "x": 400,
+      "y": 31
+     },
+     "frontmost": "com.apple.TextEdit"
+    },
+    "postedActivation": true,
+    "postedDeactivation": true,
+    "trusted": true,
+    "windowNumber": 236,
+    "frameEqual": true,
+    "activationPointEqual": true
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "engineStderr": ""
+  },
+  {
+   "label": "obs+checkbox",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": "checkbox",
+   "keysFirst": null,
+   "chromePid": 10766,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n11124  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "build": "unbundled",
+    "accessibility": true,
+    "cursor": "on",
+    "routes": {},
+    "screenRecording": true,
+    "routeAdvice": [],
+    "canPostHid": true,
+    "pid": 11124,
+    "engineVersion": "0.1.0",
+    "inputMonitoring": true,
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "connections": 0,
+    "holders": [],
+    "cursorDebug": null,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/obs_checkbox.sock"
+   },
+   "ping": {
+    "id": 2,
+    "result": {
+     "serverApiVersion": "cua-engine-1",
+     "build": "unbundled",
+     "engineVersion": "0.1.0"
+    },
+    "jsonrpc": "2.0"
+   },
+   "observationMs": 538,
+   "window": {
+    "pid": 10766,
+    "title": "probe282 page",
+    "frame": {
+     "y": 31,
+     "width": 620,
+     "height": 679,
+     "x": 400
+    }
+   },
+   "screenshot": {
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-obs_checkbox/cua-engine-11124-1-C5F98165.jpg",
+    "width": 620,
+    "height": 679,
+    "scale": 1
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXCheckBox",
+    "title": "Probe option",
+    "description": "",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "height": 13,
+     "x": 412,
+     "width": 13,
+     "y": 227
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 19,
+     "y": 203
+    },
+    "scale": 1,
+    "screen": {
+     "x": 419,
+     "y": 234
+    }
+   },
+   "waitedAfterObservationMs": 2502,
+   "hit": {
+    "appActions": [
+     "AXPress",
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXCheckBox",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "ecgjuxi6",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 14
+   },
+   "clickAfterObservationMs": 3387,
+   "click": {
+    "id": 4,
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "endedAt": 1793925306676,
+      "activationJoin": "fresh",
+      "inputRoute": 3,
+      "receivedAt": 1793925306558,
+      "elementClick": {
+       "pressed": "hit",
+       "action": "AXPress",
+       "plan": "action",
+       "reason": "webArea",
+       "walk": [
+        "AXCheckBox"
+       ],
+       "pressedRole": "AXCheckBox"
+      },
+      "startedAt": 1793925306672,
+      "activationClick": "outsideFrame",
+      "activationGuardMs": 87.807,
+      "coordinateClick": {
+       "screenshotPoint": {
+        "y": 203,
+        "x": 19
+       },
+       "postedWindowLocation": {
+        "x": 19,
+        "y": 203
+       },
+       "windowPoint": {
+        "x": 19,
+        "y": 203
+       },
+       "frameBeforePost": null,
+       "postedLocation": {
+        "x": 419,
+        "y": 234
+       },
+       "windowFrame": {
+        "height": 679,
+        "y": 31,
+        "x": 400,
+        "width": 620
+       }
+      },
+      "activationClickKind": {
+       "point": "activationPoint",
+       "kind": "inertOutside",
+       "when": "early"
+      }
+     }
+    },
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 131,
+   "hitAfter": {
+    "appActions": [
+     "AXPress",
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXCheckBox",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "after": {
+    "load": "ecgjuxi6",
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 1,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 1,
+    "checked": true,
+    "lastClick": {
+     "trusted": true,
+     "detail": 1,
+     "target": "option"
+    },
+    "focused": true,
+    "active": "option",
+    "loads": 14
+   },
+   "delta": {
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 1,
+    "applyClick": 0,
+    "windowFocus": 1,
+    "windowBlur": 0,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXCheckBox",
+    "title": "Probe option",
+    "description": ""
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "obs+button",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": "button",
+   "keysFirst": null,
+   "chromePid": 11703,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n12112  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "cursor": "on",
+    "build": "unbundled",
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "inputMonitoring": true,
+    "holders": [],
+    "accessibility": true,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/obs_button.sock",
+    "routes": {},
+    "cursorDebug": null,
+    "pid": 12112,
+    "routeAdvice": [],
+    "screenRecording": true,
+    "connections": 0,
+    "engineVersion": "0.1.0",
+    "canPostHid": true
+   },
+   "ping": {
+    "id": 2,
+    "result": {
+     "engineVersion": "0.1.0",
+     "serverApiVersion": "cua-engine-1",
+     "build": "unbundled"
+    },
+    "jsonrpc": "2.0"
+   },
+   "observationMs": 530,
+   "window": {
+    "title": "probe282 page",
+    "frame": {
+     "y": 31,
+     "width": 620,
+     "height": 679,
+     "x": 400
+    },
+    "pid": 11703
+   },
+   "screenshot": {
+    "width": 620,
+    "height": 679,
+    "scale": 1,
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-obs_button/cua-engine-12112-1-63BB1BFC.jpg"
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXButton",
+    "title": "Apply",
+    "description": "",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "y": 225,
+     "x": 518,
+     "height": 21,
+     "width": 50
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 143,
+     "y": 205
+    },
+    "scale": 1,
+    "screen": {
+     "x": 543,
+     "y": 236
+    }
+   },
+   "waitedAfterObservationMs": 2502,
+   "hit": {
+    "appActions": [
+     "AXPress",
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXButton",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "v9tdv0ox",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 15
+   },
+   "clickAfterObservationMs": 3357,
+   "click": {
+    "id": 4,
+    "result": {
+     "meta": {
+      "receivedAt": 1793925322704,
+      "activationGuardMs": 86.691,
+      "elementClick": {
+       "walk": [
+        "AXStaticText",
+        "AXButton"
+       ],
+       "pressed": "ancestor",
+       "action": "AXPress",
+       "reason": "webArea",
+       "pressedRole": "AXButton",
+       "plan": "action"
+      },
+      "startedAt": 1793925322811,
+      "coordinateClick": {
+       "windowPoint": {
+        "y": 205,
+        "x": 143
+       },
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "x": 143,
+        "y": 205
+       },
+       "postedLocation": {
+        "x": 543,
+        "y": 236
+       },
+       "postedWindowLocation": {
+        "x": 143,
+        "y": 205
+       },
+       "windowFrame": {
+        "width": 620,
+        "height": 679,
+        "x": 400,
+        "y": 31
+       }
+      },
+      "inputRoute": 3,
+      "endedAt": 1793925322811,
+      "hidIdleMs": null,
+      "activationClick": "outsideFrame",
+      "activationClickKind": {
+       "point": "activationPoint",
+       "kind": "inertOutside",
+       "when": "early"
+      },
+      "activationJoin": "fresh"
+     }
+    },
+    "jsonrpc": "2.0"
+   },
+   "clickMs": 111,
+   "hitAfter": {
+    "appActions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXStaticText",
+     "AXButton",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "after": {
+    "load": "v9tdv0ox",
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 1,
+    "windowFocus": 1,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": {
+     "trusted": true,
+     "detail": 1,
+     "target": "apply"
+    },
+    "focused": true,
+    "active": "apply",
+    "loads": 15
+   },
+   "delta": {
+    "pointerdown": 1,
+    "mousedown": 1,
+    "mouseup": 1,
+    "click": 1,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 1,
+    "windowFocus": 1,
+    "windowBlur": 0,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXButton",
+    "title": "Apply",
+    "description": ""
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "obs+textarea",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": "textarea",
+   "keysFirst": null,
+   "chromePid": 12451,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n12597  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "accessibility": true,
+    "screenRecording": true,
+    "cursor": "on",
+    "cursorDebug": null,
+    "build": "unbundled",
+    "inputMonitoring": true,
+    "pid": 12597,
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "connections": 0,
+    "routes": {},
+    "routeAdvice": [],
+    "engineVersion": "0.1.0",
+    "canPostHid": true,
+    "socket": "/Users/runner/work/_temp/probe-282/sock/obs_textarea.sock",
+    "holders": []
+   },
+   "ping": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "serverApiVersion": "cua-engine-1",
+     "engineVersion": "0.1.0",
+     "build": "unbundled"
+    }
+   },
+   "observationMs": 498,
+   "window": {
+    "pid": 12451,
+    "title": "probe282 page",
+    "frame": {
+     "width": 620,
+     "y": 31,
+     "height": 679,
+     "x": 400
+    }
+   },
+   "screenshot": {
+    "scale": 1,
+    "height": 679,
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-obs_textarea/cua-engine-12597-1-85276B3C.jpg",
+    "width": 620
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "targetNode": {
+    "role": "AXTextArea",
+    "title": "Probe notes",
+    "description": "Probe notes",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "x": 408,
+     "y": 262,
+     "width": 503,
+     "height": 156
+    }
+   },
+   "point": {
+    "screenshotPixel": {
+     "x": 260,
+     "y": 309
+    },
+    "scale": 1,
+    "screen": {
+     "x": 660,
+     "y": 340
+    }
+   },
+   "waitedAfterObservationMs": 2502,
+   "hit": {
+    "appActions": [
+     "AXPress",
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXTextArea",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "before": {
+    "load": "ke9httbu",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 16
+   },
+   "clickAfterObservationMs": 3401,
+   "click": {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "error": {
+     "code": -10005,
+     "message": "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop",
+     "meta": {
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "inputRoute": 3,
+      "receivedAt": 1793925338372,
+      "elementClick": {
+       "plan": "synthesized",
+       "reason": "webArea",
+       "walk": [
+        "AXTextArea"
+       ],
+       "walkStopped": "editable"
+      },
+      "startedAt": null,
+      "coordinateClick": {
+       "windowPoint": {
+        "x": 260,
+        "y": 309
+       },
+       "postedWindowLocation": {
+        "x": 260,
+        "y": 309
+       },
+       "windowFrame": {
+        "x": 400,
+        "y": 31,
+        "height": 679,
+        "width": 620
+       },
+       "frameBeforePost": null,
+       "screenshotPoint": {
+        "x": 260,
+        "y": 309
+       },
+       "postedLocation": {
+        "y": 340,
+        "x": 660
+       }
+      },
+      "endedAt": null
+     },
+     "errorName": "backgroundClickRefused"
+    }
+   },
+   "clickMs": 10,
+   "hitAfter": {
+    "appActions": [
+     "AXPress",
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "appChain": [
+     "AXTextArea",
+     "AXGroup",
+     "AXWebArea",
+     "AXScrollArea",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXGroup",
+     "AXWindow"
+    ],
+    "appHitError": "0",
+    "trusted": true,
+    "windowChain": [],
+    "windowHitError": "-25201",
+    "windows": 1
+   },
+   "after": {
+    "load": "ke9httbu",
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 1,
+    "checked": false,
+    "lastClick": null,
+    "focused": false,
+    "active": "BODY",
+    "loads": 16
+   },
+   "delta": {
+    "pointerdown": 0,
+    "mousedown": 0,
+    "mouseup": 0,
+    "click": 0,
+    "textFocus": 0,
+    "optionChange": 0,
+    "applyClick": 0,
+    "windowFocus": 0,
+    "windowBlur": 0,
+    "loads": 0
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "focusedAfter": {
+    "role": "AXWebArea",
+    "title": "probe282 page",
+    "description": ""
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "obs-timeline",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": null,
+   "keysFirst": null,
+   "chromePid": 13040,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n13223  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "socket": "/Users/runner/work/_temp/probe-282/sock/obs-timeline.sock",
+    "build": "unbundled",
+    "routes": {},
+    "routeAdvice": [],
+    "engineVersion": "0.1.0",
+    "screenRecording": true,
+    "pid": 13223,
+    "holders": [],
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug",
+    "canPostHid": true,
+    "cursor": "on",
+    "accessibility": true,
+    "cursorDebug": null,
+    "inputMonitoring": true,
+    "connections": 0
+   },
+   "ping": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "build": "unbundled",
+     "engineVersion": "0.1.0",
+     "serverApiVersion": "cua-engine-1"
+    }
+   },
+   "observationMs": 629,
+   "window": {
+    "title": "probe282 page",
+    "frame": {
+     "y": 31,
+     "width": 620,
+     "x": 400,
+     "height": 679
+    },
+    "pid": 13040
+   },
+   "screenshot": {
+    "height": 679,
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-obs-timeline/cua-engine-13223-1-A3857C90.jpg",
+    "scale": 1,
+    "width": 620
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "timeline": [
+    {
+     "t": 1,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 100,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 201,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 301,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 401,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 501,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 601,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 702,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 803,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 903,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 1003,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 1103,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 1200,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 1301,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 1403,
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 1502,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 1602,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 1701,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 1803,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 1901,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 2003,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 2103,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 2204,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 2302,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 2403,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 2502,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 2602,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 2704,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 2803,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 2903,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    {
+     "t": 3002,
+     "actions": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    }
+   ],
+   "axPressAfterObservationMs": 1502,
+   "frontAfter": "com.apple.TextEdit",
+   "engineStderr": ""
+  },
+  {
+   "label": "btn-timeline",
+   "engine": "branch",
+   "desktop": "shared (ping names none)",
+   "target": null,
+   "keysFirst": null,
+   "chromePid": 13598,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0,
+    "bounds": "0, 40, 380, 300"
+   },
+   "ancestry": "2933  1086 /bin/bash\n 2934  2933 node\n13879  2934 /Users/runner/work/_temp/eng-branch/debug/cua-engine",
+   "status": {
+    "routeAdvice": [],
+    "canPostHid": true,
+    "build": "unbundled",
+    "cursor": "on",
+    "screenRecording": true,
+    "connections": 0,
+    "routes": {},
+    "socket": "/Users/runner/work/_temp/probe-282/sock/btn-timeline.sock",
+    "pid": 13879,
+    "engineVersion": "0.1.0",
+    "holders": [],
+    "inputMonitoring": true,
+    "cursorDebug": null,
+    "accessibility": true,
+    "bundlePath": "/Users/runner/work/_temp/eng-branch/debug"
+   },
+   "ping": {
+    "id": 2,
+    "jsonrpc": "2.0",
+    "result": {
+     "build": "unbundled",
+     "engineVersion": "0.1.0",
+     "serverApiVersion": "cua-engine-1"
+    }
+   },
+   "observationMs": 597,
+   "window": {
+    "title": "probe282 page",
+    "frame": {
+     "height": 679,
+     "y": 31,
+     "x": 400,
+     "width": 620
+    },
+    "pid": 13598
+   },
+   "screenshot": {
+    "width": 620,
+    "height": 679,
+    "url": "file:///Users/runner/work/_temp/probe-282/shots-btn-timeline/cua-engine-13879-1-60655A17.jpg",
+    "scale": 1
+   },
+   "observation": {
+    "chromium": true,
+    "webAreaFound": true,
+    "webShaped": true,
+    "enabled": null,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208
+   },
+   "buttonNode": {
+    "title": "Apply",
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "frame": {
+     "x": 518,
+     "y": 225,
+     "width": 50,
+     "height": 21
+    }
+   },
+   "startedAfterObservationMs": 1,
+   "buttonTimeline": {
+    "button": {
+     "changes": [
+      {
+       "axPress": true,
+       "t": 1542
+      }
+     ],
+     "disappeared": false,
+     "firstAXPressMs": 1542
+    },
+    "buttonFound": true,
+    "firstActions": {
+     "button": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ],
+     "hit": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "freshHit": {
+     "changes": [],
+     "disappeared": false,
+     "firstAXPressMs": null
+    },
+    "hit": {
+     "changes": [
+      {
+       "axPress": true,
+       "t": 1542
+      }
+     ],
+     "disappeared": false,
+     "firstAXPressMs": 1542
+    },
+    "hitChain": [
+     {
+      "actions": [
+       "AXShowMenu",
+       "AXScrollToVisible"
+      ],
+      "role": "AXButton",
+      "title": "Apply"
+     },
+     {
+      "actions": [
+       "AXShowMenu",
+       "AXScrollToVisible"
+      ],
+      "role": "AXGroup",
+      "title": ""
+     },
+     {
+      "actions": [
+       "AXShowMenu",
+       "AXScrollToVisible"
+      ],
+      "role": "AXWebArea",
+      "title": "probe282 page"
+     }
+    ],
+    "hitIsButton": true,
+    "lastActions": {
+     "button": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ],
+     "hit": [
+      "AXPress",
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "searched": 56,
+    "timeline": [
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 42
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 151
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 227
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 321
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 402
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 537
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 669
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 726
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 865
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 942
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 1075
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 1171
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 1240
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 1338
+     },
+     {
+      "button": false,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": false,
+      "t": 1449
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 1542
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 1642
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 1774
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 1866
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 1920
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 2075
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 2120
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 2202
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 2310
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 2452
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 2537
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 2640
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 2743
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 2867
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 2908
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 3075
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 3122
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 3209
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 3326
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 3408
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 3574
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 3625
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 3721
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 3820
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 3942
+     },
+     {
+      "button": true,
+      "freshHit": false,
+      "freshIsButton": false,
+      "freshRole": "AXStaticText",
+      "hit": true,
+      "t": 4075
+     }
+    ],
+    "trusted": true
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "engineStderr": ""
+  }
+ ]
+}

@@ -7,7 +7,8 @@ import Foundation
 
 /// The attributes read per element: the vendor's 20 in its order (F §1.2), then what the Interfaces' Node adds
 /// (AXDOMClassList), the settle's busy signs (AXElementBusy, AXLoaded; F §8.4), the text's context, position, size and
-/// children. One list for the settle's busy walk and the observation's walk, so the observation can read the tree the
+/// children. Not AXEditableAncestor: #298's walk cost (the design session's ruling 1ea561bc:565) keeps it to the click.
+/// One list for the settle's busy walk and the observation's walk, so the observation can read the tree the
 /// settle fetched. The scroll bars are not on it: they are read only for an element with a page scroll (scrollBars).
 let observedAttributes: [String] = [
   "AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXValueDescription",
@@ -47,9 +48,16 @@ struct ElementData {
   var frame: CGRect?
   /// AXChildren, in order.
   var children: [AXUIElement]
+  /// Whether AXChildren was read: false when its slot held an error or nothing, which decodes as no children (#330's
+  /// rule dL then cannot tell a child the page added from one this read missed).
+  var childrenRead: Bool
+  /// The attributes whose read failed with an error other than their absence (`failedSlot`): each decodes as none, as
+  /// an absent one does, and #298's stale-point record tells the two apart for the label's attributes.
+  var unreadable: Set<String> = []
 
-  /// Decodes one element's attribute values, keyed by attribute name.
-  init(values: [String: CFTypeRef]) {
+  /// Decodes one element's attribute values, keyed by attribute name, and the names whose read failed.
+  init(values: [String: CFTypeRef], unreadable: Set<String> = []) {
+    self.unreadable = unreadable
     func string(_ name: String) -> String? { values[name].flatMap(stringValue) }
     func flag(_ name: String) -> Bool? { bool(values[name]) }
     role = string("AXRole") ?? "AXUnknown"
@@ -78,6 +86,7 @@ struct ElementData {
     domClassList = values["AXDOMClassList"].flatMap { CFGetTypeID($0) == CFArrayGetTypeID() ? ($0 as! [AnyObject]).compactMap { $0 as? String }.map(bounded) : nil }
     frame = point(values["AXPosition"]).flatMap { origin in size(values["AXSize"]).map { CGRect(origin: origin, size: $0) } }
     children = elementList(values["AXChildren"])
+    childrenRead = values["AXChildren"].map { CFGetTypeID($0) == CFArrayGetTypeID() } ?? false
   }
 }
 
@@ -128,6 +137,7 @@ class ElementSource: @unchecked Sendable {
   private var dataCache: [ElementKey: ElementData] = [:]
   private var visibleCache: [ElementKey: [AXUIElement]?] = [:]
   private var frameCache: [ElementKey: CGRect?] = [:]
+  private var roleWithFrame: [ElementKey: String] = [:]
 
   /// The element's attributes; nil when the element cannot be read.
   final func data(_ element: AXUIElement) -> ElementData? {
@@ -168,8 +178,11 @@ class ElementSource: @unchecked Sendable {
       let error = AXUIElementCopyMultipleAttributeValues(prepare(element), attributes as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
       guard error == .success, let slots = values as? [Any], slots.count == attributes.count else { return nil }
       var decoded: [String: CFTypeRef] = [:]
-      for (name, slot) in zip(attributes, slots) { if let value = present(slot) { decoded[name] = value } }
-      return ElementData(values: decoded)
+      var unreadable: Set<String> = []
+      for (name, slot) in zip(attributes, slots) {
+        if let value = present(slot) { decoded[name] = value } else if failedSlot(slot) { unreadable.insert(name) }
+      }
+      return ElementData(values: decoded, unreadable: unreadable)
     }
   }
 
@@ -203,6 +216,12 @@ class ElementSource: @unchecked Sendable {
 
   func owner(_ element: AXUIElement) -> pid_t { pid(of: element) }
 
+  /// Whether the element's handle names a destroyed element: its AXRole read answers kAXErrorInvalidUIElement (#303,
+  /// the previous revision's handle of an element Chromium re-created). Uncached: asked of a handle the walk does not read.
+  func isGone(_ element: AXUIElement) -> Bool {
+    costs.time("gone") { copyAttribute(element, kAXRoleAttribute).error == .invalidUIElement }
+  }
+
   func actions(_ element: AXUIElement) -> [String] {
     costs.time("actions") {
       var names: CFArray?
@@ -232,10 +251,16 @@ class ElementSource: @unchecked Sendable {
   final func frame(_ element: AXUIElement) -> CGRect? {
     let key = ElementKey(element: element)
     if let known = frameCache[key] { return known }
-    let read = readFrame(element)
-    frameCache[key] = .some(read)
-    return read
+    costs.count("frameReads")
+    let read = readFramedRole(element)
+    frameCache[key] = .some(read.frame)
+    if let role = read.role { roleWithFrame[key] = role }
+    return read.frame
   }
+
+  /// The role read with the element's frame (`frame`, the same call), nil when its frame was not read or gave no role:
+  /// #310's AXColumn among a wide list's shown children is known with no read of its own.
+  final func roleReadWithFrame(_ element: AXUIElement) -> String? { roleWithFrame[ElementKey(element: element)] }
 
   /// The Markdown rendering of a text element's value (the parameterized attributed-string read), timed.
   func markdown(_ element: AXUIElement, length: Int) -> String? {
@@ -252,13 +277,18 @@ class ElementSource: @unchecked Sendable {
     }
   }
 
-  func readFrame(_ element: AXUIElement) -> CGRect? {
+  func readFrame(_ element: AXUIElement) -> CGRect? { readFramedRole(element).frame }
+
+  /// The element's frame (AXPosition and AXSize) and, in the same call, its AXRole (#310); each nil when it gives none.
+  func readFramedRole(_ element: AXUIElement) -> (frame: CGRect?, role: String?) {
     costs.time("width") {
       var values: CFArray?
-      guard AXUIElementCopyMultipleAttributeValues(prepare(element), [kAXPositionAttribute, kAXSizeAttribute] as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values) == .success,
-            let slots = values as? [Any], slots.count == 2,
-            let origin = point(present(slots[0])), let extent = size(present(slots[1])) else { return nil }
-      return CGRect(origin: origin, size: extent)
+      guard AXUIElementCopyMultipleAttributeValues(prepare(element), [kAXPositionAttribute, kAXSizeAttribute, kAXRoleAttribute] as CFArray,
+                                                   AXCopyMultipleAttributeOptions(rawValue: 0), &values) == .success,
+            let slots = values as? [Any], slots.count == 3 else { return (nil, nil) }
+      let role = present(slots[2]) as? String
+      guard let origin = point(present(slots[0])), let extent = size(present(slots[1])) else { return (nil, role) }
+      return (CGRect(origin: origin, size: extent), role)
     }
   }
 }

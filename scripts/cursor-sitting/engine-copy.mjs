@@ -100,8 +100,9 @@ export async function saveEngine({home, to, status, now = () => new Date()}) {
 // saved ones in, checks the result against the record, and reads `status()` for the saved build, approved.
 // -> {ok, aside, status: {build, approved, matches}, settings: {restored}, next?}. Throws, having changed nothing, when
 // the saved record names no identified status, the saved tree or engine.json does not match it, or the engine does not
-// stop.
-export async function restoreEngine({home, from, aside, stop, status}) {
+// stop. `copy(from, to)`: how an entry is copied in (the sync copy by default; the isolating slot's cleanup passes one
+// in its own process group, ./detached.mjs, so a terminal's Ctrl-C cannot kill it mid-restore).
+export async function restoreEngine({home, from, aside, stop, status, copy = copyEntry}) {
   const record = JSON.parse(readFileSync(join(from, RECORD), 'utf8'));
   const savedSettings = join(from, 'engine.json');
   // Everything the restore will put back is checked before anything is stopped or moved.
@@ -116,7 +117,7 @@ export async function restoreEngine({home, from, aside, stop, status}) {
   mkdirSync(aside, {recursive: true, mode: 0o700});
   if (existsSync(dir)) move(dir, join(aside, 'engine'));
   mkdirSync(dir, {recursive: true, mode: 0o700});
-  for (const name of readdirSync(join(from, 'engine')).sort()) copyEntry(join(from, 'engine', name), join(dir, name));
+  for (const name of readdirSync(join(from, 'engine')).sort()) await copy(join(from, 'engine', name), join(dir, name));
   if (!sameTree(treeManifest(dir), record.manifest)) throw new Error(`the restored ${dir} differs from the saved record; the sitting's engine is in ${aside}/engine`);
   if (existsSync(settings)) copyFileSync(settings, join(aside, 'engine.json'));
   if (record.engineJson.present) { mkdirSync(dirname(settings), {recursive: true, mode: 0o700}); copyFileSync(savedSettings, settings); }

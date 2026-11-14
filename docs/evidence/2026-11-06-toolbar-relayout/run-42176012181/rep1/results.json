@@ -1,0 +1,1561 @@
+{
+ "config": {
+  "imageOS": "macos26",
+  "imageVersion": "20261102.0473.1",
+  "runnerName": "GitHub Actions 1000036215",
+  "macOS": "ProductName: macOS ProductVersion: 26.7.2 BuildVersion: 25G332",
+  "chrome": "Google Chrome for Testing 156.0.8078.80",
+  "uptime": "6:42  up 7 mins, 1 user, load averages: 22.36 22.91 15.58",
+  "engineCommit": "50f3312d3f6a8c7a40d6842746ee50e08d9a47ee",
+  "probeCommit": "f5d670844b3237870f7e88686bb67e1f3d0880e7",
+  "rep": "1"
+ },
+ "cells": [
+  {
+   "label": "c/layout-noeng",
+   "spec": {
+    "label": "c/layout-noeng",
+    "noEngine": true,
+    "layout": true,
+    "waitMs": 32000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 7006,
+   "launchedAt": 1793947369677,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793947374362,
+   "layout": [
+    {
+     "at": 63,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 879.4
+    },
+    {
+     "at": 1063,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 54.7,
+     "shotAt": 1000,
+     "shot": 0
+    },
+    {
+     "at": 2065,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 233.4
+    },
+    {
+     "at": 3068,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 72.1
+    },
+    {
+     "at": 4069,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 153.8
+    },
+    {
+     "at": 5071,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 55.1
+    },
+    {
+     "at": 6072,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 166.3
+    },
+    {
+     "at": 7088,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 70.4
+    },
+    {
+     "at": 8091,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 106.8,
+     "shotAt": 8000,
+     "shot": 0
+    },
+    {
+     "at": 9093,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 49.7
+    },
+    {
+     "at": 10094,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 114
+    },
+    {
+     "at": 11102,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 74.5
+    },
+    {
+     "at": 12104,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 114
+    },
+    {
+     "at": 13107,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       478,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 77.5
+    },
+    {
+     "at": 14109,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 112.5,
+     "shotAt": 14000,
+     "shot": 0
+    },
+    {
+     "at": 15112,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 42.7
+    },
+    {
+     "at": 16113,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 128.5
+    },
+    {
+     "at": 17115,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 82.7
+    },
+    {
+     "at": 18117,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 104.1,
+     "shotAt": 18000,
+     "shot": 0
+    },
+    {
+     "at": 19125,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 226.8
+    },
+    {
+     "at": 20127,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 64.2
+    },
+    {
+     "at": 21129,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 161.1
+    },
+    {
+     "at": 22130,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 82.5,
+     "shotAt": 22000,
+     "shot": 0
+    },
+    {
+     "at": 23132,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 398.9
+    },
+    {
+     "at": 24133,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 78
+    },
+    {
+     "at": 25136,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 128.4
+    },
+    {
+     "at": 26138,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 63.9,
+     "shotAt": 26000,
+     "shot": 0
+    },
+    {
+     "at": 27140,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 103.5
+    },
+    {
+     "at": 28141,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 54.4
+    },
+    {
+     "at": 29142,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 113.4
+    },
+    {
+     "at": 30146,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 87.4,
+     "shotAt": 30000,
+     "shot": 0
+    },
+    {
+     "at": 31148,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 153.9
+    }
+   ]
+  },
+  {
+   "label": "c/layout-eng",
+   "spec": {
+    "label": "c/layout-eng",
+    "layout": true,
+    "waitMs": 32000,
+    "noClick": true
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 9152,
+   "launchedAt": 1793947413070,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793947415334,
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 764,
+    "sinceTextEditFrontMs": 941,
+    "lineage": "Lf43733d6793b"
+   },
+   "reload": {
+    "role": "AXButton",
+    "description": "Reload",
+    "title": "Reload",
+    "frame": {
+     "y": 77,
+     "x": 442,
+     "width": 34,
+     "height": 34
+    },
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "token": "t15"
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "layout": [
+    {
+     "at": 1,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 385.2
+    },
+    {
+     "at": 1003,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 66,
+     "shotAt": 1000,
+     "shot": 0
+    },
+    {
+     "at": 2006,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 209.6
+    },
+    {
+     "at": 3009,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 75.3
+    },
+    {
+     "at": 4013,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 157.1
+    },
+    {
+     "at": 5015,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 128.4
+    },
+    {
+     "at": 6018,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 124.1
+    },
+    {
+     "at": 7021,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 65.8
+    },
+    {
+     "at": 8023,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 113.1,
+     "shotAt": 8000,
+     "shot": 0
+    },
+    {
+     "at": 9026,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 75.1
+    },
+    {
+     "at": 10027,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 160.1
+    },
+    {
+     "at": 11030,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 50.3
+    },
+    {
+     "at": 12033,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 127.3
+    },
+    {
+     "at": 13035,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 81.5
+    },
+    {
+     "at": 14039,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 114.1,
+     "shotAt": 14000,
+     "shot": 0
+    },
+    {
+     "at": 15046,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 73
+    },
+    {
+     "at": 16048,
+     "controls": [],
+     "hit": {
+      "desc": "Reload",
+      "enabled": true,
+      "frame": [
+       478,
+       77,
+       34,
+       34
+      ],
+      "role": "AXButton"
+     },
+     "ms": 115.4
+    },
+    {
+     "at": 17051,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 69.6
+    },
+    {
+     "at": 18052,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 112.6,
+     "shotAt": 18000,
+     "shot": 0
+    },
+    {
+     "at": 19055,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 55.1
+    },
+    {
+     "at": 20061,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 123.5
+    },
+    {
+     "at": 21062,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 114.3
+    },
+    {
+     "at": 22072,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 306.9,
+     "shotAt": 22000,
+     "shot": 0
+    },
+    {
+     "at": 23074,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 98.8
+    },
+    {
+     "at": 24076,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 182.4
+    },
+    {
+     "at": 25078,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 128.1
+    },
+    {
+     "at": 26081,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 282.5,
+     "shotAt": 26000,
+     "shot": 0
+    },
+    {
+     "at": 27082,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 108.3
+    },
+    {
+     "at": 28084,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 145.2
+    },
+    {
+     "at": 29087,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 101.7
+    },
+    {
+     "at": 30091,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 130.8,
+     "shotAt": 30000,
+     "shot": 0
+    },
+    {
+     "at": 31096,
+     "controls": [],
+     "hit": {
+      "desc": "",
+      "enabled": true,
+      "frame": [
+       442,
+       77,
+       34,
+       34
+      ],
+      "role": "AXGroup"
+     },
+     "ms": 128.1
+    }
+   ],
+   "reloadLater": {
+    "frame": {
+     "height": 34,
+     "y": 77,
+     "x": 478,
+     "width": 34
+    },
+    "token": "t15",
+    "afterObservationMs": 32429
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "c/current-coord-25",
+   "spec": {
+    "label": "c/current-coord-25",
+    "between": {
+     "at": 24000,
+     "do": "reobs-noshot"
+    },
+    "clickCurrent": true,
+    "waitMs": 25000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 10759,
+   "launchedAt": 1793947455048,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793947457365,
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 676,
+    "sinceTextEditFrontMs": 838,
+    "lineage": "L046b2e4ed220"
+   },
+   "reload": {
+    "role": "AXButton",
+    "description": "Reload",
+    "title": "Reload",
+    "frame": {
+     "x": 442,
+     "height": 34,
+     "y": 77,
+     "width": 34
+    },
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "token": "t15"
+   },
+   "pixel": {
+    "x": 95,
+    "y": 63,
+    "scale": 1
+   },
+   "between": {
+    "ms": 103,
+    "lineage": "L046b2e4ed220"
+   },
+   "reloadCurrent": {
+    "height": 34,
+    "width": 34,
+    "y": 77,
+    "x": 478
+   },
+   "pixelStale": {
+    "x": 95,
+    "y": 63,
+    "scale": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "pageBefore": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 1,
+     "visibility": 0
+    }
+   },
+   "idleTicks": {
+    "ticks": 100,
+    "maxGapMs": 389
+   },
+   "clickAfterObservationMs": 25038,
+   "clickAfterTextEditFrontMs": 25876,
+   "click": {
+    "meta": {
+     "activationClickKind": {
+      "kind": "action",
+      "when": "consumedByAction"
+     },
+     "startedAt": 1793947483325,
+     "receivedAt": 1793947483242,
+     "endedAt": 1793947483326,
+     "coordinateClick": {
+      "windowFrame": {
+       "width": 620,
+       "height": 679,
+       "x": 400,
+       "y": 31
+      },
+      "windowPoint": {
+       "x": 95,
+       "y": 63
+      },
+      "postedWindowLocation": {
+       "y": 63,
+       "x": 95
+      },
+      "frameBeforePost": {
+       "height": 679,
+       "y": 31,
+       "width": 620,
+       "x": 400
+      },
+      "postedLocation": {
+       "x": 495,
+       "y": 94
+      },
+      "screenshotPoint": {
+       "y": 63,
+       "x": 95
+      }
+     },
+     "hidIdleMs": null,
+     "activationJoin": "fresh",
+     "inputRoute": 3,
+     "delivery": {
+      "screenHoldMs": 100,
+      "otherAppFront": false,
+      "restores": 0,
+      "capped": false,
+      "repairedAfterRelease": false,
+      "personInput": false,
+      "raiseLeft": false,
+      "postedAt": 1793947483326,
+      "frontmostRestored": false,
+      "holdStartedAt": 1793947483281,
+      "guardMs": 60.49,
+      "releasedAt": 1793947483381
+     },
+     "activationGuardMs": 24.167,
+     "activationClick": "outsideFrame"
+    }
+   },
+   "clickMs": 148,
+   "loadsDelta": 1,
+   "frontAfter": "com.apple.TextEdit",
+   "pageEvents": [
+    {
+     "ev": "focus",
+     "dt": 158,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 162,
+     "hasFocus": false,
+     "vis": "visible"
+    },
+    {
+     "ev": "focus",
+     "dt": 325,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "visibility",
+     "dt": 622,
+     "hasFocus": true,
+     "vis": "hidden"
+    },
+    {
+     "ev": "load",
+     "dt": 638,
+     "hasFocus": false,
+     "vis": "visible"
+    }
+   ],
+   "pageAfter": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 0,
+     "visibility": 0
+    },
+    "ev": "tick"
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "c/fresh-shot-25",
+   "spec": {
+    "label": "c/fresh-shot-25",
+    "between": {
+     "at": 24000,
+     "do": "reobs"
+    },
+    "clickCurrent": true,
+    "waitMs": 25000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 12585,
+   "launchedAt": 1793947492732,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793947495208,
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 598,
+    "sinceTextEditFrontMs": 752,
+    "lineage": "L274c5913d64d"
+   },
+   "reload": {
+    "role": "AXButton",
+    "description": "Reload",
+    "title": "Reload",
+    "frame": {
+     "x": 442,
+     "y": 77,
+     "width": 34,
+     "height": 34
+    },
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "token": "t15"
+   },
+   "pixel": {
+    "x": 95,
+    "y": 63,
+    "scale": 1
+   },
+   "between": {
+    "ms": 145,
+    "lineage": "L274c5913d64d"
+   },
+   "reloadCurrent": {
+    "y": 77,
+    "width": 34,
+    "height": 34,
+    "x": 478
+   },
+   "pixelStale": {
+    "x": 95,
+    "y": 63,
+    "scale": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "pageBefore": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 1,
+     "visibility": 0
+    }
+   },
+   "idleTicks": {
+    "ticks": 100,
+    "maxGapMs": 319
+   },
+   "clickAfterObservationMs": 25045,
+   "clickAfterTextEditFrontMs": 25797,
+   "click": {
+    "meta": {
+     "activationClick": "outsideFrame",
+     "delivery": {
+      "repairedAfterRelease": false,
+      "personInput": false,
+      "capped": false,
+      "postedAt": 1793947521091,
+      "frontmostRestored": false,
+      "screenHoldMs": 100,
+      "releasedAt": 1793947521160,
+      "guardMs": 74.99,
+      "restores": 0,
+      "raiseLeft": false,
+      "holdStartedAt": 1793947521060,
+      "otherAppFront": false
+     },
+     "activationJoin": "fresh",
+     "coordinateClick": {
+      "frameBeforePost": {
+       "y": 31,
+       "width": 620,
+       "height": 679,
+       "x": 400
+      },
+      "windowPoint": {
+       "x": 95,
+       "y": 63
+      },
+      "postedWindowLocation": {
+       "x": 95,
+       "y": 63
+      },
+      "screenshotPoint": {
+       "x": 95,
+       "y": 63
+      },
+      "postedLocation": {
+       "y": 94,
+       "x": 495
+      },
+      "windowFrame": {
+       "y": 31,
+       "height": 679,
+       "width": 620,
+       "x": 400
+      }
+     },
+     "startedAt": 1793947521091,
+     "inputRoute": 3,
+     "receivedAt": 1793947521006,
+     "endedAt": 1793947521091,
+     "activationClickKind": {
+      "kind": "action",
+      "when": "consumedByAction"
+     },
+     "hidIdleMs": null,
+     "activationGuardMs": 26.21
+    }
+   },
+   "clickMs": 166,
+   "loadsDelta": 1,
+   "frontAfter": "com.apple.TextEdit",
+   "pageEvents": [
+    {
+     "ev": "focus",
+     "dt": 161,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 166,
+     "hasFocus": false,
+     "vis": "visible"
+    },
+    {
+     "ev": "focus",
+     "dt": 218,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 244,
+     "hasFocus": false,
+     "vis": "visible"
+    },
+    {
+     "ev": "visibility",
+     "dt": 283,
+     "hasFocus": false,
+     "vis": "hidden"
+    },
+    {
+     "ev": "load",
+     "dt": 312,
+     "hasFocus": false,
+     "vis": "visible"
+    }
+   ],
+   "pageAfter": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 0,
+     "visibility": 0
+    },
+    "ev": "tick"
+   },
+   "engineStderr": ""
+  }
+ ]
+}

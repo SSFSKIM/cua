@@ -1,0 +1,7 @@
+{"item":"188-click-vendor","at":1793914384135,"kind":"start","steps":21,"dryRun":false}
+{"item":"188-click-vendor","at":1793914384135,"step":1,"kind":"say","text":"#188 188-click-vendor: cell 3 on the vendor engine, recorded only: (i) an element click on the field holding a selection, (ii) a positional click mid-text"}
+{"item":"188-click-vendor","at":1793914384135,"step":2,"kind":"series","series":["188-click-vendor"],"counts":{"cells":2}}
+{"item":"188-click-vendor","at":1793914384135,"step":3,"kind":"task","task":"188-preflight","args":["electron"],"result":{"ok":true,"scenes":["electron"]}}
+{"item":"188-click-vendor","at":1793914386361,"step":4,"kind":"open","session":"s","env":{},"engine":"vendor"}
+{"item":"188-click-vendor","at":1793914388220,"step":5,"kind":"task","task":"188-activate","args":["electron"],"result":{"ok":false,"scene":"electron","attempts":3,"problem":"the electron scene's run window is not on top after 3 activation(s): window 65111 of process 85249"}}
+{"item":"188-click-vendor","at":1793914388369,"kind":"stopped","error":"188-activate refused: the electron scene's run window is not on top after 3 activation(s): window 65111 of process 85249"}

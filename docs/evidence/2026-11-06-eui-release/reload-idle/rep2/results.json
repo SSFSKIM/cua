@@ -1,0 +1,632 @@
+{
+ "config": {
+  "imageOS": "macos26",
+  "imageVersion": "20261026.0455.2",
+  "runnerName": "GitHub Actions 1000036119",
+  "macOS": "ProductName: macOS ProductVersion: 26.6.2 BuildVersion: 25G83",
+  "chrome": "Google Chrome for Testing 156.0.8078.47",
+  "mainCommit": "d2568c764dd170b293e14198a6dbcdabe7555610",
+  "branchCommit": "63926945eb4e669000589377cff8e14baeed5f0c",
+  "probeCommit": "7e7777758fe32a79fd180a1725dfff6f7bbd76aa",
+  "rep": "2"
+ },
+ "cells": [
+  {
+   "label": "d/branch/reload-1s",
+   "engine": "branch",
+   "chromePid": 2190,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 1505,
+    "enablementPrior": "false",
+    "enablementWrite": "success",
+    "enablementWriteError": -25208,
+    "enabled": "AXEnhancedUserInterface",
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXButton",
+     "title": "Reload",
+     "description": "Reload",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 459,
+     "y": 94
+    }
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "clickAfterObservationMs": 1002,
+   "clickMs": 241,
+   "clickStartedAt": 1793943502093,
+   "click": {
+    "meta": {
+     "activationJoin": "fresh",
+     "delivery": {
+      "postedAt": 1793943502182,
+      "repairedAfterRelease": false,
+      "personInput": false,
+      "frontmostRestored": false,
+      "guardMs": 149.659,
+      "holdStartedAt": 1793943502120,
+      "screenHoldMs": 100,
+      "otherAppFront": false,
+      "capped": true,
+      "raiseLeft": false,
+      "restores": 0,
+      "releasedAt": 1793943502220
+     },
+     "hidIdleMs": null,
+     "inputRoute": 3,
+     "coordinateClick": {
+      "windowPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "frameBeforePost": {
+       "y": 31,
+       "x": 400,
+       "height": 674,
+       "width": 620
+      },
+      "windowFrame": {
+       "width": 620,
+       "height": 674,
+       "y": 31,
+       "x": 400
+      },
+      "screenshotPoint": {
+       "y": 63,
+       "x": 59
+      },
+      "postedWindowLocation": {
+       "y": 63,
+       "x": 59
+      },
+      "postedLocation": {
+       "x": 459,
+       "y": 94
+      }
+     },
+     "receivedAt": 1793943502093,
+     "activationClick": "outsideFrame",
+     "activationClickKind": {
+      "kind": "action",
+      "when": "consumedByAction"
+     },
+     "endedAt": 1793943502182,
+     "startedAt": 1793943502182,
+     "activationGuardMs": 51.259
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 1,
+   "afterClick": {
+    "checked": false,
+    "active": "BODY",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 8.5
+     }
+    ],
+    "samples": 4,
+    "t0": 1793943505345.708
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "d/main/reload-1s",
+   "engine": "main",
+   "chromePid": 2780,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 587,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208,
+    "enabled": null,
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXButton",
+     "title": "Reload",
+     "description": "Reload",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 459,
+     "y": 94
+    }
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "clickAfterObservationMs": 1002,
+   "clickMs": 110,
+   "clickStartedAt": 1793943516422,
+   "click": {
+    "meta": {
+     "hidIdleMs": null,
+     "activationJoin": "fresh",
+     "inputRoute": 3,
+     "delivery": {
+      "raiseLeft": false,
+      "guardMs": 68.526,
+      "holdStartedAt": 1793943516432,
+      "capped": false,
+      "releasedAt": 1793943516524,
+      "personInput": false,
+      "restores": 0,
+      "otherAppFront": false,
+      "repairedAfterRelease": false,
+      "screenHoldMs": 91.787,
+      "frontmostRestored": false,
+      "postedAt": 1793943516455
+     },
+     "coordinateClick": {
+      "frameBeforePost": {
+       "height": 679,
+       "x": 400,
+       "width": 620,
+       "y": 31
+      },
+      "screenshotPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "postedLocation": {
+       "y": 94,
+       "x": 459
+      },
+      "windowPoint": {
+       "y": 63,
+       "x": 59
+      },
+      "postedWindowLocation": {
+       "y": 63,
+       "x": 59
+      },
+      "windowFrame": {
+       "y": 31,
+       "width": 620,
+       "x": 400,
+       "height": 679
+      }
+     },
+     "endedAt": 1793943516455,
+     "startedAt": 1793943516455,
+     "receivedAt": 1793943516422,
+     "activationClick": "outsideFrame",
+     "activationClickKind": {
+      "when": "consumedByAction",
+      "kind": "action"
+     },
+     "activationGuardMs": 20.628
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 1,
+   "afterClick": {
+    "checked": false,
+    "active": "BODY",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 14.2
+     }
+    ],
+    "samples": 4,
+    "t0": 1793943519541.965
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "d/branch/reload-33s-nowatch",
+   "engine": "branch",
+   "chromePid": 3723,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 521,
+    "enablementPrior": "false",
+    "enablementWrite": "success",
+    "enablementWriteError": -25208,
+    "enabled": "AXEnhancedUserInterface",
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXButton",
+     "title": "Reload",
+     "description": "Reload",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 459,
+     "y": 94
+    }
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "clickAfterObservationMs": 33003,
+   "clickMs": 132,
+   "clickStartedAt": 1793943561881,
+   "click": {
+    "meta": {
+     "activationClickKind": {
+      "kind": "action",
+      "when": "consumedByAction"
+     },
+     "activationClick": "outsideFrame",
+     "receivedAt": 1793943561882,
+     "delivery": {
+      "holdStartedAt": 1793943561915,
+      "repairedAfterRelease": false,
+      "capped": false,
+      "releasedAt": 1793943562011,
+      "frontmostRestored": false,
+      "otherAppFront": false,
+      "guardMs": 64.672,
+      "raiseLeft": false,
+      "screenHoldMs": 96.177,
+      "personInput": false,
+      "restores": 0,
+      "postedAt": 1793943561946
+     },
+     "coordinateClick": {
+      "screenshotPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "windowPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "postedWindowLocation": {
+       "x": 59,
+       "y": 63
+      },
+      "postedLocation": {
+       "y": 94,
+       "x": 459
+      },
+      "windowFrame": {
+       "height": 679,
+       "width": 620,
+       "y": 31,
+       "x": 400
+      },
+      "frameBeforePost": {
+       "x": 400,
+       "y": 31,
+       "width": 620,
+       "height": 679
+      }
+     },
+     "hidIdleMs": null,
+     "activationJoin": "fresh",
+     "pointerEstablish": {
+      "webAreaFound": true,
+      "rehits": 1,
+      "ms": 12.324
+     },
+     "startedAt": 1793943561946,
+     "endedAt": 1793943561946,
+     "activationGuardMs": 27.105,
+     "inputRoute": 3
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": false,
+    "active": "BODY",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 7.8
+     }
+    ],
+    "samples": 4,
+    "t0": 1793943565028.494
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  },
+  {
+   "label": "d/main/reload-33s-nowatch",
+   "engine": "main",
+   "chromePid": 5344,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "points": {
+    "cb": {
+     "x": 420,
+     "y": 230
+    },
+    "tf": {
+     "x": 487.24609375,
+     "y": 271,
+     "k": 7
+    },
+    "notes": {
+     "x": 475.68671875,
+     "y": 333,
+     "k": 30
+    },
+    "status": {
+     "x": 448,
+     "y": 383.5
+    }
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 463,
+    "enablementPrior": "false",
+    "enablementWrite": "failed",
+    "enablementWriteError": -25208,
+    "enabled": null,
+    "webAreaFound": true
+   },
+   "target": {
+    "node": {
+     "role": "AXButton",
+     "title": "Reload",
+     "description": "Reload",
+     "actions": [
+      "AXShowMenu",
+      "AXScrollToVisible"
+     ]
+    },
+    "screen": {
+     "x": 459,
+     "y": 94
+    }
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "clickAfterObservationMs": 33002,
+   "clickMs": 148,
+   "clickStartedAt": 1793943607405,
+   "click": {
+    "meta": {
+     "endedAt": 1793943607488,
+     "activationClickKind": {
+      "kind": "action",
+      "when": "consumedByAction"
+     },
+     "coordinateClick": {
+      "windowPoint": {
+       "y": 63,
+       "x": 59
+      },
+      "windowFrame": {
+       "width": 620,
+       "y": 31,
+       "x": 400,
+       "height": 679
+      },
+      "frameBeforePost": {
+       "height": 679,
+       "x": 400,
+       "y": 31,
+       "width": 620
+      },
+      "screenshotPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "postedWindowLocation": {
+       "y": 63,
+       "x": 59
+      },
+      "postedLocation": {
+       "x": 459,
+       "y": 94
+      }
+     },
+     "activationGuardMs": 44.872,
+     "inputRoute": 3,
+     "delivery": {
+      "repairedAfterRelease": false,
+      "capped": false,
+      "restores": 0,
+      "holdStartedAt": 1793943607439,
+      "frontmostRestored": false,
+      "otherAppFront": false,
+      "postedAt": 1793943607487,
+      "raiseLeft": false,
+      "guardMs": 60.883,
+      "screenHoldMs": 100,
+      "releasedAt": 1793943607539,
+      "personInput": false
+     },
+     "startedAt": 1793943607488,
+     "receivedAt": 1793943607406,
+     "activationClick": "outsideFrame",
+     "hidIdleMs": null,
+     "activationJoin": "fresh"
+    }
+   },
+   "clickDelta": {},
+   "loadsDelta": 0,
+   "afterClick": {
+    "checked": false,
+    "active": "BODY",
+    "notesSel": [
+     0,
+     0
+    ],
+    "hasFocus": false
+   },
+   "pointerEvents": [],
+   "watchAfterClick": {
+    "changes": [
+     {
+      "box": "box",
+      "eui": true,
+      "press": true,
+      "t": 7.3
+     }
+    ],
+    "samples": 4,
+    "t0": 1793943610618.258
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageDelta": {},
+   "engineStderr": ""
+  }
+ ]
+}

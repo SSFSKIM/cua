@@ -1,0 +1,5 @@
+{"pid":67333,"watch":"activations"}
+{"at":1793859426916,"bundleId":"com.apple.ActivityMonitor","kind":"activated","pid":21995}
+{"at":1793859426916,"bundleId":"com.apple.TextEdit","kind":"deactivated","pid":54653}
+{"at":1793859430629,"bundleId":"com.google.chrome.for.testing","kind":"activated","pid":65074}
+{"at":1793859430636,"bundleId":"com.apple.ActivityMonitor","kind":"deactivated","pid":21995}

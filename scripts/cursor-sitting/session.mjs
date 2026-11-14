@@ -41,20 +41,28 @@ export function parseCells(text) {
 // before it stopped; route 3's delivery guard after a pointer action's events (#200: its restores, the hold's release
 // time) and the connection's after-action repairs, which a later call carries (#200: the flashes after an action's
 // release, keyed by its delivery's post time); an observation's own diagnostics (#244: the role read, what enablement read
-// and set, the web area's wait).
-const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered', 'delivery',
-  'afterActionRepairs', 'observation'];
+// and set, the web area's wait); a paste's value-free diagnostics (#187: its stage, waits, read time against ⌘V, the key
+// focus at ⌘V, what its activation did, `focusEnforcement`, and every line's record, `perLine`); the click the
+// activation posted (#187, `activationClickKind`: at the activation point, the inert one outside the frame, or none and
+// why); an element click's plan, the ladder's reason and the hit-test's answer (#188, `elementClick`); a coordinate
+// click's placement from the screenshot point to the posted events (#259, `coordinateClick`); how the call came by a
+// held activation (#187, `activationJoin`: fresh, shared, rearmed, replacedSpent).
+export const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered',
+  'delivery', 'afterActionRepairs', 'observation', 'paste', 'elementClick', 'coordinateClick'];
 
 // What the sitting keeps of a js reply: the cell's answer, the route the engine reported for the last call, the
-// attested engine, that call's meta (KEPT_META, the keys it carried), and the images it emitted (base64, SHOT only).
-// -> {ok, value?, error?, inCellMs?, route, engine, meta, images}.
+// attested engine and its whole identity (`nativeEngine`: engine, version, build, and a control build's variant, which
+// the isolating slot attests its half by), that call's meta (KEPT_META, the keys it carried), and the images it emitted
+// (base64, SHOT only). -> {ok, value?, error?, inCellMs?, route, engine, nativeEngine, meta, images}.
 export function readReply(reply) {
-  if (reply.timedOut) return {ok: false, error: 'no answer within the cell\'s bound', route: null, engine: null, meta: {}, images: []};
+  if (reply.timedOut) return {ok: false, error: 'no answer within the cell\'s bound', route: null, engine: null, nativeEngine: null, meta: {}, images: []};
   const meta = reply.result?._meta ?? {};
   const parsed = parseCells(resultText(reply));
   const images = (reply.result?.content ?? []).filter(c => c.type === 'image').map(c => ({mimeType: c.mimeType, data: c.data}));
   const kept = Object.fromEntries(KEPT_META.filter(key => meta[`cua/${key}`] != null).map(key => [key, meta[`cua/${key}`]]));
-  const base = {route: meta['cua/inputRoute'] ?? null, engine: meta['cua/nativeEngine']?.engine ?? null, meta: kept, images};
+  const native = meta['cua/nativeEngine'];
+  const nativeEngine = native && typeof native === 'object' ? Object.fromEntries(['engine', 'version', 'build', 'variant'].filter(k => typeof native[k] === 'string').map(k => [k, native[k]])) : null;
+  const base = {route: meta['cua/inputRoute'] ?? null, engine: native?.engine ?? null, nativeEngine, meta: kept, images};
   if (!parsed) return {ok: false, error: (reply.error?.message ?? resultText(reply).split('\n').filter(Boolean).at(-1) ?? 'no output').slice(0, 300), ...base};
   return {...parsed, ...base};
 }
@@ -92,10 +100,11 @@ export function gate({name, engine, scenes, guard, send}) {
 // changed target is refused and stops the session. `device`: a registered device's name, switched to with devices_use
 // before the first cell (Acceptance 8's loopback). `bind: false` binds none of them (each bind is an observation): the
 // scenes are still the guard's, so a cell may act on them, but the session's first observation of each is a cell's own
-// (#244). `open`: the session's opener (scripts/accept/mcp-session.mjs openSession; the tests' fake).
-export async function openDriven({name, engine, env, scenes, guard, device = null, bind = true, open = openSession}) {
+// (#244); a list of scene ids binds those alone (#188: Finder as the user window, never observed). `open`: the
+// session's opener (scripts/accept/mcp-session.mjs openSession; the tests' fake).
+export async function openDriven({name, engine, env, scenes, guard, device = null, bind = true, open = openSession, detached = false}) {
   const asked = [];
-  const session = open({args: [CLI, 'serve'], clientName: `cua-cursor-sitting-${name}`, env: serveEnv({engine, env}),
+  const session = open({args: [CLI, 'serve'], clientName: `cua-cursor-sitting-${name}`, env: serveEnv({engine, env}), ...(detached ? {detached: true} : {}),
     onServerRequest: msg => {
       const accepted = isSceneApproval(msg, SCENE_BUNDLE_IDS);
       asked.push({app: msg?.params?._meta?.tool_params?.app ?? null, answer: accepted ? 'accept (session)' : 'decline'});
@@ -113,7 +122,7 @@ export async function openDriven({name, engine, env, scenes, guard, device = nul
     if (!first.ok) throw new Error(`${name}: the first cell failed: ${first.error}`);
     // A local session's first result must attest the pinned engine; a device's attests the device's own.
     if (!device && first.engine !== engine) throw new Error(`${name}: the first result attests ${first.engine ?? 'no engine'}, not the pinned ${engine}`);
-    for (const scene of bind ? scenes : []) {
+    for (const scene of Array.isArray(bind) ? scenes.filter(s => bind.includes(s.id)) : bind ? scenes : []) {
       const bound = await run(BIND(scene.id, scene.app));
       if (!bound.ok) throw new Error(`${name}: binding ${scene.id} failed: ${bound.error}`);
     }

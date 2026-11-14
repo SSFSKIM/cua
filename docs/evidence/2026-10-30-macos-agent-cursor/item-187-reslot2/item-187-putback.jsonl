@@ -1,0 +1,3 @@
+{"item":"187-putback","at":1793867512670,"kind":"start","steps":2,"dryRun":false}
+{"item":"187-putback","at":1793867512671,"step":1,"kind":"say","text":"#187: the cell's BEFORE half, on the engine put back: the put-back read against the save, the scenes still up"}
+{"item":"187-putback","at":1793867512787,"step":2,"kind":"task","task":"187-putback","args":["/Users/new/.local/share/cua-187/engine-before-reslot2"],"result":{"ok":true,"saved":"dd7a092358850cc6769f2acf3aaff1655543f9f0872ff05c3b42a1ebe0179e62","current":{"build":"dd7a092358850cc6769f2acf3aaff1655543f9f0872ff05c3b42a1ebe0179e62","approved":true},"scenesUp":true,"consent":true}}

@@ -1,0 +1,2441 @@
+{
+ "config": {
+  "imageOS": "macos26",
+  "imageVersion": "20261102.0473.1",
+  "runnerName": "GitHub Actions 1000036202",
+  "macOS": "ProductName: macOS ProductVersion: 26.7.2 BuildVersion: 25G332",
+  "chrome": "Google Chrome for Testing 156.0.8078.80",
+  "uptime": "6:33  up 5 mins, 1 user, load averages: 22.73 18.47 10.35",
+  "engineCommit": "50f3312d3f6a8c7a40d6842746ee50e08d9a47ee",
+  "probeCommit": "e4908e018a7feb8a921e5340c64c3786c25775da",
+  "rep": "1"
+ },
+ "cells": [
+  {
+   "label": "b/noeng-hid-3s",
+   "spec": {
+    "label": "b/noeng-hid-3s",
+    "noEngine": true,
+    "route": "hid",
+    "tap": true,
+    "waitMs": 3000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 5707,
+   "launchedAt": 1793946802905,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793946810307,
+   "frontBefore": "com.apple.TextEdit",
+   "clickAfterTextEditFrontMs": 3288,
+   "click": {
+    "hid": {
+     "at": {
+      "x": 459,
+      "y": 94
+     },
+     "ms": 1415.1,
+     "orig": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   },
+   "clickMs": 1457,
+   "loadsDelta": 1,
+   "frontAfter": "com.google.chrome.for.testing",
+   "pageEvents": [
+    {
+     "ev": "focus",
+     "dt": 1182,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 1188,
+     "hasFocus": false,
+     "vis": "visible"
+    },
+    {
+     "ev": "focus",
+     "dt": 1422,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "visibility",
+     "dt": 1543,
+     "hasFocus": true,
+     "vis": "hidden"
+    },
+    {
+     "ev": "load",
+     "dt": 1572,
+     "hasFocus": false,
+     "vis": "visible"
+    },
+    {
+     "ev": "focus",
+     "dt": 1596,
+     "hasFocus": true,
+     "vis": "visible"
+    }
+   ],
+   "tap": {
+    "clocks": {
+     "mach": 8224201464,
+     "processUptimeS": 342.67506958333337,
+     "timebase": [
+      125,
+      3
+     ],
+     "uptimeRawNs": 342675061250,
+     "wall": 1793946813341.7812
+    },
+    "enabledAtEnd": true,
+    "events": [
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 184365,
+      "f40": 5707,
+      "f41": 0,
+      "f51": 32,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 8231486870,
+      "t": 303.8,
+      "ts": 342976136666,
+      "type": 8,
+      "x": 459,
+      "y": 94
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 184365,
+      "f40": 5707,
+      "f41": 0,
+      "f51": 32,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 8236126420,
+      "subtype": 9,
+      "t": 497.2,
+      "ts": 343171275083,
+      "type": 13,
+      "windowNumber": 32,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "f1": 1,
+      "f3": 0,
+      "f7": 0,
+      "f39": 184365,
+      "f40": 5707,
+      "f41": 6168,
+      "f51": 32,
+      "f91": 32,
+      "f92": 32,
+      "flags": 0,
+      "machAtTap": 8253357372,
+      "nsClickCount": 1,
+      "nsEventNumber": 0,
+      "nsTimestamp": 343.17117475,
+      "nsWindowNumber": 32,
+      "t": 1215.5,
+      "ts": 343171174750,
+      "type": 1,
+      "x": 459,
+      "y": 94
+     },
+     {
+      "f1": 1,
+      "f3": 0,
+      "f7": 0,
+      "f39": 184365,
+      "f40": 5707,
+      "f41": 6168,
+      "f51": 32,
+      "f91": 32,
+      "f92": 32,
+      "flags": 0,
+      "machAtTap": 8255359868,
+      "nsClickCount": 1,
+      "nsEventNumber": 0,
+      "nsTimestamp": 343.954000083,
+      "nsWindowNumber": 32,
+      "t": 1299,
+      "ts": 343954000083,
+      "type": 2,
+      "x": 459,
+      "y": 94
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 184365,
+      "f40": 5707,
+      "f41": 0,
+      "f51": 32,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 8264862324,
+      "t": 1695.1,
+      "ts": 344365306500,
+      "type": 9,
+      "x": 10,
+      "y": 10
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 184365,
+      "f40": 5707,
+      "f41": 6168,
+      "f51": 32,
+      "f91": 16,
+      "f92": 9,
+      "flags": 0,
+      "machAtTap": 8264865111,
+      "t": 1695.2,
+      "ts": 344365193708,
+      "type": 5,
+      "x": 10,
+      "y": 10
+     }
+    ],
+    "mode": "listenOnly"
+   },
+   "tapClickT": 253.21875
+  },
+  {
+   "label": "b/noeng-hid-25s",
+   "spec": {
+    "label": "b/noeng-hid-25s",
+    "noEngine": true,
+    "route": "hid",
+    "tap": true,
+    "waitMs": 25000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 6250,
+   "launchedAt": 1793946826203,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793946828821,
+   "frontBefore": "com.apple.TextEdit",
+   "clickAfterTextEditFrontMs": 25058,
+   "click": {
+    "hid": {
+     "at": {
+      "x": 459,
+      "y": 94
+     },
+     "ms": 675.3,
+     "orig": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   },
+   "clickMs": 693,
+   "loadsDelta": 0,
+   "frontAfter": "com.google.chrome.for.testing",
+   "pageEvents": [
+    {
+     "ev": "focus",
+     "dt": 211,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 212,
+     "hasFocus": false,
+     "vis": "visible"
+    }
+   ],
+   "tap": {
+    "clocks": {
+     "mach": 9195807092,
+     "processUptimeS": 383.1586342916667,
+     "timebase": [
+      125,
+      3
+     ],
+     "uptimeRawNs": 383158629041,
+     "wall": 1793946853837.689
+    },
+    "enabledAtEnd": true,
+    "events": [
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 225335,
+      "f40": 6250,
+      "f41": 0,
+      "f51": 51,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 9197289686,
+      "t": 61.8,
+      "ts": 383219809666,
+      "type": 8,
+      "x": 459,
+      "y": 94
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 225335,
+      "f40": 6250,
+      "f41": 0,
+      "f51": 51,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 9200235549,
+      "subtype": 9,
+      "t": 184.6,
+      "ts": 383342967875,
+      "type": 13,
+      "windowNumber": 51,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "f1": 1,
+      "f3": 0,
+      "f7": 0,
+      "f39": 225335,
+      "f40": 6250,
+      "f41": 7502,
+      "f51": 51,
+      "f91": 51,
+      "f92": 51,
+      "flags": 0,
+      "machAtTap": 9200300963,
+      "nsClickCount": 1,
+      "nsEventNumber": 0,
+      "nsTimestamp": 383.342875875,
+      "nsWindowNumber": 51,
+      "t": 187.3,
+      "ts": 383342875875,
+      "type": 1,
+      "x": 459,
+      "y": 94
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 225335,
+      "f40": 6250,
+      "f41": 0,
+      "f51": 51,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 9201223860,
+      "subtype": 22,
+      "t": 225.7,
+      "ts": 383384028583,
+      "type": 13,
+      "windowNumber": 51,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 225335,
+      "f40": 6250,
+      "f41": 0,
+      "f51": 51,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 9201224553,
+      "subtype": 23,
+      "t": 225.8,
+      "ts": 383384133291,
+      "type": 13,
+      "windowNumber": 51,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "f1": 1,
+      "f3": 0,
+      "f7": 0,
+      "f39": 225335,
+      "f40": 6250,
+      "f41": 7502,
+      "f51": 51,
+      "f91": 51,
+      "f92": 51,
+      "flags": 0,
+      "machAtTap": 9204197079,
+      "nsClickCount": 1,
+      "nsEventNumber": 0,
+      "nsTimestamp": 383.475393708,
+      "nsWindowNumber": 51,
+      "t": 349.6,
+      "ts": 383475393708,
+      "type": 2,
+      "x": 459,
+      "y": 94
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 225335,
+      "f40": 6250,
+      "f41": 0,
+      "f51": 51,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 9213365062,
+      "t": 731.6,
+      "ts": 383889853041,
+      "type": 9,
+      "x": 10,
+      "y": 10
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 225335,
+      "f40": 6250,
+      "f41": 7502,
+      "f51": 51,
+      "f91": 16,
+      "f92": 9,
+      "flags": 0,
+      "machAtTap": 9213365958,
+      "t": 731.7,
+      "ts": 383889798583,
+      "type": 5,
+      "x": 10,
+      "y": 10
+     }
+    ],
+    "mode": "listenOnly"
+   },
+   "tapClickT": 41.31103515625
+  },
+  {
+   "label": "b/hid-1s",
+   "spec": {
+    "label": "b/hid-1s",
+    "route": "hid",
+    "tap": true,
+    "waitMs": 1000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 7753,
+   "launchedAt": 1793946864729,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793946867273,
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 923,
+    "sinceTextEditFrontMs": 1216,
+    "lineage": "L5c9679bade20"
+   },
+   "reload": {
+    "role": "AXButton",
+    "description": "Reload",
+    "title": "Reload",
+    "frame": {
+     "y": 77,
+     "height": 34,
+     "x": 442,
+     "width": 34
+    },
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "token": "t15"
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "pageBefore": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 1,
+     "visibility": 0
+    }
+   },
+   "idleTicks": {
+    "ticks": 4,
+    "maxGapMs": 264
+   },
+   "clickAfterObservationMs": 1064,
+   "clickAfterTextEditFrontMs": 2280,
+   "click": {
+    "hid": {
+     "at": {
+      "x": 459,
+      "y": 94
+     },
+     "ms": 689.9,
+     "orig": {
+      "x": 10,
+      "y": 10
+     }
+    }
+   },
+   "clickMs": 729,
+   "loadsDelta": 1,
+   "frontAfter": "com.google.chrome.for.testing",
+   "pageEvents": [
+    {
+     "ev": "focus",
+     "dt": 261,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 262,
+     "hasFocus": false,
+     "vis": "visible"
+    },
+    {
+     "ev": "focus",
+     "dt": 371,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "visibility",
+     "dt": 385,
+     "hasFocus": true,
+     "vis": "hidden"
+    },
+    {
+     "ev": "focus",
+     "dt": 392,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "load",
+     "dt": 393,
+     "hasFocus": true,
+     "vis": "visible"
+    }
+   ],
+   "pageAfter": {
+    "hasFocus": true,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 1,
+     "winBlur": 0,
+     "visibility": 0
+    },
+    "ev": "tick"
+   },
+   "tap": {
+    "clocks": {
+     "mach": 9571762437,
+     "processUptimeS": 398.823441875,
+     "timebase": [
+      125,
+      3
+     ],
+     "uptimeRawNs": 398823435291,
+     "wall": 1793946869502.514
+    },
+    "enabledAtEnd": true,
+    "events": [
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 266305,
+      "f40": 7753,
+      "f41": 0,
+      "f51": 64,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 9573944679,
+      "t": 91,
+      "ts": 398913642708,
+      "type": 8,
+      "x": 459,
+      "y": 94
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 266305,
+      "f40": 7753,
+      "f41": 0,
+      "f51": 64,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 9577880269,
+      "subtype": 9,
+      "t": 254.9,
+      "ts": 399078147083,
+      "type": 13,
+      "windowNumber": 64,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "f1": 1,
+      "f3": 0,
+      "f7": 0,
+      "f39": 266305,
+      "f40": 7753,
+      "f41": 8168,
+      "f51": 64,
+      "f91": 64,
+      "f92": 64,
+      "flags": 0,
+      "machAtTap": 9577960562,
+      "nsClickCount": 1,
+      "nsEventNumber": 0,
+      "nsTimestamp": 399.078050458,
+      "nsWindowNumber": 64,
+      "t": 258.3,
+      "ts": 399078050458,
+      "type": 1,
+      "x": 459,
+      "y": 94
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 266305,
+      "f40": 7753,
+      "f41": 0,
+      "f51": 64,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 9578940606,
+      "subtype": 22,
+      "t": 299.1,
+      "ts": 399121778250,
+      "type": 13,
+      "windowNumber": 64,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 266305,
+      "f40": 7753,
+      "f41": 0,
+      "f51": 64,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 9578941139,
+      "subtype": 23,
+      "t": 299.1,
+      "ts": 399121816333,
+      "type": 13,
+      "windowNumber": 64,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "f1": 1,
+      "f3": 0,
+      "f7": 0,
+      "f39": 266305,
+      "f40": 7753,
+      "f41": 8168,
+      "f51": 64,
+      "f91": 64,
+      "f92": 64,
+      "flags": 0,
+      "machAtTap": 9580529833,
+      "nsClickCount": 1,
+      "nsEventNumber": 0,
+      "nsTimestamp": 399.147217541,
+      "nsWindowNumber": 64,
+      "t": 365.3,
+      "ts": 399147217541,
+      "type": 2,
+      "x": 459,
+      "y": 94
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 266305,
+      "f40": 7753,
+      "f41": 0,
+      "f51": 64,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 9590344175,
+      "t": 774.3,
+      "ts": 399597423375,
+      "type": 9,
+      "x": 10,
+      "y": 10
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 266305,
+      "f40": 7753,
+      "f41": 8168,
+      "f51": 64,
+      "f91": 16,
+      "f92": 9,
+      "flags": 0,
+      "machAtTap": 9590344593,
+      "t": 774.3,
+      "ts": 399597374916,
+      "type": 5,
+      "x": 10,
+      "y": 10
+     }
+    ],
+    "mode": "listenOnly"
+   },
+   "tapClickT": 50.486083984375,
+   "engineStderr": ""
+  },
+  {
+   "label": "b/eui-toggle-24",
+   "spec": {
+    "label": "b/eui-toggle-24",
+    "between": {
+     "at": 24000,
+     "do": "eui-toggle"
+    },
+    "waitMs": 25000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 8455,
+   "launchedAt": 1793946879888,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793946882570,
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 1571,
+    "sinceTextEditFrontMs": 1789,
+    "lineage": "L26d7a8a4ac66"
+   },
+   "reload": {
+    "role": "AXButton",
+    "description": "Reload",
+    "title": "Reload",
+    "frame": {
+     "y": 77,
+     "width": 34,
+     "height": 34,
+     "x": 442
+    },
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "token": "t15"
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "between": {
+    "after": true,
+    "false": -25208,
+    "ms": 148.5,
+    "prior": true,
+    "true": -25208
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "pageBefore": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 1,
+     "visibility": 0
+    }
+   },
+   "idleTicks": {
+    "ticks": 100,
+    "maxGapMs": 320
+   },
+   "clickAfterObservationMs": 25034,
+   "clickAfterTextEditFrontMs": 26823,
+   "click": {
+    "meta": {
+     "hidIdleMs": null,
+     "delivery": {
+      "restores": 0,
+      "frontmostRestored": false,
+      "screenHoldMs": 100,
+      "repairedAfterRelease": false,
+      "otherAppFront": false,
+      "holdStartedAt": 1793946909425,
+      "personInput": false,
+      "capped": false,
+      "guardMs": 71.441,
+      "releasedAt": 1793946909525,
+      "postedAt": 1793946909458,
+      "raiseLeft": false
+     },
+     "endedAt": 1793946909458,
+     "receivedAt": 1793946909394,
+     "inputRoute": 3,
+     "activationClickKind": {
+      "when": "consumedByAction",
+      "kind": "action"
+     },
+     "coordinateClick": {
+      "windowPoint": {
+       "y": 63,
+       "x": 59
+      },
+      "screenshotPoint": {
+       "y": 63,
+       "x": 59
+      },
+      "postedLocation": {
+       "x": 459,
+       "y": 94
+      },
+      "postedWindowLocation": {
+       "y": 63,
+       "x": 59
+      },
+      "frameBeforePost": {
+       "width": 620,
+       "height": 679,
+       "y": 31,
+       "x": 400
+      },
+      "windowFrame": {
+       "width": 620,
+       "height": 679,
+       "y": 31,
+       "x": 400
+      }
+     },
+     "activationGuardMs": 25.03,
+     "startedAt": 1793946909458,
+     "activationClick": "outsideFrame",
+     "activationJoin": "fresh"
+    }
+   },
+   "clickMs": 143,
+   "loadsDelta": 0,
+   "frontAfter": "com.apple.TextEdit",
+   "pageEvents": [
+    {
+     "ev": "focus",
+     "dt": 138,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 143,
+     "hasFocus": false,
+     "vis": "visible"
+    }
+   ],
+   "pageAfter": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 1,
+     "winBlur": 2,
+     "visibility": 0
+    },
+    "ev": "tick"
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b/manual-24",
+   "spec": {
+    "label": "b/manual-24",
+    "between": {
+     "at": 24000,
+     "do": "manual"
+    },
+    "waitMs": 25000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 9645,
+   "launchedAt": 1793946919109,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793946921437,
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 475,
+    "sinceTextEditFrontMs": 590,
+    "lineage": "L2d757e070380"
+   },
+   "reload": {
+    "role": "AXButton",
+    "description": "Reload",
+    "title": "Reload",
+    "frame": {
+     "x": 442,
+     "height": 34,
+     "y": 77,
+     "width": 34
+    },
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "token": "t15"
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "between": {
+    "after": true,
+    "manual": -25205,
+    "ms": 10.1,
+    "prior": true
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "pageBefore": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 1,
+     "visibility": 0
+    }
+   },
+   "idleTicks": {
+    "ticks": 101,
+    "maxGapMs": 316
+   },
+   "clickAfterObservationMs": 25048,
+   "clickAfterTextEditFrontMs": 25638,
+   "click": {
+    "meta": {
+     "activationClickKind": {
+      "when": "consumedByAction",
+      "kind": "action"
+     },
+     "hidIdleMs": null,
+     "receivedAt": 1793946947076,
+     "delivery": {
+      "releasedAt": 1793946947202,
+      "personInput": false,
+      "restores": 0,
+      "guardMs": 83.703,
+      "screenHoldMs": 100,
+      "frontmostRestored": false,
+      "otherAppFront": false,
+      "capped": false,
+      "raiseLeft": false,
+      "holdStartedAt": 1793946947102,
+      "postedAt": 1793946947157,
+      "repairedAfterRelease": false
+     },
+     "inputRoute": 3,
+     "endedAt": 1793946947158,
+     "activationClick": "outsideFrame",
+     "activationGuardMs": 50.324,
+     "startedAt": 1793946947158,
+     "activationJoin": "fresh",
+     "coordinateClick": {
+      "frameBeforePost": {
+       "x": 400,
+       "height": 679,
+       "width": 620,
+       "y": 31
+      },
+      "windowFrame": {
+       "y": 31,
+       "width": 620,
+       "x": 400,
+       "height": 679
+      },
+      "windowPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "screenshotPoint": {
+       "y": 63,
+       "x": 59
+      },
+      "postedLocation": {
+       "y": 94,
+       "x": 459
+      },
+      "postedWindowLocation": {
+       "y": 63,
+       "x": 59
+      }
+     }
+    }
+   },
+   "clickMs": 168,
+   "loadsDelta": 0,
+   "frontAfter": "com.apple.TextEdit",
+   "pageEvents": [
+    {
+     "ev": "focus",
+     "dt": 143,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 146,
+     "hasFocus": false,
+     "vis": "visible"
+    }
+   ],
+   "pageAfter": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 1,
+     "winBlur": 2,
+     "visibility": 0
+    },
+    "ev": "tick"
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b/reobs-then-click-25",
+   "spec": {
+    "label": "b/reobs-then-click-25",
+    "between": {
+     "at": 25000,
+     "do": "reobs-noshot"
+    },
+    "waitMs": 25000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 11312,
+   "launchedAt": 1793946956350,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793946958662,
+   "ping": {
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 447,
+    "sinceTextEditFrontMs": 543,
+    "lineage": "Ld64515d9d7ba"
+   },
+   "reload": {
+    "role": "AXButton",
+    "description": "Reload",
+    "title": "Reload",
+    "frame": {
+     "width": 34,
+     "height": 34,
+     "y": 77,
+     "x": 442
+    },
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "token": "t15"
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "between": {
+    "ms": 69,
+    "lineage": "Ld64515d9d7ba"
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "pageBefore": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 1,
+     "visibility": 0
+    }
+   },
+   "idleTicks": {
+    "ticks": 100,
+    "maxGapMs": 323
+   },
+   "clickAfterObservationMs": 25092,
+   "clickAfterTextEditFrontMs": 25635,
+   "click": {
+    "meta": {
+     "activationJoin": "fresh",
+     "activationClick": "outsideFrame",
+     "activationGuardMs": 21.883,
+     "delivery": {
+      "repairedAfterRelease": false,
+      "frontmostRestored": false,
+      "postedAt": 1793946984342,
+      "guardMs": 63.727,
+      "raiseLeft": false,
+      "restores": 0,
+      "capped": false,
+      "releasedAt": 1793946984406,
+      "screenHoldMs": 90.237,
+      "otherAppFront": false,
+      "holdStartedAt": 1793946984316,
+      "personInput": false
+     },
+     "inputRoute": 3,
+     "endedAt": 1793946984342,
+     "coordinateClick": {
+      "windowPoint": {
+       "y": 63,
+       "x": 59
+      },
+      "frameBeforePost": {
+       "y": 31,
+       "width": 620,
+       "height": 679,
+       "x": 400
+      },
+      "postedWindowLocation": {
+       "x": 59,
+       "y": 63
+      },
+      "screenshotPoint": {
+       "y": 63,
+       "x": 59
+      },
+      "postedLocation": {
+       "y": 94,
+       "x": 459
+      },
+      "windowFrame": {
+       "width": 620,
+       "y": 31,
+       "x": 400,
+       "height": 679
+      }
+     },
+     "receivedAt": 1793946984298,
+     "hidIdleMs": null,
+     "startedAt": 1793946984342,
+     "activationClickKind": {
+      "kind": "action",
+      "when": "consumedByAction"
+     }
+    }
+   },
+   "clickMs": 110,
+   "loadsDelta": 0,
+   "frontAfter": "com.apple.TextEdit",
+   "pageEvents": [
+    {
+     "ev": "focus",
+     "dt": 114,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 116,
+     "hasFocus": false,
+     "vis": "visible"
+    }
+   ],
+   "pageAfter": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 1,
+     "winBlur": 2,
+     "visibility": 0
+    },
+    "ev": "tick"
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b/element-tap-25s",
+   "spec": {
+    "label": "b/element-tap-25s",
+    "route": "element",
+    "tap": true,
+    "waitMs": 25000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 12706,
+   "launchedAt": 1793946993255,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793946995500,
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 464,
+    "sinceTextEditFrontMs": 558,
+    "lineage": "L0cd0fe1089a3"
+   },
+   "reload": {
+    "role": "AXButton",
+    "description": "Reload",
+    "title": "Reload",
+    "frame": {
+     "y": 77,
+     "width": 34,
+     "height": 34,
+     "x": 442
+    },
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "token": "t15"
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "pageBefore": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 1,
+     "visibility": 0
+    }
+   },
+   "idleTicks": {
+    "ticks": 101,
+    "maxGapMs": 323
+   },
+   "clickAfterObservationMs": 25043,
+   "clickAfterTextEditFrontMs": 25601,
+   "click": {
+    "meta": {
+     "hidIdleMs": null,
+     "elementClick": {
+      "plan": "synthesized",
+      "hit": "element",
+      "hitTest": "application",
+      "reason": "noAction"
+     },
+     "activationJoin": "fresh",
+     "activationGuardMs": 50.875,
+     "delivery": {
+      "postedAt": 1793947021174,
+      "repairedAfterRelease": false,
+      "frontmostRestored": false,
+      "screenHoldMs": 100,
+      "capped": true,
+      "restores": 0,
+      "holdStartedAt": 1793947021119,
+      "personInput": false,
+      "guardMs": 85.156,
+      "raiseLeft": false,
+      "otherAppFront": false,
+      "releasedAt": 1793947021219
+     },
+     "startedAt": 1793947021173,
+     "activationClick": "outsideFrame",
+     "activationClickKind": {
+      "kind": "action",
+      "when": "consumedByAction"
+     },
+     "inputRoute": 3,
+     "receivedAt": 1793947021102,
+     "endedAt": 1793947021173
+    }
+   },
+   "clickMs": 177,
+   "loadsDelta": 1,
+   "frontAfter": "com.apple.TextEdit",
+   "pageEvents": [
+    {
+     "ev": "focus",
+     "dt": 129,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 131,
+     "hasFocus": false,
+     "vis": "visible"
+    },
+    {
+     "ev": "focus",
+     "dt": 169,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 232,
+     "hasFocus": false,
+     "vis": "visible"
+    },
+    {
+     "ev": "visibility",
+     "dt": 304,
+     "hasFocus": false,
+     "vis": "hidden"
+    },
+    {
+     "ev": "load",
+     "dt": 326,
+     "hasFocus": false,
+     "vis": "visible"
+    }
+   ],
+   "pageAfter": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 0,
+     "visibility": 0
+    },
+    "ev": "tick"
+   },
+   "tap": {
+    "clocks": {
+     "mach": 13209475055,
+     "processUptimeS": 550.3947987916667,
+     "timebase": [
+      125,
+      3
+     ],
+     "uptimeRawNs": 550394794291,
+     "wall": 1793947021073.875
+    },
+    "enabledAtEnd": true,
+    "events": [
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 352342,
+      "f40": 12706,
+      "f41": 13065,
+      "f51": 128,
+      "f91": 0,
+      "f92": 0,
+      "flags": 786432,
+      "machAtTap": 13210623542,
+      "subtype": 1,
+      "t": 47.9,
+      "ts": 550440247375,
+      "type": 13,
+      "windowNumber": 128,
+      "x": 0,
+      "y": 768
+     },
+     {
+      "f1": 1,
+      "f3": 0,
+      "f7": 3,
+      "f39": 352342,
+      "f40": 12706,
+      "f41": 13065,
+      "f51": 128,
+      "f91": 128,
+      "f92": 128,
+      "flags": 0,
+      "machAtTap": 13211873502,
+      "nsClickCount": 1,
+      "nsEventNumber": 1,
+      "nsTimestamp": 550.494333625,
+      "nsWindowNumber": 128,
+      "t": 100,
+      "ts": 550494333625,
+      "type": 1,
+      "x": 495,
+      "y": 94
+     },
+     {
+      "f1": 1,
+      "f3": 0,
+      "f7": 3,
+      "f39": 352342,
+      "f40": 12706,
+      "f41": 13065,
+      "f51": 128,
+      "f91": 128,
+      "f92": 128,
+      "flags": 0,
+      "machAtTap": 13211876040,
+      "nsClickCount": 1,
+      "nsEventNumber": 1,
+      "nsTimestamp": 550.494369,
+      "nsWindowNumber": 128,
+      "t": 100.1,
+      "ts": 550494369000,
+      "type": 2,
+      "x": 495,
+      "y": 94
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 352342,
+      "f40": 12706,
+      "f41": 0,
+      "f51": 128,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 13212649359,
+      "subtype": 22,
+      "t": 132.3,
+      "ts": 550520528875,
+      "type": 13,
+      "windowNumber": 128,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 352342,
+      "f40": 12706,
+      "f41": 0,
+      "f51": 128,
+      "f91": 0,
+      "f92": 0,
+      "flags": 0,
+      "machAtTap": 13212650012,
+      "subtype": 23,
+      "t": 132.3,
+      "ts": 550520560291,
+      "type": 13,
+      "windowNumber": 128,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "f1": 0,
+      "f3": 0,
+      "f7": 0,
+      "f39": 352342,
+      "f40": 12706,
+      "f41": 13065,
+      "f51": 128,
+      "f91": 0,
+      "f92": 0,
+      "flags": 786432,
+      "machAtTap": 13213953395,
+      "subtype": 2,
+      "t": 186.6,
+      "ts": 550579793833,
+      "type": 13,
+      "windowNumber": 128,
+      "x": 0,
+      "y": 768
+     }
+    ],
+    "mode": "listenOnly"
+   },
+   "tapClickT": 27.125,
+   "engineStderr": ""
+  },
+  {
+   "label": "b/coord-then-element-25",
+   "spec": {
+    "label": "b/coord-then-element-25",
+    "then": {
+     "route": "element",
+     "afterMs": 1500
+    },
+    "waitMs": 25000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 14334,
+   "launchedAt": 1793947030999,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793947033237,
+   "ping": {
+    "engineVersion": "0.1.0",
+    "build": "unbundled",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 403,
+    "sinceTextEditFrontMs": 499,
+    "lineage": "L20955300c920"
+   },
+   "reload": {
+    "role": "AXButton",
+    "description": "Reload",
+    "title": "Reload",
+    "frame": {
+     "x": 442,
+     "y": 77,
+     "height": 34,
+     "width": 34
+    },
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "token": "t15"
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "frontBefore": "com.apple.TextEdit",
+   "pageBefore": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 1,
+     "visibility": 0
+    }
+   },
+   "idleTicks": {
+    "ticks": 99,
+    "maxGapMs": 317
+   },
+   "clickAfterObservationMs": 25040,
+   "clickAfterTextEditFrontMs": 25539,
+   "click": {
+    "meta": {
+     "endedAt": 1793947058838,
+     "activationJoin": "fresh",
+     "activationGuardMs": 29.738,
+     "receivedAt": 1793947058777,
+     "startedAt": 1793947058838,
+     "activationClick": "outsideFrame",
+     "activationClickKind": {
+      "kind": "action",
+      "when": "consumedByAction"
+     },
+     "delivery": {
+      "frontmostRestored": false,
+      "capped": false,
+      "screenHoldMs": 99.022,
+      "otherAppFront": false,
+      "raiseLeft": false,
+      "postedAt": 1793947058838,
+      "holdStartedAt": 1793947058804,
+      "repairedAfterRelease": false,
+      "personInput": false,
+      "releasedAt": 1793947058903,
+      "restores": 0,
+      "guardMs": 65.056
+     },
+     "coordinateClick": {
+      "screenshotPoint": {
+       "y": 63,
+       "x": 59
+      },
+      "windowPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "postedWindowLocation": {
+       "x": 59,
+       "y": 63
+      },
+      "windowFrame": {
+       "y": 31,
+       "height": 679,
+       "x": 400,
+       "width": 620
+      },
+      "postedLocation": {
+       "x": 459,
+       "y": 94
+      },
+      "frameBeforePost": {
+       "width": 620,
+       "height": 679,
+       "x": 400,
+       "y": 31
+      }
+     },
+     "hidIdleMs": null,
+     "inputRoute": 3
+    }
+   },
+   "clickMs": 127,
+   "firstLoadsDelta": 0,
+   "second": {
+    "afterObservationMs": 26670,
+    "click": {
+     "meta": {
+      "activationClick": "outsideFrame",
+      "delivery": {
+       "restores": 0,
+       "otherAppFront": false,
+       "screenHoldMs": 100,
+       "raiseLeft": false,
+       "releasedAt": 1793947060524,
+       "capped": false,
+       "holdStartedAt": 1793947060424,
+       "guardMs": 81.323,
+       "frontmostRestored": false,
+       "personInput": false,
+       "postedAt": 1793947060474,
+       "repairedAfterRelease": false
+      },
+      "elementClick": {
+       "hit": "element",
+       "reason": "noAction",
+       "plan": "synthesized",
+       "hitTest": "application"
+      },
+      "hidIdleMs": null,
+      "inputRoute": 3,
+      "startedAt": 1793947060474,
+      "endedAt": 1793947060474,
+      "receivedAt": 1793947060407,
+      "activationClickKind": {
+       "kind": "action",
+       "when": "consumedByAction"
+      },
+      "activationJoin": "fresh",
+      "activationGuardMs": 48.805
+     }
+    }
+   },
+   "loadsDelta": 1,
+   "frontAfter": "com.apple.TextEdit",
+   "pageEvents": [
+    {
+     "ev": "focus",
+     "dt": 128,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 131,
+     "hasFocus": false,
+     "vis": "visible"
+    },
+    {
+     "ev": "focus",
+     "dt": 1764,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "visibility",
+     "dt": 1779,
+     "hasFocus": true,
+     "vis": "hidden"
+    },
+    {
+     "ev": "load",
+     "dt": 1787,
+     "hasFocus": false,
+     "vis": "visible"
+    },
+    {
+     "ev": "focus",
+     "dt": 1789,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 1833,
+     "hasFocus": false,
+     "vis": "visible"
+    }
+   ],
+   "pageAfter": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 1,
+     "winBlur": 1,
+     "visibility": 0
+    },
+    "ev": "tick"
+   },
+   "engineStderr": ""
+  },
+  {
+   "label": "b/timeline-25",
+   "spec": {
+    "label": "b/timeline-25",
+    "timeline": true,
+    "waitMs": 25000
+   },
+   "cursor": {
+    "x": 10,
+    "y": 10
+   },
+   "pid": 16120,
+   "launchedAt": 1793947069604,
+   "textEdit": {
+    "front": "com.apple.TextEdit",
+    "placeStatus": 0
+   },
+   "textEditFrontAt": 1793947071885,
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 449,
+    "sinceTextEditFrontMs": 534,
+    "lineage": "L357548d1c069"
+   },
+   "reload": {
+    "role": "AXButton",
+    "description": "Reload",
+    "title": "Reload",
+    "frame": {
+     "width": 34,
+     "y": 77,
+     "height": 34,
+     "x": 442
+    },
+    "actions": [
+     "AXShowMenu",
+     "AXScrollToVisible"
+    ],
+    "token": "t15"
+   },
+   "pixel": {
+    "x": 59,
+    "y": 63,
+    "scale": 1
+   },
+   "timeline": [
+    {
+     "at": 0,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 10
+    },
+    {
+     "at": 1023,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 10
+    },
+    {
+     "at": 2047,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 10,
+     "shot": 0
+    },
+    {
+     "at": 3191,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 10
+    },
+    {
+     "at": 4212,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 5252,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 6284,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 7316,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 8341,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 9380,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 10414,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 11459,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 12505,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 13549,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 14597,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 15616,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 16678,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 17704,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 18755,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 19787,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 20831,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 21866,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    },
+    {
+     "at": 22913,
+     "cg": [
+      {
+       "n": 160,
+       "layer": 0,
+       "b": {
+        "Height": 679,
+        "Width": 620,
+        "X": 400,
+        "Y": 31
+       },
+       "name": "probe294 page",
+       "alpha": 1
+      }
+     ],
+     "total": 8
+    }
+   ],
+   "shot2": true,
+   "frontBefore": "com.apple.TextEdit",
+   "pageBefore": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 0,
+     "winBlur": 1,
+     "visibility": 0
+    }
+   },
+   "idleTicks": {
+    "ticks": 100,
+    "maxGapMs": 315
+   },
+   "clickAfterObservationMs": 25014,
+   "clickAfterTextEditFrontMs": 25548,
+   "click": {
+    "meta": {
+     "activationJoin": "fresh",
+     "delivery": {
+      "screenHoldMs": 94.705,
+      "frontmostRestored": false,
+      "holdStartedAt": 1793947097457,
+      "raiseLeft": false,
+      "releasedAt": 1793947097552,
+      "repairedAfterRelease": false,
+      "otherAppFront": false,
+      "guardMs": 63.185,
+      "personInput": false,
+      "restores": 0,
+      "postedAt": 1793947097489,
+      "capped": false
+     },
+     "inputRoute": 3,
+     "startedAt": 1793947097489,
+     "coordinateClick": {
+      "frameBeforePost": {
+       "x": 400,
+       "y": 31,
+       "width": 620,
+       "height": 679
+      },
+      "windowFrame": {
+       "y": 31,
+       "x": 400,
+       "width": 620,
+       "height": 679
+      },
+      "postedLocation": {
+       "y": 94,
+       "x": 459
+      },
+      "windowPoint": {
+       "x": 59,
+       "y": 63
+      },
+      "screenshotPoint": {
+       "y": 63,
+       "x": 59
+      },
+      "postedWindowLocation": {
+       "x": 59,
+       "y": 63
+      }
+     },
+     "activationClick": "outsideFrame",
+     "hidIdleMs": null,
+     "receivedAt": 1793947097434,
+     "endedAt": 1793947097489,
+     "activationGuardMs": 28.58,
+     "activationClickKind": {
+      "kind": "action",
+      "when": "consumedByAction"
+     }
+    }
+   },
+   "clickMs": 120,
+   "loadsDelta": 0,
+   "windowsAfter": {
+    "ax": [
+     {
+      "focused": false,
+      "main": true,
+      "role": "AXWindow",
+      "subrole": "AXStandardWindow",
+      "title": "probe294 page - Google Chrome for Testin"
+     }
+    ],
+    "cg": [
+     {
+      "alpha": 1,
+      "bounds": {
+       "Height": 679,
+       "Width": 620,
+       "X": 400,
+       "Y": 31
+      },
+      "layer": 0,
+      "n": 160,
+      "name": "probe294 page"
+     }
+    ],
+    "total": 9
+   },
+   "frontAfter": "com.apple.TextEdit",
+   "pageEvents": [
+    {
+     "ev": "focus",
+     "dt": 122,
+     "hasFocus": true,
+     "vis": "visible"
+    },
+    {
+     "ev": "blur",
+     "dt": 128,
+     "hasFocus": false,
+     "vis": "visible"
+    }
+   ],
+   "pageAfter": {
+    "hasFocus": false,
+    "vis": "visible",
+    "counts": {
+     "pointerdown": 0,
+     "pointerup": 0,
+     "mousedown": 0,
+     "mouseup": 0,
+     "click": 0,
+     "winFocus": 1,
+     "winBlur": 2,
+     "visibility": 0
+    },
+    "ev": "tick"
+   },
+   "engineStderr": ""
+  }
+ ]
+}

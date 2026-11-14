@@ -1,0 +1,340 @@
+chrome     chrome/dedicated/button      A n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=132 p50=144 p95=185 max=185
+    click answer ms n=10 min=64 p50=100 p95=152 max=152
+chrome     chrome/dedicated/button      B n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=133 p50=144 p95=161 max=161
+    click answer ms n=10 min=66 p50=126 p95=148 max=148
+chrome     chrome/dedicated/checkbox    A n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=130 p50=138 p95=159 max=159
+    click answer ms n=10 min=66 p50=84 p95=151 max=151
+chrome     chrome/dedicated/checkbox    B n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=135 p50=140 p95=156 max=156
+    click answer ms n=10 min=60 p50=99 p95=115 max=115
+chrome     chrome/dedicated/empty       A n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=131 p50=138 p95=153 max=153
+    click answer ms n=10 min=63 p50=106 p95=157 max=157
+chrome     chrome/dedicated/empty       B n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=131 p50=137 p95=152 max=152
+    click answer ms n=10 min=88 p50=118 p95=160 max=160
+chrome     chrome/dedicated/field       A n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=131 p50=139 p95=152 max=152
+    click answer ms n=10 min=72 p50=100 p95=137 max=137
+chrome     chrome/dedicated/field       B n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=135 p50=138 p95=155 max=155
+    click answer ms n=10 min=54 p50=123 p95=156 max=156
+chrome     chrome/dedicated/filled      A n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=134 p50=140 p95=157 max=157
+    click answer ms n=10 min=68 p50=112 p95=146 max=146
+chrome     chrome/dedicated/filled      B n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=134 p50=141 p95=156 max=156
+    click answer ms n=10 min=46 p50=96 p95=152 max=152
+chrome     chrome/shared/button         A n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 2, '-': 8}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=132 p50=138 p95=150 max=150
+    click answer ms n=10 min=5 p50=8 p95=1940 max=1940
+chrome     chrome/shared/button         B n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 2, '-': 8}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=130 p50=144 p95=168 max=168
+    click answer ms n=10 min=6 p50=8 p95=1978 max=1978
+chrome     chrome/shared/checkbox       A n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 2, '-': 8}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=102 p50=136 p95=157 max=157
+    click answer ms n=10 min=5 p50=6 p95=1939 max=1939
+chrome     chrome/shared/checkbox       B n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "inertOutside", "point": "activationPoint", "when": "early"}': 2, '-': 8}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=132 p50=139 p95=159 max=159
+    click answer ms n=10 min=5 p50=6 p95=1958 max=1958
+chrome     chrome/shared/empty          A n=10 delivered=0/10 answers={'success': 10} kinds={'-': 10}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=133 p50=137 p95=145 max=145
+    click answer ms n=10 min=34 p50=49 p95=97 max=97
+    fails ['probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/empty/b2#1', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/empty/b2#2', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/empty/b2#3', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/empty/b2#4', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/empty/b2#5', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b1/cft/chrome/shared/empty/b1#1']
+chrome     chrome/shared/empty          B n=10 delivered=0/10 answers={'success': 10} kinds={'-': 10}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=136 p50=141 p95=152 max=152
+    click answer ms n=10 min=30 p50=44 p95=102 max=102
+    fails ['probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/empty/b2#1', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/empty/b2#2', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/empty/b2#3', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/empty/b2#4', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/empty/b2#5', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b1/cft/chrome/shared/empty/b1#1']
+chrome     chrome/shared/field          A n=10 delivered=0/10 answers={'success': 10} kinds={'-': 10}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=135 p50=140 p95=156 max=156
+    click answer ms n=10 min=69 p50=126 p95=1901 max=1901
+    fails ['probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/field/b2#1', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/field/b2#2', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/field/b2#3', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/field/b2#4', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/field/b2#5', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b1/cft/chrome/shared/field/b1#1']
+chrome     chrome/shared/field          B n=10 delivered=0/10 answers={'success': 10} kinds={'-': 10}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=137 p50=150 p95=159 max=159
+    click answer ms n=10 min=86 p50=136 p95=1870 max=1870
+    fails ['probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/field/b2#1', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/field/b2#2', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/field/b2#3', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/field/b2#4', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/field/b2#5', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b1/cft/chrome/shared/field/b1#1']
+chrome     chrome/shared/filled         A n=10 delivered=0/10 answers={'success': 10} kinds={'-': 10}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=133 p50=144 p95=173 max=173
+    click answer ms n=10 min=74 p50=95 p95=1894 max=1894
+    fails ['probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/filled/b2#1', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/filled/b2#2', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/filled/b2#3', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/filled/b2#4', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b2/cft/chrome/shared/filled/b2#5', 'probe-321-ab-ctl-chrome/A/ctl-chrome/b1/cft/chrome/shared/filled/b1#1']
+chrome     chrome/shared/filled         B n=10 delivered=0/10 answers={'success': 10} kinds={'-': 10}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=128 p50=136 p95=153 max=153
+    click answer ms n=10 min=71 p50=138 p95=1933 max=1933
+    fails ['probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/filled/b2#1', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/filled/b2#2', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/filled/b2#3', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/filled/b2#4', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b2/cft/chrome/shared/filled/b2#5', 'probe-321-ab-ctl-chrome/B/ctl-chrome/b1/cft/chrome/shared/filled/b1#1']
+native     textedit/dedicated/text      A n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=122 p50=140 p95=159 max=159
+    click answer ms n=10 min=90 p50=148 p95=197 max=197
+native     textedit/dedicated/text      B n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=0 visible after hold=10 stuck=10 front held=10/10 key held=10/10 samples n=10 min=132 p50=140 p95=156 max=156
+    click answer ms n=10 min=86 p50=158 p95=208 max=208
+native     textedit/shared/text         A n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=7 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=120 p50=141 p95=162 max=162
+    record: capped=4/10 repaired=10 repairedAfterRelease=0 raiseLeft=0 screenHoldMs n=10 min=87 p50=100 p95=100 max=100 guardMs n=10 min=60 p50=66 p95=364 max=364
+    click answer ms n=10 min=91 p50=118 p95=428 max=428
+native     textedit/shared/text         B n=10 delivered=10/10 answers={'success': 10} kinds={'{"kind": "activationPoint", "when": "early"}': 10}
+    watch: inside hold=9 visible after hold=0 stuck=0 front held=10/10 key held=10/10 samples n=10 min=132 p50=144 p95=153 max=153
+    record: capped=0/10 repaired=10 repairedAfterRelease=0 raiseLeft=0 screenHoldMs n=10 min=180 p50=200 p95=200 max=200 guardMs n=10 min=151 p50=155 p95=163 max=163
+    transientRaise: seen=10/10 outlivedHold=0 ms n=10 min=11 p50=16 p95=44 max=44
+    vs watch: seen&watch=9 seen&!watch=1 !seen&watch=0 outlived&visible=0 outlived&!visible=0 !outlived&visible=0
+    click answer ms n=10 min=185 p50=210 p95=223 max=223
+safari     safari/dedicated/button      A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=137 p50=144 p95=162 max=162
+    click answer ms n=20 min=83 p50=136 p95=164 max=164
+safari     safari/dedicated/button      B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=130 p50=145 p95=159 max=159
+    click answer ms n=20 min=60 p50=128 p95=226 max=226
+safari     safari/dedicated/checkbox    A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=100 p50=144 p95=154 max=154
+    click answer ms n=20 min=67 p50=146 p95=210 max=210
+safari     safari/dedicated/checkbox    B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=135 p50=141 p95=158 max=158
+    click answer ms n=20 min=73 p50=135 p95=205 max=205
+safari     safari/dedicated/empty       A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=132 p50=142 p95=161 max=161
+    click answer ms n=20 min=106 p50=156 p95=197 max=197
+safari     safari/dedicated/empty       B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=129 p50=142 p95=164 max=164
+    click answer ms n=20 min=92 p50=135 p95=190 max=190
+safari     safari/dedicated/field       A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=132 p50=146 p95=161 max=161
+    click answer ms n=20 min=73 p50=132 p95=184 max=184
+safari     safari/dedicated/field       B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=132 p50=144 p95=160 max=160
+    click answer ms n=20 min=89 p50=130 p95=188 max=188
+safari     safari/dedicated/filled      A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=133 p50=142 p95=165 max=165
+    click answer ms n=20 min=76 p50=128 p95=213 max=213
+safari     safari/dedicated/filled      B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=138 p50=144 p95=163 max=163
+    click answer ms n=20 min=81 p50=128 p95=223 max=223
+safari     safari/shared/button         A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=8 visible after hold=6 stuck=0 front held=20/20 key held=20/20 samples n=20 min=136 p50=144 p95=168 max=168
+    record: capped=18/20 repaired=20 repairedAfterRelease=4 raiseLeft=0 screenHoldMs n=20 min=92 p50=100 p95=100 max=100 guardMs n=20 min=60 p50=98 p95=170 max=170
+    click answer ms n=20 min=98 p50=155 p95=333 max=333
+      visible probe-321-ab-page-2/A/page-2/b3/safari/safari/shared/button/b3#1 guardMs=121.561 hold=100 capped=True tr=null risesAfterPost=33 risesVsRelease=-6
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/button/b4#1 guardMs=138.881 hold=100 capped=True tr=null risesAfterPost=33 risesVsRelease=31
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/button/b4#3 guardMs=161.744 hold=100 capped=True tr=null risesAfterPost=28 risesVsRelease=-2
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/button/b2#1 guardMs=144.369 hold=100 capped=True tr=null risesAfterPost=18 risesVsRelease=3
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/button/b2#3 guardMs=91.98 hold=100 capped=True tr=null risesAfterPost=27 risesVsRelease=-17
+      visible probe-321-ab-page-1/A/page-1/b1/safari/safari/shared/button/b1#1 guardMs=170.451 hold=100 capped=True tr=null risesAfterPost=25 risesVsRelease=47
+safari     safari/shared/button         B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=12 visible after hold=0 stuck=0 front held=20/20 key held=20/20 samples n=20 min=137 p50=146 p95=169 max=169
+    record: capped=0/20 repaired=20 repairedAfterRelease=0 raiseLeft=0 screenHoldMs n=20 min=192 p50=200 p95=200 max=200 guardMs n=20 min=151 p50=179 p95=201 max=201
+    transientRaise: seen=20/20 outlivedHold=0 ms n=20 min=3 p50=15 p95=27 max=27
+    vs watch: seen&watch=12 seen&!watch=8 !seen&watch=0 outlived&visible=0 outlived&!visible=0 !outlived&visible=0
+    click answer ms n=20 min=196 p50=250 p95=372 max=372
+safari     safari/shared/checkbox       A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=6 visible after hold=8 stuck=0 front held=20/20 key held=20/20 samples n=20 min=120 p50=148 p95=156 max=156
+    record: capped=15/20 repaired=20 repairedAfterRelease=7 raiseLeft=0 screenHoldMs n=20 min=98 p50=100 p95=100 max=100 guardMs n=20 min=64 p50=107 p95=474 max=474
+    click answer ms n=20 min=102 p50=170 p95=649 max=649
+      visible probe-321-ab-page-2/A/page-2/b3/safari/safari/shared/checkbox/b3#1 guardMs=404.503 hold=100 capped=True tr=null risesAfterPost=7 risesVsRelease=48
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/checkbox/b4#1 guardMs=144.644 hold=100 capped=True tr=null risesAfterPost=28 risesVsRelease=14
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/checkbox/b2#1 guardMs=168.106 hold=100 capped=True tr=null risesAfterPost=39 risesVsRelease=6
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/checkbox/b2#3 guardMs=94.918 hold=100 capped=True tr=null risesAfterPost=20 risesVsRelease=-18
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/checkbox/b2#4 guardMs=157.791 hold=100 capped=True tr=null risesAfterPost=20 risesVsRelease=0
+      visible probe-321-ab-page-1/A/page-1/b1/safari/safari/shared/checkbox/b1#1 guardMs=474.5 hold=100 capped=True tr=null risesAfterPost=23 risesVsRelease=80
+      visible probe-321-ab-page-1/A/page-1/b1/safari/safari/shared/checkbox/b1#2 guardMs=179.15 hold=100 capped=True tr=null risesAfterPost=23 risesVsRelease=39
+      visible probe-321-ab-page-1/A/page-1/b1/safari/safari/shared/checkbox/b1#3 guardMs=147.245 hold=100 capped=True tr=null risesAfterPost=48 risesVsRelease=48
+safari     safari/shared/checkbox       B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=12 visible after hold=0 stuck=0 front held=20/20 key held=20/20 samples n=20 min=139 p50=146 p95=160 max=160
+    record: capped=0/20 repaired=20 repairedAfterRelease=0 raiseLeft=0 screenHoldMs n=20 min=193 p50=200 p95=200 max=200 guardMs n=20 min=150 p50=155 p95=183 max=183
+    transientRaise: seen=20/20 outlivedHold=0 ms n=20 min=8 p50=14 p95=29 max=29
+    vs watch: seen&watch=12 seen&!watch=8 !seen&watch=0 outlived&visible=0 outlived&!visible=0 !outlived&visible=0
+    click answer ms n=20 min=197 p50=215 p95=292 max=292
+safari     safari/shared/empty          A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=8 visible after hold=10 stuck=0 front held=20/20 key held=20/20 samples n=20 min=135 p50=142 p95=167 max=167
+    record: capped=18/20 repaired=20 repairedAfterRelease=6 raiseLeft=0 screenHoldMs n=20 min=100 p50=100 p95=100 max=100 guardMs n=20 min=61 p50=116 p95=229 max=229
+    click answer ms n=20 min=116 p50=188 p95=429 max=429
+      visible probe-321-ab-page-2/A/page-2/b3/safari/safari/shared/empty/b3#1 guardMs=116.948 hold=100 capped=True tr=null risesAfterPost=19 risesVsRelease=-5
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/empty/b4#1 guardMs=176.505 hold=100 capped=True tr=null risesAfterPost=15 risesVsRelease=-9
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/empty/b4#3 guardMs=118.843 hold=100 capped=True tr=null risesAfterPost=36 risesVsRelease=0
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/empty/b4#4 guardMs=91.457 hold=100 capped=True tr=null risesAfterPost=27 risesVsRelease=-14
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/empty/b2#1 guardMs=228.689 hold=100 capped=True tr=null risesAfterPost=50 risesVsRelease=120
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/empty/b2#2 guardMs=180.458 hold=100 capped=True tr=null risesAfterPost=33 risesVsRelease=28
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/empty/b2#3 guardMs=157.134 hold=100 capped=True tr=null risesAfterPost=45 risesVsRelease=54
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/empty/b2#4 guardMs=91.678 hold=100 capped=True tr=null risesAfterPost=34 risesVsRelease=-12
+      visible probe-321-ab-page-1/A/page-1/b1/safari/safari/shared/empty/b1#3 guardMs=120.686 hold=100 capped=True tr=null risesAfterPost=30 risesVsRelease=54
+      visible probe-321-ab-page-1/A/page-1/b1/safari/safari/shared/empty/b1#4 guardMs=109.651 hold=100 capped=True tr=null risesAfterPost=33 risesVsRelease=0
+safari     safari/shared/empty          B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=11 visible after hold=0 stuck=0 front held=20/20 key held=20/20 samples n=20 min=133 p50=144 p95=163 max=163
+    record: capped=2/20 repaired=20 repairedAfterRelease=0 raiseLeft=0 screenHoldMs n=20 min=200 p50=200 p95=200 max=200 guardMs n=20 min=153 p50=167 p95=195 max=195
+    transientRaise: seen=20/20 outlivedHold=0 ms n=20 min=6 p50=15 p95=44 max=44
+    vs watch: seen&watch=11 seen&!watch=9 !seen&watch=0 outlived&visible=0 outlived&!visible=0 !outlived&visible=0
+    click answer ms n=20 min=207 p50=256 p95=337 max=337
+safari     safari/shared/field          A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=10 visible after hold=13 stuck=0 front held=20/20 key held=20/20 samples n=20 min=133 p50=148 p95=164 max=164
+    record: capped=19/20 repaired=20 repairedAfterRelease=7 raiseLeft=0 screenHoldMs n=20 min=100 p50=100 p95=100 max=100 guardMs n=20 min=64 p50=111 p95=189 max=189
+    click answer ms n=20 min=113 p50=178 p95=309 max=309
+      visible probe-321-ab-page-2/A/page-2/b3/safari/safari/shared/field/b3#1 guardMs=137.954 hold=100 capped=True tr=null risesAfterPost=16 risesVsRelease=62
+      visible probe-321-ab-page-2/A/page-2/b3/safari/safari/shared/field/b3#2 guardMs=189.461 hold=100 capped=True tr=null risesAfterPost=50 risesVsRelease=9
+      visible probe-321-ab-page-2/A/page-2/b3/safari/safari/shared/field/b3#5 guardMs=70.455 hold=100 capped=True tr=null risesAfterPost=32 risesVsRelease=-12
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/field/b4#1 guardMs=170.2 hold=100 capped=True tr=null risesAfterPost=30 risesVsRelease=14
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/field/b4#4 guardMs=110.992 hold=100 capped=True tr=null risesAfterPost=32 risesVsRelease=-6
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/field/b4#5 guardMs=110.295 hold=100 capped=True tr=null risesAfterPost=31 risesVsRelease=-11
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/field/b2#1 guardMs=164.977 hold=100 capped=True tr=null risesAfterPost=42 risesVsRelease=69
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/field/b2#2 guardMs=125.498 hold=100 capped=True tr=null risesAfterPost=35 risesVsRelease=-9
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/field/b2#3 guardMs=162.53 hold=100 capped=True tr=null risesAfterPost=38 risesVsRelease=15
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/field/b2#4 guardMs=98.737 hold=100 capped=True tr=null risesAfterPost=20 risesVsRelease=-14
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/field/b2#5 guardMs=172.991 hold=100 capped=True tr=null risesAfterPost=29 risesVsRelease=3
+      visible probe-321-ab-page-1/A/page-1/b1/safari/safari/shared/field/b1#1 guardMs=178.123 hold=100 capped=True tr=null risesAfterPost=38 risesVsRelease=23
+      visible probe-321-ab-page-1/A/page-1/b1/safari/safari/shared/field/b1#2 guardMs=67.754 hold=100 capped=True tr=null risesAfterPost=36 risesVsRelease=-22
+safari     safari/shared/field          B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=10 visible after hold=0 stuck=0 front held=20/20 key held=20/20 samples n=20 min=134 p50=141 p95=154 max=154
+    record: capped=4/20 repaired=20 repairedAfterRelease=0 raiseLeft=0 screenHoldMs n=20 min=188 p50=200 p95=200 max=200 guardMs n=20 min=150 p50=161 p95=194 max=194
+    transientRaise: seen=20/20 outlivedHold=0 ms n=20 min=4 p50=14 p95=50 max=50
+    vs watch: seen&watch=10 seen&!watch=10 !seen&watch=0 outlived&visible=0 outlived&!visible=0 !outlived&visible=0
+    click answer ms n=20 min=193 p50=248 p95=316 max=316
+safari     safari/shared/filled         A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=7 visible after hold=12 stuck=0 front held=20/20 key held=20/20 samples n=20 min=135 p50=146 p95=165 max=165
+    record: capped=15/20 repaired=20 repairedAfterRelease=10 raiseLeft=0 screenHoldMs n=20 min=92 p50=100 p95=100 max=100 guardMs n=20 min=60 p50=133 p95=211 max=211
+    click answer ms n=20 min=96 p50=204 p95=339 max=339
+      visible probe-321-ab-page-2/A/page-2/b3/safari/safari/shared/filled/b3#1 guardMs=149.888 hold=100 capped=True tr=null risesAfterPost=50 risesVsRelease=12
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/filled/b4#1 guardMs=203.009 hold=100 capped=True tr=null risesAfterPost=51 risesVsRelease=66
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/filled/b4#2 guardMs=135.265 hold=100 capped=True tr=null risesAfterPost=32 risesVsRelease=1
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/filled/b4#4 guardMs=157.212 hold=100 capped=True tr=null risesAfterPost=29 risesVsRelease=9
+      visible probe-321-ab-page-2/A/page-2/b4/safari/safari/shared/filled/b4#5 guardMs=143.952 hold=100 capped=True tr=null risesAfterPost=39 risesVsRelease=0
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/filled/b2#1 guardMs=211.448 hold=100 capped=True tr=null risesAfterPost=92 risesVsRelease=99
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/filled/b2#2 guardMs=144.341 hold=100 capped=True tr=null risesAfterPost=29 risesVsRelease=36
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/filled/b2#3 guardMs=129.849 hold=100 capped=True tr=null risesAfterPost=21 risesVsRelease=-19
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/filled/b2#4 guardMs=61.298 hold=100 capped=True tr=null risesAfterPost=39 risesVsRelease=-18
+      visible probe-321-ab-page-1/A/page-1/b2/safari/safari/shared/filled/b2#5 guardMs=144.206 hold=100 capped=True tr=null risesAfterPost=23 risesVsRelease=30
+      visible probe-321-ab-page-1/A/page-1/b1/safari/safari/shared/filled/b1#1 guardMs=163.956 hold=100 capped=True tr=null risesAfterPost=29 risesVsRelease=31
+      visible probe-321-ab-page-1/A/page-1/b1/safari/safari/shared/filled/b1#5 guardMs=153.082 hold=100 capped=True tr=null risesAfterPost=53 risesVsRelease=24
+safari     safari/shared/filled         B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=9 visible after hold=0 stuck=0 front held=20/20 key held=20/20 samples n=20 min=135 p50=142 p95=171 max=171
+    record: capped=2/20 repaired=20 repairedAfterRelease=0 raiseLeft=0 screenHoldMs n=20 min=191 p50=200 p95=200 max=200 guardMs n=20 min=151 p50=159 p95=191 max=191
+    transientRaise: seen=20/20 outlivedHold=0 ms n=20 min=9 p50=14 p95=40 max=40
+    vs watch: seen&watch=9 seen&!watch=11 !seen&watch=0 outlived&visible=0 outlived&!visible=0 !outlived&visible=0
+    click answer ms n=20 min=197 p50=216 p95=299 max=299
+safari-282 a-main/textarea              A n=19 delivered=19/19 answers={'success': 19} kinds={'{"kind": "activationPoint", "when": "early"}': 19}
+    watch: inside hold=4 visible after hold=10 stuck=0 front held=19/19 key held=19/19 samples n=19 min=130 p50=142 p95=162 max=162
+    record: capped=18/19 repaired=19 repairedAfterRelease=8 raiseLeft=0 screenHoldMs n=19 min=100 p50=100 p95=100 max=100 guardMs n=19 min=63 p50=150 p95=304 max=304
+      visible probe-321-ab-k282-2/A/k282-2/r9/a-main/textarea guardMs=189.642 hold=100 capped=True tr=null risesAfterPost=48 risesVsRelease=57
+      visible probe-321-ab-k282-2/A/k282-2/r8/a-main/textarea guardMs=149.738 hold=100 capped=True tr=null risesAfterPost=45 risesVsRelease=8
+      visible probe-321-ab-k282-2/A/k282-2/r6/a-main/textarea guardMs=158.224 hold=100 capped=True tr=null risesAfterPost=69 risesVsRelease=64
+      visible probe-321-ab-k282-2/A/k282-2/r10/a-main/textarea guardMs=166.302 hold=100 capped=True tr=null risesAfterPost=30 risesVsRelease=-5
+      visible probe-321-ab-k282-4/A/k282-4/r17/a-main/textarea guardMs=153.876 hold=100 capped=True tr=null risesAfterPost=42 risesVsRelease=0
+      visible probe-321-ab-k282-4/A/k282-4/r18/a-main/textarea guardMs=186.053 hold=100 capped=True tr=null risesAfterPost=38 risesVsRelease=14
+      visible probe-321-ab-k282-4/A/k282-4/r16/a-main/textarea guardMs=136.651 hold=100 capped=True tr=null risesAfterPost=16 risesVsRelease=-28
+      visible probe-321-ab-k282-3/A/k282-3/r14/a-main/textarea guardMs=173.674 hold=100 capped=True tr=null risesAfterPost=54 risesVsRelease=56
+      visible probe-321-ab-k282-1/A/k282-1/r3/a-main/textarea guardMs=160.961 hold=100 capped=True tr=null risesAfterPost=45 risesVsRelease=25
+      visible probe-321-ab-k282-1/A/k282-1/r5/a-main/textarea guardMs=131.877 hold=100 capped=True tr=null risesAfterPost=17 risesVsRelease=-33
+safari-282 a-main/textarea              B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=14 visible after hold=0 stuck=0 front held=20/20 key held=20/20 samples n=20 min=120 p50=143 p95=155 max=155
+    record: capped=1/20 repaired=20 repairedAfterRelease=0 raiseLeft=0 screenHoldMs n=20 min=200 p50=200 p95=200 max=200 guardMs n=20 min=151 p50=173 p95=456 max=456
+    transientRaise: seen=20/20 outlivedHold=0 ms n=20 min=13 p50=19 p95=76 max=76
+    vs watch: seen&watch=14 seen&!watch=6 !seen&watch=0 outlived&visible=0 outlived&!visible=0 !outlived&visible=0
+safari-282 b-noobs/checkbox             A n=20 delivered=0/0 answers={'noScreenshotForCoordinates': 20} kinds={'-': 20}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=20/20 key held=20/20 samples n=20 min=128 p50=136 p95=141 max=141
+safari-282 b-noobs/checkbox             B n=20 delivered=0/0 answers={'noScreenshotForCoordinates': 20} kinds={'-': 20}
+    watch: inside hold=0 visible after hold=0 stuck=0 front held=20/20 key held=20/20 samples n=20 min=126 p50=136 p95=157 max=157
+safari-282 b-shared/button              A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=7 visible after hold=11 stuck=0 front held=20/20 key held=20/20 samples n=20 min=132 p50=139 p95=149 max=149
+    record: capped=15/20 repaired=20 repairedAfterRelease=8 raiseLeft=0 screenHoldMs n=20 min=93 p50=100 p95=100 max=100 guardMs n=20 min=61 p50=128 p95=200 max=200
+      visible probe-321-ab-k282-2/A/k282-2/r7/b-shared/button guardMs=185.818 hold=100 capped=True tr=null risesAfterPost=22 risesVsRelease=12
+      visible probe-321-ab-k282-2/A/k282-2/r9/b-shared/button guardMs=200.462 hold=100 capped=True tr=null risesAfterPost=41 risesVsRelease=17
+      visible probe-321-ab-k282-2/A/k282-2/r8/b-shared/button guardMs=106.399 hold=100 capped=True tr=null risesAfterPost=26 risesVsRelease=-12
+      visible probe-321-ab-k282-4/A/k282-4/r17/b-shared/button guardMs=166.969 hold=100 capped=True tr=null risesAfterPost=33 risesVsRelease=59
+      visible probe-321-ab-k282-4/A/k282-4/r19/b-shared/button guardMs=166.525 hold=100 capped=True tr=null risesAfterPost=24 risesVsRelease=64
+      visible probe-321-ab-k282-4/A/k282-4/r18/b-shared/button guardMs=156.627 hold=100 capped=True tr=null risesAfterPost=46 risesVsRelease=45
+      visible probe-321-ab-k282-3/A/k282-3/r13/b-shared/button guardMs=149.801 hold=100 capped=True tr=null risesAfterPost=51 risesVsRelease=33
+      visible probe-321-ab-k282-3/A/k282-3/r12/b-shared/button guardMs=162.117 hold=100 capped=True tr=null risesAfterPost=36 risesVsRelease=0
+      visible probe-321-ab-k282-1/A/k282-1/r1/b-shared/button guardMs=146.529 hold=100 capped=True tr=null risesAfterPost=20 risesVsRelease=16
+      visible probe-321-ab-k282-1/A/k282-1/r3/b-shared/button guardMs=159.492 hold=100 capped=True tr=null risesAfterPost=14 risesVsRelease=-15
+      visible probe-321-ab-k282-1/A/k282-1/r4/b-shared/button guardMs=142.318 hold=100 capped=True tr=null risesAfterPost=30 risesVsRelease=-16
+safari-282 b-shared/button              B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=12 visible after hold=0 stuck=0 front held=20/20 key held=20/20 samples n=20 min=136 p50=140 p95=150 max=150
+    record: capped=0/20 repaired=20 repairedAfterRelease=0 raiseLeft=0 screenHoldMs n=20 min=198 p50=200 p95=200 max=200 guardMs n=20 min=151 p50=172 p95=200 max=200
+    transientRaise: seen=20/20 outlivedHold=0 ms n=20 min=6 p50=12 p95=20 max=20
+    vs watch: seen&watch=12 seen&!watch=8 !seen&watch=0 outlived&visible=0 outlived&!visible=0 !outlived&visible=0
+safari-282 b-shared/checkbox            A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=10 visible after hold=10 stuck=0 front held=20/20 key held=20/20 samples n=20 min=129 p50=140 p95=150 max=150
+    record: capped=18/20 repaired=20 repairedAfterRelease=7 raiseLeft=0 screenHoldMs n=20 min=99 p50=100 p95=100 max=100 guardMs n=20 min=62 p50=125 p95=182 max=182
+      visible probe-321-ab-k282-2/A/k282-2/r7/b-shared/checkbox guardMs=137.409 hold=100 capped=True tr=null risesAfterPost=27 risesVsRelease=9
+      visible probe-321-ab-k282-2/A/k282-2/r9/b-shared/checkbox guardMs=132.727 hold=100 capped=True tr=null risesAfterPost=40 risesVsRelease=47
+      visible probe-321-ab-k282-2/A/k282-2/r8/b-shared/checkbox guardMs=158.665 hold=100 capped=True tr=null risesAfterPost=32 risesVsRelease=-5
+      visible probe-321-ab-k282-2/A/k282-2/r10/b-shared/checkbox guardMs=78.188 hold=100 capped=True tr=null risesAfterPost=34 risesVsRelease=-11
+      visible probe-321-ab-k282-4/A/k282-4/r16/b-shared/checkbox guardMs=181.631 hold=100 capped=True tr=null risesAfterPost=14 risesVsRelease=38
+      visible probe-321-ab-k282-3/A/k282-3/r14/b-shared/checkbox guardMs=173.392 hold=100 capped=True tr=null risesAfterPost=34 risesVsRelease=51
+      visible probe-321-ab-k282-3/A/k282-3/r15/b-shared/checkbox guardMs=76.007 hold=100 capped=True tr=null risesAfterPost=35 risesVsRelease=-21
+      visible probe-321-ab-k282-1/A/k282-1/r1/b-shared/checkbox guardMs=123.07 hold=100 capped=True tr=null risesAfterPost=13 risesVsRelease=-1
+      visible probe-321-ab-k282-1/A/k282-1/r4/b-shared/checkbox guardMs=143.126 hold=100 capped=True tr=null risesAfterPost=26 risesVsRelease=33
+      visible probe-321-ab-k282-1/A/k282-1/r2/b-shared/checkbox guardMs=141.722 hold=100 capped=True tr=null risesAfterPost=40 risesVsRelease=0
+safari-282 b-shared/checkbox            B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=14 visible after hold=1 stuck=0 front held=20/20 key held=20/20 samples n=20 min=126 p50=138 p95=150 max=150
+    record: capped=1/20 repaired=20 repairedAfterRelease=1 raiseLeft=0 screenHoldMs n=20 min=199 p50=200 p95=200 max=200 guardMs n=20 min=150 p50=168 p95=240 max=240
+    transientRaise: seen=20/20 outlivedHold=1 ms n=20 min=6 p50=15 p95=79 max=79
+    vs watch: seen&watch=15 seen&!watch=5 !seen&watch=0 outlived&visible=1 outlived&!visible=0 !outlived&visible=0
+      visible probe-321-ab-k282-4/B/k282-4/r16/b-shared/checkbox guardMs=240.308 hold=200 capped=True tr={"outlivedHold": true, "seen": true, "ms": 79.351} risesAfterPost=74 risesVsRelease=7
+safari-282 b-shared/checkbox-immediate  A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=10 visible after hold=9 stuck=0 front held=20/20 key held=20/20 samples n=20 min=132 p50=140 p95=151 max=151
+    record: capped=18/20 repaired=20 repairedAfterRelease=7 raiseLeft=0 screenHoldMs n=20 min=100 p50=100 p95=100 max=100 guardMs n=20 min=64 p50=110 p95=193 max=193
+      visible probe-321-ab-k282-2/A/k282-2/r9/b-shared/checkbox-immediate guardMs=193.425 hold=100 capped=True tr=null risesAfterPost=73 risesVsRelease=76
+      visible probe-321-ab-k282-4/A/k282-4/r17/b-shared/checkbox-immediate guardMs=132.742 hold=100 capped=True tr=null risesAfterPost=18 risesVsRelease=-6
+      visible probe-321-ab-k282-4/A/k282-4/r19/b-shared/checkbox-immediate guardMs=160.169 hold=100 capped=True tr=null risesAfterPost=26 risesVsRelease=-11
+      visible probe-321-ab-k282-4/A/k282-4/r18/b-shared/checkbox-immediate guardMs=159.259 hold=100 capped=True tr=null risesAfterPost=31 risesVsRelease=3
+      visible probe-321-ab-k282-3/A/k282-3/r14/b-shared/checkbox-immediate guardMs=182.961 hold=100 capped=True tr=null risesAfterPost=49 risesVsRelease=29
+      visible probe-321-ab-k282-3/A/k282-3/r13/b-shared/checkbox-immediate guardMs=63.75 hold=100 capped=True tr=null risesAfterPost=17 risesVsRelease=-26
+      visible probe-321-ab-k282-3/A/k282-3/r12/b-shared/checkbox-immediate guardMs=64.323 hold=100 capped=True tr=null risesAfterPost=25 risesVsRelease=-21
+      visible probe-321-ab-k282-3/A/k282-3/r15/b-shared/checkbox-immediate guardMs=149.939 hold=100 capped=True tr=null risesAfterPost=50 risesVsRelease=35
+      visible probe-321-ab-k282-1/A/k282-1/r2/b-shared/checkbox-immediate guardMs=135.396 hold=100 capped=True tr=null risesAfterPost=18 risesVsRelease=-28
+safari-282 b-shared/checkbox-immediate  B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=14 visible after hold=0 stuck=0 front held=20/20 key held=20/20 samples n=20 min=131 p50=137 p95=151 max=151
+    record: capped=0/20 repaired=20 repairedAfterRelease=0 raiseLeft=0 screenHoldMs n=20 min=185 p50=200 p95=200 max=200 guardMs n=20 min=152 p50=165 p95=197 max=197
+    transientRaise: seen=20/20 outlivedHold=0 ms n=20 min=10 p50=13 p95=32 max=32
+    vs watch: seen&watch=14 seen&!watch=6 !seen&watch=0 outlived&visible=0 outlived&!visible=0 !outlived&visible=0
+safari-282 b-shared/textarea            A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=5 visible after hold=10 stuck=0 front held=20/20 key held=20/20 samples n=20 min=129 p50=138 p95=148 max=148
+    record: capped=17/20 repaired=20 repairedAfterRelease=10 raiseLeft=0 screenHoldMs n=20 min=100 p50=100 p95=100 max=100 guardMs n=20 min=65 p50=130 p95=190 max=190
+      visible probe-321-ab-k282-2/A/k282-2/r7/b-shared/textarea guardMs=114.409 hold=100 capped=True tr=null risesAfterPost=42 risesVsRelease=50
+      visible probe-321-ab-k282-2/A/k282-2/r9/b-shared/textarea guardMs=180.408 hold=100 capped=True tr=null risesAfterPost=46 risesVsRelease=24
+      visible probe-321-ab-k282-2/A/k282-2/r8/b-shared/textarea guardMs=181.002 hold=100 capped=True tr=null risesAfterPost=36 risesVsRelease=34
+      visible probe-321-ab-k282-2/A/k282-2/r6/b-shared/textarea guardMs=136.085 hold=100 capped=True tr=null risesAfterPost=45 risesVsRelease=11
+      visible probe-321-ab-k282-2/A/k282-2/r10/b-shared/textarea guardMs=168.94 hold=100 capped=True tr=null risesAfterPost=38 risesVsRelease=-6
+      visible probe-321-ab-k282-4/A/k282-4/r17/b-shared/textarea guardMs=189.781 hold=100 capped=True tr=null risesAfterPost=43 risesVsRelease=13
+      visible probe-321-ab-k282-4/A/k282-4/r19/b-shared/textarea guardMs=186.466 hold=100 capped=True tr=null risesAfterPost=28 risesVsRelease=3
+      visible probe-321-ab-k282-4/A/k282-4/r18/b-shared/textarea guardMs=132.391 hold=100 capped=True tr=null risesAfterPost=24 risesVsRelease=0
+      visible probe-321-ab-k282-3/A/k282-3/r14/b-shared/textarea guardMs=127.92 hold=100 capped=True tr=null risesAfterPost=40 risesVsRelease=10
+      visible probe-321-ab-k282-1/A/k282-1/r1/b-shared/textarea guardMs=124.674 hold=100 capped=True tr=null risesAfterPost=25 risesVsRelease=-10
+safari-282 b-shared/textarea            B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=11 visible after hold=1 stuck=0 front held=20/20 key held=20/20 samples n=20 min=128 p50=139 p95=163 max=163
+    record: capped=2/20 repaired=20 repairedAfterRelease=1 raiseLeft=0 screenHoldMs n=20 min=193 p50=200 p95=200 max=200 guardMs n=20 min=150 p50=174 p95=201 max=201
+    transientRaise: seen=20/20 outlivedHold=1 ms n=20 min=9 p50=17 p95=66 max=66
+    vs watch: seen&watch=12 seen&!watch=8 !seen&watch=0 outlived&visible=1 outlived&!visible=0 !outlived&visible=0
+      visible probe-321-ab-k282-4/B/k282-4/r18/b-shared/textarea guardMs=167.509 hold=200 capped=True tr={"seen": true, "ms": 66.336, "outlivedHold": true} risesAfterPost=21 risesVsRelease=22
+safari-282 b-shared/toolbar-reload      A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=10 visible after hold=10 stuck=0 front held=20/20 key held=20/20 samples n=20 min=128 p50=137 p95=158 max=158
+    record: capped=19/20 repaired=20 repairedAfterRelease=5 raiseLeft=0 screenHoldMs n=20 min=99 p50=100 p95=100 max=100 guardMs n=20 min=60 p50=115 p95=228 max=228
+      visible probe-321-ab-k282-2/A/k282-2/r9/b-shared/toolbar-reload guardMs=181.376 hold=100 capped=True tr=null risesAfterPost=64 risesVsRelease=43
+      visible probe-321-ab-k282-2/A/k282-2/r8/b-shared/toolbar-reload guardMs=92.359 hold=100 capped=True tr=null risesAfterPost=36 risesVsRelease=-6
+      visible probe-321-ab-k282-2/A/k282-2/r6/b-shared/toolbar-reload guardMs=227.746 hold=100 capped=True tr=null risesAfterPost=36 risesVsRelease=22
+      visible probe-321-ab-k282-4/A/k282-4/r17/b-shared/toolbar-reload guardMs=200.926 hold=100 capped=True tr=null risesAfterPost=54 risesVsRelease=72
+      visible probe-321-ab-k282-4/A/k282-4/r19/b-shared/toolbar-reload guardMs=142.956 hold=100 capped=True tr=null risesAfterPost=20 risesVsRelease=-28
+      visible probe-321-ab-k282-4/A/k282-4/r18/b-shared/toolbar-reload guardMs=171.803 hold=100 capped=True tr=null risesAfterPost=32 risesVsRelease=7
+      visible probe-321-ab-k282-3/A/k282-3/r12/b-shared/toolbar-reload guardMs=114.477 hold=100 capped=True tr=null risesAfterPost=37 risesVsRelease=-10
+      visible probe-321-ab-k282-3/A/k282-3/r15/b-shared/toolbar-reload guardMs=147.841 hold=100 capped=True tr=null risesAfterPost=18 risesVsRelease=-30
+      visible probe-321-ab-k282-3/A/k282-3/r11/b-shared/toolbar-reload guardMs=109.978 hold=100 capped=True tr=null risesAfterPost=19 risesVsRelease=-31
+      visible probe-321-ab-k282-1/A/k282-1/r3/b-shared/toolbar-reload guardMs=112.381 hold=100 capped=True tr=null risesAfterPost=51 risesVsRelease=-3
+safari-282 b-shared/toolbar-reload      B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=13 visible after hold=1 stuck=0 front held=20/20 key held=20/20 samples n=20 min=130 p50=140 p95=150 max=150
+    record: capped=3/20 repaired=20 repairedAfterRelease=1 raiseLeft=0 screenHoldMs n=20 min=198 p50=200 p95=200 max=200 guardMs n=20 min=150 p50=162 p95=253 max=253
+    transientRaise: seen=20/20 outlivedHold=1 ms n=20 min=12 p50=22 p95=57 max=57
+    vs watch: seen&watch=14 seen&!watch=6 !seen&watch=0 outlived&visible=1 outlived&!visible=0 !outlived&visible=0
+      visible probe-321-ab-k282-2/B/k282-2/r10/b-shared/toolbar-reload guardMs=253.114 hold=200 capped=True tr={"outlivedHold": true, "seen": true, "ms": 57.203} risesAfterPost=137 risesVsRelease=72
+safari-282 c-dedicated/textarea         A n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=124 p50=140 p95=151 max=151
+safari-282 c-dedicated/textarea         B n=20 delivered=20/20 answers={'success': 20} kinds={'{"kind": "activationPoint", "when": "early"}': 20}
+    watch: inside hold=0 visible after hold=20 stuck=20 front held=20/20 key held=20/20 samples n=20 min=130 p50=138 p95=147 max=147
+safari-282 geometry                     A n=20 delivered=0/0 answers={'none': 20} kinds={'-': 20}
+safari-282 geometry                     B n=20 delivered=0/0 answers={'none': 20} kinds={'-': 20}
+
+guards above 250 ms:
+  B safari-282 b-shared/toolbar-reload probe-321-ab-k282-2/B/k282-2/r10/b-shared/toolbar-reload: {"capped": true, "frontmostRestored": false, "guardMs": 253.114, "holdStartedAt": 1794105047552, "otherAppFront": false, "personInput": false, "postedAt": 1794105047687, "raiseLeft": false, "releasedAt": 1794105047752, "repairAfterReleaseLatencyMs": 137.346, "repairedAfterRelease": true, "restores": 0, "screenHoldMs": 200, "transientRaise": {"ms": 57.203, "outlivedHold": true, "seen": true}} watch {'inside': False, 'after': True, 'samples': 136}
+  A safari safari/shared/checkbox probe-321-ab-page-2/A/page-2/b3/safari/safari/shared/checkbox/b3#1: {"capped": true, "frontmostRestored": false, "guardMs": 404.503, "holdStartedAt": 1794101380962, "otherAppFront": false, "personInput": false, "postedAt": 1794101381103, "raiseLeft": false, "releasedAt": 1794101381062, "repairAfterReleaseLatencyMs": 48.464, "repairedAfterRelease": true, "restores": 0, "screenHoldMs": 100} watch {'inside': False, 'after': True, 'samples': 131}
+  B safari-282 a-main/textarea probe-321-ab-k282-4/B/k282-4/r16/a-main/textarea: {"capped": false, "frontmostRestored": false, "guardMs": 455.534, "holdStartedAt": 1794103607915, "otherAppFront": false, "personInput": false, "postedAt": 1794103608000, "raiseLeft": false, "releasedAt": 1794103608115, "repairedAfterRelease": false, "restoreLatencyMs": 12.535, "restores": 1, "screenHoldMs": 200, "transientRaise": {"ms": 13.228, "outlivedHold": false, "seen": true}} watch {'inside': True, 'after': False, 'samples': 121}
+  A safari-282 a-main/textarea probe-321-ab-k282-3/A/k282-3/r11/a-main/textarea: {"capped": true, "frontmostRestored": false, "guardMs": 303.756, "holdStartedAt": 1794101087646, "otherAppFront": false, "personInput": false, "postedAt": 1794101087734, "raiseLeft": false, "releasedAt": 1794101087746, "repairAfterReleaseLatencyMs": 33.574, "repairedAfterRelease": true, "restores": 0, "screenHoldMs": 100} watch {'inside': False, 'after': False, 'samples': 130}
+  A native textedit/shared/text probe-321-ab-ctl-textedit/A/ctl-textedit/b1/textedit/textedit/shared/text/b1#1: {"capped": true, "frontmostRestored": false, "guardMs": 363.635, "holdStartedAt": 1794103363227, "otherAppFront": false, "personInput": false, "postedAt": 1794103363281, "raiseLeft": false, "releasedAt": 1794103363327, "repairedAfterRelease": false, "restoreLatencyMs": 11.905, "restores": 2, "screenHoldMs": 100} watch {'inside': True, 'after': False, 'samples': 120}
+  A safari safari/shared/checkbox probe-321-ab-page-1/A/page-1/b1/safari/safari/shared/checkbox/b1#1: {"capped": true, "frontmostRestored": false, "guardMs": 474.5, "holdStartedAt": 1794101140490, "otherAppFront": false, "personInput": false, "postedAt": 1794101140647, "raiseLeft": false, "releasedAt": 1794101140590, "repairAfterReleaseLatencyMs": 68.501, "repairedAfterRelease": true, "restores": 0, "screenHoldMs": 100} watch {'inside': False, 'after': True, 'samples': 120}

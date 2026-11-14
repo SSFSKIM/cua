@@ -1,0 +1,4 @@
+{"item":"187-iso-end","at":1793914485645,"kind":"start","steps":3,"dryRun":false}
+{"item":"187-iso-end","at":1793914485645,"step":1,"kind":"say","text":"#187: the owner's input source selected again, TextEdit's run window on top"}
+{"item":"187-iso-end","at":1793914485776,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":43714,"bundleId":"com.apple.TextEdit"}}}
+{"item":"187-iso-end","at":1793914486116,"step":3,"kind":"task","task":"select-source","args":["owner","textedit"],"result":{"ok":true,"which":"owner","switched":true,"requested":"com.apple.inputmethod.Korean.2SetKorean","current":{"id":"com.apple.inputmethod.Korean.2SetKorean","name":"2-Set Korean"}}}

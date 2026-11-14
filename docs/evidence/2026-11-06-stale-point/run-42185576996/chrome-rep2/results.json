@@ -1,0 +1,1224 @@
+{
+ "config": {
+  "group": "chrome",
+  "imageOS": "macos26",
+  "imageVersion": "20261102.0473.1",
+  "runnerName": "GitHub Actions 1000036379",
+  "macOS": "ProductName: macOS ProductVersion: 26.7.2 BuildVersion: 25G332",
+  "chrome": "Google Chrome for Testing 156.0.8078.80",
+  "branchCommit": "a7a43b02a69aba31a74fcdb8825af2c44e4606a7",
+  "mainCommit": "d482bcc2e8b6ca21bb8cddf79f137356a9a48d97",
+  "probeCommit": "e9939802a9c47282a5e71dd3b7af547cbf20286d",
+  "rep": "2"
+ },
+ "cells": [
+  {
+   "label": "chrome/shared/toolbar-reload/1s/branch",
+   "spec": {
+    "kind": "toolbar",
+    "app": "chrome",
+    "mode": "shared",
+    "delay": 1,
+    "expect": "kept",
+    "label": "chrome/shared/toolbar-reload/1s/branch",
+    "engine": "branch"
+   },
+   "pid": 7668,
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 1079,
+    "sinceLaunchMs": 12775,
+    "nodes": 60,
+    "stalePointRecord": 0.154,
+    "timings": {
+     "screenshotWindowListMs": 0.369,
+     "focusableMs": 122.239,
+     "fetchFailures": 0,
+     "markdownFetches": 1,
+     "enablementPrior": "false",
+     "windowMs": 0.165,
+     "disclosableMs": 1.947,
+     "stalePointRecordMs": 0.154,
+     "screenshotReleaseWaitMs": 0.019,
+     "chromium": true,
+     "totalMs": 1055.715,
+     "screenshotWindowNumberMs": 0.224,
+     "enableMs": 4.073,
+     "enablementWriteError": -25208,
+     "screenshotContentCached": false,
+     "menuBarMs": 0.9,
+     "screenshotJoinMs": 303.379,
+     "chromiumCheckMs": 5.957,
+     "appRoleReadMs": 18.111,
+     "webAreaWaitMs": 223.715,
+     "actionsMs": 57.705,
+     "settableMs": 0.361,
+     "walkMs": 461.623,
+     "screenshotEncodeMs": 20.773,
+     "enabled": "AXEnhancedUserInterface",
+     "selectableMs": 16.186,
+     "focusMs": 0.462,
+     "webAreaFound": true,
+     "watchedProcesses": 1,
+     "screenshotContentMs": 107.68,
+     "estimatedBytes": 47510,
+     "webShaped": true,
+     "nodes": 71,
+     "screenshotCaptureMs": 625.277,
+     "actionDescriptionsMs": 36.735,
+     "attributesMs": 197.521,
+     "markdownMs": 8.007,
+     "resolveMs": 0.023,
+     "screenshotWriteMs": 1.115,
+     "enablementWrite": "success",
+     "monitorMs": 0.756,
+     "prepareMs": 19.788
+    }
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Reload",
+    "frame": {
+     "height": 34,
+     "x": 442,
+     "y": 77,
+     "width": 34
+    }
+   },
+   "intended": "reload",
+   "px": {
+    "x": 59,
+    "y": 63
+   },
+   "point": {
+    "x": 459,
+    "y": 94
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Reload",
+    "depth": 12,
+    "frame": {
+     "height": 34,
+     "x": 442,
+     "y": 77,
+     "width": 34
+    }
+   },
+   "clickAfterObservationMs": 1003,
+   "clickSinceLaunchMs": 13778,
+   "response": {
+    "result": {
+     "meta": {
+      "activationClick": "outsideFrame",
+      "receivedAt": 1793953411193,
+      "activationJoin": "fresh",
+      "coordinateClick": {
+       "windowFrame": {
+        "y": 31,
+        "height": 674,
+        "x": 400,
+        "width": 620
+       },
+       "postedLocation": {
+        "x": 459,
+        "y": 94
+       },
+       "frameBeforePost": {
+        "height": 674,
+        "x": 400,
+        "width": 620,
+        "y": 31
+       },
+       "screenshotPoint": {
+        "x": 59,
+        "y": 63
+       },
+       "postedWindowLocation": {
+        "y": 63,
+        "x": 59
+       },
+       "windowPoint": {
+        "x": 59,
+        "y": 63
+       }
+      },
+      "hidIdleMs": null,
+      "activationClickKind": {
+       "kind": "action",
+       "when": "consumedByAction"
+      },
+      "startedAt": 1793953411263,
+      "inputRoute": 3,
+      "delivery": {
+       "personInput": false,
+       "postedAt": 1793953411263,
+       "holdStartedAt": 1793953411212,
+       "frontmostRestored": false,
+       "raiseLeft": false,
+       "otherAppFront": false,
+       "guardMs": 117.659,
+       "capped": false,
+       "screenHoldMs": 100,
+       "restores": 0,
+       "releasedAt": 1793953411312,
+       "repairedAfterRelease": false
+      },
+      "activationGuardMs": 47.788,
+      "stalePoint": {
+       "ms": 0.47,
+       "hitRole": "AXButton",
+       "reason": "sameElement",
+       "verdict": "kept",
+       "identity": "handle",
+       "recordedRole": "AXButton"
+      },
+      "endedAt": 1793953411263
+     }
+    }
+   },
+   "stalePoint": {
+    "ms": 0.47,
+    "hitRole": "AXButton",
+    "reason": "sameElement",
+    "verdict": "kept",
+    "identity": "handle",
+    "recordedRole": "AXButton"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793953411263,
+   "endedAt": 1793953411263,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 191,
+   "effect": {
+    "loadsDelta": 1,
+    "hit": [
+     "reload"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "chrome/dedicated/label/1s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "label",
+    "id": "label",
+    "app": "chrome",
+    "mode": "dedicated",
+    "delay": 1,
+    "expect": "kept",
+    "label": "chrome/dedicated/label/1s/branch",
+    "engine": "branch"
+   },
+   "pid": 8475,
+   "navK": "k1",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "build": "unbundled",
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1"
+   },
+   "observation": {
+    "ms": 711,
+    "sinceLaunchMs": 29428,
+    "nodes": 60,
+    "stalePointRecord": 0.153,
+    "timings": {
+     "stalePointRecordMs": 0.153,
+     "chromium": true,
+     "nodes": 71,
+     "focusMs": 0.338,
+     "chromiumCheckMs": 2.357,
+     "enablementWrite": "success",
+     "attributesMs": 342.245,
+     "monitorMs": 0.498,
+     "screenshotWindowNumberMs": 3.354,
+     "menuBarMs": 0.447,
+     "webShaped": true,
+     "windowMs": 0.083,
+     "settableMs": 0.187,
+     "screenshotCaptureMs": 310.444,
+     "watchedProcesses": 1,
+     "totalMs": 698.201,
+     "markdownMs": 6.973,
+     "selectableMs": 4.527,
+     "screenshotJoinMs": 0.002,
+     "screenshotWriteMs": 0.577,
+     "screenshotEncodeMs": 10.414,
+     "enableMs": 3.091,
+     "enabled": "AXEnhancedUserInterface",
+     "resolveMs": 0.028,
+     "enablementPrior": "false",
+     "screenshotContentCached": false,
+     "prepareMs": 7.195,
+     "webAreaFound": true,
+     "screenshotContentMs": 121.073,
+     "fetchFailures": 0,
+     "actionsMs": 102.362,
+     "actionDescriptionsMs": 0.19,
+     "disclosableMs": 1.295,
+     "screenshotWindowListMs": 1.2,
+     "appRoleReadMs": 4.345,
+     "estimatedBytes": 47550,
+     "focusableMs": 5.328,
+     "markdownFetches": 1,
+     "webAreaWaitMs": 191.053,
+     "enablementWriteError": -25208,
+     "screenshotReleaseWaitMs": 0.025,
+     "walkMs": 479.285
+    }
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Elapsed 4.2 s",
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 218,
+     "width": 110
+    }
+   },
+   "intended": "label",
+   "px": {
+    "x": 63,
+    "y": 203
+   },
+   "point": {
+    "x": 463,
+    "y": 234
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Elapsed 4.2 s",
+    "depth": 10,
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 218,
+     "width": 110
+    }
+   },
+   "clickAfterObservationMs": 1002,
+   "clickSinceLaunchMs": 30430,
+   "response": {
+    "result": {
+     "meta": {
+      "endedAt": 1793953447471,
+      "stalePoint": {
+       "recordedRole": "AXButton",
+       "ms": 2.019,
+       "verdict": "kept",
+       "identity": "handle",
+       "hitRole": "AXButton",
+       "reason": "sameElement"
+      },
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "startedAt": 1793953447471,
+      "activationGuardMs": 99.325,
+      "inputRoute": 3,
+      "receivedAt": 1793953447328,
+      "activationClick": "outsideFrame",
+      "activationClickKind": {
+       "kind": "inertOutside",
+       "when": "early",
+       "point": "activationPoint"
+      },
+      "coordinateClick": {
+       "screenshotPoint": {
+        "y": 203,
+        "x": 63
+       },
+       "postedWindowLocation": {
+        "y": 203,
+        "x": 63
+       },
+       "frameBeforePost": {
+        "x": 400,
+        "y": 31,
+        "width": 620,
+        "height": 679
+       },
+       "windowFrame": {
+        "x": 400,
+        "y": 31,
+        "width": 620,
+        "height": 679
+       },
+       "postedLocation": {
+        "x": 463,
+        "y": 234
+       },
+       "windowPoint": {
+        "x": 63,
+        "y": 203
+       }
+      }
+     }
+    }
+   },
+   "stalePoint": {
+    "recordedRole": "AXButton",
+    "ms": 2.019,
+    "verdict": "kept",
+    "identity": "handle",
+    "hitRole": "AXButton",
+    "reason": "sameElement"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793953447471,
+   "endedAt": 1793953447471,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 148,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "label",
+      "text": "Elapsed 5.5 s",
+      "sx": 463,
+      "sy": 234,
+      "dt": 164
+     },
+     {
+      "ev": "click",
+      "id": "label",
+      "text": "Elapsed 5.5 s",
+      "sx": 463,
+      "sy": 234,
+      "dt": 170
+     }
+    ],
+    "hit": [
+     "label"
+    ],
+    "text": [
+     "Elapsed 5.5 s"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "chrome/dedicated/label/20s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "label",
+    "id": "label",
+    "app": "chrome",
+    "mode": "dedicated",
+    "delay": 20,
+    "expect": "kept",
+    "label": "chrome/dedicated/label/20s/branch",
+    "engine": "branch"
+   },
+   "pid": 8475,
+   "navK": "k2",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled",
+    "engineVersion": "0.1.0"
+   },
+   "observation": {
+    "ms": 334,
+    "sinceLaunchMs": 34931,
+    "nodes": 60,
+    "stalePointRecord": 0.133,
+    "timings": {
+     "markdownMs": 1.447,
+     "screenshotContentMs": 16.409,
+     "attributesMs": 70.732,
+     "screenshotEncodeMs": 11.646,
+     "menuBarMs": 0.429,
+     "actionDescriptionsMs": 0.067,
+     "walkMs": 131.291,
+     "screenshotWindowListMs": 0.354,
+     "nodes": 71,
+     "screenshotJoinMs": 0.002,
+     "focusMs": 0.389,
+     "screenshotWriteMs": 0.51,
+     "webShaped": true,
+     "prepareMs": 6.939,
+     "markdownFetches": 1,
+     "settableMs": 0.993,
+     "focusableMs": 9.788,
+     "screenshotReleaseWaitMs": 0.011,
+     "webAreaWaitMs": 170.175,
+     "enableMs": 0.503,
+     "appRoleReadMs": 0.687,
+     "stalePointRecordMs": 0.133,
+     "enablementPrior": "true",
+     "screenshotWindowNumberMs": 0.079,
+     "disclosableMs": 10.199,
+     "chromium": true,
+     "watchedProcesses": 1,
+     "totalMs": 321.271,
+     "selectableMs": 6.516,
+     "windowMs": 0.07,
+     "monitorMs": 0.368,
+     "screenshotCaptureMs": 95.133,
+     "chromiumCheckMs": 0.551,
+     "screenshotContentCached": false,
+     "webAreaFound": true,
+     "estimatedBytes": 47640,
+     "resolveMs": 0.168,
+     "fetchFailures": 0,
+     "actionsMs": 17.464
+    }
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Elapsed 2.1 s",
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 218,
+     "width": 108
+    }
+   },
+   "intended": "label",
+   "px": {
+    "x": 62,
+    "y": 203
+   },
+   "point": {
+    "x": 462,
+    "y": 234
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Elapsed 2.1 s",
+    "depth": 10,
+    "frame": {
+     "height": 32,
+     "x": 408,
+     "y": 218,
+     "width": 108
+    }
+   },
+   "clickAfterObservationMs": 20012,
+   "clickSinceLaunchMs": 54943,
+   "response": {
+    "result": {
+     "meta": {
+      "coordinateClick": {
+       "postedWindowLocation": {
+        "x": 62,
+        "y": 203
+       },
+       "windowFrame": {
+        "height": 679,
+        "x": 400,
+        "y": 31,
+        "width": 620
+       },
+       "frameBeforePost": {
+        "x": 400,
+        "y": 31,
+        "width": 620,
+        "height": 679
+       },
+       "screenshotPoint": {
+        "x": 62,
+        "y": 203
+       },
+       "windowPoint": {
+        "y": 203,
+        "x": 62
+       },
+       "postedLocation": {
+        "x": 462,
+        "y": 234
+       }
+      },
+      "activationClickKind": {
+       "point": "activationPoint",
+       "when": "early",
+       "kind": "inertOutside"
+      },
+      "activationJoin": "fresh",
+      "stalePoint": {
+       "reason": "sameElement",
+       "ms": 0.323,
+       "identity": "handle",
+       "verdict": "kept",
+       "hitRole": "AXButton",
+       "recordedRole": "AXButton"
+      },
+      "receivedAt": 1793953471840,
+      "activationGuardMs": 184.245,
+      "hidIdleMs": null,
+      "activationClick": "outsideFrame",
+      "startedAt": 1793953472048,
+      "inputRoute": 3,
+      "endedAt": 1793953472048
+     }
+    }
+   },
+   "stalePoint": {
+    "reason": "sameElement",
+    "ms": 0.323,
+    "identity": "handle",
+    "verdict": "kept",
+    "hitRole": "AXButton",
+    "recordedRole": "AXButton"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793953472048,
+   "endedAt": 1793953472048,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 211,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "label",
+      "text": "Elapsed 22.5 s",
+      "sx": 462,
+      "sy": 234,
+      "dt": 221
+     },
+     {
+      "ev": "click",
+      "id": "label",
+      "text": "Elapsed 22.5 s",
+      "sx": 462,
+      "sy": 234,
+      "dt": 222
+     }
+    ],
+    "hit": [
+     "label"
+    ],
+    "text": [
+     "Elapsed 22.5 s"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "chrome/dedicated/recreate/1s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "recreate",
+    "id": "again",
+    "anyGen": true,
+    "app": "chrome",
+    "mode": "dedicated",
+    "delay": 1,
+    "expect": "kept",
+    "label": "chrome/dedicated/recreate/1s/branch",
+    "engine": "branch"
+   },
+   "pid": 8475,
+   "navK": "k3",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "engineVersion": "0.1.0",
+    "serverApiVersion": "cua-engine-1",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 348,
+    "sinceLaunchMs": 59482,
+    "nodes": 60,
+    "stalePointRecord": 0.379,
+    "timings": {
+     "actionsMs": 27.051,
+     "fetchFailures": 0,
+     "webAreaFound": true,
+     "chromiumCheckMs": 0.542,
+     "nodes": 71,
+     "screenshotWindowNumberMs": 0.108,
+     "appRoleReadMs": 0.282,
+     "walkMs": 152.651,
+     "totalMs": 329.995,
+     "actionDescriptionsMs": 1.16,
+     "enableMs": 0.513,
+     "watchedProcesses": 1,
+     "screenshotReleaseWaitMs": 0.009,
+     "screenshotJoinMs": 1.899,
+     "markdownFetches": 1,
+     "screenshotWriteMs": 0.375,
+     "screenshotContentMs": 15.922,
+     "markdownMs": 0.893,
+     "settableMs": 0.092,
+     "chromium": true,
+     "attributesMs": 93.81,
+     "enablementPrior": "true",
+     "webShaped": true,
+     "screenshotContentCached": false,
+     "stalePointRecordMs": 0.379,
+     "windowMs": 0.075,
+     "screenshotEncodeMs": 8.335,
+     "webAreaWaitMs": 154.547,
+     "disclosableMs": 1.155,
+     "prepareMs": 8.063,
+     "focusMs": 0.362,
+     "screenshotWindowListMs": 0.569,
+     "resolveMs": 0.038,
+     "selectableMs": 6.745,
+     "focusableMs": 7.911,
+     "monitorMs": 0.67,
+     "menuBarMs": 0.457,
+     "screenshotCaptureMs": 127.819,
+     "estimatedBytes": 47658
+    }
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Again",
+    "frame": {
+     "x": 408,
+     "y": 218,
+     "width": 64,
+     "height": 32
+    }
+   },
+   "intended": "again",
+   "px": {
+    "x": 40,
+    "y": 203
+   },
+   "point": {
+    "x": 440,
+    "y": 234
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Again",
+    "depth": 10,
+    "frame": {
+     "x": 408,
+     "y": 218,
+     "width": 64,
+     "height": 32
+    }
+   },
+   "clickAfterObservationMs": 1001,
+   "clickSinceLaunchMs": 60483,
+   "response": {
+    "result": {
+     "meta": {
+      "activationClick": "outsideFrame",
+      "startedAt": 1793953477569,
+      "hidIdleMs": null,
+      "activationGuardMs": 161.432,
+      "activationJoin": "fresh",
+      "inputRoute": 3,
+      "receivedAt": 1793953477380,
+      "activationClickKind": {
+       "point": "activationPoint",
+       "when": "early",
+       "kind": "inertOutside"
+      },
+      "stalePoint": {
+       "recordedRole": "AXButton",
+       "hitRole": "AXButton",
+       "verdict": "kept",
+       "reason": "sameElement",
+       "ms": 7.849,
+       "identity": "recreated"
+      },
+      "endedAt": 1793953477569,
+      "coordinateClick": {
+       "windowPoint": {
+        "y": 203,
+        "x": 40
+       },
+       "postedWindowLocation": {
+        "x": 40,
+        "y": 203
+       },
+       "frameBeforePost": {
+        "width": 620,
+        "x": 400,
+        "height": 679,
+        "y": 31
+       },
+       "windowFrame": {
+        "height": 679,
+        "y": 31,
+        "width": 620,
+        "x": 400
+       },
+       "postedLocation": {
+        "x": 440,
+        "y": 234
+       },
+       "screenshotPoint": {
+        "x": 40,
+        "y": 203
+       }
+      }
+     }
+    }
+   },
+   "stalePoint": {
+    "recordedRole": "AXButton",
+    "hitRole": "AXButton",
+    "verdict": "kept",
+    "reason": "sameElement",
+    "ms": 7.849,
+    "identity": "recreated"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793953477569,
+   "endedAt": 1793953477569,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 190,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "again",
+      "text": "Again",
+      "gen": "7",
+      "sx": 440,
+      "sy": 234,
+      "dt": 193
+     },
+     {
+      "ev": "click",
+      "id": "again",
+      "text": "Again",
+      "gen": "7",
+      "sx": 440,
+      "sy": 234,
+      "dt": 194
+     }
+    ],
+    "hit": [
+     "again"
+    ],
+    "text": [
+     "Again"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "chrome/dedicated/recreate/20s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "recreate",
+    "id": "again",
+    "anyGen": true,
+    "app": "chrome",
+    "mode": "dedicated",
+    "delay": 20,
+    "expect": "kept",
+    "label": "chrome/dedicated/recreate/20s/branch",
+    "engine": "branch"
+   },
+   "pid": 8475,
+   "navK": "k4",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 346,
+    "sinceLaunchMs": 64927,
+    "nodes": 60,
+    "stalePointRecord": 0.207,
+    "timings": {
+     "fetchFailures": 0,
+     "nodes": 71,
+     "screenshotJoinMs": 9.499,
+     "screenshotEncodeMs": 5.129,
+     "screenshotWriteMs": 0.576,
+     "stalePointRecordMs": 0.207,
+     "webAreaWaitMs": 164.602,
+     "chromium": true,
+     "appRoleReadMs": 0.706,
+     "resolveMs": 0.03,
+     "menuBarMs": 0.386,
+     "settableMs": 0.181,
+     "markdownMs": 4.689,
+     "screenshotWindowListMs": 0.578,
+     "totalMs": 330.588,
+     "watchedProcesses": 1,
+     "screenshotContentCached": false,
+     "chromiumCheckMs": 1.302,
+     "focusableMs": 27.909,
+     "monitorMs": 0.374,
+     "prepareMs": 4.014,
+     "markdownFetches": 1,
+     "actionDescriptionsMs": 0.05,
+     "estimatedBytes": 47658,
+     "focusMs": 0.345,
+     "screenshotCaptureMs": 125.886,
+     "windowMs": 0.071,
+     "selectableMs": 6.692,
+     "walkMs": 139.127,
+     "enableMs": 1.029,
+     "enablementPrior": "true",
+     "screenshotReleaseWaitMs": 0.019,
+     "disclosableMs": 0.94,
+     "screenshotContentMs": 14.49,
+     "actionsMs": 19.096,
+     "webShaped": true,
+     "webAreaFound": true,
+     "attributesMs": 67.958,
+     "screenshotWindowNumberMs": 0.455
+    }
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Again",
+    "frame": {
+     "height": 32,
+     "width": 64,
+     "y": 218,
+     "x": 408
+    }
+   },
+   "intended": "again",
+   "px": {
+    "x": 40,
+    "y": 203
+   },
+   "point": {
+    "x": 440,
+    "y": 234
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Again",
+    "depth": 10,
+    "frame": {
+     "height": 32,
+     "width": 64,
+     "y": 218,
+     "x": 408
+    }
+   },
+   "clickAfterObservationMs": 20014,
+   "clickSinceLaunchMs": 84941,
+   "response": {
+    "result": {
+     "meta": {
+      "activationClickKind": {
+       "when": "early",
+       "kind": "inertOutside",
+       "point": "activationPoint"
+      },
+      "inputRoute": 3,
+      "activationGuardMs": 145.366,
+      "stalePoint": {
+       "reason": "sameElement",
+       "verdict": "kept",
+       "ms": 5.373,
+       "hitRole": "AXButton",
+       "identity": "recreated",
+       "recordedRole": "AXButton"
+      },
+      "hidIdleMs": null,
+      "activationJoin": "fresh",
+      "endedAt": 1793953502030,
+      "coordinateClick": {
+       "windowPoint": {
+        "x": 40,
+        "y": 203
+       },
+       "screenshotPoint": {
+        "x": 40,
+        "y": 203
+       },
+       "postedLocation": {
+        "y": 234,
+        "x": 440
+       },
+       "postedWindowLocation": {
+        "x": 40,
+        "y": 203
+       },
+       "windowFrame": {
+        "height": 679,
+        "width": 620,
+        "x": 400,
+        "y": 31
+       },
+       "frameBeforePost": {
+        "y": 31,
+        "x": 400,
+        "width": 620,
+        "height": 679
+       }
+      },
+      "receivedAt": 1793953501839,
+      "startedAt": 1793953502030,
+      "activationClick": "outsideFrame"
+     }
+    }
+   },
+   "stalePoint": {
+    "reason": "sameElement",
+    "verdict": "kept",
+    "ms": 5.373,
+    "hitRole": "AXButton",
+    "identity": "recreated",
+    "recordedRole": "AXButton"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793953502030,
+   "endedAt": 1793953502030,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 194,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "again",
+      "text": "Again",
+      "gen": "45",
+      "sx": 440,
+      "sy": 234,
+      "dt": 197
+     },
+     {
+      "ev": "click",
+      "id": "again",
+      "text": "Again",
+      "gen": "45",
+      "sx": 440,
+      "sy": 234,
+      "dt": 205
+     }
+    ],
+    "hit": [
+     "again"
+    ],
+    "text": [
+     "Again"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  },
+  {
+   "label": "chrome/dedicated/static/1s/branch",
+   "spec": {
+    "kind": "web",
+    "case": "static",
+    "id": "static",
+    "app": "chrome",
+    "mode": "dedicated",
+    "delay": 1,
+    "expect": "kept/nonInteractiveHit",
+    "label": "chrome/dedicated/static/1s/branch",
+    "engine": "branch"
+   },
+   "pid": 8475,
+   "navK": "k5",
+   "front": "com.apple.TextEdit",
+   "ping": {
+    "serverApiVersion": "cua-engine-1",
+    "engineVersion": "0.1.0",
+    "build": "unbundled"
+   },
+   "observation": {
+    "ms": 351,
+    "sinceLaunchMs": 89422,
+    "nodes": 60,
+    "stalePointRecord": 0.122,
+    "timings": {
+     "nodes": 71,
+     "focusMs": 0.256,
+     "fetchFailures": 0,
+     "selectableMs": 12.006,
+     "appRoleReadMs": 0.178,
+     "estimatedBytes": 47640,
+     "windowMs": 0.069,
+     "prepareMs": 3.661,
+     "walkMs": 139.599,
+     "stalePointRecordMs": 0.122,
+     "screenshotReleaseWaitMs": 0.024,
+     "chromium": true,
+     "actionsMs": 15.183,
+     "markdownMs": 0.569,
+     "screenshotWriteMs": 0.263,
+     "enablementPrior": "true",
+     "webShaped": true,
+     "chromiumCheckMs": 0.549,
+     "focusableMs": 8.412,
+     "disclosableMs": 1.327,
+     "resolveMs": 0.018,
+     "screenshotWindowNumberMs": 0.14,
+     "screenshotCaptureMs": 108.819,
+     "screenshotEncodeMs": 11.869,
+     "screenshotWindowListMs": 0.474,
+     "webAreaFound": true,
+     "watchedProcesses": 1,
+     "attributesMs": 83.318,
+     "screenshotContentMs": 14.124,
+     "enableMs": 0.324,
+     "totalMs": 340.72,
+     "monitorMs": 0.361,
+     "menuBarMs": 0.45,
+     "screenshotJoinMs": 0.001,
+     "screenshotContentCached": false,
+     "actionDescriptionsMs": 0.09,
+     "webAreaWaitMs": 188.578,
+     "markdownFetches": 1,
+     "settableMs": 0.168
+    }
+   },
+   "target": {
+    "role": "AXButton",
+    "title": "Static",
+    "frame": {
+     "x": 408,
+     "height": 32,
+     "y": 218,
+     "width": 64
+    }
+   },
+   "intended": "static",
+   "px": {
+    "x": 40,
+    "y": 203
+   },
+   "point": {
+    "x": 440,
+    "y": 234
+   },
+   "recorded": {
+    "role": "AXButton",
+    "title": "Static",
+    "depth": 10,
+    "frame": {
+     "x": 408,
+     "height": 32,
+     "y": 218,
+     "width": 64
+    }
+   },
+   "clickAfterObservationMs": 1002,
+   "clickSinceLaunchMs": 90424,
+   "response": {
+    "result": {
+     "meta": {
+      "hidIdleMs": null,
+      "activationGuardMs": 188.681,
+      "startedAt": 1793953507527,
+      "activationJoin": "fresh",
+      "activationClick": "outsideFrame",
+      "stalePoint": {
+       "recordedRole": "AXButton",
+       "verdict": "kept",
+       "reason": "sameElement",
+       "ms": 0.331,
+       "identity": "handle",
+       "hitRole": "AXButton"
+      },
+      "inputRoute": 3,
+      "coordinateClick": {
+       "windowFrame": {
+        "x": 400,
+        "y": 31,
+        "height": 679,
+        "width": 620
+       },
+       "frameBeforePost": {
+        "y": 31,
+        "width": 620,
+        "height": 679,
+        "x": 400
+       },
+       "windowPoint": {
+        "x": 40,
+        "y": 203
+       },
+       "postedLocation": {
+        "y": 234,
+        "x": 440
+       },
+       "postedWindowLocation": {
+        "y": 203,
+        "x": 40
+       },
+       "screenshotPoint": {
+        "x": 40,
+        "y": 203
+       }
+      },
+      "receivedAt": 1793953507320,
+      "endedAt": 1793953507527,
+      "activationClickKind": {
+       "kind": "inertOutside",
+       "point": "activationPoint",
+       "when": "early"
+      }
+     }
+    }
+   },
+   "stalePoint": {
+    "recordedRole": "AXButton",
+    "verdict": "kept",
+    "reason": "sameElement",
+    "ms": 0.331,
+    "identity": "handle",
+    "hitRole": "AXButton"
+   },
+   "errorName": null,
+   "errorMessage": null,
+   "startedAt": 1793953507527,
+   "endedAt": 1793953507527,
+   "route": 3,
+   "elementClick": null,
+   "clickMs": 207,
+   "effect": {
+    "events": [
+     {
+      "ev": "pointerdown",
+      "id": "static",
+      "text": "Static",
+      "sx": 440,
+      "sy": 234,
+      "dt": 210
+     },
+     {
+      "ev": "click",
+      "id": "static",
+      "text": "Static",
+      "sx": 440,
+      "sy": 234,
+      "dt": 211
+     }
+    ],
+    "hit": [
+     "static"
+    ],
+    "text": [
+     "Static"
+    ]
+   },
+   "pageEvents": [],
+   "engineStderr": ""
+  }
+ ]
+}

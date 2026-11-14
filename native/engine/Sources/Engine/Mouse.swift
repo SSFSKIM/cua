@@ -175,7 +175,14 @@ func stampWindow(_ event: CGEvent, id: CGWindowID?, frame: CGRect?, point: CGPoi
   if windowIDField { event.setIntegerValueField(eventField(51), value: Int64(id)) }
   event.setIntegerValueField(eventField(91), value: Int64(id))
   event.setIntegerValueField(eventField(92), value: Int64(id))
-  if let frame { setWindowLocation?(event, CGPoint(x: point.x - frame.minX, y: point.y - frame.minY)) }
+  if let location = stampedWindowLocation(point, id: id, frame: frame) { setWindowLocation?(event, location) }
+}
+
+/// The window location `stampWindow` stamps for `point`: its offset from the frame's origin, unflipped; nil without a
+/// window id or a frame, when none is stamped.
+func stampedWindowLocation(_ point: CGPoint, id: CGWindowID?, frame: CGRect?) -> CGPoint? {
+  guard id != nil, let frame else { return nil }
+  return CGPoint(x: point.x - frame.minX, y: point.y - frame.minY)
 }
 
 /// The window the events are aimed at (`stampWindow`'s field 91), the first that names one; nil when none does.

@@ -47,15 +47,49 @@ test('an observation keeps its own diagnostics (#244: the role read, the prior, 
   assert.deepEqual(readReply(reply({'cua/nativeEngine': {engine: 'cua'}, 'cua/engineMs': 120, 'cua/observation': observation})).meta, {engineMs: 120, observation});
 });
 
+test('an element click keeps its plan, the ladder\'s reason and the hit-test\'s answer (#188)', () => {
+  const elementClick = {plan: 'action', action: 'AXPress', reason: 'advertised', hit: 'same', hitTest: 'application'};
+  assert.deepEqual(readReply(reply({'cua/nativeEngine': {engine: 'cua'}, 'cua/elementClick': elementClick})).meta, {elementClick});
+});
+
+test('a re-slot row keeps the activation\'s click, the paste\'s per-line records, the delivery guard, the after-action repairs and a coordinate click\'s placement (#187, #259)', () => {
+  const kind = {kind: 'inertOutside', point: 'offset', when: 'early'};
+  const paste = {stage: 'effect', confirmed: true, perLine: [{line: 1, confirmed: true, effectWait: 'reading'}, {line: 2, confirmed: true, effectWait: 'reading', openingReturn: {settle: 'reading', settleMs: 12}}]};
+  const delivery = {restores: 0, postedAt: 10}, repairs = {total: 0}, placement = {screenshotPoint: {x: 1, y: 2}, windowPoint: {x: 1, y: 2}, postedLocation: {x: 3, y: 4},
+    postedWindowLocation: {x: 1, y: 2}, windowFrame: {x: 2, y: 2, width: 9, height: 9}, frameBeforePost: {x: 2, y: 2, width: 9, height: 9}};
+  const read = readReply(reply({'cua/nativeEngine': {engine: 'cua'}, 'cua/activationClickKind': kind, 'cua/paste': paste, 'cua/delivery': delivery,
+    'cua/afterActionRepairs': repairs, 'cua/coordinateClick': placement}));
+  assert.deepEqual(read.meta, {activationClickKind: kind, paste, delivery, afterActionRepairs: repairs, coordinateClick: placement});
+});
+
+test('a reply keeps the engine\'s whole identity, a control build\'s variant included, and the activation\'s join (#187\'s isolating slot)', () => {
+  const control = {engine: 'cua', version: '0.1.0', build: 'c'.repeat(64), variant: 'control-no-inert-click'};
+  const read = readReply(reply({'cua/nativeEngine': {...control, extra: 1}, 'cua/activationJoin': 'rearmed'}));
+  assert.deepEqual(read.nativeEngine, control, 'only the identity\'s own fields');
+  assert.equal(read.engine, 'cua');
+  assert.deepEqual(read.meta, {activationJoin: 'rearmed'});
+  const {variant, ...shipping} = control;
+  assert.deepEqual(readReply(reply({'cua/nativeEngine': shipping})).nativeEngine, shipping, 'a release names no variant');
+  assert.equal(readReply(reply({})).nativeEngine, null);
+  assert.equal(readReply({timedOut: true}).nativeEngine, null);
+});
+
 // A session whose serve is a fake: what each opening sends.
-async function opened(bind) {
+async function opened(bind, scenes = [{id: 'electron', app: '/c/F.app', pid: 7, at: 1, window: {number: 5}}]) {
   const sent = [];
   const fake = () => ({initialize: async () => {}, terminate: async () => {}, close: async () => {}, call: async () => ({}),
     js: async code => { sent.push(code); return reply({'cua/nativeEngine': {engine: 'cua'}}, answer({ready: true})); }});
-  const scene = {id: 'electron', app: '/c/F.app', pid: 7, at: 1, window: {number: 5}};
-  const session = await openDriven({name: 's', engine: 'cua', env: {}, scenes: [scene], guard: {problem: () => null, frontmost: () => null}, open: fake, ...(bind === undefined ? {} : {bind})});
+  const session = await openDriven({name: 's', engine: 'cua', env: {}, scenes, guard: {problem: () => null, frontmost: () => null}, open: fake, ...(bind === undefined ? {} : {bind})});
   return {sent, session};
 }
+
+test('a session opened with bind naming some scenes binds those alone; the others are still the guard\'s (#188: Finder as the user window)', async () => {
+  const finder = {id: 'finder', app: '/System/Library/CoreServices/Finder.app', pid: 9, window: {number: 6}};
+  const some = await opened(['electron'], [{id: 'electron', app: '/c/F.app', pid: 7, at: 1, window: {number: 5}}, finder]);
+  assert.equal(some.sent.length, 2, 'the first cell and the fixture\'s bind');
+  assert.ok(!some.sent.some(code => code.includes('Finder.app')), 'Finder is never observed');
+  assert.equal((await some.session.run('1', {keys: null})).ok, true);
+});
 
 test('a session opened with bind false sends only its first cell, and its scene is still one a cell may act on', async () => {
   const bound = await opened(undefined);

@@ -707,6 +707,11 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - Xvfb cannot grow its screen: RandR's maximum is its start size, and a `SetScreenSize` smaller than the CRTC is BadMatch. So a resize test needs Xorg's dummy driver (`tests/xorg-resizable.conf`, 640x480 to 1280x800).
   Evidence: runs 43148025593 (red) and 43149892384 (green); the whole-branch review's fix report, F3 (local).
 
+- Observation (M5 T1's review, 2026-11-14): M4's gate ran its service-backed experiments, the D, S, L, H, C, P and V steps that go through `cua serve`, with this VM account's own HOME, XDG dirs and CUA_HOME. The runner passed its environment through (`scripts/linux-engine-gate/gate.mjs`). So the person's secret store, `~/.config/claude-secrets`, was reachable from those sessions' trusted side.
+  - None substituted a secret. Every M4 gate record was searched for `{{secret:`: in `out/`, `out-rerun1/`, `c2-f9692898/` and `c3-c55c8e08/`, compressed records included. The only matches are the tool description's own `{{secret:<label>}}` syntax, in R1's `parity/{cua,vendor}/tools.json`. No gate step and no facade script runs the secret acceptance scripts (`scripts/accept/linux-secret.mjs`, `remote-secret.mjs`, `textedit.mjs`).
+  - The facade suites R1–R4 already ran in a run-owned home (`m4/facade/`), as did M4's post-release checks.
+  - From M5 on, pinned mode gives every service-backed experiment the run-owned home (T1's fix wave, ruling 708).
+
 ## Decision Log
 
 - Decision (2026-10-28, authoring): verification. The spec gets one independent review by the `doperpowers:adversarial-reviewer` agent (technical-heavy: a wire protocol, X11 and D-Bus semantics, a vendor bar) and, in the same round, the same agent type's buildability review of the execution section. Execution runs under a `doperpowers:plan-executor` (opus, high) with its default worker pins; each milestone's pull request gets `doperpowers:reviewer-high`; the final branch review is doperpowers:review-code at the high rung per milestone PR.

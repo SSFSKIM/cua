@@ -168,6 +168,8 @@ record's first version doubled candidate 1's V1, V2 and V4 series counts: they w
 `results.jsonl`, where every cua verdict row carries each series' label twice (`intervals[].label` and
 `labels[].label`). The row counts were right.
 
+Candidate 1's speed tallies were corrected to be counted once per series (ba0434ff), and no verdict moved.
+
 ### Candidate 1 (task 76, 2026-11-13; `out/`, `out-rerun1/`)
 
 The STOP file held the driver after C1, before the twice-the-load block.

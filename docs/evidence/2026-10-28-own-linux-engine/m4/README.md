@@ -51,6 +51,7 @@ application runs on default settings in a home of the run's (the Decision Log, 2
 | task 75 | `drag-control-race/` | (the tech-debt tracker) | The Gecko drag control's missing event was the release, read late |
 | T18 | `harness-helpers/`, `foreground-start/`, `facade/` | T18's entries (folded by the design session) | The close-out, below |
 | – | `repl-parity-baseline/` | – | Two repl-parity tests that fail on the VM before and after M4 |
+| task 80 | `release/` | (the controller folds it) | `linux-engine-v0.4.0` released from c55c8e08 (run 43637317960). Its x64 asset is the gated bytes (`751ec9be…`). Pinned in ed5bf1bc. Fresh-home install, doctor, Acceptance 1 and the device fixture pass on it. A home on 0.3.0 is refused and names `cua install --engine`, which fixes it ([its README](release/README.md)) |
 
 ## T18 (task 74): the close-out
 

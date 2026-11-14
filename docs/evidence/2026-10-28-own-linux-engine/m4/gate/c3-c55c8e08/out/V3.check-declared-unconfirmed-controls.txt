@@ -1,0 +1,8 @@
+ok   as stored (must HOLD): HOLDS
+ok   a right_click_fallback sample answered ok: DOES NOT HOLD (VERDICT (declared unconfirmed, listed apart, never a pass): DOES NOT HOLD for 1 of 2 cells)
+ok   a secondary_action sample answered another error: DOES NOT HOLD (VERDICT (declared unconfirmed, listed apart, never a pass): DOES NOT HOLD for 1 of 2 cells)
+ok   a secondary_action sample whose page's context counter did not rise: DOES NOT HOLD (VERDICT (declared unconfirmed, listed apart, never a pass): DOES NOT HOLD for 1 of 2 cells)
+ok   a right_click_fallback sample whose witness changed: DOES NOT HOLD (VERDICT (declared unconfirmed, listed apart, never a pass): DOES NOT HOLD for 1 of 2 cells)
+ok   a foreign change in the secondary_action audit: DOES NOT HOLD (VERDICT (declared unconfirmed, listed apart, never a pass): DOES NOT HOLD for 1 of 2 cells)
+ok   the harness stored right_click_fallback as fail: DOES NOT HOLD (VERDICT (declared unconfirmed, listed apart, never a pass): DOES NOT HOLD for 1 of 2 cells)
+controls: every one as expected

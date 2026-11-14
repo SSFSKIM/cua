@@ -1,0 +1,25 @@
+ok   m4-gate-S1 as stored (must PASS): PASS
+ok   m4-gate-S1 electron-input press_key background, trial 4: a lost key: no late reading: FAIL (trial 4: fail: class never)
+ok   m4-gate-S1 electron-input press_key background, trial 4: criterion 1: no key-down in the settle: FAIL (trial 4: fail: criterion 1: key_downs 4 -> 4, last_key x)
+ok   m4-gate-S1 electron-input press_key background, trial 4: criterion 2: the key-up already counted, yet not ok: FAIL (trial 4: fail: criterion 2: key_ups 4 -> 5, late_ms 215.9)
+ok   m4-gate-S1 electron-input press_key background, trial 4: criterion 3: the next before-read still one release short: FAIL (trial 4: fail: criterion 3: next before-read (electron-input press_key background trial 5) key_ups 4, key_downs 5)
+ok   m4-gate-S1 electron-input press_key background, trial 4: a refusal: FAIL (trial 4: fail: class refused)
+ok   m4-gate-S1 electron-input press_key background, trial 4: the desktop changed (desktop_clean false): FAIL (trial 4: fail: the desktop changed)
+ok   m4-gate-S1 electron-input press_key background, trial 4: its front window not active (front_active false): FAIL (trial 4: fail: the desktop changed)
+     m4-gate-S1 electron-input press_key desktop: no #302 run, no control
+ok   m4-gate-L3b as stored (must PASS): PASS
+ok   m4-gate-L3b electron-input press_key background, trial 28: a lost key: no late reading: FAIL (trial 28: fail: class never)
+ok   m4-gate-L3b electron-input press_key background, trial 28: criterion 1: no key-down in the settle: FAIL (trial 28: fail: criterion 1: key_downs 28 -> 28, last_key x)
+ok   m4-gate-L3b electron-input press_key background, trial 28: criterion 2: the key-up already counted, yet not ok: FAIL (trial 28: fail: criterion 2: key_ups 28 -> 29, late_ms 314.5)
+ok   m4-gate-L3b electron-input press_key background, trial 28: criterion 3: the next before-read still one release short: FAIL (trial 28: fail: criterion 3: next before-read (electron-input press_key background trial 29) key_ups 28, key_downs 29)
+ok   m4-gate-L3b electron-input press_key background, trial 28: a refusal: FAIL (trial 28: fail: class refused)
+ok   m4-gate-L3b electron-input press_key background, trial 28: the desktop changed (desktop_clean false): FAIL (trial 28: fail: the desktop changed)
+ok   m4-gate-L3b electron-input press_key background, trial 28: its front window not active (front_active false): FAIL (trial 28: fail: the desktop changed)
+ok   m4-gate-L3b electron-input press_key desktop, trial 4: a lost key: no late reading: FAIL (trial 4: fail: class never)
+ok   m4-gate-L3b electron-input press_key desktop, trial 4: criterion 1: no key-down in the settle: FAIL (trial 4: fail: criterion 1: key_downs 173 -> 173, last_key x)
+ok   m4-gate-L3b electron-input press_key desktop, trial 4: criterion 2: the key-up already counted, yet not ok: FAIL (trial 4: fail: criterion 2: key_ups 173 -> 174, late_ms 268)
+ok   m4-gate-L3b electron-input press_key desktop, trial 4: criterion 3: the next before-read still one release short: FAIL (trial 4: fail: criterion 3: next before-read (electron-input press_key desktop trial 5) key_ups 173, key_downs 174)
+ok   m4-gate-L3b electron-input press_key desktop, trial 4: a refusal: FAIL (trial 4: fail: class refused)
+ok   m4-gate-L3b electron-input press_key desktop, trial 4: the desktop changed (desktop_clean false): FAIL (trial 4: fail: the desktop changed)
+ok   m4-gate-L3b electron-input press_key desktop, trial 4: its front window not active (front_active false): FAIL (trial 4: fail: the desktop changed)
+controls: every one as expected

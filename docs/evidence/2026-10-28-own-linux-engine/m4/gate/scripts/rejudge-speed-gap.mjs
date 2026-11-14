@@ -14,6 +14,9 @@
 //     same operation (the activation itself: _NET_ACTIVE_WINDOW, the raise, the focus), with no foreign change;
 //   - witness: every field a cua sample's witness saw change is one the vendor builds' samples saw change too.
 // Anything else fails. The run itself must be valid, its stub check failed by witness and audit, and its trace clean.
+// A stored verdict the candidate's harness lists apart as a declared loss (stats.mjs DECLARED_LOSSES: from candidate 3
+// on, "declared unconfirmed" beside "declared refusal", rulings 688 and 691) stands as stored, listed apart, never a
+// pass; a harness without that list has only "declared refusal" (task 79).
 // Read-only. usage: node rejudge-speed-gap.mjs <harness checkout (the candidate's commit)> <results.jsonl>
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -37,6 +40,7 @@ const { judgeWithDecisions } = await import(join(harness, 'scripts/linux-engine-
 const { medianDifferenceInterval } = await import(join(harness, 'scripts/linux-engine-diff/events.mjs'));
 const { declaredParity } = await import(join(harness, 'scripts/linux-engine-diff/deviations.mjs'));
 const { OPS } = await import(join(harness, 'scripts/linux-engine-diff/ops.mjs'));
+const DECLARED_LOSSES = (await import(join(harness, 'scripts/linux-engine-diff/stats.mjs'))).DECLARED_LOSSES ?? ['declared refusal'];
 const rows = readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
 const meta = rows.find((r) => r.kind === 'meta');
 const end = rows.find((r) => r.kind === 'end');
@@ -55,7 +59,7 @@ console.log(`label: ${meta?.label ?? (meta?.gate ? 'release gate' : 'development
 console.log(`gap: ${GAP.wording}`);
 
 const verdictOf = (v) => v.verdict ?? (v.pass ? 'pass' : 'fail');
-const STANDING = new Set(['pass', 'parity', 'declared refusal']);
+const STANDING = new Set(['pass', 'parity', ...DECLARED_LOSSES]);
 const out = [];
 for (const v of rows.filter((r) => r.kind === 'verdict')) {
   const name = `${v.scene} ${v.op} ${v.device ? '(device)' : v.candidate}`;
@@ -103,6 +107,8 @@ const tally = out.reduce((m, o) => ({ ...m, [o.now]: (m[o.now] ?? 0) + 1 }), {})
 const failed = out.filter((o) => !STANDING.has(o.now) && o.now !== 'declared gap');
 const gaps = out.filter((o) => o.now === 'declared gap');
 console.log(`\nrows: ${out.length} (${Object.entries(tally).map(([k, n]) => `${k} ${n}`).join(', ')}); declared gap (listed apart, never a pass): ${gaps.map((g) => g.name).join(', ') || 'none'}`);
+const unconfirmed = out.filter((o) => o.now === 'declared unconfirmed');
+if (unconfirmed.length) console.log(`declared unconfirmed, as the harness judged it (listed apart, never a pass): ${unconfirmed.map((u) => u.name).join(', ')}`);
 if (problems.length) console.log(`run problems: ${problems.join('; ')}`);
 const pass = failed.length === 0 && problems.length === 0;
 console.log(`VERDICT (the run's verdicts, ${GAP.op} by its declared gap ${GAP.issue}): ${pass ? 'PASS' : 'FAIL'}${failed.length ? `; failing: ${failed.map((f) => f.name).join(', ')}` : ''}`);

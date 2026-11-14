@@ -1,0 +1,66 @@
+# the settle cross-check: out/S4.release-gate/run/summary.md against out-c3/S4.release-gate/run/summary.md
+
+| cell | lane | runs | misses | verdict | differs |
+|---|---|---|---|---|---|
+| xterm click desktop | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| xterm scroll desktop | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| xterm drag desktop | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| xterm click background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| xterm scroll background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| xterm drag background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| xterm press_key dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-gtk3 move desktop | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-gtk3 click background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-gtk3 activate_click background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-gtk3 activate_click dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-gtk3 click_element background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-gtk3 move background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-gtk3 scroll background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt5 move desktop | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt5 click background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt5 key_click background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt5 click_element background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt5 move background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt5 secondary_action background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt5 scroll dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt6 move desktop | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt6 click background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt6 key_click background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt6 click_element background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt6 move background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt6 secondary_action background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| settle-qt6 scroll dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gtk4-button click_element background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gtk4-button secondary_action background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gtk4-input press_key dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gtk4-input click dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gtk4-input move dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gtk4-input scroll dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gtk4-input drag dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gnome-text-editor type_text dedicated | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+| gnome-text-editor activate_window background | shipped | 30 → 30 | 0 (0 / 0 / 0 / 0) → 0 (0 / 0 / 0 / 0) | 30 consecutive → 30 consecutive | – |
+
+| audited cell | audit | ran | effects missed | differs |
+|---|---|---|---|---|
+| xterm click background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| xterm scroll background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| xterm drag background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-gtk3 click background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-gtk3 click_element background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-gtk3 move background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-gtk3 scroll background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-qt5 click background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-qt5 key_click background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-qt5 click_element background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-qt5 move background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-qt5 secondary_action background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-qt6 click background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-qt6 key_click background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-qt6 click_element background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-qt6 move background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| settle-qt6 secondary_action background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| gtk4-button click_element background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+| gtk4-button secondary_action background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
+
+cells: 37 and 37; audited: 19 and 19; verdicts differing 0, cells in one only 0, audits differing 0, cells whose misses differ 0
+CROSS-CHECK: SAME verdicts, cells and audits

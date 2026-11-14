@@ -1,0 +1,12 @@
+ok   as stored (must PASS, the two cells listed apart): PASS (declared unconfirmed, as the harness judged it (listed apart, never a pass): chrome-input right_click_fallback cua, chrome-input secondary_action cua)
+ok   a missed effect: FAIL (VERDICT (the run's verdicts, activate_window by its declared gap #373): FAIL; failing: chrome-input activate_window cua)
+ok   a failed answer: FAIL (VERDICT (the run's verdicts, activate_window by its declared gap #373): FAIL; failing: chrome-input activate_window cua)
+ok   a witness field the vendors' never changed: FAIL (VERDICT (the run's verdicts, activate_window by its declared gap #373): FAIL; failing: chrome-input activate_window cua)
+ok   an audit request the vendors do not send: FAIL (VERDICT (the run's verdicts, activate_window by its declared gap #373): FAIL; failing: chrome-input activate_window cua)
+ok   a foreign change in the audit: FAIL (VERDICT (the run's verdicts, activate_window by its declared gap #373): FAIL; failing: chrome-input activate_window cua)
+ok   an audit that did not answer ok: FAIL (VERDICT (the run's verdicts, activate_window by its declared gap #373): FAIL; failing: chrome-input activate_window cua)
+ok   another row failing (stands): FAIL (VERDICT (the run's verdicts, activate_window by its declared gap #373): FAIL; failing: chrome-input move cua)
+ok   right_click_fallback stored as fail, not declared unconfirmed: FAIL (VERDICT (the run's verdicts, activate_window by its declared gap #373): FAIL; failing: chrome-input right_click_fallback cua)
+ok   secondary_action stored as fail, not declared unconfirmed: FAIL (VERDICT (the run's verdicts, activate_window by its declared gap #373): FAIL; failing: chrome-input secondary_action cua)
+ok   the stored rows under a harness without DECLARED_LOSSES (must FAIL): FAIL (VERDICT (the run's verdicts, activate_window by its declared gap #373): FAIL; failing: chrome-input right_click_fallback cua, chrome-input secondary_action cua)
+controls: every one as expected

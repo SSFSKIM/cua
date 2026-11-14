@@ -1,0 +1,11 @@
+# m4-gate-V3 re-judged with activate_window's declared speed gap (#373; the design session, 2026-11-13 (sminos 666))
+label: release gate; candidate 751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca (cua-engine 0.4.0 (c55c8e08d9cb)); /Users/new/.local/share/cua-171/gate/out-c3/V3.release-gate/run/results.jsonl
+gap: activate_window waits for its window's raise so the next input can't reach the window it covered (task 63, 2026-11-06); the wait is the safety; tracked by #373
+
+| verdict row | stored | re-judged | why |
+|---|---|---|---|
+| chrome-input activate_window cua | fail | declared gap | speed only: cua: cold 11.56 ms > bar 4.26 ms, the interval [6.035, 8.265] above 0; cua: warm 8.46 ms > bar 0.55 ms, the interval [6.285, 10.045] above 0; effect 40/40, audit and witness as the vendor builds' |
+
+rows: 41 (pass 37, declared unconfirmed 2, declared refusal 1, declared gap 1); declared gap (listed apart, never a pass): chrome-input activate_window cua
+declared unconfirmed, as the harness judged it (listed apart, never a pass): chrome-input right_click_fallback cua, chrome-input secondary_action cua
+VERDICT (the run's verdicts, activate_window by its declared gap #373): PASS

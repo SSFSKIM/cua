@@ -155,6 +155,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
     }};
     server = createServer({input, output, sessionId, upstream, secrets, profiles, diagnostics,
       sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), nativeEngine: planned.nativeEngine,
+      // The engine every launch of this connection drives, for the js rules (src/mcp/surface.mjs jsRulesFor).
+      engine: replHost.engine?.engine ?? null,
       cursorContext: cursorContext ? () => cursorContext : null,
       ...(idleTimer ? {idleTimer} : {}), ...serverSettings});
   } catch (error) {

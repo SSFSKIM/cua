@@ -36,6 +36,9 @@
 //   answer the runtime takes, is answered here on its repeats, across idle stops and worker replacements, and never
 //   reaches the client again; an answer that arrives after its runtime stopped is remembered for its app and not
 //   forwarded.
+// - tools/list passes the runtime's tools through surface.mjs modelTools, which puts cua's rules ahead of the js
+//   description; on Linux their text rule follows `engine` ('vendor' | 'cua', the native engine the connection
+//   selected at its open; null without the computer surface, which keeps the vendor engine's rule).
 // - With `nativeEngine` (the launch's engine attestation, a macOS computer session's: src/runtime/launch.mjs), every
 //   js/js_reset result carries `_meta['cua/nativeEngine']`: the service's own when it set one (cua's engine, as its
 //   ping answered), else the launch's, which is how the vendor engine is attested (#117, EngineAttestation).
@@ -99,7 +102,7 @@ export function createServer({
   hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null, feedbackDir}),
   model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID, inAppBrowser = false,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {}, runtimeIdleMs = 0, idleTimer = realTimer, nativeEngine = null,
-  cursorContext = null,
+  cursorContext = null, engine = null,
 }) {
   let nextUpstreamId = 0;
   let clientModel = model;
@@ -349,7 +352,7 @@ export function createServer({
       // A handshake that launched the runtime arms the idle stop, as a completed call does.
       return passThrough(msg, result => { arm(); return {...result, instructions: withHostNotes(result?.instructions, hostNotes)}; });
     }
-    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform, devices: Boolean(target), inAppBrowser})}));
+    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform, devices: Boolean(target), inAppBrowser, engine})}));
     return passThrough(msg);
   }
 

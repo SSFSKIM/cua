@@ -84,7 +84,7 @@ test('no excluded provider, platform or product name survives in the first-call 
 });
 
 test('docs/cua-api holds only the shipped documents and their provenance', () => {
-  assert.deepEqual(readdirSync(DOCS).sort(), ['PROVENANCE.md', 'agent-cursor.md', 'confirmations.md', 'core.md', 'other-browser-apis.md']);
+  assert.deepEqual(readdirSync(DOCS).sort(), ['PROVENANCE.md', 'agent-cursor.md', 'confirmations.md', 'core.md', 'linux-engine.md', 'other-browser-apis.md']);
 });
 
 // The surface inventory's "Table 3 addition (2026-10-30, #235)": cua's own paragraph, not the vendor's, on what the
@@ -114,6 +114,19 @@ test('agent-cursor.md is the Table 3 additions\' paragraphs, and the core carrie
   assert.equal(await create_documentation(read_).read_core(), '<core-cua-repl>\n<confirmations>');
   assert.equal(await create_documentation(read_, {agentCursor: () => false}).read_core(), '<core-cua-repl>\n<confirmations>');
   assert.equal(await create_documentation(read_, {agentCursor: () => true}).read_core(), '<core-cua-repl>\n<agent-cursor>\n<confirmations>');
+});
+
+// cua's own Linux document (the #171 spec's Decision Log, M5 pre-flight, F4): what a Linux computer surface answers
+// beyond core.md (the device mode, minimized windows, the unconfirmed answers, the truncation line), read after the core
+// and before the policy only where the facade's computer surface is Linux's, as agent-cursor.md is macOS's. Its
+// sentences are checked against the engine's own text in ./linux-engine-document.test.mjs.
+test('linux-engine.md follows the core only where the facade asks for it, in agent-cursor.md\'s place', async () => {
+  const read_ = async name => `<${name}>`;
+  assert.equal(await create_documentation(read_, {linuxEngine: () => false}).read_core(), '<core-cua-repl>\n<confirmations>');
+  assert.equal(await create_documentation(read_, {linuxEngine: () => true}).read_core(), '<core-cua-repl>\n<linux-engine>\n<confirmations>');
+  assert.equal(await create_documentation(read_, {linuxEngine: () => true, agentCursor: () => false}).read_core(), '<core-cua-repl>\n<linux-engine>\n<confirmations>');
+  const {read_documentation} = await import('../../src/cua-api/documentation.mjs');
+  assert.equal(await read_documentation('linux-engine'), read(DOCS, 'linux-engine.md'), 'the facade reads the shipped file');
 });
 
 test('the documents ship with the package, so an installed plugin reads them without the source tree', () => {

@@ -143,7 +143,8 @@ test('the Linux comparison refuses the macOS modes, a lane of the wrong engine, 
 // medianDifferenceInterval): with at least 20 samples a side, it passes when the upper end of the bootstrap 95% interval
 // of cua's median minus the vendor's is within max(5% of the vendor's median, 1 ms). #171 M5 T3 (#370, the design
 // session's F8, sminos 704): that series is the in-cell time, what the engines change; the wall time, which adds the MCP
-// transport and the REPL host both lanes share, is reported beside it and judged by nothing. Its basis is the counted
+// transport and the REPL host both lanes share, is reported beside it, and judges only through a gross backstop (ruling
+// 706, below). Its basis is the counted
 // sitting at 8ab1cc75 (docs/evidence/2026-10-28-own-linux-engine/m4/facade/baseline/): by wall time warm.getState and
 // warm.listApps were ties (cua 0.3 and 0.4 ms above), listApps undetermined; inside the cell cua was faster at both.
 const SITTING = fileURLToPath(new URL('../../docs/evidence/2026-10-28-own-linux-engine/m4/facade/baseline/', import.meta.url));
@@ -154,7 +155,7 @@ const edited = (runs, name, edit, key = 'inCellMs') => {
   return runs.map(run => ({...run, rows: run.rows.map(r => (r.op === name && r.ok === true ? {...r, [key]: edit(r[key], i++)} : r))}));
 };
 
-test('the stored sitting re-judged in-cell: every series the engine answers passes, and the wall time is reported beside it, unjudged', () => {
+test('the stored sitting re-judged in-cell: every series the engine answers passes, and the wall time is reported beside it', () => {
   const result = compareLanes('engines', sitting('cv'), sitting('cc'));
   assert.deepEqual(result.problems, []);
   assert.equal(result.verdict, 'PASS', JSON.stringify(result.operations.filter(o => o.verdict === 'fail').map(o => [o.op, o.reasons])));
@@ -166,7 +167,7 @@ test('the stored sitting re-judged in-cell: every series the engine answers pass
     assert.equal(o.basis, 'in-cell median', o.op);
     assert.deepEqual([o.verdict, o.speed.rule, o.speed.basis, o.speed.samples, o.speed.medians, o.speed.interval, o.speed.label], ['pass', 'interval', 'in-cell', {vendor: 90, cua: 90}, medians, interval, 'faster'], o.op);
   }
-  // the wall time beside it, by the same rule and judged by nothing: listApps's wall interval is the one M4 left undetermined
+  // the wall time beside it, by the same rule, its interval judging nothing: listApps's wall interval is the one M4 left undetermined
   assert.deepEqual(state.speed.wall, {samples: {vendor: 90, cua: 90}, medians: {vendor: 17.65, cua: 17.93}, interval: [-0.122, 0.834], bound: 1, label: 'same (within noise)'});
   assert.deepEqual(apps.speed.wall, {samples: {vendor: 90, cua: 90}, medians: {vendor: 16.83, cua: 17.2}, interval: [-0.227, 1.124], bound: 1, label: 'undetermined'});
   for (const name of ['warm.getAXState', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.clear', 'task.total']) assert.deepEqual([op(result, name).verdict, op(result, name).speed.label], ['pass', 'faster'], name);
@@ -177,7 +178,7 @@ test('the stored sitting re-judged in-cell: every series the engine answers pass
   assert.ok(!result.above.some(a => a.op === 'warm.getState' || a.op === 'warm.listApps'), JSON.stringify(result.above));
   const text = renderComparison(result);
   assert.match(text, /## Speed of the operations the engine answers/);
-  assert.match(text, /judged by the in-cell time.*the wall time.*reported beside it, unjudged/);
+  assert.match(text, /judged by the in-cell time.*the wall time.*reported beside it and judged only by a gross wall backstop/);
   assert.match(text, /\| warm\.listApps \| 90 \/ 90 \| 3\.88 \| 3\.43 \| \[-0\.542, -0\.306\] \| 1 \| faster \| pass \| 16\.8 \| 17\.2 \| \[-0\.227, 1\.124\] \| undetermined \|/);
   assert.match(text, /\| warm\.listApps \| in-cell median \|/);
   assert.match(text, /Verdict: \*\*PASS\*\*/);
@@ -197,14 +198,42 @@ test('a cell slower in-cell fails, though its wall time is unchanged; a wall tim
   assert.equal(wall.verdict, 'PASS', JSON.stringify(wall.operations.filter(x => x.verdict === 'fail').map(x => [x.op, x.reasons])));
   const w = op(wall, 'warm.getState');
   assert.deepEqual([w.verdict, w.speed.label, w.speed.wall.label], ['pass', 'faster', 'loss']);
-  // the latency tolerance reads the same median: a wall time 600 ms slower around an unchanged cell is not judged
-  const slow = compareLanes('engines', sitting('cv'), edited(sitting('cc'), 'warm.getState', ms => ms + 600, 'wallMs'));
-  assert.equal(op(slow, 'warm.getState').verdict, 'pass');
+  // the latency tolerance reads the same median
+  assert.deepEqual([w.limitMs, w.candidate.judgedMs], [Math.round((3.94 + 500) * 10) / 10, 3.6]);
   // bind.getApp has 3 samples a side, fewer than the interval rule's 20: it keeps the median rule, in-cell
   const bind = compareLanes('engines', sitting('cv'), edited(sitting('cc'), 'bind.getApp', () => 700));
   assert.deepEqual([op(bind, 'bind.getApp').verdict, op(bind, 'bind.getApp').speed.rule], ['fail', 'median']);
   assert.match(op(bind, 'bind.getApp').reasons.join(' '), /cua's in-cell median 700 ms is above the vendor engine's .* fewer than 20 samples a side/);
 });
+
+// The wall backstop (the design session, ruling 706): in-cell time decides every verdict, and is blind by construction
+// to what cua adds outside the cell (serialization, its worker, the trusted side). So beside it, a gross wall regression
+// fails the operation: cua's wall median above the vendor's plus max(10%, 500 ms). It never passes anything. The stored
+// warm.getState wall medians are 17.65 (vendor) and 17.93 ms (cua): the backstop is 517.65 ms.
+test('the wall backstop: an in-cell pass whose wall time is over max(10%, 500 ms) of the vendor\'s fails; one just under it passes', () => {
+  const over = compareLanes('engines', sitting('cv'), edited(sitting('cc'), 'warm.getState', ms => ms + 501, 'wallMs'));
+  assert.equal(over.verdict, 'FAIL');
+  const o = op(over, 'warm.getState');
+  assert.deepEqual([o.verdict, o.speed.verdict, o.speed.label], ['fail', 'pass', 'faster'], 'in-cell it passes; the backstop alone fails it');
+  // shown to 0.1 ms; judged unrounded, 518.93 against 17.65 + 500
+  assert.deepEqual(o.wallBackstop, {baselineMs: 17.6, candidateMs: 518.9, limitMs: 517.6, verdict: 'fail'});
+  assert.match(o.reasons.join(' '), /wall backstop: cua's wall median 518\.9 ms is above the vendor engine's 17\.6 ms plus max\(10%, 500 ms\), 517\.6 ms/);
+  assert.match(renderComparison(over), /wall backstop/);
+  const under = compareLanes('engines', sitting('cv'), edited(sitting('cc'), 'warm.getState', ms => ms + 499, 'wallMs'));
+  assert.equal(under.verdict, 'PASS', JSON.stringify(under.operations.filter(x => x.verdict === 'fail').map(x => [x.op, x.reasons])));
+  assert.deepEqual([op(under, 'warm.getState').verdict, op(under, 'warm.getState').wallBackstop.verdict], ['pass', 'pass']);
+  // a backstop never passes anything: an in-cell loss with an unchanged wall still fails
+  const loss = compareLanes('engines', sitting('cv'), edited(sitting('cc'), 'warm.getState', ms => ms + 5));
+  assert.deepEqual([op(loss, 'warm.getState').verdict, op(loss, 'warm.getState').wallBackstop.verdict], ['fail', 'pass']);
+  // a method case the engine answers has it too, and an operation no engine answers keeps the wall tolerance it had
+  const typed = judgeBackstop('method.typeText', 12_000);
+  assert.equal(op(typed, 'method.typeText').verdict, 'fail');
+  assert.match(op(typed, 'method.typeText').reasons.join(' '), /wall backstop/);
+  assert.equal(op(compareLanes('engines', sitting('cv'), sitting('cc')), 'warm.noop').wallBackstop, undefined);
+  // the rule is named in the output
+  assert.match(renderComparison(under), /wall backstop/);
+});
+const judgeBackstop = (name, wallMs) => compareLanes('engines', sitting('cv'), sitting('cc').map(run => ({...run, rows: run.rows.map(r => (r.op === name && r.ok ? {...r, wallMs} : r))})));
 
 test('a successful sample with no in-cell time fails its operation: the series the engines change is not shown', () => {
   const missing = sitting('cc').map((run, k) => ({...run, rows: run.rows.map(r => (k === 0 && r.op === 'warm.getAXState' && r.sample === 3 ? (({inCellMs: _, ...rest}) => rest)(r) : r))}));
@@ -257,7 +286,7 @@ test('a series undetermined in the counted sitting resolves when pooled with its
   assert.deepEqual([apps.verdict, apps.speed.verdict, apps.speed.label], ['pass', 'pass', 'faster']);
   assert.deepEqual([apps.speed.samples, apps.speed.interval, apps.speed.bound], [{vendor: 180, cua: 180}, [-0.484, -0.157], 1]);
   assert.deepEqual(apps.speed.toppedUp, {samples: {vendor: 90, cua: 90}, interval: [-2.262, 1.392], bound: 1, label: 'undetermined'});
-  // the wall time beside it is pooled as the in-cell time is, and still judged by nothing
+  // the wall time beside it is pooled as the in-cell time is, its interval still judging nothing
   assert.deepEqual(apps.speed.wall.samples, {vendor: 180, cua: 180});
   assert.deepEqual(result.topUp, {given: true, needed: [], pooled: ['warm.listApps'], undetermined: []});
   assert.deepEqual(result.unproved, []);

@@ -102,8 +102,11 @@ function figures(o, side, net, inCell) {
 
 // `linux`: the Linux engine comparison, where an operation the engine answers is timed in the cell (#370; the design
 // session's F8, 2026-11-14): its judged median is the in-cell time, what the engines change, and its wall time, which
-// adds the MCP transport and the REPL host both lanes share, is reported and judged by nothing. Such an operation fails
-// when a successful sample carries no in-cell time.
+// adds the MCP transport and the REPL host both lanes share, is reported beside it. Such an operation fails when a
+// successful sample carries no in-cell time. In-cell time is blind by construction to what cua adds outside the cell
+// (serialization, its worker, the trusted side), so the wall time keeps one gross backstop (the design session, ruling
+// 706): cua's wall median above the vendor's plus max(10%, 500 ms) fails the operation (`wallBackstop`). The backstop
+// never passes anything; it only fails a gross wall regression.
 function judgeOperation(op, baseline, candidate, {linux = false} = {}) {
   const net = NET_OF_SSH.has(op), inCell = linux && ENGINE_ANSWERED.includes(op);
   const b = figures(baseline.summary.operations.find(o => o.op === op), baseline, net, inCell);
@@ -126,13 +129,19 @@ function judgeOperation(op, baseline, candidate, {linux = false} = {}) {
     const n = side.noInCell.get(op) ?? 0;
     if (n) reasons.push(`${n} of the ${side.label}'s ${f.ok} successful samples ${n === 1 ? 'carries' : 'carry'} no in-cell time, which judges an operation the engine answers (#370)`);
   }
+  let wallBackstop = null;
+  if (inCell && b.wall && c.wall) {
+    const limit = latencyLimit(b.wall.median), over = c.wall.median > limit;
+    wallBackstop = {baselineMs: round(b.wall.median), candidateMs: round(c.wall.median), limitMs: round(limit), verdict: over ? 'fail' : 'pass'};
+    if (over) reasons.push(`wall backstop: cua's wall median ${wallBackstop.candidateMs} ms is above the vendor engine's ${wallBackstop.baselineMs} ms plus max(10%, 500 ms), ${wallBackstop.limitMs} ms; in-cell time judges the operation, and this backstop fails a gross regression outside the cell (ruling 706)`);
+  }
   let limitMs = null;
   if (b.judgedMs !== null) {
     limitMs = round(latencyLimit(b.judgedMs));
     if (c.judgedMs === null) reasons.push('no successful candidate sample to time');
     else if (c.judgedMs > limitMs) reasons.push(`median ${c.judgedMs} ms is above the limit ${limitMs} ms (baseline ${b.judgedMs} ms + max(10%, 500 ms))`);
   }
-  return {...base, limitMs, verdict: reasons.length ? 'fail' : 'pass', reasons};
+  return {...base, limitMs, ...(wallBackstop ? {wallBackstop} : {}), verdict: reasons.length ? 'fail' : 'pass', reasons};
 }
 
 // A method case's observed outcome, one per sample: what the method did, its error, its window's fate, the read-back.
@@ -305,7 +314,8 @@ function declaredGaps(list) {
 // Acceptance 3's speed rule, as the gate applies it, so the suite is never stricter than the bar it serves, over the
 // samples' in-cell time (#370; the design session's F8, M5): the facade -> service -> engine call, what the engines
 // change. The wall time adds the MCP transport and the REPL host, which both lanes run alike; it is reported beside the
-// in-cell time by the same calls (`wall`) and judged by nothing. With at least MIN_NOISE_SAMPLES successful samples a
+// in-cell time by the same calls (`wall`), and its interval and label judge nothing: only judgeOperation's wall backstop
+// (ruling 706) reads the wall time, and only to fail a gross regression. With at least MIN_NOISE_SAMPLES successful samples a
 // side, the series is judged only through the interval (../linux-engine-diff/stats.mjs judgeSeriesSpeed over events.mjs
 // medianDifferenceInterval): it passes when the upper end of the bootstrap 95% interval of cua's median minus the vendor
 // engine's is within max(5% of the vendor's median, 1 ms), labelled `faster`, `same (within noise)` or `within the
@@ -330,7 +340,8 @@ const intervalSpeed = (b, c) => {
   const past = `the bootstrap 95% interval [${s.interval.join(', ')}] ms of cua's in-cell median minus the vendor engine's (cua ${s.candidate} ms, vendor ${s.bar} ms, ${b.length} / ${c.length} samples)`;
   return {rule: 'interval', samples: {vendor: b.length, cua: c.length}, medians: {vendor: s.bar, cua: s.candidate}, interval: s.interval, bound: s.bound, label, verdict: s.verdict === 'pass' ? 'pass' : 'fail', past};
 };
-// The wall time beside the in-cell time, by the same calls where the series is long enough for them; judged by nothing.
+// The wall time beside the in-cell time, by the same calls where the series is long enough for them; its interval and
+// label judge nothing (the wall backstop is judgeOperation's).
 const shownMedian = values => { const m = stats(values)?.median; return m === undefined ? null : Math.round(m * 100) / 100; };
 function wallBeside(b, c) {
   if (b.length < MIN_NOISE_SAMPLES || c.length < MIN_NOISE_SAMPLES) return {samples: {vendor: b.length, cua: c.length}, medians: {vendor: shownMedian(b), cua: shownMedian(c)}};
@@ -526,7 +537,7 @@ export function renderComparison(result) {
     `| Runs | ${b.runs.map(r => r.name).join(', ')} | ${c.runs.map(r => r.name).join(', ')} |`,
     `| ssh.roundtrip median | ${fmt(b.sshMedianMs)} | ${fmt(c.sshMedianMs)} |`, '',
     lane
-      ? `Rule (${lane.linux ? '#171' : '#117'} comparison ${lane.id}, ${lane.title}): the baseline runs ${flags(lane.baseline)}, the candidate ${flags(lane.candidate)}; three complete, attested runs a side of one sitting covering the same plan, every attested field equal but ${lane.differ.join(', ')} (below). ${lane.note} Per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median.${lane.linux ? ` On an operation the engine answers (${ENGINE_ANSWERED.join(', ')}) the candidate is judged by the in-cell time (#370), the cell's own call through the service to the engine, what the engines change; the wall time, which adds the MCP transport and the REPL host both lanes share, is reported beside it, unjudged. Its speed is also judged by Acceptance 3\'s rule (Acceptance 10): with at least ${MIN_NOISE_SAMPLES} samples a side, the upper end of the bootstrap 95% interval of its in-cell median minus the baseline\'s must be within max(5% of the baseline\'s median, 1 ms); with fewer, its in-cell median must be at most the baseline\'s, and every cua typeText and paste sample must return without an error, survive and read back its text (Plan of Work M2); the ordinary better-outcome rule accepts this improvement over the vendor engine\'s text failures, with no failure waived on cua.` : ''} ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
+      ? `Rule (${lane.linux ? '#171' : '#117'} comparison ${lane.id}, ${lane.title}): the baseline runs ${flags(lane.baseline)}, the candidate ${flags(lane.candidate)}; three complete, attested runs a side of one sitting covering the same plan, every attested field equal but ${lane.differ.join(', ')} (below). ${lane.note} Per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median.${lane.linux ? ` On an operation the engine answers (${ENGINE_ANSWERED.join(', ')}) the candidate is judged by the in-cell time (#370), the cell's own call through the service to the engine, what the engines change; the wall time, which adds the MCP transport and the REPL host both lanes share, is reported beside it and judged only by a gross wall backstop: the candidate\'s wall median above the baseline\'s plus max(10%, 500 ms) fails the operation (ruling 706), and the backstop never passes anything. Its speed is also judged by Acceptance 3\'s rule (Acceptance 10): with at least ${MIN_NOISE_SAMPLES} samples a side, the upper end of the bootstrap 95% interval of its in-cell median minus the baseline\'s must be within max(5% of the baseline\'s median, 1 ms); with fewer, its in-cell median must be at most the baseline\'s, and every cua typeText and paste sample must return without an error, survive and read back its text (Plan of Work M2); the ordinary better-outcome rule accepts this improvement over the vendor engine\'s text failures, with no failure waived on cua.` : ''} ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
       : sameHost
       ? `Rule (#115 acceptance 11): one host, three complete, attested runs a side covering the same plan, on the same machine and configuration except the permitted differences below; the judged rows are ${SAME_HOST_JUDGED.join(' and ')}: the candidate\'s median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples. Every other row is reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
       : 'Rule (acceptance 8): three complete, attested runs a side covering the same plan; per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples. The judged median is wall time around the MCP call; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median. ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.', '',
@@ -546,9 +557,9 @@ export function renderComparison(result) {
   const speeds = result.operations.filter(o => o.speed);
   const span = interval => (interval ? `[${interval.join(', ')}]` : '–');
   if (speeds.length) lines.push('', '## Speed of the operations the engine answers (Acceptance 3\'s rule)', '',
-    `Judged by the in-cell time (#370). With at least ${MIN_NOISE_SAMPLES} successful samples a side, the bootstrap 95% interval of cua\'s in-cell median minus the vendor engine\'s passes when its upper end is within the bound, max(5% of the vendor\'s median, 1 ms); with fewer, cua\'s in-cell median must be at most the vendor\'s (the median rule). The wall time is reported beside it by the same calls, and judged by nothing.`, '',
-    '| Operation | Samples (vendor / cua) | Vendor in-cell | cua in-cell | Interval of cua minus vendor, ms | Bound, ms | Label | Verdict | Vendor wall | cua wall | Wall interval, ms (unjudged) | Wall label (unjudged) |', '|---|---|---|---|---|---|---|---|---|---|---|---|',
-    ...speeds.map(o => `| ${o.op} | ${o.speed.samples.vendor} / ${o.speed.samples.cua} | ${fmt(o.speed.medians.vendor)} | ${fmt(o.speed.medians.cua)} | ${span(o.speed.interval)} | ${o.speed.bound ?? '–'} | ${o.speed.label ?? (o.speed.rule === 'median' ? 'median rule' : '–')} | ${o.speed.verdict} | ${fmt(o.speed.wall.medians.vendor)} | ${fmt(o.speed.wall.medians.cua)} | ${span(o.speed.wall.interval)} | ${o.speed.wall.label ?? '–'} |`));
+    `Judged by the in-cell time (#370). With at least ${MIN_NOISE_SAMPLES} successful samples a side, the bootstrap 95% interval of cua\'s in-cell median minus the vendor engine\'s passes when its upper end is within the bound, max(5% of the vendor\'s median, 1 ms); with fewer, cua\'s in-cell median must be at most the vendor\'s (the median rule). The wall time is reported beside it by the same calls; its interval and label judge nothing, and only the wall backstop, cua\'s wall median at most the vendor\'s plus max(10%, 500 ms), can fail the operation on it (ruling 706).`, '',
+    '| Operation | Samples (vendor / cua) | Vendor in-cell | cua in-cell | Interval of cua minus vendor, ms | Bound, ms | Label | Verdict | Vendor wall | cua wall | Wall interval, ms (unjudged) | Wall label (unjudged) | Wall backstop, ms |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+    ...speeds.map(o => `| ${o.op} | ${o.speed.samples.vendor} / ${o.speed.samples.cua} | ${fmt(o.speed.medians.vendor)} | ${fmt(o.speed.medians.cua)} | ${span(o.speed.interval)} | ${o.speed.bound ?? '–'} | ${o.speed.label ?? (o.speed.rule === 'median' ? 'median rule' : '–')} | ${o.speed.verdict} | ${fmt(o.speed.wall.medians.vendor)} | ${fmt(o.speed.wall.medians.cua)} | ${span(o.speed.wall.interval)} | ${o.speed.wall.label ?? '–'} | ${o.wallBackstop ? `${fmt(o.wallBackstop.limitMs)}, ${o.wallBackstop.verdict}` : '–'} |`));
   const up = result.topUp;
   const sides = s => `${s.vendor} / ${s.cua}`;
   if (up?.needed.length) lines.push('', '## Top-up', '', `Undetermined at the samples of this sitting, and so failing until its one top-up (three more runs a lane, the same candidate and display) decides it: ${up.needed.join(', ')}.`);

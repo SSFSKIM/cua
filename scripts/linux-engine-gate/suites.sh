@@ -100,7 +100,7 @@ case "$part" in
     fi
     rm -rf "$OUT/parity/vendor" "$OUT/parity/cua"
     node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine vendor --out "$OUT/parity/vendor" > "$L/vendor.out" 2>&1; log "vendor exit $? $(tail -1 "$L/vendor.out")"
-    node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine cua "${lane_engine[@]}" --out "$OUT/parity/cua" > "$L/cua.out" 2>&1; log "cua exit $? $(tail -1 "$L/cua.out")"
+    node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine cua ${lane_engine[@]+"${lane_engine[@]}"} --out "$OUT/parity/cua" > "$L/cua.out" 2>&1; log "cua exit $? $(tail -1 "$L/cua.out")"
     node scripts/repl-parity.mjs diff "$OUT/parity/vendor" "$OUT/parity/cua" --expected scripts/repl-parity/expected/native-linux.json > "$OUT/parity/diff.json" 2> "$L/diff.err"; d=$?; log "diff exit $d"
     node scripts/repl-parity.mjs cleanup-prepared --device "$DEVICE" > "$L/cleanup.out" 2>&1; k=$?; log "cleanup exit $k"
     # the diff's failure first; else a cleanup that did not finish fails the part (its prepared home may be left)
@@ -115,7 +115,7 @@ case "$part" in
       rm -rf "$1/cv" "$1/cc"
       for n in 1 2 3; do
         node scripts/native-baseline.mjs run --device "$DEVICE" --experiment "$EXPERIMENT" --display "$CUA_PARITY_DISPLAY" --host cua --engine vendor --out "$1/cv/run-$n" > "$L/${2}cv-run-$n.out" 2>&1; log "${2}cv run-$n exit $?"
-        node scripts/native-baseline.mjs run --device "$DEVICE" --experiment "$EXPERIMENT" --display "$CUA_PARITY_DISPLAY" --host cua --engine cua "${lane_engine[@]}" "${baseline_check[@]}" --out "$1/cc/run-$n" > "$L/${2}cc-run-$n.out" 2>&1; log "${2}cc run-$n exit $?"
+        node scripts/native-baseline.mjs run --device "$DEVICE" --experiment "$EXPERIMENT" --display "$CUA_PARITY_DISPLAY" --host cua --engine cua ${lane_engine[@]+"${lane_engine[@]}"} ${baseline_check[@]+"${baseline_check[@]}"} --out "$1/cc/run-$n" > "$L/${2}cc-run-$n.out" 2>&1; log "${2}cc run-$n exit $?"
       done
       node scripts/native-baseline.mjs summary "$1/cv" > "$L/${2}summary-cv.out" 2>&1; log "${2}summary cv exit $?"
       node scripts/native-baseline.mjs summary "$1/cc" > "$L/${2}summary-cc.out" 2>&1; log "${2}summary cc exit $?"
@@ -144,7 +144,7 @@ case "$part" in
     if ! pinned_check "$CUA_HOME" "$OUT/$P/pinned.txt"; then rm -rf "$R"; exit 1; fi
     if [ "$ENGINE" = installed ]; then engine=$CUA_HOME/engine/linux/cua-engine; else engine=$ENGINE_BIN; fi
     if [ "$P" = accept ]; then fixture=scripts/accept/linux-native.mjs; report=accept-linux-native-cua.json; else fixture=scripts/accept/linux-device-mode.mjs; report=device-mode.json; fi
-    env "${fixture_engine[@]}" CUA_NATIVE_ENGINE=cua node "$FACADE/watch.mjs" "$OUT/$P/$report" "$OUT/$P/watch.json" -- node "$fixture" 2> "$L/fixture.err"
+    env ${fixture_engine[@]+"${fixture_engine[@]}"} CUA_NATIVE_ENGINE=cua node "$FACADE/watch.mjs" "$OUT/$P/$report" "$OUT/$P/watch.json" -- node "$fixture" 2> "$L/fixture.err"
     a=$?; log "$fixture exit $a"
     node "$WT/scripts/linux-engine-gate/engine-watch.mjs" "$OUT/$P/watch.json" "$engine" > "$OUT/$P/engine-watch.txt" 2>&1
     w=$?; log "$(cat "$OUT/$P/engine-watch.txt")"

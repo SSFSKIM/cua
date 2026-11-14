@@ -17,11 +17,18 @@
 // before the policy. The facade answers it from the computer surface's target: on macOS this host serves only cua's
 // own engine (src/runtime/launch.mjs refuses cua's host with the vendor engine, whose helper takes only the vendor
 // host as a peer), so a macOS computer surface here is always one cua's agent cursor draws for.
+// And its Linux counterpart (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Decision Log, M5
+// pre-flight, F4): with `linuxEngine()` true, linux-engine.md (the device mode and its refusal, `minimized: true` in
+// listWindows(), the answers that say nothing was sent or that a paste or a context menu could not be confirmed, a
+// pending drag, duplicate windows, the truncation line) takes the same place. The facade answers it from the computer
+// surface's target: every Linux computer surface, under either engine, since each paragraph names an answer and what
+// to do on meeting it, and the vendor's engine gives none of them. core.md stays the vendor's text.
 import {readFile} from 'node:fs/promises';
 
 const DOCUMENTS = new URL('../../docs/cua-api/', import.meta.url);
 // The vendor's document names (tinysky-alt-<name>.md) and the files that hold them here.
-const FILES = {'core-cua-repl': 'core.md', confirmations: 'confirmations.md', 'other-browser-apis': 'other-browser-apis.md', 'agent-cursor': 'agent-cursor.md'};
+const FILES = {'core-cua-repl': 'core.md', confirmations: 'confirmations.md', 'other-browser-apis': 'other-browser-apis.md', 'agent-cursor': 'agent-cursor.md',
+  'linux-engine': 'linux-engine.md'};
 const POLICY_MAX_BYTES = 12_000;
 
 export function read_documentation(name) {
@@ -37,12 +44,13 @@ function confirmationPolicyOverride(requestMeta) {
   return undefined;
 }
 
-export function create_documentation(read, {agentCursor = () => false} = {}) {
+export function create_documentation(read, {agentCursor = () => false, linuxEngine = () => false} = {}) {
   return {
     read,
     async read_core() {
       const base = await read('core-cua-repl');
-      const core = agentCursor() ? `${base}\n${await read('agent-cursor')}` : base;
+      const platform = agentCursor() ? 'agent-cursor' : linuxEngine() ? 'linux-engine' : null;
+      const core = platform ? `${base}\n${await read(platform)}` : base;
       const policy = confirmationPolicyOverride(globalThis.nodeRepl?.requestMeta) ?? await read('confirmations');
       return policy === '' ? core : `${core}\n${policy}`;
     },

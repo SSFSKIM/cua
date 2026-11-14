@@ -14,10 +14,12 @@ import {browserDouble} from './browser-client-harness.mjs';
 
 const {node, skip} = kernelNode();
 const doc = name => readFileSync(new URL(`../../docs/cua-api/${name}`, import.meta.url), 'utf8');
-const CORE = `${doc('core.md')}\n${doc('confirmations.md')}`;
 // A macOS computer surface is served only by cua's own engine on this host, so its core carries the agent cursor's
 // paragraph (src/cua-api/documentation.mjs).
 const MAC_CORE = `${doc('core.md')}\n${doc('agent-cursor.md')}\n${doc('confirmations.md')}`;
+// A Linux computer surface's core carries cua's Linux document in that place, under either engine (the #171 spec's
+// Decision Log, M5 pre-flight, F4).
+const LINUX_CORE = `${doc('core.md')}\n${doc('linux-engine.md')}\n${doc('confirmations.md')}`;
 const BROWSERS = [{id: 'b1', name: 'Chrome', type: 'extension', metadata: {extensionInstanceId: 'inst-1'}}];
 const browserAnswer = browserDouble({list_browsers: BROWSERS, get_browser_documentation: 'DOC b1', list_tabs: {tabs: [{id: 't1', title: 'One'}]}, browser_user_open_tabs: {tabs: []}});
 const SKY = {
@@ -85,7 +87,7 @@ test('computer-only on Linux: no agent and no browser members; listWindows and a
   const {exec, services} = facadeKernel(t, {surfaces: 'computer', target: 'linux'});
   const first = ok(await exec('nodeRepl.write(JSON.stringify([Object.keys(cua).sort(), typeof agent, cua.computer.target]));'));
   assert.deepEqual(JSON.parse(first.output), [['computer', 'getApp', 'getState', 'initialize', 'listApps', 'listWindows', 'rewriteDocumentation'], 'undefined', 'linux']);
-  assert.deepEqual(first.named_outputs, [CORE], 'no agent cursor paragraph off macOS');
+  assert.deepEqual(first.named_outputs, [LINUX_CORE], 'the Linux document, and no agent cursor paragraph, off macOS');
   assert.deepEqual(services, ['sky.setup']);
   const refused = await exec('await cua.getApp("gedit");');
   assert.equal(refused.error, 'linux getApp requires { windowId } from listApps() or listWindows().');

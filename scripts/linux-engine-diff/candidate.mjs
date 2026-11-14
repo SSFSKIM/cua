@@ -158,7 +158,7 @@ function installRecordProblem(source, pinned, sha256) {
   try {
     record = JSON.parse(readFileSync(path, 'utf8'));
   } catch (error) {
-    return { refused: `the engine ${source} has no install.json beside it that reads (${error.code ?? error.message}): acceptance on the pinned release takes the engine a run home's cua install placed (CUA_HOME=<home> node bin/cua.mjs install --engine; then --pinned <home>)` };
+    return { refused: `the engine ${source} has no install.json beside it that reads (${error.code ?? error.message}): install the engine in a run home (CUA_HOME=<home> node bin/cua.mjs install --engine) and name that home (gate.mjs --pinned <home>)` };
   }
   if (record?.build !== 'pinned' || record.release !== pinned.release) {
     return { refused: `the engine's install.json (${path}) records build ${record?.build} of ${record?.release ?? 'no release'}, not the pinned release ${pinned.release}: run cua install --engine in that home` };
@@ -173,7 +173,7 @@ function installRecordProblem(source, pinned, sha256) {
  * `{pin, installed}`, or `{refused}`.
  */
 function pinnedProblem({ source, sha256, root, env, hostArch }) {
-  if (env[OVERRIDE]) return { refused: `an override is set: ${OVERRIDE}=${env[OVERRIDE]}; acceptance on the pinned release takes the engine a run home's cua install placed, never an override: unset it` };
+  if (env[OVERRIDE]) return { refused: `an override is set: ${OVERRIDE}=${env[OVERRIDE]}: unset it` };
   const read = checkoutPin(root);
   if (read.refused) return read;
   let asset;

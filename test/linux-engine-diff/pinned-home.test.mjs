@@ -90,3 +90,27 @@ test('a pinned experiment runs the installed engine itself, its run home named; 
   assert.notEqual(gate.cua, engine, 'a release gate runs its stored copy');
   assert.equal(gate.pinnedHome, undefined);
 });
+
+test('a pinned verdict run drives the installed engine itself; a release gate its checked copy', async () => {
+  const { runDiff } = await import('../../scripts/linux-engine-diff/run.mjs');
+  const { engine } = runHome();
+  const prepare = async ({ dir, gate }) => {
+    const path = join(dir, 'cua-engine');
+    writeFileSync(path, 'x');
+    return { path, record: { gate, sha256: 'ab'.repeat(32), target: 'x86_64-unknown-linux-musl', linkage: 'static-pie', attestation: null } };
+  };
+  const pinned = (cua) => ({ cua, cuaHome: cuaHomeOf(cua) });
+  const ran = async (gate) => {
+    let seen = null;
+    const write = process.stdout.write;
+    process.stdout.write = () => true;
+    try {
+      await runDiff({ cua: engine, gate, out: join(scratch, `out-${n++}`), run: 'r' }, { prepare, pinned, start: async (args) => (seen = args.cua) });
+    } finally {
+      process.stdout.write = write;
+    }
+    return seen;
+  };
+  assert.equal(await ran('pinned'), engine);
+  assert.notEqual(await ran(undefined), engine, 'a release gate drives its stored copy');
+});

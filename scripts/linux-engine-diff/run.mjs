@@ -23,6 +23,7 @@ import { auditForeign, foreignLine } from './foreign.mjs';
 import { foregroundStart } from './foreground-start.mjs';
 import { startMonitor } from './busmon.mjs';
 import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
+import { pinnedEngine } from './pinned-home.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
 import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe, setAsideMinimized, setAsideTruncation, truncationMismatch } from './deviations.mjs';
@@ -1013,10 +1014,11 @@ export function runHasRows(results, run) {
  * is removed on a refusal, an error, the run's end, and a stop (SIGINT or SIGTERM) at any point. A stop has a handler
  * from before the copy until the run's own (the Desktop's, stop.mjs) is in place, which the run's `handoff` marks: a
  * stop during the checks kills the command they wait on (SIGKILL), waits for it to end, removes the copy and exits; a
- * stop during the run removes it at the exit. Every engine lane of cua runs the stored copy. `start` is the run proper
+ * stop during the run removes it at the exit. Every engine lane of cua runs the stored copy; on the pinned release, the
+ * run home's installed engine itself (pinned-home.mjs). `start` is the run proper
  * (the tests pass their own).
  */
-export async function runDiff(args, { start = diffRun } = {}) {
+export async function runDiff(args, { start = diffRun, prepare = prepareCandidate, pinned = pinnedEngine } = {}) {
   const run = args.run ?? `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
   const results = join(args.out, 'results.jsonl');
   if (runHasRows(results, run)) throw new RunRefused(`the run name ${run} already has rows in ${results}: give each execution a --run name of its own`);
@@ -1035,7 +1037,7 @@ export async function runDiff(args, { start = diffRun } = {}) {
   });
   try {
     // a release gate unless --dev; --pinned (args.gate 'pinned'), acceptance on the pinned release
-    preparing = prepareCandidate({ source: args.cua, gate: args.gate === 'pinned' ? 'pinned' : !args.dev, dir, signal: stopping.signal });
+    preparing = prepare({ source: args.cua, gate: args.gate === 'pinned' ? 'pinned' : !args.dev, dir, signal: stopping.signal });
     let candidate;
     try {
       candidate = await preparing;
@@ -1045,7 +1047,9 @@ export async function runDiff(args, { start = diffRun } = {}) {
     // stopped during the checks: the stop exits the process once the command has ended, and nothing more starts
     if (stopping.signal.aborted) await new Promise(() => {});
     process.stdout.write(`${gateLabel(candidate.record.gate) ?? 'release gate'}; ${candidateLine(candidate.record)}\n`);
-    return await start({ ...args, run, cua: candidate.path }, candidate.record, { handoff: unhook });
+    // on the pinned release the copy is the check's alone: the run drives the installed engine itself (ruling 708)
+    const cua = args.gate === 'pinned' ? pinned(args.cua, candidate.record).cua : candidate.path;
+    return await start({ ...args, run, cua }, candidate.record, { handoff: unhook });
   } finally {
     unhook();
     process.off('exit', remove);

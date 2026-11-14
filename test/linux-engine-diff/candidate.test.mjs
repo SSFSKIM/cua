@@ -11,7 +11,7 @@ import { basename, dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { CandidateRefused, elfTarget, prepareCandidate } from '../../scripts/linux-engine-diff/candidate.mjs';
+import { CandidateRefused, candidateLine, elfTarget, gateLabel, prepareCandidate } from '../../scripts/linux-engine-diff/candidate.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { renderSummary } from '../../scripts/linux-engine-diff/report.mjs';
 
@@ -117,12 +117,13 @@ function attestationJson(subjects, commit, run = 41350086196) {
  * A fake `run(command, args)`: git answers `head` and `status`, gh answers `gh`, the stored candidate answers `version`.
  * Every call is recorded in `calls`.
  */
-function fake({ head = HEAD, status = '', gh = null, version = `cua-engine 0.3.0 (${HEAD.slice(0, 12)})` } = {}) {
+function fake({ head = HEAD, status = '', gh = null, version = `cua-engine 0.3.0 (${HEAD.slice(0, 12)})`, diff = { status: 0, stdout: '', stderr: '' } } = {}) {
   const calls = [];
   const run = (command, args) => {
     calls.push([command, ...args]);
     if (command === 'git' && args.includes('rev-parse')) return { status: 0, stdout: `${head}\n`, stderr: '' };
     if (command === 'git' && args.includes('status')) return { status: 0, stdout: status, stderr: '' };
+    if (command === 'git' && args.includes('diff')) return typeof diff === 'function' ? diff(args) : diff;
     if (command === 'gh') return typeof gh === 'function' ? gh(args) : (gh ?? { status: 1, stdout: '', stderr: 'no attestations found' });
     if (basename(command) === 'cua-engine' && args[0] === '--version') return { status: 0, stdout: `${version}\n`, stderr: '' };
     return { status: 127, stdout: '', stderr: `unexpected ${command}` };
@@ -464,5 +465,144 @@ test('a stop during the checks ends the command they wait on, one that ignores S
     assert.deepEqual(readdirSync(tmp).filter((d) => d.startsWith('cua171-candidate-')), []);
   } finally {
     if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
+  }
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// acceptance on the pinned release (#171 M5, T1; the M5 pre-flight's §1.1): the engine a run home's `cua install`
+// placed, whose bytes are the pin's for this architecture and attested by the release workflow, whose --version names
+// the attested commit, at a checkout whose native/linux-engine/ is that commit's, with no override in the environment
+
+const RELEASED = 'c55c8e08d9cbbb057b8b95434787b1e45d41184c';
+/** The released arm64 asset: an aarch64 musl static build. */
+const ARM = elf({ type: 2, machine: 183, segments: [{ type: PT_NOTE, data: note('GNU', 3, Buffer.alloc(20, 7)) }] });
+const PIN_VERSION = '0.4.0';
+const RELEASE = `linux-engine-v${PIN_VERSION}`;
+const assetUrl = (arch) => `https://github.com/SSFSKIM/cua/releases/download/${RELEASE}/cua-engine-${PIN_VERSION}-linux-${arch}`;
+
+/** A checkout whose runtime/engine/linux-engine.json pins `x64` and `arm64` (their bytes). */
+function pinnedRoot({ x64 = MUSL, arm64 = ARM } = {}) {
+  const root = join(scratch, `root-${n++}`);
+  mkdirSync(join(root, 'runtime', 'engine'), { recursive: true });
+  const pin = { version: PIN_VERSION, release: RELEASE, assets: { x64: { url: assetUrl('x64'), sha256: sha(x64) }, arm64: { url: assetUrl('arm64'), sha256: sha(arm64) } } };
+  writeFileSync(join(root, 'runtime', 'engine', 'linux-engine.json'), `${JSON.stringify(pin, null, 2)}\n`);
+  return root;
+}
+
+/** A run home's engine as `cua install` places it: `<home>/engine/linux/cua-engine`, mode 0755, and its install.json. */
+function installed(bytes, record = {}) {
+  const dir = join(scratch, `home-${n++}`, 'engine', 'linux');
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, 'cua-engine');
+  writeFileSync(path, bytes);
+  chmodSync(path, 0o755);
+  if (record !== null) {
+    const full = { schema: 1, build: 'pinned', version: PIN_VERSION, release: RELEASE, sha256: sha(bytes), source: assetUrl('x64'), installedAt: '2026-11-14T20:34:30.000Z', ...record };
+    writeFileSync(join(dir, 'install.json'), `${JSON.stringify(full)}\n`);
+  }
+  return path;
+}
+
+/** gh verifying the released assets' attestation, built from the released commit (as the release run's is). */
+const releaseAttested = (x64 = MUSL, arm64 = ARM, commit = RELEASED) => ({ status: 0, stdout: attestationJson([[`cua-engine-${PIN_VERSION}-linux-x64`, sha(x64)], [`cua-engine-${PIN_VERSION}-linux-arm64`, sha(arm64)]], commit), stderr: '' });
+/** The checkout is past the release (M5's harness changes), and its native/linux-engine/ is the released commit's. */
+const pinnedFake = (over = {}) => fake({ head: HEAD, gh: releaseAttested(), version: `cua-engine ${PIN_VERSION} (${RELEASED.slice(0, 12)})`, ...over });
+const pinned = (source, { root = pinnedRoot(), run = pinnedFake().run, env = {}, hostArch = 'x64' } = {}) => prepareCandidate({ dir: fresh(), source, gate: 'pinned', root, run, env, hostArch });
+
+test('the pinned rule takes the engine a run home\'s cua install placed: the pin\'s bytes, attested, its tree unchanged since the released commit', async () => {
+  const { run, calls } = pinnedFake();
+  const candidate = await pinned(installed(MUSL), { run });
+  try {
+    const r = candidate.record;
+    assert.equal(r.gate, 'pinned');
+    assert.equal(r.sha256, sha(MUSL));
+    assert.equal(r.commit, HEAD, 'the checkout is the harness\'s, past the release');
+    assert.equal(r.version, `cua-engine ${PIN_VERSION} (${RELEASED.slice(0, 12)})`);
+    assert.deepEqual(r.pin, { arch: 'x64', version: PIN_VERSION, release: RELEASE, sha256: sha(MUSL) });
+    assert.deepEqual(r.engine_tree, { path: 'native/linux-engine', commit: RELEASED, equal: true });
+    assert.equal(r.installed.build, 'pinned');
+    assert.equal(r.attestation.verified, true);
+    assert.deepEqual(r.attestation.attestations.map((a) => a.source_commit), [RELEASED]);
+    const diff = calls.find(([c, ...a]) => c === 'git' && a.includes('diff'));
+    assert.ok(diff.includes(RELEASED) && diff.includes('HEAD') && diff.at(-1) === 'native/linux-engine', `the engine's tree compared with the attested commit: ${diff.join(' ')}`);
+    assert.equal(gateLabel(r.gate), 'acceptance on the pinned release');
+    assert.match(candidateLine(r), new RegExp(`the pin's x64 asset of ${RELEASE}; native/linux-engine as at ${RELEASED}, the checkout at ${HEAD}; attestation verified: .*built from ${RELEASED}`));
+  } finally {
+    rmSync(dirname(candidate.path), { recursive: true, force: true });
+  }
+});
+
+test('the pinned rule refuses another digest, even an attested artifact of the checkout\'s own commit, which M4\'s gate takes', async () => {
+  const other = elf({ segments: [{ type: PT_DYNAMIC, data: Buffer.alloc(40) }] });
+  // the old judge: an attested artifact of the checkout's commit is a release gate's candidate
+  const m4 = fake({ gh: attested(other), version: `cua-engine 0.3.0 (${HEAD.slice(0, 12)})` });
+  const old = await prepareCandidate({ dir: fresh(), source: file(other), gate: true, root: '/repo', run: m4.run, hostArch: 'x64' });
+  rmSync(dirname(old.path), { recursive: true, force: true });
+  // the new one: those bytes are not the pin's
+  const { run, calls } = pinnedFake({ gh: attested(other) });
+  await refusal(() => pinned(installed(other), { run }), new RegExp(`not the pinned engine: its sha256 is ${sha(other)}, and the pin's x64 asset of ${RELEASE} is ${sha(MUSL)}`));
+  assert.equal(calls.filter(([c]) => c === 'gh').length, 0, 'refused before gh is asked');
+});
+
+test('the pinned rule refuses the other architecture\'s asset, naming it', async () => {
+  await refusal(() => pinned(installed(ARM)), new RegExp(`the pin's arm64 asset of ${RELEASE}, and this host is x64`));
+  // and on arm64, the x64 asset
+  await refusal(() => pinned(installed(MUSL), { hostArch: 'arm64' }), new RegExp(`the pin's x64 asset of ${RELEASE}, and this host is arm64`));
+});
+
+test('the pinned rule refuses an override in the environment, which M4\'s gate ignores', async () => {
+  const env = { CUA_LINUX_ENGINE_BIN: '/Users/new/Developer/GitHub/cua-171/native/linux-engine/target/release/cua-engine' };
+  const m4 = fake({ gh: attested(MUSL) });
+  const old = await prepareCandidate({ dir: fresh(), source: file(MUSL), gate: true, root: '/repo', run: m4.run, env, hostArch: 'x64' });
+  rmSync(dirname(old.path), { recursive: true, force: true });
+  const { run, calls } = pinnedFake();
+  await refusal(() => pinned(installed(MUSL), { run, env }), /an override is set: CUA_LINUX_ENGINE_BIN=\/Users\/new\/.*cua-engine/);
+  assert.equal(calls.filter(([c]) => c === 'gh').length, 0);
+  // an empty one is no override (the native lane's command sets it empty, scripts/repl-parity/native.mjs)
+  const ok = await pinned(installed(MUSL), { env: { CUA_LINUX_ENGINE_BIN: '' } });
+  rmSync(dirname(ok.path), { recursive: true, force: true });
+});
+
+test('the pinned rule refuses an engine no cua install placed: no install record, or one of another build or release', async () => {
+  await refusal(() => pinned(installed(MUSL, null)), /no install\.json beside it.*cua install/s);
+  await refusal(() => pinned(installed(MUSL, { build: 'local' })), /install\.json .*build local.*not the pinned release/s);
+  await refusal(() => pinned(installed(MUSL, { release: 'linux-engine-v0.3.0' })), /install\.json .*linux-engine-v0\.3\.0.*not the pinned release/s);
+  await refusal(() => pinned(installed(MUSL, { sha256: sha(ARM) })), /install\.json .*names another sha256/s);
+  // a pinned asset copied anywhere else is not a run home's engine
+  await refusal(() => pinned(file(MUSL)), /no install\.json beside it/);
+});
+
+test('the pinned rule refuses an unattested file, and an attestation that does not name its bytes', async () => {
+  await refusal(() => pinned(installed(MUSL), { run: pinnedFake({ gh: { status: 1, stdout: '', stderr: 'no attestations found' } }).run }), /unattested/);
+  const other = elf({ segments: [{ type: PT_DYNAMIC, data: Buffer.alloc(48) }] });
+  await refusal(() => pinned(installed(MUSL), { run: pinnedFake({ gh: releaseAttested(other) }).run }), /digest mismatch/);
+});
+
+test('the pinned rule refuses a checkout whose native/linux-engine/ differs from the attested commit\'s, naming the files', async () => {
+  const changed = { status: 0, stdout: 'native/linux-engine/src/input.rs\nnative/linux-engine/Cargo.toml\n', stderr: '' };
+  const { run, calls } = pinnedFake({ diff: changed });
+  await refusal(() => pinned(installed(MUSL), { run }), new RegExp(`native/linux-engine/ differs from ${RELEASED}'s, .*2 files: native/linux-engine/src/input\\.rs, native/linux-engine/Cargo\\.toml.*an engine change ends with its own release`, 's'));
+  assert.equal(calls.filter(([c]) => basename(c) === 'cua-engine').length, 0, 'never run');
+  // a released commit the checkout does not hold cannot be compared: refused, naming the fetch
+  const missing = pinnedFake({ diff: { status: 128, stdout: '', stderr: `fatal: bad object ${RELEASED}\n` } });
+  await refusal(() => pinned(installed(MUSL), { run: missing.run }), new RegExp(`could not be compared with ${RELEASED}.*bad object.*git fetch origin ${RELEASED}`, 's'));
+});
+
+test('the pinned rule refuses a --version that names another commit or another version, and an unclean checkout', async () => {
+  await refusal(() => pinned(installed(MUSL), { run: pinnedFake({ version: `cua-engine ${PIN_VERSION} (${HEAD.slice(0, 12)})` }).run }), new RegExp(`--version answers .*${HEAD.slice(0, 12)}.*does not name the attested commit ${RELEASED.slice(0, 12)}`, 's'));
+  await refusal(() => pinned(installed(MUSL), { run: pinnedFake({ version: `cua-engine 0.3.9 (${RELEASED.slice(0, 12)})` }).run }), /--version answers .*0\.3\.9.*the pin's version 0\.4\.0/s);
+  await refusal(() => pinned(installed(MUSL), { run: pinnedFake({ status: ' M scripts/linux-engine-diff/run.mjs\n' }).run }), /not clean/);
+});
+
+test('the pinned rule\'s refusals each come before the engine is run', async () => {
+  const ran = (calls) => calls.filter(([c]) => basename(c) === 'cua-engine');
+  const cases = [
+    [{ env: { CUA_LINUX_ENGINE_BIN: '/x/cua-engine' } }, pinnedFake(), /override/],
+    [{}, pinnedFake({ gh: { status: 1, stdout: '', stderr: 'none' } }), /unattested/],
+    [{}, pinnedFake({ diff: { status: 0, stdout: 'native/linux-engine/src/lib.rs\n', stderr: '' } }), /differs/],
+  ];
+  for (const [opts, { run, calls }, pattern] of cases) {
+    await refusal(() => pinned(installed(MUSL), { ...opts, run }), pattern);
+    assert.deepEqual(ran(calls), [], `refused (${pattern}) after running the engine`);
   }
 });

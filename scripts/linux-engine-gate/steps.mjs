@@ -24,6 +24,7 @@
 // the settle's observations, the paste and exit settle, the accept signal's false releases and the late takes, T17's
 // Electron cells, and GTK 4's covered capture.
 
+import { PINNED_RELEASE } from '../linux-engine-diff/candidate.mjs';
 import { SCENE_OPS } from '../linux-engine-diff/ops.mjs';
 
 /** The M3 gate's scenes (`m3-gate-musl`), then M4's, in the frozen order. */
@@ -39,6 +40,8 @@ const experiment = (name, display, load, minutes, args, what, { pilot = null } =
 const LOAD2 = ['--load-factor', '2'];
 /** w5's runner of the facade suites (T18), relative to the checkout. */
 export const FACADE_SCRIPT = 'docs/evidence/2026-10-28-own-linux-engine/m4/facade/scripts/facade.sh';
+/** M5's runner of the facade suites (T1): each part on its own homes' installed engines, checked by the pinned rule. */
+export const SUITES_SCRIPT = 'scripts/linux-engine-gate/suites.sh';
 /** A facade suite's part, run by facade.sh on a private desktop of its own; its pilot is the part itself. */
 const suite = (name, minutes, part, what) => ({ name, kind: 'suite', display: 'own', load: 'idle', minutes, args: [part], what, pilot: (args) => args });
 
@@ -138,21 +141,27 @@ export const stepNamed = (name) => {
 /** A verdict step's operations: each scene's own (`SCENE_OPS`), or the part `only` names for a scene split across steps. */
 export const verdictOps = (step) => [...new Set(step.scenes.flatMap((scene) => step.only[scene] ?? SCENE_OPS[scene]))];
 
-/** A step's run name: one of its own per execution kind, so a gate's rows and a development run's never share one. */
+/**
+ * A step's run name: one of its own per execution kind, so a gate's rows, a development run's and acceptance on the
+ * pinned release's (`gate` 'pinned') never share one.
+ */
 export function runName(step, { gate, pilot }) {
+  if (gate === 'pinned') return `pinned-${step.name}`;
   return `m4-${gate ? 'gate' : 'dev'}-${step.name}${pilot ? '-pilot' : ''}`;
 }
 
 /** The label every artifact of a step carries, and the directory name's form of it (candidate.mjs `gateLabel`). */
 export function stepLabel({ gate, pilot }) {
-  if (gate && pilot) throw new Error('a pilot is never a release gate: drop --pilot, or run it as a development run');
+  if (gate && pilot) throw new Error('a pilot is never a release gate, nor acceptance: drop --pilot, or run it as a development run');
+  if (gate === 'pinned') return { label: PINNED_RELEASE, slug: 'pinned-release', pilot: false };
   return { label: gate ? 'release gate' : 'development run, not a release gate', slug: gate ? 'release-gate' : `development-run${pilot ? '.pilot' : ''}`, pilot: Boolean(pilot) };
 }
 
 /**
  * A step's arguments to its harness script, `--out` left to the launcher (run71.sh, gate.mjs): `paths` names the
  * candidate, the vendor builds and the vendor's JavaScript client. A gate's experiment takes `--gate` (candidate.mjs's
- * checks), a gate's verdict run takes none (it is a gate unless `--dev`); a development run's verdict takes `--dev`. A
+ * checks), a gate's verdict run takes none (it is a gate unless `--dev`); a development run's verdict takes `--dev`;
+ * acceptance on the pinned release (`gate` 'pinned') gives either kind `--pinned`, candidate.mjs's pinned rule. A
  * pilot (`pilot`, a count) runs the step's smallest form: its `pilot` transform, or `--trials <count>`, and for a
  * verdict one block.
  */
@@ -165,7 +174,7 @@ export function stepArgs(step, { paths, gate, pilot = null }) {
       '--scene', step.scenes.join(','), '--ops', verdictOps(step).join(','),
       '--blocks', pilot ? '1' : '3', '--run', run,
       ...(step.ballast ? ['--ballast', 'gate'] : []),
-      ...(gate ? [] : ['--dev']),
+      ...(gate === 'pinned' ? ['--pinned'] : gate ? [] : ['--dev']),
     ];
   }
   if (step.kind === 'facade') return ['--vendor-js', paths.vendorJs, '--engine', paths.candidate, ...step.args];
@@ -173,19 +182,32 @@ export function stepArgs(step, { paths, gate, pilot = null }) {
   if (step.kind === 'suite') return [...step.args];
   const base = fill(step.args);
   const sized = pilot ? (step.pilot ?? ((args, n) => [...args, '--trials', String(n)]))(base, pilot) : base;
-  return [...sized, '--cua', paths.candidate, '--run', run, ...(gate ? ['--gate'] : [])];
+  return [...sized, '--cua', paths.candidate, '--run', run, ...(gate === 'pinned' ? ['--pinned'] : gate ? ['--gate'] : [])];
 }
 
-/** The harness script a step runs, relative to the checkout. */
-export const stepScript = (step) => ({ facade: 'scripts/linux-engine-diff/services.mjs', suite: FACADE_SCRIPT })[step.kind] ?? 'scripts/linux-engine-diff.mjs';
+/**
+ * The harness script a step runs, relative to the checkout. A suite on the pinned release (`pinned`: the engine a run
+ * home's cua install placed, `gate.mjs --pinned`) is M5's runner, which takes no engine of its caller's; one on a
+ * `--candidate` is M4's facade.sh.
+ */
+export const stepScript = (step, { pinned = false } = {}) => ({ facade: 'scripts/linux-engine-diff/services.mjs', suite: pinned ? SUITES_SCRIPT : FACADE_SCRIPT })[step.kind] ?? 'scripts/linux-engine-diff.mjs';
 
 /**
  * A suite step's environment for facade.sh: the candidate (a gate's the checked copy), its out directory in the step's
  * labelled directory, its log directory `logs` (a short scratch one: facade.sh starts the private desktop's session bus
  * under it, and a socket's path has 108 bytes; the pilot's R3 and R4 met "Socket name too long"), and its label
- * (`counted`, which refuses an unclean tree, or `pilot`).
+ * (`counted`, which refuses an unclean tree, or `pilot`); on the pinned release (`pinned`), no ENGINE_BIN, and the
+ * device (`DEVICE`) the suites' lanes are declared on.
  */
-export const suiteEnv = ({ candidate, dir, gate, logs }) => ({ ENGINE_BIN: candidate, OUT: `${dir}/run`, LOGS: logs, LABEL: gate ? 'counted' : 'pilot' });
+export const suiteEnv = ({ candidate, dir, gate, logs, pinned = false, device }) => ({
+  // on the pinned release no engine is passed: each part runs on the engine its own home's cua install placed, on the
+  // device the environment names (M5's runner, SUITES_SCRIPT)
+  ...(pinned ? {} : { ENGINE_BIN: candidate }),
+  OUT: `${dir}/run`,
+  LOGS: logs,
+  LABEL: gate ? 'counted' : 'pilot',
+  ...(pinned ? { DEVICE: device } : {}),
+});
 
 /** The planned minutes: in all, per display (`:0`, and private, the experiments' own servers included) and per load. */
 export function totals(steps = STEPS) {

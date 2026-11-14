@@ -1005,7 +1005,8 @@ export function runHasRows(results, run) {
 }
 
 /**
- * A verdict run on its candidate (candidate.mjs): a release gate unless `args.dev`. Each execution has a run name of its
+ * A verdict run on its candidate (candidate.mjs): a release gate unless `args.dev`, acceptance on the pinned release
+ * with `--pinned`. Each execution has a run name of its
  * own: a name the out directory already has rows of is refused (`RunRefused`), so one execution's rows never label
  * another's. The candidate `--cua` names is stored as `cua-engine` (mode 0700) and checked before anything runs; a gate's
  * refusal is thrown as a `CandidateRefused`. The stored copy's directory is the run's from before the copy is made: it
@@ -1033,7 +1034,8 @@ export async function runDiff(args, { start = diffRun } = {}) {
     remove();
   });
   try {
-    preparing = prepareCandidate({ source: args.cua, gate: !args.dev, dir, signal: stopping.signal });
+    // a release gate unless --dev; --pinned (args.gate 'pinned'), acceptance on the pinned release
+    preparing = prepareCandidate({ source: args.cua, gate: args.gate === 'pinned' ? 'pinned' : !args.dev, dir, signal: stopping.signal });
     let candidate;
     try {
       candidate = await preparing;

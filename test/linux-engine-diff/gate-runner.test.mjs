@@ -3,13 +3,15 @@
 // and every step's directory carries its label. Display-free.
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { GateRefused, checkCheckout, launchCommand, listText, parseGateArgs, printStep, runStep, stepDir } from '../../scripts/linux-engine-gate/gate.mjs';
-import { FACADE_SCRIPT, GATE_SCENES, MAX_STEP_MINUTES, STEPS, stepArgs, stepNamed, stepScript, suiteEnv, totals, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
+import { FACADE_SCRIPT, GATE_SCENES, MAX_STEP_MINUTES, STEPS, SUITES_SCRIPT, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { planOps } from '../../scripts/linux-engine-diff/run.mjs';
 import { dropSignalsVerdict } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
@@ -231,4 +233,110 @@ test("a suite step runs facade.sh's part with the candidate as ENGINE_BIN, its o
   assert.equal(record.exit, 0);
   assert.equal(record.env.LABEL, 'pilot');
   assert.equal(record.run_name, null);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// #171 M5, T1: acceptance on the pinned release. `--pinned <cua home>` names the run home whose `cua install` placed the
+// engine; every step takes that engine by candidate.mjs's pinned rule, the vendor paths follow the architecture, and the
+// facade suites run on their own homes' installed engines with no --engine-bin and no CUA_LINUX_ENGINE_BIN
+
+const ACC = '/runs/m5/home-x64';
+const ACC_ENGINE = `${ACC}/engine/linux/cua-engine`;
+
+test('--pinned <home> takes the engine its cua install placed, as acceptance on the pinned release unless --dev; never beside --candidate', () => {
+  const a = parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o'], { arch: 'x64', env: {} });
+  assert.deepEqual([a.gate, a.pinned, a.candidate], ['pinned', ACC, ACC_ENGINE]);
+  assert.equal(parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--dev', '--pilot', '1'], { arch: 'x64', env: {} }).gate, false);
+  assert.throws(() => parseGateArgs(['run', 'D1', '--pinned', ACC, '--candidate', '/c', '--out', '/o']), /--pinned or --candidate, not both/);
+  assert.throws(() => parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--pilot', '1']), /never a release gate|never acceptance/);
+  assert.throws(() => parseGateArgs(['run', 'D1', '--out', '/o']), /needs --pinned <home> or --candidate <file>/);
+  assert.deepEqual([parseGateArgs(['check', '--pinned', ACC]).mode, parseGateArgs(['check', '--pinned', ACC]).candidate], ['check', ACC_ENGINE]);
+  assert.throws(() => parseGateArgs(['check', '--candidate', '/c']), /check needs --pinned <home>/);
+  assert.throws(() => parseGateArgs(['check', '--pinned', ACC, '--dev']), /check is the pinned rule/);
+});
+
+test("the vendor paths follow the architecture, the pinned home's runtime when one is named; the device too, unless the environment names it", () => {
+  const arm = parseGateArgs(['print', 'V1', '--pinned', '/runs/m5/home-arm64', '--out', '/o'], { arch: 'arm64', env: {} });
+  for (const key of ['vendor', 'newest', 'vendorJs']) assert.doesNotMatch(arm[key], /x64/, `${key}: ${arm[key]}`);
+  assert.equal(arm.vendor, '/runs/m5/home-arm64/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64');
+  assert.equal(arm.vendorJs, '/runs/m5/home-arm64/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky');
+  assert.match(arm.newest, /deb-26\.1023\/extracted\/.*\/sky_linux_arm64$/);
+  assert.equal(arm.device, 'cua-171-arm64');
+  const x64 = parseGateArgs(['print', 'V1', '--candidate', '/c', '--out', '/o'], { arch: 'x64', env: { DEVICE: 'cua-bench' } });
+  assert.match(x64.vendor, /\/\.local\/share\/cua\/runtimes\/26\.928\.40906-linux-x64\/.*\/sky_linux_x64$/, 'without a pinned home, the default home\'s runtime, as M4 ran');
+  assert.equal(x64.device, 'cua-bench');
+  assert.equal(parseGateArgs(['print', 'V1', '--candidate', '/c', '--out', '/o', '--vendor', '/v/mine'], { arch: 'arm64', env: {} }).vendor, '/v/mine', 'a flag still wins');
+});
+
+test('a pinned step passes the home\'s engine with --pinned to every harness step, and runs under its own run name and label', () => {
+  const a = parseGateArgs(['print', 'V1', '--pinned', ACC, '--out', '/o'], { arch: 'x64', env: {} });
+  const names = new Set();
+  for (const s of STEPS.filter((x) => ['verdict', 'experiment'].includes(x.kind))) {
+    const parsed = parseArgs([...stepArgs(s, { paths: a, gate: 'pinned' }), '--out', '/o']);
+    assert.equal(parsed.gate, 'pinned', s.name);
+    assert.equal(parsed.cua, ACC_ENGINE, s.name);
+    assert.equal(parsed.dev, undefined, s.name);
+    assert.equal(parsed.run, `pinned-${s.name}`);
+    names.add(parsed.run);
+  }
+  assert.equal(names.size, STEPS.filter((x) => ['verdict', 'experiment'].includes(x.kind)).length);
+  assert.deepEqual(stepLabel({ gate: 'pinned' }), { label: 'acceptance on the pinned release', slug: 'pinned-release', pilot: false });
+  assert.equal(stepDir(stepNamed('V1'), a), '/o/V1.pinned-release');
+  // the :0 step's printed command carries it into the sitting
+  assert.match(launchCommand(stepNamed('V1'), a, ROOT), new RegExp(`--cua ${ACC_ENGINE} .*--run pinned-V1 --pinned$`));
+  assert.match(launchCommand(stepNamed('D1'), a, ROOT), new RegExp(`gate\\.mjs run D1 --pinned ${ACC} --out /o$`));
+});
+
+test('the facade suites on the pinned release: the M5 runner, no ENGINE_BIN, the device named', () => {
+  assert.equal(stepScript(stepNamed('R1'), { pinned: true }), SUITES_SCRIPT);
+  assert.equal(stepScript(stepNamed('R1')), FACADE_SCRIPT, 'a --candidate gate keeps M4\'s facade.sh');
+  const env = suiteEnv({ candidate: ACC_ENGINE, dir: '/o/R3.pinned-release', gate: 'pinned', logs: '/tmp/l', pinned: true, device: 'cua-171' });
+  assert.deepEqual(env, { OUT: '/o/R3.pinned-release/run', LOGS: '/tmp/l', LABEL: 'counted', DEVICE: 'cua-171' });
+  assert.equal(suiteEnv({ candidate: ACC_ENGINE, dir: '/d', gate: false, logs: '/tmp/l', pinned: true, device: 'cua-171' }).LABEL, 'pilot');
+});
+
+test('the M5 suites runner passes no --engine-bin and sets no CUA_LINUX_ENGINE_BIN, refuses one in its environment, and checks each home by the pinned rule', () => {
+  const text = readFileSync(new URL(`../../${SUITES_SCRIPT}`, import.meta.url), 'utf8');
+  const code = text.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  assert.doesNotMatch(code, /--engine-bin/);
+  assert.doesNotMatch(code, /CUA_LINUX_ENGINE_BIN=\S/, 'never assigned');
+  assert.doesNotMatch(code, /(?<!CUA_LINUX_)ENGINE_BIN\b/, 'no engine of its caller');
+  assert.match(code, /CUA_LINUX_ENGINE_BIN:-/, 'an ambient one is refused');
+  assert.match(code, /DEVICE:\?/, 'the device is the environment\'s');
+  assert.match(code, /pinned_check\(\) \{[\s\S]{0,300}?gate\.mjs" check --pinned "\$1"/);
+  assert.deepEqual(code.match(/pinned_check "\$\w+"/g), ['pinned_check "$PHOME"', 'pinned_check "$CUA_HOME"'], 'the parity home and each fixture\'s home are checked');
+  assert.match(code, /engine-watch\.mjs/, 'the fixtures\' samples are judged');
+  // the script parses
+  const { status, stderr } = spawnSync('bash', ['-n', fileURLToPath(new URL(`../../${SUITES_SCRIPT}`, import.meta.url))], { encoding: 'utf8' });
+  assert.equal(status, 0, stderr);
+});
+
+test("a pinned suite step runs the M5 runner's part with no engine in its environment, only the device", async () => {
+  const root = fresh('root');
+  mkdirSync(join(root, SUITES_SCRIPT, '..'), { recursive: true });
+  writeFileSync(join(root, SUITES_SCRIPT), '#!/bin/bash\necho "part=$1 engine=${ENGINE_BIN-unset} override=${CUA_LINUX_ENGINE_BIN-unset} device=$DEVICE label=$LABEL" > "$OUT/seen"\n');
+  const home = fresh('home');
+  mkdirSync(join(home, 'engine', 'linux'), { recursive: true });
+  writeFileSync(join(home, 'engine', 'linux', 'cua-engine'), 'x');
+  const out = fresh('out');
+  const a = parseGateArgs(['run', 'R4', '--pinned', home, '--out', out, '--dev', '--pilot', '1'], { arch: 'x64', env: {} });
+  const before = process.env.CUA_LINUX_ENGINE_BIN;
+  delete process.env.CUA_LINUX_ENGINE_BIN;
+  try {
+    const exit = await runStep(a, { root, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: join(home, 'engine', 'linux', 'cua-engine') });
+    assert.equal(exit, 0);
+  } finally {
+    if (before !== undefined) process.env.CUA_LINUX_ENGINE_BIN = before;
+  }
+  const dir = join(out, 'R4.development-run.pilot');
+  assert.equal(readFileSync(join(dir, 'run', 'seen'), 'utf8').trim(), 'part=device engine=unset override=unset device=cua-171 label=pilot');
+  assert.equal(JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8')).pinned_home, home);
+});
+
+test('a pinned step refuses a home with no engine, naming the install, and refuses before anything when the rule refuses', async () => {
+  const out = fresh('out');
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: '/' };
+  const a = parseGateArgs(['run', 'FB', '--pinned', '/nowhere/home', '--out', out], { arch: 'x64', env: {} });
+  await assert.rejects(runStep(a, deps), /no engine at \/nowhere\/home\/engine\/linux\/cua-engine: .*CUA_HOME=\/nowhere\/home node bin\/cua\.mjs install --engine/);
+  assert.deepEqual(readdirSync(out), []);
 });

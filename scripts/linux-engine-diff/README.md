@@ -88,6 +88,27 @@ nothing run. Either way the run's `meta` and summary rows, its `summary.md` head
 stdout carry its label, `release gate` or `development run, not a release gate`; a gate verdict run's heading and
 verdict line now say `release gate` too.
 
+### Acceptance on the pinned release (`--pinned`, #171 M5)
+
+M5 runs on the release already pinned, from a checkout past it (M5's harness changes), so a release gate's commit rule
+cannot hold. `--pinned`, on a verdict run or an experiment in place of `--dev` or `--gate`, checks the candidate by the
+pinned rule instead and labels every artifact `acceptance on the pinned release` (`gate` is `pinned` in the `meta` and
+`end` rows). The candidate is the engine a run home's `cua install --engine` placed, `<CUA_HOME>/engine/linux/cua-engine`
+(`scripts/linux-engine-gate/gate.mjs --pinned <CUA_HOME>` names it for every step). In order, it refuses:
+
+- an override in the environment: `CUA_LINUX_ENGINE_BIN` set and not empty;
+- bytes that are not the checkout pin's asset for this host's architecture (`runtime/engine/linux-engine.json`), the
+  other architecture's asset named as such;
+- an engine with no `install.json` beside it recording a `pinned` build of the pin's release and those bytes: one no
+  `cua install` placed;
+- then, as a gate's: not a static musl ELF for this host, an unclean checkout, an unattested file, a digest mismatch;
+- a checkout whose `native/linux-engine/` differs from every attested source commit's (`git diff --name-only <commit>
+  HEAD -- native/linux-engine`), the files named, or that cannot be compared (the commit not fetched);
+- then, the engine's first run, a `--version` that does not name that commit or the pin's version.
+
+The record adds `pin` (`arch`, `version`, `release`, `sha256`), `installed` (the install record) and `engine_tree` (the
+commit whose engine sources the checkout holds); `attestation` keeps the attestations of that commit.
+
 ## M4's gate as steps (`../linux-engine-gate/`, T18)
 
 `scripts/linux-engine-gate/steps.mjs` is the gate as one runnable sequence: steps of 45 minutes or less, each a valid run of its own (its

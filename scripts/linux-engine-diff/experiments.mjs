@@ -318,7 +318,8 @@ const STOP_CODES = { SIGINT: 130, SIGTERM: 143 };
 
 /**
  * `body(args, record)` on the experiment's candidate (M4's T18, the design session's ruling: an experiment that joins the
- * gate takes its candidate as a verdict run does). With `--gate` the candidate `--cua` names is stored as `cua-engine`
+ * gate takes its candidate as a verdict run does). With `--gate` (or M5's `--pinned`, `args.gate` 'pinned', checked by
+ * the pinned rule) the candidate `--cua` names is stored as `cua-engine`
  * (mode 0700) in a directory of the run's own and checked by candidate.mjs's preparation before anything runs; a refusal
  * is thrown as a `CandidateRefused` and nothing starts. `body` gets the stored copy and its record, and the copy is
  * removed on a refusal, an error, the end and a stop. A stop (SIGINT or SIGTERM) while this listener is the process's
@@ -345,7 +346,7 @@ export async function withExperimentCandidate(args, body, { prepare = prepareCan
   };
   for (const signal of Object.keys(STOP_CODES)) proc.on(signal, onStop);
   try {
-    preparing = prepare({ source: args.cua, gate: true, dir, signal: stopping.signal });
+    preparing = prepare({ source: args.cua, gate: args.gate, dir, signal: stopping.signal });
     let candidate;
     try {
       candidate = await preparing;
@@ -385,7 +386,8 @@ export async function runExperiment(args, { prepare = prepareCandidate, start = 
   if (args.gate && args.experiment === 'drop-signals' && args.samplesTrials != null) throw new RunRefused('a gate drop-signals step runs its plan whole: --trials caps it (a pilot, a development run)');
   return withExperimentCandidate(args, async (runArgs, record) => {
     mkdirSync(args.out, { recursive: true });
-    const gate = Boolean(args.gate);
+    // true (a release gate), 'pinned' (acceptance on the pinned release) or false (a development run)
+    const gate = args.gate || false;
     const label = gateLabel(gate);
     const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row, ...(LABELLED.has(row.kind) ? { gate, label, ...(row.kind === 'meta' && record ? { candidate: record } : {}) } : {}) })}\n`);
     process.stdout.write(`${label}${record ? `; ${candidateLine(record)}` : ''}\n`);

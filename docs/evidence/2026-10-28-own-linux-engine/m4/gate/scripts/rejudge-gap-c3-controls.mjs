@@ -3,7 +3,9 @@
 // at a time and re-judged. The rows as stored must PASS, with chrome-input's two declared unconfirmed cells listed apart;
 // every edit must FAIL: task 76's controls of the gap itself (rejudge-gap-controls.mjs), and the amendment's own, a
 // declared unconfirmed cell whose stored verdict is not that verdict, and a harness without the declared-loss list,
-// under which "declared unconfirmed" stands no more than any other failing verdict.
+// under which "declared unconfirmed" stands no more than any other failing verdict; and ruling 697's, the run's own
+// failures beside its verdict rows (preparation over the cap, a foreign change at its cleanup) and a planned operation
+// with no verdict.
 // usage: node rejudge-gap-c3-controls.mjs <harness checkout> <V3 results.jsonl>
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, cpSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -20,11 +22,14 @@ const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'rejudge-speed-gap.
 const rows = () => readFileSync(SRC, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
 const at = (r, kind, engine, op = 'activate_window') => r.filter((x) => x.kind === kind && x.scene === 'chrome-input' && x.op === op && x.engine === engine);
 const verdictRow = (r, op) => r.find((x) => x.kind === 'verdict' && x.scene === 'chrome-input' && x.op === op && x.candidate === 'cua' && !x.device);
-// a copy of the harness's linux-engine-diff modules whose stats.mjs has no DECLARED_LOSSES (candidate 1 and 2's form)
+// a copy of the harness's linux-engine-diff modules (and its gate's steps) whose stats.mjs has no DECLARED_LOSSES
+// (candidate 1 and 2's form)
 const withoutDeclaredList = () => {
   const dir = mkdtempSync(join(tmpdir(), 'rjgap3-h-'));
   mkdirSync(join(dir, 'scripts'), { recursive: true });
   cpSync(join(H, 'scripts/linux-engine-diff'), join(dir, 'scripts/linux-engine-diff'), { recursive: true, filter: (p) => !p.includes('/xprobe/target') && !p.includes('node_modules') });
+  // the gate's step plan, which the re-judge reads for the step's coverage (ruling 697)
+  cpSync(join(H, 'scripts/linux-engine-gate'), join(dir, 'scripts/linux-engine-gate'), { recursive: true });
   const stats = join(dir, 'scripts/linux-engine-diff/stats.mjs');
   writeFileSync(stats, readFileSync(stats, 'utf8').replace('export const DECLARED_LOSSES', 'const DECLARED_LOSSES'));
   return dir;
@@ -38,11 +43,24 @@ const judge = (edit, harness = H) => {
     const out = execFileSync(process.execPath, [SCRIPT, harness, join(dir, 'results.jsonl')], { encoding: 'utf8' });
     return `PASS (${(out.match(/declared unconfirmed, as the harness judged it[^\n]*/) || ['no declared unconfirmed line'])[0]})`;
   } catch (e) {
-    return `FAIL (${(String(e.stdout).match(/VERDICT[^\n]*/) || ['?'])[0]})`;
+    // the verdict line, and the run's problems where no verdict row fails (ruling 697's run-wide checks)
+    const verdict = (String(e.stdout).match(/VERDICT[^\n]*/) || ['?'])[0];
+    const problems = String(e.stdout).match(/run problems: [^\n]*/)?.[0];
+    return `FAIL (${verdict.includes('failing:') || !problems ? verdict : `${verdict}; ${problems}`})`;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 };
+// the run's own failures beside its verdicts (stats.mjs runOutcome): a terminal failure lands in the end row's `failed`
+const endFailure = (r, f) => { const e = r.find((x) => x.kind === 'end'); e.failed.push(f); e.pass = false; };
+const FOREIGN = 'a window the harness did not open was changed: the harness: 0x00a00003 ConfigureWindow (raised)';
+const prepareOver = (r) => {
+  const f = r.find((x) => x.kind === 'prepare-faults');
+  const reason = "chrome-input scroll: 5 of 120 samples resampled or invalid (5 resampled, 0 invalid), more than the case's cap of 2";
+  Object.assign(f, { pass: false, reasons: [reason], cases: [{ scene: 'chrome-input', op: 'scroll', samples: 120, resampled: 5, invalid: 0, limit: 2, over: true }] });
+  endFailure(r, `harness preparation failures over the cap (${reason})`);
+};
+const dropOp = (r, scene, op) => { for (let i = r.length - 1; i >= 0; i--) if (r[i].scene === scene && r[i].op === op) r.splice(i, 1); };
 const failing = (v) => Object.assign(v, { verdict: 'fail', pass: false });
 const controls = [
   ['as stored (must PASS, the two cells listed apart)', () => {}, 'PASS'],
@@ -55,6 +73,10 @@ const controls = [
   ['another row failing (stands)', (r) => { failing(verdictRow(r, 'move')); }, 'FAIL'],
   ['right_click_fallback stored as fail, not declared unconfirmed', (r) => { failing(verdictRow(r, 'right_click_fallback')); }, 'FAIL'],
   ['secondary_action stored as fail, not declared unconfirmed', (r) => { failing(verdictRow(r, 'secondary_action')); }, 'FAIL'],
+  // ruling 697's run-wide controls: a terminal failure of the run's own, outside the verdict rows, and a planned operation unjudged
+  ['preparation failures over the cap (the rule failed, and its failure in the end row)', (r) => { prepareOver(r); }, 'FAIL'],
+  ["a change to a window the harness did not open, at the run's cleanup", (r) => { endFailure(r, FOREIGN); }, 'FAIL'],
+  ['a planned operation with no verdict (its rows gone)', (r) => { dropOp(r, 'minimized', 'minimized_scroll'); }, 'FAIL'],
 ];
 let ok = true;
 for (const [name, edit, want] of controls) {

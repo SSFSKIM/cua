@@ -7,4 +7,7 @@ gap: activate_window waits for its window's raise so the next input can't reach 
 | chrome-input activate_window cua | fail | declared gap | speed only: cua: cold 10.4 ms > bar 3.86 ms, the interval [5.635, 7.8] above 0; cua: warm 7.9 ms > bar 0.52 ms, the interval [6.145, 8.97] above 0; effect 40/40, audit and witness as the vendor builds' |
 
 rows: 41 (pass 39, declared refusal 1, declared gap 1); declared gap (listed apart, never a pass): chrome-input activate_window cua
+coverage: 41 of the step's 41 operations (V3) with a verdict
+replaced by the ruling: chrome-input activate_window cua
+other terminal failures retained: none
 VERDICT (the run's verdicts, activate_window by its declared gap #373): PASS

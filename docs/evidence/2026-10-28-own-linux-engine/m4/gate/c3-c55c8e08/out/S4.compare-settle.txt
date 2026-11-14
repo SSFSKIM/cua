@@ -62,5 +62,6 @@
 | gtk4-button click_element background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
 | gtk4-button secondary_action background | clean → clean | 5 of 5 → 5 of 5 | 0 → 0 | – |
 
+the runs' own failures: earlier none; later none
 cells: 37 and 37; audited: 19 and 19; verdicts differing 0, cells in one only 0, audits differing 0, cells whose misses differ 0
-CROSS-CHECK: SAME verdicts, cells and audits
+CROSS-CHECK: SAME verdicts, cells, audits and the runs' own failures

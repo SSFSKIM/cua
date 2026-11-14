@@ -16,8 +16,13 @@
 //      press) is at or past the answer (`ms`, from the request's send, before the press) plus the tail;
 // Every other rule of the case is the candidate's own (device.mjs `judgeDevice`), run over the samples without the
 // span-limited ones: it must pass, so the case still needs a drop the witness recorded. Every other verdict row keeps its
-// stored verdict, and the run must be valid, its stub check failed by witness and audit. Read-only: it reads the stored
-// rows and prints. usage: node rejudge-late-take-window.mjs <harness checkout (the candidate's commit)> <results.jsonl>
+// stored verdict, and the run must be valid, its stub check failed by witness and audit. Run-wide (the design
+// session's ruling 697, after review): the run's own terminal failures (its end row's `failed`: a failing verdict,
+// preparation failures over the cap, a failed warm-up, a run stopped early, a change to a window the harness did not
+// open, a drop finding) all stand but the exact one this ruling replaces, the late-take case's row where it now passes;
+// its preparation-fault rule must pass; and every operation the step plans (the candidate's steps.mjs) has its verdict
+// row. Read-only: it reads the stored rows and prints.
+// usage: node rejudge-late-take-window.mjs <harness checkout (the candidate's commit)> <results.jsonl>
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -32,6 +37,8 @@ if (!harness || !file) {
   process.exit(2);
 }
 const { judgeDevice } = await import(join(harness, 'scripts/linux-engine-diff/device.mjs'));
+const { stepNamed, verdictOps } = await import(join(harness, 'scripts/linux-engine-gate/steps.mjs'));
+const { SCENE_OPS } = await import(join(harness, 'scripts/linux-engine-diff/ops.mjs'));
 const rows = readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
 const meta = rows.find((r) => r.kind === 'meta');
 const end = rows.find((r) => r.kind === 'end');
@@ -40,6 +47,8 @@ const stub = rows.find((r) => r.kind === 'stub-check');
 const problems = [];
 if (!end?.valid) problems.push('the run is not valid');
 if (!(stub?.witness_failed_it && stub?.audit_failed_it)) problems.push('the stub check was not failed by both the witness and the audit');
+const faults = rows.find((r) => r.kind === 'prepare-faults');
+if (!faults?.pass) problems.push(`the preparation-fault rule did not pass (${faults ? faults.reasons.join('; ') : 'no record of it'})`);
 
 console.log(`# ${meta?.run} re-judged with the witness span's limit on a late take's drop (${RULING})`);
 console.log(`label: ${meta?.label ?? (meta?.gate ? 'release gate' : 'development run, not a release gate')}; candidate ${meta?.candidate?.sha256} (${meta?.candidate?.version}); ${file}`);
@@ -82,11 +91,26 @@ for (const v of rows.filter((r) => r.kind === 'verdict')) {
   out.push({ name, stored: verdictOf(v), now: why.length ? 'fail' : 'pass', why: why.length ? why.join('; ') : `${samples.length} samples; the witness span's limit: ${note || 'none'}; every other rule passes` });
 }
 
+// the step's planned operations, and the run's terminal failures but the replaced one
+const step = stepNamed(String(meta?.run).replace(/^m4-gate-/, ''));
+const stepOps = new Set(verdictOps(step));
+const planned = step.scenes.flatMap((scene) => SCENE_OPS[scene].filter((op) => stepOps.has(op)).map((op) => `${scene} ${op}`));
+const verdicts = rows.filter((r) => r.kind === 'verdict');
+const unjudged = planned.filter((p) => !verdicts.some((v) => `${v.scene} ${v.op}` === p && v.candidate === 'cua'));
+if (unjudged.length) problems.push(`the step's operations with no verdict: ${unjudged.join(', ')}`);
+const replaced = new Set(out.filter((o) => o.name.includes(OP) && o.stored !== 'pass' && o.now === 'pass').map((o) => o.name));
+if (!end) problems.push('the run has no end row: it did not end');
+const retained = (end?.failed ?? []).filter((f) => !replaced.has(f));
+for (const f of retained) problems.push(`the run's own failure: ${f}`);
+
 console.log('\n| verdict row | stored | re-judged | why |');
 console.log('|---|---|---|---|');
 for (const o of out.filter((x) => x.now !== x.stored || x.now !== 'pass' || x.name.includes(OP))) console.log(`| ${o.name} | ${o.stored} | ${o.now} | ${o.why} |`);
 const failed = out.filter((o) => !['pass', 'parity', 'declared refusal'].includes(o.now));
 console.log(`\nrows: ${out.length}; failing: ${failed.map((f) => f.name).join(', ') || 'none'}`);
+console.log(`coverage: ${planned.length - unjudged.length} of the step's ${planned.length} operations (${step.name}) with a verdict`);
+console.log(`replaced by the ruling: ${[...replaced].join('; ') || 'none'}`);
+console.log(`other terminal failures retained: ${retained.join('; ') || 'none'}`);
 if (problems.length) console.log(`run problems: ${problems.join('; ')}`);
 const pass = failed.length === 0 && problems.length === 0;
 console.log(`VERDICT (the run's verdicts, ${OP} with the witness span's limit): ${pass ? 'PASS' : 'FAIL'}`);

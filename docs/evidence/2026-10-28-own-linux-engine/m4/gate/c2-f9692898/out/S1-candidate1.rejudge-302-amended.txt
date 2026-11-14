@@ -106,4 +106,7 @@ label: release gate; candidate f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661
   verdict: PASS
 
 #302 counts per Electron press_key cell: [{"cell":"electron-input press_key background","lane":"shipped","load":0,"runs":32,"#302":10,"failing":0,"verdict":"pass"},{"cell":"electron-text press_key background","lane":"shipped","load":0,"runs":30,"#302":0,"failing":0,"verdict":"pass"},{"cell":"electron-input press_key desktop","lane":"shipped","load":0,"runs":30,"#302":0,"failing":0,"verdict":"pass"}]
+coverage: 48 of the step's 48 series (S1: --family chrome,electron, lanes shipped, load 0); 26 of its 26 audits
+replaced by the ruling: electron-input press_key background (shipped): no 30 consecutive passing runs in 32
+other terminal failures retained: none
 cells: 48; VERDICT (the lane's rule with #302 encoded): PASS

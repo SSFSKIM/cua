@@ -14,7 +14,13 @@
 // a lost key (`never`), a refusal, an invalid run, a desktop change, or a miss outside the criterion. An Electron
 // press_key cell passes when every run outside #302 passes, its series' streak (#302 runs counted as passes, the lane's
 // own seriesVerdict) reaches the lane's need, and every audit of the cell passed; every other cell keeps the lane's own
-// verdict (its series reached, its audits passed). Read-only: it reads the stored rows and prints.
+// verdict (its series reached, its audits passed). Run-wide (the design session's ruling 697, after review): the run's
+// own terminal failures (its settle verdict's and summary's `failed`: a cell that could not be opened or was not
+// measured, a development series, an audit, a change to a window the experiment did not open, the display's watchdog)
+// all stand but the exact ones this ruling replaces, an Electron press_key cell's "no N consecutive passing runs in M"
+// where the cell now passes; and every cell the step plans (the candidate's steps.mjs, its families through the lane's
+// cellsFor), in each of its lanes at its load, has its series, and each background cell its audit (ACTIVATING aside, as
+// the lane audits). Read-only: it reads the stored rows and prints.
 // usage: node rejudge-302.mjs <harness checkout (the candidate's commit)> <results.jsonl>
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,8 +30,9 @@ if (!harness || !file) {
   console.error('usage: node rejudge-302.mjs <harness checkout> <results.jsonl>');
   process.exit(2);
 }
-const { runClass } = await import(join(harness, 'scripts/linux-engine-diff/action-settle-cells.mjs'));
+const { runClass, cellsFor, cellName, ACTIVATING } = await import(join(harness, 'scripts/linux-engine-diff/action-settle-cells.mjs'));
 const { seriesVerdict } = await import(join(harness, 'scripts/linux-engine-diff/focus-timer.mjs'));
+const { stepNamed } = await import(join(harness, 'scripts/linux-engine-gate/steps.mjs'));
 const rows = readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
 const runs = rows.filter((r) => r.kind === 'settle-run');
 const series = rows.filter((r) => r.kind === 'settle-series');
@@ -67,6 +74,7 @@ console.log(`# ${meta?.run} re-judged with #302 encoded (${file})`);
 console.log(`label: ${meta?.label}; candidate ${meta?.candidate?.sha256} (${meta?.candidate?.version}); load factor ${meta?.load_factor ?? 'none'}`);
 let allPass = true;
 const counts = [];
+const replaced = new Set();
 for (const s of series) {
   const mine = runs.map((r, i) => [r, i]).filter(([r]) => r.cell === s.cell && r.lane === s.lane && r.load === s.load);
   const judged = mine.map(([r, i]) => {
@@ -87,6 +95,8 @@ for (const s of series) {
   // an Electron press_key cell by the ruling: no failing run at all; every other cell by the lane's own series rule
   const pass = (electronPressKey(s) ? failed.length === 0 : true) && reached && auditOk;
   if (!pass) allPass = false;
+  // the run's own failure of this series (action-settle-cells.mjs settleVerdict), which the ruling replaces when it passes
+  if (pass && electronPressKey(s) && !s.reached) replaced.add(`${s.cell} (${s.lane}): no ${s.need} consecutive passing runs in ${s.runs}`);
   if (n302.length || !pass || electronPressKey(s)) {
     console.log(`\n## ${s.cell} (${s.lane}, load ${s.load})`);
     for (const j of judged) console.log(`  trial ${j.trial}: ${j.cls}${j.late_ms != null ? ` (key-up seen ${j.late_ms} ms after the answer)` : ''}${j.why ? `: ${j.why}` : ''}`);
@@ -96,5 +106,30 @@ for (const s of series) {
   if (electronPressKey(s)) counts.push({ cell: s.cell, lane: s.lane, load: s.load, runs: judged.length, '#302': n302.length, failing: failed.length, verdict: pass ? 'pass' : 'fail' });
 }
 console.log(`\n#302 counts per Electron press_key cell: ${JSON.stringify(counts)}`);
+// the step's planned cells, lanes and load, and the run's terminal failures but the replaced ones
+const step = stepNamed(String(meta?.run).replace(/^m4-gate-/, ''));
+const argOf = (name) => (step.args.includes(name) ? step.args[step.args.indexOf(name) + 1] : undefined);
+const planned = cellsFor({ families: argOf('--family')?.split(',') ?? [], kinds: [], routes: [] });
+const lanes = argOf('--lanes')?.split(',') ?? [];
+const load = Number(argOf('--load-factor') ?? 0);
+const problems = [];
+const missing = planned.flatMap((c) => lanes.filter((lane) => !series.some((s) => s.cell === cellName(c) && s.lane === lane && s.load === load)).map((lane) => `${cellName(c)} (${lane}, load ${load})`));
+if (!planned.length || !lanes.length) problems.push(`the step plans no settle cell (${step.args.join(' ')})`);
+if (missing.length) problems.push(`the step's cells with no series: ${missing.join(', ')}`);
+const audited = planned.filter((c) => c.route === 'background' && !ACTIVATING.includes(c.kind)).map(cellName);
+const unaudited = audited.filter((name) => !audits.some((a) => a.cell === name && a.load === load));
+if (unaudited.length) problems.push(`the step's background cells with no audit: ${unaudited.join(', ')}`);
+const verdictRow = rows.find((r) => r.kind === 'settle-verdict');
+const summary = rows.find((r) => r.kind === 'experiment-summary');
+if (!verdictRow || !summary) problems.push('the run has no settle verdict or no summary: it did not end');
+const retained = [...new Set([...(verdictRow?.failed ?? []), ...(summary?.failed ?? [])])].filter((f) => !replaced.has(f));
+for (const f of retained) problems.push(`the run's own failure: ${f}`);
+console.log(`coverage: ${planned.length * lanes.length - missing.length} of the step's ${planned.length * lanes.length} series (${step.name}: --family ${argOf('--family')}, lanes ${lanes.join(',')}, load ${load}); ${audited.length - unaudited.length} of its ${audited.length} audits`);
+console.log(`replaced by the ruling: ${[...replaced].join('; ') || 'none'}`);
+console.log(`other terminal failures retained: ${retained.join('; ') || 'none'}`);
+if (problems.length) {
+  console.log(`run problems: ${problems.join('; ')}`);
+  allPass = false;
+}
 console.log(`cells: ${series.length}; VERDICT (the lane's rule with #302 encoded): ${allPass ? 'PASS' : 'FAIL'}`);
 process.exit(allPass ? 0 : 1);

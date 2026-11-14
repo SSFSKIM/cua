@@ -1,0 +1,11 @@
+as stored (must PASS): PASS
+a missed effect: FAIL (cua: the effect was not verified on 1 sample (0/3); effect 39 of 40 samples (40 timed))
+a failed answer: FAIL (cua: a request failed; effect 39 of 40 samples (40 timed))
+a witness field the vendors' never changed: FAIL (cua's witness saw mapped change, which the vendor builds' did not)
+an audit request the vendors do not send: FAIL (cua's audit shows requests the vendor builds' do not: XTEST FakeInput)
+a foreign change in the audit: FAIL (cua's audit shows 1 foreign change(s))
+an audit that did not answer ok: FAIL (cua's audit did not answer ok)
+another row failing (stands): FAIL (VERDICT (the run's verdicts, activate_window by its declared gap #373): FAIL; failing: chrome-input move cua)
+preparation failures over the cap (the rule failed, and its failure in the end row): FAIL (the preparation-fault rule did not pass (chrome-input scroll: 5 of 120 samples resampled or invalid (5 resampled, 0 invalid), more than the case's cap of 2); the run's own failure: harness preparation failures over the cap (chrome-input scroll: 5 of 120 samples resampled or invalid (5 resampled, 0 invalid), more than the case's cap of 2))
+a change to a window the harness did not open, at the run's cleanup: FAIL (the run's own failure: a window the harness did not open was changed: the harness: 0x00a00003 ConfigureWindow (raised))
+a planned operation with no verdict (its rows gone): FAIL (the step's operations with no verdict: minimized minimized_scroll)

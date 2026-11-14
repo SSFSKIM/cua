@@ -17,6 +17,11 @@
 // A stored verdict the candidate's harness lists apart as a declared loss (stats.mjs DECLARED_LOSSES: from candidate 3
 // on, "declared unconfirmed" beside "declared refusal", rulings 688 and 691) stands as stored, listed apart, never a
 // pass; a harness without that list has only "declared refusal" (task 79).
+// Run-wide (the design session's ruling 697, after review): the run's own terminal failures (its end row's `failed`: a
+// failing verdict, preparation failures over the cap, a failed warm-up, a run stopped early, a change to a window the
+// harness did not open, a drop finding) all stand but the exact ones this ruling replaces, the activate_window rows it
+// re-judges as a declared gap; its preparation-fault rule must pass; and every operation the step plans (the
+// candidate's steps.mjs: its scenes, each scene's operations among the step's) has its verdict row.
 // Read-only. usage: node rejudge-speed-gap.mjs <harness checkout (the candidate's commit)> <results.jsonl>
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -41,6 +46,8 @@ const { medianDifferenceInterval } = await import(join(harness, 'scripts/linux-e
 const { declaredParity } = await import(join(harness, 'scripts/linux-engine-diff/deviations.mjs'));
 const { OPS } = await import(join(harness, 'scripts/linux-engine-diff/ops.mjs'));
 const DECLARED_LOSSES = (await import(join(harness, 'scripts/linux-engine-diff/stats.mjs'))).DECLARED_LOSSES ?? ['declared refusal'];
+const { stepNamed, verdictOps } = await import(join(harness, 'scripts/linux-engine-gate/steps.mjs'));
+const { SCENE_OPS } = await import(join(harness, 'scripts/linux-engine-diff/ops.mjs'));
 const rows = readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
 const meta = rows.find((r) => r.kind === 'meta');
 const end = rows.find((r) => r.kind === 'end');
@@ -53,6 +60,8 @@ const problems = [];
 if (!end?.valid) problems.push('the run is not valid');
 if (!(stub?.witness_failed_it && stub?.audit_failed_it)) problems.push("the stub check was not failed by both the witness and the audit");
 if (!end?.desktop?.trace?.clean || end.desktop.trace.foreign?.length) problems.push("the run's trace is not clean");
+const faults = rows.find((r) => r.kind === 'prepare-faults');
+if (!faults?.pass) problems.push(`the preparation-fault rule did not pass (${faults ? faults.reasons.join('; ') : 'no record of it'})`);
 
 console.log(`# ${meta?.run} re-judged with ${GAP.op}'s declared speed gap (${GAP.issue}; ${GAP.ruling})`);
 console.log(`label: ${meta?.label ?? (meta?.gate ? 'release gate' : 'development run, not a release gate')}; candidate ${meta?.candidate?.sha256} (${meta?.candidate?.version}); ${file}`);
@@ -100,6 +109,19 @@ for (const v of rows.filter((r) => r.kind === 'verdict')) {
   out.push({ name, stored: verdictOf(v), now: verdict, why: why.length ? why.join('; ') : speed.length ? `speed only: ${speed.join('; ')}; effect ${effectOk}/${mine.length}, audit and witness as the vendor builds'` : 'clean' });
 }
 
+// the step's planned operations, and the run's terminal failures but the replaced ones
+const step = stepNamed(String(meta?.run).replace(/^m4-gate-/, ''));
+const stepOps = new Set(verdictOps(step));
+const planned = step.scenes.flatMap((scene) => SCENE_OPS[scene].filter((op) => stepOps.has(op)).map((op) => `${scene} ${op}`));
+const verdicts = rows.filter((r) => r.kind === 'verdict');
+const unjudged = planned.filter((p) => !verdicts.some((v) => `${v.scene} ${v.op}` === p && v.candidate === 'cua'));
+if (unjudged.length) problems.push(`the step's operations with no verdict: ${unjudged.join(', ')}`);
+const runName = (v) => `${v.scene} ${v.op} ${v.candidate}`;
+const replaced = new Set(verdicts.filter((v, i) => !STANDING.has(out[i].stored) && out[i].now === 'declared gap').map(runName));
+if (!end) problems.push('the run has no end row: it did not end');
+const retained = (end?.failed ?? []).filter((f) => !replaced.has(f));
+for (const f of retained) problems.push(`the run's own failure: ${f}`);
+
 console.log('\n| verdict row | stored | re-judged | why |');
 console.log('|---|---|---|---|');
 for (const o of out.filter((x) => x.now !== x.stored || x.now === 'declared gap' || !STANDING.has(x.now))) console.log(`| ${o.name} | ${o.stored} | ${o.now} | ${o.why} |`);
@@ -109,6 +131,9 @@ const gaps = out.filter((o) => o.now === 'declared gap');
 console.log(`\nrows: ${out.length} (${Object.entries(tally).map(([k, n]) => `${k} ${n}`).join(', ')}); declared gap (listed apart, never a pass): ${gaps.map((g) => g.name).join(', ') || 'none'}`);
 const unconfirmed = out.filter((o) => o.now === 'declared unconfirmed');
 if (unconfirmed.length) console.log(`declared unconfirmed, as the harness judged it (listed apart, never a pass): ${unconfirmed.map((u) => u.name).join(', ')}`);
+console.log(`coverage: ${planned.length - unjudged.length} of the step's ${planned.length} operations (${step.name}) with a verdict`);
+console.log(`replaced by the ruling: ${[...replaced].join('; ') || 'none'}`);
+console.log(`other terminal failures retained: ${retained.join('; ') || 'none'}`);
 if (problems.length) console.log(`run problems: ${problems.join('; ')}`);
 const pass = failed.length === 0 && problems.length === 0;
 console.log(`VERDICT (the run's verdicts, ${GAP.op} by its declared gap ${GAP.issue}): ${pass ? 'PASS' : 'FAIL'}${failed.length ? `; failing: ${failed.map((f) => f.name).join(', ')}` : ''}`);

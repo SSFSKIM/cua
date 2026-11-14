@@ -8,4 +8,7 @@ gap: activate_window waits for its window's raise so the next input can't reach 
 
 rows: 41 (pass 37, declared unconfirmed 2, declared refusal 1, declared gap 1); declared gap (listed apart, never a pass): chrome-input activate_window cua
 declared unconfirmed, as the harness judged it (listed apart, never a pass): chrome-input right_click_fallback cua, chrome-input secondary_action cua
+coverage: 41 of the step's 41 operations (V3) with a verdict
+replaced by the ruling: chrome-input activate_window cua
+other terminal failures retained: none
 VERDICT (the run's verdicts, activate_window by its declared gap #373): PASS

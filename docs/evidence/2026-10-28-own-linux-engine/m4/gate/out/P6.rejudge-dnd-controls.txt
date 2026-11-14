@@ -1,0 +1,11 @@
+as stored (must PASS): PASS
+the honest miss answered ok instead (ok with no effect): FAIL (1 answered ok with no effect)
+a clear loss: 7 more honest misses (22 of 30 against 30 of 30): FAIL (landed 22 of 30 against the pinned build's 30 of 30 (one-sided Fisher p = 0.0023))
+an error that took effect: FAIL (1 answered an error and took effect)
+a refused case that took effect: FAIL (1 took effect)
+the witness changed: FAIL (the witness changed on 1)
+unequal valid runs, the review's case: cua 22 of 30 against the pinned build's 20 of 20 (p = 0.0109): FAIL (the pinned build's reference is 20 valid runs, under the 30 a side the landing is judged on; landed 22 of 30 against the pinned build's 20 of 20 (one-sided Fisher p = 0.0109))
+unequal valid runs, the reference full: cua 31 of 40 against the pinned build's 30 of 30 (p = 0.0042): FAIL (landed 31 of 40 against the pinned build's 30 of 30 (one-sided Fisher p = 0.0042))
+the pinned build's reference short: cua 29 of 30 against 20 of 20 (p = 0.6): FAIL (the pinned build's reference is 20 valid runs, under the 30 a side the landing is judged on)
+a change to a window the harness did not open, at the run's cleanup: FAIL (the run's own failure: a window the harness did not open was changed: the harness: 0x00a00003 ConfigureWindow (raised))
+a case of the step the run never measured (its runs and rows gone): FAIL (cua ran 0 of 10)

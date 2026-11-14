@@ -1,0 +1,2 @@
+[329016:1105/180017.030971:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+[329016:1105/180017.042617:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote

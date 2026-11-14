@@ -15,6 +15,13 @@ import {linuxEnginePath} from '../../src/runtime/linux-engine.mjs';
 export const ENGINES = Object.freeze(['vendor', 'cua']);
 // The parent every answering engine must have: src/repl-host/trusted-worker.mjs, which spawns it.
 export const TRUSTED_WORKER = 'trusted-worker.mjs';
+// The launcher shim (#171 M4 T7b fix 4, src/repl-host/kernel-child.mjs LAUNCHER_SHIM): on cua's lane the supervisor
+// starts the trusted worker's launcher through `cua-engine launcher-shim <its own pid> <program> [args...]`, the engine
+// the launch names (CUA_ENGINE_BIN, which the vendor lane's launch does not set: no shim runs there). It answers nothing.
+// A process is the shim only when its own command line says so and names its real parent, and the shim is sound only
+// as the lane's engine under the supervisor; it never counts as the engine that answered.
+export const SHIM = 'launcher-shim';
+export const SUPERVISOR = 'supervisor.mjs';
 
 // The engine an executable is, by its file name: cua's `cua-engine`, the vendor's `sky_linux_<arch>`, else null.
 export function engineKind(exe) {
@@ -71,9 +78,9 @@ export function engineProcesses(root, {proc = '/proc', fs = nodeFs} = {}) {
     try { exe = fs.readlinkSync(join(proc, String(pid), 'exe')); } catch { continue; }
     const kind = engineKind(exe);
     if (!kind) continue;
-    let argv = [];
-    try { argv = fs.readFileSync(join(proc, String(parents.get(pid)), 'cmdline'), 'utf8').split('\0').filter(Boolean); } catch {}
-    found.push({pid, exe, kind, parent: programOf(argv), service: serviceOf(proc, fs, parents.get(pid))});
+    const cmdline = at => { try { return fs.readFileSync(join(proc, String(at), 'cmdline'), 'utf8').split('\0').filter(Boolean); } catch { return []; } };
+    const own = cmdline(pid), shim = own[1] === SHIM ? {role: SHIM, namesItsParent: own[2] === String(parents.get(pid))} : {};
+    found.push({pid, exe, kind, parent: programOf(cmdline(parents.get(pid))), service: serviceOf(proc, fs, parents.get(pid)), ...shim});
   }
   return found;
 }
@@ -82,7 +89,7 @@ export function engineProcesses(root, {proc = '/proc', fs = nodeFs} = {}) {
 // An observation without a `service` (recorded before M3's service attestation) is kept as it is, and judged unproven.
 export function mergeObservations(...lists) {
   const seen = new Map();
-  for (const {pid, ...observed} of lists.flat()) seen.set(JSON.stringify([observed.exe, observed.kind, observed.parent, observed.service]), observed);
+  for (const {pid, ...observed} of lists.flat()) seen.set(JSON.stringify([observed.exe, observed.kind, observed.parent, observed.service, observed.role, observed.namesItsParent]), observed);
   return [...seen.values()];
 }
 
@@ -144,12 +151,19 @@ export function laneEngineProblem(meta) {
 // null with `error` saying why), observed (mergeObservations)}; `name` labels the sentence.
 export function engineAnsweredProblem(record, name) {
   if (!record || !Array.isArray(record.observed)) return `${name}: records no engine observation`;
-  const {requested, expected, observed} = record;
+  const {requested, expected} = record;
   if (!ENGINES.includes(requested)) return `${name}: the requested engine ${requested} is not vendor or cua`;
   // A failed observation leaves an interval nobody watched: the observations around it do not cover it.
   if (record.sampleError) return `${name}: an engine observation failed (${record.sampleError}), so what answered in that interval is unknown`;
   if (typeof expected !== 'string' || !expected.startsWith('/')) return `${name}: no expected ${requested} engine${record.error ? ` (${record.error})` : ''}`;
   if (engineKind(expected) !== requested) return `${name}: the expected executable ${expected} is not a ${requested} engine`;
+  // the launcher shim, judged on its own and then set aside: it never answers
+  for (const shim of record.observed.filter(o => o.role === SHIM)) {
+    if (shim.namesItsParent !== true) return `${name}: a launcher shim names a parent pid that is not its own`;
+    if (shim.parent !== SUPERVISOR) return `${name}: the launcher shim ran as a child of ${shim.parent ?? 'an unknown process'}, not of the supervisor (${SUPERVISOR})`;
+    if (shim.exe !== expected || shim.kind !== 'cua') return `${name}: the launcher shim ${shim.exe} (${shim.kind}) is not the lane's engine (${expected})`;
+  }
+  const observed = record.observed.filter(o => o.role !== SHIM);
   if (!observed.length) return `${name}: no engine process answered (none was the trusted worker's child while the lane ran)`;
   const other = observed.find(o => o.exe !== expected || o.kind !== requested);
   if (other) return `${name}: ${other.exe} (${other.kind}) answered, not the requested ${requested} engine at ${expected}`;

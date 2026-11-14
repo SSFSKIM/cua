@@ -1,0 +1,20 @@
+{
+  "label": "release gate",
+  "step": "V5",
+  "pilot": false,
+  "what": "Firefox's device cases (T19), Chrome's drags and drops with #263's and #264's cases, under the gate's Chrome ballast; identity (T5), its Chrome windows after device-chrome-dnd",
+  "display": ":0",
+  "load": "idle",
+  "minutes": 38,
+  "run_name": "m4-gate-V5",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/",
+    "commit": "514f5c62dd6c74b1ed24c48f112ca9c35a70eece",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64",
+    "sha256": "f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937"
+  },
+  "command": "/Users/new/.local/share/cua-171/locked.sh t18-gate env WRAP=/Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/wrap71.py /Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts/run71.sh /Users/new/.local/share/cua-171/gate/out-rerun1/V5.release-gate /Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/ --vendor /Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64 --scene device-firefox,device-chrome,device-chrome-dnd,identity,identity-gtk3,identity-gtk4,identity-kate --ops firefox_click_pointer_out_shared,firefox_click_pointer_under_shared,firefox_right_click_pointer_out_shared,firefox_click_pointer_out_dedicated,firefox_click_visible_shared,firefox_click_overlap_pointer_in_shared,firefox_element_click_covered,firefox_move_pointer_out_shared,firefox_move_overlap_pointer_in_shared,firefox_move_covered_dedicated,firefox_drag_pointer_out_shared,firefox_drag_overlap_pointer_in_shared,firefox_drag_covered_dedicated,firefox_scroll_pointer_out_shared,firefox_scroll_overlap_pointer_in_shared,firefox_scroll_covered_dedicated,chrome_drag_visible_path_shared,chrome_drag_covered_path_shared,chrome_drag_covered_dedicated,chrome_dnd_shared,chrome_dnd_in_front_shared,chrome_dnd_late_shared,chrome_dnd_covered_dedicated,chrome_dnd_short_in_front_shared,chrome_dnd_short_covered_dedicated,chrome_dnd_obscured_in_front_shared,chrome_dnd_obscured_in_front_late_shared,chrome_dnd_late_take_shared,chrome_dnd_short_pointer_outside_shared,chrome_dnd_short_pointer_outside_dedicated,chrome_select_nudged_shared,chrome_dnd_inzone_out_in_front_shared,chrome_dnd_long_left_in_front_shared,identity_apart,identity_stacked,identity_stacked_self_active,identity_stacked_other_active,identity_apart_shot,identity_click_element,identity_secondary_action,identity_type_text,identity_clipboard_read,identity_key_up,identity_kate --blocks 3 --run m4-gate-V5 --ballast gate"
+}

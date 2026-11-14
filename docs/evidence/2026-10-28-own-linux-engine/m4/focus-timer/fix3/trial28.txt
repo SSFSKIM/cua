@@ -1,0 +1,4 @@
+paste text Pastedabc | its record: Some(TextState { count: 1377, caret: 1376, selection: None, selections: 0 }) unconfirmed_around [1317, '']
+reconstructed: count 1377 caret 1376 | after one row out: 1317 characters
+the paste text occurs 67 times in the expected text
+readings short of the whole paste that give the same text: none

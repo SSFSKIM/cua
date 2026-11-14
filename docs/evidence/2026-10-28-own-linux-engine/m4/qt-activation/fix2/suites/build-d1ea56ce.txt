@@ -1,0 +1,64 @@
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded gethostname v1.1.0
+  Downloaded bitflags v2.13.2
+  Downloaded itoa v1.0.18
+  Downloaded zune-core v0.5.1
+  Downloaded byteorder-lite v0.1.0
+  Downloaded unicode-ident v1.0.27
+  Downloaded zune-jpeg v0.5.15
+  Downloaded num-traits v0.2.19
+  Downloaded serde_derive v1.0.228
+  Downloaded proc-macro2 v1.0.107
+  Downloaded memchr v2.8.3
+  Downloaded serde_core v1.0.228
+  Downloaded serde_json v1.0.149
+  Downloaded quote v1.0.47
+  Downloaded serde v1.0.228
+  Downloaded moxcms v0.8.1
+  Downloaded x11rb v0.13.2
+  Downloaded autocfg v1.5.1
+  Downloaded zmij v1.0.23
+  Downloaded errno v0.3.14
+  Downloaded rustix v1.1.4
+  Downloaded syn v2.0.119
+  Downloaded image v0.25.10
+  Downloaded bytemuck v1.25.0
+  Downloaded anyhow v1.0.102
+  Downloaded x11rb-protocol v0.13.2
+  Downloaded libc v0.2.191
+  Downloaded pxfm v0.1.30
+  Downloaded linux-raw-sys v0.12.1
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling autocfg v1.5.1
+   Compiling serde_core v1.0.228
+   Compiling rustix v1.1.4
+   Compiling bitflags v2.13.2
+   Compiling linux-raw-sys v0.12.1
+   Compiling zmij v1.0.23
+   Compiling zune-core v0.5.1
+   Compiling serde v1.0.228
+   Compiling anyhow v1.0.102
+   Compiling serde_json v1.0.149
+   Compiling num-traits v0.2.19
+   Compiling pxfm v0.1.30
+   Compiling zune-jpeg v0.5.15
+   Compiling bytemuck v1.25.0
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling syn v2.0.119
+   Compiling cua-linux-engine v0.3.0 (<task61fix2>/build/d1ea56cee9819b720fd035d1aaf35949cc851337/src/native/linux-engine)
+   Compiling x11rb-protocol v0.13.2
+   Compiling byteorder-lite v0.1.0
+   Compiling serde_derive v1.0.228
+   Compiling moxcms v0.8.1
+   Compiling gethostname v1.1.0
+   Compiling image v0.25.10
+   Compiling x11rb v0.13.2
+    Finished `release` profile [optimized] target(s) in 47.24s
+target/x86_64-unknown-linux-musl/release/cua-engine: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=226b03149cf338bf86eefa38dddc4d1a48ad8f7b, stripped
+cua-engine 0.3.0 (d1ea56cee981)
+efd8a403f22ac853cff09e8b30a6c5d6fdf16c43941e2aa85d15b822bc17419e  target/x86_64-unknown-linux-musl/release/cua-engine
+<task61fix2>/build/d1ea56cee9819b720fd035d1aaf35949cc851337/src/native/linux-engine/target/x86_64-unknown-linux-musl/release/cua-engine

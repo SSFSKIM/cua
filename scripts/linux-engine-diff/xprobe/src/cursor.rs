@@ -17,7 +17,7 @@ use x11rb::wrapper::ConnectionExt as _;
 use crate::{Result, json_str};
 
 pub fn cursor_watch() -> Result<()> {
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     conn.xfixes_query_version(5, 0)?.reply()?;
     conn.xfixes_select_cursor_input(root, CursorNotifyMask::DISPLAY_CURSOR)?;

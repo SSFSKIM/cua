@@ -1,0 +1,3 @@
+runtime/engine/linux-engine.json: linux-engine-v0.4.0
+  x64 751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.0/cua-engine-0.4.0-linux-x64 (attestation verified)
+  arm64 0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42 https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.4.0/cua-engine-0.4.0-linux-arm64 (attestation verified)

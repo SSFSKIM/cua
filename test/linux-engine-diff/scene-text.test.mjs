@@ -353,13 +353,15 @@ test("the engine's own failure restores no scene: it is never resampled", async 
 // ---------------------------------------------------------------------------------------------------------------
 // the backstop's scene restore in run.mjs: a fresh window for the lane, the cover back, a warm engine warmed again
 
-function fakeDesktop({ lingers = 0 } = {}) {
+function fakeDesktop({ lingers = 0, application = 'gedit' } = {}) {
   const log = [];
   let next = 100;
   let closed = null;
   let left = lingers;
   const desktop = {
     log,
+    // the harness's own bus reader, as the fresh window's identity is verified through it (app-identity.mjs)
+    oracle: { name: () => application, toolkit: () => ({ toolkit: 'gtk', toolkit_version: '3.24.41' }) },
     async close(scenes) {
       closed = scenes[0].id;
       log.push(`close ${scenes.map((s) => s.id).join(',')}`);
@@ -382,7 +384,7 @@ function fakeDesktop({ lingers = 0 } = {}) {
       return GEDIT_TEXT.replace(/\n$/, '');
     },
     async state(scene) {
-      return { ax_tree: { role: 'frame', children: [{ id: `field-${scene.id}`, role: 'text', states: ['editable'] }] } };
+      return { ax_tree_source: 'at_spi', ax_tree: { id: `:1.5:/org/a11y/atspi/accessible/${scene.id}`, role: 'frame', children: [{ id: `field-${scene.id}`, role: 'text', states: ['editable'] }] } };
     },
     focusFront() {
       log.push('focus front');
@@ -426,6 +428,16 @@ test('the old window is gone before its successor is looked for, which is found 
   const windows = { gedit: { text: { pinned: { kind: 'gedit', role: 'text_pinned', id: 42 } } } };
   await restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp: null });
   assert.deepEqual(desktop.log, ['close 42', 'listed old', 'listed old', 'open text_pinned', 'focus front']);
+});
+
+test("the restored window is verified as the scene's application before it stands in, and refused otherwise", async () => {
+  const ok = fakeDesktop();
+  const windows = { gedit: { text: { cua: { kind: 'gedit', role: 'text_cua', id: 9 } } } };
+  await restoreLaneScene({ desktop: ok, windows, sceneName: 'gedit', label: 'cua', occlusion: 'visible', warmUp: null });
+  assert.deepEqual(windows.gedit.text.cua.identity, { application: 'gedit', toolkit: 'gtk', toolkit_major: 3 });
+  const other = fakeDesktop({ application: 'gnome-text-editor' });
+  const kept = { gedit: { text: { cua: { kind: 'gedit', role: 'text_cua', id: 9 } } } };
+  await assert.rejects(restoreLaneScene({ desktop: other, windows: kept, sceneName: 'gedit', label: 'cua', occlusion: 'visible', warmUp: null }), (e) => e.name === 'IdentityRefused' && /application "gnome-text-editor", not "gedit"/.test(e.message));
 });
 
 // ---------------------------------------------------------------------------------------------------------------

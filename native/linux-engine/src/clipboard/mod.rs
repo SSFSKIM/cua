@@ -30,6 +30,8 @@ use x11rb::rust_connection::RustConnection;
 
 pub use handles::Handles;
 pub use lock::Lock;
+#[cfg(test)]
+pub use owner::REQUEST_PAUSE_MS;
 pub use owner::{Outcome, Paste, Seen};
 pub use serving::{Payload, TextAtoms};
 

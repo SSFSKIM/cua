@@ -1,0 +1,4 @@
+Warning: failed to launch javaldx - java may not function correctly
+
+(soffice:3348661): Gtk-WARNING **: 20:48:07.308: Could not load a pixbuf from /org/gtk/libgtk/theme/Adwaita/assets/check-symbolic.svg.
+This may indicate that pixbuf loaders or the mime database could not be found.

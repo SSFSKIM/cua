@@ -16,6 +16,13 @@
 // alike, emitted or not. Each count is a cut point whose subtree is never read, so <n> is a lower bound. The reason
 // names each cause that cut something, with its count when there are several. A state without the field renders as the
 // vendor's does.
+//
+// And its second (the design session's ruling, 2026-11-10; #171 M4 T14): a window state whose `notice` is a non-empty
+// string (cua-engine's report of what a drag's after-release watch left pending: a late drag and drop, an unconfirmed
+// drop or a failed watch) starts its rendered state with that sentence as its first line, before `Accessibility
+// source:`, so the model reads it before it acts again. A state without it, or with an empty one, renders as before,
+// byte for byte. The screenshot alone, the window and app lists and the releases show no notice: the next acting
+// request is refused with it, so the model cannot act again without meeting it.
 import {image, one_screenshot, positive_pixels, require_plain_text, text} from './display.mjs';
 
 // The causes of `truncated`, in the order the line names them.
@@ -30,13 +37,16 @@ function truncation(truncated) {
   return `\nAccessibility tree truncated: at least ${total} elements not shown (${reason})`;
 }
 
+// A state's pending drag notice as its first line, with the newline that puts the rest after it, or ''.
+const pending = notice => (typeof notice === 'string' && notice !== '' ? `${notice}\n` : '');
+
 export function bind_linux_app(sky, window) {
   async function windowState({include_screenshot}) {
     const state = await sky.get_window_state({window, include_screenshot});
     window = state.window;
     return state;
   }
-  const describe = state => `Accessibility source: ${state.ax_tree_source}\n${state.ax_tree.to_string()}${truncation(state.truncated)}`;
+  const describe = state => `${pending(state.notice)}Accessibility source: ${state.ax_tree_source}\n${state.ax_tree.to_string()}${truncation(state.truncated)}`;
   return {
     async getAXState(options) {
       const state = describe(await windowState({include_screenshot: false}));

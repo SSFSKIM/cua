@@ -1,0 +1,95 @@
+fatal: not a git repository (or any of the parent directories): .git
+negative check: the witness failed the activating stub (stacking, active, focus)
+family gedit, input: 21 cells
+cell gedit click visible pointer-in
+| GTK3 gedit | click | visible | in | 10/10 | – |
+cell gedit scroll visible pointer-in
+| GTK3 gedit | scroll | visible | in | 10/10 | – |
+cell gedit move visible pointer-in
+| GTK3 gedit | move | visible | in | 10/10 | – |
+cell gedit click visible pointer-out
+| GTK3 gedit | click | visible | out | 10/10 | – |
+cell gedit scroll visible pointer-out
+| GTK3 gedit | scroll | visible | out | 10/10 | – |
+cell gedit move visible pointer-out
+| GTK3 gedit | move | visible | out | 10/10 | – |
+cell gedit click partial pointer-in
+| GTK3 gedit | click | partial | in | 10/10 | – |
+cell gedit scroll partial pointer-in
+| GTK3 gedit | scroll | partial | in | 10/10 | – |
+cell gedit move partial pointer-in
+| GTK3 gedit | move | partial | in | 10/10 | – |
+cell gedit click partial pointer-under
+| GTK3 gedit | click | partial | under | 10/10 | – |
+cell gedit scroll partial pointer-under
+| GTK3 gedit | scroll | partial | under | 10/10 | – |
+cell gedit move partial pointer-under
+| GTK3 gedit | move | partial | under | 5/10 (5 ok with no effect) | – |
+cell gedit click partial pointer-out
+| GTK3 gedit | click | partial | out | 10/10 | – |
+cell gedit scroll partial pointer-out
+| GTK3 gedit | scroll | partial | out | 10/10 | – |
+cell gedit move partial pointer-out
+| GTK3 gedit | move | partial | out | 10/10 | – |
+cell gedit click covered pointer-under
+| GTK3 gedit | click | covered | under | 10/10 | – |
+cell gedit scroll covered pointer-under
+| GTK3 gedit | scroll | covered | under | 10/10 | – |
+cell gedit move covered pointer-under
+| GTK3 gedit | move | covered | under | 10/10 | – |
+cell gedit click covered pointer-out
+| GTK3 gedit | click | covered | out | 10/10 | – |
+cell gedit scroll covered pointer-out
+| GTK3 gedit | scroll | covered | out | 10/10 | – |
+cell gedit move covered pointer-out
+| GTK3 gedit | move | covered | out | 10/10 | – |
+family gedit, drag: 7 cells
+cell gedit select visible pointer-in
+| GTK3 gedit | select | visible | in | 10/10 | – |
+cell gedit select visible pointer-out
+| GTK3 gedit | select | visible | out | 10/10 | – |
+cell gedit select partial pointer-in
+| GTK3 gedit | select | partial | in | 10/10 | – |
+cell gedit select partial pointer-under
+| GTK3 gedit | select | partial | under | 10/10 | – |
+cell gedit select partial pointer-out
+| GTK3 gedit | select | partial | out | 10/10 | – |
+cell gedit select covered pointer-under
+| GTK3 gedit | select | covered | under | 10/10 | – |
+cell gedit select covered pointer-out
+| GTK3 gedit | select | covered | out | 10/10 | – |
+T19's sitting (pointer-route.mjs): each cell 10 runs a lane, the real pointer parked before each run and read before each request; cua's lane with `--ignore-cover`, so the counts are the application's. Occlusions: `visible` (raised, nothing over it), `partial` (a window over its bottom half), `covered` (a window over the whole screen). Pointer: `in` the window's visible part, `under` the cover inside its geometry, `out` of its geometry, on the front window.
+
+| family | kind | occlusion | pointer | cua took | pinned took |
+|---|---|---|---|---:|---:|
+| GTK3 gedit | click | visible | in | 10/10 | – |
+| GTK3 gedit | scroll | visible | in | 10/10 | – |
+| GTK3 gedit | move | visible | in | 10/10 | – |
+| GTK3 gedit | click | visible | out | 10/10 | – |
+| GTK3 gedit | scroll | visible | out | 10/10 | – |
+| GTK3 gedit | move | visible | out | 10/10 | – |
+| GTK3 gedit | click | partial | in | 10/10 | – |
+| GTK3 gedit | scroll | partial | in | 10/10 | – |
+| GTK3 gedit | move | partial | in | 10/10 | – |
+| GTK3 gedit | click | partial | under | 10/10 | – |
+| GTK3 gedit | scroll | partial | under | 10/10 | – |
+| GTK3 gedit | move | partial | under | 5/10 (5 ok with no effect) | – |
+| GTK3 gedit | click | partial | out | 10/10 | – |
+| GTK3 gedit | scroll | partial | out | 10/10 | – |
+| GTK3 gedit | move | partial | out | 10/10 | – |
+| GTK3 gedit | click | covered | under | 10/10 | – |
+| GTK3 gedit | scroll | covered | under | 10/10 | – |
+| GTK3 gedit | move | covered | under | 10/10 | – |
+| GTK3 gedit | click | covered | out | 10/10 | – |
+| GTK3 gedit | scroll | covered | out | 10/10 | – |
+| GTK3 gedit | move | covered | out | 10/10 | – |
+| GTK3 gedit | select | visible | in | 10/10 | – |
+| GTK3 gedit | select | visible | out | 10/10 | – |
+| GTK3 gedit | select | partial | in | 10/10 | – |
+| GTK3 gedit | select | partial | under | 10/10 | – |
+| GTK3 gedit | select | partial | out | 10/10 | – |
+| GTK3 gedit | select | covered | under | 10/10 | – |
+| GTK3 gedit | select | covered | out | 10/10 | – |
+
+The park held at every request.
+{"exit": 0, "samples": 9063, "maps_samples": 3022, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 3767, "browsers": 33}

@@ -74,9 +74,9 @@ pub fn crossings(client: u32, data: &[u8], wall: u128) -> Vec<String> {
 }
 
 pub fn crossing_watch() -> Result<()> {
-    let (control, screen) = x11rb::connect(None)?;
-    let (data, _) = x11rb::connect(None)?;
-    let (poll, _) = x11rb::connect(None)?;
+    let (control, screen) = crate::xconnect(None)?;
+    let (data, _) = crate::xconnect(None)?;
+    let (poll, _) = crate::xconnect(None)?;
     let root = poll.setup().roots[screen].root;
     control.record_query_version(1, 13)?.reply()?;
     let context = control.generate_id()?;

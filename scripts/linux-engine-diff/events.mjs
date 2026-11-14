@@ -1,7 +1,8 @@
 // The input events experiment (Design, Input: "the same press_key, key_down and key_up sequences produce the same X
 // key events in both engines"; Clicks, scroll, drag, move: "kept exactly"): every engine gets the same request
-// sequences against a recorder window (`xprobe record`) on a private X server the experiment starts itself (Xvfb),
-// so the desktop route's XTEST input reaches nobody's desktop. Per scenario and engine it records each request's
+// sequences against a recorder window (`xprobe record`) on a private X server the experiment starts itself (Xvfb,
+// through xtools.mjs `startPrivateServer`, under the watchdog from its first client on), so the desktop route's XTEST
+// input reaches nobody's desktop. Per scenario and engine it records each request's
 // answer and every event the recorder received, and compares them with the pinned build's, event by event: type,
 // whether it was sent (SendEvent) or real, detail (keycode or button), state, the window it went to and its
 // coordinates. Timestamps are not compared (each engine anchors its own).
@@ -9,18 +10,22 @@
 // The newest vendor build presses a chord's keys back to back where the pinned one paces them (behaviour §11.3),
 // and cua paces them not at all; the events and their order are the same, which is what this checks.
 
-import { spawn, execFileSync } from 'node:child_process';
+import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
+import { parseXtrace, startProxy } from './audit.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
 import { SPEED_GAPS, declaredDeviation, declaredSpeedGap } from './deviations.mjs';
-import { Engine } from './engine.mjs';
+import { runTmp } from './app-env.mjs';
+import { Engine, runEngines } from './engine.mjs';
+import { ROOT, displayTools, parkPointer } from './park.mjs';
 import { XPROBE } from './scenes.mjs';
 import { median, noiseVerdict, speedLabel } from './stats.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
+import { startPrivateServer } from './xtools.mjs';
 
 /** The verdicts of a passing group (stats.mjs `speedLabel`). */
 const PASSING = ['faster', 'same (within noise)', 'within the bound'];
@@ -29,6 +34,16 @@ const PASSING = ['faster', 'same (within noise)', 'within the bound'];
 export const RECORDER = { x: 100, y: 100, width: 800, height: 600 };
 /** Where the real pointer is put before each desktop scenario: inside the top-level, outside its child. */
 export const POINTER_START = [300, 300];
+
+/**
+ * The real pointer put at `POINTER_START` on the experiment's own display (`env`), before the scenario's recorder or
+ * the motion listener's window exists, and verified there on the bare root (park.mjs): every step is judged from that
+ * position, so a pointer elsewhere, or a window left under it, refuses the run (`ParkRefused`). `options` are
+ * `parkPointer`'s, given only by the tests.
+ */
+export function parkAtStart(env, options = {}) {
+  return parkPointer({ x: POINTER_START[0], y: POINTER_START[1] }, ROOT, { ...displayTools(env), ...options });
+}
 
 const W = '$W';
 const k = (key, extra = {}) => ({ command: 'press_key', input: { window: W, key, ...extra } });
@@ -195,8 +210,134 @@ export function judgeScenarioEffects(steps, records, candidates) {
   return { pass: vendorTook && Object.values(misses).every((m) => m.length === 0), misses };
 }
 
+/**
+ * The motion listener's steps (M4's T9), from the pointer at `POINTER_START`: a move to where the pointer already is
+ * (the vendor's one motion there), a 1 px move (the positive control: the listener must receive its motion), a path
+ * whose leading motion is at the pointer's own position, and the same with button 1 held through `drag_handle`.
+ */
+export const MOTION_STEPS = [
+  { tag: 'a move to the pointer', command: 'move', input: { x: 300, y: 300 } },
+  { tag: 'a 1 px move (the control)', command: 'move', input: { x: 301, y: 300 }, control: [301, 300] },
+  { tag: 'a path', command: 'move', input: { x: 701, y: 500 } },
+  { tag: 'a handle pressed at the pointer', command: 'drag_handle', input: { action: 'start', x: 701, y: 500 } },
+  { tag: 'held, a 1 px move (the control)', command: 'drag_handle', input: { action: 'move_to', x: 702, y: 500 }, control: [702, 500] },
+  { tag: 'held, a move to the pointer', command: 'drag_handle', input: { action: 'move_to', x: 702, y: 500 } },
+  { tag: 'released', command: 'drag_handle', input: { action: 'end' } },
+];
+
+/** The absolute XTEST motions among traced requests, in order, as `[x, y]` (FakeInput's root x and y, bytes 20–23). */
+export function fakeMotions(requests, extensions) {
+  const out = [];
+  for (const r of requests) {
+    if (extensions.XTEST === undefined || r.major !== extensions.XTEST || r.minor !== 2) continue;
+    const bytes = r.text.match(/unparsed-data=([0-9a-fx,]+)/)?.[1].split(',').map((b) => Number(b));
+    if (!bytes || bytes[0] !== 6 || bytes[1] !== 0) continue;
+    const int16 = (lo, hi) => ((hi << 8) | lo) << 16 >> 16;
+    out.push([int16(bytes[20], bytes[21]), int16(bytes[22], bytes[23])]);
+  }
+  return out;
+}
+
+/**
+ * One step's motions judged: which of those `sent` (in order, from the pointer at `from`) the listener `delivered`,
+ * matched in order by position, and of them how many were at the pointer's own position. `{sent, delivered, own,
+ * own_delivered, undelivered, to}`, `to` where the step left the pointer.
+ */
+export function judgeMotionStep(from, sent, delivered) {
+  let at = from;
+  let next = 0;
+  const step = { sent: sent.length, delivered: delivered.length, own: 0, own_delivered: 0, undelivered: [] };
+  for (const point of sent) {
+    const own = point[0] === at[0] && point[1] === at[1];
+    const found = next < delivered.length && delivered[next][0] === point[0] && delivered[next][1] === point[1];
+    if (own) step.own++;
+    if (found) {
+      next++;
+      if (own) step.own_delivered++;
+    } else step.undelivered.push(point);
+    at = point;
+  }
+  return { ...step, to: at };
+}
+
+/**
+ * The listener's verdict over every engine and mode: it works only when each control step's point was delivered
+ * everywhere (a listener that misses a real 1 px move proves nothing), and it tells whether a motion at the pointer's
+ * own position is delivered (`own_delivered` of `own`, summed).
+ */
+export function judgeMotionListener(rows) {
+  const controls = rows.filter((r) => r.control);
+  const listening = controls.length > 0 && controls.every((r) => r.delivered_points.some(([x, y]) => x === r.control[0] && y === r.control[1]));
+  const own = rows.reduce((n, r) => n + r.own, 0);
+  const ownDelivered = rows.reduce((n, r) => n + r.own_delivered, 0);
+  return { listening, own, own_delivered: ownDelivered };
+}
+
+/**
+ * The motion listener (M4's T9): per engine and listener mode (`xprobe motion-watch`, core `MotionNotify` or XInput 2
+ * `XI_Motion`), `MOTION_STEPS` with the engine's X connection through xtrace, each step's XTEST motions read beside
+ * what the listener received. Whether the desktop path may leave its leading motion out, as the newest build does,
+ * turns on whether the server delivers a motion to the pointer's own position.
+ */
+async function motionListener(engines, env, emit) {
+  const rows = [];
+  for (const mode of ['core', 'xi2']) {
+    for (const engine of engines) {
+      parkAtStart(env);
+      const watch = xSpawn(XPROBE, ['motion-watch', '0', '0', '1280', '800', mode], { env, stdio: ['pipe', 'pipe', 'inherit'] });
+      const lines = [];
+      const waiters = [];
+      createInterface({ input: watch.stdout }).on('line', (line) => {
+        lines.push(JSON.parse(line));
+        for (const w of waiters.splice(0)) w();
+      });
+      const until = async (match) => {
+        for (;;) {
+          const i = lines.findIndex(match);
+          if (i >= 0) return lines.splice(0, i + 1);
+          await new Promise((resolve) => waiters.push(resolve));
+        }
+      };
+      await until((m) => m.ready);
+      const proxy = await startProxy({ display: env.DISPLAY });
+      const process_ = new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env: { ...env, DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY } }).start();
+      const steps = [];
+      let trace = '';
+      try {
+        for (const step of MOTION_STEPS) {
+          const { response } = await process_.request(step.command, step.input, { timeoutMs: 30000 });
+          await proxy.mark(step.tag);
+          watch.stdin.write(`mark ${step.tag}\n`);
+          const events = (await until((m) => m.mark === step.tag)).filter((m) => m.type);
+          const kind = mode === 'core' ? 'MotionNotify' : 'XI_Motion';
+          steps.push({ step, ok: response.ok === true, delivered: events.filter((e) => e.type === kind).map((e) => [e.root_x, e.root_y]), raw: events.filter((e) => e.type === 'XI_RawMotion').length });
+        }
+      } finally {
+        await process_.close();
+        trace = await proxy.stop();
+        watch.stdin.end();
+        await new Promise((resolve) => watch.once('exit', resolve));
+      }
+      const { requests, extensions } = parseXtrace(trace);
+      let at = POINTER_START;
+      let start = 0;
+      for (const [i, s] of steps.entries()) {
+        const end = proxy.marks[i].at;
+        const sent = fakeMotions(requests.filter((r) => r.at >= start && r.at < end), extensions);
+        start = end;
+        const judged = judgeMotionStep(at, sent, s.delivered);
+        at = judged.to;
+        const row = { kind: 'events-motion', mode, engine: engine.label, step: s.step.tag, ok: s.ok, sent_points: sent, delivered_points: s.delivered, raw: s.raw, ...judged, ...(s.step.control ? { control: s.step.control } : {}) };
+        emit(row);
+        rows.push(row);
+      }
+    }
+  }
+  return { rows, ...judgeMotionListener(rows) };
+}
+
 function pointerOn(env) {
-  const text = execFileSync('xdotool', ['getmouselocation', '--shell'], { env, encoding: 'utf8' });
+  const text = xExecFileSync('xdotool', ['getmouselocation', '--shell'], { env, encoding: 'utf8' });
   const value = (key) => Number(text.match(new RegExp(`^${key}=(-?\\d+)`, 'm'))?.[1]);
   return [value('X'), value('Y')];
 }
@@ -256,29 +397,11 @@ export function firstDifference(reference, candidate) {
   return null;
 }
 
-/**
- * A private X server: `Xvfb -displayfd`, so the display number is the server's choice; `-noreset`, so it does not
- * reset (and recompile its keymap) each time its last client leaves; its output not piped, since a full pipe would
- * stall the keymap compiler and with it the server.
- */
-async function startServer() {
-  const child = spawn('Xvfb', ['-displayfd', '3', '-noreset', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
-  const display = await new Promise((resolve, reject) => {
-    let text = '';
-    child.stdio[3].on('data', (chunk) => {
-      text += chunk;
-      if (text.includes('\n')) resolve(`:${text.trim()}`);
-    });
-    child.once('exit', (code) => reject(new Error(`Xvfb exited (${code})`)));
-  });
-  return { display, stop: () => child.kill('SIGTERM') };
-}
-
 class Recorder {
   constructor(env, { focus = false, fragile = false, fragileKey = false } = {}) {
     const { x, y, width, height } = RECORDER;
     const flags = [...(focus ? ['focus'] : []), ...(fragile ? ['fragile'] : []), ...(fragileKey ? ['fragile-key'] : [])];
-    this.child = spawn(XPROBE, ['record', String(x), String(y), String(width), String(height), ...flags], { env, stdio: ['pipe', 'pipe', 'inherit'] });
+    this.child = xSpawn(XPROBE, ['record', String(x), String(y), String(width), String(height), ...flags], { env, stdio: ['pipe', 'pipe', 'inherit'] });
     this.lines = [];
     this.waiters = [];
     createInterface({ input: this.child.stdout }).on('line', (line) => {
@@ -314,24 +437,54 @@ class Recorder {
   }
 }
 
+/** How long a step's events are read on for the `FocusOut` of a synthetic focus it left open (`settleFocus`). */
+export const FOCUS_SETTLE_MS = 300;
+
+/**
+ * A step's events once the synthetic focus left open over the scenario so far (`open`, plus the step's own `FocusIn`s
+ * less its `FocusOut`s) has closed, read on with `mark` every `pollMs`, or once `boundMs` has passed: `{events, open}`.
+ * T7's timer once sent cua's `FocusOut` after a request's answer; it now goes before the answer, as the vendor builds'
+ * does (M4's T7 as ruled on task 59, the engine's `route.rs`), and each request's events are still compared once its
+ * session has ended, as the vendor's has, so a step whose session closed before its answer is read once; the next step
+ * then starts on no open session in either engine. A hold keeps its session open in every engine until its release:
+ * such a step is read after the bound.
+ */
+export async function settleFocus(events, { open = 0, mark, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), boundMs = FOCUS_SETTLE_MS, pollMs = 20 }) {
+  const count = (list) => list.reduce((n, e) => n + (e.send === true && e.type === 'FocusIn' ? 1 : e.send === true && e.type === 'FocusOut' ? -1 : 0), 0);
+  const all = [...events];
+  let left = open + count(events);
+  for (let waited = 0; left > 0 && waited < boundMs; waited += pollMs) {
+    await sleep(pollMs);
+    const more = await mark();
+    all.push(...more);
+    left += count(more);
+  }
+  return { events: all, open: left };
+}
+
 /**
  * Runs one scenario on one engine: a fresh recorder and engine process (or, through the vendor JavaScript, a fresh
  * client's engine), the pointer put at its start. A step with an `effect` has it judged from the pointer read before
- * and after it and the events the recorder received.
+ * and after it and the events the recorder received; its events are read once any synthetic focus it left open has
+ * closed (`settleFocus`).
  */
 async function runScenario(scenario, engine, env, { via = 'wire', skyDir } = {}) {
-  execFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
+  parkAtStart(env);
   const recorder = new Recorder(env, { focus: scenario.route === 'desktop', fragile: scenario.fragile, fragileKey: scenario.fragileKey });
   const window = await recorder.ready();
   const engineEnv = scenario.apps ? { ...env, XDG_DATA_HOME: env.EVENTS_APPS, XDG_DATA_DIRS: '' } : env;
   const process_ = (via === 'vendor-js' ? new VendorJsEngine({ label: engine.label, bin: engine.bin, skyDir, env: engineEnv }) : new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env: engineEnv })).start();
   const steps = [];
+  let open = 0;
   try {
     for (const [i, step] of scenario.steps.entries()) {
       const { command, input } = bindStep(step, window);
       const before = step.effect ? pointerOn(env) : null;
       const { response, ms } = await process_.request(command, input, { timeoutMs: 30000 });
-      const events = await recorder.mark(`step-${i}`);
+      let polls = 0;
+      const settled = await settleFocus(await recorder.mark(`step-${i}`), { open, mark: () => recorder.mark(`step-${i}-focus-${polls++}`) });
+      ({ open } = settled);
+      const { events } = settled;
       const timed = { ms: Math.round(ms * 100) / 100, first: i === 0 };
       const effect = step.effect ? { effect: response.ok === true && step.effect({ before, after: pointerOn(env), events }) } : {};
       if (step.interrupted) steps.push({ command, interrupted: true, ...interruptedStep(response, events), raw: normalizeAnswer(response), ...timed });
@@ -534,7 +687,7 @@ async function desktopBlocks(engines, env, emit, { rounds = FIRST_ROUNDS, firstR
     for (const sequence of sequences) {
       const order = [...engines.slice(r % engines.length), ...engines.slice(0, r % engines.length)];
       for (const engine of order) {
-        execFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
+        parkAtStart(env);
         const process_ = new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env }).start();
         try {
           await new Promise((resolve) => setTimeout(resolve, ENGINE_SETTLE_MS));
@@ -627,8 +780,12 @@ export function eventEngines(args) {
 
 /** `--experiment events`: every scenario on every engine; whether cua matched the pinned build everywhere, and its speed. */
 export async function runEvents(args, emit) {
-  const server = await startServer();
+  // the harness's own private server, watched from its first client on, before anything probes or drives it (task 44)
+  const server = await startPrivateServer({ out: args.out });
   const home = mkdtempSync(join(tmpdir(), 'cua171-events-'));
+  // its engines' temporary files in a TMPDIR of the experiment's own, every engine alike, gone with it (task 51)
+  mkdirSync(runTmp(home), { mode: 0o700 });
+  const endEngines = runEngines(home);
   const env = { ...process.env, DISPLAY: server.display, XAUTHORITY: join(home, 'no-auth'), EVENTS_APPS: join(home, 'data') };
   mkdirSync(join(home, 'data', 'applications'), { recursive: true });
   writeFileSync(join(home, 'data', 'applications', 'events-probe.desktop'), desktopEntry('Events Probe', ['/usr/bin/touch', join(home, 'launched')]));
@@ -640,7 +797,11 @@ export async function runEvents(args, emit) {
   // each desktop group's verdict from the stage of the schedule that decided it (eventStage)
   let frozen = new Map();
   let pass = true;
+  let watched = null;
+  let motion = null;
   try {
+    // over the wire, first the motion listener (M4's T9): what a motion to the pointer's own position delivers
+    if (via === 'wire') motion = await motionListener(engines.filter((e) => !e.args?.length), env, emit);
     for (const scenario of via === 'vendor-js' ? VENDOR_JS_SCENARIOS : scenarios()) {
       const records = {};
       for (const engine of engines) records[engine.label] = await runScenario(scenario, engine, env, { via, skyDir: args.vendorJs });
@@ -696,8 +857,22 @@ export async function runEvents(args, emit) {
       }
     }
   } finally {
-    server.stop();
+    watched = await server.stop();
+    endEngines();
     rmSync(home, { recursive: true, force: true });
+  }
+  // a display that went unwatched (its watchdog stalled, was lost or failed) judges nothing
+  if (motion) {
+    emit({ kind: 'events-motion-verdict', listening: motion.listening, own: motion.own, own_delivered: motion.own_delivered });
+    md.push('', 'The motion listener (`xprobe motion-watch`; each engine through xtrace): XTEST motions sent / motions the listener received, and of them those at the pointer\'s own position (sent / received):', '');
+    md.push('| listener | engine | step | sent / received | at the pointer\'s own position |', '|---|---|---|---|---|');
+    for (const r of motion.rows) md.push(`| ${r.mode} | ${r.engine} | ${r.step} | ${r.sent} / ${r.delivered} | ${r.own} / ${r.own_delivered} |`);
+    md.push('', motion.listening ? `The listener received every control's 1 px move. Motions at the pointer's own position: ${motion.own_delivered} of ${motion.own} received.` : "**The listener missed a control's 1 px move, so it proves nothing and the run is incomplete.**");
+    if (!motion.listening) pass = false;
+  }
+  if (!watched.clean) {
+    pass = false;
+    md.push('', `**The private display's watchdog: ${watched.reason}, so the display went unwatched and the run is incomplete.**`);
   }
   md.push('', pass ? 'cua sent the pinned build\'s events and answers in every scenario.' : 'cua differs from the pinned build; results.jsonl has each first difference.');
   const mismatches = (blocks ?? []).flatMap((b) => b.mismatches ?? []);

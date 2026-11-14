@@ -1,0 +1,17 @@
+--- /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/scripts/linux-engine-diff/scenes.mjs	2026-11-02 04:50:53.454934267 -0800
++++ /Users/new/.local/share/cua-171/task35/restoring-build/scenes.mjs	2026-11-02 05:03:36.726315702 -0800
+@@ -625,6 +625,14 @@
+     if (this.holder && this.windows.includes(this.holder)) await this.close([this.holder]);
+     rmSync(this.dir, { recursive: true, force: true });
+     this.pruneLogs();
++    // the restore the harness made until M4's rule, put back for the negative control
++    if (this.startActive) {
++      try {
++        xdotool('windowactivate', this.startActive);
++      } catch {
++        // the previously active window is gone
++      }
++    }
+     if (this.trace) this.ending = await this.finishTrace();
+     // only once everything is closed: a signal meanwhile still waits for this cleanup
+     this.unhookStop();

@@ -1,0 +1,25 @@
+file://<home>/Developer/GitHub/cua/.claude/worktrees/cua-171/test/linux-engine-diff/waits.test.mjs:6
+import { firstCaptureVerdict, judgeControls, judgeReadinessRun, readinessOutcome } from '../../scripts/linux-engine-diff/readiness-check.mjs';
+                                                                ^^^^^^^^^^^^^^^^
+SyntaxError: The requested module '../../scripts/linux-engine-diff/readiness-check.mjs' does not provide an export named 'readinessOutcome'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:455:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:553:5)
+    at async node:internal/modules/esm/loader:647:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.22.1
+✖ test/linux-engine-diff/waits.test.mjs (87.938533ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 97.673941
+
+✖ failing tests:
+
+test at test/linux-engine-diff/waits.test.mjs:1:1
+✖ test/linux-engine-diff/waits.test.mjs (87.938533ms)
+  'test failed'

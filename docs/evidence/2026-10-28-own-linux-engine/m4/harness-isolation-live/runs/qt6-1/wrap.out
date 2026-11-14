@@ -1,0 +1,4 @@
+family qt6-input: pinned at_spi/1/13calls, newest at_spi/1/13calls, cua at_spi/1/13calls
+family qtcreator: pinned at_spi/1261/9685calls, newest at_spi/1261/9685calls, cua at_spi/1261/9685calls
+family qt6-input: pinned x11/1/2calls, newest x11/1/2calls, cua x11/1/2calls
+{"exit": 0, "samples": 427, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 57}

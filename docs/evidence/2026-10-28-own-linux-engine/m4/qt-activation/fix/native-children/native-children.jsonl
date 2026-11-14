@@ -1,0 +1,11 @@
+{"app": "kate", "result": {"window": 4194310, "size": [800, 533], "points": 1200, "on_native_child": 0, "share": 0.0, "descendants": []}}
+{"app": "keditbookmarks", "result": {"window": 4194310, "size": [640, 480], "points": 1200, "on_native_child": 0, "share": 0.0, "descendants": []}}
+{"app": "qtcreator", "result": {"window": 4194318, "size": [1260, 700], "points": 1200, "on_native_child": 0, "share": 0.0, "descendants": []}}
+{"app": "assistant", "result": {"window": 4194310, "size": [554, 533], "points": 1200, "on_native_child": 0, "share": 0.0, "descendants": []}}
+{"app": "designer", "result": {"window": 4194314, "size": [1280, 781], "points": 1200, "on_native_child": 0, "share": 0.0, "descendants": []}}
+{"app": "designer", "result": {"window": 4194324, "size": [537, 400], "points": 1200, "on_native_child": 0, "share": 0.0, "descendants": []}}
+{"app": "linguist", "result": {"window": 4194310, "size": [1000, 770], "points": 1200, "on_native_child": 0, "share": 0.0, "descendants": []}}
+{"app": "pixeltool", "result": {"window": 4194310, "size": [250, 200], "points": 1200, "on_native_child": 0, "share": 0.0, "descendants": []}}
+{"app": "qdbusviewer", "result": {"window": 4194310, "size": [534, 479], "points": 1200, "on_native_child": 0, "share": 0.0, "descendants": []}}
+{"app": "control-qt5", "result": {"window": 4194310, "size": [400, 200], "points": 1200, "on_native_child": 988, "share": 0.8233, "descendants": [{"depth": 1, "width": 378, "height": 178, "viewable": true, "input_only": false}, {"depth": 2, "width": 376, "height": 176, "viewable": true, "input_only": false}, {"depth": 2, "width": 100, "height": 30, "viewable": false, "input_only": false}, {"depth": 2, "width": 100, "height": 30, "viewable": false, "input_only": false}]}}
+{"app": "control-qt6", "result": {"window": 4194310, "size": [400, 200], "points": 1200, "on_native_child": 988, "share": 0.8233, "descendants": [{"depth": 1, "width": 378, "height": 178, "viewable": true, "input_only": false}, {"depth": 2, "width": 376, "height": 176, "viewable": true, "input_only": false}, {"depth": 2, "width": 100, "height": 30, "viewable": false, "input_only": false}, {"depth": 2, "width": 100, "height": 30, "viewable": false, "input_only": false}]}}

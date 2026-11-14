@@ -1,0 +1,8 @@
+as stored (must PASS): PASS
+a lost key: trial 2 never landed, no late reading: FAIL (trial 2: fail: class never)
+criterion 1: no key-down in the settle: FAIL (trial 2: fail: criterion 1: key_downs 2 -> 2, last_key x)
+criterion 2: the key-up already counted, yet not ok: FAIL (trial 2: fail: criterion 2: key_ups 2 -> 3, late_ms 207.4)
+criterion 3: the next before-read still one release short: FAIL (trial 2: fail: criterion 3: next before-read (electron-input press_key background trial 3) key_ups 2, key_downs 3)
+a refusal: FAIL (trial 2: fail: class refused)
+the desktop changed: FAIL (trial 2: fail: the desktop changed)
+an audit failed: FAIL (?)

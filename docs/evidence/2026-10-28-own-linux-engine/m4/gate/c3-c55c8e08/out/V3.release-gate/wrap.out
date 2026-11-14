@@ -1,0 +1,66 @@
+release gate; candidate: sha256 751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca, x86_64-unknown-linux-musl static-pie, cua-engine 0.4.0 (c55c8e08d9cb); attestation verified: .github/workflows/linux-engine.yml run https://github.com/SSFSKIM/cua/actions/runs/43608161213/attempts/1, built from c55c8e08d9cbbb057b8b95434787b1e45d41184c (refs/heads/feat/171-m4) on a github-hosted runner
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 21; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 22; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 3; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 317; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 300; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 13; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 311; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 317; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 287; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 304; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 312; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 305; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 11; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 318; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 5; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 311; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 313; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 305; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 309; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 293; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 4; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 301; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 318; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 312; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 314; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 314; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 293; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 4; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 291; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 288; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 311; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 8; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 310; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 9; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 305; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 290; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 5; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 306; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 10; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 299; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 314; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 303; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-pinned: the scroll series ended at 327; back to the top
+cua171-diff-m4-gate-V3-ed0cd044-input-newest: the scroll series ended at 339; back to the top
+run valid; release gate: FAIL: chrome-input activate_window cua; declared refusal (a loss, not a pass): chrome-input right_click_fallback cua, chrome-input secondary_action cua, chrome-input drag cua; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/gate/out-c3/V3.release-gate/run/results.jsonl
+{"exit": 1, "samples": 17450, "maps_samples": 5818, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 1715, "browsers": 43}

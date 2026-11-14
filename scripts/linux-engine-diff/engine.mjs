@@ -1,12 +1,69 @@
 // An engine over the wire: one process, `<bin> server [flags]`, one JSON request per line on stdin, one response
 // per line on stdout. Requests go one at a time; each is timed from its write to its answer, and the first also
 // from the process's spawn (the cold sample a service pays on first use). cua-engine's `--stats` lines on stderr are
-// matched to their requests by id.
+// matched to their requests by id; the lines it writes with no request (`"id": null`: an after-release watch run out
+// between requests, engine.rs `tick`) are kept, in order, with the next request's answer.
 
-import { spawn } from 'node:child_process';
+import { engineEnvironment } from './app-env.mjs';
+import { xSpawn } from './xspawn.mjs';
 import { createInterface } from 'node:readline';
 
 const now = () => Number(process.hrtime.bigint()) / 1e6;
+
+const operationWatchers = new Set();
+
+// the scratch directory of the run open now (`runEngines`): every engine started meanwhile writes its temporary files
+// there, in the run's TMPDIR (app-env.mjs `engineEnvironment`, task 51)
+let openRun = null;
+
+/**
+ * The run whose engines start from now on (scenes.mjs `Desktop.begin`; one run at a time in a harness process): each
+ * one, cua's and the vendor builds' alike, gets the run's TMPDIR under `scratch`. Returns the function that ends it.
+ */
+export function runEngines(scratch) {
+  openRun = scratch;
+  return () => {
+    if (openRun === scratch) openRun = null;
+  };
+}
+
+/** The open run's scratch directory, or null between runs. */
+export const runningScratch = () => openRun;
+
+/**
+ * For engines that code of another's starts with this process's environment (the two-services instrument: the vendor's
+ * service and cua's own service, given no environment, each spawn their engine with process.env): puts the open run's
+ * TMPDIR there, the value every other engine of the run gets (`engineEnvironment`), so both lanes share it. Only while a
+ * run is open; answers the function that puts the harness's own back. The harness's own temporary directories made
+ * meanwhile go there too, and with the run's scratch.
+ */
+export function runTmpdirInProcess() {
+  if (!openRun) throw new Error("no run is open: the run's TMPDIR exists from Desktop.begin to the run's end");
+  const saved = process.env.TMPDIR;
+  process.env.TMPDIR = engineEnvironment(process.env, openRun).TMPDIR;
+  return () => {
+    if (saved === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = saved;
+  };
+}
+
+/**
+ * Every request an engine makes on a window, reported when it is answered to `watch({engine, window, command, start,
+ * end})` (wall-clock ms): the spans during which that window's client may open popups of the operation's own (scenes.mjs
+ * `Desktop.operations`, foreign.mjs `judgeForeign`). Returns the function that stops the watch.
+ */
+export function watchOperations(watch) {
+  operationWatchers.add(watch);
+  return () => operationWatchers.delete(watch);
+}
+
+/** A request's span to every watch, when it names a window. */
+function reportOperation(engine, command, input, start) {
+  const window = input?.window?.id;
+  if (!window || operationWatchers.size === 0) return;
+  const op = { engine, window, command, start, end: Date.now() };
+  for (const watch of operationWatchers) watch(op);
+}
 
 export class Engine {
   constructor({ label, bin, args = [], stats = false, env }) {
@@ -18,6 +75,8 @@ export class Engine {
     this.nextId = 1;
     this.pending = new Map();
     this.statsById = new Map();
+    // the engine's own `--stats` lines, written with no request, since the last answer that took them
+    this.untied = [];
     this.stderrTail = '';
   }
 
@@ -29,7 +88,8 @@ export class Engine {
   start() {
     this.spawnedAt = now();
     const args = ['server', ...this.args, ...(this.statsWanted ? ['--stats'] : [])];
-    this.child = spawn(this.bin, args, { stdio: ['pipe', 'pipe', 'pipe'], ...(this.env ? { env: this.env } : {}) });
+    const env = engineEnvironment(this.env ?? process.env, openRun);
+    this.child = xSpawn(this.bin, args, { stdio: ['pipe', 'pipe', 'pipe'], env });
     this.pid = this.child.pid;
     this.exited = new Promise((resolve) => this.child.once('exit', (code, signal) => resolve({ code, signal })));
     createInterface({ input: this.child.stdout }).on('line', (line) => {
@@ -48,8 +108,16 @@ export class Engine {
     });
     createInterface({ input: this.child.stderr }).on('line', (line) => {
       if (line.startsWith('{"stats"')) {
-        const { stats } = JSON.parse(line);
-        this.statsById.set(stats.id, stats);
+        // a line that does not parse leaves its request without stats, which a check that needs them fails
+        let stats;
+        try {
+          ({ stats } = JSON.parse(line));
+        } catch {
+          this.stderrTail = `${this.stderrTail}unparsable --stats line: ${line.slice(0, 200)}\n`.slice(-4000);
+          return;
+        }
+        if (stats?.id === null) this.untied.push(stats);
+        else this.statsById.set(stats?.id, stats);
       } else {
         this.stderrTail = `${this.stderrTail}${line}\n`.slice(-4000);
       }
@@ -63,12 +131,16 @@ export class Engine {
     return this;
   }
 
-  /** Sends one request and waits for its answer: `{response, ms, sinceSpawnMs, stats}`. */
+  /**
+   * Sends one request and waits for its answer: `{id, response, ms, sinceSpawnMs, stats, untied}`, `untied` the
+   * engine's own `--stats` lines written since the previous answer (empty without `--stats`).
+   */
   async request(command, input = {}, { timeoutMs = 120000 } = {}) {
     const id = this.nextId++;
     const first = id === 1;
     const answered = new Promise((resolve) => this.pending.set(id, resolve));
     const sentAt = now();
+    const wallStart = Date.now();
     this.child.stdin.write(`${JSON.stringify({ id, command, input })}\n`);
     let timer;
     const timeout = new Promise((resolve) => {
@@ -76,18 +148,25 @@ export class Engine {
     });
     const { response, at } = await Promise.race([answered, timeout]);
     clearTimeout(timer);
+    reportOperation(this, command, input, wallStart);
     let stats = null;
     if (this.statsWanted) {
-      for (let i = 0; i < 50 && !this.statsById.has(id); i++) await new Promise((r) => setTimeout(r, 2));
+      // the engine writes a request's line just after its answer; a check that needs it fails without it, so a busy
+      // machine's late line is waited for (2 s), off the timed span, which ended at the answer
+      const until = now() + 2000;
+      while (!this.statsById.has(id) && now() < until) await new Promise((r) => setTimeout(r, 2));
       stats = this.statsById.get(id) ?? null;
       this.statsById.delete(id);
     }
-    return { response, ms: at - sentAt, sinceSpawnMs: first ? at - this.spawnedAt : null, stats };
+    // read once this request's own line is in, so every line the engine wrote before it is too (stderr keeps its order)
+    const untied = this.untied.splice(0);
+    return { id, response, ms: at - sentAt, sinceSpawnMs: first ? at - this.spawnedAt : null, stats, untied };
   }
 
   /** Writes several requests at once (pipelined) and waits for every answer. */
   async pipeline(requests, { timeoutMs = 120000 } = {}) {
     const started = now();
+    const wallStart = Date.now();
     const waits = requests.map(({ command, input }) => {
       const id = this.nextId++;
       const answered = new Promise((resolve) => this.pending.set(id, resolve));
@@ -100,6 +179,7 @@ export class Engine {
     });
     const answers = await Promise.race([Promise.all(waits), timeout]);
     clearTimeout(timer);
+    for (const { command, input } of requests) reportOperation(this, command, input, wallStart);
     return { responses: answers.map((a) => a.response), ms: answers.at(-1).at - started };
   }
 

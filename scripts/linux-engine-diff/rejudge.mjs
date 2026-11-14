@@ -56,6 +56,8 @@ export function rejudge(rows, run) {
     // a declared refusal excuses its answer and effect, never its speed (run.mjs declaredRefusalVerdict); a run before
     // that rule recorded no other reasons for it
     if (before.verdict === 'declared refusal') verdict = speed.length ? 'fail' : before.verdict;
+    // a declared unconfirmed answer is not judged on speed (run.mjs declaredRefusalVerdict)
+    else if (before.verdict === 'declared unconfirmed') verdict = before.verdict;
     else if (others.length || speed.length) verdict = 'fail';
     else verdict = now.parity.length ? 'parity' : 'pass';
     if (verdict !== before.verdict) changed.push({ scene, op, candidate, before: before.verdict, after: verdict, speed_before: before.speed, speed_after: speed });

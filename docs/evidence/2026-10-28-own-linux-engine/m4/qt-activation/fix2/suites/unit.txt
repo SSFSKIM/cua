@@ -1,0 +1,449 @@
+   Compiling cua-linux-engine v0.3.0 (<checkout>/native/linux-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.92s
+     Running unittests src/main.rs (target/debug/deps/cua_engine-28885870b3fa0b71)
+
+running 370 tests
+test apps::tests::exec_lines_tokenize_with_quotes_and_escapes ... ok
+test apps::tests::launch_finds_the_first_entry_by_id_name_or_stem_ignoring_case ... ok
+test apps::tests::field_codes_expand_as_the_vendor_expands_them ... ok
+test apps::tests::roots_follow_the_xdg_variables ... ok
+test atspi::tests::a_context_menu_copy_is_refused_on_every_route_of_cuas_own ... ok
+test atspi::tests::an_error_on_cuas_own_routes_is_their_answer_never_an_error_that_falls_back ... ok
+test apps::tests::programs_are_found_by_path_or_in_path ... ok
+test apps::tests::windows_join_their_apps_and_apps_sort_by_name ... ok
+test atspi::tests::how_a_frame_was_told_is_named_for_the_stats_line ... ok
+test atspi::tests::only_the_vendors_own_match_falls_back_when_its_tree_cannot_be_read ... ok
+test atspi::tests::the_active_state_is_read_from_the_state_words_themselves ... ok
+test atspi::tests::what_cuas_own_routes_answer_reads_as_their_sentences ... ok
+test capture::tests::a_short_image_carries_the_vendor_sentence ... ok
+test caps::tests::the_x11_backend_reports_every_capability_and_its_device_mode ... ok
+test apps::tests::a_directory_s_files_come_before_its_subdirectories ... ok
+test apps::tests::discovery_filters_entries_and_the_first_id_wins ... ok
+test capture::tests::an_existing_directory_at_the_name_is_refused ... ok
+test capture::tests::a_symlink_at_the_name_is_refused_and_its_target_untouched ... ok
+test capture::tests::jpeg_is_quality_80_with_4_4_4_sampling_and_a_jfif_1_2_header ... ok
+test capture::tests::pixels_are_read_as_bgrx_with_a_stride_of_four_bytes ... ok
+test capture::tests::files_are_named_pid_underscore_nanoseconds ... ok
+test capture::tests::the_cursor_is_composited_premultiplied_at_its_hotspot ... ok
+test capture::tests::the_fallback_arrow_is_sized_and_clipped ... ok
+test capture::tests::the_private_directory_is_new_owner_only_and_unpredictable ... ok
+test clipboard::handles::tests::releasing_an_unknown_or_released_handle_does_nothing ... ok
+test clipboard::handles::tests::at_most_32_handles_are_kept ... ok
+test clipboard::handles::tests::handles_are_named_as_the_vendor_names_them ... ok
+test clipboard::quarantine::tests::a_record_further_ahead_than_a_window_runs_is_ignored ... ok
+test clipboard::quarantine::tests::a_window_runs_until_its_end_on_the_wrapping_clock ... ok
+test clipboard::serving::tests::a_closed_paste_refuses_its_own_conversions_and_nothing_later ... ok
+test clipboard::serving::tests::a_merged_paste_keeps_refusing_a_ctrl_v_outside_its_ownership ... ok
+test clipboard::serving::tests::a_merged_unconfirmed_paste_keeps_its_current_time_refusal ... ok
+test clipboard::serving::tests::a_paste_never_dispatched_still_refuses_its_window ... ok
+test clipboard::serving::tests::a_snapshot_is_stored_in_ascending_atom_order ... ok
+test clipboard::serving::tests::an_unconfirmed_paste_refuses_current_time_for_ten_seconds ... ok
+test clipboard::serving::tests::chunks_are_at_most_64_kib_whole_32_bit_units_and_fit_the_request ... ok
+test capture::tests::jpeg_round_trips_to_the_same_size_and_close_pixels ... ok
+test clipboard::serving::tests::pastes_beyond_the_kept_ones_still_refuse_their_timestamps ... ok
+test clipboard::serving::tests::the_merged_span_stays_within_half_the_clock ... ok
+test clipboard::tests::a_conversion_of_a_long_evicted_paste_stays_refused ... ignored, needs an X display (--features live)
+test clipboard::serving::tests::timestamps_are_compared_on_the_wrapping_clock ... ok
+test clipboard::tests::a_copy_between_the_snapshot_and_the_take_is_refused_and_the_newer_copy_survives ... ignored, needs an X display (--features live)
+test clipboard::tests::a_held_lock_makes_the_next_engine_wait_then_refuse_with_clipboard_busy ... ignored, needs an X display (--features live)
+test clipboard::tests::a_late_conversion_never_receives_the_restored_snapshot_as_the_paste ... ignored, needs an X display (--features live)
+test clipboard::serving::tests::text_is_served_as_the_vendor_serves_it_with_string_only_for_latin1 ... ok
+test clipboard::tests::a_pause_before_taking_clipboard_does_not_shorten_the_refused_window ... ignored, needs an X display (--features live)
+test clipboard::tests::a_requestor_that_stops_acknowledging_incr_chunks_is_dropped_within_the_bounds ... ignored, needs an X display (--features live)
+test clipboard::tests::a_silent_owner_ends_the_snapshot_at_its_bound_and_the_locks_are_released ... ignored, needs an X display (--features live)
+test clipboard::tests::a_snapshot_captures_every_format_another_owner_offers_incr_included ... ignored, needs an X display (--features live)
+test clipboard::tests::a_snapshot_during_an_abandoned_take_s_verification_holds_the_clipboard_as_it_was ... ignored, needs an X display (--features live)
+test clipboard::tests::a_take_abandoned_after_the_owner_started_it_is_cleaned_up ... ignored, needs an X display (--features live)
+test clipboard::tests::a_takeover_handled_late_does_not_cost_the_next_paste_its_clipboard ... ignored, needs an X display (--features live)
+test clipboard::tests::a_vendor_holding_its_lock_keeps_cua_out_and_cua_s_own_lock_is_given_back ... ignored, needs an X display (--features live)
+test clipboard::tests::after_a_confirmed_paste_current_time_gets_the_snapshot ... ignored, needs an X display (--features live)
+test clipboard::tests::an_empty_prior_clipboard_is_restored_as_an_owner_with_no_formats ... ignored, needs an X display (--features live)
+test clipboard::tests::an_incr_format_is_held_to_the_cap_exactly ... ignored, needs an X display (--features live)
+test clipboard::tests::an_owner_stalling_mid_incr_ends_the_snapshot_at_the_chunk_bound ... ignored, needs an X display (--features live)
+test clipboard::tests::an_unconfirmed_paste_s_current_time_refusal_covers_the_next_paste_too ... ignored, needs an X display (--features live)
+test clipboard::tests::an_unconfirmed_paste_s_window_holds_for_another_engine_and_outlives_the_engine ... ignored, needs an X display (--features live)
+test clipboard::tests::engines_contending_for_the_lock_never_hold_it_together_nor_cross_deliver ... ignored, needs an X display (--features live)
+test clipboard::tests::only_an_unconfirmed_paste_that_was_sent_opens_the_current_time_refusal ... ignored, needs an X display (--features live)
+test clipboard::tests::the_budget_left_by_earlier_formats_is_counted_in_bytes ... ignored, needs an X display (--features live)
+test clipboard::tests::the_cleanup_leaves_a_newer_owner_alone ... ignored, needs an X display (--features live)
+test clipboard::tests::the_engine_s_own_clipboard_is_snapshotted_as_it_serves_it ... ignored, needs an X display (--features live)
+test clipboard::tests::the_owner_serves_a_large_payload_through_incr ... ignored, needs an X display (--features live)
+test clipboard::tests::the_owner_serves_text_in_every_format_and_targets ... ignored, needs an X display (--features live)
+test clipboard::tests::the_same_owner_copying_again_between_the_snapshot_and_the_take_is_refused ... ignored, needs an X display (--features live)
+test clipboard::tests::the_target_s_targets_request_is_answered_and_delivered_before_answered_targets_says_so ... ignored, needs an X display (--features live)
+test copy::tests::a_menu_item_is_its_label_alone_or_with_its_shortcut ... ok
+test copy::tests::a_menu_left_open_is_said_to_have_had_an_escape_sent_never_to_have_closed ... ok
+test cover::tests::a_path_in_the_visible_part_of_a_partly_covered_window_is_unobscured ... ok
+test copy::tests::the_focus_is_the_first_focused_node_in_post_order ... ok
+test apps::launched_tests::a_launched_program_starts_with_the_stop_signals_unblocked ... ok
+test cover::tests::a_window_alone_on_the_screen_is_unobscured ... ok
+test cover::tests::a_path_under_an_override_redirect_or_shaped_window_or_outside_the_window_is_obscured ... ok
+test cover::tests::a_window_partly_off_the_screen_or_its_parent_is_obscured ... ok
+test cover::tests::any_overlap_above_obscures_it ... ok
+test cover::tests::doubt_counts_as_obscured ... ok
+test cover::tests::a_covered_vertex_or_a_segment_crossing_a_cover_obscures_the_path ... ok
+test copy::tests::the_search_stops_at_the_depth_limit ... ok
+test dbus::tests::a_call_without_arguments_has_no_signature_field ... ok
+test dbus::tests::a_method_call_is_marshalled_little_endian_with_its_header_fields_in_order ... ok
+test dbus::tests::a_closed_bus_is_reported_as_broken ... ok
+test copy::tests::siblings_are_fetched_together_within_the_window ... ok
+test dbus::tests::addresses_take_the_first_unix_socket_and_decode_escapes ... ok
+test dbus::tests::error_replies_become_the_vendor_sentence ... ok
+test dbus::tests::external_authentication_sends_the_hex_of_the_decimal_uid ... ok
+test dbus::tests::integer_arguments_are_aligned ... ok
+test dbus::tests::message_len_needs_the_fixed_header_and_reports_the_whole_length ... ok
+test dbus::tests::calls_with_a_deadline_answer_in_order_when_every_reply_is_in_time ... ok
+test dbus::tests::replies_decode_the_types_at_spi_answers_with ... ok
+test dbus::tests::replies_are_matched_by_serial_with_many_calls_in_flight ... ok
+test dbus::tests::the_send_boundary_refuses_every_text_mutator_before_anything_is_sent ... ok
+test desktop::tests::a_long_move_is_ten_steps_from_the_start ... ok
+test dbus::tests::an_error_reply_fails_only_its_call_with_the_vendor_sentence ... ok
+test desktop::tests::a_short_move_has_one_step_per_sixteen_pixels ... ok
+test desktop::tests::coordinates_round_half_away_from_zero_and_staying_put_is_one_motion ... ok
+test dnd::tests::a_cancel_whose_escape_did_not_go_out_records_no_key ... ok
+test dnd::tests::a_take_counts_only_from_the_target_s_own_client ... ok
+test dbus::tests::the_send_boundary_lets_copy_text_and_the_same_members_of_other_interfaces_through ... ok
+test dnd::tests::a_watch_whose_connection_fails_or_whose_round_trip_fails_ends_failed_never_quiet ... ok
+test dnd::tests::a_window_newly_active_focused_or_on_top_is_the_drop_s_signature ... ok
+test dnd::tests::a_watch_whose_thread_panicked_ends_failed ... ok
+test dnd::tests::a_take_after_the_release_is_cancelled_at_once_and_timed_from_the_release ... ok
+test dnd::tests::the_answer_follows_the_order_of_the_take_the_escape_and_the_release ... ok
+test dbus::tests::a_silent_bus_fails_every_outstanding_call_and_keeps_the_connection ... ok
+test dbus::tests::a_reply_larger_than_any_window_budget_is_read_whole ... ok
+test dnd::tests::the_refusal_names_the_application_and_says_nothing_was_dropped_only_when_cancelled_in_time ... ok
+test dnd::tests::the_hold_waits_for_a_take_until_its_deadline_and_no_longer ... ok
+test dnd::tests::the_floor_after_a_take_is_filled_with_motions_that_end_on_the_last_sample ... ok
+test dnd::tests::the_steps_after_a_take_spread_over_the_release_s_delay ... ok
+test engine::elements::tests::a_named_action_is_chosen_case_insensitively_at_full_length ... ok
+test engine::elements::tests::an_empty_or_ambiguous_action_is_refused ... ok
+test engine::elements::tests::the_point_is_the_floored_centre_of_what_the_window_shows ... ok
+test engine::identity_faults::a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::identity_faults::a_copy_whose_active_frame_is_corrected_after_its_selection_is_read_copies_nothing ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::identity_faults::a_focus_change_between_choosing_the_frame_and_verifying_it_is_the_retry_sentence_never_the_x11_tree ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::identity_faults::a_paste_whose_active_frame_is_corrected_before_its_focusing_click_clicks_nothing ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::identity_faults::a_paste_whose_frame_changes_after_its_focusing_click_says_the_click_was_sent_and_restores_nothing ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::identity_faults::a_paste_whose_frame_is_no_longer_told_apart_before_its_chord_sends_nothing ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::identity_faults::a_read_whose_active_frame_is_corrected_once_read_is_the_retry_sentence ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::identity_faults::a_stale_paste_into_the_focused_field_sends_nothing ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::identity_faults::an_action_whose_active_frame_is_corrected_before_it_presses_nothing ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::identity_faults::the_stale_state_is_real_and_a_corrected_one_reads_the_right_window ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::paste::tests::a_confirming_reply_in_time_confirms_and_the_read_is_given_the_deadline ... ok
+test dnd::tests::at_the_exit_a_watch_that_does_not_end_is_waited_for_no_longer_than_its_lifetime ... ok
+test dnd::tests::the_watch_ends_at_the_settle_counted_from_the_release ... ok
+test engine::paste::tests::a_field_observed_whole_is_read_whole_only_once_text_has_left_it_and_confirms_scrolled ... ok
+test engine::paste::tests::a_confirming_reply_that_arrives_after_the_deadline_does_not_confirm ... ok
+test engine::paste::tests::a_wait_ends_at_the_target_s_answer_or_at_its_bound ... ok
+test engine::paste::tests::an_error_after_the_focusing_click_and_before_the_chord_says_the_click_reached_the_window ... ok
+test engine::paste::tests::an_identity_refusal_says_safe_to_retry_only_before_any_focusing_click ... ok
+test engine::paste::tests::only_a_family_that_asks_at_every_owner_change_waits_for_its_targets ... ok
+test engine::paste::tests::the_focusing_click_stops_at_its_second_try_or_at_the_focus ... ok
+test engine::paste::tests::the_scrolled_rule_s_cost_at_the_route_s_limits ... ignored, a measurement
+test engine::paste::tests::with_no_wait_the_target_s_answer_is_asked_about_once ... ok
+test engine::paste_faults::a_failed_release_is_retried_once_and_reported_even_when_the_paste_confirms ... ignored, needs an X display, AT-SPI and yad (--features live)
+test engine::paste_faults::a_lost_acknowledgement_before_the_v_keeps_the_unconfirmed_answer_and_its_window ... ignored, needs an X display, AT-SPI and yad (--features live)
+test engine::paste_faults::a_lost_acknowledgement_of_the_delivered_v_is_not_answered_as_nothing_pasted ... ignored, needs an X display, AT-SPI and yad (--features live)
+test engine::paste_faults::a_v_the_server_rejects_before_delivery_is_not_applied_and_opens_no_window ... ignored, needs an X display, AT-SPI and yad (--features live)
+test engine::pointer::tests::a_drag_handle_keeps_the_pacing_its_start_found_until_its_end ... ok
+test engine::pointer::tests::a_forty_pixel_drag_visits_forty_one_points ... ok
+test engine::pointer::tests::drag_samples_truncate_toward_zero_and_repeat_the_joint ... ok
+test engine::pointer::tests::the_atomic_press_ends_with_the_first_sample_past_blink_s_drag_threshold ... ok
+test engine::pointer::tests::the_atomic_press_sends_at_most_its_cap_under_the_grab_whatever_the_path ... ok
+test engine::pointer::tests::wheel_steps_round_half_away_from_zero_with_one_at_least ... ok
+test engine::refusal_faults::a_clipboard_lock_held_after_the_click_says_the_click_reached_the_window ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::refusal_faults::a_clipboard_taken_from_the_paste_after_the_click_says_the_click_reached_the_window ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::refusal_faults::a_context_menu_copy_on_the_vendor_s_own_match_still_copies ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::refusal_faults::a_context_menu_with_no_copy_says_an_escape_was_sent_to_close_it_not_that_it_closed ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::refusal_faults::a_copy_between_the_snapshot_and_the_take_after_the_click_says_the_click_reached_the_window ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::refusal_faults::a_desktop_focus_change_after_the_click_says_the_click_reached_the_window ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::refusal_faults::a_field_changed_at_the_revalidation_after_the_click_says_the_click_reached_the_window ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::refusal_faults::a_field_that_loses_the_focus_at_its_restore_says_the_click_reached_the_window ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::refusal_faults::a_field_that_never_takes_the_focus_says_its_clicks_reached_the_window ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::refusal_faults::a_silent_clipboard_owner_after_the_click_says_the_click_reached_the_window ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::refusal_faults::an_unconfirmed_paste_s_window_opened_after_the_click_says_the_click_reached_the_window ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::targets_faults::a_focus_change_during_the_wait_for_targets_refuses_with_nothing_sent ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::targets_faults::a_request_the_owner_has_not_yet_answered_is_answered_before_the_chord_in_any_family ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::targets_faults::a_terminal_that_asks_for_targets_late_still_has_its_answer_before_the_chord ... ignored, needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)
+test engine::tests::a_frame_found_by_cuas_own_routes_answers_its_tree_only_once_confirmed ... ok
+test engine::tests::a_late_drag_and_drop_refuses_only_requests_that_send_input_or_change_state ... ok
+test engine::tests::a_minimized_window_refuses_every_window_targeted_input_but_releases_reads_and_activation ... ok
+test engine::tests::a_window_its_modal_dialog_blocks_is_refused_naming_the_dialog_to_send_the_input_to ... ok
+test engine::tests::truncation_is_reported_only_for_an_accessibility_read_that_cut_something ... ok
+test engine::way::tests::the_device_mode_sentence_names_the_application ... ok
+test engine::windows::tests::a_bad_match_on_a_window_already_viewable_answers_after_the_one_retry_without_waiting_out_the_bound ... ok
+test engine::windows::tests::a_failed_look_at_the_window_is_the_answer ... ok
+test engine::windows::tests::a_window_nothing_maps_is_not_retried_and_answers_at_the_bound ... ok
+test engine::windows::tests::a_window_the_window_manager_maps_during_the_wait_gets_the_focus_once ... ok
+test families::tests::a_family_is_found_by_class_then_by_toolkit_without_regard_to_case ... ok
+test families::tests::a_process_is_qt_when_its_map_maps_qt_5_s_or_qt_6_s_core_library ... ok
+test families::tests::a_window_with_no_tree_is_qt_s_by_its_xembed_mark_else_by_its_process_s_map_where_readable ... ok
+test families::tests::chrome_and_the_chromium_toolkit_press_as_blink_does ... ok
+test families::tests::coordinate_clicks_are_ignored_by_gtk_4_always_and_by_gecko_unless_unobscured ... ok
+test families::tests::drags_are_ignored_by_gtk_4_always_by_gecko_unless_unobscured_and_by_chromium_unless_their_path_is ... ok
+test families::tests::each_family_pastes_by_its_own_route ... ok
+test families::tests::every_entry_is_keyed_and_names_its_evidence ... ok
+test families::tests::gtk_4_and_gtk_3_are_their_toolkit_at_their_major_version ... ok
+test families::tests::only_a_terminal_s_text_scrolls_away_at_its_start ... ok
+test families::tests::only_chrome_s_drop_changes_the_desktop ... ok
+test families::tests::only_qt_hands_a_blocked_window_s_focus_to_its_modal_dialog ... ok
+test families::tests::only_qt_s_press_activates_a_window_that_has_not_taken_its_focus ... ok
+test families::tests::qt_ignores_background_scrolls_at_any_version_and_takes_the_rest ... ok
+test families::tests::scroll_and_move_are_ignored_by_gtk_4_always_and_by_gecko_unless_unobscured ... ok
+test families::tests::the_families_that_ask_for_targets_at_every_owner_change_are_gtk_and_vte ... ok
+test focus_ack::tests::a_press_needs_the_focus_as_it_is_now_not_as_the_session_found_it ... ok
+test focus_ack::tests::a_press_refused_after_earlier_clicks_of_its_request_says_they_were_sent ... ok
+test focus_ack::tests::a_read_that_fails_is_the_wait_s_error ... ok
+test apps::launched_tests::an_exited_program_is_reaped_without_waiting_and_a_running_one_is_kept ... ok
+test focus_ack::tests::the_native_child_and_no_frame_refusals_say_why_and_what_to_do ... ok
+test focus_ack::tests::the_record_carries_the_bound_and_each_wait_looked_at ... ok
+test focus_ack::tests::the_refusals_name_the_application_the_bound_and_why_a_press_was_withheld ... ok
+test focus_ack::tests::the_wait_ends_at_the_first_read_that_answers_the_state_wanted ... ok
+test held::tests::a_record_carries_every_key_and_button_the_engine_can_hold_and_anything_else_is_refused ... ok
+test held::tests::the_engine_adopts_only_a_pipe_s_write_end_close_on_exec_and_starts_with_an_empty_record ... ok
+test held::tests::the_pipe_is_named_as_proc_names_it ... ok
+test held::tests::the_reader_keeps_the_latest_record_and_sees_its_writers_end_for_good ... ok
+test focus_ack::tests::a_state_that_never_comes_ends_the_wait_at_the_bound_with_none ... ok
+test identity::tests::a_caption_frame_is_the_windows_only_by_screen_extents_at_its_place ... ok
+test identity::tests::a_frame_at_the_windows_position_that_a_sibling_shares_is_not_told_apart_by_position ... ok
+test identity::tests::a_frame_holds_its_window_by_the_client_or_the_window_managers_frame ... ok
+test identity::tests::a_frame_is_named_for_a_caption_when_its_trimmed_name_equals_it ... ok
+test identity::tests::extents_are_screen_coordinates_only_for_the_toolkits_measured_to_report_them ... ok
+test identity::tests::no_frame_at_the_windows_position_is_several ... ok
+test identity::tests::placed_apart_each_window_takes_the_frame_at_its_position ... ok
+test identity::tests::stacked_with_another_window_active_every_duplicate_is_several ... ok
+test clipboard::handles::tests::at_most_256_mib_are_stored_and_a_release_frees_its_bytes ... ok
+test identity::tests::stacked_with_one_duplicate_active_only_that_one_is_told_apart ... ok
+test identity::tests::the_active_state_counts_only_when_it_names_one_frame_at_the_windows_position ... ok
+test identity::tests::the_duplicates_sentence ... ok
+test identity::tests::the_caption_before_the_applications_name ... ok
+test identity::tests::window_relative_extents_place_every_frame_at_the_origin ... ok
+test input::tests::a_cleanup_release_carries_the_state_that_was_held ... ok
+test input::tests::a_duplicate_keycode_s_failed_edge_is_one_unreleased_reference ... ok
+test input::tests::a_failed_release_answers_only_this_holds_own_unreleased_references ... ok
+test input::tests::a_failing_release_is_returned_after_every_release_is_attempted ... ok
+test input::tests::a_press_carries_the_state_without_its_key_and_a_release_with_it ... ok
+test input::tests::shared_keys_are_counted_and_a_failed_press_releases_what_it_acquired ... ok
+test input::tests::the_first_of_several_release_errors_wins ... ok
+test keys::tests::a_character_off_the_layout_refuses_the_whole_text ... ok
+test keys::tests::a_character_only_at_a_third_level_is_refused_never_typed_with_altgr ... ok
+test keys::tests::letters_map_to_the_uppercase_keysym_and_printable_ascii_to_its_code ... ok
+test keys::tests::keysym_lookup_scans_the_base_level_of_every_key_first ... ok
+test keys::tests::literal_characters_take_their_level_with_shift_for_level_two_letters_included ... ok
+test keys::tests::other_names_are_unsupported_with_the_normalized_part ... ok
+test keys::tests::parts_are_trimmed_lowercased_and_lose_a_leading_xk ... ok
+test keys::tests::plus_signs_follow_the_empty_part_toggle ... ok
+test keys::tests::the_name_table_is_the_pinned_one ... ok
+test keys::tests::shift_is_synthesized_only_for_shifted_symbols_never_for_letters ... ok
+test keys::tests::unresolvable_keysyms_carry_the_vendor_sentences ... ok
+test paste::tests::a_reading_the_paste_s_first_characters_alone_explain_stays_unconfirmed ... ok
+test paste::tests::a_refusal_says_nothing_was_sent_only_before_any_focusing_click ... ok
+test paste::tests::a_request_is_the_target_s_when_its_window_is_the_target_client_s ... ok
+test paste::tests::a_screen_full_of_the_paste_text_confirms_the_paste_that_landed ... ok
+test paste::tests::a_scroll_whose_prefix_does_not_end_where_a_line_starts_stays_unconfirmed ... ok
+test paste::tests::a_scrolled_field_whose_paste_landed_confirms ... ok
+test paste::tests::a_scrolled_field_whose_paste_text_shows_elsewhere_confirms_when_nothing_short_of_the_paste_reads_the_same ... ok
+test paste::tests::a_scrolled_field_with_the_paste_text_already_in_it_and_no_paste_does_not_confirm ... ok
+test paste::tests::a_target_that_never_asks_ends_the_transfer_at_the_start_bound ... ok
+test paste::tests::a_transfer_in_flight_stays_open_until_the_owner_ends_it ... ok
+test paste::tests::gecko_counts_one_more_offset_per_character_beyond_the_bmp ... ok
+test paste::tests::gecko_s_reading_is_compared_without_its_feffs ... ok
+test paste::tests::only_a_feff_right_after_a_character_beyond_the_bmp_is_stripped ... ok
+test paste::tests::text_already_there_confirms_only_once_the_field_changes ... ok
+test paste::tests::text_lands_at_the_selection_s_start_else_at_a_valid_caret ... ok
+test paste::tests::the_inserted_segment_confirms_whatever_surrounds_it ... ok
+test dnd::tests::the_signature_is_looked_for_until_it_shows_or_the_settle_ends ... ok
+test paste::tests::the_sentences ... ok
+test paste::tests::the_target_s_requests_before_the_chord_are_not_the_paste_s ... ok
+test paste::tests::the_transfer_is_served_only_by_a_data_format_to_the_target ... ok
+test pressed::panic_tests::a_panic_inside_a_send_releases_every_key_before_its_diagnostics ... ok
+test pressed::panic_tests::panic_inside_a_send_child ... ok
+test pressed::tests::a_failed_press_stays_recorded_since_its_delivery_is_unknown ... ok
+test pressed::tests::a_press_is_recorded_and_a_release_struck_only_once_it_went_out ... ok
+test pressed::tests::an_exit_s_release_empties_the_held_record_once_its_releases_went_out ... ok
+test pressed::tests::every_button_is_released_with_the_keys_a_drag_s_too ... ok
+test pressed::tests::keys_are_told_apart_by_target_and_released_latest_first ... ok
+test dbus::tests::calls_with_a_deadline_end_at_it_however_the_replies_trickle_in_and_late_replies_are_dropped ... ok
+test pressed::tests::the_held_record_follows_the_xtest_keys_and_buttons_a_press_out_before_it_is_sent ... ok
+test readiness::tests::a_pixmap_is_ready_after_damage_and_ten_quiet_milliseconds ... ok
+test readiness::tests::an_unobscured_window_needs_no_first_damage ... ok
+test readiness::tests::sequence_numbers_compare_across_the_wrap ... ok
+test readiness::tests::the_fixed_fallback_waits_100_ms_once_per_pixmap ... ok
+test readiness::tests::the_wait_is_capped_at_150_ms ... ok
+test readiness::tests::without_damage_the_event_connection_renews_after_resize_and_remap ... ignored, needs an X display (--features live)
+test paste::tests::a_paste_longer_than_the_read_is_judged_without_an_allocation_of_its_size ... ok
+test resolve::tests::a_missing_element_is_searched_twice_and_refused ... ok
+test held::tests::the_wait_for_the_writers_tells_their_end_from_the_bound_and_from_a_failure ... ok
+test resolve::tests::a_sampled_cell_past_the_first_walk_s_limit_resolves_through_the_second ... ok
+test resolve::tests::the_first_walk_finds_an_element_with_its_ancestors ... ok
+test resolve::tests::the_first_walk_s_limit_is_the_answer_when_the_second_misses_too ... ok
+test route::tests::a_foreground_hold_is_its_window_s_and_not_the_background_route_s_nor_the_desktop_s ... ok
+test route::tests::a_hold_is_named_by_its_target_and_its_chord_in_order ... ok
+test route::tests::a_target_keeps_its_session_while_any_hold_names_it ... ok
+test serve::tests::a_read_failure_exits_one ... ok
+test serve::tests::a_response_that_cannot_be_written_exits_one_and_runs_nothing_after_it ... ok
+test serve::tests::a_stop_signal_exits_with_128_plus_its_number_and_runs_nothing_after_it ... ok
+test pressed::tests::nothing_is_pressed_while_the_forced_exit_holds_the_ledger ... ok
+test serve::tests::every_line_is_answered_in_order_and_the_end_of_stdin_exits_zero ... ok
+test serve::tests::lines_queued_behind_a_signal_are_not_run ... ok
+test serve::tests::only_a_second_sigint_ends_the_drain_at_once ... ok
+test serve::tests::the_forced_exit_ends_before_the_repl_host_s_kill_and_upstream_s ... ok
+test paste::tests::the_scrolled_rule_answers_as_it_did_over_characters_on_every_screen_tried ... ok
+test resolve::tests::a_table_whose_scan_fails_is_listed_in_the_second_walk ... ok
+test settle::tests::a_paste_waits_the_rest_of_its_settle_since_its_window_s_last_key_and_nothing_after_it ... ok
+test settle::tests::a_settle_ends_its_length_after_the_latest_key ... ok
+test dnd::tests::at_the_exit_a_watch_runs_out_its_lifetime_so_a_late_take_is_still_cancelled ... ok
+test settle::tests::the_settles_hold_their_measured_values ... ok
+test settle::tests::a_wait_already_past_sleeps_nothing ... ok
+test serve::tests::work_due_while_waiting_for_a_line_is_done_on_time ... ok
+test serve::tests::a_stop_while_a_response_cannot_go_out_ends_the_loop_at_once ... ok
+test shim::tests::a_watch_that_fails_kills_the_launcher_as_the_supervisor_s_death_would ... ok
+test engine::paste::tests::a_focusing_click_the_application_dropped_is_made_once_more_past_the_double_click_time ... ok
+test shim::tests::only_what_the_xtest_devices_still_show_down_is_released_buttons_first ... ok
+test shim::tests::the_wait_for_the_engine_is_its_own_latest_exit_and_50_ms ... ok
+test shim::tests::writers_gone_and_nothing_held_leave_nothing_to_say ... ok
+test shm::tests::a_display_is_local_when_its_connection_is_a_unix_socket ... ok
+test shm::tests::shm_reads_the_root_exactly_as_get_image_does ... ignored, needs an X display (--features live)
+test shm::tests::the_server_must_pass_descriptors ... ok
+test stray::tests::a_crossing_of_the_target_is_a_stray_but_a_grab_s_end_after_the_release ... ok
+test stray::tests::a_stray_without_a_take_is_never_success ... ok
+test stray::tests::real_motion_is_a_stray_unless_it_is_the_xtest_route_s_own ... ok
+test stray::tests::the_answer_says_what_may_have_happened_why_and_to_look_before_dragging_again ... ok
+test stray::tests::the_stats_count_the_strays_and_name_the_first ... ok
+test table::tests::a_bad_hit_abandons_the_scan_with_its_reason ... ok
+test table::tests::a_cell_ending_above_the_row_moves_one_pixel_down ... ok
+test table::tests::cells_are_kept_once_in_discovery_order ... ok
+test serve::tests::the_next_line_waits_until_the_response_before_it_has_gone_out ... ok
+test table::tests::the_scan_walks_rows_and_columns_as_the_vendor_does ... ok
+test table::tests::the_table_s_preconditions_carry_the_vendor_sentences ... ok
+test tests::a_background_press_waits_for_its_focus_by_default_and_a_flag_sets_the_bound_or_turns_it_off ... ok
+test tests::bad_arguments_are_refused ... ok
+test tests::drags_are_paced_by_the_target_s_family_unless_a_flag_fixes_the_pacing ... ok
+test tests::measurement_and_vendor_options_parse_in_any_order ... ok
+test tests::the_defaults_are_m0_s_choices ... ok
+test tests::the_version_line_names_the_package_version_and_the_commit ... ok
+test readiness::tests::without_the_event_connection_a_resize_or_remap_renews_the_fallback_wait ... ok
+test shim::tests::an_interrupted_poll_goes_on_watching_and_the_launcher_s_own_end_is_waited_for ... ok
+test tree::tests::a_deep_first_branch_under_the_limit_reads_at_full_speed ... ok
+test table::tests::the_budget_and_the_hit_limit_end_the_scan_with_the_cells_found ... ok
+test tree::tests::a_failed_role_counts_once_whatever_its_subtree_holds ... ok
+test tree::tests::a_depth_only_cut_keeps_a_64_node_chain_and_records_the_depth_cut ... ok
+test engine::paste::tests::a_whole_read_the_scrolled_rule_left_unconfirmed_is_judged_once_while_it_reads_the_same ... ok
+test tree::tests::a_read_that_cuts_nothing_reports_nothing ... ok
+test tree::tests::a_table_of_5000_children_or_fewer_is_listed ... ok
+test tree::tests::a_table_over_5000_children_reads_its_visible_cells_as_leaves ... ok
+test tree::tests::a_late_table_takes_only_the_cells_admission_leaves ... ok
+test tree::tests::a_table_whose_scan_fails_lists_its_children ... ok
+test shim::tests::a_record_written_while_its_writers_are_ended_is_read_before_the_release_set_is_chosen ... ok
+test shim::tests::a_writer_that_outlives_the_wait_is_ended_and_nothing_that_does_not_hold_the_record ... ok
+test tree::tests::depth_is_limited_to_63_below_the_root ... ok
+test tree::tests::an_uncut_tree_with_no_failures_records_no_cut ... ok
+test tree::tests::a_wide_container_fetches_attributes_only_inside_the_admission_window ... ok
+test tree::tests::m0_s_window_is_the_default ... ok
+test tree::tests::states_keep_the_vendor_table_and_order ... ok
+test tree::tests::the_byte_budget_bounds_calls_in_flight_and_a_reply_over_it_is_read_whole ... ok
+test tree::tests::the_depth_limit_counts_the_children_listed_at_depth_63_with_no_call_of_its_own ... ok
+test tree::tests::over_budget_keeps_the_preorder_node_set_and_bounds_extra_calls ... ok
+test tree::tests::the_frontier_matches_the_vendor_on_failures_tables_and_actions ... ok
+test tree::tests::the_frontier_returns_the_vendor_tree_with_the_same_calls_and_far_fewer_waits ... ok
+test tree::tests::the_model_sends_the_vendor_calls_in_the_vendor_order ... ok
+test tree::tests::a_table_after_a_large_nested_subtree_scans_with_the_exact_budget ... ok
+test tree::tests::the_query_keeps_matches_and_their_ancestors_only ... ok
+test tree::tests::the_read_gives_the_vendor_fields ... ok
+test tree::tests::the_root_failing_reads_nothing ... ok
+test wire::tests::drag_handle_is_tagged_on_its_action ... ok
+test wire::tests::input_errors_carry_the_vendor_context_without_a_position ... ok
+test wire::tests::line_endings_are_stripped_and_blank_lines_skipped ... ok
+test wire::tests::mouse_buttons_accept_the_short_names ... ok
+test wire::tests::output_is_a_json_value_not_a_string ... ok
+test wire::tests::response_keys_are_in_the_vendor_order ... ok
+test wire::tests::scroll_directions_accept_the_short_names ... ok
+test wire::tests::the_id_is_any_json_value_echoed_back ... ok
+test wire::tests::the_window_target_ignores_every_field_but_id ... ok
+test wire::tests::unknown_request_keys_are_refused ... ok
+test x11::tests::a_dialog_s_modal_ancestors_do_not_block_it_and_a_modal_dialog_above_a_window_does ... ok
+test x11::tests::a_modal_transient_is_modal_transient_for_a_window_and_shown ... ok
+test x11::tests::a_window_is_minimized_when_it_is_not_viewable_and_its_wm_state_is_iconic ... ok
+test x11::tests::property_text_is_lossy_trimmed_and_drops_trailing_nuls ... ok
+test x11::tests::the_class_is_the_last_wm_class_segment ... ok
+test x11::tests::window_types_lose_their_prefix_and_case ... ok
+test x11::tests::windows_serialize_with_alphabetical_keys_and_skip_absent_ones ... ok
+test tree::tests::the_over_budget_shape_counts_what_the_vendor_refuses ... ok
+test shim::tests::a_holder_whose_pidfd_or_its_signal_fails_is_not_stopped_and_nothing_is_released ... ok
+test tree::tests::a_complete_tree_of_exactly_5000_nodes_records_no_cut ... ok
+test tree::tests::an_element_cut_with_one_failed_role_keeps_4999_nodes_and_records_both ... ok
+test tree::tests::every_cause_counts_apart_in_one_read ... ok
+test tree::tests::a_child_past_both_limits_counts_under_the_element_limit ... ok
+test tree::tests::the_element_limit_counts_every_refused_child_it_listed ... ok
+
+test result: ok. 312 passed; 0 failed; 58 ignored; 0 measured; 0 filtered out; finished in 20.13s
+
+     Running tests/identity_boundary.rs (target/debug/deps/identity_boundary-2ee98194a051d188)
+
+running 2 tests
+test leave_for_the_x11_fallback_comes_only_from_the_vendors_own_failures ... ok
+test each_rule_fails_where_it_should ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/launcher_shim.rs (target/debug/deps/launcher_shim-e664e2e0c2b5dc12)
+
+running 7 tests
+test a_parent_already_gone_runs_nothing ... ok
+test a_stderr_nobody_reads_any_more_does_not_change_how_the_shim_exits ... ok
+test the_program_gets_its_arguments_and_stdio_as_given_and_the_shim_exits_as_it_did ... ok
+test the_record_is_a_pipe_s_write_end_the_program_inherits_never_a_path ... ok
+test the_program_dies_at_once_with_its_parent_even_stopped_and_the_shim_after_it ... ok
+test without_the_shim_the_program_outlives_its_parent ... ok
+test the_shim_takes_no_stop_signal_and_its_program_starts_with_none_blocked ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
+     Running tests/live.rs (target/debug/deps/live-edcbbde8c8e3a9eb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/live_device.rs (target/debug/deps/live_device-808141d2b7316483)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/live_focus_ack.rs (target/debug/deps/live_focus_ack-ba3d1c9b430bb521)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/live_focus_out.rs (target/debug/deps/live_focus_out-b8411549d6d473eb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/live_minimized.rs (target/debug/deps/live_minimized-ac91df02eec4dd55)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/no_text_mutators.rs (target/debug/deps/no_text_mutators-9c3e3add14116f70)
+
+running 3 tests
+test only_the_boundary_list_is_cut_out_of_dbus_rs ... ok
+test the_scan_sees_literals_and_skips_comments_and_doc_attributes ... ok
+test the_engine_source_names_no_atspi_text_mutator ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/send_boundary.rs (target/debug/deps/send_boundary-95ad8bb71626f710)
+
+running 5 tests
+test functions_are_spanned_from_fn_to_their_closing_brace ... ok
+test only_the_send_boundary_reaches_the_bus ... ok
+test the_reviewers_two_ways_out_are_caught ... ok
+test every_new_way_out_inside_dbus_rs_is_caught ... ok
+test every_way_out_of_another_module_is_caught ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.77s
+

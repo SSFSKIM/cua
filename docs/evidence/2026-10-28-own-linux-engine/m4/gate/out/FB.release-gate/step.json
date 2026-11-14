@@ -1,0 +1,69 @@
+{
+  "label": "release gate",
+  "step": "FB",
+  "pilot": false,
+  "what": "the over-budget scene through the real facade: the truncation line in getAXState and the combined observation (T3)",
+  "display": "private",
+  "load": "idle",
+  "minutes": 5,
+  "run_name": null,
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/",
+    "commit": "514f5c62dd6c74b1ed24c48f112ca9c35a70eece",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64",
+    "sha256": "f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937",
+    "record": {
+      "gate": true,
+      "sha256": "f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937",
+      "target": "x86_64-unknown-linux-musl",
+      "linkage": "static-pie",
+      "version": "cua-engine 0.4.0 (514f5c62dd6c)",
+      "commit": "514f5c62dd6c74b1ed24c48f112ca9c35a70eece",
+      "clean": true,
+      "attestation": {
+        "verified": true,
+        "signer_workflow": "SSFSKIM/cua/.github/workflows/linux-engine.yml",
+        "attestations": [
+          {
+            "subjects": [
+              {
+                "name": "cua-engine-0.4.0-linux-x64",
+                "sha256": "f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937"
+              },
+              {
+                "name": "cua-engine-0.4.0-linux-arm64",
+                "sha256": "da457d7f69b5546bfbe2fa5ecfa7d923dbb88c51a7fee22009deb33c04f3006b"
+              }
+            ],
+            "predicate": "https://slsa.dev/provenance/v1",
+            "source_commit": "514f5c62dd6c74b1ed24c48f112ca9c35a70eece",
+            "source_ref": "refs/heads/feat/171-m4",
+            "signer": "https://github.com/SSFSKIM/cua/.github/workflows/linux-engine.yml@refs/heads/feat/171-m4",
+            "run": "https://github.com/SSFSKIM/cua/actions/runs/43405393873/attempts/1",
+            "runner": "github-hosted"
+          }
+        ]
+      }
+    }
+  },
+  "command": "/Users/new/.local/share/cua-171/locked.sh t18-gate /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/scripts/linux-engine-gate/gate.mjs run FB --candidate /Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64 --out /Users/new/.local/share/cua-171/gate/out",
+  "argv": [
+    "scripts/linux-engine-diff/services.mjs",
+    "--vendor-js",
+    "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky",
+    "--engine",
+    "/tmp/cua171-candidate-VUjuqS/cua-engine",
+    "--scenes",
+    "over-budget",
+    "--out",
+    "/Users/new/.local/share/cua-171/gate/out/FB.release-gate/run"
+  ],
+  "started": "2026-11-13T12:40:29.838Z",
+  "finished": "2026-11-13T12:40:52.673Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean"
+}

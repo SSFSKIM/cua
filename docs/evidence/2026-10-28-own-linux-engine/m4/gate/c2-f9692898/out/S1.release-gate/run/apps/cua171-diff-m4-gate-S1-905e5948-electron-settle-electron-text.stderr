@@ -1,0 +1,8 @@
+[2302956:1113/211519.409275:ERROR:content/browser/browser_main_loop.cc:279] <unknown>: impl_DeleteText: assertion 'ATK_IS_EDITABLE_TEXT (user_data)' failed
+[2302956:1113/211544.109698:ERROR:content/browser/browser_main_loop.cc:279] <unknown>: impl_DeleteText: assertion 'ATK_IS_EDITABLE_TEXT (user_data)' failed
+[2302956:1113/212337.119651:ERROR:content/browser/network_service_instance_impl.cc:650] Network service crashed or was terminated, restarting service.
+[2302956:1113/212337.127062:ERROR:content/common/zygote/zygote_communication_linux.cc:291] Failed to send GetTerminationStatus message to zygote
+[2302956:1113/212337.127868:ERROR:content/browser/gpu/gpu_process_host.cc:1029] GPU process launch failed: error_code=1002
+[2302956:1113/212337.128431:ERROR:content/browser/gpu/gpu_process_host.cc:1029] GPU process launch failed: error_code=1002
+[2302956:1113/212337.128934:ERROR:content/browser/gpu/gpu_process_host.cc:1029] GPU process launch failed: error_code=1002
+[2302956:1113/212337.128951:FATAL:content/browser/gpu/gpu_data_manager_impl_private.cc:417] GPU process isn't usable. Goodbye.

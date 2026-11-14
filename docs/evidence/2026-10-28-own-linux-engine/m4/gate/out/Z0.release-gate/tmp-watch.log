@@ -1,0 +1,933 @@
+== 2026-11-13T22:20:40.878Z sample 1
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+== 2026-11-13T22:21:10.912Z sample 2
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  systemd-private-3e886c1935f34c2ea2950a8fffe1042d-systemd-timedated.service-UPLfDF
+== 2026-11-13T22:21:40.952Z sample 3
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-13T22:22:10.988Z sample 4
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.chrome_chrome_url_fetcher_.vZhsca
+      1   com.google.Chrome.chrome_chrome_url_fetcher_.vZhsca/a94f415e84d9aa291f0afb5a3e8a7e7b61dafffef4dfdf0b129f3f6af59d71c1
+      1   com.google.Chrome.chrome_chrome_url_fetcher_.vZhsca/decoded_xz
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  doperpowers-to-human
+== 2026-11-13T22:22:41.029Z sample 5
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  doperpowers-to-human
+== 2026-11-13T22:23:11.069Z sample 6
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  doperpowers-to-human
+== 2026-11-13T22:23:41.108Z sample 7
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  doperpowers-to-human
+== 2026-11-13T22:24:11.152Z sample 8
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  doperpowers-to-human
+== 2026-11-13T22:24:41.191Z sample 9
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  doperpowers-to-human
+== 2026-11-13T22:25:11.231Z sample 10
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  doperpowers-to-human
+== 2026-11-13T22:25:41.270Z sample 11
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  doperpowers-to-human
+== 2026-11-13T22:26:11.308Z sample 12
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  doperpowers-to-human
+== 2026-11-13T22:26:41.349Z sample 13
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  doperpowers-to-human
+== 2026-11-13T22:27:11.390Z sample 14
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  doperpowers-to-human
+== 2026-11-13T22:27:41.432Z sample 15
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   luNntyvwu.tmp
+      1   luNntyvwu.tmp/luN{314C0561-9C63-4552-A7B9-341E13B4FD7E}.tmp
+      1   luNntz1bq.tmp
+      1   luNntz1bq.tmp/luN{29A97105-9232-45A5-A20A-FC812EN}.tmp
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  OSL_PIPE_501_SingleOfficeIPC_9978f7604693d411ff8ef8875e9c289
+  OSL_PIPE_501_SingleOfficeIPC_f493f08b377f724d92eea2bd0d698cb
+  doperpowers-to-human
+== 2026-11-13T22:28:11.469Z sample 16
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   luNntyvwu.tmp
+      1   luNntyvwu.tmp/luN{314C0561-9C63-4552-A7B9-341E13B4FD7E}.tmp
+      1   luNntz1bq.tmp
+      1   luNntz1bq.tmp/luN{29A97105-9232-45A5-A20A-FC812EN}.tmp
+      1   luNntz6mv.tmp
+      1   luNntz6mv.tmp/luN{3FF51C95-3C73-4B27-9A80-NA09C}.tmp
+      1   luNntzbw7.tmp
+      1   luNntzbw7.tmp/luN{9BBE750F-CA1B-4619-BF28-E6E3028E66EB}.tmp
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  OSL_PIPE_501_SingleOfficeIPC_828c3abade5ce05c55fb7fdbfdacac0
+  OSL_PIPE_501_SingleOfficeIPC_9978f7604693d411ff8ef8875e9c289
+  OSL_PIPE_501_SingleOfficeIPC_b4da36ffb8aff48c33037263bac381e
+  OSL_PIPE_501_SingleOfficeIPC_f493f08b377f724d92eea2bd0d698cb
+  doperpowers-to-human
+== 2026-11-13T22:28:41.510Z sample 17
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   luNntyvwu.tmp
+      1   luNntyvwu.tmp/luN{314C0561-9C63-4552-A7B9-341E13B4FD7E}.tmp
+      1   luNntz1bq.tmp
+      1   luNntz1bq.tmp/luN{29A97105-9232-45A5-A20A-FC812EN}.tmp
+      1   luNntz6mv.tmp
+      1   luNntz6mv.tmp/luN{3FF51C95-3C73-4B27-9A80-NA09C}.tmp
+      1   luNntzbw7.tmp
+      1   luNntzbw7.tmp/luN{9BBE750F-CA1B-4619-BF28-E6E3028E66EB}.tmp
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  OSL_PIPE_501_SingleOfficeIPC_828c3abade5ce05c55fb7fdbfdacac0
+  OSL_PIPE_501_SingleOfficeIPC_9978f7604693d411ff8ef8875e9c289
+  OSL_PIPE_501_SingleOfficeIPC_b4da36ffb8aff48c33037263bac381e
+  OSL_PIPE_501_SingleOfficeIPC_f493f08b377f724d92eea2bd0d698cb
+  doperpowers-to-human
+== 2026-11-13T22:29:11.549Z sample 18
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   luNntyvwu.tmp
+      1   luNntyvwu.tmp/luN{314C0561-9C63-4552-A7B9-341E13B4FD7E}.tmp
+      1   luNntz1bq.tmp
+      1   luNntz1bq.tmp/luN{29A97105-9232-45A5-A20A-FC812EN}.tmp
+      1   luNntz6mv.tmp
+      1   luNntz6mv.tmp/luN{3FF51C95-3C73-4B27-9A80-NA09C}.tmp
+      1   luNntzbw7.tmp
+      1   luNntzbw7.tmp/luN{9BBE750F-CA1B-4619-BF28-E6E3028E66EB}.tmp
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  OSL_PIPE_501_SingleOfficeIPC_828c3abade5ce05c55fb7fdbfdacac0
+  OSL_PIPE_501_SingleOfficeIPC_9978f7604693d411ff8ef8875e9c289
+  OSL_PIPE_501_SingleOfficeIPC_b4da36ffb8aff48c33037263bac381e
+  OSL_PIPE_501_SingleOfficeIPC_f493f08b377f724d92eea2bd0d698cb
+  doperpowers-to-human
+== 2026-11-13T22:29:41.595Z sample 19
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   luNntyvwu.tmp
+      1   luNntyvwu.tmp/luN{314C0561-9C63-4552-A7B9-341E13B4FD7E}.tmp
+      1   luNntz1bq.tmp
+      1   luNntz1bq.tmp/luN{29A97105-9232-45A5-A20A-FC812EN}.tmp
+      1   luNntz6mv.tmp
+      1   luNntz6mv.tmp/luN{3FF51C95-3C73-4B27-9A80-NA09C}.tmp
+      1   luNntzbw7.tmp
+      1   luNntzbw7.tmp/luN{9BBE750F-CA1B-4619-BF28-E6E3028E66EB}.tmp
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  OSL_PIPE_501_SingleOfficeIPC_828c3abade5ce05c55fb7fdbfdacac0
+  OSL_PIPE_501_SingleOfficeIPC_9978f7604693d411ff8ef8875e9c289
+  OSL_PIPE_501_SingleOfficeIPC_b4da36ffb8aff48c33037263bac381e
+  OSL_PIPE_501_SingleOfficeIPC_f493f08b377f724d92eea2bd0d698cb
+  doperpowers-to-human
+== 2026-11-13T22:30:11.637Z sample 20
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   luNntyvwu.tmp
+      1   luNntyvwu.tmp/luN{314C0561-9C63-4552-A7B9-341E13B4FD7E}.tmp
+      1   luNntz1bq.tmp
+      1   luNntz1bq.tmp/luN{29A97105-9232-45A5-A20A-FC812EN}.tmp
+      1   luNntz6mv.tmp
+      1   luNntz6mv.tmp/luN{3FF51C95-3C73-4B27-9A80-NA09C}.tmp
+      1   luNntzbw7.tmp
+      1   luNntzbw7.tmp/luN{9BBE750F-CA1B-4619-BF28-E6E3028E66EB}.tmp
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  OSL_PIPE_501_SingleOfficeIPC_828c3abade5ce05c55fb7fdbfdacac0
+  OSL_PIPE_501_SingleOfficeIPC_9978f7604693d411ff8ef8875e9c289
+  OSL_PIPE_501_SingleOfficeIPC_b4da36ffb8aff48c33037263bac381e
+  OSL_PIPE_501_SingleOfficeIPC_f493f08b377f724d92eea2bd0d698cb
+  doperpowers-to-human
+== 2026-11-13T22:30:41.675Z sample 21
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   luNntyvwu.tmp
+      1   luNntyvwu.tmp/luN{314C0561-9C63-4552-A7B9-341E13B4FD7E}.tmp
+      1   luNntz1bq.tmp
+      1   luNntz1bq.tmp/luN{29A97105-9232-45A5-A20A-FC812EN}.tmp
+      1   luNntz6mv.tmp
+      1   luNntz6mv.tmp/luN{3FF51C95-3C73-4B27-9A80-NA09C}.tmp
+      1   luNntzbw7.tmp
+      1   luNntzbw7.tmp/luN{9BBE750F-CA1B-4619-BF28-E6E3028E66EB}.tmp
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  OSL_PIPE_501_SingleOfficeIPC_828c3abade5ce05c55fb7fdbfdacac0
+  OSL_PIPE_501_SingleOfficeIPC_9978f7604693d411ff8ef8875e9c289
+  OSL_PIPE_501_SingleOfficeIPC_b4da36ffb8aff48c33037263bac381e
+  OSL_PIPE_501_SingleOfficeIPC_f493f08b377f724d92eea2bd0d698cb
+  doperpowers-to-human
+== 2026-11-13T22:31:11.721Z sample 22
+run tmp /tmp/c71-53fCF9/cua171-run-zIk8j6/tmp:
+      1   830a8ab4-1a8e-41dc-801d-07b506c40bf7.zip
+      1   Nc-b9e8-4caa-acaa-d76be50bbfac.zip
+      1   b7169e6a-a45b-40fa-8e4f-6cdb36a27080.zip
+      1   c94104c3-c0f9-44d3-a8fa-274e44c936ee.zip
+      1   com.google.Chrome.vPMxor
+      1   com.google.Chrome.vPMxor/SingletonCookie
+      1   com.google.Chrome.vPMxor/SingletonSocket
+      1   luNntyvwu.tmp
+      1   luNntyvwu.tmp/luN{314C0561-9C63-4552-A7B9-341E13B4FD7E}.tmp
+      1   luNntz1bq.tmp
+      1   luNntz1bq.tmp/luN{29A97105-9232-45A5-A20A-FC812EN}.tmp
+      1   luNntz6mv.tmp
+      1   luNntz6mv.tmp/luN{3FF51C95-3C73-4B27-9A80-NA09C}.tmp
+      1   luNntzbw7.tmp
+      1   luNntzbw7.tmp/luN{9BBE750F-CA1B-4619-BF28-E6E3028E66EB}.tmp
+      1   tmp-4l2.xpi
+      1   tmp-c38.xpi
+      1   tmp-ey7.xpi
+      1   tmp-jo0.xpi
+run tmp /tmp/cua171-run-7nTGZK/tmp:
+      1   com.google.Chrome.zxpTrq
+      1   com.google.Chrome.zxpTrq/SingletonCookie
+      1   com.google.Chrome.zxpTrq/SingletonSocket
+run tmp /tmp/cua171-run-AdXsUJ/tmp:
+      1   com.google.Chrome.0ZvXi1
+      1   com.google.Chrome.0ZvXi1/SingletonCookie
+      1   com.google.Chrome.0ZvXi1/SingletonSocket
+run tmp /tmp/cua171-run-OJWaJi/tmp:
+run tmp /tmp/cua171-run-lLeOBG/tmp:
+      1   03e8c715-5d94-469a-b9e7-9d90588f4acc.zip
+      1   3c386ab7-fad1-4be9-9f7e-93be645e4211.zip
+      1   com.google.Chrome.BN0Dsh
+      1   com.google.Chrome.BN0Dsh/SingletonCookie
+      1   com.google.Chrome.BN0Dsh/SingletonSocket
+      1   e22f81c8-dc05-43f3-93a7-8defe74969d8.zip
+      1   tmp-5m6.xpi
+      1   tmp-8or.xpi
+      1   tmp-vo7.xpi
+run tmp /tmp/cua171-run-q8ExPO/tmp:
+      1   com.google.Chrome.hn2CVi
+      1   com.google.Chrome.hn2CVi/SingletonCookie
+      1   com.google.Chrome.hn2CVi/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  OSL_PIPE_501_SingleOfficeIPC_828c3abade5ce05c55fb7fdbfdacac0
+  OSL_PIPE_501_SingleOfficeIPC_9978f7604693d411ff8ef8875e9c289
+  OSL_PIPE_501_SingleOfficeIPC_b4da36ffb8aff48c33037263bac381e
+  OSL_PIPE_501_SingleOfficeIPC_f493f08b377f724d92eea2bd0d698cb
+  doperpowers-to-human
+  v5chat.json

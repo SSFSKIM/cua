@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (405aa7730d02)
+start red-late 2026-11-10T07:13:42Z loadavg 0.54 0.58 0.56
+run exit 0; watchdog clean
+private run red-late exit 0 07:15:20
+end red-late 2026-11-10T07:15:20Z loadavg 0.39 0.54 0.55 status 0

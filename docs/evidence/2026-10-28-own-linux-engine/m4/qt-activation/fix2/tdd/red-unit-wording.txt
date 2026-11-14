@@ -1,0 +1,5 @@
+error[E0425]: cannot find function `after_clicks` in this scope
+error[E0425]: cannot find function `refused_press` in this scope
+error[E0425]: cannot find function `refused_press` in this scope
+error[E0425]: cannot find function `after_clicks` in this scope
+error: could not compile `cua-linux-engine` (bin "cua-engine" test) due to 4 previous errors

@@ -1,0 +1,38 @@
+# drag-judge.mjs's load judge, its stored verdicts read row by row (ruling 699): /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/docs/evidence/2026-10-28-own-linux-engine/m4/gate
+records read: 61 (out, out-rerun1, c2-f9692898/out, c3-c55c8e08/out); LOAD_P 0.05
+
+| step | cell | lane | lane runs (took) | pinned runs (took) | judged | stored verdict | sides equal | recounted from drag-run rows | by Fisher alone |
+|---|---|---|---:|---:|---|---|---|---|---|
+| c2-f9692898/out/L1 | chrome range | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L1 | chrome range | cua:0ms | 40 (21) | 40 (40) | true | fail | yes | yes | – |
+| c2-f9692898/out/L1 | chrome scroller | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L1 | chrome scroller | cua:0ms | 40 (5) | 40 (40) | true | fail | yes | yes | – |
+| c2-f9692898/out/L1 | electron range | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L1 | electron range | cua:0ms | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L1 | electron scroller | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L1 | electron scroller | cua:0ms | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2a | chrome select | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2a | chrome select | cua:0ms | 40 (21) | 40 (40) | true | fail | yes | yes | – |
+| c2-f9692898/out/L2a | chrome dnd | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2a | chrome dnd | cua:0ms | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2a | chrome canvas | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2a | chrome canvas | cua:0ms | 40 (9) | 40 (40) | true | fail | yes | yes | – |
+| c2-f9692898/out/L2b | electron select | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2b | electron select | cua:0ms | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2b | electron dnd | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2b | electron dnd | cua:0ms | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2b | electron canvas | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2b | electron canvas | cua:0ms | 40 (7) | 40 (40) | true | fail | yes | yes | – |
+| c2-f9692898/out/L2c | firefox select | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2c | firefox select | cua:0ms | 40 (33) | 40 (40) | true | fail | yes | yes | – |
+| c2-f9692898/out/L2c | firefox range | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2c | firefox range | cua:0ms | 40 (36) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2c | firefox scroller | cua | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2c | firefox scroller | cua:0ms | 40 (40) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2c | firefox dnd | cua | 40 (39) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2c | firefox dnd | cua:0ms | 40 (9) | 40 (40) | true | fail | yes | yes | – |
+| c2-f9692898/out/L2c | firefox canvas | cua | 40 (39) | 40 (40) | true | pass | yes | yes | – |
+| c2-f9692898/out/L2c | firefox canvas | cua:0ms | 40 (7) | 40 (40) | true | fail | yes | yes | – |
+
+rows: 30 in 4 steps; sides equal on 30; unequal 0; counts not matching the drag-run rows 0; verdicts that Fisher alone moves 0
+RESULT: every row compared equal counts on both sides

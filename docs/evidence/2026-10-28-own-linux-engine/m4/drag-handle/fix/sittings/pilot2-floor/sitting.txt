@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (0fa3b3c8aa21)
+start pilot2-floor 2026-11-11T10:30:18Z loadavg 0.74 1.08 1.23
+run exit 0; watchdog clean
+private run pilot2-floor exit 0 10:31:09
+end pilot2-floor 2026-11-11T10:31:09Z loadavg 0.48 0.95 1.17 status 0

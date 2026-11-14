@@ -1,0 +1,4 @@
+Warning: failed to launch javaldx - java may not function correctly
+
+(soffice:2509541): Gtk-WARNING **: 14:27:53.634: Could not load a pixbuf from /org/gtk/libgtk/theme/Adwaita/assets/bullet-symbolic.svg.
+This may indicate that pixbuf loaders or the mime database could not be found.

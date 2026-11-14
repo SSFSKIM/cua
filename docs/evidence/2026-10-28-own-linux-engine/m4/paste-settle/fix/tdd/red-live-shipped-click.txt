@@ -1,0 +1,22 @@
+   Compiling cua-linux-engine v0.3.0 (<checkout>/native/linux-engine)
+    Finished `release` profile [optimized] target(s) in 12.57s
+     Running tests/live_focus_out.rs (target/release/deps/live_focus_out-d2698581c69c2c45)
+
+running 1 test
+test as_shipped_a_paste_right_after_a_click_to_its_window_waits_out_the_click_settle ... FAILED
+
+failures:
+
+---- as_shipped_a_paste_right_after_a_click_to_its_window_waits_out_the_click_settle stdout ----
+
+thread 'as_shipped_a_paste_right_after_a_click_to_its_window_waits_out_the_click_settle' (3457226) panicked at tests/live_focus_out.rs:410:5:
+after a click to its own window 1.216398ms, to the other window 1.188315ms: no wait for the shipped click settle
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    as_shipped_a_paste_right_after_a_click_to_its_window_waits_out_the_click_settle
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 19 filtered out; finished in 1.97s
+
+error: test failed, to rerun pass `--test live_focus_out`

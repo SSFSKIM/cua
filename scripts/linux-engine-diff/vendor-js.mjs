@@ -7,13 +7,22 @@
 // ends it. A block's engine must start fresh and end with the block, so each block reaches its engine through a path
 // of its own (a symlink in a directory of its own) and ends it by that path. The client's numbering is exercised as
 // the facade's is: element requests carry the client's decimal ids, which it resolves to native ids itself.
+//
+// The client starts the engine itself, with the process's environment, so this lane hands its variables to it through
+// process.env, a start the spawner (xspawn.mjs) never sees. So before anything of the client is loaded, constructed or
+// invoked, the environment it would start the engine with (process.env with the lane's variables over it) goes through
+// the spawner's own check (`assertReachable`): a display the run did not create, outside a declared live run, is refused
+// and nothing of the client runs (task 48, from task 47's re-review).
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { engineEnvironment } from './app-env.mjs';
+import { runningScratch } from './engine.mjs';
 import { loadVendorClient } from './wire-check.mjs';
+import { assertReachable, authorityFor } from './xspawn.mjs';
 
 const now = () => Number(process.hrtime.bigint()) / 1e6;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -74,7 +83,27 @@ export class VendorJsEngine {
     return this;
   }
 
+  /**
+   * The variables the lane installs for the client: its own, the block's path to the engine, the open run's TMPDIR
+   * (engine.mjs `runEngines`), which the client's engine writes its screenshots in, and on a display this process
+   * created that display's authority (xspawn.mjs `authorityFor`), which the spawner gives every start it sees.
+   */
+  overrides() {
+    const lane = engineEnvironment({ ...(this.env ?? {}), OAI_SKY_LINUX_BIN: this.link }, runningScratch());
+    const authority = authorityFor([], { ...process.env, ...lane });
+    return authority === undefined ? lane : { ...lane, XAUTHORITY: authority };
+  }
+
+  /**
+   * Throws `DisplayRefused` unless the engine the client would start now, with the process's environment and the lane's
+   * variables over it, reaches only a display the run may reach.
+   */
+  assertReachable() {
+    assertReachable(this.link ?? this.bin, [], { ...process.env, ...this.overrides() });
+  }
+
   async client() {
+    this.assertReachable();
     if (!this.instance) {
       const createClient = await loadVendorClient(this.skyDir);
       this.instance = createClient({});
@@ -84,8 +113,9 @@ export class VendorJsEngine {
 
   /** Runs fn with the engine's environment in the process (the client spawns the engine with process.env). */
   async withEnv(fn) {
+    this.assertReachable();
     const saved = {};
-    const overrides = { ...(this.env ?? {}), OAI_SKY_LINUX_BIN: this.link };
+    const overrides = this.overrides();
     for (const [k, v] of Object.entries(overrides)) {
       saved[k] = process.env[k];
       process.env[k] = v;
@@ -114,6 +144,8 @@ export class VendorJsEngine {
   }
 
   async request(command, input = {}) {
+    // a refusal is the harness's, never an answer of the engine's: it ends the request before the client is reached
+    this.assertReachable();
     const client = await this.client();
     const first = this.requests++ === 0;
     const fn = command === 'drag_handle' && typeof client.drag_handle === 'function' ? (i) => this.dragHandle(client, i) : client[command];

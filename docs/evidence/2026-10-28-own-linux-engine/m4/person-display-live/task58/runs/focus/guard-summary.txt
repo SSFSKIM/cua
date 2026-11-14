@@ -1,0 +1,28 @@
+exit 0 samples 3334 maps 1112 ss 668 processes 805 browsers 48
+flags []
+decoys []
+leftovers []
+xauthority {"person ~/.Xauthority": ["MainThread", "cat", "chrome", "chrome_crashpad", "cua-engine", "dbus-daemon", "sleep", "xprobe", "xterm", "xtrace"], "trace proxy (cua171-audit-*/Xauthority)": ["cua-engine", "xdotool"], "unset": ["MainThread", "chrome", "electron", "exe"]}
+outside peers {
+"MainThread -> unnamed (peer ended or pid not shown)": 12,
+"None -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 8,
+"None -> @/tmp/.X11-unix/X0 (pid not shown)": 45,
+"chrome -> /run/dbus/system_bus_socket (pid not shown)": 322,
+"chrome -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 322,
+"chrome -> @/tmp/.X11-unix/X0 (pid not shown)": 1610,
+"chrome -> unnamed (peer ended or pid not shown)": 2,
+"cua-engine -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 847,
+"cua-engine -> /run/user/501/at-spi/bus_0 (pid not shown)": 1,
+"cua-engine -> @/tmp/.X11-unix/X0 (pid not shown)": 1827,
+"electron -> /run/dbus/system_bus_socket (pid not shown)": 638,
+"electron -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 637,
+"electron -> @/tmp/.X11-unix/X0 (pid not shown)": 3187,
+"xprobe -> @/tmp/.X11-unix/X0 (pid not shown)": 661,
+"xterm -> @/tmp/.X11-unix/X0 (pid not shown)": 1310,
+"xtrace -> /tmp/.X11-unix/X0 (pid not shown)": 49
+}
+home paths {}
+browser nss {"<run scratch>/home/.local/share/pki/nssdb/cert9.db": ["chrome (fd/cwd)", "electron (fd/cwd)"], "<run scratch>/home/.local/share/pki/nssdb/key4.db": ["chrome (fd/cwd)", "electron (fd/cwd)"]} {"/tmp/c58-927s7L/cua171-run-wabkad/home/.local/share/pki/nssdb": {"first": 7.738, "entries": ["cert9.db", "key4.db", "pkcs11.txt"]}}
+browser kinds ["('chrome', 'gpu-process', False, True)", "('chrome', 'renderer', False, True)", "('chrome', 'utility', False, True)", "('chrome', 'zygote', False, True)", "('chrome', None, False, False)", "('chrome', None, True, True)", "('electron', 'gpu-process', False, True)", "('electron', 'renderer', False, True)", "('electron', 'utility', False, True)", "('electron', 'zygote', False, False)", "('electron', None, False, False)"]
+browser homes (readable) ['/tmp/c58-927s7L/cua171-run-wabkad/home']
+meta {"run": "task58-focus", "kind": "meta", "experiment": "focus-timer (task 58 driver)", "display_mode": "person", "display": ":0", "cua_version": "cua-engine 0.3.0 (b0c9acad4fb3)", "lanes": {"timer": [], "control-0ms": ["--teardown-ms", "0"]}, "families": ["chrome", "electron"], "scenarios": ["burst", "aba"], "need": 30, "load": false, "started": "2026-11-04T23:38:19.405Z"}

@@ -1,0 +1,11 @@
+person's window: 0x00400000; the pre-created exact-title window: 0x00600000; active: 0x00400000
+== xprobe grabs on the private display, unmarked
+xprobe: grabs takes the pointer and the keyboard, so it runs only on a private display marked CUA171_PRIVATE_DISPLAY, never on a person's
+exit 1
+== marked private (events.mjs startServer's mark)
+{"pointer":"free","keyboard":"free"}
+exit 0
+== on :0 (it reads whether :0 is marked, then refuses; no grab is made)
+xprobe: grabs takes the pointer and the keyboard, so it runs only on a private display marked CUA171_PRIVATE_DISPLAY, never on a person's
+exit 1
+controls: exit 0; active after: 0x00400000

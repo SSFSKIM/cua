@@ -22,22 +22,31 @@ const selectKeys=(env,keys)=>Object.fromEntries(keys.filter(key=>env[key]!==unde
 // there (CUA_REPL_HOST=vendor is refused), and only the M0 control runs select it explicitly, through `run --host
 // vendor`. The mini keeps the vendor host, which macOS still serves.
 export const listingHost=platform=>platform==='linux'?'cua':'vendor';
-export function prepareDevice({device,profile,node,home}, {ambient=process.env,inspect=executionFacts,run=execFileSync,endpointOptions={}}={}) {
+// The one ready bound profile of a listing (`profile`, or the only ready one), or throws naming the candidates.
+function readyProfile(text,profile){
+ const listing=JSON.parse(text),ready=listing.profiles?.filter(p=>p.ready&&p.extensionInstanceId)??[],selected=profile?ready.find(p=>p.key===profile):ready.length===1?ready[0]:null;
+ if(!selected)throw new Error('prepare requires one ready bound profile; candidates: '+ready.map(p=>p.key).join(', '));
+ return selected;
+}
+// `nativeOnly` (#171 M4, T18): a preparation for the native suite alone, on a Linux device. Its serves bind no Chrome
+// profile (serve-native.mjs and serve-cells.mjs run with none), so it lists none (the listing reaches the live Chrome
+// backends of the source home's profiles), aliases no backend, and records the profile as null; `run` serves only the
+// native suite from it (scripts/repl-parity.mjs).
+export function prepareDevice({device,profile,node,home,nativeOnly=false}, {ambient=process.env,inspect=executionFacts,run=execFileSync,endpointOptions={}}={}) {
  const declaration=declaredDevice(device);
  const experiment='parity',plan=endpointPlan(experiment,device),source=home??declaration.discoveryHome??defaultHome(ambient);
  if(!isAbsolute(source)||/[\0\n]/.test(source))throw new Error('prepare --home needs an absolute path');
  const sourceEnv=nodeEnvironment({...ambient,CUA_HOME:source},node);delete sourceEnv.CUA_PARITY_NODE_MODE;
- const listing=JSON.parse(run(process.execPath,['bin/cua.mjs','profiles','list','--json'],{encoding:'utf8',timeout:90000,maxBuffer:1024*1024,env:{...sourceEnv,CUA_SHIM_SECRETS:'off',CUA_SHIM_SURFACES:'browser',CUA_REPL_HOST:listingHost(declaration.platform)}}));
- const ready=listing.profiles?.filter(p=>p.ready&&p.extensionInstanceId)??[],selected=profile?ready.find(p=>p.key===profile):ready.length===1?ready[0]:null;
- if(!selected)throw new Error('prepare requires one ready bound profile; candidates: '+ready.map(p=>p.key).join(', '));
+ if(nativeOnly&&(profile!==undefined||declaration.platform!=='linux'))throw new Error('a native-only preparation is of a Linux device and names no profile');
+ const selected=nativeOnly?{key:null,extensionInstanceId:null,chromeProfileDirectory:null}:readyProfile(run(process.execPath,['bin/cua.mjs','profiles','list','--json'],{encoding:'utf8',timeout:90000,maxBuffer:1024*1024,env:{...sourceEnv,CUA_SHIM_SECRETS:'off',CUA_SHIM_SURFACES:'browser',CUA_REPL_HOST:listingHost(declaration.platform)}}),profile);
  const mode=node?'diagnostic-override':'managed';
  // Source observations use the real HOME. Scratch observations use only its synthetic Chrome presence HOME.
  const inspectHome=({source:target,ambient:overrides})=>inspect({source:target,ambient:nodeEnvironment({...sourceEnv,...overrides,CUA_HOME:target,...(target===source?{}:{CUA_PARITY_NODE_MODE:mode})},node)});
  const prepared={...inspectHome({source}),profile:selected.key,extensionInstanceId:selected.extensionInstanceId,...(node?{nodeOverride:node}:{})};
- const endpoint=prepareEndpoint({experiment,plan,prepared,enrollment:false},{...endpointOptions,inspect:inspectHome});
+ const endpoint=prepareEndpoint({experiment,plan,prepared,enrollment:false,nativeOnly},{...endpointOptions,inspect:inspectHome});
  const userHome=userHomeBeside(endpoint.home),environment=nodeEnvironment({...sourceEnv,HOME:userHome,CUA_HOME:endpoint.home,CHROME_CONFIG_HOME:join(userHome,'.config'),XDG_CONFIG_HOME:join(userHome,'.config'),CUA_PARITY_NODE_MODE:mode},node);
  try {
-  return {...inspectHome({source:endpoint.home,ambient:environment}),device,profile:selected.key,chromeProfileDirectory:selected.chromeProfileDirectory??null,extensionInstanceId:selected.extensionInstanceId,nodeMode:mode,nodeOverride:node??null,discoveryHome:source,fixturePort:48732,userHome,ownedPreparation:{device,home:endpoint.home,experiment:endpoint.experiment,token:endpoint.token},display:environment.DISPLAY??null,xSession:selectKeys(environment,SESSION_KEYS),environment:selectKeys(environment,SAFE_KEYS),load:{average:loadavg(),cpus:availableParallelism()}};
+  return {...inspectHome({source:endpoint.home,ambient:environment}),device,...(nativeOnly?{nativeOnly:true}:{}),profile:selected.key,chromeProfileDirectory:selected.chromeProfileDirectory??null,extensionInstanceId:selected.extensionInstanceId,nodeMode:mode,nodeOverride:node??null,discoveryHome:source,fixturePort:48732,userHome,ownedPreparation:{device,home:endpoint.home,experiment:endpoint.experiment,token:endpoint.token},display:environment.DISPLAY??null,xSession:selectKeys(environment,SESSION_KEYS),environment:selectKeys(environment,SAFE_KEYS),load:{average:loadavg(),cpus:availableParallelism()}};
  }catch(error){removeEndpoint(endpoint);throw error;}
 }
 
@@ -129,7 +138,8 @@ function main(argv=process.argv.slice(2)) {
  const [action,...args]=argv;
  if(action==='cleanup')return removeEndpoint(JSON.parse(args[0]));
  if(action!=='prepare')throw new Error('Unknown preparation operation');
- const {values}=parseArgs({args,options:{device:{type:'string'},profile:{type:'string'},node:{type:'string'},home:{type:'string'}}});
- return prepareDevice(values);
+ const {values}=parseArgs({args,options:{device:{type:'string'},profile:{type:'string'},node:{type:'string'},home:{type:'string'},'native-only':{type:'boolean',default:false}}});
+ const {'native-only':nativeOnly,...rest}=values;
+ return prepareDevice({...rest,nativeOnly});
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){try{console.log(JSON.stringify(main()));}catch(error){console.error(error.message);process.exitCode=1;}}

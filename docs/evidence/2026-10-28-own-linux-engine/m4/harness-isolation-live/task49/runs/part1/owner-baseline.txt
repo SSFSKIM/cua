@@ -1,0 +1,43 @@
+owner pid=2546101 start=51157914 :0 count=1 digest=5afa07ffbf55
+tmproot /tmp/cua171-task49-80xSNE
+wrap exit 0; tmproot left: [2921335_1793696321950222472.jpg
+2921335_1793696322703065181.jpg
+2921351_1793696323528776550.jpg
+2921351_1793696324260625733.jpg
+4cedf3a3-2f12-424f-91d3-5115a6cfd86a.zip
+5de8a726-708a-4755-9b31-a47c86efeb68.zip
+76769b11-9b45-400f-b6e2-41ecfd22628c.zip
+QtCreator-FZlQKx
+QtCreator-LEZnmf
+QtCreator-dWeXiF
+QtCreator-hCJOHh
+QtCreator-jtsshG
+QtCreator-ppMjuI
+QtCreator-yIzaan
+QtCreator-ySXSUc
+d7ab382b-dedd-4336-8e5e-4fceed0c69a8.zip
+lu29418838r3hqk.tmp
+lu29421108r3mj4.tmp
+lu29423548r3rax.tmp
+lu29426138r3w1m.tmp
+lu29437178r4ld0.tmp
+lu29439198r4oz7.tmp
+lu29441508r4snv.tmp
+lu29444158r4w9e.tmp
+lu29465598r6hqx.tmp
+lu29468418r6n9m.tmp
+lu29470718r6srv.tmp
+lu29473338r6y6z.tmp
+qipc_sharedmemory_qtsingleapplicationebf625dd30f3562b4e75e13e6191c3e98a0ea80eac2
+qipc_systemsem_qtsingleapplicationebf625dd30f3562b4e75e13e6191c3e98a0ea80eac2
+qtsingleapplication-aab2-1f5
+qtsingleapplication-aab2-1f5-lockfile
+tmp-a32.xpi
+tmp-azc.xpi
+tmp-k32.xpi
+tmp-x4w.xpi]
+owner side DIFFERS:
+32c32
+< mtime ~/.config/google-chrome 1793695580.988237836
+---
+> mtime ~/.config/google-chrome 1793697441.012622214

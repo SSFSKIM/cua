@@ -8,7 +8,8 @@
 // artifact has lost its executable bit), and every check reads that copy: the bytes checked are the bytes the run
 // starts. A gate runs the candidate (its `--version`) only once it is attested; a dev run runs it unchecked. The record (the run's `meta.candidate`): the copy's sha256, its target and linkage read from the ELF file,
 // its `--version`, the checkout's commit and whether it is clean, and what `gh attestation verify --format json`
-// verified (gh's plain output prints nothing when it is not on a terminal).
+// verified (gh's plain output prints nothing when it is not on a terminal). An experiment that joins the gate (`--gate`,
+// M4's T18) takes its candidate through the same preparation (experiments.mjs `runExperiment`).
 
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -201,8 +202,14 @@ export async function prepareCandidate({ source, gate, dir, signal, root = REPO_
   return { path, record };
 }
 
-/** How a run's verdict is labelled: a dev run's says it is not a release gate; a gate's, and a run from before #267's, nothing. */
-export const gateLabel = (gate) => (gate === false ? 'development run, not a release gate' : null);
+/**
+ * How a run's artifacts are labelled: a gate's "release gate", a dev run's that it is not one (the design session's
+ * condition for T18: every artifact a gate step writes carries one or the other, and the M4 pull request cites only those
+ * labelled a release gate); a run from before #267, which recorded neither, nothing.
+ */
+export const RELEASE_GATE = 'release gate';
+export const DEVELOPMENT_RUN = 'development run, not a release gate';
+export const gateLabel = (gate) => (gate === true ? RELEASE_GATE : gate === false ? DEVELOPMENT_RUN : null);
 
 /** The candidate in one line of the summary: its sha256, target, version, and its attestation or why there is none. */
 export function candidateLine(c) {

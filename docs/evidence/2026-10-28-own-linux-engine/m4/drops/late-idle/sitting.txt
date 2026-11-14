@@ -1,0 +1,5 @@
+cua-engine 0.3.0 (3fcf2a88ad0d)
+start late-idle 2026-11-10T09:01:12Z loadavg 0.46 0.35 0.46
+run exit 0; watchdog clean
+private run late-idle exit 0 09:02:57
+end late-idle 2026-11-10T09:02:57Z loadavg 0.18 0.31 0.43 status 0

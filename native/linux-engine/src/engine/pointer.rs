@@ -1,9 +1,10 @@
-//! Coordinate clicks, `move`, `move_relative`, `scroll`, `drag` and `drag_handle` (behaviour §10) on either route:
-//! the vendor's arithmetic, its order of placing, pressing the chord and pressing the button, and its holds.
+//! Coordinate clicks, `move`, `move_relative`, `scroll` and `drag` (behaviour §10) on either route: the vendor's
+//! arithmetic, its order of placing, pressing the chord and pressing the button, and its holds. `drag_handle` is
+//! `handle.rs`'s.
 
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 use x11rb::connection::Connection as _;
 use x11rb::protocol::xproto::{ConnectionExt as _, Window};
@@ -11,15 +12,14 @@ use x11rb::protocol::xproto::{ConnectionExt as _, Window};
 use super::way::{Way, target_of};
 use super::{DesktopMode, Engine};
 use crate::desktop::Desktop;
-use crate::dnd::{DndWatch, LateWatch, Outcome, Standing};
+use crate::dnd::{Confirm, DndWatch, EscapeRoute, LateWatch, Outcome, Standing};
 use crate::families::DragPacing;
 use crate::families::Kind;
+use crate::focus_ack::{PressAck, nothing_pressed, press_ack, refused_press};
 use crate::input::chord_keycodes;
 use crate::route::{Route, Target};
 use crate::stray::{StrayWatch, Strays, Watching};
-use crate::wire::{
-    ClickInput, DragHandleInput, DragInput, MouseButton, MoveInput, MoveRelativeInput, ScrollInput, parse_input,
-};
+use crate::wire::{ClickInput, DragInput, MouseButton, MoveInput, MoveRelativeInput, ScrollInput, parse_input};
 use crate::x11::X11;
 
 /// The click hold when `duration` is absent (behaviour §10.1).
@@ -28,26 +28,6 @@ pub(super) const CLICK_HOLD: Duration = Duration::from_millis(12);
 const WHEEL_HOLD: Duration = Duration::from_millis(36);
 /// `scroll`'s pixels when absent.
 const DEFAULT_PIXELS: u16 = 800;
-
-/// The pacing of the drag a `drag_handle` holds: found at its start from the window under the pointer (as a desktop
-/// `drag` finds it under its path's start), kept for its moves and its release, forgotten at its end.
-#[derive(Debug, Default)]
-pub(super) struct HandlePacing(Option<DragPacing>);
-
-impl HandlePacing {
-    pub(super) fn current(&self) -> Option<DragPacing> {
-        self.0
-    }
-
-    pub(super) fn start(&mut self, pacing: DragPacing) -> DragPacing {
-        self.0 = Some(pacing);
-        pacing
-    }
-
-    pub(super) fn end(&mut self) -> DragPacing {
-        self.0.take().unwrap_or(DragPacing::NONE)
-    }
-}
 
 /// Wheel steps for a pixel count: pixels / 100 rounded half away from zero, at least one (behaviour §10.3).
 pub fn scroll_steps(pixels: u16) -> u32 {
@@ -68,6 +48,89 @@ pub fn drag_samples(points: &[(i16, i16)]) -> Vec<(i16, i16)> {
         }
     }
     samples
+}
+
+/// How sharply a path must turn at a joint for a resting drag to rest there (`drag_plan`). A browser takes the pointer
+/// once a frame, so a stroke drawn from what it took cuts a corner by up to half a frame's travel times the cosine of
+/// half the corner's angle; at a turn below this the cut stays a few pixels even at a fast pace.
+const CORNER_TURN_DEG: f64 = 30.0;
+
+/// The samples a drag sends after its press, and where it rests.
+#[derive(Debug, PartialEq, Eq)]
+pub struct DragPlan {
+    pub samples: Vec<(i16, i16)>,
+    /// The indices of the samples that go out only after a rest at the point before them.
+    pub rests: Vec<usize>,
+}
+
+/// A drag's motions (`families.rs` `DragPacing.rest`): the pinned build's samples ([`drag_samples`]) and, for a
+/// family that rests, a rest at each joint that turns by [`CORNER_TURN_DEG`] or more ([`corner_at`]), between the
+/// joint's first two visits, and a rest at the end, which is then visited once more. A browser takes pointer input
+/// once a frame: Chromium and Gecko hand a page one move a frame (the latest), so a corner the pointer passes within a
+/// frame is cut, and Chromium's scrollbar takes at most one move a frame and drops the rest, so a thumb stops where the
+/// last frame's first move left it and the release, which carries no position for it, does not move it on (`cc/input/
+/// scrollbar_controller.cc`, `drag_processed_for_current_frame_`; evidence `m4/drag-motion/`). A rest of a frame at a
+/// point puts it in a frame of its own, and the second visit after it reaches a scrollbar that took nothing since.
+pub fn drag_plan(points: &[(i16, i16)], rests: bool) -> DragPlan {
+    let mut samples = Vec::new();
+    let mut at = Vec::new();
+    for (j, pair) in points.windows(2).enumerate() {
+        if rests && corner_at(points, j) {
+            at.push(samples.len());
+        }
+        samples.extend(drag_samples(pair));
+    }
+    if rests && let Some(&last) = samples.last() {
+        at.push(samples.len());
+        samples.push(last);
+    }
+    DragPlan { samples, rests: at }
+}
+
+/// Whether a path turns by [`CORNER_TURN_DEG`] or more at its point `j` on arriving there: the turn between the
+/// position it came from and the next one it goes to, a point the path repeats counted once, so a repeat neither
+/// hides the corner (each turn around it would have a zero-length side) nor puts a second rest there.
+fn corner_at(points: &[(i16, i16)], j: usize) -> bool {
+    let at = points[j];
+    if j == 0 || points[j - 1] == at {
+        return false;
+    }
+    points[j + 1..]
+        .iter()
+        .find(|&&p| p != at)
+        .is_some_and(|&next| turn_deg(points[j - 1], at, next) >= CORNER_TURN_DEG)
+}
+
+/// The turn at `b` between a→b and b→c, in degrees (0 straight on, 180 straight back); a zero-length side has no
+/// direction, so no turn.
+fn turn_deg(a: (i16, i16), b: (i16, i16), c: (i16, i16)) -> f64 {
+    let (ux, uy) = (b.0 as f64 - a.0 as f64, b.1 as f64 - a.1 as f64);
+    let (vx, vy) = (c.0 as f64 - b.0 as f64, c.1 as f64 - b.1 as f64);
+    let (nu, nv) = (ux.hypot(uy), vx.hypot(vy));
+    if nu == 0.0 || nv == 0.0 {
+        return 0.0;
+    }
+    ((ux * vx + uy * vy) / (nu * nv)).clamp(-1.0, 1.0).acos().to_degrees()
+}
+
+/// Whether a drag rests before its sample `next` ([`drag_plan`]): where its plan rests, unless it is on its floor after a
+/// take (`dnd::RELEASE_AFTER_TAKE`), whose spacing brings the steps to the floor's end and whose keepalives then hold the
+/// pointer at the end, so a rest there would only push the release past the floor.
+fn rests_before(rests: &[usize], next: usize, floored: bool) -> bool {
+    !floored && rests.contains(&next)
+}
+
+/// When a drag's next sample is due, the previous one having been due at `due` and sent at `sent`: after a rest
+/// (`rest`), the rest after it was sent; by elapsed time ([`DragPacing::elapsed`]), a step after it was due, so a sample
+/// sent late does not delay the ones after it; else a step after it was sent.
+pub fn next_due(due: Instant, sent: Instant, pacing: &DragPacing, rest: bool) -> Instant {
+    if rest {
+        sent + pacing.rest
+    } else if pacing.elapsed {
+        due + pacing.step
+    } else {
+        sent + pacing.step
+    }
 }
 
 /// Blink's drag threshold off the Mac (`mouse_event_manager.cc` `kDragThresholdX/Y`): a press starts a drag on a move
@@ -143,13 +206,14 @@ fn atomic_press(
     samples: &[(i16, i16)],
     pressed: &mut bool,
     pressed_at: &mut Option<Instant>,
+    pressing: PressAck,
 ) -> Result<usize> {
     let count = press_samples(samples);
     let started = Instant::now();
     x.conn.grab_server()?;
     let sent = (|| -> Result<bool> {
         let inside = x.pointer_in(press.window, press.parent)?;
-        route.button(x, 1, true)?;
+        route.press(x, 1, pressing)?;
         *pressed = true;
         *pressed_at = Some(Instant::now());
         for &(sx, sy) in &samples[..count] {
@@ -178,7 +242,7 @@ fn chord(x: &X11, key: Option<&str>) -> Result<Vec<u8>> {
 }
 
 /// Press, hold, release of one button, inside a pressed chord that is released whatever happened; the first error
-/// wins (behaviour §10.1).
+/// wins (behaviour §10.1). The press spends `pressing`, the acknowledgement taken for it.
 fn click_once(
     x: &X11,
     route: &mut Route,
@@ -186,17 +250,18 @@ fn click_once(
     at: Option<(i16, i16)>,
     button: u8,
     hold: Duration,
+    pressing: PressAck,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let pressed = match at {
         Some((rx, ry)) => route.place_again(x, rx, ry),
         None => Ok(()),
     }
-    .and_then(|()| route.button(x, button, true));
+    .and_then(|()| route.press(x, button, pressing));
     if pressed.is_ok() {
         std::thread::sleep(hold);
     }
-    let released = pressed.and_then(|()| route.button(x, button, false));
+    let released = pressed.and_then(|()| route.release_button(x, button));
     let keys_released = route.release(x, &held);
     released.and(keys_released)
 }
@@ -224,8 +289,6 @@ pub(super) struct DropGuard {
     /// after-release watch is what finds it.
     defer: bool,
     outcome: Option<Outcome>,
-    /// The watch that goes on after the release, off the request path (`dnd::LateWatch`), subscribed before the drag.
-    after: Option<LateWatch>,
 }
 
 impl DropGuard {
@@ -246,14 +309,50 @@ fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &m
     guard.outcome = Some(Outcome::Undecided);
     escape(x, route)?;
     *pressed = false;
-    route.button(x, 1, false)?;
+    route.release_button(x, 1)?;
     guard.outcome = Some(Outcome::InTime);
     Err(DropCancelled.into())
 }
 
-/// The drag after the pointer is placed at its first point: the chord, the press, every sample, the release.
-/// `pacing.step` follows each sample, the last included (where the vendor waits 1 ms, behaviour §10.4),
-/// `pacing.press` follows the press and `pacing.release` precedes the release (`families.rs`). With a guard (always on
+/// What a drag records for `--stats` alone: the press's and the release's wall clock, and what the release at the
+/// accept decided (`accept.rs`).
+pub(super) struct DragMeasure<'a> {
+    pub(super) wall: &'a mut Option<(f64, f64)>,
+    pub(super) accept_record: &'a mut Option<Value>,
+    /// An Electron drop's cursor watch (`drop_cursor.rs`), read just before the release of a drag whose source took
+    /// `XdndSelection`, and what it read there.
+    pub(super) drop_cursor: Option<&'a mut crate::drop_cursor::DropCursor>,
+    pub(super) at_release: &'a mut Option<crate::drop_cursor::AtRelease>,
+    /// On a route whose input is XTEST's (the desktop and foreground routes): where the real pointer was, read with the
+    /// cursor just before the release (None: on another screen, or not read), which is where the release goes and so
+    /// the window the drop's confirmation is held to (the third review of task 73, P3).
+    pub(super) release_point: Option<&'a mut Option<(i16, i16)>>,
+    /// On the foreground route, a drop under way at the release, whose window is not the one the drag named: its input
+    /// is XTEST's, so its path may end over another window. The slot gets the managed top-level under the real pointer
+    /// just before the release when its family's drop is confirmed by activation (Chrome's), and the after-release
+    /// watch is told it when the window manager takes that request (the flag), as a handle's release does (the
+    /// whole-branch review of M4, P2).
+    pub(super) drop_window_at_release: Option<(&'a mut Option<Window>, bool)>,
+}
+
+/// Whether a drop on `window` (a managed top-level) is confirmed by its activation request: its family's drop sends one
+/// (Chrome's, known by its X11 class alone, so no accessibility-bus call comes before the release).
+fn confirms_by_activation(x: &X11, window: Window) -> bool {
+    crate::families::family(crate::families::FAMILIES, x.wm_class(window).as_deref(), None)
+        .is_some_and(|f| crate::families::confirms_drop(f.name))
+}
+
+/// The wall clock in milliseconds since the epoch (`--stats` only: the harness lines a drag up with its own watchers).
+pub(super) fn wall_ms() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64() * 1000.0)
+}
+
+/// The drag after the pointer is placed at its first point: the chord, the press, every sample of its plan
+/// ([`drag_plan`]), the release. `pacing.step` follows each sample, the last included (where the vendor waits 1 ms,
+/// behaviour §10.4), by elapsed time where the family asks ([`next_due`]), `pacing.rest` precedes a corner's or the
+/// end's second visit, `pacing.press` follows the press and `pacing.release` precedes the release (`families.rs`). With a guard (always on
 /// the background route), `XdndSelection` is looked at after every sample and once more just before the release: a
 /// take there stops the drag, Escape is pressed and released, then the button, so the drag and drop is cancelled before
 /// anything drops ([`Outcome::InTime`]). After the release it is watched through `SETTLE`: a take then (or, with `late`,
@@ -266,10 +365,15 @@ fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &m
 /// keepalive motions on the path's last two samples, ending on the last ([`crate::dnd::keepalive`]): Chrome's target
 /// accepts only on a motion (task 22). With no take by the path's end, the button stays down until the bound after the
 /// press for one (task 22), a take then, or one seen at that last look, getting the same floor; no take by then
-/// releases the drag as before. `scheduled` records a take, `held_for_take` the hold. With `press` (a
+/// releases the drag as before. On the background route that hold refreshes the path's end, a motion every
+/// `dnd::KEEPALIVE` until a browser's rest before the bound, so a Chromium busy while the path was queued still gets it
+/// once it reads again (`dnd::wait_for_take_refreshing`; V5's lost motion, 2026-11-13). `scheduled` records a take, `held_for_take` the hold. With `accept` (measurement only,
+/// a Chrome drop the engine can confirm, `accept.rs`), the path after a take keeps its own pacing, and the floor's
+/// motions end at Chrome's accept cursor when it comes first, the release then at once. With `press` (a
 /// Chromium-family drag), the press and the samples through Blink's drag threshold, at most [`PRESS_SAMPLES_MAX`], go
 /// out under one server grab ([`atomic_press`]), its watch begun just before the grab and ended just after the
-/// release, what it saw kept in `press.strays`.
+/// release, what it saw kept in `press.strays`. `after`, the drag's after-release watch, is told the instant the
+/// button went up and whether a take came before it.
 #[allow(clippy::too_many_arguments)]
 fn drag_along(
     x: &mut X11,
@@ -283,12 +387,16 @@ fn drag_along(
     after_take: Duration,
     scheduled: &mut Option<Value>,
     mut press: Option<&mut ChromiumPress>,
+    pressing: PressAck,
+    mut accept: Option<&mut crate::accept::CursorWatch>,
+    after: Option<&LateWatch>,
+    measure: DragMeasure<'_>,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
     let dragged = (|| -> Result<()> {
         route.place_again(x, points[0].0, points[0].1)?;
-        let samples = drag_samples(points);
+        let DragPlan { samples, rests } = drag_plan(points, !pacing.rest.is_zero());
         let count = samples.len();
         // a Chromium-family press: the watch begun, then the press and the samples through the drag threshold under
         // one server grab (no take can come during it: the target's requests wait for the grab's end)
@@ -297,37 +405,65 @@ fn drag_along(
         let first = match press.as_deref_mut() {
             Some(press) => {
                 press.watching = Some(press.watch.begin(press.window, press.xtest)?);
-                atomic_press(x, route, press, &samples, &mut pressed, &mut pressed_at)?
+                atomic_press(x, route, press, &samples, &mut pressed, &mut pressed_at, pressing)?
             }
             None => {
-                route.button(x, 1, true)?;
+                route.press(x, 1, pressing)?;
                 pressed = true;
                 pressed_at = Some(Instant::now());
                 0
             }
         };
         let pressed_at = pressed_at.expect("the button was pressed");
+        let press_wall = wall_ms() - pressed_at.elapsed().as_secs_f64() * 1000.0;
+        // with the release at the accept, the path after a take keeps its own pacing (task 68's live lane): spread over
+        // the floor, the steps would reach the zone, and the accept with them, only near the floor's end
+        let spacing = !after_take.is_zero() && accept.is_none();
         std::thread::sleep(pacing.press);
-        // the path's last two samples, which a floor after a take re-visits
-        let last = *samples.last().expect("a drag has samples");
-        let before_last = samples.len().checked_sub(2).map_or(last, |k| samples[k]);
+        // the path's last two samples, which a floor after a take re-visits (the path's own: not the end's second
+        // visit after its rest, which would make them one point)
+        let path = if rests.last() == Some(&(count - 1)) {
+            count - 1
+        } else {
+            count
+        };
+        let last = samples[path - 1];
+        let before_last = path.checked_sub(2).map_or(last, |k| samples[k]);
         // the take, when it was seen, and how many samples were still to send then
         let mut taken: Option<(Instant, usize)> = None;
         let mut since_take = 0;
-        for (i, (sx, sy)) in samples.into_iter().enumerate().skip(first) {
+        // when the sample being sent was due
+        let mut due = Instant::now();
+        for (i, &(sx, sy)) in samples.iter().enumerate().skip(first) {
             route.place_again(x, sx, sy)?;
-            let mut wait = pacing.step;
+            let sent = Instant::now();
+            // the cursors read as they come, so each one's image is fetched while it is shown (a read that fails leaves
+            // the drag to its floor, `accept_shown`)
+            if let Some(cursor) = accept.as_deref_mut() {
+                let _ = cursor.poll();
+            }
+            // when the floor after a take spaces this step to, if it does
+            let mut floor = None;
             if let Some((watch, _)) = hold.as_mut() {
                 match taken {
-                    Some((at, left)) if !after_take.is_zero() => {
+                    Some((at, left)) if spacing => {
                         since_take += 1;
-                        let due = crate::dnd::step_due(at, after_take, since_take, left);
-                        wait = wait.max(due.saturating_duration_since(Instant::now()).min(crate::dnd::KEEPALIVE));
+                        floor = Some(crate::dnd::step_due(at, after_take, since_take, left));
                     }
                     Some(_) => {}
                     None if watch.started(x) => taken = Some((Instant::now(), count - 1 - i)),
                     None => {}
                 }
+            }
+            let floored = taken.is_some() && spacing;
+            due = next_due(due, sent, pacing, rests_before(&rests, i + 1, floored));
+            let mut wait = due.saturating_duration_since(Instant::now());
+            if let Some(floor) = floor {
+                wait = wait.max(
+                    floor
+                        .saturating_duration_since(Instant::now())
+                        .min(crate::dnd::KEEPALIVE),
+                );
             }
             std::thread::sleep(wait);
             if let Some(guard) = guard.as_deref_mut()
@@ -345,9 +481,42 @@ fn drag_along(
             // whether the hold ran: no take by the path's end
             let held = taken.is_none();
             let mut waited = Duration::ZERO;
+            // the motions the hold sent on the background route: SendEvent's core motion, which a busy Chromium loses
+            // but for the first it reads (`dnd::wait_for_take_refreshing`); XTEST's arrives as XI2 and is kept
+            let mut refreshes = None;
             if held {
                 let since = Instant::now();
-                if crate::dnd::wait_for_take(|| watch.started(x), pressed_at + *bound) {
+                let deadline = pressed_at + *bound;
+                let looked = if matches!(route, Route::Window(_)) {
+                    let (looked, sent) = crate::dnd::wait_for_take_refreshing(
+                        |motion| {
+                            if let Some((px, py)) = motion {
+                                route.place_again(x, px, py)?;
+                            }
+                            if let Some(cursor) = accept.as_deref_mut() {
+                                let _ = cursor.poll();
+                            }
+                            Ok(watch.started(x))
+                        },
+                        before_last,
+                        last,
+                        deadline.checked_sub(pacing.rest).unwrap_or(deadline),
+                        deadline,
+                    )?;
+                    refreshes = Some(sent);
+                    looked
+                } else {
+                    crate::dnd::wait_for_take(
+                        || {
+                            if let Some(cursor) = accept.as_deref_mut() {
+                                let _ = cursor.poll();
+                            }
+                            watch.started(x)
+                        },
+                        deadline,
+                    )
+                };
+                if looked {
                     taken = Some((Instant::now(), 0));
                 }
                 waited = since.elapsed();
@@ -357,12 +526,33 @@ fn drag_along(
             if let Some((at, _)) = taken
                 && !after_take.is_zero()
             {
-                keepalives = crate::dnd::keepalive(
-                    |(px, py)| route.place_again(x, px, py),
-                    before_last,
-                    last,
-                    at + after_take,
-                )?;
+                keepalives = match (accept, watch.taken_time()) {
+                    // the floor ends at Chrome's accept cursor, if it comes first (`accept.rs`)
+                    (Some(cursor), Some(take)) => {
+                        let mut accepted = None;
+                        let sent = crate::dnd::keepalive_until(
+                            |(px, py)| route.place_again(x, px, py),
+                            before_last,
+                            last,
+                            at + after_take,
+                            || {
+                                accepted = accepted.or_else(|| cursor.accepted(take).ok().flatten());
+                                accepted.is_some()
+                            },
+                        )?;
+                        *measure.accept_record = Some(json!({
+                            "accepted": accepted.is_some(),
+                            "accept_after_take_ms": accepted.map(|seen| ms(seen.saturating_duration_since(at))),
+                        }));
+                        sent
+                    }
+                    _ => crate::dnd::keepalive(
+                        |(px, py)| route.place_again(x, px, py),
+                        before_last,
+                        last,
+                        at + after_take,
+                    )?,
+                };
             }
             // one shape for every drag the hold watched (`--stats` `hold`)
             *held_for_take = Some(json!({
@@ -373,6 +563,7 @@ fn drag_along(
                 "taken": taken.is_some(),
                 "take_after_press_ms": taken.map(|(at, _)| ms(at.saturating_duration_since(pressed_at))),
                 "keepalives": keepalives,
+                "refreshes": refreshes,
             }));
         }
         std::thread::sleep(pacing.release);
@@ -396,34 +587,68 @@ fn drag_along(
             *scheduled =
                 Some(json!({ "steps_after_take": left, "release_after_take_ms": at.elapsed().as_secs_f64() * 1000.0 }));
         }
+        crate::desktop::drag_hooks::before_release();
+        // a drop under way: an Electron source's drag loop cursor shown at the release itself, which confirms it or
+        // not, and on an XTEST route the real pointer beside it, where the release goes whatever the path asked (a
+        // person's motion since the last sample moves the drop); on the foreground route, the Chrome window under that
+        // pointer, whose activation request confirms the drop
+        if taken.is_some() && (measure.drop_cursor.is_some() || measure.drop_window_at_release.is_some()) {
+            let pointer = x
+                .conn
+                .query_pointer(x.root)
+                .ok()
+                .and_then(|c| c.reply().ok())
+                .filter(|p| p.same_screen)
+                .map(|p| (p.root_x, p.root_y));
+            if let Some(slot) = measure.release_point {
+                *slot = pointer;
+            }
+            if let Some((slot, supported)) = measure.drop_window_at_release {
+                *slot = pointer
+                    .and_then(|(rx, ry)| x.managed_client_at(rx, ry))
+                    .filter(|&window| confirms_by_activation(x, window));
+                if supported && let Some(after) = after {
+                    after.confirm_drop_of(*slot);
+                }
+            }
+            if let Some(cursor) = measure.drop_cursor {
+                let take = hold.as_ref().and_then(|(watch, _)| watch.taken_time());
+                *measure.at_release = Some(cursor.at_release(take));
+            }
+        }
         pressed = false;
-        route.button(x, 1, false)?;
+        // stamped as the release goes out, not once its round trip is back: Chrome's drop confirmation answers the
+        // release itself, and the watch may read it before that reply (task 68 saw requests up to 2.7 ms before a stamp
+        // taken after the release; 1 of 300 drops in task 69's idle counts was left unconfirmed so)
         let released_at = Instant::now();
+        route.release_button(x, 1)?;
+        *measure.wall = Some((press_wall, wall_ms()));
         // the watch ends at the release: what reached the window from the press on
-        if let Some(press) = press.as_deref_mut()
+        if let Some(press) = press
             && let Some(watching) = press.watching.take()
         {
             press.strays = Some(press.watch.finish(watching));
         }
-        if let Some(guard) = guard.as_deref_mut() {
+        if let Some(guard) = guard {
             // measurement only: the take the drag went on past, its Escape after the release
             if guard.late && guard.watch.started(x) {
                 guard.outcome = Some(Outcome::Late);
                 escape(x, route)?;
                 return Err(DropCancelled.into());
             }
-            // no take seen by the release: a plain drag, answered now; the after-release watch, told the instant the
-            // button went up, cancels a late take at once from here on and ends 300 ms after it (`drag`)
-            if let Some(after) = &guard.after {
-                after.released(released_at);
-            }
             guard.outcome = Some(Outcome::NoStart);
+        }
+        // the after-release watch, told the instant the button went up: with no take seen by the release (a plain drag,
+        // answered now) it cancels a late take at once from here on and ends 300 ms after it; after a take it looks for
+        // the drop's confirmation (`dnd::LateWatch`, `drag`)
+        if let Some(after) = after {
+            after.released(released_at, taken.is_some());
         }
         Ok(())
     })();
     if pressed {
         // interrupted while the button is down: its release is attempted; the interruption stays the answer
-        let _ = route.button(x, 1, false);
+        let _ = route.release_button(x, 1);
     }
     let keys_released = route.release(x, &held);
     dragged.and(keys_released)
@@ -466,24 +691,49 @@ impl Engine {
         let count = input.click_count.unwrap_or(1);
         let hold = input.duration.map(Duration::from_millis).unwrap_or(CLICK_HOLD);
         // a family that ignores synthetic clicks (families.rs): refused in shared mode, the foreground route in
-        // dedicated mode
-        let target = self.target_for(input.window.map(|w| w.id), Kind::Clicks)?;
-        let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, target, |x, route, _| {
+        // dedicated mode; one that takes them only with the real pointer in its window, watched for it leaving
+        let window = input.window.map(|w| w.id);
+        let way = self.route_for(window, Kind::Clicks)?;
+        let (way, within) = self.watch_within(window, Kind::Clicks, way)?;
+        if let (Way::Foreground, Some(window)) = (way, window) {
+            self.enter(window)?;
+        }
+        let target = target_of(way, window);
+        // a family whose press activates a window it has not focused: the session's focus reported taken first
+        let mut ack = self.focus_ack_for(target, None)?;
+        let Engine { x, inputs, bus, .. } = self;
+        let clicked = inputs.with_route(x, target, |x, route, _| {
             let at = match position {
-                Some((px, py)) => {
-                    let (rx, ry) = route.root_point(x, px, py)?;
-                    route.place(x, rx, ry)?;
-                    Some((rx, ry))
-                }
+                Some((px, py)) => Some(route.root_point(x, px, py)?),
                 None => None,
             };
-            for _ in 0..count {
-                click_once(x, route, &keycodes, at, button, hold)?;
+            // the foreground route's window on top at the point before anything is sent (task 63)
+            if let Some(point) = at {
+                route
+                    .on_top_at(x, &[point])?
+                    .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
+            }
+            // the press's checks before every press, not once per request: the person may move the focus during an
+            // earlier click's hold (the bounded re-review's P1); a count of 0 still checks and places, pressing nothing
+            for sent in 0..count.max(1) {
+                // each press its own acknowledgement, read just before it (task 61's fix 3)
+                let pressing = press_ack(ack.as_mut(), bus.as_mut(), x, route, at)?
+                    .map_err(|cause| anyhow!(refused_press(cause, sent, count)))?;
+                if sent == 0
+                    && let Some((rx, ry)) = at
+                {
+                    route.place(x, rx, ry)?;
+                }
+                if count > 0 {
+                    click_once(x, route, &keycodes, at, button, hold, pressing)?;
+                }
             }
             Ok(())
-        })?;
-        Ok(Value::Null)
+        });
+        self.record_focus_ack(ack.as_ref());
+        let left = self.within_answer(within, "click");
+        clicked?;
+        left.map_or(Ok(Value::Null), Err)
     }
 
     /// `move`: the chord pressed, the pointer placed (the background `move_to`, or the desktop's path), the chord
@@ -494,24 +744,32 @@ impl Engine {
         let input: MoveInput = parse_input(input)?;
         let window = input.window.map(|w| w.id);
         let way = self.route_for(window, Kind::Move)?;
+        let (way, within) = self.watch_within(window, Kind::Move, way)?;
         // the foreground route activates only once the chord is known good
         self.enter_checked(way, window, |x| chord(x, input.key.as_deref()).map(drop))?;
         let target = target_of(way, window);
         let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, target, |x, route, _| {
+        let moved = inputs.with_route(x, target, |x, route, _| {
             let (rx, ry) = route.root_point(x, input.x, input.y)?;
             let keycodes = chord(x, input.key.as_deref())?;
+            route
+                .on_top_at(x, &[(rx, ry)])?
+                .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
             let held = route.acquire(x, &keycodes)?;
             let moved = route.place(x, rx, ry);
             moved.and(route.release(x, &held))
-        })?;
-        Ok(Value::Null)
+        });
+        let left = self.within_answer(within, "move");
+        moved?;
+        left.map_or(Ok(Value::Null), Err)
     }
 
-    /// `move_relative`: desktop only, one relative XTEST motion inside the chord.
+    /// `move_relative`: desktop only, one relative XTEST motion inside the chord; refused while a drag handle is held
+    /// (`handle.rs`), as all desktop pointer input is.
     pub(super) fn move_relative(&mut self, input: Option<Value>) -> Result<Value> {
         let input: MoveRelativeInput = parse_input(input)?;
         let keycodes = chord(&self.x, input.key.as_deref())?;
+        self.refuse_while_held(Way::Desktop)?;
         let Engine { x, inputs, .. } = self;
         inputs.with_route(x, Target::Desktop, |x, route, _| {
             let held = route.acquire(x, &keycodes)?;
@@ -537,6 +795,7 @@ impl Engine {
         }
         let window = input.window.map(|w| w.id);
         let way = self.route_for(window, Kind::Scroll)?;
+        let (way, within) = self.watch_within(window, Kind::Scroll, way)?;
         self.enter_checked(way, window, |x| {
             if input.x.is_some() != input.y.is_some() {
                 bail!("x and y must be provided together");
@@ -545,7 +804,7 @@ impl Engine {
         })?;
         let target = target_of(way, window);
         let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, target, |x, route, _| {
+        let scrolled = inputs.with_route(x, target, |x, route, _| {
             let at = match (input.x, input.y, input.window) {
                 (Some(px), Some(py), _) => Some(route.root_point(x, px, py)?),
                 (None, None, Some(window)) => {
@@ -559,8 +818,10 @@ impl Engine {
                 _ => bail!("x and y must be provided together"),
             };
             wheel(x, route, at, &input)
-        })?;
-        Ok(Value::Null)
+        });
+        let left = self.within_answer(within, "scroll");
+        scrolled?;
+        left.map_or(Ok(Value::Null), Err)
     }
 
     /// `drag`: the path translated to the root (inside the window's session, which is opened first), checked, the
@@ -605,6 +866,9 @@ impl Engine {
             self.record_route(way);
             self.extra.insert("pointer_outside".into(), json!(true));
         }
+        // a family that takes pointer input only while the real pointer is in its window (Gecko): watched for the pointer
+        // leaving it, from a second read of the pointer to the drag's end (`within.rs`)
+        let (way, within) = self.watch_within(named, Kind::Drag, way)?;
         self.enter_checked(way, named, |x| {
             if input.path.len() < 2 {
                 bail!("drag path must contain at least two points");
@@ -612,6 +876,8 @@ impl Engine {
             chord(x, input.key.as_deref()).map(drop)
         })?;
         let target = target_of(way, named);
+        // a family whose press activates a window it has not focused: the session's focus reported taken first
+        let mut ack = self.focus_ack_for(target, None)?;
         // in shared mode, a background drag into a family whose drop changes the desktop watches for a drag and drop,
         // unless the window is already in front (active, focused, fully unobscured), where the drop changes nothing
         let mut guard = match target {
@@ -625,15 +891,12 @@ impl Engine {
                 if in_front {
                     None
                 } else {
-                    // the after-release watch subscribes before the drag begins, so no take can fall between
-                    let escape = chord_keycodes(&self.x, "Escape")?;
                     Some(DropGuard {
                         watch: DndWatch::start(&mut self.x, window)?,
                         before: standing,
                         late: self.cfg.dnd_cancel_late,
                         defer: self.cfg.dnd_defer_take,
                         outcome: None,
-                        after: Some(LateWatch::start(window, escape[0])?),
                     })
                 }
             }
@@ -677,15 +940,121 @@ impl Engine {
             }),
             _ => None,
         };
+        // the drop's window, where Chrome's drop asks for activation: the named window, or on the desktop route the
+        // top-level under the path's end. Its confirmation is live on a drag the engine lets drop into Chrome, under a
+        // window manager that lists `_NET_ACTIVE_WINDOW` as supported (the design session's ruling on task 68,
+        // 2026-11-09); Electron's by its drag loop's cursor at the release (below); every other window keeps the floor
+        // with nothing to confirm
+        // The foreground route's is resolved at the button-up instead, as on every XTEST release: its path may end over
+        // another window (the whole-branch review of M4, P2)
+        let resolve_at_release = hold.is_some() && matches!(target, Target::Foreground(_));
+        let drop_window = match (hold.is_some(), target) {
+            (false, _) | (true, Target::Foreground(_)) => None,
+            (true, Target::Window(window)) => Some(window),
+            (true, Target::Desktop) => input.path.last().and_then(|p| self.x.client_at(p.x, p.y)),
+        };
+        let confirm = match drop_window {
+            Some(window)
+                if self
+                    .family_of(window)
+                    .is_some_and(|f| crate::families::confirms_drop(f.name)) =>
+            {
+                let supported = crate::dnd::active_window_supported(&self.x);
+                self.extra.insert(
+                    "confirm".into(),
+                    match &supported {
+                        Ok(supported) => json!({ "window": window, "supported": supported }),
+                        Err(error) => json!({ "window": window, "supported": false, "error": format!("{error:#}") }),
+                    },
+                );
+                supported.unwrap_or(false).then_some(window)
+            }
+            _ => None,
+        };
+        // the after-release watch, subscribed before the drag begins so no take can fall between: the guard's, and that
+        // of every Chromium drag the engine lets drop (#264; the design session's rulings, 2026-11-02), its late take's
+        // Escape on the route the drag used
+        let watched = match &guard {
+            Some(_) => named,
+            None => hold.as_ref().and(pressing_into),
+        };
+        let after = match watched {
+            Some(window) => {
+                let escape = chord_keycodes(&self.x, "Escape")?;
+                let route = match target {
+                    Target::Window(window) => EscapeRoute::Synthetic(window),
+                    Target::Foreground(_) | Target::Desktop => EscapeRoute::Xtest,
+                };
+                let otherwise = if resolve_at_release {
+                    Confirm::AtRelease
+                } else {
+                    Confirm::Never
+                };
+                Some(LateWatch::start(
+                    window,
+                    route,
+                    escape[0],
+                    confirm.map_or(otherwise, Confirm::Window),
+                )?)
+            }
+            None => None,
+        };
+        // an Electron source's drag the engine lets land, watched: its drag loop's accept cursor at the release confirms
+        // the drop, the cursor watched from before the press (`drop_cursor.rs`; the design session's ruling on task
+        // 73's review, 2026-11-11). The source decides, as a handle's does, not the window under the path's end: the
+        // drag loop is the source's, wherever it drops (the second review, P2: a desktop drag from Electron to the bare
+        // root started no watch and answered ok). A watch that cannot start confirms nothing
+        let mut drop_cursor = match (&guard, &after, pressing_into) {
+            (None, Some(_), Some(source))
+                if self
+                    .family_of(source)
+                    .is_some_and(|f| crate::families::confirms_drop_by_cursor(f.name)) =>
+            {
+                Some(crate::drop_cursor::DropCursor::start().map_err(|e| format!("{e:#}")))
+            }
+            _ => None,
+        };
+        // whether the window manager takes Chrome's activation request, for a drop nothing else can confirm (as a
+        // handle's, `handle::confirming`): read already for a Chrome drop window, else only for a drop that can begin
+        let supported = match (confirm, &after) {
+            (Some(_), _) => true,
+            (None, Some(_)) if guard.is_none() => crate::dnd::active_window_supported(&self.x).unwrap_or(false),
+            _ => false,
+        };
+        let mut at_release = None;
+        // where the real pointer was at the release, read on the routes whose input is XTEST's: the background route's
+        // input is synthetic and leaves the real pointer where it is, so its release is the path's end
+        let xtest_route = !matches!(target, Target::Window(_));
+        let mut release_point = None;
+        let mut drop_at_release = None;
         let after_take = self.cfg.dnd_after_take;
         let mut scheduled = None;
         let bound = self.cfg.dnd_hold;
         let mut held_for_take = None;
+        // measurement only (`--drag-dnd-release-at-accept`, reverted from shipping by the design session's ruling on
+        // task 69's counts): a drop the engine can confirm released at Chrome's accept cursor, read from before the
+        // press (`accept.rs`); a watch that cannot start leaves the drag to its floor
+        let mut cursor = match (confirm, self.cfg.dnd_release_at_accept) {
+            (Some(_), true) => match crate::accept::CursorWatch::start() {
+                Ok(cursor) => Some(cursor),
+                Err(error) => {
+                    self.extra
+                        .insert("accept".into(), json!({ "error": format!("{error:#}") }));
+                    None
+                }
+            },
+            _ => None,
+        };
+        let mut wall = None;
+        let mut accept_record = None;
         // the time field the drag's events carried at its end, beside the server's time read just after (M3.1: whether
         // a background event's time can run ahead of the server's)
         let mut times = None;
-        let Engine { x, inputs, .. } = self;
-        let dragged = inputs.with_route(x, target, |x, route, _| {
+        // a watched drag's session is kept focused past its answer while its late-take watch is armed, so the watch's
+        // Escape lands inside it (the design session's ruling on task 60); a drag that arms no watch ends it below
+        let may_arm_watch = after.is_some();
+        let Engine { x, inputs, bus, .. } = self;
+        let dragged = inputs.with_route_kept(x, target, may_arm_watch, |x, route, _| {
             let points = input
                 .path
                 .iter()
@@ -694,6 +1063,13 @@ impl Engine {
             if points.len() < 2 {
                 bail!("drag path must contain at least two points");
             }
+            // the foreground route's window on top along the whole path before anything is sent (task 63)
+            route
+                .on_top_at(x, &drag_samples(&points))?
+                .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
+            // the drag's press goes at the path's start, with its own acknowledgement
+            let pressing = press_ack(ack.as_mut(), bus.as_mut(), x, route, Some(points[0]))?
+                .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
             route.place(x, points[0].0, points[0].1)?;
             let keycodes = chord(x, input.key.as_deref())?;
             let dragged = drag_along(
@@ -708,6 +1084,17 @@ impl Engine {
                 after_take,
                 &mut scheduled,
                 press.as_mut(),
+                pressing,
+                cursor.as_mut(),
+                after.as_ref(),
+                DragMeasure {
+                    wall: &mut wall,
+                    accept_record: &mut accept_record,
+                    drop_cursor: drop_cursor.as_mut().and_then(|c| c.as_mut().ok()),
+                    at_release: &mut at_release,
+                    release_point: xtest_route.then_some(&mut release_point),
+                    drop_window_at_release: resolve_at_release.then_some((&mut drop_at_release, supported)),
+                },
             );
             if let Some(event) = route.event_time()
                 && let Ok(server) = crate::input::server_time(x)
@@ -716,6 +1103,14 @@ impl Engine {
             }
             dragged
         });
+        // on the foreground route, the drop's window is the one found at the button-up
+        let (confirm, drop_window) = match resolve_at_release {
+            true => (drop_at_release, drop_at_release),
+            false => (confirm, drop_window),
+        };
+        self.record_focus_ack(ack.as_ref());
+        // the pointer watch's word on a drag that otherwise succeeded (`within.rs`)
+        let left = self.within_answer(within, "drag");
         if let Some((event, server)) = times {
             self.extra.insert(
                 "event_time".into(),
@@ -724,6 +1119,34 @@ impl Engine {
         }
         if let Some(scheduled) = scheduled {
             self.extra.insert("after_take".into(), scheduled);
+        }
+        if let Some((press, release)) = wall {
+            self.extra
+                .insert("wall".into(), json!({ "press_ms": press, "release_ms": release }));
+        }
+        // what the release at the accept saw (`--stats`): every change of the displayed cursor, with its image when known
+        if let Some(mut cursor) = cursor {
+            let mut record = accept_record.unwrap_or_else(|| json!({ "accepted": false }));
+            match cursor.finish().map(<[_]>::to_vec) {
+                Ok(changes) => {
+                    record["changes"] = json!(
+                        changes
+                            .iter()
+                            .map(|c| json!([
+                                c.serial,
+                                c.time,
+                                c.named,
+                                cursor.image_of(c.serial).map(|i| format!("{i:016x}"))
+                            ]))
+                            .collect::<Vec<_>>()
+                    );
+                }
+                Err(error) => record["error"] = json!(format!("{error:#}")),
+            }
+            if let Some(take) = hold.as_ref().and_then(|h| h.taken_time()) {
+                record["take_time"] = json!(take);
+            }
+            self.extra.insert("accept".into(), record);
         }
         // whether the target's client took `XdndSelection` by now: a drag and drop started, so no stray reset the press
         let mut taken = false;
@@ -744,28 +1167,111 @@ impl Engine {
             }
             (press.grab, press.strays)
         });
-        // what the watch says about a drag that otherwise succeeded: None, or its refusal
-        let watched = match strays {
+        // what the press watch says about a drag that otherwise succeeded: None, or its refusal
+        let watched_answer = match strays {
             Some((grab, strays)) => self.press_answer(pressing_into, grab, strays, taken, watch),
-            None => None,
+            None => left,
         };
-        let Some(mut guard) = guard else {
-            return match watched {
+        let Some(guard) = guard else {
+            // a Chromium drag the engine lets drop: its watch is handed over once the button went up with no take (the
+            // late take is the watch's to cancel and report), or after a take on a drop Chrome's activation request
+            // confirms; a drop under way that an Electron source's cursor did not confirm at the release, or that
+            // nothing can confirm (a Chrome source over a window not Chrome's, where the window manager takes the
+            // request), is pending unconfirmed at once, as a handle's is (`handle::confirming`); otherwise (no release,
+            // or a drop not judged) there is nothing more to watch
+            if let Some(after) = after {
+                let released = after.released_with_take();
+                // an Electron source's cursor at the release: the accept shown, or not (a watch that never started, a
+                // read that failed, or one that could not tell all confirm nothing)
+                let mut cursor = drop_cursor.as_ref().map(|watch| match (watch, &at_release) {
+                    (Ok(_), Some(read)) => read.accepted,
+                    _ => None,
+                });
+                // and an accept only over a window that takes drag and drop, put up after the pointer came into it:
+                // Chromium keeps its last status's accept when the path leaves for one that does not (the bare root, an
+                // xterm), or for one that has not answered yet, and drops nowhere (the design session's ruling,
+                // 2026-11-11; the third review, P2), as a handle's. The window is the one under the release: on an
+                // XTEST route where the real pointer was at the button-up, which a person's motion may have taken off
+                // the path's end (the third review, P3), and on the background route the path's end
+                let mut over_aware = None;
+                if cursor == Some(Some(true))
+                    && let Some(read) = &at_release
+                {
+                    let release = match (xtest_route, input.path.last()) {
+                        (true, _) => release_point,
+                        (false, Some(p)) => match input.window {
+                            Some(target) => self.x.desktop_position(target.id, p.x, p.y).ok(),
+                            None => Some((p.x, p.y)),
+                        },
+                        (false, None) => None,
+                    };
+                    let (held, mut over) = self.accept_held_to_release(read, release);
+                    over["read"] = json!(if xtest_route { "pointer" } else { "path_end" });
+                    over_aware = Some(over);
+                    cursor = Some(Some(held));
+                }
+                let confirming = super::handle::confirming(confirm, supported, cursor);
+                let by_cursor = cursor.map(|accepted| accepted == Some(true));
+                if let Some(watch) = &drop_cursor {
+                    self.extra.insert(
+                        "drop_cursor".into(),
+                        match (watch, &at_release) {
+                            (Ok(_), Some(read)) => read.record(),
+                            (Ok(_), None) => json!({ "read": false }),
+                            (Err(error), _) => json!({ "accepted": null, "error": error }),
+                        },
+                    );
+                }
+                self.extra.insert(
+                    "after_release".into(),
+                    json!({
+                        "released_with_take": released,
+                        "confirming": confirm.is_some(),
+                        "by_cursor": by_cursor,
+                        "confirmed_by": format!("{confirming:?}"),
+                        "drop_window": drop_window,
+                        "release_over": over_aware,
+                    }),
+                );
+                let window = watched.expect("a watched drag has its window");
+                let app = |x: &mut crate::x11::X11| {
+                    x.get_window(window)
+                        .map_or_else(|_| format!("window {window}"), |w| w.app)
+                };
+                match (released, confirming) {
+                    (Some(false), _) | (Some(true), super::handle::Confirming::Activation(_)) => {
+                        self.late_watch = Some(after.handed_over(app(&mut self.x)));
+                    }
+                    (Some(true), confirming) if confirming.unconfirmed() => {
+                        after.done();
+                        self.inputs.end_watched(&mut self.x);
+                        self.late_pending = Some((app(&mut self.x), crate::dnd::WatchEnd::Unconfirmed));
+                    }
+                    _ => {
+                        after.done();
+                        self.inputs.end_watched(&mut self.x);
+                    }
+                }
+            }
+            return match watched_answer {
                 Some(refusal) if dragged.is_ok() => Err(refusal),
                 _ => dragged.map(|()| Value::Null),
             };
         };
         let started = guard.watch.is_started();
         guard.watch.stop(&mut self.x);
-        let after = guard.after.take().expect("a guard starts its after-release watch");
+        let after = after.expect("a guard starts its after-release watch");
         let Some(outcome) = guard.outcome else {
             // the drag failed before anything was decided: its own error is the answer
             after.done();
+            self.inputs.end_watched(&mut self.x);
             self.extra
                 .insert("dnd".into(), json!({ "in_front": false, "started": started }));
             return dragged.map(|()| Value::Null);
         };
-        // no take by the release: answered now as a plain drag, the watch handed over until the next request
+        // no take by the release: answered now as a plain drag, the watch handed over until the next request, the drag's
+        // session left to it (`Engine::collect_late_watch` ends it); otherwise the session ends now, before the
+        // signature's look
         if outcome == Outcome::NoStart {
             let window = named.expect("a watched drag named its window");
             // the watch is handed over whatever the window's name reads as: a late take must still be reported
@@ -776,6 +1282,7 @@ impl Engine {
             self.late_watch = Some(after.handed_over(app));
         } else {
             after.done();
+            self.inputs.end_watched(&mut self.x);
         }
         // the cross-check of an in-time cancel: the drop's signature, where a change can show
         let window = named.expect("a watched drag named its window");
@@ -798,7 +1305,7 @@ impl Engine {
         match crate::dnd::answer(outcome, signature, &self.x.get_window(window)?.app) {
             Some(sentence) => bail!(sentence),
             // no drag and drop began: what the press watch saw decides
-            None => match watched {
+            None => match watched_answer {
                 Some(refusal) if dragged.is_ok() => Err(refusal),
                 _ => dragged.map(|()| Value::Null),
             },
@@ -806,7 +1313,7 @@ impl Engine {
     }
 
     /// Whether a window is of a Chromium family (`families::blink`).
-    fn blink(&mut self, window: x11rb::protocol::xproto::Window) -> bool {
+    pub(super) fn blink(&mut self, window: x11rb::protocol::xproto::Window) -> bool {
         self.family_of(window).is_some_and(|f| crate::families::blink(f.name))
     }
 
@@ -854,43 +1361,6 @@ impl Engine {
         self.extra.insert("press".into(), record);
         refusal
     }
-
-    /// `drag_handle`: desktop only; start, move and end are the JavaScript's to order (behaviour §10.5). The vendor's
-    /// events, with the drag's waits by family (`families.rs`) in place of the vendor's 8 ms between a held move's
-    /// points: the window under the start decides them, for the whole handle. The move to the start is the vendor's
-    /// own pointer move, as a desktop `drag`'s placing is.
-    pub(super) fn drag_handle(&mut self, input: Option<Value>) -> Result<Value> {
-        let input: DragHandleInput = parse_input(input)?;
-        match input {
-            DragHandleInput::Start { x: px, y: py } => {
-                let window = self.x.client_at(px, py);
-                let pacing = self.drag_pacing_for(window);
-                self.handle_pacing.start(pacing);
-                Desktop::move_path(&self.x, px, py)?;
-                Desktop::motion(&self.x, px, py)?;
-                Desktop::button(&self.x, 1, true)?;
-                std::thread::sleep(pacing.press);
-            }
-            DragHandleInput::MoveTo { x: px, y: py } => {
-                // a move with no start in this engine (the wire allows it): the window under the pointer decides
-                let pacing = match self.handle_pacing.current() {
-                    Some(pacing) => pacing,
-                    None => {
-                        let pointer = self.x.conn.query_pointer(self.x.root)?.reply()?;
-                        let window = self.x.client_at(pointer.root_x, pointer.root_y);
-                        let pacing = self.drag_pacing_for(window);
-                        self.handle_pacing.start(pacing)
-                    }
-                };
-                Desktop::move_path_paced(&self.x, px, py, pacing.step)?;
-            }
-            DragHandleInput::End => {
-                std::thread::sleep(self.handle_pacing.end().release);
-                Desktop::button(&self.x, 1, false)?;
-            }
-        }
-        Ok(Value::Null)
-    }
 }
 
 /// The wheel's own input checked as [`wheel`] checks it (`pixels`, then the chord), for the foreground route to check
@@ -911,16 +1381,24 @@ pub(super) fn wheel(x: &X11, route: &mut Route, at: Option<(i16, i16)>, input: &
     }
     let keycodes = chord(x, input.key.as_deref())?;
     if let Some((rx, ry)) = at {
+        route
+            .on_top_at(x, &[(rx, ry)])?
+            .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
         route.place(x, rx, ry)?;
     }
     let button = input.direction.button();
     let held = route.acquire(x, &keycodes)?;
     let mut scrolled = Ok(());
     for _ in 0..scroll_steps(pixels) {
-        scrolled = route.button(x, button, true).and_then(|()| {
-            std::thread::sleep(WHEEL_HOLD);
-            route.button(x, button, false)
-        });
+        // a wheel step asks no toolkit (Qt never activates on one, and its scrolls are refused in shared mode), but
+        // it is a press like any other, with its own acknowledgement
+        scrolled = press_ack(None, None, x, route, at)
+            .and_then(|ack| ack.map_err(anyhow::Error::msg))
+            .and_then(|pressing| route.press(x, button, pressing))
+            .and_then(|()| {
+                std::thread::sleep(WHEEL_HOLD);
+                route.release_button(x, button)
+            });
         if scrolled.is_err() {
             break;
         }
@@ -949,28 +1427,47 @@ mod tests {
         }
     }
 
+    /// T9's review kept Gecko's pause after a held move's leading motion until Firefox's held moves were measured; T11
+    /// measured them, and Chromium's as their controls (evidence `m4/drag-motion/`): a browser's held move rests at its
+    /// end and visits it again, with no pause after the leading motion; an unlisted family pauses nowhere.
     #[test]
-    fn a_drag_handle_keeps_the_pacing_its_start_found_until_its_end() {
-        let gecko = DragPacing {
-            step: Duration::from_micros(300),
-            press: Duration::ZERO,
-            release: Duration::from_millis(30),
+    fn a_browser_s_held_move_rests_at_its_end_with_no_lead_pause() {
+        use crate::desktop::{held_points, path_points, paused_before};
+        use crate::families::{FAMILIES, Toolkit, family};
+        let drag = |class: &str, toolkit: &str| {
+            let toolkit = Toolkit {
+                name: toolkit.into(),
+                version: None,
+            };
+            family(FAMILIES, Some(class), Some(&toolkit)).expect(class).drag
         };
-        let mut handle = HandlePacing::default();
-        assert_eq!(handle.current(), None, "no handle yet: the move looks its window up");
-        assert_eq!(handle.start(gecko), gecko);
-        assert_eq!(
-            handle.current(),
-            Some(gecko),
-            "every move of the handle keeps the start's family"
+        let start = (300, 300);
+        let points = path_points(start, (700, 500));
+        let pauses = |pacing: DragPacing| -> Vec<bool> {
+            (1..points.len())
+                .map(|i| paused_before(&points, start, i, pacing.held_lead_pause))
+                .collect()
+        };
+        for (class, toolkit) in [
+            ("firefox", "Gecko"),
+            ("Google-chrome", "Chromium"),
+            ("Electron", "Chromium"),
+        ] {
+            let pacing = drag(class, toolkit);
+            assert!(!pauses(pacing)[0], "{class}: no pause after the leading motion");
+            let rested = held_points(start, (700, 500), !pacing.held_rest.is_zero());
+            assert_eq!(rested.len(), points.len() + 1, "{class}");
+            assert_eq!(
+                rested[rested.len() - 2..],
+                [(700, 500), (700, 500)],
+                "{class}: the end, then the end again after the rest"
+            );
+        }
+        assert!(
+            !pauses(DragPacing::NONE)[0],
+            "an unlisted family pauses nowhere after it (nor does the desktop path)"
         );
-        assert_eq!(handle.end(), gecko, "the release waits as the family asks");
-        assert_eq!(handle.current(), None, "the end forgets it");
-        assert_eq!(
-            handle.end(),
-            DragPacing::NONE,
-            "an end without a start waits for nothing"
-        );
+        assert!(DragPacing::NONE.held_rest.is_zero(), "nor rests");
     }
 
     #[test]
@@ -1022,6 +1519,111 @@ mod tests {
         // a long straight path crosses early: the threshold, not the length, decides
         assert_eq!(press_samples(&drag_samples(&[(0, 0), (3000, 0)])), 5);
         assert_eq!(press_samples(&drag_samples(&[(0, 0), (2000, 2000)])), 7);
+    }
+
+    #[test]
+    fn a_resting_drag_rests_before_its_end_s_second_visit_and_at_each_sharp_corner() {
+        // a straight drag: the pinned build's samples, then the end once more after a rest
+        let straight = drag_plan(&[(200, 300), (240, 300)], true);
+        let mut samples = drag_samples(&[(200, 300), (240, 300)]);
+        samples.push((240, 300));
+        assert_eq!(straight.samples, samples);
+        assert_eq!(straight.rests, vec![41], "only before the end's second visit");
+        // the canvas path (drag.mjs CORNERS): the joints turn 139° and 65°, so the pointer rests at both, between the
+        // joint's two visits (the second visit is the next segment's first sample), and at the end
+        let corners = [(20, 20), (380, 40), (200, 180), (40, 100)];
+        let plan = drag_plan(&corners, true);
+        let first = drag_samples(&corners[..2]).len();
+        let second = drag_samples(&corners[1..3]).len();
+        assert_eq!(plan.samples.len(), drag_samples(&corners).len() + 1);
+        assert_eq!(plan.rests, vec![first, first + second, plan.samples.len() - 1]);
+        for &k in &plan.rests {
+            assert_eq!(
+                plan.samples[k],
+                plan.samples[k - 1],
+                "a rest is between two visits of one point"
+            );
+        }
+        // the drop's path turns 7° at its joint: a shallow joint is passed without a rest
+        let dnd = drag_plan(&[(410, 155), (440, 160), (660, 170)], true);
+        assert_eq!(dnd.rests, vec![dnd.samples.len() - 1]);
+        // a zero-length segment has no direction: no corner there
+        let still = drag_plan(&[(0, 0), (0, 0), (10, 0)], true);
+        assert_eq!(still.rests, vec![still.samples.len() - 1]);
+    }
+
+    #[test]
+    fn a_point_repeated_inside_a_resting_drag_s_path_neither_hides_its_corner_nor_rests_there_twice() {
+        // the bend at (200, 0) turns 90° whether or not the path names it twice: the turn is read between the distinct
+        // positions around it, and the rest comes once, after the bend's first visit, as without the repeat
+        let bend = [(0, 0), (200, 0), (200, 200)];
+        for repeated in [
+            vec![(0, 0), (200, 0), (200, 0), (200, 200)],
+            vec![(0, 0), (200, 0), (200, 0), (200, 0), (200, 200)],
+        ] {
+            let plan = drag_plan(&repeated, true);
+            let mut samples = drag_samples(&repeated);
+            samples.push((200, 200));
+            assert_eq!(
+                plan.samples, samples,
+                "the samples the path's own points give, the end's second visit last"
+            );
+            let first = drag_samples(&bend[..2]).len();
+            assert_eq!(plan.rests, vec![first, plan.samples.len() - 1], "{repeated:?}");
+            assert_eq!(plan.samples[first], (200, 0), "between two visits of the bend");
+            assert_eq!(plan.samples[first - 1], (200, 0));
+        }
+        // a straight path with a point repeated in it has no corner there
+        let straight = drag_plan(&[(0, 0), (100, 0), (100, 0), (200, 0)], true);
+        assert_eq!(straight.rests, vec![straight.samples.len() - 1]);
+        // a repeated end is no corner: the bend before it rests, and the end once, before its last visit
+        let end = drag_plan(&[(0, 0), (100, 0), (100, 100), (100, 100)], true);
+        assert_eq!(end.rests, vec![101, end.samples.len() - 1]);
+    }
+
+    #[test]
+    fn a_drag_on_its_floor_after_a_take_does_not_rest_again() {
+        let rests = [41];
+        assert!(rests_before(&rests, 41, false), "a planned rest");
+        assert!(!rests_before(&rests, 40, false), "no rest where none is planned");
+        assert!(
+            !rests_before(&rests, 41, true),
+            "the floor after a take spaces the steps to its end and holds the pointer there with keepalives"
+        );
+    }
+
+    #[test]
+    fn a_drag_that_does_not_rest_sends_the_pinned_build_s_samples() {
+        let corners = [(20, 20), (380, 40), (200, 180), (40, 100)];
+        let plan = drag_plan(&corners, false);
+        assert_eq!(plan.samples, drag_samples(&corners));
+        assert!(plan.rests.is_empty());
+    }
+
+    #[test]
+    fn by_elapsed_time_a_sample_is_due_a_step_after_the_last_was_due_and_a_rest_counts_from_the_last_sent() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let paced = |elapsed| DragPacing {
+            step: Duration::from_micros(500),
+            elapsed,
+            rest: ms(20),
+            ..DragPacing::NONE
+        };
+        // the previous sample was due at t0 and went out 300 µs late
+        let sent = t0 + Duration::from_micros(300);
+        assert_eq!(next_due(t0, sent, &paced(true), false), t0 + Duration::from_micros(500));
+        assert_eq!(
+            next_due(t0, sent, &paced(false), false),
+            sent + Duration::from_micros(500),
+            "per sample: a step after it went out"
+        );
+        // late by more than a step: due at once, so the motions catch up rather than add their own time
+        let late = t0 + ms(3);
+        assert!(next_due(t0, late, &paced(true), false) < late);
+        // a rest is a rest whatever the lateness: from when the point went out
+        assert_eq!(next_due(t0, late, &paced(true), true), late + ms(20));
+        assert_eq!(next_due(t0, late, &paced(false), true), late + ms(20));
     }
 
     #[test]

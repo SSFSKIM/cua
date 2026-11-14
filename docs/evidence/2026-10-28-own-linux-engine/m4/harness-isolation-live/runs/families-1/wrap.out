@@ -1,0 +1,20 @@
+family gedit: pinned at_spi/498/3181calls, newest at_spi/498/3181calls, cua at_spi/498/3181calls
+family gnome-text-editor: pinned at_spi/64/535calls, newest at_spi/64/535calls, cua at_spi/64/535calls
+family gtk4-button: pinned at_spi/3/40calls, newest at_spi/3/40calls, cua at_spi/3/40calls
+family gtk4-input: pinned at_spi/11/112calls, newest at_spi/11/112calls, cua at_spi/11/112calls
+family gtk-scale: pinned at_spi/2/18calls, newest at_spi/2/18calls, cua at_spi/2/18calls
+family gtk-table: pinned at_spi/41/931calls, newest at_spi/41/931calls, cua at_spi/41/929calls
+family qt5-input: pinned at_spi/1/13calls, newest at_spi/1/13calls, cua at_spi/1/13calls
+family qt6-input: pinned x11/1/2calls, newest x11/1/2calls, cua x11/1/2calls
+family qt5-breeze: pinned at_spi/2/22calls, newest at_spi/2/22calls, cua at_spi/2/22calls
+family qt5-fusion: pinned at_spi/2/22calls, newest at_spi/2/22calls, cua at_spi/2/22calls
+family kate: pinned x11/1/5calls, newest x11/1/5calls, cua at_spi/892/6855calls
+family qtcreator: pinned x11/1/2calls, newest x11/1/2calls, cua x11/1/2calls
+family firefox: pinned at_spi/68/550calls, newest at_spi/68/550calls, cua at_spi/68/550calls
+family writer: pinned at_spi/1964/14960calls, newest at_spi/1964/14960calls, cua at_spi/1964/14960calls
+family writer-gen: pinned x11/1/2calls, newest x11/1/2calls, cua x11/1/2calls
+family calc: pinned at_spi/2431/19847calls, newest at_spi/2431/19847calls, cua at_spi/2431/19845calls
+family xterm: pinned x11/2/2calls, newest x11/2/2calls, cua x11/2/2calls
+family xterm-allow: pinned x11/2/2calls, newest x11/2/2calls, cua x11/2/2calls
+family gnome-terminal: pinned at_spi/49/369calls, newest at_spi/49/369calls, cua at_spi/49/369calls
+{"exit": 0, "samples": 1354, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 318}

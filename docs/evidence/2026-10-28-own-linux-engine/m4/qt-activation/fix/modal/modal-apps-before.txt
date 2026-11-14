@@ -1,0 +1,23 @@
+kate [openbox]: dialog 8388628 'WM_TRANSIENT_FOR(WINDOW): window id # 0x800006\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 8388614; front 4194307
+kate [openbox] control 1: nothing sent, focus 4194307 active 4194307 (front 4194307)
+kate [openbox] control 2: nothing sent, focus 4194307 active 4194307 (front 4194307)
+kate [openbox] control 3: nothing sent, focus 4194307 active 4194307 (front 4194307)
+kate [openbox] press_key 1: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('8388628', '8388628')  <- moved
+kate [openbox] press_key 2: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('8388628', '8388628')  <- moved
+kate [openbox] press_key 3: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('8388628', '8388628')  <- moved
+kate [openbox] press_key 4: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('8388628', '8388628')  <- moved
+kate [openbox] press_key 5: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('8388628', '8388628')  <- moved
+kate [openbox]: the X focus or the active window moved off the front window after 5 of 5 background press_keys to the blocked main window
+Traceback (most recent call last):
+  File "<task61fix>/probes/modal-probe.py", line 63, in <module>
+    ids = json.loads(app.stdout.readline())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)

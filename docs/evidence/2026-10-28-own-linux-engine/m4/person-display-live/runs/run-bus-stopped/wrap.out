@@ -1,0 +1,4 @@
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+family gnome-text-editor
+family firefox
+{"exit": 143, "samples": 813, "maps_samples": 272, "flags": 3, "decoy_connections": 0, "leftovers": [{"pid": 3258003, "comm": "xprobe", "argv": "/Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xprobe/target/release/xprobe witness"}], "processes": 190, "browsers": 30}

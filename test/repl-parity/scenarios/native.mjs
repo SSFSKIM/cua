@@ -4,6 +4,7 @@ import {isFullNativeTree} from '../fixtures/native-state-oracle.mjs';
 // targets/linux/{create_client,element_ids,launch_app,perform_secondary_action}.js. M2's text oracle deliberately departs
 // from the vendor's GTK3 failure: successful return, the marker once, window alive (the #171 design's Acceptance 6).
 import assert from 'node:assert/strict';
+import {isDeepStrictEqual} from 'node:util';
 import {caseSchedule} from '../../../scripts/repl-parity/registry.mjs';
 const plan=new Map(caseSchedule().map(c=>[c.id,c])),scenarios=[];
 const report=result=>{assert.equal(result.isError,false);const text=result.content.filter(c=>c.type==='text').map(c=>c.text).join('');assert.ok(text.startsWith('NATIVE:'));return JSON.parse(text.slice(7));};
@@ -24,6 +25,39 @@ add('cua/getapp', ['null','"gedit"','{windowId:0}','{windowId:1.5}'].map(x=>take
 add('cua/listapps',take(`(async()=>{const all=await cua.listApps({emit:false});const found=all.find(a=>a.windows?.some(w=>w.id===nativeWindow.id));return {found:!!found,id:typeof found?.id,running:found?.isRunning,name:typeof found?.displayName,windows:Array.isArray(found?.windows)};})()`),[{found:true,id:'string',running:true,name:'string',windows:true}]);
 add('cua/listwindows',take(`(async()=>{const all=await cua.listWindows({emit:false});const found=all.find(w=>w.id===nativeWindow.id);return {found:!!found,id:Number.isSafeInteger(found?.id),app:typeof found?.app,title:typeof found?.title};})()`),[{found:true,id:true,app:'string',title:'string'}]);
 add('target-app-decorated-tab/getaxstate',take(`(async()=>{const a=await app.getAXState({emit:false,disableDiffing:false}),b=await app.getAXState({emit:false,disableDiffing:true});return {full:[a,b].every(v=>(${isFullNativeTree.toString()})(v,nativeFilename)),source:[a,b].every(v=>v.startsWith('Accessibility source: at_spi\\n')),owned:[a,b].every(v=>v.includes(nativeFilename))};})()`),[{full:true,source:true,owned:true}]);
+// getAXState on a minimized window (#171 M4's T4, Acceptance 7's minimized half), a named variant of the getAXState
+// case, which stays positive on both lanes (the inventory admits a member's variant only where a declared vendor defect
+// names it): the fixture minimizes the bound gedit once the bind has answered (a second owned gedit opened first takes the window manager's focus fallback, so the
+// person's windows never do). Through the real facade the window is listed with `minimized: true` (and no other window
+// is), the focus has fallen on the fixture's own window, getAXState returns its full tree, its screenshot is
+// unavailable, input is refused, and activate_window restores it, so the field goes and the screenshot comes back (the
+// controls). Error sentences have the window id and X sequence numbers taken out, so the lanes compare exactly. The
+// pinned vendor engine leaves a minimized window out of list_windows and cannot read it, so its lane fails this case,
+// declared (test/repl-parity/vendor-defects.json).
+const minimizedNorm=`var minimizedNorm=e=>({error:String(e?.message??e).replaceAll(String(nativeWindow.id),'<id>').replace(/sequence: \\d+/g,'sequence: <n>')});`;
+const minimizedListed=`(async()=>{const id=nativeWindow.id,front=nativeFilename.replace('cua-m4-','cua-m4front-');let end=Date.now()+10000,all;do{all=await cua.listWindows({emit:false});if(all.find(w=>w.id===id)?.minimized===true)break;await new Promise(r=>setTimeout(r,100));}while(Date.now()<end);return {listed:all.find(w=>w.id===id)?.minimized===true,others:all.filter(w=>w.id!==id).every(w=>!('minimized' in w)),focusedFront:all.find(w=>w.focused)?.title?.includes(front)===true};})()`;
+const minimizedRestored=`(async()=>{const id=nativeWindow.id;let end=Date.now()+10000,mine;do{mine=(await cua.listWindows({emit:false})).find(w=>w.id===id);if(mine&&!('minimized' in mine))break;await new Promise(r=>setTimeout(r,100));}while(Date.now()<end);return {restored:!!mine&&!('minimized' in mine)};})()`;
+add('target-app-decorated-tab/getaxstate/minimized',minimizedNorm+take(minimizedListed)
+ +take(`(async()=>{const a=await app.getAXState({emit:false,disableDiffing:false}),b=await app.getAXState({emit:false,disableDiffing:true});return {full:[a,b].every(v=>(${isFullNativeTree.toString()})(v,nativeFilename)),source:[a,b].every(v=>v.startsWith('Accessibility source: at_spi\\n')),owned:[a,b].every(v=>v.includes(nativeFilename))};})().catch(minimizedNorm)`)
+ +take(`app.getScreenshot({emit:false}).then(b=>({bytes:b.length>100}),minimizedNorm)`)
+ +take(`app.pressKey('x').then(()=>'sent',minimizedNorm)`)
+ +take(`cua.computer.activate_window({window:nativeWindow}).then(()=>'undefined',minimizedNorm)`)
+ +take(minimizedRestored)
+ +take(`app.getScreenshot({emit:false}).then(b=>({bytes:b.length>100}),minimizedNorm)`),
+ // each step's own message and nothing more, so a failing lane's recorded reason names the first fact that failed and
+ // a declared vendor defect matches it exactly
+ values=>{
+  const fact=(actual,expected,message)=>assert.ok(isDeepStrictEqual(actual,expected),message);
+  fact(values.length,7,'the case must record its seven steps');
+  fact(values[0],{listed:true,others:true,focusedFront:true},'the minimized window must be listed with minimized: true, no other window with the field, and the focus on the fixture\'s own window');
+  fact(values[1],{full:true,source:true,owned:true},'getAXState must return the minimized window\'s full tree');
+  fact(values[2],{error:'Screenshot unavailable for window <id>.'},'the minimized window\'s screenshot must be unavailable');
+  fact(values[3],{error:'Window <id> is minimized; activate it first'},'input to the minimized window must be refused as minimized');
+  fact(values[4],'undefined','activate_window must restore the minimized window without an error');
+  fact(values[5],{restored:true},'the restored window must lose the minimized field');
+  fact(values[6],{bytes:true},'the restored window must give a screenshot');
+ },
+ {fixtureMode:'minimized'});
 add('target-app-decorated-tab/getscreenshot',take(`(async()=>{const b=await app.getScreenshot({emit:false});await nodeRepl.emitImage({bytes:b,mimeType:'image/png'});return {bytes:b instanceof Uint8Array,nonempty:b.length>100};})()`),[{bytes:true,nonempty:true}],{image:true});
 add('target-app-decorated-tab/getaxstateandscreenshot',take(`(async()=>{const b=await app.getAXStateAndScreenshot({emit:false,disableDiffing:true});await nodeRepl.emitImage({bytes:b.screenshot,mimeType:'image/png'});return {state:(${isFullNativeTree.toString()})(b.state,nativeFilename),bytes:b.screenshot instanceof Uint8Array,nonempty:b.screenshot.length>100};})()`),[{state:true,bytes:true,nonempty:true}],{image:true});
 const witnessImport=`var witnesses=await import('@@CHECKOUT@@/test/repl-parity/fixtures/native-action-witness.mjs');var readOwnedText=()=>witnesses.nativeDocumentText(cua,nativeWindow);`;

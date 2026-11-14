@@ -1,0 +1,12 @@
+[package]
+name = "task41-flood"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "#171 task 41: load for a private X server under RECORD (recorded requests, delivered events, client churn) and a round-trip prober"
+
+[dependencies]
+x11rb = { version = "0.13.2", features = ["record"] }
+
+[profile.release]
+codegen-units = 1

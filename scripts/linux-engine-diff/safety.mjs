@@ -20,12 +20,14 @@
 // Every case's requests run inside witness spans; the bus calls of the whole phase are checked for PasteText,
 // InsertText and SetTextContents (run.mjs).
 
-import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 
-import { clipRead, grabs, startOwner, toplevel, waitQuarantineOver, within } from './clip.mjs';
+import { clipRead, grabsIn, startOwner, toplevel, waitQuarantineOver, watchGrabs, within } from './clip.mjs';
+import { verifiedScene, verifySceneIdentity } from './app-identity.mjs';
 import { Engine } from './engine.mjs';
+import { wmClass } from './families.mjs';
+import { foregroundStart } from './foreground-start.mjs';
 import { PAGES } from './scenes.mjs';
 import {
   CHANGED,
@@ -37,7 +39,7 @@ import {
   judgeUnconfirmed,
 } from './safety-judge.mjs';
 import { occurrences, pasted } from './text.mjs';
-import { judgeRouteSpan } from './witness.mjs';
+import { judgeAfterForeground, judgeRouteSpan } from './witness.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -49,25 +51,45 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * applies), judged by `judgeRouteSpan` against the route the engine reports it took (Decision Log, M2.2): the foreground
  * route's allowance only where both are the foreground route, and the in-front allowance only for a request the engine
  * recorded as made to a window already in front; after either, nothing may change once the request ends (a quiet span)
- * or stay grabbed, since what each allowance excuses is temporary. A route other than the expected one fails. Where
+ * or stay grabbed, since what each allowance excuses is temporary, except that after the foreground route the focus may
+ * still move within the target toplevel (witness.mjs `judgeAfterForeground`; task 53). The quiet span's report is
+ * answered as `after`. A route other than the expected one fails. Where
  * either allowance may apply, the target's top-level (its window manager frame) is read before the span, for the
- * restack judge. `probes` are the X reads, `toplevel` and `grabs` (clip.mjs), replaced in the display-free tests.
+ * restack judge, and a watch of every client's grabs is begun, so that what is still grabbed after the quiet span is
+ * read from the server's record rather than asked by grabbing (T4b's audit round). `probes` are the X reads,
+ * `toplevel`, `watchGrabs` and `within` (clip.mjs), replaced in the display-free tests.
  */
-export async function routeWitness(witness, tag, target, expected, fn, { inFront = false, opensWindows = false, pointerMoves = false, probes = { toplevel, grabs } } = {}) {
-  const frame = expected === 'foreground' || inFront ? probes.toplevel(target) : null;
-  const result = await witness.span(tag, fn);
-  const route = result.value?.stats?.route ?? null;
-  // the in-front allowance (witness.mjs): only for a case that declares it, and a request the engine recorded as made
-  // to a window already in front
-  const front = inFront && result.value?.stats?.dnd?.in_front === true;
-  const judged = allowPointer(judgeRouteSpan(result.report, { expected, reported: route, target, frame, focusWithin: (w) => within(w, target), inFront: front, opensWindows }), pointerMoves);
-  if (!judged.foreground && !judged.inFront) return { ...result, route, judged };
-  const quiet = await witness.span(`${tag}:after`, () => sleep(300));
-  const held = probes.grabs();
-  const fields = [...judged.fields];
-  if (!quiet.witness.clean) fields.push(...quiet.witness.fields.map((f) => `${f} after the request`));
-  if (held.pointer !== 'free' || held.keyboard !== 'free') fields.push(`grab left (${JSON.stringify(held)})`);
-  return { ...result, route, judged: { clean: fields.length === 0, fields, allowed: judged.allowed } };
+export async function routeWitness(witness, tag, target, expected, fn, { inFront = false, opensWindows = false, pointerMoves = false, probes = { toplevel, watchGrabs, within } } = {}) {
+  const allowance = expected === 'foreground' || inFront;
+  const frame = allowance ? probes.toplevel(target) : null;
+  const grabWatch = allowance ? await probes.watchGrabs() : null;
+  let stopped = false;
+  try {
+    const result = await witness.span(tag, fn);
+    const route = result.value?.stats?.route ?? null;
+    // the in-front allowance (witness.mjs): only for a case that declares it, and a request the engine recorded as made
+    // to a window already in front
+    const front = inFront && result.value?.stats?.dnd?.in_front === true;
+    const focusWithin = (w) => probes.within(w, target);
+    const judged = allowPointer(judgeRouteSpan(result.report, { expected, reported: route, target, frame, focusWithin, inFront: front, opensWindows }), pointerMoves);
+    if (!judged.foreground && !judged.inFront) {
+      stopped = true;
+      if (grabWatch) await grabWatch.stop();
+      return { ...result, route, judged };
+    }
+    const quiet = await witness.span(`${tag}:after`, () => sleep(300));
+    stopped = true;
+    const held = grabsIn(await grabWatch.stop());
+    const fields = [...judged.fields];
+    const after = judged.foreground ? judgeAfterForeground(quiet.report, { focusWithin }) : { ...quiet.witness, allowed: [] };
+    if (!after.clean) fields.push(...after.fields.map((f) => `${f} after the request`));
+    if (held.pointer !== 'free' || held.keyboard !== 'free') fields.push(`grab left (${JSON.stringify(held.held)})`);
+    const allowed = [...(judged.allowed ?? []), ...after.allowed.map((f) => `${f} after the request`)];
+    return { ...result, route, after: quiet.report, judged: { clean: fields.length === 0, fields, allowed } };
+  } finally {
+    // a request that threw: the watch is disposed of all the same (Decision Log, M2.3)
+    if (grabWatch && !stopped) grabWatch.kill();
+  }
 }
 
 /**
@@ -86,8 +108,8 @@ export function allowPointer(judged, pointerMoves) {
 /** A paste-target window (pages/paste-target.py) and what it reports; `hold(scene)` as soon as its program runs. */
 async function openTarget(desktop, mode, hold) {
   const label = desktop.label('target', mode.replace(/[^a-z0-9]+/gi, ''));
-  const child = spawn('python3', ['-I', join(PAGES, 'paste-target.py'), label, mode], { stdio: ['ignore', 'pipe', 'ignore'], detached: true });
-  child.unref();
+  // a scene application like any other: the run's environment, its stderr kept with the run's (scenes.mjs `spawnApp`)
+  const child = desktop.spawnApp(label, 'python3', ['-I', join(PAGES, 'paste-target.py'), label, mode], { stdout: 'pipe' });
   const reports = [];
   createInterface({ input: child.stdout }).on('line', (line) => {
     try {
@@ -233,8 +255,17 @@ export class Cases {
     return owner;
   }
 
-  /** A paste-target window, closed when the case ends unless the case closed it. */
-  target(mode) {
+  /**
+   * A paste-target window, closed when the case ends unless the case closed it, and verified as the harness's GTK 3
+   * paste target before the case counts (app-identity.mjs; a window refused is closed with the case).
+   */
+  async target(mode) {
+    const scene = await this.openTarget(mode);
+    scene.identity = await verifySceneIdentity(this.desktop, this.oracle, scene, 'paste-target', { wmClassOf: wmClass });
+    return scene;
+  }
+
+  openTarget(mode) {
     return openTarget(this.desktop, mode, (scene) =>
       this.defer(async () => {
         if (this.desktop.windows.includes(scene)) await this.desktop.close([scene]);
@@ -261,7 +292,8 @@ export class Cases {
     const { resolveField } = await import('./text.mjs');
     const scene = await this.desktop.openChrome(role, 'text.html', { stem: 'case', query: `paste=${paste}` });
     await resolveField(this.desktop, scene, 'chrome-textarea');
-    return scene;
+    // the run's Chrome, verified before the case counts (app-identity.mjs)
+    return verifiedScene(this.desktop, this.oracle, scene, 'chrome');
   }
 
   focusFirst(scene) {
@@ -554,6 +586,9 @@ export class Cases {
     await sleep(300);
     const marker = `cua171-${op}-${stamp()}`;
     const expected = dedicated ? 'foreground' : 'background';
+    // the foreground route's start, outside the span: the other clients' popups closed (foreground-start.mjs; the
+    // target, activated above, stays active)
+    const started = dedicated ? await foregroundStart(this.desktop, scene.id) : null;
     const span = await routeWitness(this.witness, `case:${op}`, scene.id, expected, () => engine.request('type_text', { window: { id: scene.id }, element_id: scene.field, text: marker }));
     await sleep(300);
     const after = textOf(this.oracle, scene.field);
@@ -579,7 +614,7 @@ export class Cases {
     }
     // the expected route, then its allowance (judgeRouteSpan): a route other than the expected one fails here
     if (!span.judged.clean) reasons.push(`the witness changed beyond the ${expected} route's allowance (${span.judged.fields.join(', ')})`);
-    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, route_expected: expected, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), witness_restacks: (span.report?.restacks ?? []).slice(0, 30), witness_focus: (span.report?.focus ?? []).slice(0, 30), paste });
+    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, route_expected: expected, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), witness_restacks: (span.report?.restacks ?? []).slice(0, 30), witness_focus: (span.report?.focus ?? []).slice(0, 30), paste, ...(started ? { foreground_start: started } : {}) });
   }
 }
 

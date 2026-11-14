@@ -1,0 +1,32 @@
+two-screens: Xorg on :1
+
+running 2 tests
+test a_drag_handle_ended_with_the_pointer_on_another_screen_releases_there_and_moves_nothing ... FAILED
+test an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing ... FAILED
+
+failures:
+
+---- a_drag_handle_ended_with_the_pointer_on_another_screen_releases_there_and_moves_nothing stdout ----
+
+thread 'a_drag_handle_ended_with_the_pointer_on_another_screen_releases_there_and_moves_nothing' (2010363) panicked at tests/live_device.rs:2534:5:
+assertion `left == right` failed: End: the release where the pointer is, no motion before it
+  left: [Motion { root: 1058, x: 200, y: 120 }, Motion { root: 1058, x: 200, y: 120 }, Release { root: 1058, x: 200, y: 120 }]
+ right: [Release { root: 1060, x: 200, y: 120 }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing stdout ----
+
+thread 'an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing' (2010371) panicked at tests/live_device.rs:2534:5:
+assertion `left == right` failed: Exit: the release where the pointer is, no motion before it
+  left: [Motion { root: 1058, x: 200, y: 120 }, Motion { root: 1058, x: 200, y: 120 }, Release { root: 1058, x: 200, y: 120 }]
+ right: [Release { root: 1060, x: 200, y: 120 }]
+
+
+failures:
+    a_drag_handle_ended_with_the_pointer_on_another_screen_releases_there_and_moves_nothing
+    an_exit_with_a_drag_handle_held_and_the_pointer_on_another_screen_releases_there_and_moves_nothing
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 32 filtered out; finished in 0.32s
+
+error: test failed, to rerun pass `--test live_device`
+exit 1

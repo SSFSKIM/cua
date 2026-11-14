@@ -1,0 +1,8 @@
+cua-engine 0.3.0 (aff8c0328186)
+0c5b82a3bd92f78152fe088017204df28471958804dbdef52fc621d8a6d7ecea  <task71>/build/aff8c0328186b6d16d6df5f4379fdccabf030f0b/src/native/linux-engine/target/x86_64-unknown-linux-musl/release/cua-engine
+start person3 2026-11-10T06:52:34Z loadavg 0.26 0.30 0.48
+owner pid=2546101 start=51157914
+tmproot left: []
+/tmp/cua171-run-* left: [/tmp/cua171-run-AdXsUJ /tmp/cua171-run-lLeOBG /tmp/cua171-run-q8ExPO ]
+owner side: no difference
+end person3 2026-11-10T07:12:06Z loadavg 0.56 0.57 0.56 status 0

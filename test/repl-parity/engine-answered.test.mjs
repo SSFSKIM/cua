@@ -179,3 +179,46 @@ test('expectedEngine: the vendor lane names the runtime\'s helper, the cua lane 
   assert.equal(expectedEngine({engine: 'cua', home, runtime}).expected, join(home, 'engine', 'linux', 'cua-engine'));
   assert.match(expectedEngine({engine: 'vendor', home, runtime: () => { throw new Error('no runtime'); }}).error, /no runtime/);
 });
+
+// #171 M4 T18: since T7b fix 4 the supervisor starts the trusted worker's launcher through `cua-engine launcher-shim`
+// (src/repl-host/kernel-child.mjs LAUNCHER_SHIM), a cua-engine that answers nothing. It is observed as the shim, by its
+// own command line, and counts only as the lane's expected engine under the supervisor; the engine that answered is
+// still the trusted worker's child.
+const SUPERVISOR = ['/home/u/.local/share/cua/node/bin/node', '--disable-sigusr1', '/c/src/repl-host/supervisor.mjs'];
+test('engineProcesses names the launcher shim by its own command line', () => {
+  const proc = fakeProc({
+    100: {ppid: 1, exe: '/usr/bin/node', cmdline: ['node', 'serve-native.mjs']},
+    101: {ppid: 100, exe: SUPERVISOR[0], cmdline: SUPERVISOR},
+    102: {ppid: 101, exe: OWN, cmdline: [OWN, 'launcher-shim', '101', '/usr/bin/bwrap', '--']},
+    103: {ppid: 102, exe: WORKER[0], cmdline: WORKER},
+    104: {ppid: 103, exe: OWN, cmdline: [OWN, 'server', '--desktop', 'shared']},
+    // a shim whose command line names a parent pid that is not its own
+    105: {ppid: 101, exe: OWN, cmdline: [OWN, 'launcher-shim', '999', '/usr/bin/bwrap']},
+  });
+  assert.deepEqual(engineProcesses(100, {proc}), [
+    {pid: 102, exe: OWN, kind: 'cua', parent: 'supervisor.mjs', service: null, role: 'launcher-shim', namesItsParent: true},
+    {pid: 104, exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs', service: null},
+    {pid: 105, exe: OWN, kind: 'cua', parent: 'supervisor.mjs', service: null, role: 'launcher-shim', namesItsParent: false},
+  ]);
+  const shim = {exe: OWN, kind: 'cua', parent: 'supervisor.mjs', service: 'cua'};
+  assert.equal(mergeObservations([{...shim, role: 'launcher-shim', namesItsParent: true}], [shim], [{...shim, role: 'launcher-shim', namesItsParent: false}]).length, 3,
+    'a shim, an engine of the same place and a shim naming another parent stay apart');
+});
+
+test('engineAnsweredProblem: the launcher shim counts only as the lane\'s engine under the supervisor', () => {
+  const own = {exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs', service: 'cua'};
+  const shim = {exe: OWN, kind: 'cua', parent: 'supervisor.mjs', service: 'cua', role: 'launcher-shim', namesItsParent: true};
+  assert.equal(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [shim, own]}, 'run'), null);
+  // a shim whose command line names another parent than its own fails
+  assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [{...shim, namesItsParent: false}, own]}, 'run'), /launcher shim names a parent pid that is not its own/);
+  // the shim answers nothing: a lane whose only cua-engine is the shim had no engine answer
+  assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [shim]}, 'run'), /^run: no engine process answered/);
+  // a shim of another executable, or under another parent, fails
+  assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [{...shim, exe: '/other/cua-engine'}, own]}, 'run'), /launcher shim \/other\/cua-engine .*not the lane's engine/);
+  assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [{...shim, parent: 'trusted-worker.mjs'}, own]}, 'run'), /launcher shim ran as a child of trusted-worker\.mjs, not of the supervisor/);
+  // on the vendor lane a cua-engine shim is not the lane's engine
+  const vendor = {exe: VENDOR, kind: 'vendor', parent: 'trusted-worker.mjs', service: 'vendor'};
+  assert.match(engineAnsweredProblem({requested: 'vendor', expected: VENDOR, observed: [shim, vendor]}, 'run'), /launcher shim .*cua-engine .*not the lane's engine/);
+  // a non-shim cua-engine under the supervisor still fails as before
+  assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [{...own, parent: 'supervisor.mjs'}, own]}, 'run'), /a child of supervisor\.mjs, not of the trusted worker/);
+});

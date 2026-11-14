@@ -1,0 +1,10 @@
+fatal: not a git repository (or any of the parent directories): .git
+| family | lane | scenario | runs | misses | passing streak at the end | verdict | raw misses | raw streak | median burst ms |
+|---|---|---|---:|---:|---:|---|---:|---:|---:|
+| kate | shipped | click-paste | 10 | 0 | 10 | 10 consecutive | 0 | 10 | 198.9 |
+
+| family | lane | scenario | engine flags | audit | FocusOuts attributed (deferred) | sessions as expected | problems |
+|---|---|---|---|---|---:|---|---|
+| kate | shipped | click-paste | – | **not clean** | 0 (0) | **no** | input to 0xc00006 outside a session (EnterNotify); input to 0xc00006 outside a session (MotionNotify); input to 0xc00006 outside a session (EnterNotify); input to 0xc00006 outside a session (MotionNotify); input to 0xc00006 outside a session (ButtonPress); input to 0xc00006 outside a session (ButtonRelease); input to 0xc00006 outside a session (KeyPress); input to 0xc00006 outside a session (KeyPress); input to 0xc00006 outside a session (KeyRelease); input to 0xc00006 outside a session (KeyRelease) |
+
+**Incomplete or failed:** kate click-paste: a development series of 10, not the 30 the proof needs; kate shipped click-paste: the audit is not clean.

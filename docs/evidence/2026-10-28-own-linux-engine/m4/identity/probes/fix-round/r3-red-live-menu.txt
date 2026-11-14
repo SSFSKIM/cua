@@ -1,0 +1,29 @@
+   Compiling cua-linux-engine v0.3.0 (/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/native/linux-engine)
+    Finished `release` profile [optimized] target(s) in 49.73s
+     Running unittests src/main.rs (target/release/deps/cua_engine-70057b6b8a99fa9b)
+
+running 1 test
+test engine::identity_faults::a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing ... dbus-daemon[1967756]: [session uid=501 pid=1967756] Activating service name='org.a11y.Bus' requested by ':1.0' (uid=501 pid=1968223 comm="python3 -c import gi; gi.require_version('Gtk', '3" label="unconfined")
+dbus-daemon[1967756]: [session uid=501 pid=1967756] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[1968231]: Activating service name='org.a11y.atspi.Registry' requested by ':1.1' (uid=501 pid=1968232 comm="python3 /Users/new/Developer/GitHub/cua/.claude/wo" label="unconfined")
+dbus-daemon[1968231]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+FAILED
+
+failures:
+
+---- engine::identity_faults::a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing stdout ----
+
+thread 'engine::identity_faults::a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing' (1968222) panicked at src/engine/identity_faults.rs:645:5:
+assertion `left == right` failed: the clipboard now holds "menu-copy-1"
+  left: Ok(String("1968221-1793654117644145811-1"))
+ right: Err("the focused element of X11 window 4194318 copies only through a context menu, and a context menu cannot be shown to belong to this window, whose accessibility frame was found by its position among same-title duplicates; nothing was sent")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    engine::identity_faults::a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 289 filtered out; finished in 0.37s
+
+error: test failed, to rerun pass `--bin cua-engine`

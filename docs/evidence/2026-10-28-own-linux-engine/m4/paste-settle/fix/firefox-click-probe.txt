@@ -1,0 +1,8 @@
+text "seedxyz" caret 7 origin {"app":"firefox","focused":false,"height":600,"id":12582915,"modal":false,"title":"cua171-diff-fxdebug-f93a016d-firefox-focus-a — Mozilla Firefox","width":620,"window_type":"normal","x":1,"y":20}
+char0 {"x":0,"y":0,"w":0,"h":0} field {"x":-1,"y":-1,"w":-1,"h":-1}
+node {"actions":["activate"],"children":[],"id":":1.0:/org/a11y/atspi/accessible/67","name":"Field","role":"entry","states":["editable","enabled","focusable","focused","sensitive","showing","visible"],"value":"seedxyz"}
+click 15 315 {"id":10,"ok":true,"output":null,"error":null,"restart":false} caret 8 text after Q "seedxyzq"
+click 18 317 {"id":13,"ok":true,"output":null,"error":null,"restart":false} caret 9 text after Q "seedxyzqq"
+click 52 345 {"id":16,"ok":true,"output":null,"error":null,"restart":false} caret 10 text after Q "seedxyzqqq"
+element click {"id":19,"ok":true,"output":null,"error":null,"restart":false} caret 10
+watchdog true

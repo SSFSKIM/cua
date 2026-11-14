@@ -1,0 +1,24 @@
+qt5 [none] click 1: before ('2097155', 'none'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('6291472', 'none')  <- moved
+qt5 [none] click 2: before ('2097155', 'none'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('6291477', 'none')  <- moved
+qt5 [none] click 3: before ('2097155', 'none'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('6291482', 'none')  <- moved
+qt5 [none] click 4: before ('2097155', 'none'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('6291487', 'none')  <- moved
+qt5 [none] click 5: before ('2097155', 'none'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('6291492', 'none')  <- moved
+qt5 [none]: a background click that opened a modal dialog moved the focus or the active window off the front window 5 of 5 times
+qt6 [none] click 1: before ('2097155', 'none'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('6291472', 'none')  <- moved
+qt6 [none] click 2: before ('2097155', 'none'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('6291477', 'none')  <- moved
+qt6 [none] click 3: before ('2097155', 'none'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('6291482', 'none')  <- moved
+qt6 [none] click 4: before ('2097155', 'none'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('6291487', 'none')  <- moved
+qt6 [none] click 5: before ('2097155', 'none'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('6291492', 'none')  <- moved
+qt6 [none]: a background click that opened a modal dialog moved the focus or the active window off the front window 5 of 5 times
+qt5 [openbox] click 1: before ('4194307', '4194307'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('8388624', '8388624')  <- moved
+qt5 [openbox] click 2: before ('4194307', '4194307'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('8388629', '8388629')  <- moved
+qt5 [openbox] click 3: before ('4194307', '4194307'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('8388634', '8388634')  <- moved
+qt5 [openbox] click 4: before ('4194307', '4194307'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('8388639', '8388639')  <- moved
+qt5 [openbox] click 5: before ('4194307', '4194307'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('8388644', '8388644')  <- moved
+qt5 [openbox]: a background click that opened a modal dialog moved the focus or the active window off the front window 5 of 5 times
+qt6 [openbox] click 1: before ('4194307', '4194307'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('8388624', '8388624')  <- moved
+qt6 [openbox] click 2: before ('4194307', '4194307'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('8388629', '8388629')  <- moved
+qt6 [openbox] click 3: before ('4194307', '4194307'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('8388634', '8388634')  <- moved
+qt6 [openbox] click 4: before ('4194307', '4194307'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('8388639', '8388639')  <- moved
+qt6 [openbox] click 5: before ('4194307', '4194307'), answer {"id":1,"ok":true,"output":null,"error":null,"restart":false}, after ('8388644', '8388644')  <- moved
+qt6 [openbox]: a background click that opened a modal dialog moved the focus or the active window off the front window 5 of 5 times

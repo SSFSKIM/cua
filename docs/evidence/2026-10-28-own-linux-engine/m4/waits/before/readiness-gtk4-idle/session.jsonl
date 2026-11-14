@@ -1,0 +1,8 @@
+{"t":"2026-11-07T17:19:03.623Z","kind":"server","display":":1","pid":4062026}
+{"t":"2026-11-07T17:19:03.999Z","kind":"setup","openbox":4062033,"person":"8388620"}
+{"t":"2026-11-07T17:19:04.056Z","kind":"run-end","code":2,"signal":null}
+{"t":"2026-11-07T17:19:05.073Z","kind":"server-stopped","clean":true,"reason":null}
+{"t":"2026-11-07T17:19:25.535Z","kind":"server","display":":1","pid":4062327}
+{"t":"2026-11-07T17:19:25.911Z","kind":"setup","openbox":4062334,"person":"8388620"}
+{"t":"2026-11-07T17:20:41.289Z","kind":"run-end","code":0,"signal":null}
+{"t":"2026-11-07T17:20:42.302Z","kind":"server-stopped","clean":true,"reason":null}

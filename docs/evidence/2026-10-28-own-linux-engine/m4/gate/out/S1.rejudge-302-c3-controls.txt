@@ -1,0 +1,15 @@
+ok   m4-gate-S1 as stored (must PASS): PASS
+ok   m4-gate-S1: a family skipped as the run records it (its cells could not be opened) (chrome): FAIL (run problems: the step's cells with no series: chrome-input press_key background (shipped, load 0), chrome-input key_down background (shipped, load 0), chrome-input key_up background (shipped, load 0), chrome-input click background (shipped, load 0), chrome-input click_element background (shipped, load 0), chrome-input right_click background (shipped, load 0), chrome-input secondary_action backgro)
+ok   m4-gate-S1: a family's rows gone, the run's failures as stored (chrome): FAIL (run problems: the step's cells with no series: chrome-input press_key background (shipped, load 0), chrome-input key_down background (shipped, load 0), chrome-input key_up background (shipped, load 0), chrome-input click background (shipped, load 0), chrome-input click_element background (shipped, load 0), chrome-input right_click background (shipped, load 0), chrome-input secondary_action backgro)
+ok   m4-gate-S1: a change to a window the experiment did not open, at its cleanup: FAIL (run problems: the run's own failure: a window the experiment did not open was changed: the harness: 0x00a00003 ConfigureWindow (raised))
+ok   m4-gate-S1: the private display's watchdog failed: FAIL (run problems: the run's own failure: the private display's watchdog: it stalled for 2.1 s)
+ok   m4-gate-S1: a background cell's audit gone: FAIL (run problems: the step's background cells with no audit: chrome-input press_key background)
+ok   m4-gate-S1 electron-input press_key background, trial 2: a lost key: no late reading: FAIL (trial 2: fail: class never)
+ok   m4-gate-S1 electron-input press_key background, trial 2: criterion 1: no key-down in the settle: FAIL (trial 2: fail: criterion 1: key_downs 2 -> 2, last_key x)
+ok   m4-gate-S1 electron-input press_key background, trial 2: criterion 2: the key-up already counted, yet not ok: FAIL (trial 2: fail: criterion 2: key_ups 2 -> 3, late_ms 207.4)
+ok   m4-gate-S1 electron-input press_key background, trial 2: criterion 3: the next before-read still one release short: FAIL (trial 2: fail: criterion 3: next before-read (electron-input press_key background trial 3) key_ups 2, key_downs 3)
+ok   m4-gate-S1 electron-input press_key background, trial 2: a refusal: FAIL (trial 2: fail: class refused)
+ok   m4-gate-S1 electron-input press_key background, trial 2: the desktop changed (desktop_clean false): FAIL (trial 2: fail: the desktop changed)
+ok   m4-gate-S1 electron-input press_key background, trial 2: its front window not active (front_active false): FAIL (trial 2: fail: the desktop changed)
+     m4-gate-S1 electron-input press_key desktop: no #302 run, no control
+controls: every one as expected

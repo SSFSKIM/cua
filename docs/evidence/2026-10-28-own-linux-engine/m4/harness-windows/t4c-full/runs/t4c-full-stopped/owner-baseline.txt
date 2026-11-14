@@ -1,0 +1,7 @@
+owner pid=2546101 start=51157914
+tmproot /tmp/c50-Jnjtpo
+args: --dev --vendor /Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/task42/engine/cua-engine --scene desktop,gedit,chrome,chrome-input,over-budget,retention,chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target,device-gtk4,device-firefox,device-xterm,device-qt,device-chrome,device-chrome-dnd,identity,identity-gtk3,identity-gtk4,identity-kate,minimized,minimized-xterm,minimized-recorder --ops all --blocks 3 --run task50-t4c-full
+started 2026-11-03T13:54:11Z finished 2026-11-03T13:58:59Z wrap exit 1
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side: no difference

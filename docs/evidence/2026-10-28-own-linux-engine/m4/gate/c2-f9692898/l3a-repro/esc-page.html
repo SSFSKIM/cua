@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 matrix scene, escape log</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  #press { position: absolute; left: 0; top: 0; width: 100vw; height: 40vh; font-size: 32px;
+           appearance: none; background: #dddddd; border: 1px solid #888888; color: #000000; }
+  #field { position: absolute; left: 12px; top: 44vh; width: 80vw; height: 40vh; font: 16px monospace; }
+  #esc { position: absolute; left: 12px; top: 88vh; margin: 0; }
+</style>
+</head>
+<body>
+<!-- Task 77's L3a Escape check: the harness's matrix.html (scripts/linux-engine-diff/pages/matrix.html) unchanged, with one
+     line more that counts, in its accessible name, every Escape keydown the page receives (captured on the document) and
+     every contextmenu event, so the check can tell whether an Escape sent to the window reached the page. -->
+<button id="press" type="button" tabindex="-1">presses 0</button>
+<textarea id="field" aria-label="Field" autofocus autocomplete="off" spellcheck="false"></textarea>
+<p id="esc" aria-label="esc 0 menus 0">esc 0 menus 0</p>
+<script>
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  let presses = 0;
+  const press = document.getElementById('press');
+  press.addEventListener('mousedown', (e) => e.preventDefault());
+  press.addEventListener('click', () => {
+    press.textContent = `presses ${++presses}`;
+  });
+  let escapes = 0;
+  let menus = 0;
+  const line = document.getElementById('esc');
+  const show = () => {
+    const text = `esc ${escapes} menus ${menus}`;
+    line.textContent = text;
+    line.setAttribute('aria-label', text);
+  };
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      escapes += 1;
+      show();
+    }
+  }, true);
+  document.addEventListener('contextmenu', () => {
+    menus += 1;
+    show();
+  }, true);
+</script>
+</body>
+</html>

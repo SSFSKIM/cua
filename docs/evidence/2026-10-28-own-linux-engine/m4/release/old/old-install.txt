@@ -1,0 +1,25 @@
+== old-install: checkout /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171 at 4d3085b3718654027dbac62ac647c95b88765e88, pin linux-engine-v0.3.0 5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60; home <home>
+installing 26.928.40906-linux-x64 from https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_amd64.deb
+installed and activated 26.928.40906-linux-x64 at <home>/cua/runtimes/26.928.40906-linux-x64
+installed cua's sandbox helper at <home>/cua/sandbox/rust-v0.163.0/codex-linux-sandbox
+installed cua's Linux engine 0.3.0 (linux-engine-v0.3.0) at <home>/cua/engine/linux/cua-engine
+installing Node 24.22.0 for cua's own REPL host from https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz
+installed Node 24.22.0 for cua's own REPL host at <home>/cua/node/24.22.0
+install exit 0
+-rwxr-xr-x 1 new new 1692384 Nov 14 12:06 <home>/cua/engine/linux/cua-engine
+<home>/cua/engine/linux/cua-engine: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=90faf1ec54b9383c7a60e490d747c5b3f2dce639, stripped
+cua-engine 0.3.0 (cd4c929758ca)
+sha256 5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60
+pin    5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60 (linux-engine-v0.3.0)
+== install.json
+{
+  "schema": 1,
+  "build": "pinned",
+  "version": "0.3.0",
+  "release": "linux-engine-v0.3.0",
+  "sha256": "5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60",
+  "source": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.3.0/cua-engine-0.3.0-linux-x64",
+  "installedAt": "2026-11-14T20:06:22.667Z"
+}
+
+the home's engine is linux-engine-v0.3.0's x64 asset (5f4a1600…)

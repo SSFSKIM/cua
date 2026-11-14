@@ -1,0 +1,10 @@
+stress-ng: 0
+cell 1 true keys [50]
+tree [["anchor",1727876,"S"],["supervisor",1727882,"S"],["kernel",1727898,"S"],["worker",1727909,"S"],["engine",1727918,"S"]]
+cua serve stopped
+supervisor SIGKILLed
+left after 3 s: [["anchor",1727876,"S"]]
+keys after []
+stopped after [[1727863,"node"]]
+{"summary":"pre-t7b-unheld-disabled","mode":"unheld","left":[]}
+exit 0

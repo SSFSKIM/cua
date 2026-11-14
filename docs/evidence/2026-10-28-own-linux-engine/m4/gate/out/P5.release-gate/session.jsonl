@@ -1,0 +1,4 @@
+{"t":"2026-11-13T17:39:09.392Z","label":"release gate","kind":"server","display":":1","pid":1024525}
+{"t":"2026-11-13T17:39:09.761Z","label":"release gate","kind":"setup","openbox":1024534,"person":"8388620"}
+{"t":"2026-11-13T17:57:52.619Z","label":"release gate","kind":"run-end","code":0,"signal":null}
+{"t":"2026-11-13T17:57:53.633Z","label":"release gate","kind":"server-stopped","clean":true,"reason":null}

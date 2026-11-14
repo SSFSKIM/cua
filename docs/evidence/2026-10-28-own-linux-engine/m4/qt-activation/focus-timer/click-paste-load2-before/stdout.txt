@@ -1,0 +1,16 @@
+fatal: not a git repository (or any of the parent directories): .git
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+XGetWindowProperty[_NET_ACTIVE_WINDOW] failed (code=1)
+| family | lane | scenario | runs | misses | passing streak at the end | verdict | raw misses | raw streak | median burst ms |
+|---|---|---|---:|---:|---:|---|---:|---:|---:|
+| kate | shipped | click-paste | 60 | 14 | 1 | **not reached** (desktop 14) | 14 | 1 | 134.6 |
+| qtcreator | shipped | click-paste | 60 | 19 | 0 | **not reached** (desktop 19) | 19 | 0 | 228.1 |
+
+| family | lane | scenario | engine flags | audit | FocusOuts attributed (deferred) | sessions as expected | problems |
+|---|---|---|---|---|---:|---|---|
+| kate | shipped | click-paste | – | **not clean** | 0 (0) | **no** | 0xe00006's session was never closed; 0 FocusOut in the trace and 2 reported by the engine |
+| qtcreator | shipped | click-paste | – | clean | 2 (0) | yes | – |
+
+**Incomplete or failed:** kate click-paste: no 30 consecutive passing runs in 60; qtcreator click-paste: no 30 consecutive passing runs in 60; kate shipped click-paste: the audit is not clean.

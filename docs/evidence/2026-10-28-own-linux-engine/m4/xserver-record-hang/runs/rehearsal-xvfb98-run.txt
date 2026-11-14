@@ -1,0 +1,4 @@
+xvfb 2343481 on :98; rec /Users/new/.local/share/cua-171/task41/xprobe-e54658b8 (da72e17c4433); floods 2 batch 30 churn 20 pause 1 flood-args 5 5 200000; secs 1800
+result: stall after 43 s, 400 cycles
+STALL no answer in 5000 ms at 1793672157375
+xvfb: 20.2 70256

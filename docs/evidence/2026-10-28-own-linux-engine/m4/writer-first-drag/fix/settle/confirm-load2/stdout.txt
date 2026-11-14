@@ -1,0 +1,8 @@
+fatal: not a git repository (or any of the parent directories): .git
+| cell | lane | runs | misses (late / never / refused / invalid) | streak at the end | verdict |
+|---|---|---:|---|---:|---|
+| writer drag background | shipped | 30 | 0 (0 / 0 / 0 / 0) | 30 | 30 consecutive |
+
+| cell | audit | requests | runs that ran their input | effects missed |
+|---|---|---:|---:|---:|
+| writer drag background | clean | 1829 | 5 of 5 | 0 |

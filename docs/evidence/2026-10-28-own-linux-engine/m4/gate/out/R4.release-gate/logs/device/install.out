@@ -1,0 +1,6 @@
+installing 26.928.40906-linux-x64 from https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_amd64.deb
+installed and activated 26.928.40906-linux-x64 at /tmp/cua171-gl-OU7iQt/device/home/cua/runtimes/26.928.40906-linux-x64
+installed cua's sandbox helper at /tmp/cua171-gl-OU7iQt/device/home/cua/sandbox/rust-v0.163.0/codex-linux-sandbox
+installed cua's Linux engine 0.3.0 (linux-engine-v0.3.0) at /tmp/cua171-gl-OU7iQt/device/home/cua/engine/linux/cua-engine
+installing Node 24.22.0 for cua's own REPL host from https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz
+installed Node 24.22.0 for cua's own REPL host at /tmp/cua171-gl-OU7iQt/device/home/cua/node/24.22.0

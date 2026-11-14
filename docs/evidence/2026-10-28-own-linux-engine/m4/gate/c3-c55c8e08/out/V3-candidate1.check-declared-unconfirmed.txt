@@ -1,0 +1,89 @@
+# m4-gate-V3: chrome-input's declared unconfirmed cells, checked row by row (rulings 688, 691)
+label: release gate; candidate f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937 (cua-engine 0.4.0 (514f5c62dd6c)); /Users/new/.local/share/cua-171/gate/out/V3.release-gate/run/results.jsonl
+
+| cell | samples (timed) | 1. menuUnconfirmed | 2. context rose | 3. witness unchanged | all three | audit | stored verdict | holds |
+|---|---|---|---|---|---|---|---|---|
+| chrome-input right_click_fallback cua | 40 (40) | 0/40 | 40/40 | 40/40 | 0/40 | NOT as declared | pass | NO |
+  not all three: block 0 cold 0: ok true, error null, effect true, witness true
+  not all three: block 0 warm 1: ok true, error null, effect true, witness true
+  not all three: block 0 warm 2: ok true, error null, effect true, witness true
+  not all three: block 0 warm 3: ok true, error null, effect true, witness true
+  not all three: block 0 warm 4: ok true, error null, effect true, witness true
+  not all three: block 0 warm 5: ok true, error null, effect true, witness true
+  not all three: block 1 cold 0: ok true, error null, effect true, witness true
+  not all three: block 1 warm 1: ok true, error null, effect true, witness true
+  not all three: block 1 warm 2: ok true, error null, effect true, witness true
+  not all three: block 1 warm 3: ok true, error null, effect true, witness true
+  not all three: block 1 warm 4: ok true, error null, effect true, witness true
+  not all three: block 1 warm 5: ok true, error null, effect true, witness true
+  not all three: block 2 cold 0: ok true, error null, effect true, witness true
+  not all three: block 2 warm 1: ok true, error null, effect true, witness true
+  not all three: block 2 warm 2: ok true, error null, effect true, witness true
+  not all three: block 2 warm 3: ok true, error null, effect true, witness true
+  not all three: block 2 warm 4: ok true, error null, effect true, witness true
+  not all three: block 2 warm 5: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 warm 1: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 warm 2: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 warm 3: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 warm 4: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 warm 5: ok true, error null, effect true, witness true
+  not all three: block topup-0-1 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-2 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-3 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-4 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-5 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-6 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-7 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-8 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-9 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-10 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-11 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-12 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-13 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-14 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-15 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-16 cold 0: ok true, error null, effect true, witness true
+| chrome-input secondary_action cua | 40 (40) | 0/40 | 40/40 | 40/40 | 0/40 | NOT as declared | pass | NO |
+  not all three: block 0 cold 0: ok true, error null, effect true, witness true
+  not all three: block 0 warm 1: ok true, error null, effect true, witness true
+  not all three: block 0 warm 2: ok true, error null, effect true, witness true
+  not all three: block 0 warm 3: ok true, error null, effect true, witness true
+  not all three: block 0 warm 4: ok true, error null, effect true, witness true
+  not all three: block 0 warm 5: ok true, error null, effect true, witness true
+  not all three: block 1 cold 0: ok true, error null, effect true, witness true
+  not all three: block 1 warm 1: ok true, error null, effect true, witness true
+  not all three: block 1 warm 2: ok true, error null, effect true, witness true
+  not all three: block 1 warm 3: ok true, error null, effect true, witness true
+  not all three: block 1 warm 4: ok true, error null, effect true, witness true
+  not all three: block 1 warm 5: ok true, error null, effect true, witness true
+  not all three: block 2 cold 0: ok true, error null, effect true, witness true
+  not all three: block 2 warm 1: ok true, error null, effect true, witness true
+  not all three: block 2 warm 2: ok true, error null, effect true, witness true
+  not all three: block 2 warm 3: ok true, error null, effect true, witness true
+  not all three: block 2 warm 4: ok true, error null, effect true, witness true
+  not all three: block 2 warm 5: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 warm 1: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 warm 2: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 warm 3: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 warm 4: ok true, error null, effect true, witness true
+  not all three: block topup-0-0 warm 5: ok true, error null, effect true, witness true
+  not all three: block topup-0-1 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-2 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-3 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-4 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-5 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-6 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-7 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-8 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-9 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-10 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-11 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-12 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-13 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-14 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-15 cold 0: ok true, error null, effect true, witness true
+  not all three: block topup-0-16 cold 0: ok true, error null, effect true, witness true
+
+VERDICT (declared unconfirmed, listed apart, never a pass): DOES NOT HOLD for 0 of 2 cells

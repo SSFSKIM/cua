@@ -1,0 +1,28 @@
+000:>:0315: Event Expose(12) window=0x00c00006 x=0 y=0 width=900 height=700 count=0x0000
+000:>:0315: Event (generated) FocusIn(9) detail=Nonlinear(0x03) event=0x00c00006 mode=Normal(0x00)
+000:<:0316: 20: Request(59): SetClipRectangles ordering=YXBanded(0x03) gc=0x00c00016 clip-x-origin=0 clip-y-origin=0 rectangles={x=0 y=0 w=900 h=700};
+000:<:0317: 40: MIT-SHM-Request(130,3): PutImage drawable=0x00c00006 gc=0x00c00016 total-width=900 total-height=700 src-x=0 src-y=0 src-width=900 src-height=700 dst-x=0 dst-y=0 depth=24 format=ZPixmap(0x02) send-event=false(0x00) shmseg=0x00c00014 offset=0x00000000
+000:>:0317: Event (generated) EnterNotify(7) detail=Nonlinear(0x03) mode=Normal(0x00) flags=same-screen time=0x2b224960 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=0
+000:<:0318: 16: Request(56): ChangeGC gc=0x00c00016 values={clip-mask=None(0x00000000)}
+000:>:0318: Event (generated) MotionNotify(6) detail=Normal(0x00) time=0x2b224960 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=0 same-screen=true(0x01)
+000:>:0318: Event (generated) EnterNotify(7) detail=Nonlinear(0x03) mode=Normal(0x00) flags=same-screen time=0x2b224961 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=0
+000:>:0318: Event (generated) MotionNotify(6) detail=Normal(0x00) time=0x2b224961 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=0 same-screen=true(0x01)
+000:>:0318: Event (generated) ButtonPress(4) button=left button(0x01) time=0x2b224961 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=0 same-screen=true(0x01)
+000:<:0319:  4: Request(43): GetInputFocus 
+000:>:0319:32: Reply to GetInputFocus: revert-to=PointerRoot(0x01) focus=0x00a0000c
+000:<:031a: 20: Request(59): SetClipRectangles ordering=YXBanded(0x03) gc=0x00c00016 clip-x-origin=0 clip-y-origin=0 rectangles={x=0 y=0 w=900 h=700};
+000:<:031b: 40: MIT-SHM-Request(130,3): PutImage drawable=0x00c00006 gc=0x00c00016 total-width=900 total-height=700 src-x=0 src-y=0 src-width=900 src-height=700 dst-x=0 dst-y=0 depth=24 format=ZPixmap(0x02) send-event=false(0x00) shmseg=0x00c00014 offset=0x00000000
+000:<:031c: 16: Request(56): ChangeGC gc=0x00c00016 values={clip-mask=None(0x00000000)}
+000:<:031d: 28: Request(18): ChangeProperty mode=Replace(0x00) window=0x00c00006 property=0x118("_NET_WM_USER_TIME") type=0x6("CARDINAL") data=0x2b224961;
+000:<:031e:  8: Request(38): QueryPointer window=0x000001ff
+000:>:031e: Event PropertyNotify(28) window=0x00c00006 atom=0x118("_NET_WM_USER_TIME") time=0x2b22496c state=NewValue(0x00)
+000:>:031e:32: Reply to QueryPointer: same-screen=true(0x01) root=0x000001ff child=0x00600139 root-x=640 root-y=400 win-x=640 win-y=400 mask=0
+000:>:031e: Event (generated) ButtonRelease(5) button=left button(0x01) time=0x2b22496d root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=Button1 same-screen=true(0x01)
+000:>:031e: Event (generated) FocusOut(10) detail=Nonlinear(0x03) event=0x00c00006 mode=Normal(0x00)
+000:<:031f:  8: Request(38): QueryPointer window=0x000001ff
+000:>:031f:32: Reply to QueryPointer: same-screen=true(0x01) root=0x000001ff child=0x00600139 root-x=640 root-y=400 win-x=640 win-y=400 mask=0
+000:<:0320:  4: Request(43): GetInputFocus 
+000:>:0320:32: Reply to GetInputFocus: revert-to=PointerRoot(0x01) focus=0x00a0000c
+000:<:0321: 20: Request(59): SetClipRectangles ordering=YXBanded(0x03) gc=0x00c00016 clip-x-origin=0 clip-y-origin=0 rectangles={x=0 y=0 w=900 h=700};
+000:<:0322: 40: MIT-SHM-Request(130,3): PutImage drawable=0x00c00006 gc=0x00c00016 total-width=900 total-height=700 src-x=0 src-y=0 src-width=900 src-height=700 dst-x=0 dst-y=0 depth=24 format=ZPixmap(0x02) send-event=false(0x00) shmseg=0x00c00014 offset=0x00000000
+000:<:0323: 16: Request(56): ChangeGC gc=0x00c00016 values={clip-mask=None(0x00000000)}

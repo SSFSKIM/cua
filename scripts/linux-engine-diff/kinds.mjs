@@ -24,10 +24,11 @@ import { readFileSync } from 'node:fs';
 import { DRAG_DOC, verticalScrollBar } from './drag.mjs';
 import { Engine } from './engine.mjs';
 import { FAMILIES, familyNames, openFamily, readGtk4Status, readQtCounts } from './families.mjs';
+import { verifiedScene } from './app-identity.mjs';
 import { Oracle } from './oracle.mjs';
 import { captureWindow, pixelsChanged } from './pixels.mjs';
 import { negativeCheck } from './run.mjs';
-import { XPROBE } from './scenes.mjs';
+import { XPROBE, xdotool } from './scenes.mjs';
 import { startWitness } from './witness.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -109,6 +110,9 @@ export function wheelReported(before, after) {
   return /\x1b\[M[`a]/.test(fresh);
 }
 
+/** An editor's click: its caret moved (the document's caret offset changed). */
+export const caretMoved = (before, after) => (Number.isFinite(before) && Number.isFinite(after) ? after !== before : null);
+
 /** A count that grew. */
 export const grew = (before, after) => (typeof before === 'number' && typeof after === 'number' ? after > before : null);
 
@@ -148,6 +152,8 @@ function target(scene, kind, i) {
     if (kind === 'move') return { x: i % 2 ? 100 : 300, y: Math.round(w.height / 2) };
     return { x: Math.round(w.width / 2), y: Math.round(w.height / 2) };
   }
+  // an editor's click alternates between two lines of its document, so each one it takes moves the caret (T19)
+  if (kind === 'click' && scene.kindOf === 'editor') return { x: 100, y: Math.round(w.height * (i % 2 ? 0.35 : 0.25)) };
   // an editor or a document: a move alternates between a toolbar button and the middle of the window
   if (kind === 'move' && i % 2 === 0) return scene.hover;
   return { x: Math.round(w.width / 2), y: Math.round(w.height / 2) };
@@ -195,6 +201,7 @@ async function readValue(ctx, scene, kind) {
       return s === null ? null : kind === 'scroll' ? s.wheels : kind === 'move' ? s.moves : s.presses;
     }
     if (scene.kindOf === 'terminal') return readFileSync(scene.record, 'latin1');
+    if (kind === 'click' && scene.kindOf === 'editor') return Number(oracle.caret(scene.field));
     if (kind === 'move' || scene.pixels || !scene.scrollbar) return await captureWindow(ctx.cua, scene, ctx.dir);
     return Number(oracle.currentValue(scene.scrollbar));
   } catch {
@@ -206,6 +213,7 @@ async function readValue(ctx, scene, kind) {
 function judge(scene, kind, input, before, after) {
   if (scene.kindOf === 'terminal') return kind === 'move' ? motionReported(before, after) : wheelReported(before, after);
   if (scene.kindOf === 'qt-input') return grew(before, after);
+  if (kind === 'click' && scene.kindOf === 'editor') return caretMoved(before, after);
   if (kind === 'move' && !['page', 'gtk4-input'].includes(scene.kindOf)) {
     const over = pixelsOver(XPROBE, before, after);
     return over === null ? null : over > HOVER_PIXELS;
@@ -238,22 +246,28 @@ function request(scene, kind, i, point) {
 // ---------------------------------------------------------------------------------------------------------------
 // the run
 
-async function series(ctx, spec, scene, kind, n) {
+/**
+ * One lane's runs of a cell. `readFailed` reads the effect of a request the engine answered with an error too, and
+ * judges it as any other (T19's manifest and sitting: what the application did, whatever the answer; `took` is null
+ * when the effect could not be read); otherwise a failed request is not read and counts as no effect.
+ */
+export async function series(ctx, spec, scene, kind, n, { readFailed = false } = {}) {
   const { witness, emit, family, desktop } = ctx;
   const engine = new Engine(spec).start();
   const runs = [];
   try {
     for (let i = 0; i < n; i++) {
-      desktop.arrange(scene, ctx.occlusion);
+      await desktop.arrange(scene, ctx.occlusion);
       await sleep(300);
-      const point = target(scene, kind, i);
+      // a caller may aim the request elsewhere (T19's sitting keeps every point in the window's visible part)
+      const point = ctx.pointFor?.(scene, kind, i) ?? target(scene, kind, i);
       const [command, input] = request(scene, kind, i, point);
       const read = () => readValue(ctx, scene, kind);
       const before = await read();
       let sent;
       if (spec.control) {
         // the control: the window activated, then the same point in root coordinates through XTEST
-        execFileSync('xdotool', ['windowactivate', '--sync', String(scene.id)]);
+        xdotool('windowactivate', '--sync', scene.id);
         await sleep(150);
         sent = await witness.span(`${spec.label}:${family}:${kind}`, () => engine.request(command, { ...input, x: scene.window.x + point.x, y: scene.window.y + point.y }));
       } else {
@@ -261,8 +275,9 @@ async function series(ctx, spec, scene, kind, n) {
       }
       const { value, witness: w } = sent;
       const ok = value.response.ok === true;
-      const after = ok ? await settledEffect(read, (now) => judge(scene, kind, input, before, now)) : null;
-      const took = ok ? judge(scene, kind, input, before, after) : false;
+      const observed = ok || readFailed;
+      const after = observed ? await settledEffect(read, (now) => judge(scene, kind, input, before, now)) : null;
+      const took = observed ? judge(scene, kind, input, before, after) : false;
       const shown = (v) => (typeof v === 'string' && v.length > 80 ? `${v.length} bytes` : v);
       const run = { kind: 'kinds-run', family, input: kind, occlusion: ctx.occlusion, engine: spec.label, i, point, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before: shown(before), after: shown(after), took };
       // a hover read as pixels: how many changed, for the record
@@ -318,7 +333,8 @@ export async function runKinds(args, { desktop, emit }) {
           // enough to scroll everywhere else
           const doc = FAMILIES[family].kind === 'terminal' ? null : DRAG_DOC;
           // a terminal's recorder reports every motion (mode 1003) as well as the buttons and the wheel
-          scenes[l.label] = await openFamily(desktop, oracle, family, `kinds${l.label.replace(/[^a-z0-9]+/gi, '')}`, { page, doc, env, geometry, motion: true });
+          // the window's application verified as the family's before its cells count (app-identity.mjs)
+          scenes[l.label] = await verifiedScene(desktop, oracle, await openFamily(desktop, oracle, family, `kinds${l.label.replace(/[^a-z0-9]+/gi, '')}`, { page, doc, env, geometry, motion: true }), family);
           if (page) scenes[l.label].kindOf = 'page';
           // an editor's or a document's effect is its vertical scroll bar's value, where it has one
           if (!['terminal', 'gtk4-input', 'qt-input', 'qt-style'].includes(scenes[l.label].kindOf) && !page && !scenes[l.label].pixels) {

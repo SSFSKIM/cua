@@ -1,0 +1,11 @@
+host ns pid:[4026531836], outside pid 3968606
+scoped: exit 0
+ns pid:[4026532622]
+pids 5
+outside maps unreadable
+outside comm none
+default: exit 0
+ns pid:[4026532622]
+pids 5
+outside maps unreadable
+outside comm none

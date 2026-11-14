@@ -1,0 +1,17 @@
+stress-ng: 0
+cell 1 true keys [50] buttons [1]
+tree [["anchor",1854636,"S"],["supervisor",1854644,"S"],["kernel-launcher",1854655,"S"],["bwrap",1854659,"S"],["kernel-launcher",1854660,"S"],["kernel",1854661,"S"],["shim",1854678,"S"],["worker-launcher",1854679,"S"],["bwrap",1854683,"S"],["worker-launcher",1854684,"S"],["worker",1854685,"S"],["engine",1854717,"S"]]
+cua serve SIGKILLed
+worker launcher before the kill: T
+supervisor SIGKILLed
+engine gone after 6 ms
++6 ms keys [] buttons []
++52 ms keys [] buttons []
++202 ms keys [] buttons []
++1003 ms keys [] buttons []
+left after 3 s: []
+keys after [] buttons after []
+stopped after []
+shim said []
+{"summary":"head-held-scoped","mode":"held","left":[],"keys":[],"buttons":[]}
+exit 0

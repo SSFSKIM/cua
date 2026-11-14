@@ -16,13 +16,19 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { auditForeground, auditNothingSent, auditRequests, parseXtrace, startProxy } from './audit.mjs';
+import { runTmp } from './app-env.mjs';
+import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace, startProxy, watchAncestry } from './audit.mjs';
+import { verifySceneIdentity } from './app-identity.mjs';
+import { auditForeign, foreignLine } from './foreign.mjs';
+import { foregroundStart } from './foreground-start.mjs';
 import { startMonitor } from './busmon.mjs';
 import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
-import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe } from './deviations.mjs';
+import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe, setAsideMinimized, setAsideTruncation, truncationMismatch } from './deviations.mjs';
 import { judgeDevice } from './device.mjs';
+import { IDENTITY_OPS, identityAuditKind } from './identity.mjs';
+import { MINIMIZED_OPS, minimizedAuditKind } from './minimized.mjs';
 import { Engine } from './engine.mjs';
 import { medianDifferenceInterval, normalizeAnswer } from './events.mjs';
 import { compareShots, xprobeDiff } from './images.mjs';
@@ -32,7 +38,8 @@ import { Oracle } from './oracle.mjs';
 import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, judgeWarmUps, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
 import { writeSummary } from './report.mjs';
 import { routeWitness, runCases } from './safety.mjs';
-import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
+import { Desktop, XPROBE, a11yBusAddress, desktopEnding } from './scenes.mjs';
+import { xdotool, xprobe } from './xtools.mjs';
 import { MIN_NOISE_SAMPLES, auditVerdict, blockOrder, judgeCalls, judgeOperation, runOutcome, verdictLine } from './stats.mjs';
 import { cleanupOnStop } from './stop.mjs';
 import { CandidateTextLost, resolveField, sceneTextBefore } from './text.mjs';
@@ -153,6 +160,12 @@ export async function pollEffect(read, judge, { gapMs = 120, deadlineMs = 2500 }
   }
 }
 
+/**
+ * Whether a screenshot file is one a vendor build left in the run's TMPDIR (`<pid>_<ns>.jpg`, task 49: never removed),
+ * which the harness removes once it has its copy; cua-engine keeps its own in a private directory there, and removes it.
+ */
+export const leftByVendor = (filepath, scratch) => dirname(filepath) === runTmp(scratch);
+
 /** The answer a sample is compared by: its state, its screenshot, or its normalized answer. */
 function answerDigest(op, scene, response, labelPattern) {
   if (!response.ok) return sha(JSON.stringify(normalizeAnswer(response)));
@@ -196,7 +209,8 @@ export function differingField(reference, candidate) {
  * step returns its record instead, no request sent, with `fault` set (prepare.mjs).
  */
 export async function runSample(s) {
-  const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness, cuaVersion: s.cuaVersion };
+  // `traceMark(tag)`: the audit pass's mark in its trace, so a case can attribute requests to its steps (M4's T4)
+  const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness, cuaVersion: s.cuaVersion, traceMark: s.traceMark };
   return withSampleCleanup(ctx, () => measureSample(s, ctx));
 }
 
@@ -231,6 +245,109 @@ export async function withSampleCleanup(ctx, body) {
   }
   if (cleanup.length) throw new AggregateError(cleanup, `the sample's cleanup failed: ${cleanup.map((e) => e.message).join('; ')}`);
   return result;
+}
+
+/**
+ * One route audit's own resources, each ended however the audit goes (task 53's review): the xtrace proxy
+ * (`openProxy()`), the audited window's watcher on it (`watch(proxy)`, null for none) and the engine through it
+ * (`startEngine(proxy)`). `body(engine, proxy)` runs the audited samples; then, whatever threw, the engine is closed,
+ * the watcher stopped, `after()` run once the engine had started (the scene put back) and the proxy stopped, each tried
+ * on its own. Answers `{trace, ancestry, watcher, proxy}`: the proxy's trace text and the watcher's answer
+ * (`{watched: true}` with none). A body or start that threw keeps its error with the cleanup failures attached
+ * (`cleanup`); a cleanup that fails after a body that did not fails the audit.
+ */
+export async function withRouteAudit({ openProxy, watch, startEngine, after = async () => {} }, body) {
+  const proxy = await openProxy();
+  let watcher = null;
+  let engine = null;
+  let failure = null;
+  try {
+    watcher = await watch(proxy);
+    engine = startEngine(proxy);
+    await body(engine, proxy);
+  } catch (error) {
+    failure = error;
+  }
+  let ancestry = { watched: true };
+  let trace = '';
+  const cleanup = [];
+  const attempt = async (fn) => {
+    try {
+      await fn();
+    } catch (error) {
+      cleanup.push(error);
+    }
+  };
+  if (engine) await attempt(() => engine.close());
+  if (watcher)
+    await attempt(async () => {
+      ancestry = await watcher.stop();
+    });
+  if (engine) await attempt(after);
+  await attempt(async () => {
+    trace = await proxy.stop();
+  });
+  if (failure) {
+    if (cleanup.length) failure.cleanup = cleanup;
+    throw failure;
+  }
+  if (cleanup.length) throw new AggregateError(cleanup, `the route audit's cleanup failed: ${cleanup.map((e) => e.message).join('; ')}`);
+  return { trace, ancestry, watcher, proxy };
+}
+
+/**
+ * A sample's fields from its request's `--stats` record (null for an engine without it): the ones the judges read, and
+ * the whole record as the engine wrote it (`engine_stats`, its `id` the request's), so a sample nobody foresaw needing
+ * is still diagnosable from its row (V5's false successes, 2026-11-13); with the engine's own lines written since the
+ * previous request (`untied_stats`, engine.mjs), where there were any.
+ */
+export function statsFields(stats, untied) {
+  const row = {};
+  if (stats) {
+    row.stats = { calls: stats.bus.calls, waits_alone: stats.bus.waits_alone, max_in_flight: stats.bus.max_in_flight, connections: stats.bus.connections };
+    if (stats.tree) row.stats.tree = stats.tree;
+    if (stats.capture) row.stats.capture = stats.capture;
+    if (stats.paste) row.stats.paste = { confirmed: stats.paste.confirmed, confirm_ms: stats.paste.confirm_ms, transfer: stats.paste.transfer, clicked: stats.paste.clicked, restored: stats.paste.restored, focus_ms: stats.paste.focus_ms, clicks: stats.paste.clicks };
+    if (stats.route) row.route = stats.route;
+    if (stats.dnd) row.dnd = stats.dnd;
+    if (stats.event_time) row.event_time = stats.event_time;
+    if (stats.hold) row.hold = stats.hold;
+    if (stats.after_take) row.after_take = stats.after_take;
+    // a Chromium drag's atomic press and what its watch saw (task 20: stray.rs)
+    if (stats.press) row.press = stats.press;
+    // an activation that set the focus again once its window was mapped (M4 T4: how long it waited for the map)
+    if (stats.activation) row.activation = stats.activation;
+    row.engine_stats = stats;
+  }
+  if (untied.length) row.untied_stats = untied;
+  return row;
+}
+
+/**
+ * A development run's X trace of an engine's own connection through a series's timed samples (`--trace-engine`, for
+ * localizing V5's lost motion): a proxy of its own (audit.mjs `startProxy`) whose display the engine connects to (`env`),
+ * each sample's span marked in it (`span(i, fn)` answers `fn()`'s value with `xtrace: {file, from, to}`, the span's byte
+ * offsets in the trace), and the trace and its marks written into `dir` as `<name>.xtrace` and `<name>.marks.json` when
+ * the series ends (`close`). Its marks wait for the trace to go quiet, so they fall between samples, never inside one.
+ */
+export async function openSeriesTrace({ dir, name, open = () => startProxy() }) {
+  const proxy = await open();
+  const file = `${name}.xtrace`;
+  return {
+    env: { DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY },
+    async span(i, fn) {
+      const from = await proxy.mark(`sample ${i} start`);
+      const value = await fn();
+      const to = await proxy.mark(`sample ${i} end`);
+      return { value, xtrace: { file, from, to } };
+    },
+    async close() {
+      const text = await proxy.stop();
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, file), text);
+      writeFileSync(join(dir, `${name}.marks.json`), JSON.stringify(proxy.marks));
+    },
+  };
 }
 
 async function measureSample(s, ctx) {
@@ -305,30 +422,25 @@ async function measureSample(s, ctx) {
   // a cua text command's route is known beforehand: its witness is judged against it and the route the engine reports
   // taking (Decision Log, M2.2); a vendor build's is judged strictly
   const expected = VENDORS.includes(s.label) ? null : routeOf(op, s.sceneName);
+  // a foreground-route sample starts, outside its span, with the front window active and the other clients' popups
+  // closed (foreground-start.mjs), every lane alike: a client a previous sample left active closes its popups as the
+  // route's activation takes the focus from it, which the witness would count inside the span
+  const started = witness && target && routeOf(op, s.sceneName) === 'foreground' ? await foregroundStart(s.desktop, target.id) : null;
   const answered = witness && target && (isText(op) || isDevice(op)) ? await routeWitness(witness, tag, target.id, expected, send, { inFront: OPS[op].inFront === true, opensWindows: command === 'click' && input.mouse_button === 'right', pointerMoves: OPS[op].pointerMoves === true }) : await span(tag, send);
   const { response, ms, sinceSpawnMs, stats } = answered.value;
   const row = { kind: 'sample', engine: s.label, scene: s.sceneName, op, block: s.block, series: i === 0 ? 'cold' : 'warm', i };
   if (expected) row.route_expected = expected;
+  if (started) row.foreground_start = started;
   row.ms = Math.round((i === 0 && startedInSpan ? sinceSpawnMs : ms) * 100) / 100;
   row.timed = i === 0 && startedInSpan ? 'spawn' : 'request';
   row.request_ms = Math.round(ms * 100) / 100;
   row.ok = response.ok === true;
   if (!row.ok) row.error = String(response.error).slice(0, 300);
-  if (stats) {
-    row.stats = { calls: stats.bus.calls, waits_alone: stats.bus.waits_alone, max_in_flight: stats.bus.max_in_flight, connections: stats.bus.connections };
-    if (stats.tree) row.stats.tree = stats.tree;
-    if (stats.capture) row.stats.capture = stats.capture;
-    if (stats.paste) row.stats.paste = { confirmed: stats.paste.confirmed, confirm_ms: stats.paste.confirm_ms, transfer: stats.paste.transfer, clicked: stats.paste.clicked, restored: stats.paste.restored, focus_ms: stats.paste.focus_ms, clicks: stats.paste.clicks };
-    if (stats.route) row.route = stats.route;
-    if (stats.dnd) row.dnd = stats.dnd;
-    if (stats.event_time) row.event_time = stats.event_time;
-    if (stats.hold) row.hold = stats.hold;
-    if (stats.after_take) row.after_take = stats.after_take;
-    // a Chromium drag's atomic press and what its watch saw (task 20: stray.rs)
-    if (stats.press) row.press = stats.press;
-  }
+  Object.assign(row, statsFields(stats, answered.value.untied ?? []));
   if (def.after) await def.after(ctx, response);
-  if (def.effect && row.ok && def.read && !def.follow) {
+  // the effect is read on success, and on an answer declared to have sent the request with its effect unseen
+  // (deviations.mjs REFUSALS `effect`), whose page must still show what was sent
+  if (def.effect && (row.ok || declaredWithEffect(op, s.sceneName, response)) && def.read && !def.follow) {
     row.effect = await pollEffect(() => def.read(ctx), (after) => def.effect(ctx, input, before, after));
   }
   if (def.follow && row.ok) {
@@ -369,6 +481,8 @@ async function measureSample(s, ctx) {
       row.witness_changes = (answered.report.changes ?? []).slice(0, 20);
       row.witness_restacks = (answered.report.restacks ?? []).slice(0, 20);
       row.witness_focus = (answered.report.focus ?? []).slice(0, 20);
+      // and in the quiet span after the request, where an allowance has one (task 53)
+      if (answered.after) row.witness_after_changes = (answered.after.changes ?? []).slice(0, 20);
     }
     if (answered.judged?.allowed?.length) row.witness_allowed = answered.judged.allowed;
   }
@@ -377,21 +491,47 @@ async function measureSample(s, ctx) {
 
 /**
  * The negative check: the activate-and-restore stub engine, through the audit's proxy display, must fail both the
- * witness and the audit. Returns whether it did.
+ * witness and the audit. Its trace is judged for foreign windows too, like every engine's: the stub activates the
+ * harness's scene and restores the harness's front window, so a change of any other window is pushed to `foreign`.
+ * Returns whether it failed both.
  */
-export async function negativeCheck(desktop, witness, stubScene, emit, { audit = false } = {}) {
+export async function negativeCheck(desktop, witness, stubScene, emit, { audit = false, foreign = [] } = {}) {
   const proxy = audit ? await startProxy() : null;
-  const stub = new Engine({ label: 'stub-activating', bin: join(here, 'stub-activating.mjs'), env: proxy?.env }).start();
-  const { value, witness: w } = await witness.span('stub', () => stub.request('press_key', { window: { id: stubScene.id }, key: 'x' }));
-  await stub.close();
-  desktop.focusFront();
+  let value;
+  let w;
+  let text = null;
+  try {
+    const stub = new Engine({ label: 'stub-activating', bin: join(here, 'stub-activating.mjs'), env: proxy?.env }).start();
+    ({ value, witness: w } = await witness.span('stub', () => stub.request('press_key', { window: { id: stubScene.id }, key: 'x' })));
+    await stub.close();
+    desktop.focusFront();
+  } finally {
+    // the proxy stopped however the check goes
+    if (proxy) text = await proxy.stop();
+  }
   const witnessFailed = !w.clean;
   let audited = null;
-  if (proxy) audited = auditRequests(parseXtrace(await proxy.stop()));
+  let stubForeign = [];
+  if (proxy) {
+    const trace = parseXtrace(text);
+    audited = auditRequests(trace);
+    stubForeign = auditForeign(trace, { registered: desktop.registry(), root: desktop.root }).foreign;
+    foreign.push(...stubForeign.map((f) => `stub-activating: ${foreignLine(f)}`));
+  }
   const auditFailed = audited ? !audited.clean && audited.traced : null;
-  emit({ kind: 'stub-check', ok: value.response.ok, witness: w, witness_failed_it: witnessFailed, audit: audited ? { traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.map((f) => f.what) } : null, audit_failed_it: auditFailed });
+  emit({ kind: 'stub-check', ok: value.response.ok, witness: w, witness_failed_it: witnessFailed, audit: audited ? { traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.map((f) => f.what), foreign: stubForeign.slice(0, 10).map(foreignLine) } : null, audit_failed_it: auditFailed });
   process.stdout.write(`negative check: the witness ${witnessFailed ? 'failed' : 'PASSED'} the activating stub (${w.fields.join(', ') || 'no change'})${audited ? `; the audit ${auditFailed ? 'failed' : 'PASSED'} it (${[...new Set(audited.forbidden.map((f) => f.what))].join(', ') || 'nothing forbidden'})` : ''}\n`);
   return witnessFailed && (auditFailed ?? true);
+}
+
+/**
+ * The negative checks' two windows: the top two of the harness's own in the stacking order (`[other, top]`), or null
+ * when it has fewer than two. The checks raise and activate them, so they are never the person's (the design session,
+ * 2026-11-02: the harness never changes a window it did not open), whatever lies between them.
+ */
+export function harnessPair(order, isHarness) {
+  const mine = order.filter((w) => isHarness(w));
+  return mine.length < 2 ? null : mine.slice(-2);
 }
 
 /**
@@ -404,15 +544,15 @@ export async function negativeCheck(desktop, witness, stubScene, emit, { audit =
  *   which leaves the stacking property as it was: only the restack events tell.
  * Returns whether all three held.
  */
-export async function inFrontNegativeCheck(witness, emit) {
-  const order = stacking();
-  if (order.length < 2) {
-    emit({ kind: 'stub-check-in-front', witness_failed_it: false, why: 'fewer than two windows' });
-    process.stdout.write('in-front checks: fewer than two windows\n');
+export async function inFrontNegativeCheck(witness, emit, isHarness) {
+  const pair = harnessPair(stacking(), isHarness);
+  if (!pair) {
+    emit({ kind: 'stub-check-in-front', witness_failed_it: false, why: 'fewer than two windows of the harness' });
+    process.stdout.write('in-front checks: fewer than two windows of the harness\n');
     return false;
   }
-  const [other, top] = order.slice(-2);
-  const activate = (w) => execFileSync('xdotool', ['windowactivate', '--sync', String(w)]);
+  const [other, top] = pair;
+  const activate = (w) => xdotool('windowactivate', '--sync', w);
   activate(top);
   await sleep(200);
   const judge = (report) => judgeInFrontSpan(report, { target: top, frame: toplevel(top) });
@@ -427,7 +567,7 @@ export async function inFrontNegativeCheck(witness, emit) {
     await sleep(100);
   });
   const restacked = await witness.span('stub:in-front:restacked', async () => {
-    execFileSync(XPROBE, ['restack-grabbed', String(other), String(top)]);
+    xprobe(['restack-grabbed', other, top]);
     await sleep(100);
   });
   // another client's override-redirect window, just below the target's frame, raised just above it and put back under
@@ -473,15 +613,16 @@ export async function inFrontNegativeCheck(witness, emit) {
  *   window as the target: only the target client's own override-redirect windows may come and go.
  * Each judgement names the target's frame (`toplevel`). Returns whether all six held.
  */
-export async function foregroundNegativeCheck(witness, emit) {
+export async function foregroundNegativeCheck(witness, emit, isHarness) {
   const order = stacking();
-  if (order.length < 2) {
-    emit({ kind: 'stub-check-foreground', witness_failed_it: false, why: 'fewer than two windows to restack' });
-    process.stdout.write('foreground checks: fewer than two windows to restack\n');
+  const pair = harnessPair(order, isHarness);
+  if (!pair) {
+    emit({ kind: 'stub-check-foreground', witness_failed_it: false, why: 'fewer than two windows of the harness to restack' });
+    process.stdout.write('foreground checks: fewer than two windows of the harness to restack\n');
     return false;
   }
-  const [other, top] = order.slice(-2);
-  const raise = (w) => execFileSync('xdotool', ['windowraise', String(w)]);
+  const [other, top] = pair;
+  const raise = (w) => xdotool('windowraise', w);
   const judge = (report, target) => judgeForegroundSpan(report, { target, frame: toplevel(target), focusWithin: (w) => within(w, target) });
   const shown = (report) => ({ changes: (report.changes ?? []).slice(0, 10), restacks: (report.restacks ?? []).slice(0, 10) });
   const spaced = await witness.span('stub:foreground:spaced', async () => {
@@ -491,7 +632,7 @@ export async function foregroundNegativeCheck(witness, emit) {
     await sleep(50);
   });
   const coalesced = await witness.span('stub:foreground:coalesced', async () => {
-    execFileSync(XPROBE, ['restack-grabbed', String(other), String(top)]);
+    xprobe(['restack-grabbed', other, top]);
     await sleep(100);
   });
   const restored = stacking().join() === order.join();
@@ -504,11 +645,11 @@ export async function foregroundNegativeCheck(witness, emit) {
   // the activation evidence (M2 whole-branch review): the focus and the active window switched to the other window and
   // back under one server grab, which the property read after its notifies and the sampled focus cannot show; then the
   // other window activated through the window manager as the foreground route activates its target
-  const activate = (w) => execFileSync('xdotool', ['windowactivate', '--sync', String(w)]);
+  const activate = (w) => xdotool('windowactivate', '--sync', w);
   activate(top);
   await sleep(100);
   const switched = await witness.span('stub:foreground:switched', async () => {
-    execFileSync(XPROBE, ['focus-grabbed', String(other), String(top)]);
+    xprobe(['focus-grabbed', other, top]);
     await sleep(100);
   });
   const activated = await witness.span('stub:foreground:activated', async () => {
@@ -520,7 +661,7 @@ export async function foregroundNegativeCheck(witness, emit) {
   // another client's override-redirect window (the harness's own) mapped and destroyed inside the span: the target
   // client's own may come and go (Decision Log, M3.1), another's may not
   const popup = await witness.span('stub:foreground:popup', async () => {
-    execFileSync(XPROBE, ['popup', '40', '40', '120', '80', '100']);
+    xprobe(['popup', 40, 40, 120, 80, 100]);
     await sleep(50);
   });
   const shownFocus = (report) => ({ ...shown(report), focus: (report.focus ?? []).slice(0, 10) });
@@ -564,10 +705,69 @@ export function launchEntry(dir) {
 }
 
 /**
+ * The gate's ballast (`--ballast gate`, a verdict run's): dnd.mjs's `GATE_BALLAST`, the Chrome windows a full verdict
+ * run has open, opened as the run opens its scenes (`open(scene, role, {text})`, `openScene`). Chrome's take latency
+ * rises with its window load, so a verdict run split into steps carries the full run's load into the step that drags
+ * in Chrome. They stay open to the run's end and close with every window of the run. Returns the windows.
+ */
+export async function openGateBallast({ open }) {
+  const { GATE_BALLAST } = await import('./dnd.mjs');
+  const windows = [];
+  for (const [scene, n] of Object.entries(GATE_BALLAST)) {
+    for (let k = 0; k < n; k++) windows.push(await open(scene, `ballast${k}`, { text: ['chrome-textarea', 'chrome-address-bar'].includes(scene) }));
+  }
+  return windows;
+}
+
+/**
+ * The family whose application each scene's windows must show (app-identity.mjs `APP_IDENTITY`), by the opener behind
+ * the scene (`openScene`).
+ */
+export const SCENE_FAMILY = {
+  gedit: 'gedit',
+  minimized: 'gedit',
+  chrome: 'chrome',
+  'chrome-input': 'chrome',
+  'chrome-textarea': 'chrome',
+  'chrome-address-bar': 'chrome',
+  'over-budget': 'chrome',
+  'big-text': 'chrome',
+  retention: 'chrome',
+  identity: 'chrome',
+  'device-chrome': 'chrome',
+  'device-chrome-dnd': 'chrome',
+  'device-firefox': 'firefox',
+  'gnome-text-editor': 'gnome-text-editor',
+  'device-gtk4': 'gtk4-input',
+  'device-xterm': 'xterm',
+  'minimized-xterm': 'xterm',
+  'minimized-recorder': 'recorder',
+  'device-qt': 'kate',
+  'identity-kate': 'kate',
+  'identity-gtk3': 'identity-gtk3',
+  'identity-gtk4': 'identity-gtk4',
+  'gtk-table': 'gtk-table',
+  calc: 'calc',
+};
+
+/**
+ * Opens one window of a scene (`openSceneWindow`), and verifies its application as the scene's family's
+ * (`SCENE_FAMILY`; app-identity.mjs `verifySceneIdentity`) before any of its samples counts: a scene that is not is
+ * refused (`IdentityRefused`) and the run stops. The identity read is kept on the scene (`identity`).
+ */
+export async function openScene(desktop, scene, role, options = {}) {
+  const opened = await openSceneWindow(desktop, scene, role, options);
+  const { wmClass } = await import('./families.mjs');
+  desktop.oracle ??= new Oracle();
+  opened.identity = await verifySceneIdentity(desktop, desktop.oracle, opened, SCENE_FAMILY[scene], { wmClassOf: wmClass });
+  return opened;
+}
+
+/**
  * Opens one window of a scene: gedit on a scratch file, a harness page in Chrome, a family's application; M2's text
  * scenes with their field resolved (text.mjs).
  */
-export async function openScene(desktop, scene, role, { text = false } = {}) {
+async function openSceneWindow(desktop, scene, role, { text = false } = {}) {
   if (scene === 'gedit') {
     const opened = await desktop.openGedit(role, GEDIT_TEXT);
     opened.originalLength = (await desktop.geditText(opened)).length;
@@ -580,6 +780,23 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
   // and its size (a case moves it and puts it back)
   if (scene === 'device-gtk4') return withApp(desktop, await desktop.openFamilyScene('gtk4-input', role));
   if (scene === 'device-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role));
+  // M4's T4: the minimized cases' windows (minimized.mjs), each restored to its size after a case withdraws it
+  if (scene === 'minimized') return withApp(desktop, await desktop.openGedit(role, GEDIT_TEXT, { stem: 'minimized' }));
+  if (scene === 'minimized-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role, { stem: 'minimized-xterm' }));
+  if (scene === 'minimized-recorder') return withApp(desktop, await desktop.openRecorder(role));
+  // M4's T5: the identity scenes (identity.mjs), windows of one title and size, each with its own marker
+  if (scene === 'identity') return desktop.openDuplicates(role, 'chrome');
+  if (scene === 'identity-gtk3') return desktop.openDuplicates(role, 'gtk3');
+  if (scene === 'identity-gtk4') return desktop.openDuplicates(role, 'gtk4');
+  if (scene === 'identity-kate') {
+    // two kate windows, each its own process and document, its document's name (the window's label) its marker
+    const windows = [];
+    for (const n of [1, 2]) {
+      const opened = await desktop.openFamilyScene('kate', `${role}_${n}`, { stem: 'identitykate' });
+      windows.push({ ...opened, marker: opened.label });
+    }
+    return { kind: 'identity', toolkit: 'kate', role, id: windows[0].id, windows, size: [900, 700], marksActive: false };
+  }
   if (scene === 'device-qt') {
     const { openFamily } = await import('./families.mjs');
     const { DRAG_DOC, verticalScrollBar } = await import('./drag.mjs');
@@ -596,7 +813,10 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
     opened.kindOf = 'page';
     opened.dndAt = await locate({ desktop, oracle: desktop.oracle }, opened, ['dnd']);
     opened.dndPath = runPath(opened.dndAt, 'dnd', 0);
+    opened.dndLingerPath = runPath(opened.dndAt, 'dnd-linger', 0);
     opened.dndShortPath = runPath(opened.dndAt, 'dnd-short', 0);
+    opened.dndInzonePath = runPath(opened.dndAt, 'dnd-inzone', 0);
+    opened.dndLongLeftPath = runPath(opened.dndAt, 'dnd-long-left', 0);
     opened.selectPaths = [runPath(opened.dndAt, 'select', 0), runPath(opened.dndAt, 'select', 1)];
     return withApp(desktop, opened);
   }
@@ -773,7 +993,7 @@ export class RunRefused extends Error {
 }
 
 /** Whether `results.jsonl` already has rows of the run `run`. */
-function runHasRows(results, run) {
+export function runHasRows(results, run) {
   if (!existsSync(results)) return false;
   return readFileSync(results, 'utf8').split('\n').some((line) => {
     try {
@@ -855,6 +1075,10 @@ async function diffRun(args, candidate, { handoff }) {
   const blockPlan = plan.filter((p) => !isCase(p.op));
   const samplesFor = (op) => OPS[op].warmSamples ?? (inputOp(op) ? args.samplesInput : args.samplesTree);
 
+  // the run's desktop; the window active before the run opens anything is recorded, marked, and never activated again
+  const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
+  // the Desktop's stop handler is in place (stop.mjs): the checks' handler hands over to it, with no moment between
+  handoff();
   emit({
     kind: 'meta',
     commit: gitHead(),
@@ -871,13 +1095,10 @@ async function diffRun(args, candidate, { handoff }) {
     samples_tree: args.samplesTree,
     samples_input: args.samplesInput,
     occlusion: args.occlusion,
+    ...(args.ballast ? { ballast: args.ballast } : {}),
+    ...(args.traceEngine ? { trace_engine: true } : {}),
     started: new Date().toISOString(),
   });
-
-  const desktop = new Desktop({ cua: args.cua, run });
-  // the Desktop's stop handler is in place (stop.mjs): the checks' handler hands over to it, with no moment between
-  handoff();
-  if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
   // Every scene label of this run: equivalent windows differ in their own label and list each other's (gedit's
   // recent files), so comparisons across windows replace them all.
   const labelPattern = new RegExp(`cua171-diff-${run.replace(/[^A-Za-z0-9_-]/g, '\\$&')}-[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*`, 'g');
@@ -886,16 +1107,31 @@ async function diffRun(args, candidate, { handoff }) {
   const keep = {}; // first ok output per engine/scene/op, for the first difference
   const shots = []; // every screenshot sample
   const answers = new Map(); // normalized answers of non-state samples, for the deviations
-  let outcome = { valid: false, pass: false, failed: ['the run did not finish'], code: 1 };
+  // what the run's verdicts and options were, judged once the desktop is closed and its trace audited
+  let judged = { verdicts: [], options: { valid: false, stop: 'the run did not finish' } };
+  // the changes of a window the harness did not open, by an engine it drove (the X request audit's pass)
+  const engineForeign = [];
   try {
+    // the run's watchdog, its own trace, and the holder when a foreign window is active (scenes.mjs `begin`); the
+    // window found active is read only once the watchdog answered (task 44)
+    emit({ kind: 'begin', active_start: await desktop.begin() });
+    // the harness's own bus reader, once the run's start has settled which accessibility bus the display names
+    if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
     const launch = plan.some((p) => OPS[p.op].apps) ? launchEntry(desktop.dir) : null;
     if (launch) desktop.launchCount = launch.count;
+    // the gate's ballast before the step's scenes, open to the run's end (`openGateBallast`)
+    if (args.ballast === 'gate') await openGateBallast({ open: (scene, role, options) => openScene(desktop, scene, role, options) });
     // Scenes: one shared window per scene for tree reads, one window per engine for screenshots and input.
     const windows = {};
     for (const scene of args.scenes.filter((s) => s !== 'desktop')) {
       // the safety cases open windows of their own (safety.mjs)
       const ops = blockPlan.filter((p) => p.scene === scene).map((p) => p.op);
-      const open = (role, text = false) => openScene(desktop, scene, role, { text });
+      // each window's application verified as the scene's family's (`openScene`), and recorded
+      const open = async (role, text = false) => {
+        const opened = await openScene(desktop, scene, role, { text });
+        emit({ kind: 'scene-identity', scene, role, family: SCENE_FAMILY[scene], identity: opened.identity });
+        return opened;
+      };
       windows[scene] = { shared: ops.some((op) => !ownWindow(op)) ? await open('read') : null, own: {}, text: {} };
       // each engine that runs one of the scene's own-window operations gets its own window
       for (const label of labels.filter((l) => ops.some((op) => ownWindow(op) && !isText(op) && runsOp(l, op)))) {
@@ -914,27 +1150,37 @@ async function diffRun(args, candidate, { handoff }) {
     desktop.onStop(() => witness.stop());
     const busAddress = a11yBusAddress();
 
-    if (stubScene && !(await negativeCheck(desktop, witness, stubScene, emit, { audit: args.audit }))) valid = false;
+    if (stubScene && !(await negativeCheck(desktop, witness, stubScene, emit, { audit: args.audit, foreign: engineForeign }))) valid = false;
     // the foreground route's allowance, wherever a request is expected to take that route
     const foregroundPlanned = plan.some((p) => routeOf(p.op, p.scene) === 'foreground' || p.op === 'restore_refused');
-    if (foregroundPlanned && !(await foregroundNegativeCheck(witness, emit))) valid = false;
+    const isHarness = (w) => desktop.ownerOf(w) === 'harness';
+    if (foregroundPlanned && !(await foregroundNegativeCheck(witness, emit, isHarness))) valid = false;
     // the in-front allowance's controls, in every run with the stub's
-    if (stubScene && !(await inFrontNegativeCheck(witness, emit))) valid = false;
+    if (stubScene && !(await inFrontNegativeCheck(witness, emit, isHarness))) valid = false;
 
     // One engine's series of an operation in a block: a fresh process, its cold sample and `n - 1` warm ones.
     const measureSeries = async ({ sceneName, op, label, block, n }) => {
       const spec = engineSpecFor(engines.find((e) => e.label === label), op, sceneName);
       let target = measuredTarget(windows, sceneName, op, label);
       if (target && args.occlusion === 'visible') desktop.raise(target);
-      const env = OPS[op].apps ? launch.env : undefined;
+      // a development run's candidate engine through a trace proxy of the series's own (`--trace-engine`), each sample's
+      // span in the trace kept on its row
+      const trace = args.traceEngine && !VENDORS.includes(label) ? await openSeriesTrace({ dir: join(args.out, 'xtrace'), name: `${sceneName}.${op}.${label.replace(/[^a-z0-9]+/gi, '_')}.${block}` }) : null;
+      const env = trace ? { ...(OPS[op].apps ? launch.env : {}), ...trace.env } : OPS[op].apps ? launch.env : undefined;
       let engine = makeEngine(spec, env);
+      const sample = (i) => runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion });
+      const traced = (i) =>
+        trace.span(i, () => sample(i)).then(({ value, xtrace }) => {
+          if (value.row) value.row.xtrace = xtrace;
+          return value;
+        });
       try {
         for (let i = 0; i < n; i++) {
           // the gate's rule for a harness-side preparation failure (prepare.mjs): one resample in the sample's condition,
           // a cold sample's on a fresh engine, a text window's after the backstop restored the lane's scene (task 24)
           const taken = await sampleUnderRule({
             cold: i === 0,
-            take: () => runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion }),
+            take: () => (trace ? traced(i) : sample(i)),
             renew: async () => {
               await engine.close();
               engine = makeEngine(spec, env);
@@ -954,7 +1200,26 @@ async function diffRun(args, candidate, { handoff }) {
           });
           if (taken.stop) break;
           if (!taken.counted) continue;
-          const { row, response } = taken.counted;
+          const { row, response: answered } = taken.counted;
+          // cua's `truncated` beside a tree (M4): recorded, and set aside before the state is compared only where the
+          // deviation declares it (deviations.mjs); anywhere else it stays in the state, which then differs from the
+          // vendor's. Over the wire a candidate's read is checked here against the engine's own record of where that
+          // read was cut, its `--stats` tree record: the field exactly as the record calls for it, and a read without
+          // the record fails. "as recorded", or what differs.
+          const stateRead = row.ok && ['read', 'shot', 'retention'].includes(OPS[op].kind);
+          if (stateRead && answered.output.truncated !== undefined) row.truncated = answered.output.truncated;
+          if (stateRead && via === 'wire' && !VENDORS.includes(label)) {
+            row.truncation = truncationMismatch({ scene: sceneName, state: answered.output, stats: row.stats }) ?? 'as recorded';
+          }
+          const { response: kept, deviation: truncation } = stateRead ? setAsideTruncation({ op, scene: sceneName, response: answered }) : { response: answered, deviation: null };
+          if (truncation) row.deviation = truncation.op ?? op;
+          // cua's minimized windows in a listing (M4's T4): recorded, and set aside where the deviation declares them,
+          // so the rest of the list still equals the vendor's
+          const { response, deviation: minimized } = setAsideMinimized({ op, scene: sceneName, response: kept });
+          if (minimized) {
+            row.deviation = minimized.op;
+            row.minimized_listed = true;
+          }
           if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
             row.nodes = retainedIds(response.output).length;
             row.source = response.output.ax_tree_source;
@@ -976,13 +1241,14 @@ async function diffRun(args, candidate, { handoff }) {
           if (row.ok) {
             const files = op === 'get_screenshot' ? response.output : (response.output?.screenshots ?? []);
             for (const shot of files) {
-              if (shot.filepath.startsWith('/tmp/') && !shot.filepath.startsWith('/tmp/cua-engine-')) rmSync(shot.filepath, { force: true });
+              if (leftByVendor(shot.filepath, desktop.dir)) rmSync(shot.filepath, { force: true });
             }
           }
           emit(row);
         }
       } finally {
         await engine.close();
+        if (trace) await trace.close();
       }
       if (target) target.retainedBy = null;
       if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
@@ -1076,37 +1342,59 @@ async function diffRun(args, candidate, { handoff }) {
       for (const { scene: sceneName, op } of auditPlan(plan)) {
         for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
           const target = measuredTarget(windows, sceneName, op, spec.label);
-          const proxy = await startProxy();
-          const engine = makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY });
           const oks = [];
           // each audited request's answer, for the device cases' judge: the expected outcome, not only a clean trace
           const answered = [];
           // each audited sample's scene-text restore, counted in the lane's total (prepare.mjs judgeTextRestores) and
           // never a timed sample
           const restoredText = [];
-          try {
-            for (let i = 0; i < 2; i++) {
-              const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion });
-              if (row.text_restored) restoredText.push({ i, ...row.text_restored });
-              oks.push(row.ok);
-              answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
-            }
-          } finally {
-            await engine.close();
-            if (ownWindow(op)) target.retainedBy = null;
-            if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
-          }
+          // the proxy, the watcher and the engine, each ended however the samples go
+          const { trace: traceText, ancestry, watcher: watch, proxy } = await withRouteAudit(
+            {
+              openProxy: () => startProxy(),
+              // the audited window's ancestry in the trace's own replies and events, read before the engine connects, so
+              // the foreign-window judge knows which frame holds it and when it ends (task 53)
+              watch: (p) => (Number.isSafeInteger(target?.id) && target.id > 0 ? watchAncestry(p, target.id) : null),
+              startEngine: (p) => makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: p.env.DISPLAY, XAUTHORITY: p.env.XAUTHORITY }),
+              after: async () => {
+                if (ownWindow(op)) target.retainedBy = null;
+                if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
+              },
+            },
+            async (engine, p) => {
+              for (let i = 0; i < 2; i++) {
+                const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion, traceMark: (tag) => p.mark(`${tag}:${i}`) });
+                if (row.text_restored) restoredText.push({ i, ...row.text_restored });
+                oks.push(row.ok);
+                answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
+              }
+            },
+          );
           // a cua request that must take the foreground route is audited against that route: only its target's activation,
           // raise and focus and XTEST input (M2 whole-branch review)
           const foregroundAudit = !VENDORS.includes(spec.label) && routeOf(op, sceneName) === 'foreground';
-          // a refused device case sends nothing at all (device.mjs)
+          // a refused device case sends nothing at all (device.mjs); a minimized case is audited as its kind says
+          // (minimized.mjs: nothing sent for a refusal, the target's activation alone for an activation, and for a
+          // release the hold proven and then exactly its release, attributed by the case's marks in the trace)
           const nothingAudit = OPS[op].device === 'refusal';
-          const trace = parseXtrace(await proxy.stop());
-          const audited = foregroundAudit ? auditForeground(trace, target.id) : nothingAudit ? auditNothingSent(trace) : auditRequests(trace);
-          const auditKind = foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
+          const trace = parseXtrace(traceText);
+          const auditKind = op in MINIMIZED_OPS ? minimizedAuditKind(op) : op in IDENTITY_OPS ? identityAuditKind(op) : foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
+          const audited = {
+            foreground: () => auditForeground(trace, target.id),
+            'nothing-sent': () => auditNothingSent(trace),
+            background: () => auditRequests(trace),
+            'held-release': () => auditHeldRelease(trace, target.id, { route: OPS[op].holdRoute, marks: proxy.marks }),
+          }[auditKind]();
+          // whatever the operation's route, no request of the engine's may change a window the harness did not open; its
+          // XTEST input may land in a window of a live harness window's client (task 53)
+          const judgedForeign = auditForeign(trace, { registered: desktop.registry(), root: desktop.root, routeAudit: true });
+          const { foreign } = judgedForeign;
+          engineForeign.push(...foreign.map((f) => `${spec.label} on ${sceneName} ${op}: ${foreignLine(f)}`));
+          // a watcher that did not watch to the end leaves the judge's knowledge of the window's end unproven
+          const clean = audited.clean && foreign.length === 0 && ancestry.watched;
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
-          audits[`${sceneName}|${op}|${spec.label}`] = { clean: audited.clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set(audited.forbidden.map((f) => f.what))] };
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean: audited.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), forbidden: audited.forbidden.slice(0, 10) });
+          audits[`${sceneName}|${op}|${spec.label}`] = { clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set([...audited.forbidden.map((f) => f.what), ...foreign.map(foreignLine), ...(ancestry.error ? [ancestry.error] : [])])] };
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(foreign.some((f) => 'parent' in f) ? { foreign_parents: foreign.slice(0, 10).map((f) => f.parent ?? null) } : {}), ...(watch ? { ancestry: ancestry.error ?? watch.chain } : {}), ...(judgedForeign.unplaced ? { xtest_unplaced: judgedForeign.unplaced } : {}) });
           desktop.focusFront();
         }
       }
@@ -1204,7 +1492,7 @@ async function diffRun(args, candidate, { handoff }) {
           const deviation = field ? declaredDeviation({ op, scene: sceneName, field, candidate }) : null;
           if (deviation) {
             r.equal = true;
-            r.deviation = deviation.op;
+            r.deviation = deviation.op ?? op;
           }
         }
       }
@@ -1251,6 +1539,18 @@ async function diffRun(args, candidate, { handoff }) {
           if (!calls.pass) {
             verdict.pass = false;
             verdict.reasons.push(...calls.reasons);
+          }
+        }
+        if (via === 'wire' && ['read', 'shot', 'retention'].includes(OPS[op].kind)) {
+          // cua's truncation (M4) as the engine recorded each read's cut points, on every sample: present exactly when
+          // the record has a cut point, with its counts, so a cut is required, not only excused (over the wire, where
+          // the answer and the record are the engine's own; through the vendor's JavaScript an undeclared field still
+          // differs from the vendor's state). A sample without the check fails.
+          const off = mine.filter((r) => r.ok && r.truncation !== 'as recorded');
+          if (off.length) {
+            verdict.pass = false;
+            const why = off.find((r) => r.truncation)?.truncation ?? 'no truncation check recorded';
+            verdict.reasons.push(`${candidate}: truncated not as recorded on ${off.length} of ${mine.length} samples (first: ${why})`);
           }
         }
         const kept = keep[`${candidate}|${sceneName}|${op}`];
@@ -1312,8 +1612,7 @@ async function diffRun(args, candidate, { handoff }) {
     emit({ kind: 'text-restores', ...restores });
     // the backstop's warm-ups: a candidate's that failed fails the run (fix round 1)
     const warmUps = judgeWarmUps(after, VENDORS);
-    outcome = runOutcome(verdicts, { valid, faults, restores: restores.lanes, warmUps });
-    emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, finished: new Date().toISOString() });
+    judged = { verdicts, options: { valid, faults, restores: restores.lanes, warmUps } };
   } catch (error) {
     if (!(error instanceof CandidateTextLost)) throw error;
     // a candidate's own text window lost its first word: a sample of its lane left the person's text wrong, so the run
@@ -1323,12 +1622,15 @@ async function diffRun(args, candidate, { handoff }) {
     const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
     const restores = judgeTextRestores(rows, labels);
     emit({ kind: 'text-restores', ...restores });
-    outcome = runOutcome([], { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), stop: `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}: ${error.message}; the run stopped there` });
-    emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, finished: new Date().toISOString() });
+    judged = { verdicts: [], options: { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), stop: `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}: ${error.message}; the run stopped there` } };
   } finally {
     if (witness) await witness.stop();
     await desktop.closeAll();
   }
+  // judged once every window of the run's is closed: its own trace covers the cleanup
+  const ending = desktopEnding(desktop.ending);
+  const outcome = runOutcome(judged.verdicts, { ...judged.options, foreign: [...engineForeign, ...ending.foreign] });
+  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, desktop: ending.record, finished: new Date().toISOString() });
   writeSummary(args.out);
   const label = gateLabel(candidate.gate);
   process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${label ? `${label}: ` : ''}${verdictLine(outcome)}\nresults: ${results}\n`);
@@ -1340,14 +1642,24 @@ async function diffRun(args, candidate, { handoff }) {
  * declared sentence (the Device mode sentence unless the declaration names its own) with the witness unchanged, and the
  * judge found nothing beyond what the refusal itself makes differ: its failed request, its answer unlike the vendor's,
  * its effect not taking place. Every other reason the judge gave (the audit, the witness, a bus call, speed) still fails
- * it. Returns `{pass, verdict, reasons}`.
+ * it. A declaration with `effect` also requires every sample's effect (read for the declared answer), and one that is
+ * `unconfirmed` (a request sent, its effect unseen) is `declared unconfirmed`, its speed not judged. Returns `{pass,
+ * verdict, reasons}`.
  */
 export function declaredRefusalVerdict(verdict, mine, refusal, candidate) {
   const excused = [`${candidate}: a request failed`, `${candidate}: the output differs from the vendor's`, `${candidate}: the effect was not verified`];
-  const kept = verdict.reasons.filter((r) => !excused.some((e) => r.startsWith(e)));
-  const bad = mine.filter((r) => r.ok || !(refusal.answer ?? DEVICE_REFUSAL).test(String(r.error ?? '')) || r.witness !== true);
-  if (bad.length) kept.unshift(`${candidate}: ${bad.length} of ${mine.length} samples not the declared refusal with the witness unchanged`);
-  return kept.length ? { pass: false, verdict: 'fail', reasons: kept } : { pass: false, verdict: 'declared refusal', reasons: [] };
+  const kept = verdict.reasons.filter((r) => !excused.some((e) => r.startsWith(e)) && !(refusal.unconfirmed && SPEED_REASON.test(r)));
+  const declared = (r) => !r.ok && (refusal.answer ?? DEVICE_REFUSAL).test(String(r.error ?? '')) && r.witness === true && (!refusal.effect || r.effect === true);
+  const bad = mine.filter((r) => !declared(r));
+  const what = `declared ${refusal.unconfirmed ? 'unconfirmed answer' : 'refusal'} with ${refusal.effect ? 'its effect and ' : ''}the witness unchanged`;
+  if (bad.length) kept.unshift(`${candidate}: ${bad.length} of ${mine.length} samples not the ${what}`);
+  return kept.length ? { pass: false, verdict: 'fail', reasons: kept } : { pass: false, verdict: refusal.unconfirmed ? 'declared unconfirmed' : 'declared refusal', reasons: [] };
+}
+
+/** Whether `response` is the answer a declaration with `effect` names for the operation on the scene (its effect then read). */
+export function declaredWithEffect(op, scene, response) {
+  const refusal = declaredRefusal({ op, scene });
+  return Boolean(refusal?.effect && response?.ok === false && (refusal.answer ?? DEVICE_REFUSAL).test(String(response.error ?? '')));
 }
 
 /** The operations the X request audit covers: every window-targeted one of the blocks (reads and screenshots included). */

@@ -18,8 +18,18 @@ use crate::x11::X11;
 pub struct Pacing {
     /// After each new key edge (the pinned build's 33 ms).
     pub key: Duration,
-    /// Before the session's teardown (the vendor's 100 ms).
+    /// Between a desktop pointer path's points (`desktop.rs` `PATH_STEP`; `--path-step-ms` for measurement only).
+    pub path: Duration,
+    /// Before a session's `FocusOut`, on the request path, for measurement only (`--teardown-ms`: 0.3.0's wait, the
+    /// vendor's 100 ms there); 0, the default, sends it as the request's input ends (`route.rs`).
     pub teardown: Duration,
+    /// Before the exit drops its redirects, from the last key to a window it still holds redirected
+    /// (`settle::EXIT_SETTLE`).
+    pub exit_settle: Duration,
+    /// Before a paste observes its field, from the last key to its window (`settle::PASTE_SETTLE`).
+    pub paste_settle: Duration,
+    /// Before a paste observes its field, from the last click to its window (`settle::PASTE_CLICK_SETTLE`).
+    pub paste_click_settle: Duration,
     /// A drag's waits fixed for every target by the measurement flags (`--drag-step-ms`, `--drag-step-us`,
     /// `--drag-press-dwell-ms`, `--drag-release-dwell-ms`); None, the default, paces each drag by its target's family
     /// (`families.rs`).
@@ -171,10 +181,14 @@ impl Keys {
     }
 }
 
-/// One request's input session for a window (behaviour §8.1).
+/// A window's input session (behaviour §8.1): one request's, kept open across requests only while a hold names the
+/// window (`route.rs`).
 pub struct Session {
     pub target: Window,
     synthesized_focus: bool,
+    /// The presses this session has sent: what a press's acknowledgement is issued against, so it serves one press
+    /// (`focus_ack::PressAck`).
+    presses: u64,
     redirected: bool,
     anchor_time: u32,
     anchor: Instant,
@@ -183,6 +197,11 @@ pub struct Session {
     grab: Option<Window>,
     pointer: Option<Pointer>,
     pacing: Pacing,
+    /// Whether a key event went to the target in this session: a paste's settle follows keys (`settle.rs`).
+    took_keys: bool,
+    /// Whether a press of button 1, 2 or 3 went to the target in this session (a click, a drag): a paste's settle
+    /// follows clicks too (`settle.rs`).
+    took_clicks: bool,
 }
 
 /// The server time now: an InputOnly window's property change, whose `PropertyNotify` carries the time.
@@ -248,6 +267,7 @@ impl Session {
         let mut session = Session {
             target,
             synthesized_focus: false,
+            presses: 0,
             redirected,
             anchor_time,
             anchor,
@@ -256,39 +276,46 @@ impl Session {
             grab: None,
             pointer: None,
             pacing,
+            took_keys: false,
+            took_clicks: false,
         };
-        if !within {
-            let focus_in = FocusInEvent {
-                response_type: FOCUS_IN_EVENT,
-                detail: NotifyDetail::NONLINEAR,
-                sequence: 0,
-                event: target,
-                mode: NotifyMode::NORMAL,
-            };
-            if let Err(error) = x
-                .conn
-                .send_event(false, target, EventMask::NO_EVENT, focus_in)
-                .map_err(anyhow::Error::from)
-                .and_then(|c| Ok(c.check()?))
-            {
-                session.synthesized_focus = true;
-                session.close(x);
-                return Err(error);
-            }
-            session.synthesized_focus = true;
+        if !within && let Err(error) = session.focus_in(x) {
+            session.finish(x);
+            session.end(x);
+            return Err(error);
         }
         Ok(session)
     }
 
-    /// Ends the session: keys and buttons still held released (best effort: the request has already answered
-    /// with any release error), the teardown wait, FocusOut unless the real focus has since entered the target,
-    /// and the per-request unredirect.
-    pub fn close(mut self, x: &mut X11) {
+    /// The synthetic `FocusIn` (detail `Nonlinear`, mode `Normal`); the session counts it as held either way, so its end
+    /// sends the `FocusOut` that answers a `FocusIn` whose delivery the error leaves unknown.
+    fn focus_in(&mut self, x: &X11) -> Result<()> {
+        let focus_in = FocusInEvent {
+            response_type: FOCUS_IN_EVENT,
+            detail: NotifyDetail::NONLINEAR,
+            sequence: 0,
+            event: self.target,
+            mode: NotifyMode::NORMAL,
+        };
+        self.synthesized_focus = true;
+        x.conn
+            .send_event(false, self.target, EventMask::NO_EVENT, focus_in)
+            .map_err(anyhow::Error::from)
+            .and_then(|c| Ok(c.check()?))
+    }
+
+    /// The end of a request's input on this session: keys and buttons still held released (best effort: the request
+    /// has already answered with any release error). The session's `FocusOut` follows (`end`), unless a hold keeps it.
+    pub fn finish(&mut self, x: &X11) {
         let (target, buttons, time) = (self.target, self.buttons, self.clock());
         self.keys
             .release_all(|keycode, mask| send_key(x, target, time(), keycode, false, buttons | mask));
         self.release_buttons(x);
-        std::thread::sleep(self.pacing.teardown);
+    }
+
+    /// Ends the session, as its request's input ends (`route.rs`): `FocusOut` unless the real focus has since entered the
+    /// target, and the per-request unredirect.
+    pub fn end(self, x: &mut X11) {
         if self.synthesized_focus && !focus_is_within(x, self.target).unwrap_or(false) {
             let focus_out = FocusOutEvent {
                 response_type: FOCUS_OUT_EVENT,
@@ -312,7 +339,7 @@ impl Session {
     pub fn release_buttons(&mut self, x: &X11) {
         for button in 1..=5u8 {
             if self.buttons & (1 << (button + 7)) != 0 {
-                let _ = self.button(x, button, false);
+                let _ = self.release_button(x, button);
             }
         }
         self.buttons = 0;
@@ -324,8 +351,9 @@ impl Session {
         self.clock()()
     }
 
-    /// Whether the X input focus was within the target when the session opened: the synthetic-focus state the
-    /// session holds (no FocusIn was synthesized), which a paste revalidates before its dispatch.
+    /// Whether the session holds no synthetic focus: none was synthesized, because the X input focus was within the
+    /// target when the session opened (and no press took one since, `take_focus`). The synthetic-focus state a paste
+    /// revalidates before its dispatch.
     pub fn focus_was_within(&self) -> bool {
         !self.synthesized_focus
     }
@@ -342,8 +370,20 @@ impl Session {
         self.buttons | self.keys.mask()
     }
 
+    /// Whether a key event went to the target in this session (a press or a release, the paste chord's included).
+    pub fn took_keys(&self) -> bool {
+        self.took_keys
+    }
+
+    /// Whether a press of button 1, 2 or 3 went to the target in this session (a click, a drag's press).
+    pub fn took_clicks(&self) -> bool {
+        self.took_clicks
+    }
+
     /// Presses each keycode not already held, in order, pacing after each new edge (behaviour §11.3).
     pub fn acquire(&mut self, x: &X11, keycodes: &[u8]) -> Result<Vec<u8>> {
+        // a click's empty modifier chord sends no key
+        self.took_keys |= !keycodes.is_empty();
         let (target, buttons, pace, time) = (self.target, self.buttons, self.pacing.key, self.clock());
         self.keys.acquire(
             keycodes,
@@ -368,6 +408,7 @@ impl Session {
 
     /// [`Session::release`], also answering the references still unreleased ([`Keys::release_tracked`]).
     pub fn release_tracked(&mut self, x: &X11, keycodes: &[u8]) -> (Result<()>, Vec<u8>) {
+        self.took_keys |= !keycodes.is_empty();
         let (target, buttons, pace, time) = (self.target, self.buttons, self.pacing.key, self.clock());
         self.keys.release_tracked(keycodes, |keycode, mask| {
             let sent = send_key(x, target, time(), keycode, false, buttons | mask);
@@ -379,7 +420,34 @@ impl Session {
     /// Releases a key the bookkeeping does not hold: one whose press may have been delivered though its acknowledgement
     /// never came. No press is sent.
     pub fn release_unheld(&mut self, x: &X11, keycode: u8) -> Result<()> {
+        self.took_keys = true;
         send_key(x, self.target, self.now(), keycode, false, self.state())
+    }
+
+    /// The window a press at a root point would go to, sending nothing: the implicit-grab window while a button is
+    /// held, else the deepest viewable child under the point, as [`Session::move_to`] places the pointer.
+    pub fn recipient(&self, x: &X11, root_x: i16, root_y: i16) -> Result<Window> {
+        match self.grab {
+            Some(grab) => Ok(grab),
+            None => Ok(deepest_at(x, self.target, root_x, root_y)?.0),
+        }
+    }
+
+    /// Takes a synthetic focus now, a fresh `FocusIn` (`focus_ack.rs`, a press's `Need::Take`): the session held none
+    /// (it opened while the real focus was within the target, which has left since), or its earlier `FocusIn` is spent
+    /// (the toolkit has given its focus to another window since). The session's end then sends its `FocusOut`.
+    pub fn take_focus(&mut self, x: &X11) -> Result<()> {
+        self.focus_in(x)
+    }
+
+    /// Whether the session sent a synthetic `FocusIn` (at its opening or since, `take_focus`): whether one may hold.
+    pub fn synthesized_focus(&self) -> bool {
+        self.synthesized_focus
+    }
+
+    /// The presses this session has sent, against which a press's acknowledgement is issued.
+    pub fn presses(&self) -> u64 {
+        self.presses
     }
 
     /// Places the pointer at a root point: Enter and Motion to the deepest viewable child under it, or one
@@ -397,54 +465,7 @@ impl Session {
             });
             return Ok(());
         }
-        let base = self.target;
-        let local = x.conn.translate_coordinates(x.root, base, root_x, root_y)?;
-        let geometry = x.conn.get_geometry(base)?;
-        let (local, geometry) = (local.reply()?, geometry.reply()?);
-        if local.dst_x < 0
-            || local.dst_y < 0
-            || local.dst_x as i32 >= geometry.width as i32
-            || local.dst_y as i32 >= geometry.height as i32
-        {
-            bail!("background pointer position is outside the target window");
-        }
-        let (mut window, mut lx, mut ly) = (base, local.dst_x, local.dst_y);
-        for _ in 0..100 {
-            let children = x.conn.query_tree(window)?.reply()?.children;
-            let mut pending = Vec::with_capacity(children.len());
-            for &child in children.iter().rev() {
-                pending.push((
-                    child,
-                    x.conn.get_window_attributes(child)?,
-                    x.conn.get_geometry(child)?,
-                    x.conn.translate_coordinates(x.root, child, root_x, root_y)?,
-                ));
-            }
-            let mut found = None;
-            for (child, attributes, geometry, local) in pending {
-                if found.is_some() {
-                    continue;
-                }
-                let (Ok(attributes), Ok(geometry), Ok(local)) = (attributes.reply(), geometry.reply(), local.reply())
-                else {
-                    continue;
-                };
-                if attributes.map_state != MapState::VIEWABLE {
-                    continue;
-                }
-                let inside = local.dst_x >= 0
-                    && local.dst_y >= 0
-                    && (local.dst_x as i32) < geometry.width as i32
-                    && (local.dst_y as i32) < geometry.height as i32;
-                if inside {
-                    found = Some((child, local.dst_x, local.dst_y));
-                }
-            }
-            match found {
-                Some((child, cx, cy)) => (window, lx, ly) = (child, cx, cy),
-                None => break,
-            }
-        }
+        let (window, lx, ly) = deepest_at(x, self.target, root_x, root_y)?;
         let enter = EnterNotifyEvent {
             response_type: ENTER_NOTIFY_EVENT,
             detail: NotifyDetail::NONLINEAR,
@@ -493,8 +514,27 @@ impl Session {
         Ok(())
     }
 
-    /// A button press or release at the last placed position (behaviour §8.3).
-    pub fn button(&mut self, x: &X11, button: u8, press: bool) -> Result<()> {
+    /// A button press at the last placed position (behaviour §8.3), spending the acknowledgement taken for it
+    /// ([`crate::focus_ack::press_ack`]): one issued for this session's next press at this point, and no other, so no
+    /// acknowledgement serves two presses, outlives its request, or covers a point it did not check (task 61's fix 3).
+    pub fn press(&mut self, x: &X11, button: u8, ack: crate::focus_ack::PressAck) -> Result<()> {
+        let Some((window, presses, at)) = ack.issued_for() else {
+            bail!("a desktop press's acknowledgement cannot press in a background session")
+        };
+        let placed = self.pointer.map(|p| (p.root_x, p.root_y));
+        if window != self.target || presses != self.presses || placed != Some(at) {
+            bail!("a press's acknowledgement was taken for another press; nothing was pressed");
+        }
+        self.presses += 1;
+        self.send_button(x, button, true)
+    }
+
+    /// A button release at the last placed position (behaviour §8.3).
+    pub fn release_button(&mut self, x: &X11, button: u8) -> Result<()> {
+        self.send_button(x, button, false)
+    }
+
+    fn send_button(&mut self, x: &X11, button: u8, press: bool) -> Result<()> {
         let Some(pointer) = self.pointer else {
             bail!("background pointer input requires a position")
         };
@@ -530,9 +570,63 @@ impl Session {
         }
         if (1..=3).contains(&button) {
             self.grab = if press { Some(pointer.window) } else { None };
+            self.took_clicks |= press;
         }
         Ok(())
     }
+}
+
+/// The deepest viewable child of `base` under a root point, with the point in its coordinates (behaviour §8.2): each
+/// level's children topmost first, the first viewable one containing the point. A point outside `base` is refused.
+fn deepest_at(x: &X11, base: Window, root_x: i16, root_y: i16) -> Result<(Window, i16, i16)> {
+    let local = x.conn.translate_coordinates(x.root, base, root_x, root_y)?;
+    let geometry = x.conn.get_geometry(base)?;
+    let (local, geometry) = (local.reply()?, geometry.reply()?);
+    if local.dst_x < 0
+        || local.dst_y < 0
+        || local.dst_x as i32 >= geometry.width as i32
+        || local.dst_y as i32 >= geometry.height as i32
+    {
+        bail!("background pointer position is outside the target window");
+    }
+    let (mut window, mut lx, mut ly) = (base, local.dst_x, local.dst_y);
+    for _ in 0..100 {
+        let children = x.conn.query_tree(window)?.reply()?.children;
+        let mut pending = Vec::with_capacity(children.len());
+        for &child in children.iter().rev() {
+            pending.push((
+                child,
+                x.conn.get_window_attributes(child)?,
+                x.conn.get_geometry(child)?,
+                x.conn.translate_coordinates(x.root, child, root_x, root_y)?,
+            ));
+        }
+        let mut found = None;
+        for (child, attributes, geometry, local) in pending {
+            if found.is_some() {
+                continue;
+            }
+            let (Ok(attributes), Ok(geometry), Ok(local)) = (attributes.reply(), geometry.reply(), local.reply())
+            else {
+                continue;
+            };
+            if attributes.map_state != MapState::VIEWABLE {
+                continue;
+            }
+            let inside = local.dst_x >= 0
+                && local.dst_y >= 0
+                && (local.dst_x as i32) < geometry.width as i32
+                && (local.dst_y as i32) < geometry.height as i32;
+            if inside {
+                found = Some((child, local.dst_x, local.dst_y));
+            }
+        }
+        match found {
+            Some((child, cx, cy)) => (window, lx, ly) = (child, cx, cy),
+            None => break,
+        }
+    }
+    Ok((window, lx, ly))
 }
 
 /// One key event to the top-level target, root and event coordinates 0 (behaviour §8.3).
@@ -556,10 +650,13 @@ fn send_key(x: &X11, target: Window, time: u32, keycode: u8, press: bool, state:
         x.conn.send_event(false, target, EventMask::NO_EVENT, event)?.check()?;
         Ok(())
     };
-    #[cfg(test)]
-    return crate::fault::key(keycode, press, send);
-    #[cfg(not(test))]
-    send()
+    // recorded for the exits that cannot wait for the bookkeeping (pressed.rs)
+    crate::pressed::window_key(target, keycode, state, time, press, || {
+        #[cfg(test)]
+        return crate::fault::key(keycode, press, send);
+        #[cfg(not(test))]
+        send()
+    })
 }
 
 #[cfg(test)]

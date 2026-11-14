@@ -1,0 +1,37 @@
+✔ a Writer drag is aimed where VCL draws the text, by the host panel's offset, after a configure as after a pointer event (2.591897ms)
+✖ the aim samples VCL's offset with each character's extents, so a pointer event or a configure after locate moves neither (1.400404ms)
+✔ another family's text keeps the AT-SPI extents less the window's origin (0.214463ms)
+✔ VCL's offset is the host's origin less the root pane's, and only the menu bar's shape is read (0.71304ms)
+✔ the declared refusal is the engine's own sentence (native/linux-engine/src/vcl.rs `UNTRUSTED`) (0.861089ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 4
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 114.968161
+
+✖ failing tests:
+
+test at test/linux-engine-diff/vcl-aim.test.mjs:42:1
+✖ the aim samples VCL's offset with each character's extents, so a pointer event or a configure after locate moves neither (1.400404ms)
+  AssertionError [ERR_ASSERTION]: located after a configure, aimed after a pointer event
+  + actual - expected
+  
+    [
+      302,
+  +   261
+  -   234
+    ]
+  
+      at TestContext.<anonymous> (file://<worktree>/test/linux-engine-diff/vcl-aim.test.mjs:54:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 302, 261 ],
+    expected: [ 302, 234 ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

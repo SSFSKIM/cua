@@ -1,0 +1,115 @@
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running unittests src/main.rs (target/release/deps/cua_engine-70057b6b8a99fa9b)
+
+running 12 tests
+test engine::identity_faults::a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing ... dbus-daemon[1966838]: [session uid=501 pid=1966838] Activating service name='org.a11y.Bus' requested by ':1.0' (uid=501 pid=1966851 comm="python3 -c import gi; gi.require_version('Gtk', '3" label="unconfined")
+dbus-daemon[1966838]: [session uid=501 pid=1966838] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[1966859]: Activating service name='org.a11y.atspi.Registry' requested by ':1.1' (uid=501 pid=1966860 comm="python3 /Users/new/Developer/GitHub/cua/.claude/wo" label="unconfined")
+dbus-daemon[1966859]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+FAILED
+test engine::refusal_faults::a_clipboard_lock_held_after_the_click_says_the_click_reached_the_window ... FAILED
+test engine::refusal_faults::a_clipboard_taken_from_the_paste_after_the_click_says_the_click_reached_the_window ... FAILED
+test engine::refusal_faults::a_context_menu_copy_on_the_vendor_s_own_match_still_copies ... ok
+test engine::refusal_faults::a_context_menu_with_no_copy_says_an_escape_was_sent_to_close_it_not_that_it_closed ... FAILED
+test engine::refusal_faults::a_copy_between_the_snapshot_and_the_take_after_the_click_says_the_click_reached_the_window ... FAILED
+test engine::refusal_faults::a_desktop_focus_change_after_the_click_says_the_click_reached_the_window ... FAILED
+test engine::refusal_faults::a_field_changed_at_the_revalidation_after_the_click_says_the_click_reached_the_window ... FAILED
+test engine::refusal_faults::a_field_that_loses_the_focus_at_its_restore_says_the_click_reached_the_window ... FAILED
+test engine::refusal_faults::a_field_that_never_takes_the_focus_says_its_clicks_reached_the_window ... FAILED
+test engine::refusal_faults::a_silent_clipboard_owner_after_the_click_says_the_click_reached_the_window ... FAILED
+test engine::refusal_faults::an_unconfirmed_paste_s_window_opened_after_the_click_says_the_click_reached_the_window ... FAILED
+
+failures:
+
+---- engine::identity_faults::a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing stdout ----
+
+thread 'engine::identity_faults::a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing' (1966850) panicked at src/engine/identity_faults.rs:86:9:
+B's menu closed and gone: [Object {"marker": Number(1), "xid": Number(4194307)}, Object {"marker": Number(2), "xid": Number(4194318)}, Object {"active": Number(1), "is": Bool(true)}, Object {"configured": Number(2), "x": Number(450), "y": Number(0)}, Object {"active": Number(1), "is": Bool(false)}, Object {"active": Number(2), "is": Bool(true)}, Object {"menu": String("open"), "window": Number(2)}, Object {"active": Number(2), "is": Bool(false)}, Object {"active": Number(2), "is": Bool(true)}]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- engine::refusal_faults::a_clipboard_lock_held_after_the_click_says_the_click_reached_the_window stdout ----
+
+thread 'engine::refusal_faults::a_clipboard_lock_held_after_the_click_says_the_click_reached_the_window' (1967030) panicked at src/engine/refusal_faults.rs:103:5:
+assertion `left == right` failed
+  left: Err("clipboard busy")
+ right: Err("clipboard busy; no paste was dispatched, but a focusing click already reached the window, so read the window before retrying")
+
+---- engine::refusal_faults::a_clipboard_taken_from_the_paste_after_the_click_says_the_click_reached_the_window stdout ----
+
+thread 'engine::refusal_faults::a_clipboard_taken_from_the_paste_after_the_click_says_the_click_reached_the_window' (1967118) panicked at src/engine/refusal_faults.rs:103:5:
+assertion `left == right` failed
+  left: Err("another program took the clipboard before the paste was sent; nothing was sent")
+ right: Err("another program took the clipboard before the paste was sent; no paste was dispatched, but a focusing click already reached the window, so read the window before retrying")
+
+---- engine::refusal_faults::a_context_menu_with_no_copy_says_an_escape_was_sent_to_close_it_not_that_it_closed stdout ----
+
+thread 'engine::refusal_faults::a_context_menu_with_no_copy_says_an_escape_was_sent_to_close_it_not_that_it_closed' (1967139) panicked at src/engine/refusal_faults.rs:403:5:
+assertion `left == right` failed
+  left: Err("native menu opened without an available Copy; no clipboard action was sent")
+ right: Err("native menu opened without an available Copy; no clipboard action was sent; an Escape was sent to close the menu the Copy opened")
+
+---- engine::refusal_faults::a_copy_between_the_snapshot_and_the_take_after_the_click_says_the_click_reached_the_window stdout ----
+
+thread 'engine::refusal_faults::a_copy_between_the_snapshot_and_the_take_after_the_click_says_the_click_reached_the_window' (1967150) panicked at src/engine/refusal_faults.rs:103:5:
+assertion `left == right` failed
+  left: Err("the clipboard changed after it was read; nothing was sent")
+ right: Err("the clipboard changed after it was read; no paste was dispatched, but a focusing click already reached the window, so read the window before retrying")
+
+---- engine::refusal_faults::a_desktop_focus_change_after_the_click_says_the_click_reached_the_window stdout ----
+
+thread 'engine::refusal_faults::a_desktop_focus_change_after_the_click_says_the_click_reached_the_window' (1967162) panicked at src/engine/refusal_faults.rs:103:5:
+assertion `left == right` failed
+  left: Err("requested field or selection changed before dispatch; nothing was sent")
+ right: Err("requested field or selection changed before dispatch; no paste was dispatched, but a focusing click already reached the window, so read the window before retrying")
+
+---- engine::refusal_faults::a_field_changed_at_the_revalidation_after_the_click_says_the_click_reached_the_window stdout ----
+
+thread 'engine::refusal_faults::a_field_changed_at_the_revalidation_after_the_click_says_the_click_reached_the_window' (1967171) panicked at src/engine/refusal_faults.rs:103:5:
+assertion `left == right` failed
+  left: Err("requested field or selection changed before dispatch; nothing was sent")
+ right: Err("requested field or selection changed before dispatch; no paste was dispatched, but a focusing click already reached the window, so read the window before retrying")
+
+---- engine::refusal_faults::a_field_that_loses_the_focus_at_its_restore_says_the_click_reached_the_window stdout ----
+
+thread 'engine::refusal_faults::a_field_that_loses_the_focus_at_its_restore_says_the_click_reached_the_window' (1967183) panicked at src/engine/refusal_faults.rs:103:5:
+assertion `left == right` failed
+  left: Err("requested field or selection changed before dispatch; nothing was sent")
+ right: Err("requested field or selection changed before dispatch; no paste was dispatched, but a focusing click already reached the window, so read the window before retrying")
+
+---- engine::refusal_faults::a_field_that_never_takes_the_focus_says_its_clicks_reached_the_window stdout ----
+
+thread 'engine::refusal_faults::a_field_that_never_takes_the_focus_says_its_clicks_reached_the_window' (1967199) panicked at src/engine/refusal_faults.rs:143:5:
+assertion `left == right` failed
+  left: Err("element did not take the focus when clicked; nothing was sent")
+ right: Err("element did not take the focus when clicked; no paste was dispatched, but a focusing click already reached the window, so read the window before retrying")
+
+---- engine::refusal_faults::a_silent_clipboard_owner_after_the_click_says_the_click_reached_the_window stdout ----
+
+thread 'engine::refusal_faults::a_silent_clipboard_owner_after_the_click_says_the_click_reached_the_window' (1967218) panicked at src/engine/refusal_faults.rs:103:5:
+assertion `left == right` failed
+  left: Err("clipboard capture timed out: the clipboard owner did not answer TARGETS within 500 ms; nothing was sent")
+ right: Err("clipboard capture timed out: the clipboard owner did not answer TARGETS within 500 ms; no paste was dispatched, but a focusing click already reached the window, so read the window before retrying")
+
+---- engine::refusal_faults::an_unconfirmed_paste_s_window_opened_after_the_click_says_the_click_reached_the_window stdout ----
+
+thread 'engine::refusal_faults::an_unconfirmed_paste_s_window_opened_after_the_click_says_the_click_reached_the_window' (1967298) panicked at src/engine/refusal_faults.rs:268:5:
+a previous paste could not be confirmed and may still be read; nothing was sent; retry after 5 s
+
+
+failures:
+    engine::identity_faults::a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing
+    engine::refusal_faults::a_clipboard_lock_held_after_the_click_says_the_click_reached_the_window
+    engine::refusal_faults::a_clipboard_taken_from_the_paste_after_the_click_says_the_click_reached_the_window
+    engine::refusal_faults::a_context_menu_with_no_copy_says_an_escape_was_sent_to_close_it_not_that_it_closed
+    engine::refusal_faults::a_copy_between_the_snapshot_and_the_take_after_the_click_says_the_click_reached_the_window
+    engine::refusal_faults::a_desktop_focus_change_after_the_click_says_the_click_reached_the_window
+    engine::refusal_faults::a_field_changed_at_the_revalidation_after_the_click_says_the_click_reached_the_window
+    engine::refusal_faults::a_field_that_loses_the_focus_at_its_restore_says_the_click_reached_the_window
+    engine::refusal_faults::a_field_that_never_takes_the_focus_says_its_clicks_reached_the_window
+    engine::refusal_faults::a_silent_clipboard_owner_after_the_click_says_the_click_reached_the_window
+    engine::refusal_faults::an_unconfirmed_paste_s_window_opened_after_the_click_says_the_click_reached_the_window
+
+test result: FAILED. 1 passed; 11 failed; 0 ignored; 0 measured; 278 filtered out; finished in 32.07s
+
+error: test failed, to rerun pass `--bin cua-engine`

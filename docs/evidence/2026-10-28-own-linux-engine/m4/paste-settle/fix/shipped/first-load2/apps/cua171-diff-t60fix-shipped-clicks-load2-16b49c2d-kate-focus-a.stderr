@@ -1,0 +1,8 @@
+SingleApplication: Shared memory block has been in an inconsistent state from more than 5s. Assuming primary instance failure.
+Hspell: can't open /usr/share/hspell/hebrew.wgz.sizes.
+kf.sonnet.clients.hspell: HSpellDict::HSpellDict: Init failed
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x59d3e03b48a0 invalid) "/org/a11y/atspi/accessible/2147485139"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x59d3e03b48a0 invalid) "/org/a11y/atspi/accessible/2147485139"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x59d3e03b48a0 invalid) "/org/a11y/atspi/accessible/2147485139"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x59d3e03b48a0 invalid) "/org/a11y/atspi/accessible/2147485139"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x59d3e03b48a0 invalid) "/org/a11y/atspi/accessible/2147485139"

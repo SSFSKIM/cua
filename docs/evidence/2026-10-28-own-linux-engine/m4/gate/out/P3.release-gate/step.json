@@ -1,0 +1,41 @@
+{
+  "label": "release gate",
+  "step": "P3",
+  "pilot": false,
+  "what": "T19's predicates manifest: move",
+  "display": "private",
+  "load": "idle",
+  "minutes": 30,
+  "run_name": "m4-gate-P3",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/",
+    "commit": "514f5c62dd6c74b1ed24c48f112ca9c35a70eece",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64",
+    "sha256": "f7c12e9bc2ca415050c9dd0f955012aedc3f5d0e1fbcd8661daea7bee0b83937"
+  },
+  "command": "/Users/new/.local/share/cua-171/locked.sh t18-gate /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t76-gate/scripts/linux-engine-gate/gate.mjs run P3 --candidate /Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64 --out /Users/new/.local/share/cua-171/gate/out",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "predicates",
+    "--vendor",
+    "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "--ops",
+    "move",
+    "--cua",
+    "/Users/new/.local/share/cua-171/gate/artifact/cua-engine-0.4.0-linux-x64",
+    "--run",
+    "m4-gate-P3",
+    "--gate",
+    "--out",
+    "/Users/new/.local/share/cua-171/gate/out/P3.release-gate/run"
+  ],
+  "started": "2026-11-13T16:15:03.277Z",
+  "finished": "2026-11-13T16:41:22.245Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean"
+}

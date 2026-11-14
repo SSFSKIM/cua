@@ -1,0 +1,11 @@
+{"t":"2026-11-03T08:46:43.633Z","phase":null,"id":"0x80000c","at":"first","class":"\"xterm\", \"XTerm\"","name":null,"state":"","transient_for":null,"type":null,"pid":"2899345"}
+{"t":"2026-11-03T08:46:44.146Z","phase":"smoke-chrome-tree","id":"0xc0000c","at":"first","class":"\"xterm\", \"XTerm\"","name":null,"state":"","transient_for":null,"type":null,"pid":"2899398"}
+{"t":"2026-11-03T08:46:45.667Z","phase":"smoke-chrome-tree","id":"0x80000c","at":"+2s","class":"\"xterm\", \"XTerm\"","name":null,"state":"","transient_for":null,"type":null,"pid":"2899345"}
+{"t":"2026-11-03T08:46:46.175Z","phase":"smoke-chrome-tree","id":"0xc0000c","at":"+2s","class":"\"xterm\", \"XTerm\"","name":null,"state":"","transient_for":null,"type":null,"pid":"2899398"}
+{"t":"2026-11-03T08:46:48.196Z","phase":"smoke-chrome-tree","id":"0xe00002","at":"first","class":"\"google-chrome (/tmp/cua171-task49-wINluY/cua171-diff-t49-smoke-AJPUSj/chrome-profile)\", \"Google-chrome\"","name":"\"cua171-diff-t49-smoke-8b30b21f-scene-read - Google Chrome\"","state":"","transient_for":null,"type":"_NET_WM_WINDOW_TYPE_NORMAL","pid":"2899528"}
+{"t":"2026-11-03T08:46:48.705Z","phase":"smoke-chrome-tree","id":"0x1a0000c","at":"first","class":"\"xterm\", \"XTerm\"","name":null,"state":"","transient_for":null,"type":null,"pid":"2899728"}
+{"t":"2026-11-03T08:46:50.225Z","phase":"smoke-chrome-tree","id":"0xe00002","at":"+2s","class":"\"google-chrome (/tmp/cua171-task49-wINluY/cua171-diff-t49-smoke-AJPUSj/chrome-profile)\", \"Google-chrome\"","name":"\"cua171-diff-t49-smoke-8b30b21f-scene-read - Google Chrome\"","state":"","transient_for":null,"type":"_NET_WM_WINDOW_TYPE_NORMAL","pid":"2899528"}
+{"t":"2026-11-03T08:46:50.734Z","phase":"smoke-chrome-tree","id":"0x1a0000c","at":"+2s","class":"\"xterm\", \"XTerm\"","name":null,"state":"","transient_for":null,"type":null,"pid":"2899728"}
+{"t":"2026-11-03T08:47:39.803Z","phase":"smoke-chrome-tree","id":"0xe00002","at":"gone","lived_ms":51607}
+{"t":"2026-11-03T08:47:39.803Z","phase":"smoke-chrome-tree","id":"0x1a0000c","at":"gone","lived_ms":51098}
+{"t":"2026-11-03T08:47:40.815Z","phase":"smoke-chrome-tree","id":"0xc0000c","at":"gone","lived_ms":56669}

@@ -7,6 +7,9 @@ export function median(values) {
   return xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
 }
 
+/** The verdicts of a declared loss against the vendor (deviations.mjs REFUSALS): listed apart, never a pass, not a failure. */
+export const DECLARED_LOSSES = ['declared refusal', 'declared unconfirmed'];
+
 /**
  * A run's outcome from its verdict rows (Interfaces: exit 0 only when the negative check held and every verdict
  * passes, exploratory variants included; their rows stay in the evidence either way). `valid` is the negative
@@ -15,20 +18,43 @@ export function median(values) {
  * `restores` (prepare.mjs `judgeTextRestores`' `lanes`): the scene text put back per lane, carried to the verdict line;
  * `stop`: why the run stopped before its verdicts (a candidate's own text lost, task 24), one more failure.
  * `warmUps` (prepare.mjs `judgeWarmUps`): each candidate warm-up that failed is one more failure.
+ * `foreign`: each change of a window the harness did not open (audit.mjs `auditForeign`, by the harness or an engine
+ * it drove), and each trace that could not show there was none, is one more failure, whatever the verdicts.
  */
-export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null, warmUps = null }) {
+export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null, warmUps = null, foreign = [] }) {
   const name = (v) => `${v.scene} ${v.op} ${v.candidate}`;
   const judged = verdicts.filter((v) => v.kind === 'verdict');
+  const drops = dropCounts(judged);
   const parity = judged.filter((v) => !v.pass && v.verdict === 'parity').map(name);
-  // a declared refusal (deviations.mjs REFUSALS) is a recorded loss: listed apart, never a pass, not a failure
-  const refused = judged.filter((v) => !v.pass && v.verdict === 'declared refusal').map(name);
-  const failed = judged.filter((v) => !v.pass && !['parity', 'declared refusal'].includes(v.verdict)).map(name);
+  // a declared refusal or unconfirmed answer (deviations.mjs REFUSALS) is a recorded loss: listed apart, never a pass,
+  // not a failure
+  const refused = judged.filter((v) => !v.pass && DECLARED_LOSSES.includes(v.verdict)).map(name);
+  const failed = judged.filter((v) => !v.pass && !['parity', ...DECLARED_LOSSES].includes(v.verdict)).map(name);
   // the gate's rule for harness-side preparation failures (prepare.mjs): a cap exceeded fails the run
   if (faults && !faults.pass) failed.push(`harness preparation failures over the cap (${faults.reasons.join('; ')})`);
   if (warmUps && !warmUps.pass) failed.push(...warmUps.reasons);
   if (stop) failed.push(stop);
+  for (const f of foreign) failed.push(`a window the harness did not open was changed: ${f}`);
+  if (drops.finding) failed.push(drops.finding);
   const pass = failed.length === 0;
   return { valid, pass, failed, parity, refused, ...(restores ? { restores } : {}), code: valid && pass ? 0 : 1 };
+}
+
+/** The share of a run's landed drops left unconfirmed above which the run has a finding (the design session, 2026-11-10). */
+export const UNCONFIRMED_LANDED_SHARE = 0.05;
+
+/**
+ * A run's Chrome drops the engine confirms or reports (device.mjs `confirm`, each verdict's `drops`), summed over its
+ * cases: a run is one load. A drop that landed but was reported unconfirmed is honest (Chrome's request came after the
+ * window), counted apart, and a finding only above `UNCONFIRMED_LANDED_SHARE` of the landed drops; a drag answered ok
+ * with no drop and nothing pending (false ok) fails its own case.
+ */
+export function dropCounts(verdicts) {
+  const counted = verdicts.filter((v) => v.drops);
+  const sum = (key) => counted.reduce((n, v) => n + v.drops[key], 0);
+  const c = { cases: counted.length, samples: sum('samples'), landed: sum('landed'), ok: sum('ok'), false_ok: sum('false_ok'), unconfirmed_landed: sum('unconfirmed_landed') };
+  const over = c.unconfirmed_landed > UNCONFIRMED_LANDED_SHARE * c.landed;
+  return { ...c, finding: over ? `landed drops reported unconfirmed: ${c.unconfirmed_landed} of ${c.landed}, over ${UNCONFIRMED_LANDED_SHARE * 100}%` : null };
 }
 
 /**
@@ -165,6 +191,67 @@ export function speedLabel(interval) {
 export function noiseVerdict(interval, bar) {
   if (interval[1] <= noiseBound(bar)) return 'same';
   return interval[0] > 0 ? 'loss' : 'wide';
+}
+
+/** How far a series is topped up before an undetermined one fails (Acceptance 3: 20 a side, then to 40). */
+export const TOP_UP_SAMPLES = 2 * MIN_NOISE_SAMPLES;
+
+/**
+ * One series judged by Acceptance 3's interval rule where an engine's samples can be unusable (M4, T10: the long
+ * browser drags, whose vendor builds miss runs). `samples` maps each engine to `{usable, sampled}`: the times that count
+ * and how many samples it took. A vendor build sets the bar only with `MIN_NOISE_SAMPLES` usable; one short of that holds
+ * the series open until it has been sampled to `cap`, and then gives the bar up (`failed_bar`), the bar falling to the
+ * other build. The candidate needs `MIN_NOISE_SAMPLES` usable too. The bar is the faster median of the builds that set
+ * one, and `against` names that build. Then the interval guard, as `judgeOperation` applies it: a pass when the upper end
+ * of the bootstrap interval of the candidate's median minus the bar's is within `noiseBound` (`label`), a failure when
+ * the interval lies above 0 past it, and otherwise undetermined until both sides reach `cap`, when it fails. With every
+ * vendor build having given the bar up, the verdict is `no bar`: recorded, with nothing to judge the speed against.
+ * Returns `{verdict: 'pass'|'fail'|'undetermined'|'no bar', against, bar, candidate, interval, bound, label, failed_bar,
+ * reasons}`.
+ */
+export function judgeSeriesSpeed(samples, { vendors, candidate, interval, cap = TOP_UP_SAMPLES }) {
+  const shown = (v) => (v === null ? null : Math.round(v * 100) / 100);
+  const of = (engine) => samples[engine] ?? { usable: [], sampled: 0 };
+  const out = { verdict: 'undetermined', against: null, bar: null, candidate: shown(median(of(candidate).usable)), interval: null, bound: null, label: null, failed_bar: [], reasons: [] };
+  const present = vendors.filter((v) => samples[v]);
+  const setting = present.filter((v) => of(v).usable.length >= MIN_NOISE_SAMPLES);
+  const open = present.filter((v) => of(v).usable.length < MIN_NOISE_SAMPLES && of(v).sampled < cap);
+  out.failed_bar = present.filter((v) => of(v).usable.length < MIN_NOISE_SAMPLES && of(v).sampled >= cap).map((v) => ({ engine: v, usable: of(v).usable.length, sampled: of(v).sampled }));
+  const mine = of(candidate);
+  if (mine.usable.length < MIN_NOISE_SAMPLES) {
+    out.verdict = mine.sampled >= cap ? 'fail' : 'undetermined';
+    out.reasons.push(`${candidate}: ${mine.usable.length} usable samples of ${mine.sampled}, fewer than ${MIN_NOISE_SAMPLES}`);
+    return out;
+  }
+  if (open.length) {
+    out.reasons.push(`${open.map((v) => `${v} has ${of(v).usable.length} usable of ${of(v).sampled}`).join(', ')}: the bar is not settled before ${cap} samples`);
+    return out;
+  }
+  if (!setting.length) {
+    out.verdict = 'no bar';
+    out.reasons.push(`no vendor build has ${MIN_NOISE_SAMPLES} usable samples (${out.failed_bar.map((f) => `${f.engine} ${f.usable} of ${f.sampled}`).join(', ') || 'none ran'})`);
+    return out;
+  }
+  const against = setting.reduce((best, v) => (median(of(v).usable) < median(of(best).usable) ? v : best));
+  const bar = median(of(against).usable);
+  const ci = interval(mine.usable, of(against).usable);
+  const bound = noiseBound(bar);
+  Object.assign(out, { against, bar: shown(bar), interval: ci, bound: shown(bound) });
+  const at = `${candidate} ${out.candidate} ms against ${against}'s ${out.bar} ms`;
+  if (ci[1] <= bound) {
+    out.verdict = 'pass';
+    out.label = speedLabel(ci);
+    return out;
+  }
+  if (ci[0] > 0) {
+    out.verdict = 'fail';
+    out.reasons.push(`${at}, the interval [${ci.join(', ')}] above 0`);
+    return out;
+  }
+  const final = mine.sampled >= cap && of(against).sampled >= cap;
+  out.verdict = final ? 'fail' : 'undetermined';
+  out.reasons.push(`${at}, the interval [${ci.join(', ')}] reaches past ${out.bound} ms${final ? ` at ${cap} samples` : ''}`);
+  return out;
 }
 
 /**

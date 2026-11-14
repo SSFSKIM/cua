@@ -7,6 +7,9 @@ export function median(values) {
   return xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
 }
 
+/** The verdicts of a declared loss against the vendor (deviations.mjs REFUSALS): listed apart, never a pass, not a failure. */
+export const DECLARED_LOSSES = ['declared refusal', 'declared unconfirmed'];
+
 /**
  * A run's outcome from its verdict rows (Interfaces: exit 0 only when the negative check held and every verdict
  * passes, exploratory variants included; their rows stay in the evidence either way). `valid` is the negative
@@ -23,9 +26,10 @@ export function runOutcome(verdicts, { valid, faults = null, restores = null, st
   const judged = verdicts.filter((v) => v.kind === 'verdict');
   const drops = dropCounts(judged);
   const parity = judged.filter((v) => !v.pass && v.verdict === 'parity').map(name);
-  // a declared refusal (deviations.mjs REFUSALS) is a recorded loss: listed apart, never a pass, not a failure
-  const refused = judged.filter((v) => !v.pass && v.verdict === 'declared refusal').map(name);
-  const failed = judged.filter((v) => !v.pass && !['parity', 'declared refusal'].includes(v.verdict)).map(name);
+  // a declared refusal or unconfirmed answer (deviations.mjs REFUSALS) is a recorded loss: listed apart, never a pass,
+  // not a failure
+  const refused = judged.filter((v) => !v.pass && DECLARED_LOSSES.includes(v.verdict)).map(name);
+  const failed = judged.filter((v) => !v.pass && !['parity', ...DECLARED_LOSSES].includes(v.verdict)).map(name);
   // the gate's rule for harness-side preparation failures (prepare.mjs): a cap exceeded fails the run
   if (faults && !faults.pass) failed.push(`harness preparation failures over the cap (${faults.reasons.join('; ')})`);
   if (warmUps && !warmUps.pass) failed.push(...warmUps.reasons);

@@ -8,6 +8,7 @@
 // it keeps the vendor's 100. The 0 ms step is the control: where a settle is needed, it misses.
 
 import { ANIMATED_ACTION, SETTLE_MS, animatedSettle } from '../../src/services/engine/linux/settle.mjs';
+import { MENU_UNCONFIRMED } from './deviations.mjs';
 import { seriesVerdict } from './focus-timer.mjs';
 
 /** The measured steps, in ms: the control at 0, then upward to the vendor's 100. */
@@ -61,9 +62,10 @@ export const planLanes = (plan, cell) => (plan.search ? stepsOf(settleOf(cell)).
  * `animates_primary_action`), which cua's service then settles by that family's own constant.
  */
 export const SCENES = {
-  'chrome-input': { family: 'chrome', page: 'input.html', effects: 'input-page' },
+  // the browsers' input page with its Native button (`menu=native`), whose context menu opens (candidate 3)
+  'chrome-input': { family: 'chrome', page: 'input.html', query: 'menu=native', effects: 'input-page' },
   'chrome-text': { family: 'chrome', page: 'matrix.html', effects: 'field' },
-  'electron-input': { family: 'electron', page: 'input.html', effects: 'input-page' },
+  'electron-input': { family: 'electron', page: 'input.html', query: 'menu=native', effects: 'input-page' },
   'electron-text': { family: 'electron', page: 'matrix.html', effects: 'field' },
   'firefox-input': { family: 'firefox', page: 'input.html', effects: 'input-page' },
   'firefox-text': { family: 'firefox', page: 'matrix.html', effects: 'field' },
@@ -110,6 +112,8 @@ export const KIND_METHOD = {
   click_element: 'click',
   right_click: 'click',
   secondary_action: 'perform_secondary_action',
+  // the control beside it (candidate 3): showContextMenu on the page's Menu button, whose menu the page cancels
+  menu_unconfirmed: 'perform_secondary_action',
   move: 'move',
   move_relative: 'move_relative',
   scroll: 'scroll',
@@ -141,7 +145,7 @@ export function settleOf(c) {
 }
 
 const cell = (scene, kind, route = 'background', occlusion = route === 'desktop' ? 'active' : 'covered') => ({ scene, kind, route, occlusion });
-const browserCells = (browser, { pointer, clipboard = true }) => [
+const browserCells = (browser, { pointer, clipboard = true, menus = false }) => [
   cell(`${browser}-input`, 'press_key'),
   cell(`${browser}-input`, 'key_down'),
   cell(`${browser}-input`, 'key_up'),
@@ -149,6 +153,8 @@ const browserCells = (browser, { pointer, clipboard = true }) => [
   cell(`${browser}-input`, 'click_element'),
   cell(`${browser}-input`, 'right_click', 'background', pointer),
   cell(`${browser}-input`, 'secondary_action'),
+  // a family whose elements offer showContextMenu: the request the page cancels answers menuUnconfirmed (candidate 3)
+  ...(menus ? [cell(`${browser}-input`, 'menu_unconfirmed')] : []),
   cell(`${browser}-input`, 'move', 'background', pointer),
   cell(`${browser}-input`, 'scroll', 'background', pointer),
   // Chromium refuses a background drag unless its whole path is in view; Gecko any pointer kind unless the real
@@ -173,12 +179,12 @@ const editorCells = (scene, extra = []) => ['press_key', 'key_down', 'click', ..
  * action opens a menu) is measured where the page's handler shows it in the window's own tree instead.
  */
 export const CELLS = [
-  ...browserCells('chrome', { pointer: 'covered' }),
+  ...browserCells('chrome', { pointer: 'covered', menus: true }),
   ...desktopCells('chrome-input', DESKTOP_PAGE_KINDS),
   // the engine copies nothing from the page's field in Electron (`context menu did not open; no clipboard action was
   // sent`) or Firefox (`editable element has no selected text to Copy`, the harness's selection made through AT-SPI),
   // so their clipboard commands answer errors, which defer nothing: Chrome's and gedit's cells measure the clipboard
-  ...browserCells('electron', { pointer: 'covered', clipboard: false }),
+  ...browserCells('electron', { pointer: 'covered', clipboard: false, menus: true }),
   ...desktopCells('electron-input', DESKTOP_PAGE_KINDS),
   ...browserCells('firefox', { pointer: 'unobscured', clipboard: false }),
   ...editorCells('gedit'),
@@ -331,7 +337,10 @@ export function landed(effects, kind, before, after, run = {}) {
     if (kind === 'click') return rose(before, after, 'downs') && rose(before, after, 'ups');
     if (kind === 'click_element') return rose(before, after, 'clicks');
     if (kind === 'secondary_action' && run.action === 'press') return rose(before, after, 'clicks');
-    if (kind === 'right_click' || kind === 'secondary_action') return rose(before, after, 'context') && after.context_on === 'menu';
+    // a named action's context request reaches the button it named: the Native button, whose menu opens, or (the
+    // control) the Menu button, whose menu the page cancels
+    if (kind === 'secondary_action' || kind === 'menu_unconfirmed') return rose(before, after, 'context') && after.context_on === (run.on ?? 'menu');
+    if (kind === 'right_click') return rose(before, after, 'context') && after.context_on === 'menu';
     if (kind === 'move' || kind === 'move_relative') return grew(before, after, 'moves');
     // every wheel step arrived, and the page moved its way (its smooth scroll may still be under way)
     if (kind === 'scroll') return notches(after) - notches(before) === run.steps && Number.isInteger(after.scroll) && (run.direction === 'down' ? after.scroll > before.scroll : after.scroll < before.scroll);
@@ -386,12 +395,22 @@ export function landed(effects, kind, before, after, run = {}) {
 }
 
 /**
+ * Whether a cell's answers are the ones it expects: each a success, but the control's (`menu_unconfirmed`), whose one
+ * request must answer menuUnconfirmed (deviations.mjs `MENU_UNCONFIRMED`), since the page cancels the menu it asked for.
+ */
+export function answersAsExpected(kind, answers) {
+  if (kind === 'menu_unconfirmed') return answers.length === 1 && answers[0].ok === false && MENU_UNCONFIRMED.test(String(answers[0].error ?? ''));
+  return answers.every((a) => a.ok);
+}
+
+/**
  * Whether a run passes: every answer a success and the effect in the reading; on the background route, its desktop
  * left alone too (the witness clean through the span, no activation request, and the front window still active after:
- * task 61). `activate_window`, the desktop route and the foreground route change the desktop on purpose.
+ * task 61). `activate_window`, the desktop route and the foreground route change the desktop on purpose. `left`: what
+ * the run left behind once undone (a menu it opened still open, an Escape that reached the page), each a failure.
  */
-export function runPasses({ route, kind, answersOk, landed: effect, desktopClean, frontActive }) {
-  if (!answersOk || effect !== true) return false;
+export function runPasses({ route, kind, answersOk, landed: effect, desktopClean, frontActive, left = [] }) {
+  if (!answersOk || effect !== true || left.length) return false;
   if (route !== 'background' || ACTIVATING.includes(kind)) return true;
   return desktopClean === true && frontActive === true;
 }
@@ -405,7 +424,8 @@ export function runPasses({ route, kind, answersOk, landed: effect, desktopClean
 export function runClass(row) {
   if (row.ok) return 'pass';
   if (row.error || row.after?.error || row.invalid) return 'invalid';
-  if (row.answers?.some((a) => !a.ok)) return 'refused';
+  // an error the cell expects (the control's menuUnconfirmed) is no refusal
+  if (!row.expected_error && row.answers?.some((a) => !a.ok)) return 'refused';
   if (row.landed) return 'desktop';
   return row.late_ms !== null && row.late_ms !== undefined ? 'late' : 'never';
 }

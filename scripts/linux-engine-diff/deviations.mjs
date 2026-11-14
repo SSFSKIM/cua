@@ -478,11 +478,23 @@ export const DEVICE_REFUSAL = / does not accept background input; use a dedicate
 export const DND_REFUSAL = /^\S.* began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was dropped\. Use a dedicated desktop, or activate the window first$/;
 
 /**
+ * cua's answer when an element's `showContextMenu` (a named action, or a right click's fallback) was sent and no menu
+ * appeared within 1 s (engine `elements.rs` `menu_unconfirmed`; Decision Log, 2026-11-14, candidate 3, ruling 687).
+ */
+export const MENU_UNCONFIRMED = /^showContextMenu was sent and no menu was seen within 1 s; the application may have shown its own menu or ignored the request; read the window before retrying$/;
+
+/**
  * The declared refusals (M3.1): an operation of the differential run that the vendor builds send and that lands, which
  * cua refuses in shared mode because the scene's window is in a condition its family lists (families.rs), so its
  * input would be ignored in other cases of the same kind. A loss against the vendor, recorded plainly: its verdict is
  * **declared refusal**, listed apart and never a pass, and holds only while every cua sample answers the Device mode
  * sentence with the witness unchanged; anything else fails. `[{op, scene, reason, section}]`.
+ *
+ * `unconfirmed` (candidate 3): the declared answer is not a refusal but cua's answer that the request was sent and its
+ * effect not seen (`MENU_UNCONFIRMED`); its verdict is **declared unconfirmed**, a loss listed apart in the same way.
+ * Since the request was sent, every sample must also show the effect the page itself records (`effect`, read for the
+ * declared answer too, run.mjs), so an ignored request never passes as one the page took; and the 1 s cua waits for
+ * the menu makes its time no comparison with the vendor's immediate answer, so the speed is not judged.
  */
 export const REFUSALS = [
   {
@@ -501,6 +513,18 @@ export const REFUSALS = [
       "in shared mode, Chrome's HTML5 drops are refused unless Chrome is already the active window, holds the focus and is fully unobscured: the vendor lands them (m31-dnd-visible: 9/10 in the pinned build) while its drop activates, focuses and raises Chrome's window, which nothing puts back. cua cancels the drag and drop before the drop (Escape on the background route) and says so; in dedicated mode, or with Chrome already in front, the drop goes ahead",
     section: 'Decision Log, M3.1 (Chrome drag and drop); m3/kinds/ runs m31-dnd-visible, m31-dnd-candidate',
   },
+  // candidate 3 (ruling 687): the input page cancels its context menu (preventDefault), so no menu opens for the
+  // showContextMenu these two operations send, which the vendor answers ok
+  ...['right_click_fallback', 'secondary_action'].map((op) => ({
+    op,
+    scene: 'chrome-input',
+    answer: MENU_UNCONFIRMED,
+    unconfirmed: true,
+    effect: true,
+    reason:
+      "the input page handles contextmenu itself and cancels Chrome's menu (preventDefault), as a page drawing its own menu does; the vendor answers ok as soon as showContextMenu is sent, and cua answers ok only once a menu appears, else menuUnconfirmed, which says the request was sent and that the application may have shown its own menu or ignored it. cua cannot tell those apart, so the page's own context counter rising is required of every sample beside the answer",
+    section: 'Decision Log, 2026-11-14 (T18 gate: a requested context menu is confirmed, or answered menuUnconfirmed; candidate 3), rulings 687 and 688',
+  })),
 ];
 
 /** The declared refusal of an operation on a scene, or null. */

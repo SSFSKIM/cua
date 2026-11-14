@@ -6,7 +6,7 @@ import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import {
-  ANIMATED_STEPS, CELLS, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, STEPS, auditVerdict, cellName, cellsFor, chosenPlan, heldStep, hopeless, landed, laneSettles, lostInput, methodConstants,
+  ANIMATED_STEPS, CELLS, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, STEPS, answersAsExpected, auditVerdict, cellName, cellsFor, chosenPlan, heldStep, hopeless, landed, laneSettles, lostInput, methodConstants,
   planLanes, runClass, runPasses, settleOf, settleVerdict, stepsOf,
 } from '../../scripts/linux-engine-diff/action-settle-cells.mjs';
 import { SETTLE_MS } from '../../src/services/engine/linux/settle.mjs';
@@ -368,4 +368,29 @@ test('where a cell\'s effect is read: the tree where it carries it, else the har
   const tree = { role: 'frame', name: 'w', children: [{ role: 'push button', name: 'presses 3', children: [] }, { role: 'label', name: 'moves 12 scrolls 2', children: [] }, { role: 'text', name: '', native_id: ':1.2:/f', value: 'abc', children: [] }] };
   assert.deepEqual(fromTree({ effects: 'settle-scene' }, { ax_tree: tree }), { presses: 3, moves: 12, scrolls: 2 });
   assert.deepEqual(fromTree({ effects: 'editor', field: ':1.2:/f' }, { ax_tree: tree }), { text: 'abc' });
+});
+
+test('candidate 3: the named action opens the Native button\'s menu, and the control asks for the cancelled one and expects menuUnconfirmed', () => {
+  const s = (o = {}) => ({ context: 1, context_on: 'menu', clicks: 5, escapes: 0, ...o });
+  const before = s();
+  // the confirmed menu's cell: the context request reaches the Native button, whose menu the page lets open
+  assert.equal(landed('input-page', 'secondary_action', before, s({ context: 2, context_on: 'native' }), { action: 'showContextMenu', on: 'native' }), true);
+  assert.equal(landed('input-page', 'secondary_action', before, s({ context: 2, context_on: 'menu' }), { action: 'showContextMenu', on: 'native' }), false, 'on another button');
+  // the control: the Menu button's request, whose menu the page cancels
+  assert.equal(landed('input-page', 'menu_unconfirmed', before, s({ context: 2 }), { action: 'showContextMenu', on: 'menu' }), true);
+  assert.equal(landed('input-page', 'menu_unconfirmed', before, before, { action: 'showContextMenu', on: 'menu' }), false, 'the page saw no request');
+  const unconfirmed = 'showContextMenu was sent and no menu was seen within 1 s; the application may have shown its own menu or ignored the request; read the window before retrying';
+  assert.equal(answersAsExpected('menu_unconfirmed', [{ ok: false, error: unconfirmed }]), true);
+  assert.equal(answersAsExpected('menu_unconfirmed', [{ ok: true }]), false, 'a menu opened where the page cancels it');
+  assert.equal(answersAsExpected('menu_unconfirmed', [{ ok: false, error: 'AT-SPI element refused action 1; refresh get_window_state() to check its state' }]), false);
+  assert.equal(answersAsExpected('secondary_action', [{ ok: false, error: unconfirmed }]), false, 'the confirmed cell expects its menu');
+  assert.equal(answersAsExpected('secondary_action', [{ ok: true }]), true);
+  // the control runs on Chrome and Electron only: Gecko's buttons offer no showContextMenu
+  assert.deepEqual(CELLS.filter((c) => c.kind === 'menu_unconfirmed').map(cellName), ['chrome-input menu_unconfirmed background', 'electron-input menu_unconfirmed background']);
+  assert.equal(KIND_METHOD.menu_unconfirmed, 'perform_secondary_action');
+  // a menu left open, or an Escape the page counted, fails the run; the control's expected error is no refusal
+  const ok = { answersOk: true, landed: true, desktopClean: true, frontActive: true };
+  assert.equal(runPasses({ route: 'background', kind: 'secondary_action', ...ok }), true);
+  assert.equal(runPasses({ route: 'background', kind: 'secondary_action', ...ok, left: ['a menu was still open 2000 ms after the Escape that closes it'] }), false);
+  assert.equal(runClass({ ok: false, answers: [{ ok: false, error: unconfirmed }], expected_error: true, landed: false, late_ms: null }), 'never');
 });

@@ -438,7 +438,9 @@ async function measureSample(s, ctx) {
   if (!row.ok) row.error = String(response.error).slice(0, 300);
   Object.assign(row, statsFields(stats, answered.value.untied ?? []));
   if (def.after) await def.after(ctx, response);
-  if (def.effect && row.ok && def.read && !def.follow) {
+  // the effect is read on success, and on an answer declared to have sent the request with its effect unseen
+  // (deviations.mjs REFUSALS `effect`), whose page must still show what was sent
+  if (def.effect && (row.ok || declaredWithEffect(op, s.sceneName, response)) && def.read && !def.follow) {
     row.effect = await pollEffect(() => def.read(ctx), (after) => def.effect(ctx, input, before, after));
   }
   if (def.follow && row.ok) {
@@ -1640,14 +1642,24 @@ async function diffRun(args, candidate, { handoff }) {
  * declared sentence (the Device mode sentence unless the declaration names its own) with the witness unchanged, and the
  * judge found nothing beyond what the refusal itself makes differ: its failed request, its answer unlike the vendor's,
  * its effect not taking place. Every other reason the judge gave (the audit, the witness, a bus call, speed) still fails
- * it. Returns `{pass, verdict, reasons}`.
+ * it. A declaration with `effect` also requires every sample's effect (read for the declared answer), and one that is
+ * `unconfirmed` (a request sent, its effect unseen) is `declared unconfirmed`, its speed not judged. Returns `{pass,
+ * verdict, reasons}`.
  */
 export function declaredRefusalVerdict(verdict, mine, refusal, candidate) {
   const excused = [`${candidate}: a request failed`, `${candidate}: the output differs from the vendor's`, `${candidate}: the effect was not verified`];
-  const kept = verdict.reasons.filter((r) => !excused.some((e) => r.startsWith(e)));
-  const bad = mine.filter((r) => r.ok || !(refusal.answer ?? DEVICE_REFUSAL).test(String(r.error ?? '')) || r.witness !== true);
-  if (bad.length) kept.unshift(`${candidate}: ${bad.length} of ${mine.length} samples not the declared refusal with the witness unchanged`);
-  return kept.length ? { pass: false, verdict: 'fail', reasons: kept } : { pass: false, verdict: 'declared refusal', reasons: [] };
+  const kept = verdict.reasons.filter((r) => !excused.some((e) => r.startsWith(e)) && !(refusal.unconfirmed && SPEED_REASON.test(r)));
+  const declared = (r) => !r.ok && (refusal.answer ?? DEVICE_REFUSAL).test(String(r.error ?? '')) && r.witness === true && (!refusal.effect || r.effect === true);
+  const bad = mine.filter((r) => !declared(r));
+  const what = `declared ${refusal.unconfirmed ? 'unconfirmed answer' : 'refusal'} with ${refusal.effect ? 'its effect and ' : ''}the witness unchanged`;
+  if (bad.length) kept.unshift(`${candidate}: ${bad.length} of ${mine.length} samples not the ${what}`);
+  return kept.length ? { pass: false, verdict: 'fail', reasons: kept } : { pass: false, verdict: refusal.unconfirmed ? 'declared unconfirmed' : 'declared refusal', reasons: [] };
+}
+
+/** Whether `response` is the answer a declaration with `effect` names for the operation on the scene (its effect then read). */
+export function declaredWithEffect(op, scene, response) {
+  const refusal = declaredRefusal({ op, scene });
+  return Boolean(refusal?.effect && response?.ok === false && (refusal.answer ?? DEVICE_REFUSAL).test(String(response.error ?? '')));
 }
 
 /** The operations the X request audit covers: every window-targeted one of the blocks (reads and screenshots included). */

@@ -132,6 +132,8 @@ export function parseInputStatus(names) {
     scroll: num(line('scroll '), 'scroll'),
     context: num(context, 'context'),
     context_on: context.match(/\bon (\S+)/)?.[1] ?? null,
+    // with the page's `menu=native` only (candidate 3): the Escape keydowns it got
+    escapes: num(context, 'escapes'),
     clicks: num(line('clicks '), 'clicks'),
     pointer_at: pointer.match(/\bat (-?\d+) (-?\d+)/)?.slice(1).map(Number) ?? null,
     wheels: num(line('wheels '), 'wheels'),

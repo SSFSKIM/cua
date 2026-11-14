@@ -47,8 +47,8 @@ import { POINTER_INSIDE, parkInside } from './drag.mjs';
 import { AsyncOracle } from './bus-client.mjs';
 import { startOwner, startReader } from './clip.mjs';
 import {
-  ACTIVATING, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, auditVerdict, cellName, cellsFor, chosenPlan, hopeless, landed, laneSettles, planLanes, runClass, runPasses, settleOf,
-  settleVerdict, settledFields,
+  ACTIVATING, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, answersAsExpected, auditVerdict, cellName, cellsFor, chosenPlan, hopeless, landed, laneSettles, planLanes, runClass,
+  runPasses, settleOf, settleVerdict, settledFields,
 } from './action-settle-cells.mjs';
 import { Engine, runTmpdirInProcess } from './engine.mjs';
 import { FAMILIES, openFamily } from './families.mjs';
@@ -62,7 +62,7 @@ import { LIBREOFFICE_FAMILIES, vclDrawn } from './vcl-aim.mjs';
 import { Desktop, a11yBusAddress, activeWindow, desktopEnding } from './scenes.mjs';
 import { median } from './stats.mjs';
 import { judgeSpan, spanActivations, spanClean, startWitness } from './witness.mjs';
-import { XPROBE, startPrivateServer, xdotool } from './xtools.mjs';
+import { XPROBE, startPrivateServer, xdotool, xprobe } from './xtools.mjs';
 import { LIVE_RUN, assertReachable, xExecFileSync } from './xspawn.mjs';
 import { ActionSettler } from '../../src/services/engine/linux/settle.mjs';
 import { createService } from '../../src/services/engine/linux/service.mjs';
@@ -210,6 +210,7 @@ export function requestsOf(cell, sc, run) {
     case 'right_click':
       return [execute('click', { ...target, element_id: run.element, mouse_button: 'right' })];
     case 'secondary_action':
+    case 'menu_unconfirmed':
       return [execute('perform_secondary_action', { ...target, element_id: run.element, action: run.action })];
     case 'move':
       return [execute('move', { ...target, ...point(run.point) })];
@@ -395,6 +396,30 @@ async function scrollPageToTop(ctx, sc, svc) {
   }
 }
 
+/** The run's own client's open menus and other popups (`xprobe popups`): the scene window's client's. */
+const popupsOf = (sc) => JSON.parse(xprobe(['popups', sc.id])).popups;
+
+/**
+ * A menu the run opened closed (candidate 3, ruling 687): when the scene's client has a popup open, an Escape through
+ * XTEST on the run's own display, which the open menu's grab takes, then a wait for the popups to go. What it left, each
+ * a failure of the run: a menu still open after the wait, or an Escape the page counted (it reached the page, not the
+ * menu). `before` is the run's reading before its request, whose Escape count the page must still show.
+ */
+async function closeMenu(ctx, cell, sc, svc, run, before) {
+  if (!popupsOf(sc).length) return [];
+  const left = [];
+  xdotool('key', 'Escape');
+  const until = performance.now() + MENU_CLOSE_MS;
+  while (popupsOf(sc).length && performance.now() < until) await sleep(20);
+  if (popupsOf(sc).length) left.push(`a menu was still open ${MENU_CLOSE_MS} ms after the Escape that closes it`);
+  const now = await settled(async () => (await readEffect(ctx, cell, sc, svc, run)).reading);
+  if (!now.ok || now.value.escapes !== before.escapes) left.push(now.ok ? `the page counted the Escape that closes the menu (escapes ${before.escapes} to ${now.value.escapes})` : `the page could not be read after the menu closed: ${now.error}`);
+  return left;
+}
+
+/** How long a menu has to close after its Escape. */
+const MENU_CLOSE_MS = 2000;
+
 /** What a run leaves to undo, outside its span: a held key released, a handle freed, the front window active again. */
 async function afterRun(ctx, cell, sc, svc, run, answers) {
   if (cell.kind === 'key_down') await settled(() => svc.handleRpc(execute('key_up', { ...(cell.route === 'desktop' ? {} : { window: { id: sc.id } }), key: run.key })));
@@ -461,11 +486,14 @@ async function oneRun(ctx, cell, sc, svc, settler, trial) {
   try {
     await sleep(QUIET_MS);
     const before = await quietReading(ctx, cell, sc, svc, run);
-    if (['click_element', 'right_click', 'secondary_action'].includes(cell.kind)) {
-      // a named action: the menu's context menu where the toolkit offers one (Chromium), else a button's press (Gecko's
-      // buttons offer only `press`), and on the settle scenes their button's primary action, by its own name
+    if (['click_element', 'right_click', 'secondary_action', 'menu_unconfirmed'].includes(cell.kind)) {
+      // a named action: the Native button's context menu where the toolkit offers one (Chromium; the page lets its menu
+      // open, candidate 3), else a button's press (Gecko's buttons offer only `press`), and on the settle scenes their
+      // button's primary action, by its own name; the control asks for the Menu button's, which the page cancels
       if (cell.kind === 'secondary_action') Object.assign(run, sc.secondary);
-      run.element = decimalOf(before.tree, cell.kind === 'click_element' || run.on === 'press' ? sc.press : sc.menu);
+      if (cell.kind === 'menu_unconfirmed') Object.assign(run, { action: 'showContextMenu', on: 'menu' });
+      const node = cell.kind === 'click_element' ? sc.press : cell.kind === 'right_click' ? sc.menu : sc[run.on];
+      run.element = decimalOf(before.tree, node);
       if (!run.element) throw new Error(`${cellName(cell)}: the element is not in the window's tree`);
     }
     const source = sourceOf(cell, sc);
@@ -492,10 +520,14 @@ async function oneRun(ctx, cell, sc, svc, settler, trial) {
     const { answers, after, answered, answered_ms: answeredMs, read_ms: readMs, waited_ms: waitedMs } = span.value;
     const background = cell.route === 'background' && !ACTIVATING.includes(cell.kind);
     const frontActive = background ? activeWindow() === ctx.desktop.front.id : null;
-    const answersOk = answers.every((a) => a.ok);
+    // each a success, but the control's menuUnconfirmed (action-settle-cells.mjs `answersAsExpected`)
+    const answersOk = answersAsExpected(cell.kind, answers);
     const invalid = [];
     const awaited = cell.kind === 'activate_click' ? 'click' : settleOf(cell);
-    if (answersOk && settler.deferred.at(-1) !== awaited) invalid.push(`the service settled it as ${settler.deferred.at(-1)}, not ${awaited}`);
+    // a failure defers nothing (src/services/engine/linux/methods.mjs), the control's included
+    if (cell.kind === 'menu_unconfirmed') {
+      if (answersOk && settler.deferred.length) invalid.push(`the service deferred ${settler.deferred.join(', ')} after an error`);
+    } else if (answersOk && settler.deferred.at(-1) !== awaited) invalid.push(`the service settled it as ${settler.deferred.at(-1)}, not ${awaited}`);
     const fields = settledFields(sc.effects, cell.kind);
     let seen = null;
     if (fields && answersOk && after.ok) {
@@ -531,14 +563,18 @@ async function oneRun(ctx, cell, sc, svc, settler, trial) {
         }
       }
     }
+    // a menu the run's context request opened, closed before anything else (candidate 3)
+    const left = ['secondary_action', 'menu_unconfirmed'].includes(cell.kind) && run.action === 'showContextMenu' ? await closeMenu(ctx, cell, sc, svc, run, before.reading) : [];
     await afterRun(ctx, cell, sc, svc, run, answers);
     const desktopClean = spanClean(span.report);
-    const ok = runPasses({ route: cell.route, kind: cell.kind, answersOk, landed: effect, desktopClean, frontActive });
+    const ok = runPasses({ route: cell.route, kind: cell.kind, answersOk, landed: effect, desktopClean, frontActive, left });
     return {
       ok,
       landed: effect,
       late_ms: lateMs,
       ...(invalid.length ? { invalid: invalid.join('; ').slice(0, 300) } : {}),
+      ...(left.length ? { left } : {}),
+      ...(cell.kind === 'menu_unconfirmed' ? { expected_error: true } : {}),
       answers: answers.map((a) => (a.ok ? { ok: true } : { ok: false, error: a.error })),
       deferred: [...settler.deferred],
       source,
@@ -713,7 +749,7 @@ async function openScene(ctx, name) {
   const { desktop, oracle } = ctx;
   const def = SCENES[name];
   // the family's own size asked for, so a browser opens at it and not maximized (families.mjs: Firefox's first window)
-  const sc = await openFamily(desktop, oracle, def.family, `settle-${name}`, { geometry: FAMILIES[def.family].geometry, ...(def.page ? { page: def.page } : {}) });
+  const sc = await openFamily(desktop, oracle, def.family, `settle-${name}`, { geometry: FAMILIES[def.family].geometry, ...(def.page ? { page: def.page } : {}), ...(def.query ? { query: def.query } : {}) });
   Object.assign(sc, { name, effects: def.effects });
   // the family's application verified before any cell of it counts, LibreOffice's module included: one application
   // serves Writer, Calc and Impress alike (app-identity.mjs)
@@ -730,8 +766,10 @@ async function openScene(ctx, name) {
     const button = (name) => nodes.find((n) => n.role === 'push button' && n.name === name);
     sc.press = button('Press')?.id ?? null;
     sc.menu = button('Menu')?.id ?? null;
-    if (!sc.press || !sc.menu) throw new Error(`${sc.label}: the input page has no Press or Menu button`);
-    sc.secondary = button('Menu').actions?.includes('showContextMenu') ? { action: 'showContextMenu', on: 'menu' } : { action: 'press', on: 'press' };
+    sc.native = button('Native')?.id ?? null;
+    if (!sc.press || !sc.menu || (def.query && !sc.native)) throw new Error(`${sc.label}: the input page has no Press${def.query ? ', Menu or Native' : ' or Menu'} button`);
+    // Chromium's: the Native button's menu, which opens; Gecko's buttons offer only `press`
+    sc.secondary = sc.native && button('Native').actions?.includes('showContextMenu') ? { action: 'showContextMenu', on: 'native' } : { action: 'press', on: 'press' };
     sc.points = { click: [{ x: 300, y: 150 }, { x: 700, y: 150 }], move: [{ x: 300, y: 200 }, { x: 700, y: 200 }], scroll: { x: 520, y: 500 } };
     sc.paths = [[{ x: 200, y: 150 }, { x: 380, y: 180 }, { x: 600, y: 240 }], [{ x: 600, y: 240 }, { x: 380, y: 180 }, { x: 200, y: 150 }]];
     sc.scrollPixels = 300;

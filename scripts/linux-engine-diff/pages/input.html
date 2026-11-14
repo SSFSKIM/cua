@@ -9,10 +9,11 @@
   #pad { position: absolute; left: 0; top: 0; width: 100vw; height: 300px; background: #dddddd; border-bottom: 1px solid #888888; }
   #status { position: fixed; left: 12px; top: 310px; margin: 0; }
   #status p { margin: 2px 0; }
-  #press, #menu { position: absolute; left: 12px; width: 300px; height: 60px; font-size: 20px;
+  #press, #menu, #native { position: absolute; left: 12px; width: 300px; height: 60px; font-size: 20px;
                   appearance: none; background: #eeeeee; border: 1px solid #888888; color: #000000; }
   #press { top: 470px; }
   #menu { top: 540px; }
+  #native { left: 330px; top: 540px; }
   #far { position: absolute; left: 12px; top: 3000px; width: 300px; height: 60px; font-size: 20px;
          appearance: none; background: #eeeeee; border: 1px solid #888888; color: #000000; }
 </style>
@@ -22,7 +23,10 @@
      lines, which read back through the tree. The pad counts pointer moves, presses and drags; the page counts key
      downs and ups, its scroll position and wheel steps, its context-menu requests (cancelled, so no menu opens) and the
      button's clicks. "far" sits below the first screen, so an element right click on it has no visible point in the window
-     (the right click's fallback). The title comes from the URL's fragment, so every scene window has its own. -->
+     (the right click's fallback). The title comes from the URL's fragment, so every scene window has its own. With the
+     query `menu=native` (candidate 3: the settle experiment's confirmed menu) the page also shows "Native", whose
+     context-menu request is not cancelled, so the browser's own menu opens, and its context line counts the Escape
+     keydowns it gets; without it, the page is as it was. -->
 <div id="pad"></div>
 <div id="status">
   <p id="pointer">pointer moves 0 downs 0 ups 0 drags 0 at -1 -1</p>
@@ -34,15 +38,18 @@
 </div>
 <button id="press" type="button">Press</button>
 <button id="menu" type="button">Menu</button>
+<button id="native" type="button" hidden>Native</button>
 <button id="far" type="button">Far</button>
 <script>
   document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
-  const state = { moves: 0, downs: 0, ups: 0, drags: 0, down: null, kd: 0, ku: 0, last: 'none', context: 0, on: 'none', clicks: 0, wheels: 0, legacy: 0, at: [-1, -1] };
+  const menus = new URLSearchParams(location.search).get('menu') === 'native';
+  document.getElementById('native').hidden = !menus;
+  const state = { moves: 0, downs: 0, ups: 0, drags: 0, down: null, kd: 0, ku: 0, last: 'none', context: 0, on: 'none', clicks: 0, wheels: 0, legacy: 0, at: [-1, -1], escapes: 0 };
   const show = () => {
     document.getElementById('pointer').textContent = `pointer moves ${state.moves} downs ${state.downs} ups ${state.ups} drags ${state.drags} at ${state.at.join(' ')}`;
     document.getElementById('keys').textContent = `keys down ${state.kd} up ${state.ku} last ${state.last}`;
     document.getElementById('scroll').textContent = `scroll ${Math.round(window.scrollY)}`;
-    document.getElementById('context').textContent = `context ${state.context} on ${state.on}`;
+    document.getElementById('context').textContent = `context ${state.context} on ${state.on}${menus ? ` escapes ${state.escapes}` : ''}`;
     document.getElementById('clicks').textContent = `clicks ${state.clicks}`;
     document.getElementById('wheels').textContent = `wheels ${state.wheels} legacy ${state.legacy}`;
     // each status line is its own accessible name too: Firefox's tree carries a paragraph's text in no field the
@@ -66,12 +73,18 @@
   document.addEventListener('keydown', (e) => {
     state.kd += 1;
     state.last = e.key;
+    if (e.key === 'Escape') state.escapes += 1;
     e.preventDefault();
     if (e.key === 'Home') window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     show();
   });
   document.addEventListener('keyup', (e) => { state.ku += 1; state.last = e.key; show(); e.preventDefault(); });
-  document.addEventListener('contextmenu', (e) => { state.context += 1; state.on = e.target.id || e.target.tagName.toLowerCase(); show(); e.preventDefault(); });
+  document.addEventListener('contextmenu', (e) => {
+    state.context += 1;
+    state.on = e.target.id || e.target.tagName.toLowerCase();
+    show();
+    if (e.target.id !== 'native') e.preventDefault();
+  });
   document.getElementById('press').addEventListener('click', () => { state.clicks += 1; show(); });
   window.addEventListener('scroll', show);
   // the wheel events and their legacy wheelDeltaY, 120 a notch in Chromium and Gecko, so a scroll's every wheel step

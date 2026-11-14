@@ -7,8 +7,10 @@ import { asOutput, decimalIds, dehydrateTree } from '../../scripts/linux-engine-
 
 test("the input scene's status lines parse into counters", () => {
   const s = parseInputStatus(['Press', 'pointer moves 12 downs 2 ups 2 drags 1', 'keys down 3 up 2 last b', 'scroll 300', 'context 4 on far', 'clicks 5']);
-  assert.deepEqual(s, { moves: 12, downs: 2, ups: 2, drags: 1, key_downs: 3, key_ups: 2, last_key: 'b', scroll: 300, context: 4, context_on: 'far', clicks: 5, pointer_at: null, wheels: null, wheel_legacy: null });
+  assert.deepEqual(s, { moves: 12, downs: 2, ups: 2, drags: 1, key_downs: 3, key_ups: 2, last_key: 'b', scroll: 300, context: 4, context_on: 'far', escapes: null, clicks: 5, pointer_at: null, wheels: null, wheel_legacy: null });
   assert.deepEqual(parseInputStatus(['pointer moves 3 downs 0 ups 0 drags 0 at 290 140']).pointer_at, [290, 140]);
+  // the page with menu=native counts its Escapes on the context line
+  assert.deepEqual([parseInputStatus(['context 2 on native escapes 1']).context_on, parseInputStatus(['context 2 on native escapes 1']).escapes], ['native', 1]);
   assert.deepEqual([parseInputStatus(['wheels 3 legacy -360']).wheels, parseInputStatus(['wheels 3 legacy -360']).wheel_legacy], [3, -360]);
   // a missing line reads as unknown, never as zero
   assert.equal(parseInputStatus([]).clicks, null);

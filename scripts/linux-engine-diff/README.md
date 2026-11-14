@@ -870,6 +870,17 @@ variants included; their evidence is written either way. The run's `end` row kee
   recorded as a loss (verdict `declared refusal`, listed apart, never a pass) while every cua sample answers the
   declared sentence with the witness unchanged. It excuses only what the refusal itself makes differ (the failed
   request, the answer, the effect; `declaredRefusalVerdict`); the audit and every other failure the judge finds stand.
+  A declaration that is `unconfirmed` (candidate 3: `chrome-input`'s `right_click_fallback` and `secondary_action`,
+  whose page cancels the menu their `showContextMenu` asks for) declares cua's `menuUnconfirmed` answer instead
+  (verdict `declared unconfirmed`); with `effect`, the effect is read for that answer too and required of every
+  sample (the page's context counter rose), so an ignored request never passes, and its speed is not judged, since
+  cua's answer comes after its 1 s wait for a menu.
+- **The settle experiment's context menus** (candidate 3): `chrome-input` and `electron-input` open the input page
+  with `menu=native`, whose Native button lets the browser's own menu open (the Electron page app pops a native menu
+  for it). Their `secondary_action` asks for that menu, which the engine must confirm; the harness then closes it with
+  an XTEST Escape on the run's display (the menu's grab takes it), and the run fails unless the menu has gone within
+  2 s and the page counted no Escape (`closeMenu`). Beside it, `menu_unconfirmed` asks for the Menu button's menu,
+  which the page cancels, and passes on `menuUnconfirmed` with the page's context counter risen.
 - **The drag-and-drop experiment's probes** (`withDropProbes`): each drag's `XdndSelection` watcher and grab sampler
   are stopped whatever happens, each stop tried on its own.
 

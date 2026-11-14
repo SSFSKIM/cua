@@ -87,6 +87,8 @@ function scratchFile(ctx, ext = 'txt') {
 
 /** The page a browser family opens: the caller's (`page`, a file under pages/) or the matrix's. */
 const pageOf = (ctx) => ctx.page ?? 'matrix.html';
+/** A page's own parameters (`openFamily`'s `query`), as the URL's query, or nothing. */
+const queryOf = (ctx) => (ctx.query ? `?${ctx.query}` : '');
 export const ELECTRON_PAGE_APP = join(here, 'pages', 'electron-page');
 
 const byTitle = (label) => (w) => typeof w.title === 'string' && w.title.includes(label);
@@ -287,7 +289,7 @@ export const FAMILIES = {
         const [width, height] = ctx.geometry;
         writeFileSync(join(profile, 'xulstore.json'), JSON.stringify({ 'chrome://browser/content/browser.xhtml': { 'main-window': { sizemode: 'normal', screenX: '0', screenY: '0', width: String(width), height: String(height) } } }));
       }
-      const url = `${pathToFileURL(join(PAGES, pageOf(ctx))).href}#${encodeURIComponent(ctx.label)}`;
+      const url = `${pathToFileURL(join(PAGES, pageOf(ctx))).href}${queryOf(ctx)}#${encodeURIComponent(ctx.label)}`;
       // accessibility on: Gecko reads GNOME_ACCESSIBILITY first, then org.a11y.Status on the session bus, which the
       // run's has no launcher for on a person's display, then GSettings, in memory there (accessible/atk/Platform.cpp
       // `ShouldA11yBeEnabled`; B2, task 47)
@@ -314,7 +316,7 @@ export const FAMILIES = {
       ctx.page
         ? {
             cmd: ELECTRON,
-            args: [ELECTRON_PAGE_APP, `--cua-page=${pathToFileURL(join(PAGES, ctx.page)).href}#${encodeURIComponent(ctx.label)}`, `--cua-user-data=${join(ctx.dir, 'electron')}`, '--force-renderer-accessibility'],
+            args: [ELECTRON_PAGE_APP, `--cua-page=${pathToFileURL(join(PAGES, ctx.page)).href}${queryOf(ctx)}#${encodeURIComponent(ctx.label)}`, `--cua-user-data=${join(ctx.dir, 'electron')}`, '--force-renderer-accessibility'],
             env: CHROME_ENV,
             match: byTitle(ctx.label),
           }
@@ -505,7 +507,7 @@ export function vteLaunch(ctx, { client = terminalClient() } = {}) {
  * GTK 4 scene, pages/atspi-gtk4.py). Returns the scene: `{kind: 'family', family, id, pid,
  * group, ...targets}`.
  */
-export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, mode = null, motion = false, stem = name, bridge = true, warmUp = false } = {}) {
+export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, query = '', doc = null, mode = null, motion = false, stem = name, bridge = true, warmUp = false } = {}) {
   const family = FAMILIES[name];
   if (!family) throw new Error(`unknown family ${name}`);
   // the run's first GTK 4 window comes after the run's own warm-up has filled the shader cache of the run's home
@@ -515,11 +517,11 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
   if (family.chrome) {
     // the window the run registered itself, not a copy: a copy closed (`Desktop.close`) leaves the registered window
     // behind, and the run's end then asks for the gone window again and records its close as left undone (task 55)
-    scene = Object.assign(await desktop.openChrome(role, page ?? 'matrix.html'), { family: name, kindOf: family.kind });
+    scene = Object.assign(await desktop.openChrome(role, page ?? 'matrix.html', { query }), { family: name, kindOf: family.kind });
   } else {
     // a stopping run opens nothing more (scenes.mjs `stop`); the process is registered as soon as it is started
     desktop.assertOpen();
-    const ctx = { label, dir: join(desktop.dir, label), geometry, page, doc, mode, motion };
+    const ctx = { label, dir: join(desktop.dir, label), geometry, page, query, doc, mode, motion };
     mkdirSync(ctx.dir, { recursive: true });
     const spec = family.launch(ctx);
     // the application's own variables only: the rest of its environment is the run's (scenes.mjs `appEnvironment`)

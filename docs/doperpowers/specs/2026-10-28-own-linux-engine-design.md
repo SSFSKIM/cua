@@ -24,7 +24,7 @@ How to see it: on the #171 VM (Ubuntu 24.04, X11), `CUA_NATIVE_ENGINE=cua cua se
 - [x] (2026-10-29T23:10Z) M1b — Distribution and selection: release workflow and the first release (`linux-engine-v0.1.0`), pins, install, doctor, `CUA_NATIVE_ENGINE` on Linux, the facade harnesses' Linux engine lanes, the CI gate. Three loop tasks each reviewed clean, the branch reviewed clean by `doperpowers:reviewer-high`, the gate's screenshot check reviewed clean after three rounds (Outcomes & Retrospective, M1b).
 - [x] (2026-10-30T16:40Z) M2 — Text and clipboard: one verified paste route; its release (`linux-engine-v0.2.0`). Three loop tasks each reviewed clean, the branch reviewed clean by `doperpowers:reviewer-high` after one fix round, the verdict run exiting 0 on the released engine's sources (Outcomes & Retrospective, M2).
 - [x] (2026-11-02T00:10Z) M3 — cua's own Linux service, the device mode, the capability report and the truncation line; its release (`linux-engine-v0.3.0`). Twelve loop tasks, every code change reviewed clean (the task reviews, and the branch review by `doperpowers:reviewer-high` after one fix round), and the verdict run `m3-gate-musl` exiting 0 on the shipped x64 bytes (Outcomes & Retrospective, M3).
-- [ ] M4 — The measured improvements: identity, minimized windows, truncation, waits, the settle; long browser and thumb drags at the bar, the Chrome drop's costs, `drag_handle`'s press; its release.
+- [x] (2026-11-14T21:00Z) M4 — The measured improvements: identity, minimized windows, truncation, waits, the settle; long browser and thumb drags at the bar, the Chrome drop's costs, `drag_handle`'s press; its release (`linux-engine-v0.4.0`). Loop tasks 28 to 80, every code change reviewed clean: the task reviews; the whole-branch review by `doperpowers:reviewer-high` in five slices, after six fix waves; and the gate's re-judge scripts and audit-leak-fix by `doperpowers:reviewer-medium`, after one fix wave. The release gate passed on its third candidate, the attested artifact of c55c8e08 (`751ec9be…`), and the published x64 asset is the same bytes (Outcomes & Retrospective, M4).
 - [ ] M5 — Acceptance on both architectures on the pinned release; docs; the owner's default switch.
 - [ ] M6a — A vendor-free Linux runtime.
 - [ ] M6b — Retirement of the vendor's Linux package (after the soak).
@@ -646,6 +646,66 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **A menu opened by an element action closes when the request ends** (#378): `showContextMenu` through `perform_secondary_action` or the right-button fallback, on the background session, with the pinned vendor build as with cua. The vendor's menu was open from 163 to 251 ms and answered at 256 ms; cua's was seen at 58 ms and answered at 68 ms. With Chrome focused, the menu stays open. A window-bound coordinate right click shows no menu at all, though the page gets `contextmenu`. A desktop-route right click gives a menu that stays open.
   - **The tree:** GTK 4's and Firefox's menus show under the element's window rather than as new application children, and Qt's never reach the tree (#379). Chrome and Firefox emit `ChildrenChanged` and `StateChanged showing` for an ARIA `role=menu` once a listener registers (#377).
   Evidence: `m4/gate/c2-f9692898/l3a-repro/`, `m4/gate/c3-menu-proof/`.
+
+- Observation (M4, T18, task 74; sminos 639): from task 57 (T7b, 2026-11-04) until T18 found it on 2026-11-12, no gate ran the facade suites, so a false red in one of their judges went unseen. T7b put the engine's launcher under `cua-engine launcher-shim`, a child of `supervisor.mjs`. repl-parity's and native-baseline's engine-answered judge (`engine-answered.mjs`) counted the shim as a stray engine, so every cua-lane case failed. No pass had been claimed in that time, so nothing was retracted. The suites are now gate steps R1–R4, run on every candidate's artifact.
+  Evidence: `m4/facade/README.md`; 41070184.
+
+- Observation (M4, T18 gate, V5 on candidate 1; the investigation, 2026-11-13): Chromium 156's X11 backend discards queued core `MotionNotify` events.
+  - **The mechanism.** `X11Window::DispatchUiEvent` calls `CoalescePendingMotionEvents` (`ui/base/x/x11_util.cc`). Its core-event branch moves every queued motion for the same window into `last_event` but never counts it, so the function returns 0. The first motion is then dispatched, and the rest are lost.
+  - **Who it hits.** Real devices arrive as XI2 events, which are counted, so they are unaffected. `SendEvent` delivers core events. So a background drag whose browser thread stays busy until the whole path is queued loses the path: Blink sees one motion, no drag starts, and the release becomes a click.
+  - **Seen at the gate's window load**, on a private display under xtrace: `chrome_dnd_short_in_front_shared` answered ok with no start 2 of 102 times. The engine's event stream was the same as on the passing runs. The failing page got exactly one pointermove, its handler running 58–87 ms after the press, against 17 ms or less on the passing runs.
+  - **Proven causal, idle.** With the browser stopped (SIGSTOP) for 150 ms from the send, 30 of 30 paths were lost. Stopped while the path kept arriving, it landed 30 of 30.
+  - **The fix** (0f18528f, candidate 2) re-sends the path's end during the hold. It also lets the 0 ms control lane land its select, range and thumb drags.
+  - **Why a ping cannot help.** A `_NET_WM_PING` from a third client is answered in queue order from the browser's X loop, so it shows the browser caught up, not that the renderer took the drag; a renderer-late start answered it at once. 400 or more pings changed no window manager, focus or stacking state, at a round trip of 0.415 ms median and 0.503 ms p95.
+  - **Upstream.** A one-line fix, counting the core branch's coalesced events, is in a drafted Chromium report, not filed.
+  Evidence: `m4/gate/README.md` ("Candidate 1's V5 false successes"); `~/.local/share/cua-171/v5-repro/` (local: r1–r3, the loss and bound sweeps, the ping checks, `chromium-bug-draft.md`).
+
+- Observation (M4, T18 gate, D2 on candidate 1): electron 44.9.0 ships no install script.
+  - Its package has no `scripts`, and its lock entry has no `hasInstallScript`. The download is a bin instead (`install-electron`, which runs `install.js`).
+  - So `npm ci` in a fresh checkout leaves `node_modules/electron/dist` empty, and every Electron cell fails at spawn (ENOENT, 15 s into D2, before any engine request).
+  - It was not `ignore-scripts`, `ELECTRON_SKIP_BINARY_DOWNLOAD` or npm 11.19.1's `allowScripts`. The long-lived checkout's binary came from a manual install on 2026-10-28.
+  - A gate checkout now runs `node node_modules/electron/install.js` after `npm ci`. A harness preflight that refuses an Electron step without the binary is tech debt (sminos 665).
+  Evidence: `m4/gate/out/D2.release-gate/stderr.log`; `m4/gate/README.md` (the launcher fixes).
+
+- Observation (M4, T18 gate, V5 on candidate 1): on the VM's `:0`, the `firefox` on the default PATH is Ubuntu's snap, not task 59's Mozilla build. `gate.mjs`'s own runs put task 59's Firefox first (`DEFAULTS.firefoxDir`). The command `gate.mjs print` prints for a `:0` step does not. So V5 started the snap, which failed inside the guard's decoy session ("cannot create transient scope … org.freedesktop.systemd1"), and the first scene never got its window. No verdict was made, and the screen was left as found. The launcher (`run-zero2.sh`) now exports task 59's Firefox, and refuses a Firefox step, before anything runs, when `command -v firefox` is anything else (sminos 668).
+  Evidence: `m4/gate/out/V5.release-gate/run/apps/` (the `firefox-device_cua` stderr); `m4/gate/scripts/run-zero2.sh`.
+
+- Observation (M4, T18, task 74): GTK 3's ATK marks an accessible FOCUSED from an idle callback (`gail_focus_notify_when_idle`), so a walk right after the engine's own synthetic FocusIn can find no focused element.
+  - The lag was at most 7.3 ms idle (100 runs), 13.0 ms at 16 stress-ng workers (100 runs) and 15.3 ms on one contended CPU (39 runs).
+  - At 16 workers, 12 of 200 looks needed a second walk; none needed a third.
+  - The pinned build misses the race only through timing. It sleeps 100 ms before its FocusIn and makes its first AT-SPI call about 111 ms in, and its paste takes 770 ms against cua's 70. So this is not a vendor defect.
+  Evidence: the task-74 report (local), worker w1's hand-back; `~/.local/share/cua-171/task74/w1/` (local).
+
+- Observation (M4, task 75): a background drag sends its window about 1,800 synthetic events, each its own `SendEvent`, and the X server writes each one to the client separately.
+  - In every one of the 998 reads measured, the client's socket held 8,896 bytes, 278 events; the 212,992-byte send buffer is full after about 278 writes. The rest wait in the server until the client reads.
+  - A probe that drained until `poll_for_event` returned nothing could stop after that first socketful. The drag's release, last in the stream, was the event left behind: late, never lost.
+  - A round trip on the probe's own connection reads everything the server queued to it first, so the probe now makes one.
+  - Other background-drag reads in `live_device` reach 6,016–7,424 bytes at their read, close to the limit.
+  Evidence: `m4/drag-control-race/` (f9eab71e); the probe's round trip is in 0a83de46.
+
+- Observation (M4, T18, ffdnd-fix): during Firefox's own HTML5 drag and drop, GTK's drag source grabs the pointer.
+  - The target window gets a `LeaveNotify` in `GRAB` mode, and an `EnterNotify` in `UNGRAB` mode 100–120 ms later, though the pointer has not moved.
+  - The target's own client takes `XdndSelection`.
+  - Under load, GTK's drag source can end the drag mid-path at the real pointer's parked position (the `XdndSelection` owner goes to None 20 ms after the take). The rest of the path then arrives as plain motion, and nothing drops: #372 (sminos 663). At twice the load that happened 5 times in 160; idle, in P6, once in 30.
+  Evidence: `~/.local/share/cua-171/ffdnd-fix/` (local); `m4/gate/out/P6.rejudge-dnd-fisher.txt`.
+
+- Observation (M4, T18, the facade suites): `list_apps` is not the same work in the two engines.
+  - The vendor's directory walk adds a `statx` and follows symlinks, and it interns each atom when it uses it, with no cache. cua batches its requests, keeps an atom cache, and also reads `WM_STATE` and `WM_CLASS`.
+  - On the wire, cua answers in 5–7 ms against 61–127 ms.
+  - Through the facade, warm `listApps` lost about 0.4 ms. The loss lay outside the cell, in the MCP transport and host that both lanes share: 13.75 against 13.08 ms there, where warm `noop` went the other way, 14.20 against 14.53. Inside the cell cua was faster, 3.50 against 3.90 ms pooled.
+  - So for an engine-answered operation, wall time judges shared-path noise: #370.
+  Evidence: `m4/facade/README.md` (`baseline/`, `baseline-topup/`); `m4/README.md`.
+
+- Observation (M4, T18, audit-leak-fix): the route audit's xtrace proxies outlived their harness whenever it ended without reaching `stop()`.
+  - That happened when a run's cleanup was never reached, when a signal came through `cleanupOnStop`'s exit, and when a caught failure's stop sat outside `finally`.
+  - Four orphaned proxies were still running on the VM, the oldest from 2026-11-08. Their sockets in `/tmp/.X11-unix` made the private-server tests fail on taken display numbers. One still proxied `:43` to `:1`, which by then was another run's Xvfb.
+  - The proxy is now killed by an exit hook and by `--pdeathsig`, with a test of six exit paths in the `harness-dbus` gate (8a6e0f45).
+  Evidence: the X-socket checks in the progress ledger (sminos 651–653, local); 8a6e0f45.
+
+- Observation (M4, T18, the test displays):
+  - On GitHub's hosted Ubuntu runner, `Xorg -displayfd` took `:0`, so the two-screen proof now names a display from :100 up.
+  - Xvfb cannot grow its screen: RandR's maximum is its start size, and a `SetScreenSize` smaller than the CRTC is BadMatch. So a resize test needs Xorg's dummy driver (`tests/xorg-resizable.conf`, 640x480 to 1280x800).
+  Evidence: runs 43148025593 (red) and 43149892384 (green); the whole-branch review's fix report, F3 (local).
 
 ## Decision Log
 
@@ -1803,6 +1863,280 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - #358's declaration reads: "declared gap, no closing route (the floor and hold keep drops honest; no never-take signal); owner informed 2026-11-10; tracked by #358". The owner has not ruled on it; they were told it ships declared unless they object. #269's short drop is declared the same way if any gate step judges it.
   Date/Author: 2026-11-12, the plan-executor (session linux171), on the design session's ruling.
 
+- Decision (2026-11-13, M4, T18 as built: the close-out): task 74, fa25cb83..3529448c on `feat/171-m4` (69 commits besides merges, the whole-branch review's fix waves among them), then task 76's top-up for R2 (2d5cfeb5, 514f5c62). Five workers, then the review's fix waves (the next entry). Evidence is `m4/README.md` (its T18 section), `m4/harness-helpers/`, `m4/foreground-start/` and `m4/facade/`. The design session ruled each step (2026-11-11 to 2026-11-13).
+  - **The order** (sminos 637). The code, the harness and the suites were made final on a clean head. Then came the whole-branch review and its fixes, then the release workflow's attested build-only artifact of that head, then the gate, which is its own rehearsal (the gate's entry below). A later change to `native/linux-engine/` or `runtime/` reruns the steps it touches, and the pull request lists them.
+  - **The version gate** (292b6509; T8's binding carry). The engine is 0.4.0, and so is `MIN_ENGINE_VERSION`. A service test, written first, shows a 0.3.0 engine refused before anything is sent and before the settler defers anything, element actions and `drag_handle` included. Red: 0.3.0 was accepted.
+  - **A held `drag_handle` is released at `js_reset` and at a cell's timeout** (6474d598; T17's carry; sminos 631).
+    - The supervisor posts `kernel_reset` to a ready trusted worker and waits at most 1 s. The worker calls each loaded service's `kernelReset` (on Linux, `releaseHandles`). A kernel can neither send it nor suppress it.
+    - For a service without `kernelReset` (macOS's engine, the vendor's) it is a no-op, with a test.
+    - On a private Xvfb, button 1 is up as `js_reset` answers (21–26 ms), and the 5 s timeout answers at 5,045–5,056 ms, 10 of 10 each.
+  - **A paste naming no element looks again for a focus GTK 3 reports late** (37b211f7; sminos 624, 636). The `identity_faults` flake was a race in production, not a test fault (Surprises).
+    - When the request's own session synthesized the FocusIn and the walk finds no focused element, the engine re-reads that window's focused element every 2 ms, up to 50 ms. Hold sessions and windows with the real focus read once. The sentence is unchanged, and `--stats` records `paste.focused_ms`.
+    - Red, amplified: 6 of 30 and 2 of 30. Green: 100 of 100 alone, amplified, and at 16 stress-ng workers.
+    - A single-window cell (X focus None): the pinned build pasted 60 of 60. Before the fix, cua refused 1 of 30 amplified; after it, cua pasted 60 of 60.
+    - Stated cost: a true "no focused element" refusal right after a synthetic FocusIn now comes up to 50 ms later.
+  - **The `engine-linux` gate** runs clippy with and without `live`, and `tests/two-screens.sh` (6047aa88, e83b69a0; T11's carry). The two-screen proof names a display from :100 up (Surprises, the test displays).
+  - **The harness's shared helpers** (69af6889, 939ab0e0, 5afa9be3; evidence `m4/harness-helpers/`). Every gate runner parks the real pointer through `park.mjs` and checks the application under test through `app-identity.mjs`. `pointer-route.mjs` keeps its own park, because moving it would change T19's judge. Four leftovers are tech debt (f12756ee).
+  - **A foreground sample's start** (T7 fix 3's carry; 3dc4573a, c20ee703, fcc88055, 159dccf8; evidence `m4/foreground-start/`). A sample starts with the front window active, outside the span, after a quiet check that the previous scene's popups have closed. Without this, 5 of 5 transitions were false witness reds. With it, there were none in 300 samples over 32 Chrome-to-gnome-text-editor transitions.
+  - **Firefox's own drag and drop is not a pointer leave** (ffdnd-fix: 1ecf413f, ac83d50d, a448410c, 8fb5e2e2; merged cb3661b3).
+    - **The finding.** The gate's pilot found T19's watch answering "left" on every Firefox HTML5 drag and drop, though the drop landed (D3 2 of 2, and L2c). That is a regression on an ordinary scene, so it got an engine fix (sminos 643). The cause is GTK's drag-source grab (Surprises).
+    - **The rule** (sminos 646). A `GRAB`-mode leave is not a leave when the target's own client took `XdndSelection` in the same request, as read from XFixes owner events on the watch's connection. Another client's grab still answers "left".
+    - **The limit**, posted on #362. A pointer that leaves and comes back while Firefox's own grab is held goes unseen. One that stays out is caught by the end read.
+    - **The proof.** A real Firefox drag-and-drop cell went from 0 of 10 to 30 of 30. T19's cases pass unchanged. The predicates manifest gains Firefox's drag and drop: P6, and P5's leave case.
+    - **Its cost at load**, judged by a rule set before the result was known (sminos 649):
+      - pre-T19 (7d464cb2) landed 119 of 120, and its one miss answered ok with no drop;
+      - the fix landed 155 of 160, and its 5 misses answered "left";
+      - one-sided Fisher p = 0.189, so the difference is load noise;
+      - inside one sitting, cua landed 39 of 40 (its miss answered "left"), and the same bytes with the watch off landed 37 of 40, all 3 misses answered ok with no drop.
+
+      So the watch costs no landing, and it turns false successes into honest answers. The misses are #372 (sminos 663).
+  - **The gate's runner** (`scripts/linux-engine-gate/`; 90a92898, 362bdf40, daa8b3b3, 2b008043, fd90e268, b56b15e2, 01561ce5, ff4c281d, eaa46d36, e1085997, 080caa09, 897b729d). Its model and steps are in the gate's entry below. Built here:
+    - `--gate` is opt-in on experiments and runs `candidate.mjs`'s checks. Every artifact is labelled "release gate" or "development run, not a release gate", and the pull request cites only the first (sminos 633).
+    - **The Electron drop judge for T17's cells.**
+      - A false ok fails, and #364's costs are findings with counts.
+      - The hung-sink `slow` cell is #365's declared race, counted per load (sminos 643, 645). At the gate's window load that count is 1 false ok in 173 cold handle drags: 0 of 60 in T17's third wave, 0 of 111 counted on ddb62024, and 1 of the pilot's 2.
+      - `t17-moved` stays out of the gate.
+    - **#358 declared** (f6704e79; the Decision Log, 2026-11-12). No step judges #269's short drop on speed, so #269 is not declared.
+    - **The facade suites as steps R1–R4** (fd90e268), and V5 under the gate's 18-window ballast (01561ce5).
+    - **The `FocusOut` burst is retired with its timer** (sminos 633). T7 revised's shipped acceptance runs in its place: the focus-timer shipped lane, and SIGTERM straight after keys and after clicks, idle and at twice the load (F1a, F1b, F2, F3a, F3b, F4).
+    - **Pixel baselines.** None is stored across sittings. Only layout constants could move with a theme: `maskTopRows` (`images.mjs`), `WRITER_GEN_LINE` (`drag.mjs`) and `xtermCell`.
+    - **The pilot** (a development build at `--pilot 2`). 14 steps failed only because a series of 2 is too short. Its real findings were D3 and L2c (the Firefox fix above) and H2's `slow` cell.
+  - **The facade suites on a private display** (fe0a26b4, cf785980, 7ac06f56, 41070184, 7fc2d9d0, bc67d611, bbaff26d, 75f49604; merged 70431828; evidence `m4/facade/`).
+    - **The venue.** In M3 they ran on `:0`, with the person's `me` profile. Now they run on Xvfb with Openbox, a private session bus and AT-SPI, and their browser lanes run on a run-owned Chrome for Testing profile. That was the plan-executor's ruling, agreed by the design session, which asked `m4/README.md` to state the change of venue (sminos 630). The two milestones' facade numbers are not like for like.
+    - **The launcher shim** (41070184; sminos 639). The engine-answered judge now tells T7b's launcher shim apart: a strictly identified `cua-engine launcher-shim` whose parent is `supervisor.mjs` never counts as the engine that answered, and a shim alone still fails. No cua-lane pass had been claimed since the shim arrived (81ae2732), so nothing was retracted (Surprises).
+    - **Acceptance 3's rule for `compare --engines` on Linux** (bc67d611; sminos 654).
+      - It judges an engine-answered operation with the gate's `judgeSeriesSpeed`: a bound of max(5% of the vendor's median, 1 ms) and at least 20 samples a side. A series with fewer keeps the median rule. macOS is unchanged byte for byte, with a test.
+      - Under the old rule, the counted sitting had failed on two ties: warm `getState` (17.6 against 17.9 ms) and warm `listApps` (16.8 against 17.2).
+      - Re-judged from the stored records, `getState` is the same within noise, [-0.122, 0.834], and `listApps` is undetermined at 90 a side, [-0.227, 1.124].
+    - **One top-up, no second judge change in the release window** (sminos 655–657).
+      - `listApps` was topped up on the same head and build. Pooled at 180 a side, it is the same within noise, [-0.16, 0.732].
+      - Judging engine-answered operations by their in-cell time is #370, for M5 (Surprises).
+      - The gate's R2 takes one top-up per undetermined series (2d5cfeb5, and 514f5c62 after its review):
+        - pooled, a series within the bound passes, and a loss fails;
+        - a series still undetermined is reported with its interval, not failed;
+        - the top-up's own sitting is judged by every other rule;
+        - only a series whose top-up lost no sample on either side is pooled.
+    - **The counted runs**, at 8ab1cc75, on a musl build made the release workflow's way (`17a3893e…`):
+      - `linux-native`: 11 of 11;
+      - `linux-device-mode`: 18 of 18, with both negative controls;
+      - the two-services over-budget row: 26 of 26, its line `{1263, 2, 0}`;
+      - repl-parity's cua lane: 34 of 34; the vendor lane `RECORDED_VENDOR_DEFECT`, with its 3 declared defects; the diff ok;
+      - `compare --engines`: PASS after the top-up.
+
+      R1–R4 ran them again on candidate 1's artifact, and the later candidates kept those records.
+  - **The plugin's minor bump**, 0.21.0 to 0.28.0 (f1cb9179), above `main`'s 0.27.24. Its commit message lists what macOS sees:
+    - `kernel-child.mjs`: T7b's drain and shim, on Linux paths;
+    - `supervisor.mjs`: T7b's escalation, and `kernel_reset` at `js_reset` and at a timeout (1 s, answered at once on macOS);
+    - `trusted-worker.mjs`: module caching and the `kernelReset` dispatch;
+    - `sky.mjs`: the `kernelReset` export, a no-op without a service's own;
+    - `package.json`: `test:linux-engine-diff`, used in CI only.
+
+    Right before the pull request, `main` is merged in and the plugin stays 0.28.0. `main`'s diff is checked against the frozen paths, and a touched path reruns its steps (sminos 658).
+  - **The worker layout** (sminos 632). Subagents started without worktree isolation are pinned to their parent's worktree. So two workers shared the checkout on disjoint files and committed by explicit paths. The others worked in their own worktrees and were merged by the executor. The shared files were the executor's alone. A proof run with uncommitted edits in the tree counted only as a pilot.
+  - Already done before T18: the unused `Mutex` import was gone (2ed591f4).
+  - **The clean-head suites**, on cb3661b3 and the fixes merged up to 4c532708:
+    - the engine, by the gate's own commands: fmt and both clippy runs clean, the live suite 601 tests with 0 failed, two-screens 3 of 3;
+    - services and doctor: 76 of 76;
+    - the REPL host: 192 passed, 0 failed, 16 skipped, after ed939416 fixed `serve-own-host`'s test home;
+    - the harness: 981 of 981.
+  Evidence: `m4/README.md`; `m4/harness-helpers/`, `m4/foreground-start/`, `m4/facade/`; the task-74 report (local), with each worker's hand-back; `ci-gate` GREEN 8 of 8 on 3529448c, with `sandbox-live` among them (run 43393109293), and on 6474d598 (run 43152324502), e83b69a0 (43149892384), 2d5cfeb5's fix 514f5c62 (43401193339).
+  Date/Author: 2026-11-13, the plan-executor (session linux171), from task 74's report and task 76's R2 work, on the design session's rulings 624, 630–633, 636, 637, 639, 643, 645, 646, 649 and 654–658.
+
+- Decision (2026-11-13, M4, T18: the whole-branch review): `doperpowers:reviewer-high`, the spec's rung, run before the gate (sminos 637).
+  - **The base and the slices.**
+    - The base was the merge-base fc091b83. The branch had 414 commits and 264 code files, +56k lines, plus 4,423 evidence files.
+    - That is too much for one reader, so the review ran as five path-scoped slices. Each slice got the whole spec and the interfaces across its edges.
+    - Started at f12756ee: A, the engine core (16k lines); B, the drag family (10k); C, the host, the service and T18's own code (3.6k).
+    - Started at 080caa09, after the pilot's fixes: D1, the gate and its judges (51 files, 7.7k lines); D2, the experiments and runners (160 files, 33k lines).
+    - T18's own task review was folded into slices C and D.
+  - **How findings were fixed.** Each wave went to one fixer, under the T17 convergence line. A reasoned finding had to fail on f12756ee's code, for its stated reason, before its fix (sminos 641).
+  - **Slices A to C: six findings, one wave** (wbr-fix on f1cb9179: 1776ce08, e0c74cbd, 324f4716, a43b64cd):
+    - [P1, C] A reset, or a cell's timeout, during an in-flight `drag_start` was acknowledged without `release_handle`, and the old start pressed later. Now a start not yet written is refused at the write. A start already written is followed by `release_handle`, which runs after it. Either way the start answers "drag handle was let go".
+    - [P2, B] An auto-expired handle took a retried `move_to` and answered ok with the button up. Now `handle_expired` refuses every later `move_to` and `end` until a new start or `release_handle`, declared against the vendor.
+    - [P2, B] Handles were clamped to the setup's screen size, which goes stale after a RandR resize. Now one `GetGeometry` on the root gives the size.
+    - [P2, B] A `dedicated` foreground drag from Chrome window A to B confirmed against A. Now it confirms against the managed Chrome top-level under the real pointer at the release.
+    - [P2, A] The handle's idle deadline was not serviced while a reply waited on a blocked stdout. It was contained, so it was built: the outbox runs the due work every 10 ms while it waits.
+    - [P2, C] The shim's tests put `TMPDIR` into shell source. Now the paths are positional arguments.
+
+    The re-reviews of A, B and C found nothing.
+  - **The handle-ordering class: three more waves** (sminos 642, 644).
+    - B's re-review found that a stale handle A, still stored in the service, could move a later handle B. That was ruled a deterministic wrong-target fault, not debt (sminos 642).
+    - wbr-fix2 (a70db70e, merged 44264ab8) refused a stale handle in the service.
+    - C found a pipelined `A.move_to` written behind B's start. wbr-fix3 (ddb62024) made requests wait for earlier pending starts.
+    - C then found a third hole: a later `B.start` overtaking an earlier `A.move`.
+    - wbr-fix4 (34959245, merged e0e0dda1) got one attempt (sminos 644). It sends every handle operation through one queue per kernel, so wire order is invocation order. The reset's `release_handle` moves to the next kernel's queue. An invariant test covers 640 interleavings: red 142 of 640 on ddb62024, green 0.
+    - C's re-review found nothing, and the class closed.
+  - **Slices D1 and D2: five judge findings, one wave** (harness-fix: b2258bb2, 5fe136e1, 31fdcce2, c2eca360, aa869147, e0a03b70):
+    - [P1] Chrome's late-take steps C1, L4b and L4c judged nothing, because `runDropSignals` always answered complete. Now `chromeDropVerdict` judges them by T14's contract.
+    - [P1] A control inherited an earlier trial's drop, because the page keeps its effect until the next dragstart. Now the page stamps `seq`, and the judge binds a record to its own trial.
+    - [P2] A notice passed without the next acting request's refusal. Now both must name the same cause.
+    - [P2] A reused run name mixed development and release-gate provenance. Now it is refused before any candidate check.
+    - [P2] The minimized listing failed the person's own minimized windows, a false red on V3. Now it judges only the run's own windows.
+
+    P6 (Firefox's drag and drop) and P5's leave case for it joined the gate in the same wave.
+  - **Re-judging the posted figures.**
+    - Every posted figure was re-judged from its stored rows with the fixed judges (`rejudge-drops.mjs`), and none changed.
+    - Where stored rows could not tell, the figure was called unverified, not unchanged (sminos 647).
+    - T14's device controls were rerun on their own build (sminos 648): 14 of 14 cases, 45 of 63 samples landed, 0 false ok, and each of the 18 control notices was followed by the refusal.
+    - The re-reviews of D1 and D2 found nothing.
+  - **The Firefox fix's bounded reviews.** B found nothing. D1 found two unread-counter paths:
+    - [P1] an ok whose counters were not read passed as a tolerable miss;
+    - [P2] P6 read an unread drop count as "did not take", so a refused case could pass unread.
+
+    unread-fix (8ab1cc75) makes an effect not read before or after a run count as none. Its re-review found nothing.
+  - **Converged at 8ab1cc75**, every slice and every wave. Bounded reviews of the later judge changes:
+    - the Linux baseline rule (bc67d611..75f49604): D1 found nothing;
+    - R2's top-up (2d5cfeb5): D1 found [P1] that the top-up's non-speed outcomes were never judged, so failed top-up rows vanished. That was fixed in 514f5c62, and the re-review found nothing.
+  - Discoveries the review left as limits or debt:
+    - the desktop route still confirms a Chrome drop against the window under the path's end, read before the drag, so a person moving the pointer off it first misleads the check (posted on #365, sminos 642);
+    - `--drag-dnd-release-at-accept` measures only the desktop route now.
+  Evidence: the review packages `wbr-f12756ee/` and `wbr-080caa09/` (local); wbr-fix-report.md and harness-fix-report.md (local); `ci-gate` GREEN on a43b64cd (43283541719), a70db70e (43288651097), ddb62024 (43293967494), 34959245 (43302094747), e0a03b70 (43322708497), ffdnd-fix's head (43357653445) and 8ab1cc75 (43374419201).
+  Date/Author: 2026-11-13, the plan-executor (session linux171), from the five slices' reviews and re-reviews (reviewer-high) and the fix waves' reports, on the design session's rulings 641, 642, 644, 647 and 648.
+
+- Decision (2026-11-13, M4, T18: the gate as run, and the rules its rulings set): tasks 76, 77 and 79, on three candidates. The record of every candidate and step is `m4/gate/README.md`. This departs from the pre-flight's "one sitting on one candidate": a later candidate reruns only what its diff reaches (below).
+  - **The candidate.** Each is the release workflow's build-only run (`publish=false`) on a frozen head.
+    - Before anything runs, the x64 artifact's sha256 is recorded and its attestation verified: `gh attestation verify --signer-workflow SSFSKIM/cua/.github/workflows/linux-engine.yml --deny-self-hosted-runners`.
+    - Every step's `--gate` preparation checks it again: the attested commit must be the checkout's HEAD, and `--version` must name it. Otherwise the step exits 2.
+    - From the artifact on, `native/linux-engine/` and `runtime/` are frozen.
+  - **The checkout.** Each candidate gets a fresh git worktree, detached at its head and clean, with a real `npm ci`, then `node node_modules/electron/install.js` (Surprises), then xprobe built. The out directories lie outside it. A fresh checkout per candidate keeps each earlier one as it was gated.
+  - **The steps.** 49 steps of 45 minutes or less, about 1,216 minutes in all:
+    - 27 idle private steps: D1–D5 (the drag cells), R1–R4 (the facade suites), FB (the over-budget line), E1 (the events experiment's `move`), S1–S4 (the settle), F1a, F1b and F2 (T7 revised's acceptance), P1–P6 (T19's predicates manifest), H1 and H2 (T17's handle and Electron cells), and C1 (T14's late takes);
+    - six on `:0`: V1–V5, the verdict run in the pre-flight's frozen order, each its own run starting with the stub's negative check; and Z0, Firefox's plain drop and Writer unprimed;
+    - 16 at twice the load: L1, L2a–c, L3a–e, L4a–c, L5, F3a, F3b and F4.
+  - **How the steps run.**
+    - A driver runs the private steps under the host lock, each into `<out>/<step>.release-gate/`, once the host is quiet: no hold, no stress-ng, and a 1-minute load under 1.0.
+    - A `:0` step is printed (`gate.mjs print`) and run under task 50's guards with T19's `wrap71` rule.
+    - Each `:0` sitting is announced at least 45 minutes ahead and cleared by the design session ("GO :0": sminos 661, 679, 695).
+    - Gate mode inside `wrap71` was proven first on a private display. `gh` keeps its login in `hosts.yml`, so verifying the attestation needs no D-Bus inside the guard.
+  - **A finding** is analysed before anything reruns, and goes to the design session.
+    - Under the T17 convergence line, a finding reopens work only when it reproduces on an ordinary scene.
+    - An ok with no effect on an ordinary drag at the gate's window load reopens work. It is never a declared limit or a tolerance (sminos 669).
+  - **A later candidate reruns only what its diff reaches** (sminos 677).
+    - Its rerun list comes from the step definitions and goes to the design session before anything runs.
+    - The README carries the engine diff, with its stat and the changed functions.
+    - One kept step reruns as a cross-check. If it differs, the whole kept set reruns.
+    - A step not rerun stands on the earlier candidate's record.
+  - **A step passed by a ruling over stored records, not by the gate's own judge** (sminos 659, 662).
+    - A script applies the ruling. It reads only the stored rows, through the candidate checkout's own judge functions, and lives with the evidence (`m4/gate/scripts/`), outside the candidates' trees.
+    - Each script is checked against negative controls: the rows edited one way at a time, every edit failing.
+    - The pull request carries one table of every such step, with its counts, ruling, script and output (sminos 662).
+    - An environment fault, meaning a step that stopped before its engine was judged, reruns as its own step and is listed in that table as "environment fault, rerun" (sminos 664, 665, 668).
+  - **The rules the gate's rulings set.**
+    - **#302** (sminos 659, 682). A failing Electron `press_key` run counts as #302 only when all of these hold:
+      - its class is `late`;
+      - its key-down landed inside the settle, and its key-up came late;
+      - key-ups equal key-downs at the next before-read on the same page;
+      - the desktop is clean and the front window was not lost (`desktop_clean === true && front_active !== false`), which covers the desktop route, where `front_active` is null.
+
+      A lost, refused or invalid run still fails. Encoding the rule in the settle judge is #371, for M5 (sminos 660).
+    - **The load judge** (sminos 650; 8fb5e2e2, 8ab1cc75).
+      - A hard failure is an ok whose effect did not happen, by kind (no drop, stroke, scroll or selection change), or whose effect landed on another target.
+      - A right-target effect of the wrong size, and an honest miss, are landing misses. They are judged by a one-sided Fisher test against the pinned build, p < 0.05 per kind (`LOAD_P`).
+      - An effect not read before or after a run counts as none.
+    - **An idle Firefox drag-and-drop miss.** An honest miss is a landing miss under the same Fisher test (sminos 662).
+    - **`activate_window`'s raise wait**, which keeps the next input off the window that covered its target, is a declared speed gap with no closing route, like #358, with its ticket #373 (sminos 666, 667).
+  - **The scripts were reviewed independently before the release** (`doperpowers:reviewer-medium`, 2026-11-14, with audit-leak-fix's 8a6e0f45, which had had no review). The review found three holes (sminos 697):
+    - `rejudge-dnd-fisher.mjs` passed on raw counts when the lanes' valid counts differed, so a constructed 22 of 30 against 20 of 20, with p = 0.011, printed PASS;
+    - every re-judge rebuilt its pass from the cells it ruled on, and dropped the run's other terminal failures and missing coverage;
+    - the audit proxy's exit hook removed its socket's path even after another run had made a new socket there.
+  - **The fix** (2851ce49, c204e9e4, d57c4efa, 4d3085b3; the re-review found nothing):
+    - A ruling now replaces only a failure the harness wrote on a row that the ruling passes. Coverage comes from the candidate's own `steps.mjs`, and every other terminal failure is kept. The ruled-steps table has a column "other terminal failures retained".
+    - P6 is judged by Fisher alone, against a pinned reference of at least 30 valid runs. That minimum is new: no rule set one before. It is P6's full side, the count the manifest requires of cua.
+    - The proxy removes only the socket it made, matched by device, inode and birth time.
+    - Every re-judge was rerun over its stored records, for every step and candidate. No verdict moved, and each found no other terminal failure.
+    - The candidates' own load judge (`drag-judge.mjs`) has the same raw-count shortcut. It ran only in candidate 2's L1 and L2a–c, and every one of its 30 lane rows compared 40 runs against 40. At equal counts the shortcut is Fisher's p = 1, so no stored verdict rests on it (`check-load-sides.mjs`; sminos 699). The shortcut is tech debt.
+  - **After publishing**, the published x64 sha256 is compared with the gated one. A difference reruns the device scenes on the released asset (the pre-flight).
+  Evidence: `m4/gate/README.md`; `m4/gate/wrap71-proof/`; `m4/gate/scripts/`; the task-76, task-77 and task-79 reports and gate-scripts-fix-report.md (local).
+  Date/Author: 2026-11-13 and 2026-11-14, the plan-executor (session linux171), on the design session's rulings 637, 650, 659, 662, 664–666, 668, 669, 677, 682, 697 and 699.
+
+- Decision (2026-11-13, M4, T18 gate, candidate 1: 514f5c62, cut at V5): task 76.
+  - **The candidate.**
+    - Frozen head 514f5c62, with `ci-gate` GREEN 8 of 8 (run 43401193339).
+    - Build-only run 43405393873. `cua-engine-0.4.0-linux-x64` sha256 `f7c12e9b…3937`, `cua-engine 0.4.0 (514f5c62dd6c)`; arm64 `da457d7f…006b`.
+    - Checkout `t76-gate`.
+  - **When it ran.** The idle steps ran 10:07–18:36Z and the `:0` sitting 19:30–22:32Z. The block at twice the load was held after V5's finding.
+  - **Passed by the gate's judge:**
+    - D1, with #358 inside its 40 ms bound: 365.7 against the newest build's 338 ms, [24.9, 30.1];
+    - D3–D5, R1–R4 (R2 needed no top-up), FB, E1, S2–S4, F1a, F1b, F2 and P1–P5;
+    - H1 and H2;
+    - C1, with 11 real late takes, all 11 reported;
+    - V1, V2, V4 and Z0.
+  - **Passed by a ruling over stored records:**
+    - **S1, by #302** (sminos 659). `electron-input press_key background`: 32 runs, 22 passed, and 10 were late in #302's shape (the key-up 206.9–218.7 ms after the answer), 0 outside it. The streak was 32 of 30 and the audits clean (`rejudge-302.mjs`, `S1.rejudge-302.txt`). T8 had recorded the cell at 6 of 37.
+      - T8's carry, that the shipped lane judges #302, was recorded at T18's close-out as built. No code in `scripts/linux-engine-diff/` judged it, and the pilot, at a series length of 2, could not show that.
+    - **P6, by Fisher** (sminos 662). `firefox dnd visible pointer-in` landed 29 of 30. Its one miss was honest ("the desktop pointer left its window"), there were 0 oks with no effect, and the pinned build landed 30 of 30, so p is 0.5 (`rejudge-dnd-fisher.mjs`). Against the pinned 30 of 30, 4 honest misses in 30 pass and 5 fail. The miss is #372.
+    - **V3, by #373** (sminos 666).
+      - `chrome-input activate_window` lost on speed alone: cold 10.4 against 3.86 ms, [5.635, 7.8]; warm 7.9 against 0.52, [6.145, 8.97].
+      - Its effect held 40 of 40, and its witness and audit matched the vendor builds'.
+      - The loss is task 63's raise wait (2026-11-06), ruled after M3's gate. `activate_window` had gone unmeasured on `:0` since then (`rejudge-speed-gap.mjs`).
+      - Every other row stood as stored: 39 passed, plus M3's declared refusal of chrome-input's drag.
+  - **Environment faults, rerun:**
+    - **D2** (sminos 664, 665) died at its first Electron page, before any engine request, on a missing binary (Surprises). Rerun alone, it passed: Electron's five kinds 30 of 30, the thumb at 146 px or more against the pinned mean of 129.2.
+    - **V5's first run** (sminos 668) started the snap's Firefox (Surprises). It was rerun inside the sitting with task 59's Firefox, and Z0 was the first step on the corrected launcher.
+  - **V5's rerun failed and reopened work** (sminos 669–671). Three cua samples of device-chrome-dnd failed, all in block 1 within about 160 s. In each, Chrome never took within the hold (`press.taken: false`):
+    - `chrome_dnd_short_in_front_shared`, cold: ok in 259 ms, a plain press and release, no drop and no notice. A false success.
+    - `chrome_dnd_inzone_out_in_front_shared`, warm 2: ok in 256 ms, the same. A false success.
+    - `chrome_dnd_obscured_in_front_late_shared`, warm 1: ok in 160 ms, outcome `no_start`, the page's dragstart after the answer, and no drop.
+      - This was a renderer-late dragstart after the button-up, which Chrome rejects (T13), not a lost notice.
+      - The case had never asked for its notice, so the device cases' telemetry now reads the notice and the preflight answer for it (21f1b3ec).
+
+    The other 11 cases passed, as did every Firefox device case and the four identity scenes. The mechanism and the fix are candidate 2's.
+  - **The `:0` sitting's checks** (the T18 row):
+    - **The vendor bar resolved.** No speed series was left undetermined in V1–V5, so the sample counts resolve the vendor bar on this VM.
+    - **No focus move after a foreground request** was recorded, so the witness's within-toplevel allowance has still not judged one live.
+    - **T7 fix 3 held.** V4's 103 foreground starts were all clean.
+    - **No pixel baseline** is stored across sittings. Z0's Writer cell, the first on `:0`'s theme, passed 30 of 30 unprimed.
+    - **Firefox's plain drop** took 30 of 30 on `:0` (T11's end rest): the pinned build 29, the newest 30, the 0 ms control 0.
+    - **The guards.** Every step had 0 flags and 0 decoy connections. The pointer was restored every time, the owner's Chrome kept its process, and nothing of the run was left.
+  - **Within the bound**, named as the pre-flight requires:
+    - gedit `clipboard_release` warm, [0.045, 0.11] ms, against the newest build's 0.13 (V1);
+    - desktop `launch_app` warm, [0.51, 0.63] ms, against the pinned build's 0.66 (V2).
+  - **Findings with counts:**
+    - #365's hung sink: H1 0 of 60 and H2 0 of 59 answered ok with no drop.
+    - #364: in H2, 4 cold handle drops landed unconfirmed. T14's share was 4 of 200, within 5%. H1: 0 of 200.
+    - H2's root lane was unmeasured.
+    - C1: T14's share was 0 of 29.
+  Evidence: `m4/gate/README.md`; `m4/gate/out/`, `out-rerun1/` and `wrap71-proof/` (41b08b4e); the task-76 report (local).
+  Date/Author: 2026-11-13, the plan-executor (session linux171), from task 76's report, on the design session's rulings 659, 662, 664–666 and 668–671.
+
+- Decision (2026-11-14, M4, T18 gate, candidate 2: f9692898, the background hold refreshes its last point; cut at L3a): the V5 investigation, then task 77.
+  - **The mechanism is Chromium's** (Surprises).
+  - **The fix** (sminos 672, 673; 0f18528f). It applies on the background route (`Route::Window`) to a Chromium drag held for a take with no DropGuard (Chrome in front, `dedicated` mode, or Electron, which is never guarded) that has no take by its path's end.
+    - Such a drag re-sends the path's last sample at most every 12 ms, alternating the last two and ending on the last. It stops at the take, or one `BROWSER_REST` (30 ms) before the hold's bound, where the last point goes once more (`dnd.rs` `wait_for_take_refreshing`).
+    - It adds no wait.
+    - Red, then green: with the browser stopped for 150 ms from the send, 30 of 30 paths were lost; with the fix, 30 of 30 landed.
+    - At the gate's window load: 0 oks with no start in 306 + 306 drags, against 0.4.0's 6 in 408.
+    - The idle drag cells are unchanged: Chrome's drop took 366.8 ms against 365.7 before, its #358 interval [22.6, 31.1].
+    - A stall the browser holds past about 220 ms after the press still loses the path: with stalls of 150, 200 and 215 ms the drag landed, with 230, 260 and 300 it did not. That is a stated limit on #365.
+  - **The guarded route keeps its residuals** (sminos 673–675).
+    - Chrome raised but not activated has no hold to refresh in, and after the release nothing can help.
+    - On 0.4.0, a lost path there (the browser stopped 150 ms) answered ok 20 of 20, and so did a renderer-late dragstart (stopped 30 or 40 ms).
+    - A `_NET_WM_PING` handshake before the release was measured and rejected (Surprises).
+    - Both are stated limits on #365.
+  - **An upstream Chromium report** is drafted, not filed: the owner decides (sminos 672).
+  - **The candidate.**
+    - Frozen head f9692898, v5-telemetry merged onto 41b08b4e, with `ci-gate` GREEN 8 of 8 (run 43553148367).
+    - Build-only run 43553123316. sha256 `90b9650e…0dbd`, `cua-engine 0.4.0 (f96928983006)`; arm64 `2a1db84a…a17b`.
+    - Checkout `t77-gate`.
+    - The engine diff from candidate 1: `src/dnd.rs` +139, `src/engine/pointer.rs` +37/−10 (all inside `drag_along`), `tests/live_device.rs` +157. Nothing changed under `runtime/`, `src/`, `.claude-plugin/` or the package files.
+    - The bounded review, by the drag slice's reviewer, found nothing.
+  - **The rerun set** (sminos 677): 23 steps, every one a step whose Chromium drag reaches an unguarded hold.
+    - V5 on `:0`; D1, D2, S1, H1, H2 and C1 idle; and the whole block at twice the load, which had not run on candidate 1.
+    - The rest was kept from candidate 1, each with its reason (no Chromium drag, a drag refused before anything is sent, or no Chromium family; the README lists each).
+    - The cross-check was D3, the shorter of D3 and R1. It matched candidate 1: the same verdict, 30 of 30 in every cell, warm medians within 0.5 ms. Only telemetry moved: Firefox's received-motion median went from 41 to 4, a distribution of either 3 or 50. The kept set stood.
+  - **Results**, 03:51–14:01Z:
+    - **Idle.** D1, D2, D3, H1, H2 and C1 passed. S1 passed by #302, 7 of 33 runs (the key-up 205.7–222.9 ms after the answer), and the fix's cells held 30 of 30 with clean audits.
+    - **V5 on `:0`** (sminos 679). Candidate 1's three failing cases passed, 9 of 9 each. 63 drop samples, 45 landed, 0 false ok.
+    - **V5 passed by a ruling** (sminos 680). `chrome_dnd_late_take_shared` sample 2/0 ran on the guarded route, which the fix does not reach.
+      - It answered honestly: a plain drag, the notice on the read, the next request refused, and the Escape 1.4 ms after the release.
+      - But the witness span ends 20 ms after the answer, and it closed before Chrome's late drop activated its window. That sample's dragend came 201 ms after the press, with the answer at 165 ms; the other samples' dragends came 162–187 ms after the press.
+      - `rejudge-late-take-window.mjs` passes 52 rows, and each of its four controls fails. The witness's short tail is tech debt.
+    - **The block at twice the load.** L1, L2a–c, L3c–e, L4a–c, L5, F3a, F3b and F4 passed.
+    - **L3b passed by #302 on both routes** (sminos 682). `electron-input press_key desktop`: 6 of 31 late, the key-up 238.8–316.8 ms after the answer. On the background route: 2 of 57. The amended script reproduces S1's outputs on both candidates, with a control.
+    - **L3a failed.** Chrome's context-menu Copy stuck under twice the load, with every answer honest. It was ruled a load limit and a defect (sminos 681, 683; the next entry).
+  Evidence: `m4/gate/c2-f9692898/` (866b7d01; its `l3a-repro/` holds r1, r2, esc1 and frz1); `m4/gate/scripts/` (05733962); the task-77 report (local); `~/.local/share/cua-171/v5-repro/` (local), with `chromium-bug-draft.md`.
+  Date/Author: 2026-11-14, the plan-executor (session linux171), from the V5 investigation's and task 77's reports, on the design session's rulings 669–675, 677, 679, 680 and 682.
+
 - Decision (2026-11-14, M4, T18 gate: a requested context menu is confirmed, or answered menuUnconfirmed; candidate 3): Gate step L3a on candidate 2 (f9692898) found Chrome's context-menu Copy stuck under twice the load. One `clipboard_read` Copy was not served within COPY_WAIT ("clipboard update timed out"). After it, every later Copy on that window refused with "context menu did not open; no clipboard action was sent". It happened after both timeouts seen: L3a's trial 3, and private reproduction r2's trial 59 of 60. Every answer was honest. The design session ruled the stuck state a defect (sminos 683), and then ruled on the fix below (684, 685, 687).
   - **What the checks showed** (task 77's report, sections 11–16; `m4/gate/c2-f9692898/l3a-repro/`):
     - No menu node was showing in the stuck state, and r2 found no leftover child of the application.
@@ -1832,6 +2166,44 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - The hosted engine-linux gate installs GTK 3's Python bindings and requires them (`CUA171_GTK_TESTS=required`), so the GTK 3 fixture tests can no longer pass by skipping.
     - Candidate 3's rerun set (ruling 691): S1, L3a, L3b and V3; the cross-checks S4 and S2. V4, V5 and L3c are skipped, since the changed code is unreachable in them (task 78's report).
   Date/Author: 2026-11-14, the plan-executor (session linux171), on the design session's rulings 681, 683–685, 687, 688, 690, 691 and 693, from task 77's checks and task 78's build and proofs.
+
+- Decision (2026-11-14, M4, T18 gate, candidate 3: c55c8e08): task 79.
+  - **The candidate.**
+    - Frozen head c55c8e08: the fix's head c2d2da8b plus the spec's fold. `ci-gate` is GREEN on c2d2da8b (run 43605947596).
+    - Build-only run 43608161213. sha256 `751ec9be…3cca`, `cua-engine 0.4.0 (c55c8e08d9cb)`; arm64 `0cbde8f0…0d42`.
+    - Checkout `t79-gate`.
+    - The engine diff from candidate 2 is 15 files, 943 insertions and 112 deletions, all of it the menu confirmation (the previous entry). `runtime/`, `src/`, `.claude-plugin/` and the package files are unchanged.
+    - The rerun list approved before the fix wave (sminos 691) was checked again against the final diff, and it stood.
+  - **S1 passed by #302.**
+    - `electron-input press_key background`: 5 of 32 late (the key-up 206.4–222.7 ms after the answer), 0 outside the rule.
+    - The redefined cells held 30 of 30, clean: Chrome's and Electron's `secondary_action` confirming a native menu, the `menu_unconfirmed` control, `right_click`, and chrome-text's `clipboard_read` and `clipboard_write`.
+  - **The cross-checks matched candidate 1** (`compare-settle.mjs`): S4 in all 37 cells and 19 audited ones, S2 in all 30 and 19. So the whole kept set did not rerun (sminos 677).
+  - **V3 on `:0`** (sminos 695; 16:50–17:28Z) passed by #373 again.
+    - The script `rejudge-speed-gap.mjs` was amended so that declared losses stand apart. Candidate 1's output is unchanged under it.
+    - 41 rows: 37 passed, 2 declared unconfirmed, 1 declared refusal, 1 declared gap.
+    - `activate_window`: cold 11.56 against 4.26 ms, [6.035, 8.265]; warm 8.46 against 0.55, [6.285, 10.045]; effect 40 of 40. Each of the 10 controls fails.
+    - **The declared unconfirmed cells held in every part**, 40 of 40 each: every sample answered `menuUnconfirmed`, the page's context counter rose, the witness was unchanged, and the audits were clean.
+      - The check is `check-declared-unconfirmed.mjs`, with 7 controls. On candidate 1's rows, which answered ok, the declaration does not hold.
+      - The vendor builds answer both cells ok, cold in about 707 ms and 347–352 ms. cua answers after its 1 s wait (1048.4 and 1045.7 ms), which is not judged on speed.
+    - A run's verdict line lists these cells as "declared refusal". The judgement is right; only the wording is wrong (tech debt).
+  - **L3a passed.** Every Chrome cell held 30 of 30 with no miss, `clipboard_read` and `clipboard_write` among them. The trigger (#375) did not occur, so the timed-out and stuck paths rest on task 78's GTK 3 forced-stall test and its Chrome freeze proof.
+  - **L3b passed by #302 on both routes** (sminos 659, 682): `electron-input press_key` background 1 of 59 late and desktop 9 of 34, all in #302's shape, 0 outside the rule (`rejudge-302.mjs`).
+  - **The menu's lifecycle** stays as it is in candidate 3 (sminos 689). #378 is parity with the vendor.
+  - **The tickets** (sminos 692): #375 (P3), #376 (a spike, P2), #377 (P3), #378 (P2) and #379 (P3); macOS's matching gap is #374.
+  - **Not rerun, standing on earlier candidates' records:** V4, V5 and L3c (the changed code is unreachable there, sminos 691), and every step the rule does not name.
+  - **The release** (task 80; sminos 696, 700).
+    - `linux-engine-v0.4.0` was published at 2026-11-14T20:31:38Z, from `release/linux-engine-v0.4.0` at c55c8e08 (run 43637317960, all five jobs green), after the scripts' re-review came back clean and `ci-gate` passed on the head.
+    - The published x64 asset is byte-identical to the gated one (`751ec9be…`), so no device scene reran. arm64 is `0cbde8f0…`, identical to the build-only run's. Both match the release's SHA256SUMS, and both attestations verify.
+    - The pin commit ed5bf1bc changes `runtime/engine/linux-engine.json` only.
+    - **On the released asset** (from a clean worktree at ed5bf1bc, without `CUA_LINUX_ENGINE_BIN`):
+      - a fresh-home `cua install --engine` installs 0.4.0 at the pin;
+      - `CUA_NATIVE_ENGINE=cua cua doctor` passes the engine row and `accessibility.enabled`;
+      - Acceptance 1 (`linux-native`) passes 11 of 11, with no `sky_linux` over 3,355 samples and the engine the trusted worker's child;
+      - the device-mode fixture passes 18 of 18 with both negative controls, no `sky_linux` over 585 samples.
+    - **Unlike M3's checks**, these ran in a run-owned home on a private display: a temporary HOME and XDG dirs, an empty `claude-secrets`, and a temporary CUA_HOME. M3's ran in the VM's default home on `:0`, where the trusted side could reach the person's secret store, which the repository's rules forbid for probes. So the doctor's display and bus rows name the private ones. The person's default home keeps its installed 0.3.0 until the person updates it.
+    - **A home still on 0.3.0 under this code** (sminos 700) is refused cleanly. Doctor exits 1, and its engine row names `cua install --engine`. The first request is refused with "cua-engine 0.3.0 is older than 0.4.0, which this cua needs; run cua install --engine". After `cua install --engine`, doctor passes and the request answers.
+  Evidence: `m4/gate/c3-c55c8e08/` (049cb20b, ba0434ff); `m4/gate/README.md`; `m4/release/` (0193a543); the task-79 and task-80 reports (local).
+  Date/Author: 2026-11-14, the plan-executor (session linux171), from the task-79 and task-80 reports, on the design session's rulings 689, 691, 692, 695, 696 and 700.
 
 ## Outcomes & Retrospective
 
@@ -1866,3 +2238,59 @@ Written per milestone as each lands; the whole-plan retrospective at finish. The
   - A gate judges the bytes that ship, built where they are built: the candidate's provenance is verified before the run, and its identity with the published asset after.
   - A failure attributed to a vendor build is checked against the harness's own state before it becomes a rule or a declaration.
   - A test that proves a safety rule runs on the shipped bytes with a real fault; an injected fault proves only the instrumented build.
+
+- **M4 (2026-11-14): the measured improvements, released as `linux-engine-v0.4.0`; the default stays `vendor`.**
+
+  M4 set out to close the deviations the design left for it, each measured, and to bring the long browser drags and Chromium's thumb drags to the bar. Every item landed:
+  - duplicate windows are told apart, or answered with cua's sentence (T5);
+  - minimized windows are listed and readable, and refuse input before anything is sent (T4);
+  - truncation reaches the model as the facade's line (T3; `{1263, 2, 0}` on the over-budget page);
+  - every fixed wait is inventoried, and desktop `move`'s later requests take 0.40 ms against the newest build's 5.95, which closes M1a's declared gap (T9);
+  - the settle is a constant per input kind (T8), and a paste waits for the input before it rather than for a `FocusOut` timer (T7 revised);
+  - browser drags are paced by time, with a rest at sharp joints (T11). On the shipped bytes, Chrome's canvas path takes 476.7 ms against the newest build's 517.5, and Firefox's is faster too. Chromium's thumbs land at or past the pinned build's mean on every run (shortest 146 px against 129.2), and 40 of 40 at twice the load (T12, #265).
+
+  In the gate's `:0` verdict on the shipped bytes, the measured bar passes:
+  - the gedit tree read, 78.3 ms warm against 552.5;
+  - the Chrome page's read, 57.2 against 450;
+  - background `press_key`, 1.1 against 235.7, and `click`, 13.9 against 214.8;
+  - the over-budget page, 986.4 against 6,984.9;
+  - gedit `type_text`, 62.4 against the newest build's 847.2. The pinned build fails it after 10.2 s.
+
+  Most of M4's work went into making answers true. Each of these answered ok for an effect that did not happen, in a vendor build, in 0.3.0 or in a candidate. Each now refuses, answers unconfirmed, or lands:
+  - Chromium drops taken after the release (T14, #264);
+  - Firefox's background pointer input with the real pointer outside its window (T19, #353);
+  - LibreOffice's element points, 27 px too high (T16);
+  - Electron drops released where nothing took them, and `drag_handle` drops into Chrome (T17, #250);
+  - the foreground route's pointer input sent before the raise (task 63);
+  - an expired or stale drag handle (the whole-branch review);
+  - a Chromium drag whose path a busy browser threw away (candidate 2);
+  - a context-menu action that opened no menu (candidate 3).
+
+  The gate passed on its third candidate, the attested artifact of c55c8e08 (`751ec9be…`). The release is `linux-engine-v0.4.0`, whose published x64 asset is the gated bytes, pinned in ed5bf1bc and checked on the released asset (the Decision Log, candidate 3). Against the plan:
+  - **Tasks beyond T1–T18.** T4b and T4c (the harness never changes a window it did not open); task 41 and tasks 43–53, the harness's isolation, after X RECORD froze `:0` once and the harness's Chrome took over the person's profile; T7b, the drain before the kill; T7 revised (tasks 58–60); tasks 61 and 63, Qt's activation and the foreground raise; T19 (#353); and task 75. T15 closed as superseded. In all, loop tasks 28 to 80.
+  - **T7's `FocusOut` timer** was built, measured unnecessary, and replaced by a paste settle. The gate's `FocusOut` burst retired with it.
+  - **`Cache.GetItems`** was not adopted, and `InsertText` stays forbidden on GTK 4 (T6).
+  - **T14's early release** at the accept was reverted on one false release in 30, and the floor and the hold stay. #263 and #269 went to the owner with their numbers. Chrome's long drop is a declared gap with no closing route (#358, with Acceptance 3 amended), and so is `activate_window`'s raise wait (#373).
+  - **The facade suites** moved to a private display and became gate steps.
+  - **The gate became its own rehearsal**, on the attested artifact, after the whole-branch review, and it ran on three candidates.
+  - **Declared, and listed apart:** #358; #373; #302 (an Electron page's key release after the 100 ms settle; its judge is #371); V3's two `menuUnconfirmed` cells, where a page that draws its own menu got the vendor's ok; and M3's declared refusal of chrome-input's drag. Within the bound: gedit `clipboard_release` warm and desktop `launch_app` warm (Decision Log, candidate 1).
+  - **Stated limits, each with its ticket:** #362, #364, #365, #372 and #375–#379; and on macOS, #374. arm64 is covered only by the workflow's own tests (#266, for M5).
+
+  What cost the most was false successes found late, in three places:
+  - **T17:** three reviews in a row each found a new path to an ok with no drop.
+  - **The whole-branch review:** a handle-ordering class took three more waves to close structurally, and the gate's own judges had seven findings, five of them ways to pass wrongly.
+  - **The gate itself:** two candidates were cut by faults no review had read. V5's lost path is a Chromium bug on the vendor's own route, and it showed only on the shipped bytes, on `:0`, at the gate's window load. L3a's stuck menus showed only in L3a's own cell order at twice the load.
+
+  Two process gaps cost too. The facade suites ran in no gate from task 57 to T18, so a judge's false red went unseen. And T8's #302 judge was recorded as built at the close-out but never coded, so S1 failed on the first candidate.
+
+  What held:
+  - scoped reruns with one cross-check kept candidate 2 to 23 steps plus a cross-check, and candidate 3 to four steps plus two;
+  - every pass by ruling was a script over stored rows, with negative controls;
+  - re-judging every posted figure after the judges' fixes changed none.
+
+  Lessons for M5 and M6:
+  - A suite that proves a claim runs in the gate on every candidate. A suite outside the gate goes stale without failing.
+  - A carry recorded as done is checked in the code before a gate relies on it. A pilot shorter than a judge's minimum series cannot show what that judge would fail.
+  - Some faults exist only on the shipped bytes, on the person's display, or under the gate's load. Budget `:0` sittings and time at twice the load for every candidate, and plan for a candidate to be cut.
+  - For M5, the gate's runner and scripts carry over. A fresh checkout needs `npm ci`, then `node node_modules/electron/install.js`, task 59's Firefox first on PATH, and xprobe built. #266 (arm64 in the gate), #370 (in-cell judging) and #371 (#302 in the settle judge) are M5's. Until then, R2's top-up and `rejudge-302.mjs` stand in.
+  - M6b retires the vendor engine that every bar here is measured against, and Acceptance 13 cites M5's sitting for the vendor lanes. So M5's evidence keeps every vendor series it measures.

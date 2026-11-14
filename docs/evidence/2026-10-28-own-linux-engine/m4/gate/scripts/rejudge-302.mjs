@@ -49,7 +49,10 @@ function not302(i) {
   const r = runs[i];
   const cls = runClass(r);
   if (cls !== 'late') return `class ${cls}`;
-  if (r.desktop_clean !== true || r.front_active !== true) return 'the desktop changed';
+  // the desktop left alone: a clean span, and the front window still active where the cell has one (a background
+  // cell). A desktop-route cell has no front window, so front_active is null there and passes; false still fails
+  // (amended by task 77 for L3b's desktop-route runs, the controller's reading of ruling 659, 2026-11-14)
+  if (r.desktop_clean !== true || r.front_active === false) return 'the desktop changed';
   const { before: b, after: a } = r;
   if (!b || !a || typeof b.key_downs !== 'number' || typeof b.key_ups !== 'number') return 'no key counters in the record';
   if (!(a.key_downs === b.key_downs + 1 && a.last_key === r.sent?.key)) return `criterion 1: key_downs ${b.key_downs} -> ${a.key_downs}, last_key ${a.last_key}`;

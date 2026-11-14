@@ -10,6 +10,15 @@ candidate 3" (rulings 684–690).
 - **Scripts:** `scripts/menu-proof.mjs` (its page is `scripts/menu-proof.html`), run by `scripts/proof.sh` and
   `scripts/proof-chrome.sh` under the host lock. The forced stall is task 77's `freeze-check.mjs`, unchanged, pointed
   at this candidate.
+- **The scripts as committed against the ones that ran:** the runs used copies in the executor's scratch directory.
+  The committed `.mjs` and `.html` files are byte-identical to those copies' final state. One file changed between
+  runs: `menu-proof.mjs` was last edited after `proof4` ended and before `proof5` began. That edit added the 30 min
+  bound on the whole run and the exit 3 s after its end (a stray handle had held `proof4`'s run, and the lock, past
+  its end). So `proof3` and `proof4-menus` ran on the version before that edit, which is not kept, and `proof5` ran
+  on the committed one. The wrappers (`proof.sh`, `proof-chrome.sh`,
+  `settle-pilot/settle-pilot.sh`) differ from the ones that ran in two ways only. They find the checkout and their
+  neighbouring scripts from their own location, not from fixed paths. And they take the candidate's path as their
+  first argument, where the runs used `~/.local/share/cua-171/t78/candidate/cua-engine`.
 
 | Run | What |
 |---|---|

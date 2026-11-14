@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { textSceneEndsMarkdown } from '../../scripts/linux-engine-diff/report.mjs';
+import { renderSummary, textSceneEndsMarkdown } from '../../scripts/linux-engine-diff/report.mjs';
 import { CandidateSceneEnded, judgeSceneEnds, keepLaneScene, restartLaneScene } from '../../scripts/linux-engine-diff/scene-ended.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
@@ -131,6 +131,11 @@ test('the verdict line and the summary carry the count per lane; a vendor\'s res
   assert.match(md, /pinned 1, newest 0, cua 0/);
   assert.match(md, /gedit type_text pinned 0\/1: gone after type_text 0\/0; restarted \(gedit 7 replaced by 8, window 42 by 100\)/);
   assert.deepEqual(textSceneEndsMarkdown([]), [], 'a run from before the count shows nothing');
+});
+
+test("the summary's verdict line names the run's ends per lane, as the run printed it", () => {
+  const rows = [{ kind: 'meta', run: 'r', engines: [] },{ kind: 'end', run: 'r', valid: true, pass: true, failed: [], restores: { pinned: 0, newest: 0, cua: 0 }, scene_ends: { pinned: 1, newest: 0, cua: 0 } }];
+  assert.match(renderSummary(rows), /text windows a lane ended \(a vendor's restarted, never scored\): pinned 1, newest 0, cua 0/);
 });
 
 test("Desktop.sceneEnded: a window read as the run's once is kept; an end is taken only on every read", async () => {

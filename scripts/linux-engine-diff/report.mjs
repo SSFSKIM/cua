@@ -242,7 +242,7 @@ export function renderSummary(lines) {
     out.push(...textSceneEndsMarkdown(rows));
     const end = rows.find((r) => r.kind === 'end');
     const endLabel = gateLabel(end?.gate);
-    const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine(end, (s) => `**${s}**`)}`;
+    const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine({ ...end, sceneEnds: end.scene_ends ?? null }, (s) => `**${s}**`)}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
     // a run from before the harness audited its own trace has no record
     if (end && 'desktop' in end) out.push(desktopLine(end.desktop), '');

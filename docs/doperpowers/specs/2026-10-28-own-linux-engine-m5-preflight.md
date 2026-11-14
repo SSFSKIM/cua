@@ -11,6 +11,12 @@
 - This pre-flight ran no acceptance, created no VM, committed nothing and touched no ticket. Its probes were read-only
   HTTP requests and reads of this VM (`~/.local/share/cua-171/m5-preflight/`).
 - Loop tasks continue M4's numbering, from task 81. "T" numbers are this document's rows.
+- **Revision 2.** The first draft is 483bdf05. This one folds in:
+  - the design session's rulings on the forks (sminos 704): §6 lists each with its ruling;
+  - an adversarial review's three findings: R2 fails closed (T3, F8a); the default is shown by a mode of its own (§3,
+    T10); the head is frozen after the arm64 pilot's fixes, with a rule for a later fix (§4, §8);
+  - the VM's timing, counted from the approval of this pre-flight (§7.1, §9).
+- Still for the design session to confirm: F8a, F5a, F6a and the supersession rule (§6, "To confirm").
 
 ## 0. What the research found
 
@@ -70,7 +76,7 @@ Two more facts from this VM that the plan uses:
   - x64 `:0` sittings: the design session's GO, announced 45 minutes ahead, under task 50's guards. The owner's windows
     are on that display; the owner need not be there.
   - arm64 `:0`: nobody's display. Same commands and guards, no announcement.
-  - The owner: the default (§3); the arm64 VM's deletion (C13); the x64 default home's engine at the flip (F5).
+  - The owner: the default (§3). The design session tells the owner the arm64 VM's life and price (F6).
   - Nothing needs a TCC-like grant or the person's real profile. Nothing runs on the Macs (L214).
 
 ### 1.2 The commands
@@ -108,20 +114,28 @@ Steps are `scripts/linux-engine-gate/steps.mjs`'s names. Evidence is `m5/<arch>/
 | 7 | Identity and minimized | V5 (identity), V3 (minimized), R1 (the minimized case through the real facade) | `:0`; R1 private | each duplicate returns its own marker or the sentence, never a one-node tree. A minimized window is listed, read, and refuses a screenshot | x64: GO for V |
 | 8 | Device mode | V4 (GTK 4, xterm, Qt), V5 (Firefox, Chrome), P1–P6 (T19's manifest), R4 (`linux-device-mode.mjs`) | `:0`; P and R4 private | every listed kind refuses in `shared` with nothing sent and takes effect in `dedicated`. Element actions pass in `shared`. R4 is 18 of 18 with both negative controls | x64: GO for V |
 | 9 | Install | the block above | private, an empty home | the pinned asset is fetched and its hash verified. Doctor passes `engine`. `file` says `static-pie linked` on x64 and `statically linked` on arm64 (C7) | no |
-| 10 | Suites | R1 (repl-parity and its diff), R2 (`compare --engines`), R3; `ci-gate` on the head for `npm test` and `engine-linux` | private; CI | R1's cua lane passes and its diff shows only declared differences. R2 prints VERDICT: PASS under the rule F8 settles. Both record the installed engine as the trusted worker's child. `ci-gate` is GREEN (C8) | no |
+| 10 | Suites | R1 (repl-parity and its diff), R2 (`compare --engines`), R3; `ci-gate` on the head for `npm test` and `engine-linux` | private; CI | R1's cua lane passes and its diff shows only declared differences. R2 prints VERDICT: PASS by in-cell time, with no engine-answered series left undetermined (F8, F8a). Both record the installed engine as the trusted worker's child. `ci-gate` is GREEN (C8) | no |
 | 11 | Both architectures | items 2–8 on the arm64 VM, against its vendor builds | as above | as above, with the arm64 vendor outcomes declared (C10) and anything not shown listed (§7.3) | no |
 
-Beyond the eleven items, the gate's other steps run too, on both architectures, if F1 goes as recommended: S1–S4 (the
-settle as shipped), F1a–F2 (the paste settle and the stops), H1, H2 and C1 (drops), Z0, and the block at twice the load
-(L1–F4). M4's two cut candidates were both found there or on `:0`.
+Beyond the eleven items, the gate's other steps run too, on both architectures (F1, ruled): S1–S4 (the settle as
+shipped), F1a–F2 (the paste settle and the stops), H1, H2 and C1 (drops), Z0, and the block at twice the load (L1–F4).
+M4's two cut candidates were both found there or on `:0`.
+
+After the judged run, unjudged and listed apart (F2 and F3, ruled):
+
+- on arm64, the Chrome steps once more on current stable Chrome (V2's Chrome scene, V3, V5, D1, S1's Chrome cells), as
+  development runs;
+- on both VMs, item 3's seven operations once against the vendor's third build, 26.1111.21308, given as `--newest`, as
+  a development run. On x64 it takes a short `:0` sitting.
 
 Items 12 and 13 are M6's. Item 13 cites M5's sitting for the vendor lanes (L206, L2296), so M5 commits every vendor
 series it measures, raw rows included, on both architectures.
 
 ## 2. The docs
 
-Three places teach the Linux engine today, and the spec's M5 entry names two of them. The third is model-facing and is
-wrong once cua's engine is the default.
+Three places teach the Linux engine today, and the spec's M5 entry names two of them. The third, the `js` tool's host
+rules, is model-facing and already wrong for a session that selects cua's engine, so T8 changes it now, not with the
+flip (sminos 704).
 
 | Where | Today | What changes |
 |---|---|---|
@@ -133,8 +147,8 @@ wrong once cua's engine is the default.
 | `README.md` "Configuration" table | has neither variable | Rows for `CUA_NATIVE_ENGINE` and `CUA_DESKTOP_MODE`, with the `engine.json` keys |
 | `README.md` "Verify and acceptance" | no Linux engine check | `scripts/accept/linux-native.mjs` and `linux-device-mode.mjs` |
 | `deploy/cloud-vm/README.md` "What the VM ends up with" | says the computer surface runs from the pinned runtime; no device mode | The engine `cua install` placed; `"desktop": "dedicated"` in the user's `engine.json`; `IsEnabled` set at session start |
-| `docs/cua-api/core.md`, or a Linux document beside it (F4) | "Linux input stays bound to the selected window. Sky sends it without activating that window" (L162 of core.md). `WindowInfo` is `{ id, app, title? }` | The device mode and its refusal sentence. `minimized: true` in `listWindows()` with L84's meaning: read works, a screenshot does not, input answers `Window <id> is minimized; activate it first`. The unconfirmed answers and what to do after one. The truncation line |
-| `src/mcp/surface.mjs` `LINUX_COMPUTER_RULES` (the `js` tool's host rules) | "typeText and paste crash GTK3 text views: type there with pressKey" | True only of the vendor engine. Under cua's engine the rule goes, or becomes the device-mode rule. Not in M5's Touches (C1) |
+| A Linux document of cua's own, `docs/cua-api/linux-engine.md`, beside `core.md` (F4, ruled) | `core.md` says "Linux input stays bound to the selected window. Sky sends it without activating that window" (its L162), and its `WindowInfo` is `{ id, app, title? }`. `core.md` itself stays as it is | The device mode and its refusal sentence. `minimized: true` in `listWindows()` with L84's meaning: read works, a screenshot does not, input answers `Window <id> is minimized; activate it first`. The unconfirmed answers and what to do after one. The truncation line. Every sentence is worded to hold under either engine: it names an answer and what to do on meeting it, and the vendor engine never gives those answers. Served after `core.md` when the computer surface is Linux, as `agent-cursor.md` is on macOS: `src/cua-api/documentation.mjs` gains the file and an option, and `create-tinysky-alt.mjs` passes it. That facade touch is allowed on M3's truncation-line precedent and gets a Decision Log line. `docs/cua-api/PROVENANCE.md` gains its row ("none: cua's own text") |
+| `src/mcp/surface.mjs` `LINUX_COMPUTER_RULES` (the `js` tool's host rules) | "typeText and paste crash GTK3 text views: type there with pressKey" | The sentence follows the session's selected engine, in T8, before any flip. Under the vendor's engine it stays. Under cua's it is replaced by one that fits: typeText and paste insert text, and a refusal names the device mode. `jsRulesFor` and `modelTools` take the engine, and `src/mcp/server.mjs` passes the connection's selection. Not in M5's Touches (C1) |
 | `.claude-plugin/plugin.json` description | "through OpenAI's computer-use runtime" | With the flip, Linux's default is cua's own engine |
 
 **Known limitations**, each stated for a user, with its ticket:
@@ -184,16 +198,39 @@ wrong once cua's engine is the default.
 - Tests: `test/runtime-launch.test.mjs`, `test/doctor-engine-linux.test.mjs`,
   `test/repl-parity/selection-oracle.test.mjs`.
 - `.claude-plugin/plugin.json`: 0.28.0 to 0.29.0, under L218's conditions (`ci-gate` green with `test` and
-  `sandbox-live`, the macOS-visible changes listed, nothing of another initiative's bump).
-- The model-facing text of §2 that depends on the engine.
+  `sandbox-live`, the macOS-visible changes listed, nothing of another initiative's bump). The pull request carries
+  this one bump whichever way the owner decides, since T8's Linux document and `js` rule are plugin-visible too.
+- The README's sentences that state the default, and the plugin's description.
 
-**What a Linux session gets after the flip** (`linuxEngineFor`, launch.mjs L501–516):
+**What a Linux session gets after the flip** (`linuxEngineFor`, launch.mjs L501–516, with F5 as ruled):
 
-- no setting and an engine installed: cua's engine, reason `default`;
-- no setting and none installed: the vendor's, status `warn`, so an update does not break a home that never installed;
-- no setting and an engine older than 0.4.0 installed: selected, then refused at the first request with `cua-engine
-  <found> is older than 0.4.0, which this cua needs; run cua install --engine`. This is F5;
+- no setting and an engine at or above `MIN_ENGINE_VERSION` installed: cua's engine, reason `default`;
+- no setting and none installed: the vendor's, status `warn`, so an update does not break a home that never installed
+  (today's behaviour);
+- no setting and an older engine installed: the vendor's, with a warning that names `cua install --engine` (F5, built in
+  T10). Today such a home selects cua's engine and is refused at its first request, because `installedLinuxEngine` reads
+  only the file's metadata;
+- `CUA_NATIVE_ENGINE=cua` or `"engine": "cua"` with an older engine: refused as today, with `cua-engine <found> is older
+  than 0.4.0, which this cua needs; run cua install --engine`;
 - `CUA_NATIVE_ENGINE=vendor`, or `"engine": "vendor"`: the vendor's, until M6b.
+
+**How the default is shown live** (the review's finding: unsetting the variable outside the wrapper proves nothing).
+
+- Today `scripts/accept/linux-device-mode.mjs` requires `process.env.CUA_NATIVE_ENGINE === 'cua'` (its L226), and the
+  suites' runner sets the variable itself for R3 and R4 (`m4/facade/scripts/facade.sh` L99 and L105).
+- T10 adds a **default-selection mode** to the runner and to both fixtures (`linux-native.mjs`, `linux-device-mode.mjs`).
+  The explicit mode stays as it is. In the default mode:
+  - the runner sets no `CUA_NATIVE_ENGINE`, and the run home's `engine.json` carries no `engine` key (its `desktop` key
+    may stand, since R4 sets the device mode for each of its two modes);
+  - the fixture refuses to start unless both hold, and says which did not;
+  - it reads the selection from `cua doctor --json`'s `engine` row and requires `selected` `cua` with reason `default`;
+  - the sampler requires the trusted worker's engine child to be the run home's installed `cua-engine`, and no
+    `sky_linux` at any sample;
+  - the report records the mode, the selection and its reason.
+- Its negative control is the unflipped default. T10 lands as two commits: the mode first, with the default still
+  `vendor`, where it must fail naming `vendor` and `default`; then the flip, where it passes.
+- Two more homes, in the same mode on the flip commit: one with no engine, and one holding 0.3.0. Each must run the
+  vendor's engine, with doctor's `warn` naming the reason and `cua install --engine`.
 
 **What the owner sees before deciding**: one page, `m5/README.md`, "For the owner".
 
@@ -204,9 +241,9 @@ wrong once cua's engine is the default.
 4. What changes for a user: text arrives; requests that the vendor answered ok with no effect now refuse or answer
    unconfirmed (L2259–2267); the device mode; the limitations of §2.
 5. The way back: `CUA_NATIVE_ENGINE=vendor` or `engine.json`, per session or per home, until M6b.
-6. The flipped default, live: R3 and R4 with no `CUA_NATIVE_ENGINE` set, from the prepared flip commit, on both VMs;
-   a home with no engine; a home on 0.3.0.
-7. The informational passes, if F2 and F3 run them: Chrome 157, and the vendor's 26.1111.21308.
+6. The flipped default, live, from the prepared flip commit on both VMs: R3 and R4 in the default-selection mode
+   above, its failure on the commit before the flip, and the two fallback homes.
+7. The unjudged passes: current stable Chrome on arm64, and the vendor's 26.1111.21308 on both.
 
 **If the owner says no.**
 
@@ -216,7 +253,7 @@ wrong once cua's engine is the default.
   default unchanged.
 - #266 closes on the arm64 verdict either way.
 - M6a may still start (L340: it removes nothing). M6b cannot: its soak is of the default.
-- A plugin bump still accompanies the model-facing document if it lands (L218: every plugin-visible change).
+- The plugin bump stays: T8's Linux document and `js` rule land either way (L218: every plugin-visible change).
 
 ## 4. Decomposition into loop tasks
 
@@ -224,34 +261,41 @@ wrong once cua's engine is the default.
 |---|---|---|---|---|
 | T1 | **The pinned-release rule.** A run takes the engine a run home's `cua install` placed, and refuses unless: its sha256 is the pin's for this architecture; the release workflow's attestation names those bytes; `--version` names the attested commit; `native/linux-engine/` in the checkout equals that commit's; and no override is set. Labelled "acceptance on the pinned release". The runner's vendor paths follow the architecture. The facade suites run with no `--engine-bin` and no `CUA_LINUX_ENGINE_BIN`, the device named by the environment | `scripts/linux-engine-diff/candidate.mjs`, `scripts/linux-engine-gate/{gate,steps}.mjs`, a suites runner beside `m4/facade/scripts/facade.sh`, `test/linux-engine-diff/` | – | Failing-first tests: another digest, an unattested file, a changed engine tree, an override in the environment and the other architecture's asset are each refused. One live step on x64. Reviewed for false greens first (L2212) |
 | T2 | **The gate's rulings become judges** (#371, and C22). #302 in the settle lane's judge, as #371 states it, with the stored S1 and L3b rows as fixtures. #373 in `SPEED_GAPS`, which is empty today. P6's one-sided Fisher rule in the predicates judge. The late take's witness span stays a re-judge script | `scripts/linux-engine-diff/{action-settle,deviations,predicates}.mjs`, `test/linux-engine-diff/` | – | Each rule passes the stored rows it was ruled on and fails every negative control `m4/gate/scripts/*-controls.mjs` holds. A lost key, a refusal or an invalid run still fails |
-| T3 | **In-cell judging** (#370), once F8 is ruled. `compare --engines` on Linux judges an engine-answered operation by its in-cell time and reports wall time beside it, unjudged. macOS unchanged, with a test | `scripts/native-baseline/`, its tests | F8 | The stored `m4/facade/baseline/` rows re-judged: `listApps` decided without a top-up. A cell slower in-cell fails |
-| T4 | **arm64 in the harness, the static part.** Per-architecture vendor expectations for repl-parity (today's three are x64's). The `:0` guards assume `/Users/new` and uid 501 (`wrap71.py`); they read both from the session if T6 finds the arm64 VM differs. A lane whose vendor build ends its scene window is restarted lane-neutrally, counted, and never scored against cua | `scripts/repl-parity/expected/`, `test/repl-parity/vendor-defects.json`, `scripts/linux-engine-diff/{scenes,text}.mjs`, the `:0` guards under `m4/pointer-route/scripts/` or copies of them under `m5/` | T1 | Tests on x64. Its arm64 half is T6's pilot |
-| T5 | **x64 acceptance.** §1's steps on the pinned engine, in the gate's frozen order, on the #171 VM. One `:0` sitting of six steps | evidence `m5/x64/` | T1, T2, T3 at a frozen head | Every step passes by its own judge. `m5/x64/README.md` with the step table, lock lines and loads, as `m4/gate/README.md` has them |
-| T6 | **The arm64 VM made ready, and a pilot.** §7's install list. The newest arm64 vendor package checked by its own signature and extracted. Then every step once in its smallest form, as a development run | none in the repository but what T4 then fixes; evidence `m5/arm64/pilot/` | the VM; T1, T4 | The inventory. The vendor's arm64 outcomes, each declared (L1001). The "not shown on arm64" list. Chrome checked as §7.3 says. Findings go back to T4, or to the design session |
-| T7 | **arm64 acceptance.** The same steps on the arm64 VM, against its vendor builds | evidence `m5/arm64/` | T6, the frozen head | As T5. Closes #266 |
-| T8 | **The docs** of §2, written for the default as it stands, with the flip's sentences in the flip commit | `README.md`, `deploy/cloud-vm/README.md`, `docs/cua-api/` as F4 rules, `docs/cua-api/PROVENANCE.md` and `test/cua-api/core-documentation.test.mjs` if a first-call document changes | F4 | Each limitation's sentence checked against the engine's own text. The quoted line equal to the engine README's |
-| T9 | **Close-out.** `m5/README.md` with "For the owner". The flip prepared as its own commit and shown live (§3, 6). The spec folded. The whole-branch review. The pull request | `docs/evidence/…/m5/README.md`, the spec, the report | T5, T7, T8 | The owner's decision, recorded |
-| T10 | **The flip**, on the owner's yes | `src/runtime/launch.mjs`, `scripts/repl-parity/selection.mjs`, `scripts/probe/pinned-engine.mjs`, `src/mcp/surface.mjs`, the three tests, `.claude-plugin/plugin.json`, `README.md` | T9, F5 | `ci-gate` GREEN with `test` and `sandbox-live`. macOS's default unchanged, by test |
+| T3 | **In-cell judging, and R2 fails closed** (#370; F8 ruled, F8a to confirm). `compare --engines` on Linux judges an engine-answered operation by its in-cell time and reports wall time beside it, unjudged. Today a series still undetermined after its one top-up comes back as `verdict: 'undetermined'`, and an operation fails only on `'fail'` (`compare.mjs` L318 and L416–418), so R2 can exit 0 without the bound being shown: M4's release-window concession (L1911–1918). In M5 such a series fails R2. The one exception is a series the design session declares a gap by name, in a list the comparison reads; it is then printed as **unproved**, apart from the passes, and the evidence reports it from that list, never from R2's exit status. macOS unchanged, with a test | `scripts/native-baseline/compare.mjs`, `scripts/native-baseline.mjs` (its "reported, not a failure" line), `scripts/linux-engine-gate/steps.mjs` (R2's text), `test/native-baseline/` | – | The stored `m4/facade/baseline/` rows re-judged in-cell. A cell slower in-cell fails. **A negative fixture whose pooled interval still crosses the bound: the comparison fails and exits nonzero.** With that series declared, it exits 0 and lists it as unproved; a declaration naming another series does not cover it |
+| T4 | **arm64 in the harness**, in two rounds. *Static*, in wave 0: per-architecture vendor expectations for repl-parity (today's three are x64's); the `:0` guards assume `/Users/new` and uid 501 (`wrap71.py`) and read both from the session if the arm64 VM differs; a lane whose vendor build ends its scene window is restarted lane-neutrally, counted, and never scored against cua. *The pilots' fixes*, after T6: whatever the arm64 and x64 pilots found in the harness, and the arm64 vendor outcomes as declared expectations | `scripts/repl-parity/expected/`, `test/repl-parity/vendor-defects.json`, `scripts/linux-engine-diff/{scenes,text}.mjs`, the `:0` guards under `m4/pointer-route/scripts/` or copies of them under `m5/`; then what the pilots name | T1; its second round T6 | Tests on x64 for the static round. The second round is reviewed like any harness change, for false greens first, and **the head is frozen only after it** |
+| T6 | **The arm64 VM made ready, and the pilots.** §7's install list. The newest arm64 vendor package checked by its own signature and extracted. Then every step once in its smallest form on arm64, as a development run. Beside it on x64: the private steps in their smallest form on the pinned engine, and one `:0` step in a short sitting, so T1–T3 are seen live before the judged run | evidence `m5/arm64/pilot/`, `m5/x64/pilot/`; no judged evidence | the VM; T1 and T4's static round reviewed; T2 and T3 where they have landed | The inventory. The vendor's arm64 outcomes (L1001). The "not shown on arm64" list. Chrome checked as §7.3 says. Findings go to T4's second round, or to the design session |
+| T5 | **x64 acceptance.** §1's steps on the pinned engine, in the gate's frozen order, on the #171 VM. One `:0` sitting of six steps. Then F3's unjudged lane | evidence `m5/x64/` | the frozen head H (§8): T1–T3, and T4 after T6 | Every step passes by its own judge, at H. `m5/x64/README.md` with the step table, lock lines, loads and each step's SHA |
+| T7 | **arm64 acceptance.** The same steps at the same H on the arm64 VM, against its vendor builds. Then F2's and F3's unjudged passes | evidence `m5/arm64/` | H; T6 | As T5. Closes #266 |
+| T8 | **The docs** of §2, written for the default as it stands. The Linux document and its facade option (F4), with a Decision Log line. The `js` rule that follows the selected engine, now | `README.md`, `deploy/cloud-vm/README.md`, `docs/cua-api/linux-engine.md`, `docs/cua-api/PROVENANCE.md`, `src/cua-api/{documentation,create-tinysky-alt}.mjs`, `test/cua-api/`, `src/mcp/{surface,server}.mjs`, `test/mcp-browser-surface.test.mjs` | – | Each limitation's sentence checked against the engine's own text. The quoted line equal to the engine README's. The Linux document is served for a Linux surface and not for macOS, and `core.md`'s bytes are unchanged. The `js` rule: the GTK 3 sentence under the vendor's engine, the new one under cua's, by test. How the connection's selection reaches `tools/list` is T8's to establish |
+| T10 | **The flip, prepared before the decision and merged on the owner's yes.** The default per platform. F5: a default selection whose installed engine is older than `MIN_ENGINE_VERSION` keeps the vendor's engine with a warning naming `cua install --engine`; an explicit selection still refuses (F5a: how the version is read). The default-selection mode of §3 in the runner and both fixtures. The plugin's bump and the README's default sentences | `src/runtime/{launch,linux-engine,doctor-engine}.mjs`, `scripts/repl-parity/selection.mjs`, `scripts/probe/pinned-engine.mjs`, `scripts/accept/{linux-native,linux-device-mode}.mjs`, T1's suites runner and its sampler, `test/{runtime-launch,doctor-engine-linux}.test.mjs`, `test/repl-parity/selection-oracle.test.mjs`, `.claude-plugin/plugin.json`, `README.md` | H; T5 and T7 passed | Unit tests for each row of §3's list, macOS's default unchanged by test. Live on both VMs, before the arm64 VM goes: R1–R4 again on the flip commit (it changes `launch.mjs`, which every suite launches through), R3 and R4 also in the default mode, that mode failing on the commit before the flip, and the two fallback homes. On yes: `ci-gate` GREEN with `test` and `sandbox-live` |
+| T9 | **Close-out.** `m5/README.md` with "For the owner". F7's ticket text handed to the design session. The spec folded. The whole-branch review. The pull request | `docs/evidence/…/m5/README.md`, the spec, the report | T5, T7, T8, T10's live checks | The owner's decision, recorded. On yes, T10's commit is merged with it |
 
-**Order.** Each task is reviewed clean before what consumes it runs.
+**Order.** Each task is reviewed clean before what consumes it runs. T10 is built and shown before T9 closes.
 
 | Wave | Tasks | Notes |
 |---|---|---|
-| 0 | T1, T2, T3, T4 | disjoint files, each in its own worktree. T8 starts beside them |
-| 1 | the harness head frozen and pushed; T6 | the VM can be created while wave 0 is in review: its install does not need the head |
-| 2 | T5 and T7, one on each VM | T5's `:0` sitting needs the GO |
-| 3 | T9, the decision, T10 | |
+| 0 | T1, T2, T3, T4's static round, T8 | disjoint files, each in its own worktree. The VM is created now, and T6's install runs beside them |
+| 1 | T6's pilots, on both VMs | as development runs, at wave 0's reviewed tip |
+| 2 | T4's second round, reviewed; then the head is frozen as H and pushed | no freeze before this. With no pilot finding, the freeze follows the pilots at once |
+| 3 | T5 and T7 at H, one on each VM; then the unjudged passes. T10 is built meanwhile | T5's `:0` sitting needs the GO. Neither judged run starts before H |
+| 4 | T10 shown live on both VMs; the arm64 VM deleted | |
+| 5 | T9, the decision, and on yes T10 merged | |
+
+**Why x64 waits.** T5 does not start before H, though the x64 VM is free from wave 0 on. A judged x64 run at an earlier
+head would be superseded by any pilot fix that reaches its steps, and both architectures would then stand on different
+SHAs. The x64 VM spends the wait on its pilot, which costs a few hours and proves T1–T3 live.
 
 **Where the tickets go.**
 
 | Ticket | In M5 | Why |
 |---|---|---|
-| #266 | T6, T7 | L2295; its criterion is the gate, or a stated subset, on the shipped arm64 asset (F1) |
-| #370 | T3 | L2295, L696; the ticket leaves the rule to M5 |
+| #266 | T6, T7 | L2295; its criterion is the gate on the shipped arm64 asset: the whole list (F1) |
+| #370 | T3 | L2295, L696; adopted (F8), with R2 failing closed (F8a) |
 | #371 | T2 | L2295, L2031 |
 | #228 | T8, as a limitation only | its Decision log: #171 documents it and changes no launch behaviour |
 | #192 | out | the macOS engine's decision. It matters here only because the constant is shared (C16) |
 | #373, P6's rule | T2 | not assigned by the spec, but without them V3 and P6 exit 1 again and pass by script (C22) |
+| a new ticket, lasting arm64 CI | T9 hands over its text (§6, F7) | the design session registers it and tells CI-opt |
 
 ## 5. Conflicts and ambiguities
 
@@ -265,42 +309,114 @@ wrong once cua's engine is the default.
 | C6 | Item 4 says 480 and 222 nodes. Since task 49 the gedit scene reads 486 in a home of the run's | L197 against L599 | Equality with the vendor on the same scene. Counts recorded per architecture |
 | C7 | Item 9 wants `file` to say statically linked. x64 prints `static-pie linked` | L202, `m4/release/README.md` | Both count: musl and not dynamic, as `candidate.mjs` `elfTarget` reads it |
 | C8 | Item 10 wants `npm test` to pass. On a Linux VM about 51 tests fail for platform reasons. `engine-linux` runs on x64 only | L203, R L611, `.github/ci-kit.yml` | `ci-gate` on the head is the proof for both. arm64's engine tests are the release workflow's arm64 job (run 43637317960). Neither is rerun on a VM |
-| C9 | Item 10 says "no cua median above the vendor's". T18 replaced that with the interval rule, and #370 changes what is timed | L203, L1905–1915 | Amend item 10 with F8's ruling |
+| C9 | Item 10 says "no cua median above the vendor's". T18 replaced that with the interval rule, and #370 changes what is timed | L203, L1905–1915 | Decided (F8): item 10 is amended to in-cell time with wall time beside it, and to F8a once confirmed |
 | C10 | "Against that machine's vendor builds": the pinned arm64 build ends gedit on text input. The parity expectations are x64's. The vendor lane of R2 may lose its window mid-run | L204, L527, L1001 | T6's pilot records what happens. The outcomes are declared per architecture. The bar for gedit text falls to the newest build, as on x64, where the pinned build fails. A failure blamed on a vendor build is checked against the harness's state first (L2239) |
-| C11 | "The newest build" is 26.1023.51421. The vendor now ships 26.1111.21308 | L58 | F3 |
+| C11 | "The newest build" is 26.1023.51421. The vendor now ships 26.1111.21308 | L58 | Decided (F3): the bar stays the spec's two; the third runs once, unjudged |
 | C12 | The newest build's package check went through the `Packages` index, which now lists only 26.1111.21308 | L480; R/F §0 | Check the arm64 26.1023.51421 package by its own `_gpgorigin` signature against the vendor key, as the pins' `notes` record for the pinned packages. Keep a copy of both packages off the VM: the pool is not promised |
-| C13 | The VM is "deleted after the run". #266 says never take a VM down without the owner | L334 against #266 | The design session creates it with a lease the owner has seen, or asks at the end |
+| C13 | The VM is "deleted after the run". #266 says never take a VM down without the owner | L334 against #266 | Settled (F6): deleted after T7 and the unjudged passes, with a 5-day lease as the backstop. The design session tells the owner its life and price |
 | C14 | "Provisioned the same way". The x64 VM is a devcloud host with `cua-provision.sh` run on it (`/etc/cua-provision.conf`: user `new`, ref `main`, deb `pin`, extension `hosted`), plus packages added by hand through M0–M4. cua has no `devenv/`, which the devcloud skill says a project needs | L190, L334 | §7's list is "the same way". How `devcloud vm up` treats a project without `devenv/` was not verified |
 | C15 | Each VM needs "one ready bound Chrome profile, which repl-parity's prepare requires". Since T18 the suites prepare `--native-only` on a private display | L380 against `facade.sh` | No bound profile is needed for M5. The template still binds `me` |
 | C16 | One default constant serves macOS and Linux | launch.mjs L458 | Per platform (§3) |
-| C17 | The flip and a home whose engine is older than `MIN_ENGINE_VERSION` | launch.mjs L501–516, `client.mjs` | F5 |
-| C18 | M5 documents the device mode and `minimized` "in `docs/cua-api/core.md`". That file's bytes are held to the vendor's document plus listed edits, by test. It is also served to vendor-engine sessions and on macOS | L213, L330 against `docs/cua-api/PROVENANCE.md` | F4 |
+| C17 | The flip and a home whose engine is older than `MIN_ENGINE_VERSION` | launch.mjs L501–516, `client.mjs` | Decided (F5): the default keeps the vendor's engine with a warning; built in T10 |
+| C18 | M5 documents the device mode and `minimized` "in `docs/cua-api/core.md`". That file's bytes are held to the vendor's document plus listed edits, by test. It is also served to vendor-engine sessions and on macOS | L213, L330 against `docs/cua-api/PROVENANCE.md` | Decided (F4): cua's own Linux document; `core.md` is not edited. L213 and L330 are amended at the fold |
 | C19 | M5 lists two known limitations. M4 added more | L330 against L2259–2277 | §2's list |
-| C20 | The x64 VM runs Chrome 156. A new VM installs 157 | this VM; Google's index | F2 |
+| C20 | The x64 VM runs Chrome 156. A new VM installs 157 | this VM; Google's index | Decided (F2): 156 on both for the judged run |
+| C25 | The first draft froze the head before the arm64 pilot, whose fixes then changed it | the review; §4, §8 | The freeze follows T6 and T4's second round. T5 and T7 run one SHA. A later fix follows §8's supersession rule |
+| C26 | The default cannot be shown by unsetting the variable: R4's fixture requires it and the runner sets it | `linux-device-mode.mjs` L226, `facade.sh` L99, L105 | The default-selection mode of §3, in T10 |
+| C27 | R2 exits 0 with a series still undetermined after its top-up, which item 3 does not count as a pass | `compare.mjs` L318, L416–418; L196; L1911–1918 | F8a, in T3 |
 | C21 | Firefox must be Mozilla's, never the snap. The x64 VM uses 159.0~build1 | L670, R L606 | Mozilla's apt repository has 159.0~build1 for arm64: the same version, unpacked the same way |
 | C22 | M4's gate passed S1 and L3b, V3, P6 and one V5 by re-judge scripts. M5 "as written" should pass by its judges. The spec assigns only #371 | `m4/gate/README.md`, "Steps that passed by a ruling" | T2 encodes #302, #373 and P6's rule. The late take's witness span stays a script and is run if it recurs |
 | C23 | An engine fix "ends with its own release and the affected items run again". Nothing says how much reruns, or on which architecture | L334 | M4's rule (R L444): the steps the diff reaches, plus one cross-check, on both architectures, since the pin moves for both. The fix is released first (0.4.x), then the steps run on the pinned asset |
 | C24 | The brief gives M4 as about 18 days. The spec's Progress has M3 done on 2026-11-02 and M4 on 2026-11-14 | L26–27 | §9 uses the spec's dates: about 13 days |
 
-## 6. Design forks (the design session or the owner)
+## 6. Design forks
 
-| F | Choice | Recommendation | Why |
+### Decided (the design session, sminos 704)
+
+| F | Choice | Ruling | Where it lands |
 |---|---|---|---|
-| **F1** | What runs on each architecture: the gate's whole list (49 steps, 1,216 planned minutes); or only the steps the eleven items name (about 600 minutes); or, on x64, M4's candidate-3 records cited for the steps that ran on those bytes | The whole list on both | The pinned x64 bytes passed M4's gate across three candidates, not in one run, and partly by script. arm64 has run none of it. Of M4's two cut candidates, one was found in the block at twice the load, which no item names, and the other on `:0` under the gate's window load. The cost is machine time |
-| **F2** | Chrome's version: both VMs on 156.0.8078.73 (the x64 VM's, installed on arm64 from Google's pool and held); or both on current stable | 156 on both for the judged run, then one unjudged pass of the Chrome steps on current stable on arm64 before the VM goes | The architecture is then the only new variable, and a failure can be read. V5's fault was Chromium 156's own (L653). The unjudged pass tells the owner whether the next Chrome moved anything, without the owner's Chrome being restarted |
-| **F3** | The vendor's third build: keep the bar as the spec's two; or re-base it on 26.1111.21308 | Keep the two. Run the third once, unjudged, on item 3's seven operations | The deviations and vendor-defect records are written against the two. A re-base would reopen them on both architectures. The owner should still see whether the vendor moved |
-| **F4** | Where the model reads the device mode and `minimized`: edits to `core.md`, each recorded as a Table 3 addition; or a Linux document of cua's own beside it, served when the computer surface is Linux, as `agent-cursor.md` is on macOS | The Linux document, worded so each sentence holds under either engine, and the `js` rule in `surface.mjs` changed with the flip | `core.md` stays the vendor's text plus listed edits, which #120's rewrite replaces. macOS sessions pay no tokens for Linux text. It needs one option in `create-tinysky-alt.mjs`, a facade touch that L213 does not allow without a ruling (M3's truncation line is the precedent) |
-| **F5** | A default selection that finds an engine older than `MIN_ENGINE_VERSION`: refuse, as today; or keep the vendor's engine with a `warn`, as when none is installed | Keep the vendor's, with the `warn` naming `cua install --engine`. An explicit selection still refuses | launch.mjs states the principle for the default: "a plugin update never breaks a session before the engine is installed". Every Linux home that ran `cua install` since M1b holds some engine. This VM's default home holds 0.3.0, so the flip would refuse its sessions. The other route is a rollout step: `cua install --engine` in each such home, here with the owner's word |
-| **F6** | The arm64 VM's life: deleted when T7 and the unjudged passes are in; or kept until the owner has decided | Deleted then, with a lease as the backstop | The flipped default is shown live on it in T9 before it goes. A rebuild is about a day |
-| **F7** | Lasting arm64 coverage after the VM: none beyond the release workflow's tests; or an arm64 leg of `engine-linux` | Register it as a ticket | Whether ci-kit has an arm64 lane was not verified. The release workflow already runs the engine's live tests natively on `ubuntu-24.04-arm` |
-| **F8** | #370: judge engine-answered operations by in-cell time on Linux | Adopt, with wall time reported beside it | Both lanes share the transport, so wall time judges noise the engines do not change (L692–696). Item 10's text is amended with it |
+| **F1** | What runs on each architecture | The whole 49-step list on both | T5, T7; §1.3 |
+| **F2** | Chrome's version | 156.0.8078.73 on both for the judged run. Then one unjudged pass of the Chrome steps on current stable, on arm64 | §7.2 item 2; T7 |
+| **F3** | The vendor's third build | The bar stays the spec's two. 26.1111.21308 runs once, unjudged, on item 3's seven operations | T5, T7; C11 |
+| **F4** | Where the model reads the device mode and `minimized` | cua's own Linux document, worded to hold under either engine. The facade touch it needs, the option `create-tinysky-alt.mjs` passes, is allowed on M3's truncation-line precedent and gets a Decision Log line | T8; §2 |
+| **F5** | A default selection that finds an engine older than `MIN_ENGINE_VERSION` | It keeps the vendor's engine, with a warning naming `cua install --engine`. An explicit selection still refuses | T10; §3 |
+| **F6** | The arm64 VM's life | Deleted after T7 and the unjudged passes, with a 5-day lease as the backstop. This settles C13. The design session tells the owner its life and price | §7.1 |
+| **F7** | Lasting arm64 CI after the VM | A ticket at close-out. Its text is below. The design session registers it and tells CI-opt | T9 |
+| **F8** | #370 | Adopted: engine-answered operations are judged by in-cell time, with wall time reported beside it. Item 10's text is amended with it | T3; C9 |
+| – | The `js` rule about GTK 3 text views | It follows the selected engine, in T8, not waiting for the flip. It is already wrong for a session with `CUA_NATIVE_ENGINE=cua` | T8; §2 |
+
+### To confirm
+
+| F | Proposal | Why |
+|---|---|---|
+| **F8a** | In M5, an engine-answered series still undetermined after its one top-up **fails R2**. The exception is a series the design session declares a gap by name. A declared series is reported as **unproved**, listed apart, and read from the comparison's own list, never inferred from R2's exit status | Item 3 tells undetermined apart from a pass: at 40 a side it "fails or stands as a declared speed gap" (L196). `compare.mjs` reports it and passes, which was M4's concession inside the release window (L1911–1918). M5 has no such window. T3 carries a negative fixture whose pooled interval still crosses the bound |
+| **F5a** | For F5, the installed engine's version is read from the home's `install.json` (`readEngineRecord`), not by running the engine. A home whose record cannot be read counts as older, so it too keeps the vendor's engine with the warning | Selection runs at every launch and today reads only the file's metadata. A record is written by `cua install` and by `cua engine build`. The safe side of an unreadable record is the engine that still works |
+| **§8.1's supersession rule** | A harness fix after the freeze replaces H by M4's scoped rerun with a cross-check, on both architectures, or by a full rerun where the cross-check differs or shared code changed | T5 and T7 must end on one SHA, and the rule says which evidence is regenerated |
+| **F6a** | The arm64 VM stays about 8 hours past the unjudged passes, for T10's live checks, and goes at about hour 78. Read strictly, F6 deletes it at about hour 70, and the default is then shown live on x64 only | The default flips for arm64 too, and the review asked that it be shown by a mode that proves the selection. The 8 hours are inside the lease and cost about €0.30 |
+
+### F7's ticket, drafted
+
+> **Title:** Linux engine: an arm64 leg of the `engine-linux` gate, so arm64 stays covered after M5's VM
+>
+> **Problem & intent.** cua's Linux engine ships an arm64 asset, and from M5 it may be the default engine on arm64
+> machines. M5 judged that asset once, on a devcloud arm64 VM that was then deleted (#266). After that, arm64 is covered
+> only when a release is cut: `linux-engine.yml` builds and tests the arm64 asset natively on `ubuntu-24.04-arm`. The
+> `engine-linux` ci-kit gate, which runs on every pull request that touches `native/linux-engine/**`, builds and tests
+> x86-64 only. So an arm64-only regression is first seen at release time.
+>
+> Intent: a pull request that changes the engine is tested on arm64 before it merges.
+>
+> **Seams.** `.github/ci-kit.yml` (`engine-linux`: the musl build, clippy, and the live tests under `xvfb-run` with
+> `dbus-run-session`, on the `hosted` lane); `.github/workflows/linux-engine.yml` (its arm64 job is the working recipe);
+> ci-kit's lanes.
+>
+> **Constraints.**
+> - GitHub-hosted runners only. No vendor package is fetched in CI (the spec's CI rule), so this is the engine's own
+>   tests, never a comparison against the vendor.
+> - The x86-64 leg is unchanged.
+> - Whether ci-kit has, or needs, a lane for `ubuntu-24.04-arm` is the first question, and CI-opt's to answer.
+> - Spawned by #171 (M5). Parent N/A. Blocked-by N/A.
+>
+> **Success criteria.**
+> - `ci-gate` on a commit that touches `native/linux-engine/**` runs the engine's build and live tests on arm64 and
+>   reports them as a gate, or as a leg of `engine-linux`.
+> - A deliberately arm64-only failing test turns that gate red and leaves the x86-64 leg green.
+>
+> **Decision log.**
+> - Registered at #171 M5's close-out, by the design session's ruling (sminos 704, F7).
+>
+> **Sources.** `docs/doperpowers/specs/2026-10-28-own-linux-engine-m5-preflight.md` (F7);
+> `docs/evidence/2026-10-28-own-linux-engine/m5/arm64/`.
+>
+> Board: category enhancement; status ready-for-architect; priority P3; spawned-by #171; relates-to #266.
 
 ## 7. The arm64 VM
 
 ### 7.1 When, how long, and its end
 
-- **Created** by the design session on its Mac, when wave 0 is in review. T6's install takes hours and needs no harness
-  change. The branch must be pushed first: the VM clones from GitHub.
+Hours are counted from the design session's approval of this pre-flight (hour 0), in the order of §4 and §9.
+
+- **When it is needed: day 1, hour 2.**
+  - Hours 0 to 2 are the design session's: `--dry-run`, telling the owner its life and price, and creation.
+  - It may come as late as hour 6 at no cost: its install takes 4 to 6 hours and the pilot cannot start before wave 0
+    is reviewed, about hour 12. After hour 6, each hour's delay moves the freeze, and so both judged runs, by an hour.
+  - `feat/171-m5` is already pushed (483bdf05), so the clone has what it needs. The install needs no harness change.
+- **What it does, hour by hour.**
+
+  | Hours | The VM |
+  |---|---|
+  | 2–10 | T6's install (§7.2) and the vendor packages |
+  | 12–20 | T6's pilot: every step in its smallest form |
+  | 20–36 | waits while T4's second round is fixed and reviewed. It is kept: a rebuild is a day |
+  | 36–66 | T7, at H |
+  | 66–70 | the unjudged passes: current stable Chrome, and the vendor's third build |
+  | 72–78 | T10's live checks on the flip commit |
+  | about 78 | deleted: day 4, hour 6 |
+
+- **How long: about 76 hours with no cut**, a little over three days. One cut adds 24 to 36 hours, to about hour 110.
+- **The lease: 5 days** (F6), which ends at about hour 122 and so covers one cut. A second cut needs `devcloud vm lease`
+  before then.
+- **The price**: €0.0336 an hour before VAT. 76 hours cost about €2.60, the whole lease about €4.
 - **The request**, with the flags the devcloud skill names (`devcloud vm --help` has the rest; the location flag was not
   verified):
 
@@ -314,11 +430,8 @@ wrong once cua's engine is the default.
     VMs made without one are alive.
   - If Hetzner refuses it (exit 3): another EU location, then an 8 vCPU arm64 type on Google Compute Engine, which
     devcloud ships and where #115's M3 ran its arm64 box (`docs/evidence/2026-10-17-own-sandbox/m3/`).
-- **How long.** T6 12 to 24 hours, T7 21 to 30, the unjudged passes about 3, and a day held for one cut: up to three
-  and a half days of use, so a five-day lease. `devcloud vm lease` extends it. At €0.0336 an hour, five days cost about
-  €4.
-- **Its end.** `devcloud vm down <name>` once the evidence is pushed (it refuses while work is unpushed), or the lease.
-  C13 says who allows it.
+- **Its end** (F6). `devcloud vm down <name>` after T7 and the unjudged passes, and after T10's live checks if F6a is
+  confirmed, once the evidence is pushed (it refuses while work is unpushed). The lease is the backstop.
 
 ### 7.2 What is installed
 
@@ -388,14 +501,40 @@ stands as declared for item 11, never as passed and never dropped silently. What
 
 ## 8. The run, and what cuts it
 
-- **The head.** T1–T4 land on `feat/171-m5`, each reviewed. The harness head is then frozen: each VM runs from a fresh
-  worktree detached at it, clean, with `npm ci`, the Electron binary and xprobe (L2295). Docs commits after it do not
-  move it.
+### 8.1 The frozen head, and what replaces it
+
+- **No freeze before the pilots' fixes.** T1–T3, T4's static round, T6's pilots and T4's second round all land on
+  `feat/171-m5`, each reviewed. Only then is the harness head frozen, as **H**.
+- **T5 and T7 run the same H.** Each VM runs from a fresh worktree detached at H, clean, with `npm ci`, the Electron
+  binary and xprobe (L2295). Every step's record names the SHA it ran at.
+- **What does not move H**: commits that touch no file a step runs, such as T8's docs and the evidence itself.
+  `native/linux-engine/` never changes without a release (T1 refuses a run otherwise).
+- **A harness fix after the freeze** (to confirm, §6). The fix is reviewed and gives H′. Then, as M4's gate reran
+  candidates 2 and 3 (R L444; `m4/gate/README.md`, "The rerun lists"):
+  1. **Reached steps rerun at H′, on both architectures.** A step is reached when the diff H..H′ touches its script, its
+     scenes or pages, its judge, or anything it launches through. The list is written down, with the reason for each
+     step kept, before anything reruns.
+  2. **One cross-check a VM**: a step the diff does not reach reruns at H′ and is compared with its record at H, cell by
+     cell, with its failures and audits (`m4/gate/scripts/compare-settle.mjs` is the form).
+  3. **A full rerun at H′, on both**, if a cross-check differs, or if the diff touches what every step shares: the pinned
+     rule, the runner, the witness, the audit, the stub check.
+  4. **A fix to a judge alone** may re-judge the stored rows of the steps it reaches through H′'s judge, with that judge's
+     negative controls, in place of rerunning them. Such a step is listed as re-judged at H′.
+  5. A step that neither reran nor was re-judged stands on H. The README's step table carries a SHA column, and the pull
+     request states H, H′ and which steps stand on each.
+  6. A fix found on one architecture still reruns its reached steps on both. No step ends at different SHAs on the two.
+- **The flip commit** (T10) is beyond H by design. It changes `launch.mjs`, which every facade suite launches through, so
+  R1–R4 rerun on it on both VMs (about 95 minutes each), and R3 and R4 also in the default mode. Nothing else is
+  reached.
+
+### 8.2 The run
+
 - **The order** is the gate's (`steps.mjs`): the private idle steps under the driver, the `:0` sitting, then the block
   at twice the load. Every step runs under the host lock.
 - **Before a vendor build is blamed** (L2239): the scene's text restored per lane, no stress-ng or harness process left,
   titles unique to the run. On arm64 also: did the vendor end the window.
-- **A harness or environment fault** is fixed and the step rerun, as M4's D2 and V5 were. It cuts nothing.
+- **A harness or environment fault** is fixed and the step rerun, as M4's D2 and V5 were. An environment fault changes
+  no SHA. A harness fault follows §8.1.
 - **An engine fault cuts the release.** The fix is reviewed, released as 0.4.x and pinned. The steps its diff reaches
   rerun on both architectures with one cross-check (C23).
 
@@ -403,12 +542,15 @@ What could cut it, most likely first:
 
 1. **A timing constant tuned on the x64 VM that a slower arm64 core misses**: the per-kind settle, the 25 ms wait for
    `TARGETS`, the hold to press + 250 ms, the 350 ms floor, the browser rest of one frame, the 2 s Copy wait, the 1 s
-   menu wait. Most exposed at twice the load.
+   menu wait. Most exposed at twice the load. The pilot runs every step once, so it can show a gross miss before the
+   freeze, but not a rate.
 2. **The arm64 `:0`**: a different Xorg driver changes when a redirected window's contents are ready.
 3. **A real architecture fault in the engine.** The unit and live tests already pass natively on `ubuntu-24.04-arm`,
    so this would be one only a real desktop shows.
-4. **Chrome, if F2 goes to current stable**: a browser change since 156, on both architectures.
-5. **A false success found late**, M4's costliest class (L2279–2282).
+4. **A false success found late**, M4's costliest class (L2279–2282).
+
+Chrome is not on this list: both judged runs use 156 (F2). What current stable changes is seen in the unjudged pass and
+goes to the owner's page, not to the verdict.
 
 ## 9. Timeline
 
@@ -421,20 +563,37 @@ minutes (`m4/release/README.md`).
 |---|---|---|
 | T1 | 6–10 | M4's T1 took two review rounds; this adds the runner and the suites |
 | T2 | 6–10 | three rules with controls; the re-judge scripts' review found three P2 |
-| T3 | 4–8 | one judge and a macOS-unchanged test |
-| T4 | 3–5 | static; its live half is in T6 |
-| T6 | 12–24 | the install 4–6, the pilot 4–6 of machine time, then what the pilot finds |
+| T3 | 6–10 | the in-cell judge, the fail-closed rule with its fixture, a macOS-unchanged test |
+| T4, static | 3–5 | |
+| T6 | 12–18 | the install 4–6; the pilots 4–6 of machine time on each VM, side by side; reading them |
+| T4, second round | 4–16 | what the pilots find, and its review. Nothing found: 0 |
 | T5 | 21–24, machine | 1,216 planned minutes. One `:0` sitting of about 3.5 hours, on the GO |
 | T7 | 21–30, machine | the same list on slower cores; no sittings to wait for |
-| T8 | 6–10 | with its review |
-| T9 | 6–10 | a small branch to review; the flip shown live |
-| T10 | 3–5, and `ci-gate` | the hosted macOS runners once queued 1 h 40 (R L624) |
+| the unjudged passes | 3–4 | the Chrome steps on arm64; seven operations against the third build on both |
+| T8 | 8–12 | the docs, the Linux document and its option, the `js` rule; with review |
+| T10 | 6–10, and `ci-gate` on yes | the default, F5, the default mode; the hosted macOS runners once queued 1 h 40 (R L624) |
+| T9 | 6–10 | a small branch to review; the owner's page |
 
-- **Wall time with no cut: about four days.** Wave 0 in parallel takes a day. T6, then T5 beside T7, take two. T9, the
-  decision and T10 take one.
-- **Each cut adds a day to a day and a half**: the fix and its review, a release, the reached steps on both VMs.
-- **Plan for one cut: five to six days.** M4's lesson is to plan for it (L2294).
-- Not counted: usage stops, which cost M4 about 17 hours (R L468–471), and the owner's time to decide.
+**Hours from the approval of this pre-flight**, with no cut:
+
+| Hours | What runs | The arm64 VM |
+|---|---|---|
+| 0–12 | wave 0: T1, T2, T3, T4's static round, T8 | created at hour 2; install to hour 10 |
+| 12–20 | T6's pilots on both VMs | pilot |
+| 20–36 | T4's second round and its review; **H frozen at about hour 36** | waits |
+| 36–66 | T5 and T7 at H. T10 built beside them | T7 |
+| 66–70 | the unjudged passes | passes |
+| 72–78 | T10 shown live on both VMs | live checks, then deleted at about hour 78 |
+| 78–90 | T9; the owner's page ready at about hour 90 | – |
+
+- **With no cut: about four days to the owner's page.** The new order costs about half a day against the first draft:
+  the x64 run now waits for the arm64 pilot's fixes instead of starting at hour 24. If the pilots find nothing, the
+  freeze comes at about hour 22 and that half day returns.
+- **Each cut adds a day to a day and a half**: the fix and its review, a release, the reached steps on both VMs. A
+  harness fix after the freeze costs less: its reached steps and a cross-check, hours rather than a day.
+- **Plan for one cut: five to five and a half days.** M4's lesson is to plan for it (L2294).
+- Not counted: usage stops, which cost M4 about 17 hours (R L468–471), the wait for a GO, and the owner's time to
+  decide.
 
 ## 10. Sources, and what was not verified
 
@@ -472,3 +631,6 @@ minutes (`m4/release/README.md`).
 - Whether the pinned arm64 build still ends gedit under cua's own host. October's run was on the vendor's host.
 - `qtcreator` and `stress-ng` for noble arm64: the lookups timed out.
 - Whether ci-kit has an arm64 lane.
+- How the connection's engine selection reaches `tools/list` in `src/mcp/server.mjs`, for the `js` rule (T8).
+- That `cua doctor --json`'s `engine` row carries the selection and its reason in the form the default mode needs. It was
+  read in `doctor-engine.mjs` (`selected`, `reason`), not run.

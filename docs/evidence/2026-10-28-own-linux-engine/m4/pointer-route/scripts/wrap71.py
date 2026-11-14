@@ -28,7 +28,14 @@
 import ctypes, json, os, pwd, re, signal, socket, struct, subprocess, sys, threading, time
 
 PERSON_UID = os.getuid()
-HOME = pwd.getpwuid(PERSON_UID).pw_dir
+# the home defines the forbidden paths, so an identity that resolves to no existing home fails closed, before anything
+# starts (M5's T4, fix wave 1: `nobody`'s /nonexistent was taken and the run guarded nothing)
+try:
+    HOME = pwd.getpwuid(PERSON_UID).pw_dir
+except KeyError:
+    sys.exit(f'wrap71: no passwd entry for uid {PERSON_UID}: the person cannot be read, so nothing is guarded or started')
+if not HOME or not os.path.isabs(HOME) or not os.path.isdir(HOME):
+    sys.exit(f'wrap71: the person\'s home {HOME!r} (uid {PERSON_UID}) is not an absolute directory that exists: nothing is guarded or started')
 RUNTIME = f'/run/user/{PERSON_UID}'
 MODE = sys.argv[3]
 assert MODE in ('private', 'person'), MODE

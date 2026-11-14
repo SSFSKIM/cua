@@ -46,6 +46,24 @@ test('wrap71.py follows a session of another account, never a home or uid writte
   assert.deepEqual(summary.flags, []);
 });
 
+// Fix wave 1, finding 3: the person's home defines the forbidden paths, so an identity that resolves to no home fails
+// closed before the guarded command starts: `nobody`'s passwd home (/nonexistent) is absent, and a uid with no passwd
+// entry has none.
+test('wrap71.py refuses a person with no existing home, and never starts the guarded command', { skip: !userns && 'needs an unprivileged user namespace' }, () => {
+  for (const [uid, why] of [['65534', /home '\/nonexistent' \(uid 65534\) is not an absolute directory that exists/], ['4242', /no passwd entry for uid 4242/]]) {
+    const dir = mkdtempSync(join(tmpdir(), 'cua171-guard-'));
+    try {
+      mkdirSync(join(dir, 'tmp'));
+      const run = spawnSync('unshare', ['--user', `--map-user=${uid}`, `--map-group=${uid}`, 'python3', '-I', WRAP71, join(dir, 'out'), join(dir, 'tmp'), 'private', 'echo', 'GUARDED-COMMAND-RAN'], { encoding: 'utf8', timeout: 30000 });
+      assert.notEqual(run.status, 0, `uid ${uid}: ${run.stdout}${run.stderr}`);
+      assert.doesNotMatch(run.stdout, /GUARDED-COMMAND-RAN/, `uid ${uid}: the guarded command ran`);
+      assert.match(run.stderr, why);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("person.sh reads the owner checks' person from the session, and stops where the account has no home", { skip: !userns && 'needs an unprivileged user namespace' }, () => {
   const read = (argv) => spawnSync(argv[0], argv.slice(1), { encoding: 'utf8' });
   const show = `. ${PERSON}; echo "$PUID $H $PRUN"`;

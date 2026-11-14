@@ -1,0 +1,43 @@
+{
+  "label": "release gate",
+  "step": "H2",
+  "pilot": false,
+  "what": "T17's Electron cells at the gate's window load",
+  "display": "private",
+  "load": "gate-windows",
+  "minutes": 25,
+  "run_name": "m4-gate-H2",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t77-gate/",
+    "commit": "f96928983006fbcb3ef50afe1ecd87e7ef1ac1ad",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/gate/artifact-c2/cua-engine-0.4.0-linux-x64",
+    "sha256": "90b9650eb599ec7f81f23e98b211085adb449fc906c17bd5093d9062934c0dbd"
+  },
+  "command": "/Users/new/.local/share/cua-171/locked.sh t18-gate /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t77-gate/scripts/linux-engine-gate/gate.mjs run H2 --candidate /Users/new/.local/share/cua-171/gate/artifact-c2/cua-engine-0.4.0-linux-x64 --out /Users/new/.local/share/cua-171/gate/out-c2",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "drop-signals",
+    "--family",
+    "electron",
+    "--plan",
+    "t17-fix3",
+    "--ballast",
+    "gate",
+    "--cua",
+    "/Users/new/.local/share/cua-171/gate/artifact-c2/cua-engine-0.4.0-linux-x64",
+    "--run",
+    "m4-gate-H2",
+    "--gate",
+    "--out",
+    "/Users/new/.local/share/cua-171/gate/out-c2/H2.release-gate/run"
+  ],
+  "started": "2026-11-14T05:41:38.081Z",
+  "finished": "2026-11-14T06:00:05.189Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean"
+}

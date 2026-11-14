@@ -1,0 +1,9 @@
+# m4-gate-V5 re-judged with the witness span's limit on a late take's drop (the design session, 2026-11-14 (sminos 680))
+label: release gate; candidate 90b9650eb599ec7f81f23e98b211085adb449fc906c17bd5093d9062934c0dbd (cua-engine 0.4.0 (f96928983006)); /Users/new/.local/share/cua-171/gate/out-c2/V5.release-gate/run/results.jsonl
+
+| verdict row | stored | re-judged | why |
+|---|---|---|---|
+| device-chrome-dnd chrome_dnd_late_take_shared cua | fail | pass | 9 samples; the witness span's limit: 2/0 (dragend 201 ms after the press, answer 164.97 ms + 20); every other rule passes |
+
+rows: 52; failing: none
+VERDICT (the run's verdicts, chrome_dnd_late_take_shared with the witness span's limit): PASS

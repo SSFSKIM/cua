@@ -1,0 +1,16 @@
+{"wall":1794654183740,"chrome_pid":2933278,"user_data_dir":null,"descendant_of_this_check":true}
+{"wall":1794654187570,"probe":"start","nodes":237,"menu_count":0,"showing_menus":0,"menus":[],"x_popups":"{\"popups\":[]}","x_grabs":"{\"pointer\":\"free\",\"keyboard\":\"free\"}"}
+{"wall":1794654187795,"read":"base-0","ok":true,"error":null,"ms":99.2,"clipboard_after":"cua171","page":"esc 0 menus 1"}
+{"wall":1794654187966,"read":"base-1","ok":true,"error":null,"ms":62.6,"clipboard_after":"cua171","page":"esc 0 menus 2"}
+{"wall":1794654188140,"read":"base-2","ok":true,"error":null,"ms":72.9,"clipboard_after":"cua171","page":"esc 0 menus 3"}
+{"wall":1794654191882,"read":"forced","ok":false,"error":"clipboard update timed out","ms":2051.4,"clipboard_after":"stale forced","page":"esc 0 menus 4"}
+{"wall":1794654192185,"froze_at":1794654189226,"stop_ms":2600,"state_after_continue":"S","forced_ok":false,"forced_error":"clipboard update timed out"}
+{"wall":1794654192191,"late_service_check_ms":0,"clipboard":"cua171"}
+{"wall":1794654193197,"late_service_check_ms":1000,"clipboard":"cua171"}
+{"wall":1794654195204,"late_service_check_ms":3000,"clipboard":"cua171"}
+{"wall":1794654195428,"probe":"after the timeout","nodes":237,"menu_count":0,"showing_menus":0,"menus":[],"x_popups":"{\"popups\":[]}","x_grabs":"{\"pointer\":\"free\",\"keyboard\":\"free\"}"}
+{"wall":1794654195573,"read":"fidelity-0","ok":true,"error":null,"ms":64.5,"clipboard_after":"cua171","page":"esc 0 menus 5"}
+{"wall":1794654195719,"read":"fidelity-1","ok":true,"error":null,"ms":58.7,"clipboard_after":"cua171","page":"esc 0 menus 6"}
+{"wall":1794654195893,"probe":"fidelity","nodes":237,"menu_count":0,"showing_menus":0,"menus":[],"x_popups":"{\"popups\":[]}","x_grabs":"{\"pointer\":\"free\",\"keyboard\":\"free\"}"}
+{"wall":1794654195893,"faithful":false,"forced_timed_out":true}
+{"wall":1794654196996,"end":true,"watchdog_clean":true}

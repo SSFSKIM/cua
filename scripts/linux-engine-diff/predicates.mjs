@@ -23,7 +23,10 @@ import { DEVICE_REFUSAL, GECKO_POINTER_LEFT } from './deviations.mjs';
 import { LOAD_P, fisherMissesAtLeast } from './drag-judge.mjs';
 import { OCCLUSION_PARKS, ROUTE_GROUPS, cellKey, leavePlan, measureRoute } from './pointer-route.mjs';
 
-/** The runs of an allowed case, every one of which must take effect (the row's proof: 30 of 30). */
+/**
+ * The runs of an allowed case, every one of which must take effect (the row's proof: 30 of 30), but a drag and drop's
+ * honest misses (`dndLanding`); the pinned build's reference for those is as many.
+ */
 export const ALLOWED_RUNS = 30;
 /** The runs of a still-refused counterexample: each answers the refusal, whatever the lanes beside it did. */
 export const REFUSED_RUNS = 10;

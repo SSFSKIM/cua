@@ -431,10 +431,10 @@ export function runClass(row) {
 }
 
 /**
- * Whether the lane's judge reads a run's failure (a settle-run row: its scene, input kind and lane) for #302, a limit declared at T8 (Decision Log, 2026-11-07): an
- * Electron page's key release reaches the tree after press_key's settle in about a third of the runs, at every step, the
- * vendor's 100 included. Only on the shipped lane (#371): a search lane's held step sets the service's constants, which
- * the limit must not lower.
+ * Whether the lane's judge reads a run's failure (a settle-run row: its scene, input kind and lane) for #302, a limit
+ * declared at T8 (Decision Log, 2026-11-07): an Electron page's key release reaches the tree after press_key's settle in
+ * about a third of the runs, at every step, the vendor's 100 included. Only on the shipped lane (#371): a search lane's
+ * held step sets the service's constants, which the limit must not lower.
  */
 export const judgesLateKeyUp = ({ scene, input, lane }) => input === 'press_key' && /^electron-/.test(scene) && lane === 'shipped';
 

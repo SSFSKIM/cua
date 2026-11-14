@@ -109,6 +109,13 @@ pinned rule instead and labels every artifact `acceptance on the pinned release`
 The record adds `pin` (`arch`, `version`, `release`, `sha256`), `installed` (the install record) and `engine_tree` (the
 commit whose engine sources the checkout holds); `attestation` keeps the attestations of that commit.
 
+What a pinned experiment runs is the installed file itself, never the check's copy (the design session's ruling 708,
+`pinned-home.mjs`): the one cua's own selection picks in that home with `CUA_NATIVE_ENGINE=cua` and no override,
+refused unless it is the checked file with the checked bytes. A `cua serve` the harness starts (engine-stop) runs in a
+HOME of the run's under its scratch, with an empty secret store, CUA_HOME the run home and no `CUA_LINUX_ENGINE_BIN`, so
+it selects the installed engine itself; the services the harness builds in its own process (the settle, the facade's
+two services) are given that installed path. A verdict run (wire-driven, no service) keeps its stored copy.
+
 ## M4's gate as steps (`../linux-engine-gate/`, T18)
 
 `scripts/linux-engine-gate/steps.mjs` is the gate as one runnable sequence: steps of 45 minutes or less, each a valid run of its own (its
@@ -1211,6 +1218,7 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 | `cli.mjs` | the command line |
 | `../linux-engine-gate/` | M4's gate as steps (T18): `steps.mjs` the plan and its commands, `gate.mjs` the runner that lists, prints or runs one, `display.mjs` a step's private display, `norecord.mjs` its harness script with no whole-run RECORD; a launcher above the harness, outside this directory's source checks |
 | `candidate.mjs` | a verdict run's cua candidate: stored, its target read, its attestation verified; a gate's refusals |
+| `pinned-home.mjs` | on the pinned release: the installed engine cua's selection runs, and a `cua serve`'s home of the run's |
 | `engine.mjs` | an engine process over the wire |
 | `run.mjs`, `ops.mjs` | the differential run and its operations |
 | `audit.mjs` | the X request audit through `xtrace` |

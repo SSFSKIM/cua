@@ -15,7 +15,7 @@
 // through the facade; the drag cells (every family and kind 30 of 30, Chrome's and Firefox's canvas, Chrome's drag and
 // drop, the thumbs, Writer unprimed since T16 removed the priming); the events experiment's `move`; the settle through
 // the service as shipped (T8, T16's 25 ms drag); the facade suites on the candidate (repl-parity, native-baseline with
-// compare --engines, linux-native, linux-device-mode: w5's facade.sh); T7 revised's acceptance on the shipped engine (the focus-timer
+// compare --engines, linux-native, linux-device-mode: suites.sh, M4's facade.sh made one runner); T7 revised's acceptance on the shipped engine (the focus-timer
 // experiment's shipped lane and its stops); the device cases of #263 and #264 (V5's device-chrome-dnd, and the real late
 // takes of `t14-late`, which the device scene cannot produce, judged by drop-signals-judge.mjs `chromeDropVerdict`);
 // T19's predicates manifest, Firefox's drag and drop included (P6); T17's Electron cells (`t17-fix3`, judged by
@@ -38,11 +38,13 @@ const GEDIT_TEXT = ['type_text', 'type_text_selection', 'type_text_dedicated', '
 const verdict = (name, minutes, scenes, what, { only = {}, ballast = false } = {}) => ({ name, kind: 'verdict', display: ':0', load: 'idle', minutes, scenes, only, ballast, what });
 const experiment = (name, display, load, minutes, args, what, { pilot = null } = {}) => ({ name, kind: 'experiment', display, load, minutes, args, what, pilot });
 const LOAD2 = ['--load-factor', '2'];
-/** w5's runner of the facade suites (T18), relative to the checkout. */
-export const FACADE_SCRIPT = 'docs/evidence/2026-10-28-own-linux-engine/m4/facade/scripts/facade.sh';
-/** M5's runner of the facade suites (T1): each part on its own homes' installed engines, checked by the pinned rule. */
+/**
+ * The runner of the facade suites, relative to the checkout: M4's facade.sh (T18) made the one runner (M5's T1), on a
+ * candidate it is given or on the engine each part's own home installed (`suiteEnv`'s ENGINE). M4's
+ * docs/evidence/…/m4/facade/scripts/facade.sh stays as the record of what M4 ran; no step runs it.
+ */
 export const SUITES_SCRIPT = 'scripts/linux-engine-gate/suites.sh';
-/** A facade suite's part, run by facade.sh on a private desktop of its own; its pilot is the part itself. */
+/** A facade suite's part, run by suites.sh on a private desktop of its own; its pilot is the part itself. */
 const suite = (name, minutes, part, what) => ({ name, kind: 'suite', display: 'own', load: 'idle', minutes, args: [part], what, pilot: (args) => args });
 
 /** A drag step under load: `--trials` under 40 is refused at load (T10), so its pilot drops the load. */
@@ -81,11 +83,11 @@ export const STEPS = [
   experiment('D3', 'private', 'idle', 30, drag('firefox'), "Firefox's drag cells, the pointer parked inside (T19), its canvas judged on speed"),
   experiment('D4', 'private', 'idle', 25, drag('gedit,gtk-scale,gnome-text-editor,kate,qtcreator'), 'the GTK and Qt editors\' drag cells'),
   experiment('D5', 'private', 'idle', 25, drag('writer,xterm,xterm-allow,gtk4-input,gnome-terminal,writer-gen'), 'Writer (unprimed, T16), the terminals, GTK 4\'s scale, Writer through gen'),
-  // the facade suites on the candidate (the design session's requirement, 2026-11-12): w5's facade.sh, each part on a
+  // the facade suites on the candidate (the design session's requirement, 2026-11-12): suites.sh, each part on a
   // private desktop it starts itself, the candidate as its ENGINE_BIN; they count only when they pass on the artifact
   suite('R1', 40, 'parity', "repl-parity's native suite on both engine lanes, and the diff against its expected differences"),
   // R2's 45: the counted sitting about 21 min (T18's), and its one top-up as long again when a series needs it (the
-  // design session, 2026-11-13: facade.sh's baseline part, compare --engines --top-up-baseline/--top-up-candidate)
+  // design session, 2026-11-13: suites.sh's baseline part, compare --engines --top-up-baseline/--top-up-candidate)
   suite('R2', 45, 'baseline', 'native-baseline, three runs a lane interleaved, and compare --engines; a series it leaves undetermined gets one top-up of three more runs a lane, pooled by the same rule, and one still undetermined after it is reported, not failed'),
   suite('R3', 5, 'accept', "scripts/accept/linux-native.mjs on the candidate, in a home of the run's"),
   suite('R4', 3, 'device', 'scripts/accept/linux-device-mode.mjs on the candidate'),
@@ -178,35 +180,31 @@ export function stepArgs(step, { paths, gate, pilot = null }) {
     ];
   }
   if (step.kind === 'facade') return ['--vendor-js', paths.vendorJs, '--engine', paths.candidate, ...step.args];
-  // the suite's part alone: its engine, out and label are facade.sh's environment (`suiteEnv`)
+  // the suite's part alone: its engine, out and label are suites.sh's environment (`suiteEnv`)
   if (step.kind === 'suite') return [...step.args];
   const base = fill(step.args);
   const sized = pilot ? (step.pilot ?? ((args, n) => [...args, '--trials', String(n)]))(base, pilot) : base;
   return [...sized, '--cua', paths.candidate, '--run', run, ...(gate === 'pinned' ? ['--pinned'] : gate ? ['--gate'] : [])];
 }
 
-/**
- * The harness script a step runs, relative to the checkout. A suite on the pinned release (`pinned`: the engine a run
- * home's cua install placed, `gate.mjs --pinned`) is M5's runner, which takes no engine of its caller's; one on a
- * `--candidate` is M4's facade.sh.
- */
-export const stepScript = (step, { pinned = false } = {}) => ({ facade: 'scripts/linux-engine-diff/services.mjs', suite: pinned ? SUITES_SCRIPT : FACADE_SCRIPT })[step.kind] ?? 'scripts/linux-engine-diff.mjs';
+/** The harness script a step runs, relative to the checkout: a suite's is suites.sh, whatever its engine. */
+export const stepScript = (step) => ({ facade: 'scripts/linux-engine-diff/services.mjs', suite: SUITES_SCRIPT })[step.kind] ?? 'scripts/linux-engine-diff.mjs';
 
 /**
- * A suite step's environment for facade.sh: the candidate (a gate's the checked copy), its out directory in the step's
- * labelled directory, its log directory `logs` (a short scratch one: facade.sh starts the private desktop's session bus
- * under it, and a socket's path has 108 bytes; the pilot's R3 and R4 met "Socket name too long"), and its label
- * (`counted`, which refuses an unclean tree, or `pilot`); on the pinned release (`pinned`), no ENGINE_BIN, and the
- * device (`DEVICE`) the suites' lanes are declared on.
+ * A suite step's environment for suites.sh: which engine its cua lanes run (`ENGINE`): on the pinned release
+ * (`pinned`) `installed`, the engine each part's own home's cua install placed, with no ENGINE_BIN; else `candidate`,
+ * the candidate (a gate's the checked copy) as ENGINE_BIN. Its out directory in the step's labelled directory, its log
+ * directory `logs` (a short scratch one: the runner starts the private desktop's session bus under it, and a socket's
+ * path has 108 bytes; the pilot's R3 and R4 met "Socket name too long"), its label (`counted`, which refuses an
+ * unclean tree, or `pilot`), and the device its lanes are declared on (`DEVICE`).
  */
 export const suiteEnv = ({ candidate, dir, gate, logs, pinned = false, device }) => ({
-  // on the pinned release no engine is passed: each part runs on the engine its own home's cua install placed, on the
-  // device the environment names (M5's runner, SUITES_SCRIPT)
+  ENGINE: pinned ? 'installed' : 'candidate',
   ...(pinned ? {} : { ENGINE_BIN: candidate }),
   OUT: `${dir}/run`,
   LOGS: logs,
   LABEL: gate ? 'counted' : 'pilot',
-  ...(pinned ? { DEVICE: device } : {}),
+  DEVICE: device,
 });
 
 /** The planned minutes: in all, per display (`:0`, and private, the experiments' own servers included) and per load. */

@@ -302,8 +302,14 @@ test('a pinned experiment checks its engine by the pinned rule and is labelled a
     writeFileSync(path, MUSL);
     return { path, record };
   };
-  const { stdout, rows, summary } = await labelled({ experiment: 'drag', cua: '/home/engine/linux/cua-engine', out, run: 'pinned-step', gate: 'pinned', families: [] }, { prepare });
+  // the run home's installed engine, as cua's selection picks it there (pinned-home.mjs), is what the experiment runs
+  const pinned = (cua, checked) => {
+    assert.equal(checked, record);
+    return { cua, cuaHome: '/home' };
+  };
+  const { stdout, rows, summary } = await labelled({ experiment: 'drag', cua: '/home/engine/linux/cua-engine', out, run: 'pinned-step', gate: 'pinned', families: [] }, { prepare, pinned });
   const meta = rows.find((r) => r.kind === 'meta');
+  assert.equal(meta.cua, '/home/engine/linux/cua-engine', 'the installed engine itself, never the check\'s copy');
   assert.deepEqual([meta.gate, meta.label], ['pinned', 'acceptance on the pinned release']);
   assert.deepEqual(meta.candidate, record);
   assert.match(summary, /^## pinned-step \(experiment drag; acceptance on the pinned release\)$/m);

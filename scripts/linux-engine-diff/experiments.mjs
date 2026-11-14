@@ -21,6 +21,7 @@ import { availableParallelism, loadavg, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { PreparationStopped, candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
+import { pinnedEngine } from './pinned-home.mjs';
 import { dropSignalsVerdict, judgedChromePlan, judgedElectronPlan } from './drop-signals-judge.mjs';
 import { RunRefused, runHasRows } from './run.mjs';
 
@@ -326,8 +327,12 @@ const STOP_CODES = { SIGINT: 130, SIGTERM: 143 };
  * only one (the checks, or a part of the run before a Desktop hooks its own cleanup, stop.mjs) kills the command the
  * checks wait on, removes the copy and exits as the signal would; once a Desktop's handler is in place it is that
  * handler's, and the exit removes the copy. Without `--gate`, `body` gets `--cua` as given and no record.
+ *
+ * On the pinned release (`--pinned`, the design session's ruling 708) the copy is the check's alone: `body` gets the
+ * run home's installed engine itself, the one cua's selection picks there (pinned-home.mjs `pinnedEngine`), as `cua`,
+ * and that home as `pinnedHome`, so a service an experiment starts runs in the run home and selects it itself.
  */
-export async function withExperimentCandidate(args, body, { prepare = prepareCandidate, proc = process } = {}) {
+export async function withExperimentCandidate(args, body, { prepare = prepareCandidate, proc = process, pinned = pinnedEngine } = {}) {
   if (!args.gate) return body(args, null);
   const dir = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
   const remove = () => rmSync(dir, { recursive: true, force: true });
@@ -355,6 +360,10 @@ export async function withExperimentCandidate(args, body, { prepare = prepareCan
     }
     // stopped during the checks: the stop exits once the command in flight has ended, and nothing more starts
     if (stopping.signal.aborted) await new Promise(() => {});
+    if (args.gate === 'pinned') {
+      const { cua, cuaHome } = pinned(args.cua, candidate.record);
+      return await body({ ...args, cua, pinnedHome: cuaHome }, candidate.record);
+    }
     return await body({ ...args, cua: candidate.path }, candidate.record);
   } finally {
     for (const signal of Object.keys(STOP_CODES)) proc.off(signal, onStop);
@@ -373,7 +382,7 @@ const LABELLED = new Set(['meta', 'experiment-summary']);
  * experiment proper (the tests pass their own): it gets the run's args and `{emit, results}`, and answers whether the
  * run is complete.
  */
-export async function runExperiment(args, { prepare = prepareCandidate, start = experimentRun } = {}) {
+export async function runExperiment(args, { prepare = prepareCandidate, start = experimentRun, pinned = pinnedEngine } = {}) {
   const run = args.run ?? `${args.experiment}-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
   // nothing runs, and no candidate is checked, for a run that cannot stand as one execution's or a gate's: a name the
   // out directory already has rows of (a retry with the same --out and --run would render under the first run's label
@@ -394,7 +403,7 @@ export async function runExperiment(args, { prepare = prepareCandidate, start = 
     const complete = await start({ ...runArgs, run }, { emit, results });
     process.stdout.write(`${label}: ${run} ${complete ? 'complete' : 'incomplete or failed'}\n`);
     return complete;
-  }, { prepare });
+  }, { prepare, pinned });
 }
 
 async function experimentRun(args, { emit, results }) {

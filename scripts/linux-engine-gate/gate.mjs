@@ -26,10 +26,12 @@
 // `cua install --engine` placed the pinned engine, `<home>/engine/linux/cua-engine`; every step takes that engine by
 // candidate.mjs's pinned rule (the pin's bytes for this architecture, attested, its --version the attested commit's, the
 // checkout's native/linux-engine/ that commit's, no override in the environment), checked by the harness for its own
-// steps and here for the facade and suite steps, and labelled "acceptance on the pinned release". The vendor builds
-// follow the architecture, from that home's runtime. The facade suites run M5's runner (suites.sh), which passes no
-// engine and checks each of its own homes by the same rule, on the device the environment names (`DEVICE`, else this
-// architecture's VM). `check --pinned <home>` runs the rule alone and prints its record. `--pinned --dev` takes the
+// steps and here for the facade and suite steps, and labelled "acceptance on the pinned release". What runs is that
+// installed file itself, never the check's copy, and every child gets CUA_HOME the run home (a `cua serve` the harness
+// starts, a HOME of the run's too: pinned-home.mjs; the design session's ruling 708). The vendor builds follow the
+// architecture, from that home's runtime. The facade suites run the one runner (suites.sh) with ENGINE=installed: it
+// passes no engine and checks each of its own homes by the same rule, on the device the environment names (`DEVICE`,
+// else this architecture's VM); on a `--candidate`, ENGINE=candidate names it, as M4's facade.sh did. `check --pinned <home>` runs the rule alone and prints its record. `--pinned --dev` takes the
 // home's engine unchecked, as a development run (a pilot).
 //
 // Labels (the design session's condition): every directory and file a step writes carries "release gate" or
@@ -46,6 +48,7 @@ import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { REPO_ROOT, candidateLine, gateLabel, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
+import { pinnedEngine } from '../linux-engine-diff/pinned-home.mjs';
 import { linuxEnginePath } from '../../src/runtime/linux-engine.mjs';
 import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
 
@@ -214,6 +217,7 @@ function writeRecord(dir, record) {
     `- command: \`${r.command}\``,
     ...(r.started ? [`- started ${r.started}`] : []),
     ...(r.finished ? [`- finished ${r.finished}; exit ${r.exit}${r.display_watchdog ? `; private display's watchdog: ${r.display_watchdog}` : ''}`] : []),
+    ...(r.unproved ? [`- unproved (declared gaps, not passes): ${r.unproved.length || 'none'}`, ...r.unproved.map((l) => `  - ${l}`)] : []),
     '',
   ];
   writeFileSync(join(dir, 'README.md'), md.join('\n'));
@@ -253,7 +257,7 @@ function labelledLog(path, label) {
  * step directory that exists, or (a gate) from an unclean checkout. Answers the step's exit code: the harness's, or 1
  * when its private display's watchdog was not clean.
  */
-export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT) } = {}) {
+export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null } = {}) {
   const step = stepNamed(a.step);
   if (step.display === ':0') throw new GateRefused(`${step.name} runs on :0, in the declared sitting under task 50's guards: launch it with \`gate.mjs print ${step.name} ...\`'s command; this runner never runs on the person's display`);
   if (held()) throw new GateRefused(`${a.hold} exists: the host is held for sittings, and nothing starts`);
@@ -269,25 +273,28 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   const record = stepRecord(step, a, { root, checkout, command: launchCommand(step, a, root) });
   // the harness's out directory, before any script writes in it (services.mjs's Desktop logs there at its start)
   mkdirSync(join(dir, 'run'), { recursive: true });
-  const env = { ...process.env, PATH: existsSync(a.firefoxDir) ? `${a.firefoxDir}:${process.env.PATH}` : process.env.PATH };
-  // the facade step's script has no candidate checks of its own: a gate's runs here, its copy removed at the end
+  // on the pinned release CUA_HOME is the run home, so nothing a step starts resolves the person's default cua home; a
+  // service the harness starts runs in a HOME of the run's too (pinned-home.mjs)
+  const env = { ...process.env, PATH: existsSync(a.firefoxDir) ? `${a.firefoxDir}:${process.env.PATH}` : process.env.PATH, ...(a.pinned ? { CUA_HOME: a.pinned } : {}) };
+  // the facade step's script has no candidate checks of its own: a gate's runs here, its copy removed at the end; on
+  // the pinned release the copy is the check's alone, and the step runs the installed engine cua's selection picks
   let store = null;
   let candidatePath = a.candidate;
   if (['facade', 'suite'].includes(step.kind) && a.gate) {
     store = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
     try {
-      const prepared = await prepareCandidate({ source: a.candidate, gate: a.gate, dir: store, root });
-      candidatePath = prepared.path;
+      const prepared = await prepare({ source: a.candidate, gate: a.gate, dir: store, root });
+      candidatePath = a.gate === 'pinned' ? pinned(a.candidate, prepared.record).cua : prepared.path;
       record.candidate.record = prepared.record;
     } catch (error) {
       rmSync(store, { recursive: true, force: true });
       throw error;
     }
   }
-  // a suite's out is facade.sh's environment (`suiteEnv`), every other script's its --out; a suite's logs are written to
+  // a suite's out is suites.sh's environment (`suiteEnv`), every other script's its --out; a suite's logs are written to
   // a short scratch directory (its session bus's socket lies there) and copied into the step's `logs/` at its end
   const args = [...stepArgs(step, { paths: { ...a, candidate: candidatePath }, gate: a.gate, pilot: a.pilot }), ...(step.kind === 'suite' ? [] : ['--out', join(dir, 'run')])];
-  const script = stepScript(step, { pinned: Boolean(a.pinned) });
+  const script = stepScript(step);
   record.argv = [script, ...args];
   // under /tmp itself, whatever TMPDIR names (a macOS TMPDIR alone is about 50 bytes): the socket's 108 bytes
   const suiteLogs = step.kind === 'suite' ? mkdtempSync('/tmp/cua171-gl-') : null;
@@ -301,7 +308,7 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   try {
     if (step.display === 'own') {
       const { DISPLAY, XAUTHORITY, ...own } = env;
-      // a suite is facade.sh's part, its out and logs in the step's directory, each with the label beside it
+      // a suite is suites.sh's part, its out and logs in the step's directory, each with the label beside it
       const suite = step.kind === 'suite';
       if (suite) {
         for (const sub of ['run', 'logs']) {
@@ -311,7 +318,7 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
       }
       const [command, argv] = suite ? ['bash', [join(root, script), ...args]] : [process.execPath, [join(root, script), ...args]];
       const childEnv = suite ? { ...own, ...suiteVars } : own;
-      const child = spawn(command, argv, { cwd: root, env: childEnv, stdio: ['ignore', out, err] });
+      const child = spawnChild(command, argv, { cwd: root, env: childEnv, stdio: ['ignore', out, err] });
       const forward = (signal) => child.kill(signal);
       process.on('SIGTERM', forward);
       process.on('SIGINT', forward);
@@ -319,7 +326,7 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
       process.off('SIGTERM', forward);
       process.off('SIGINT', forward);
     } else {
-      const { runOnPrivateDisplay } = await import('./display.mjs');
+      const runOnPrivateDisplay = privateDisplay ?? (await import('./display.mjs')).runOnPrivateDisplay;
       result = await runOnPrivateDisplay({ dir, label, script: join(root, script), args, cwd: root, env, out, err });
     }
   } finally {
@@ -332,6 +339,10 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   }
   const exit = result.code === 0 && result.clean ? 0 : result.code === 2 ? 2 : 1;
   Object.assign(record, { finished: new Date().toISOString(), exit, child_exit: result.code ?? result.signal, ...(step.display === 'private' ? { display_watchdog: result.clean ? 'clean' : result.reason } : {}) });
+  // a series the comparison reports unproved under a declared gap (R2, F8a) is the step's record, never inferred from
+  // its exit status: the suites runner writes them, and the step's README and step.json list them
+  const unproved = join(dir, 'run', 'baseline', 'unproved.txt');
+  if (existsSync(unproved)) record.unproved = readFileSync(unproved, 'utf8').split('\n').filter(Boolean);
   writeRecord(dir, record);
   appendFileSync(join(dir, 'stdout.log'), `${label}: ${step.name} exit ${exit}\n`);
   return exit;

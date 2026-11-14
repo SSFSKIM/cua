@@ -9,7 +9,8 @@ import { test } from 'node:test';
 import { SPEED_GAPS, closesText, declaredSpeedGap } from '../../scripts/linux-engine-diff/deviations.mjs';
 import { medianDifferenceInterval } from '../../scripts/linux-engine-diff/events.mjs';
 import { rejudge } from '../../scripts/linux-engine-diff/rejudge.mjs';
-import { declaredGapVerdict, judgeWithDecisions } from '../../scripts/linux-engine-diff/run.mjs';
+import { declaredGapVerdict, judgeWithDecisions, planOps, plannedVerdicts } from '../../scripts/linux-engine-diff/run.mjs';
+import { stepNamed, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
 import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
 import { CANDIDATES, gateRows } from './gate-rows.mjs';
 
@@ -50,11 +51,17 @@ function judgeOp(rows, scene, op) {
   return { ...verdict, ...(declaredGapVerdict(verdict, { op, candidate: 'cua', rows: opRows, audits }) ?? {}) };
 }
 
-/** The stored run's outcome, its activate_window verdicts judged again: what the run would have ended with. */
-function outcomeOf(rows, { foreign = [] } = {}) {
+/** The verdicts the gate's V3 step owes: its plan as the step's own arguments give it (steps.mjs), cua its one lane. */
+const V3_PLANNED = plannedVerdicts(planOps(stepNamed('V3').scenes, verdictOps(stepNamed('V3'))), ['cua']);
+
+/**
+ * The stored run's outcome at its finalization (stats.mjs runOutcome, as run.mjs calls it), its activate_window
+ * verdicts judged again: what the run would have ended with.
+ */
+function outcomeOf(rows, { foreign = [], planned = V3_PLANNED } = {}) {
   const verdicts = rows.filter((r) => r.kind === 'verdict').map((v) => (v.op === 'activate_window' && !v.device && v.candidate === 'cua' ? { ...v, ...judgeOp(rows, v.scene, v.op) } : v));
   const faults = rows.find((r) => r.kind === 'prepare-faults');
-  return runOutcome(verdicts, { valid: rows.find((r) => r.kind === 'end').valid, faults, foreign });
+  return runOutcome(verdicts, { valid: rows.find((r) => r.kind === 'end').valid, faults, foreign, planned });
 }
 
 const at = (rows, kind, engine) => rows.filter((x) => x.kind === kind && x.scene === 'chrome-input' && x.op === 'activate_window' && x.engine === engine);
@@ -115,8 +122,21 @@ for (const candidate of [1, 3]) {
       assert.notDeepEqual(outcomeOf(rows).failed, [], name);
     }
     assert.notDeepEqual(outcomeOf(gateRows(CANDIDATES[candidate], 'V3'), { foreign: ['the harness: 0x00a00003 ConfigureWindow (raised)'] }).failed, [], "a change to a window the harness did not open, at the run's cleanup");
+    // a planned operation whose rows and verdict are gone (rejudge-gap-c3-controls.mjs): the run's finalization fails it,
+    // where an outcome without the plan, the boundary before, passed it
+    const gone = gateRows(CANDIDATES[candidate], 'V3').filter((r) => !(r.scene === 'minimized' && r.op === 'minimized_scroll'));
+    assert.deepEqual(outcomeOf(gone).failed, ['minimized minimized_scroll cua: no verdict']);
+    assert.deepEqual(outcomeOf(gone, { planned: null }).failed, [], 'the boundary before: nothing missed it');
   });
 }
+
+test("the verdicts a plan owes: a device case's for cua, a block operation's for each candidate lane, the cases' and their bus trace for cua", () => {
+  const plan = [{ scene: 'device-gtk4', op: 'gtk4_click_shared' }, { scene: 'chrome-input', op: 'click' }, { scene: 'chrome-textarea', op: 'focus_change' }];
+  assert.deepEqual(plannedVerdicts(plan, ['cua', 'cua:variant']), [
+    'device-gtk4 gtk4_click_shared cua', 'chrome-input click cua', 'chrome-input click cua:variant', 'chrome-textarea focus_change cua', 'cases bus_trace cua',
+  ]);
+  assert.deepEqual(plannedVerdicts([{ scene: 'chrome-input', op: 'click' }], ['cua']), ['chrome-input click cua'], 'no case, no bus trace');
+});
 
 test('the offline re-judge keeps a declared gap while each speed loss is a series it declares', () => {
   const rows = gateRows(CANDIDATES[1], 'V3').map((r) => (r.kind === 'verdict' && r.op === 'activate_window' ? { ...r, ...judgeOp(gateRows(CANDIDATES[1], 'V3'), r.scene, r.op) } : r));

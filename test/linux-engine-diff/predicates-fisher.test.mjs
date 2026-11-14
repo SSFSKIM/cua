@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { LOAD_P } from '../../scripts/linux-engine-diff/drag-judge.mjs';
-import { ALLOWED_RUNS, PREDICATE_CASES, caseKey, judgeCase, judgePredicates, predicatePlan, predicatesMarkdown } from '../../scripts/linux-engine-diff/predicates.mjs';
+import { finishOutcome, measuredOutcome } from '../../scripts/linux-engine-diff/experiments.mjs';
+import { ALLOWED_RUNS, PREDICATE_CASES, caseKey, judgeCase, judgePredicates, predicatePlan, predicatesMarkdown, predicatesResult } from '../../scripts/linux-engine-diff/predicates.mjs';
 import { CANDIDATES, gateRows } from './gate-rows.mjs';
 
 const HELD = { pointer: { held: true } };
@@ -68,6 +69,19 @@ test("candidate 1's P6: the predicates judge with Fisher passes it; the judge be
   assert.deepEqual(v.failed, []);
   const row = v.rows.find((r) => caseKey(r) === CASE);
   assert.deepEqual({ took: row.counts.cua.took, n: row.counts.cua.n, p: row.landing.p, pinned: row.counts.pinned.took }, { took: 29, n: 30, p: 0.5, pinned: 30 });
+});
+
+test("candidate 1's P6 at the experiment's finalization: the ruling's pass stands, and a foreign change at the cleanup or an unmeasured case fails it", () => {
+  // the run as experiments.mjs ends it: the predicates' result, the measured outcome, then the harness's own trace
+  const finish = (rows, foreign = []) => finishOutcome(measuredOutcome(predicatesResult(predicatePlan({ ops: ['dnd'] }), runsOf(rows), [])), foreign);
+  assert.deepEqual(finish(gateRows(CANDIDATES[1], 'P6')), { complete: true, failed: [] });
+  const FOREIGN = 'the harness: 0x00a00003 ConfigureWindow (raised)';
+  assert.deepEqual(finish(gateRows(CANDIDATES[1], 'P6'), [FOREIGN]), { complete: false, failed: [`a window the harness did not open was changed: ${FOREIGN}`] });
+  const gone = gateRows(CANDIDATES[1], 'P6').filter((r) => r.case !== 'firefox dnd covered pointer-out');
+  assert.deepEqual(finish(gone), { complete: false, failed: ['firefox dnd covered pointer-out: not measured'] });
+  // a measurement error the experiment met fails it too
+  const errored = finishOutcome(measuredOutcome(predicatesResult(predicatePlan({ ops: ['dnd'] }), runsOf(gateRows(CANDIDATES[1], 'P6')), ['firefox dnd visible pointer-in: the park did not start'])), []);
+  assert.equal(errored.complete, false);
 });
 
 test("candidate 1's P6: every control the re-judge held fails the predicates judge", () => {

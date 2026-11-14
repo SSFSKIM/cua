@@ -1617,7 +1617,9 @@ async function diffRun(args, candidate, { handoff }) {
     emit({ kind: 'text-restores', ...restores });
     // the backstop's warm-ups: a candidate's that failed fails the run (fix round 1)
     const warmUps = judgeWarmUps(after, VENDORS);
-    judged = { verdicts, options: { valid, faults, restores: restores.lanes, warmUps } };
+    // every verdict the plan owes must be drawn: one missing fails the run (runOutcome)
+    const planned = plannedVerdicts(plan, labels.filter((l) => !VENDORS.includes(l)));
+    judged = { verdicts, options: { valid, faults, restores: restores.lanes, warmUps, planned } };
   } catch (error) {
     if (!(error instanceof CandidateTextLost)) throw error;
     // a candidate's own text window lost its first word: a sample of its lane left the person's text wrong, so the run
@@ -1709,6 +1711,22 @@ export function declaredGapVerdict(verdict, { op, candidate, rows, audits, vendo
   const gap = describe(gapOf(covered[0]));
   if (kept.length) return { pass: false, verdict: 'fail', reasons: kept, gap, declared_gap: covered };
   return { pass: false, verdict: 'declared gap', reasons: [], gap, declared_gap: covered };
+}
+
+/**
+ * The verdicts a run's plan (`planOps`) owes, by name (`<scene> <op> <candidate>`), as the run draws them: a device
+ * case's for cua, every other block operation's for each candidate lane, each safety case's for cua, and the cases'
+ * bus trace where the plan has a case. `runOutcome` fails each one with no verdict.
+ */
+export function plannedVerdicts(plan, candidates) {
+  const block = plan.filter((p) => !isCase(p.op));
+  const cases = plan.filter((p) => isCase(p.op));
+  return [
+    ...block.filter((p) => isDevice(p.op)).map((p) => `${p.scene} ${p.op} cua`),
+    ...block.filter((p) => !isDevice(p.op)).flatMap((p) => candidates.map((c) => `${p.scene} ${p.op} ${c}`)),
+    ...cases.map((p) => `${p.scene} ${p.op} cua`),
+    ...(cases.length ? ['cases bus_trace cua'] : []),
+  ];
 }
 
 /** Whether `response` is the answer a declaration with `effect` names for the operation on the scene (its effect then read). */

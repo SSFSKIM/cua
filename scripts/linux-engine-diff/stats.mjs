@@ -23,8 +23,9 @@ export const DECLARED_LOSSES = ['declared refusal', 'declared unconfirmed', 'dec
  * `warmUps` (prepare.mjs `judgeWarmUps`): each candidate warm-up that failed is one more failure.
  * `foreign`: each change of a window the harness did not open (audit.mjs `auditForeign`, by the harness or an engine
  * it drove), and each trace that could not show there was none, is one more failure, whatever the verdicts.
+ * `planned` (run.mjs `plannedVerdicts`): each verdict the plan owes that the run did not draw is one more failure.
  */
-export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null, warmUps = null, foreign = [] }) {
+export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null, warmUps = null, foreign = [], planned = null }) {
   const name = (v) => `${v.scene} ${v.op} ${v.candidate}`;
   const judged = verdicts.filter((v) => v.kind === 'verdict');
   const drops = dropCounts(judged);
@@ -39,6 +40,8 @@ export function runOutcome(verdicts, { valid, faults = null, restores = null, st
   if (warmUps && !warmUps.pass) failed.push(...warmUps.reasons);
   if (stop) failed.push(stop);
   for (const f of foreign) failed.push(`a window the harness did not open was changed: ${f}`);
+  // a verdict the plan owes (run.mjs plannedVerdicts) and the run did not draw
+  for (const p of planned ?? []) if (!judged.some((v) => name(v) === p)) failed.push(`${p}: no verdict`);
   if (drops.finding) failed.push(drops.finding);
   const pass = failed.length === 0;
   return { valid, pass, failed, parity, refused, declared, ...(restores ? { restores } : {}), code: valid && pass ? 0 : 1 };

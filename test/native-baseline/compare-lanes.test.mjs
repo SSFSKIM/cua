@@ -228,4 +228,11 @@ test('the macOS comparisons judge and render exactly as pinned', t => {
   // comparison refuses one, and carries no top-up record
   assert.equal('topUp' in cases.engines, false);
   assert.throws(() => compareLanes('engines', readRuns(dir(t, triple(VV))), readRuns(dir(t, triple(VC))), {topUp: {baseline: readRuns(dir(t, triple(VV))), candidate: readRuns(dir(t, triple(VC)))}}), /a top-up is the Linux engine comparison's alone/);
+  // #171 M5 T3 (#370, F8a) is Linux's too: macOS judges the wall time, so a cell three times slower inside changes no
+  // verdict, reason or basis there; it carries no unproved list and takes no declared gap
+  const slowerInCell = judge(t, 'engines', triple(VV), triple(VC, {edit: (m, rows) => { for (const r of rows) if (typeof r.inCellMs === 'number') r.inCellMs *= 3; }}));
+  assert.deepEqual(slowerInCell.operations.map(o => [o.op, o.basis, o.verdict, o.reasons]), cases.engines.operations.map(o => [o.op, o.basis, o.verdict, o.reasons]));
+  assert.ok(slowerInCell.operations.every(o => o.basis === null || /^wall median/.test(o.basis)), JSON.stringify(slowerInCell.operations.map(o => o.basis)));
+  assert.equal('unproved' in cases.engines, false);
+  assert.throws(() => compareLanes('engines', readRuns(dir(t, triple(VV))), readRuns(dir(t, triple(VC))), {declared: [{op: 'warm.listApps', reason: 'r', ruling: 'x'}]}), /a declared gap is the Linux engine comparison's alone/);
 });

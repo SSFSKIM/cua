@@ -82,8 +82,10 @@ export const STEPS = [
   // private desktop it starts itself, the candidate as its ENGINE_BIN; they count only when they pass on the artifact
   suite('R1', 40, 'parity', "repl-parity's native suite on both engine lanes, and the diff against its expected differences"),
   // R2's 45: the counted sitting about 21 min (T18's), and its one top-up as long again when a series needs it (the
-  // design session, 2026-11-13: facade.sh's baseline part, compare --engines --top-up-baseline/--top-up-candidate)
-  suite('R2', 45, 'baseline', 'native-baseline, three runs a lane interleaved, and compare --engines; a series it leaves undetermined gets one top-up of three more runs a lane, pooled by the same rule, and one still undetermined after it is reported, not failed'),
+  // design session, 2026-11-13: facade.sh's baseline part, compare --engines --top-up-baseline/--top-up-candidate). From
+  // M5 the engine-answered series are judged in-cell (#370, F8), and one still undetermined after the top-up fails R2
+  // unless declared a gap by name (F8a, compare.mjs DECLARED_ENGINE_GAPS), then unproved and never a pass
+  suite('R2', 45, 'baseline', 'native-baseline, three runs a lane interleaved, and compare --engines, the operations the engine answers judged by their in-cell time with the wall time beside it, unjudged; a series it leaves undetermined gets one top-up of three more runs a lane, pooled by the same rule, and one still undetermined after it fails, unless the design session declared it a gap by name: then it is unproved, listed apart from the passes'),
   suite('R3', 5, 'accept', "scripts/accept/linux-native.mjs on the candidate, in a home of the run's"),
   suite('R4', 3, 'device', 'scripts/accept/linux-device-mode.mjs on the candidate'),
   { name: 'FB', kind: 'facade', display: 'private', load: 'idle', minutes: 5, args: ['--scenes', 'over-budget'], what: 'the over-budget scene through the real facade: the truncation line in getAXState and the combined observation (T3)', pilot: asIs },

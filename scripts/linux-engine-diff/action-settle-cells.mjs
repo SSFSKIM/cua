@@ -430,6 +430,85 @@ export function runClass(row) {
   return row.late_ms !== null && row.late_ms !== undefined ? 'late' : 'never';
 }
 
+/**
+ * Whether the lane's judge reads a run's failure (a settle-run row: its scene, input kind and lane) for #302, a limit declared at T8 (Decision Log, 2026-11-07): an
+ * Electron page's key release reaches the tree after press_key's settle in about a third of the runs, at every step, the
+ * vendor's 100 included. Only on the shipped lane (#371): a search lane's held step sets the service's constants, which
+ * the limit must not lower.
+ */
+export const judgesLateKeyUp = ({ scene, input, lane }) => input === 'press_key' && /^electron-/.test(scene) && lane === 'shipped';
+
+/**
+ * Why a failing run is not #302, or null when it is (the design session's ruling, sminos 659 and 682, encoded by #371).
+ * It must be the lane's `late` class (every answer ok, nothing invalid, the effect late), with the desktop left alone
+ * (a clean span, and the front window still active where the cell has one: a desktop-route cell's `front_active` is
+ * null), and its record must show all three:
+ *   1. the key-down inside the settle: the reading straight after it has key_downs one more than before, and last_key
+ *      the key sent;
+ *   2. the key-up late: that reading has key_ups unchanged, and the late bound saw it come (`late_ms`);
+ *   3. key_ups equal to key_downs at the next before-read: `next`, the next timed run on the same page, its counters
+ *      continuing from this run's, before its own input.
+ */
+export function lateKeyUpMiss(run, next) {
+  return ownLateKeyUpMiss(run) ?? caughtUpMiss(run, next);
+}
+
+/** `lateKeyUpMiss` on the run's own record: its class, its desktop, criteria 1 and 2. */
+function ownLateKeyUpMiss(run) {
+  const cls = runClass(run);
+  if (cls !== 'late') return `class ${cls}`;
+  if (run.desktop_clean !== true || run.front_active === false) return 'the desktop changed';
+  const { before: b, after: a } = run;
+  if (!b || !a || typeof b.key_downs !== 'number' || typeof b.key_ups !== 'number') return 'no key counters in the record';
+  if (!(a.key_downs === b.key_downs + 1 && a.last_key === run.sent?.key)) return `criterion 1: key_downs ${b.key_downs} -> ${a.key_downs}, last_key ${a.last_key}`;
+  if (!(a.key_ups === b.key_ups && run.late_ms !== null && run.late_ms !== undefined)) return `criterion 2: key_ups ${b.key_ups} -> ${a.key_ups}, late_ms ${run.late_ms}`;
+  return null;
+}
+
+/** `lateKeyUpMiss`'s criterion 3: the next before-read on the same page caught up with the key's release. */
+function caughtUpMiss(run, next) {
+  const n = next?.before;
+  // an error row has no reading; a fresh page's counters start again
+  if (!n || typeof n.key_downs !== 'number' || n.key_downs < run.after.key_downs) return 'criterion 3: no next before-read on the same page';
+  if (n.key_ups !== n.key_downs) return `criterion 3: the next before-read (trial ${next.trial}) has key_ups ${n.key_ups}, key_downs ${n.key_downs}`;
+  return null;
+}
+
+/**
+ * A series' runs (in order) judged by the lane's rule, with #302 where the cell takes it (`judgesLateKeyUp`). Each run
+ * is `pass` (the lane's own rule, `runPasses`), `#302` (`lateKeyUpMiss`, its next before-read the series' next run, or
+ * `next` after the last: the run after the series on the same page, where a stored record shows one), `pending` (#302
+ * but for a next before-read not taken yet) or `fail`. A #302 run counts toward the streak, listed apart in
+ * `late_302`. In a cell #302 judges, the series passes only when every run is a pass or #302 (the ruling: a lost key, a
+ * refusal, an invalid run or any other miss fails, never covered by a later streak); a pending run left at the end is
+ * unproven, so it fails too. Every other cell keeps the lane's rule, 30 consecutive passes in at most 60.
+ * `oks` counts a pending run as a miss and `hopeful` as a pass; `lost` says no later run can pass the series, for the
+ * live stop rule. Returns `{judged, oks, hopeful, runs, misses, streak, reached, late_302, failing, lost}`.
+ */
+export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, next } = {}) {
+  const judged = rows.map((r, i) => {
+    if (r.ok) return { trial: r.trial, cls: 'pass' };
+    if (!judgesLateKeyUp(r)) return { trial: r.trial, cls: 'fail', why: `class ${runClass(r)}` };
+    const own = ownLateKeyUpMiss(r);
+    if (own) return { trial: r.trial, cls: 'fail', why: own };
+    const after = rows[i + 1] ?? next;
+    // all but its next before-read, which the series has not taken yet
+    if (!after) return { trial: r.trial, cls: 'pending', late_ms: r.late_ms };
+    const why = caughtUpMiss(r, after);
+    return why === null ? { trial: r.trial, cls: '#302', late_ms: r.late_ms } : { trial: r.trial, cls: 'fail', why };
+  });
+  const oks = judged.map((j) => j.cls === 'pass' || j.cls === '#302');
+  const hopeful = judged.map((j) => j.cls !== 'fail');
+  const strict = rows.length > 0 && judgesLateKeyUp(rows[0]);
+  const failing = judged.filter((j) => j.cls === 'fail' || j.cls === 'pending');
+  const verdict = seriesVerdict(oks, need);
+  const reached = verdict.reached && (!strict || failing.length === 0);
+  const lost = !reached && ((strict && judged.some((j) => j.cls === 'fail')) || hopeless(hopeful, need, max));
+  // the lane's misses, a #302 run among them: it is listed apart, never hidden
+  const misses = judged.filter((j) => j.cls !== 'pass').length;
+  return { judged, oks, hopeful, ...verdict, misses, reached, late_302: judged.filter((j) => j.cls === '#302').map(({ trial, late_ms }) => ({ trial, late_ms })), failing, lost };
+}
+
 /** Whether a series can no longer reach `need` consecutive passes in `max` runs. */
 export function hopeless(oks, need = CONSECUTIVE, max = MAX_RUNS) {
   const { streak, reached } = seriesVerdict(oks, need);
@@ -528,7 +607,8 @@ export function settleVerdict(series, { search, cells }) {
   const held = {};
   const md = ['| cell | lane | runs | misses (late / never / refused / invalid) | streak at the end | verdict |', '|---|---|---:|---|---:|---|'];
   for (const s of series) {
-    md.push(`| ${s.cell} | ${s.lane} | ${s.runs} | ${s.misses} (${s.late} / ${s.never} / ${s.refused ?? 0} / ${s.invalid ?? 0}) | ${s.streak} | ${s.reached ? `${s.need} consecutive` : 'not reached'} |`);
+    const limit = s.late_302?.length ? `, ${s.late_302.length} of them #302` : '';
+    md.push(`| ${s.cell} | ${s.lane} | ${s.runs} | ${s.misses} (${s.late} / ${s.never} / ${s.refused ?? 0} / ${s.invalid ?? 0}) | ${s.streak} | ${s.reached ? `${s.need} consecutive${limit}` : `not reached${limit}`} |`);
     if (s.need < CONSECUTIVE) failed.push(`${s.cell} (${s.lane}): a development series of ${s.need}, not the ${CONSECUTIVE} the rule needs`);
   }
   for (const name of cells) {
@@ -541,8 +621,39 @@ export function settleVerdict(series, { search, cells }) {
       held[name] = heldStep(mine);
       if (held[name] === null) failed.push(`${name}: no step held (${mine.map((s) => s.lane).join(', ')})`);
     } else {
-      for (const s of mine) if (!s.reached) failed.push(`${name} (${s.lane}): no ${s.need} consecutive passing runs in ${s.runs}`);
+      for (const s of mine) {
+        if (s.reached) continue;
+        // a cell #302 judges fails on any run outside it (judgeSettleSeries), whatever its streak
+        const outside = (s.outside_302 ?? []).slice(0, 5).map((f) => `trial ${f.trial}: ${f.cls === 'pending' ? 'late, with no next before-read' : f.why}`);
+        failed.push(`${name} (${s.lane}): ${outside.length ? `${s.outside_302.length} of ${s.runs} runs failed outside #302 (${outside.join('; ')})` : `no ${s.need} consecutive passing runs in ${s.runs}`}`);
+      }
     }
   }
+  return { md, failed, held };
+}
+
+/**
+ * A lanes or search sitting's verdict (`runSettle`'s end): its series (`settleVerdict`, over the cells it opened), and
+ * every failure of the sitting beside them, each its own: a planned cell that could not be opened (`skipped`,
+ * `{cell, why}`), an audit that failed, a cell the sitting audits (`audited`) with no audit, a change to a window it did
+ * not open (`foreign`), and the private display's watchdog. Returns `{md, failed, held}`.
+ */
+export function sittingVerdict({ series, cells, search, skipped = [], audits = [], audited = [], foreign = [], watchdog = { clean: true } }) {
+  const opened = (cell) => !skipped.some((s) => s.cell === cell);
+  const { md, failed, held } = settleVerdict(series, { search, cells: cells.filter(opened) });
+  for (const s of skipped) failed.push(`${s.cell} could not be opened: ${s.why}`);
+  for (const a of audits) if (!a.pass) failed.push(`${a.cell}: the audit failed: ${a.failed.join('; ')}`);
+  const unaudited = audited.filter((cell) => opened(cell) && !audits.some((a) => a.cell === cell));
+  if (unaudited.length) failed.push(`no audit of ${unaudited.join(', ')}`);
+  for (const f of foreign) failed.push(`a window the experiment did not open was changed: ${f}`);
+  if (!watchdog.clean) failed.push(`the private display's watchdog: ${watchdog.reason}`);
+  if (search) md.push('', '| cell | held step (ms) |', '|---|---:|', ...Object.entries(held).map(([c, ms]) => `| ${c} | ${ms ?? '**none**'} |`));
+  if (audits.length) md.push('', '| cell | audit | requests | runs that ran their input | effects missed |', '|---|---|---:|---:|---:|', ...audits.map((a) => `| ${a.cell} | ${a.pass ? 'clean' : `**${a.failed.join('; ')}**`} | ${a.requests} | ${a.runs.filter((r) => r.class !== 'invalid' && r.class !== 'refused').length} of ${a.runs.length} | ${a.missed} |`));
+  const limited = series.filter((s) => s.late_302?.length);
+  if (limited.length) {
+    md.push('', "**#302**, a declared limit (an Electron page's key release reached the tree after press_key's settle, the key-down inside it and the release caught up by the next run's reading): counted toward the streak, listed apart.", '');
+    md.push('| cell | lane | #302 runs | the key-up seen after the answer (ms) |', '|---|---|---:|---|', ...limited.map((s) => `| ${s.cell} | ${s.lane} | ${s.late_302.length} of ${s.runs} | ${s.late_302.map((l) => l.late_ms).join(', ')} |`));
+  }
+  if (failed.length) md.push('', `**Incomplete or failed:** ${failed.join('; ')}.`);
   return { md, failed, held };
 }

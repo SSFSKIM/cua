@@ -168,7 +168,10 @@ test('the oracle\'s engine table: today\'s path, the target, comparison A, the r
 // #171: on Linux the engine never changes the host, so the table's rows are the host's with the engine's refusals.
 test('the oracle\'s Linux rows: the engine\'s refusals before Node, the host always cua\'s, and the vendor host refused',()=>{
  const row=fields=>expectedSelection({platform:'linux',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,engine:'unset',installed:false,...fields});
- assert.deepEqual(row({}),{host:'cua',reason:'linux',status:'pass'});
+ // the default is cua's engine (#171 M5): none installed, the vendor's with a warning; installed, cua's
+ assert.deepEqual(row({}),{host:'cua',reason:'linux',status:'warn'});
+ assert.deepEqual(row({installed:true}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(row({defaultEngine:'vendor'}),{host:'cua',reason:'linux',status:'pass'});
  assert.deepEqual(row({engine:'vendor',override:'cua'}),{host:'cua',reason:'explicit',status:'pass'});
  assert.deepEqual(row({engine:'cua',node24:false}),{error:'engine_not_installed'},'the engine refuses before Node');
  assert.deepEqual(row({engine:'cua',installed:true}),{host:'cua',reason:'linux',status:'pass'});

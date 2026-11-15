@@ -314,11 +314,14 @@ const TRIED = ['CUA_NODE (unset)', 'the node running cua /fixture/node22 (v22.23
 const withNode = () => NODE24;
 const withoutNode = () => { throw Object.assign(new CuaError('repl_host_node', 'cua\'s own REPL host needs Node 24 or later, and none was found'), {tried: TRIED}); };
 // `extra` is more of the caller's environment (a browser setting the selection must not read).
-// The engine inputs are fixed (no engine.json, the default vendor engine), so a machine's own settings never leak in.
+// The engine inputs are fixed (no engine.json, no engine installed), so a machine's own settings never leak in.
 const hostFor = (platform, surfaces, host, resolveOwnNode = withNode, extra = {}) => outcome(() => replHostFor({platform, surfaces,
   ambient: host === undefined ? extra : {...extra, CUA_REPL_HOST: host}, resolveOwnNode, engine: {config: () => ({}), installed: () => null}}));
 // The vendor engine by default, as a macOS computer selection carries it.
 const DEFAULT_VENDOR_ENGINE = {engine: 'vendor', reason: 'default', status: 'pass'};
+// A Linux computer selection's: cua's engine is the default there (#171 M5), and with none installed (these fixed
+// inputs) the vendor's is kept with a warning.
+const DEFAULT_LINUX_ENGINE = {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
 // A resolver that counts its calls, so a test can say whether (and how often) a selection asked for Node.
 const counted = resolve => { const fn = () => { fn.calls++; return resolve(); }; fn.calls = 0; return fn; };
 // Browser settings the host selection ignores: MAWS client mode, and a CUA_BROWSER_SERVICE #79 no longer reads.
@@ -330,9 +333,9 @@ test('the REPL host follows the selection table: macOS computer keeps vendor, Li
   for (const unset of [undefined, '']) for (const extra of IGNORED) {
     const label = what => `${what}, CUA_REPL_HOST=${JSON.stringify(unset)}, ${JSON.stringify(extra)}`;
     for (const [platform, surfaces, expected] of [
-      ['linux', COMPUTER, {...own('linux'), engine: DEFAULT_VENDOR_ENGINE}],   // #171: the engine never changes the host there
+      ['linux', COMPUTER, {...own('linux'), engine: DEFAULT_LINUX_ENGINE}],   // #171: the engine never changes the host there
       ['linux', BROWSER, own('linux')],
-      ['linux', BOTH, {...own('linux'), engine: DEFAULT_VENDOR_ENGINE}],
+      ['linux', BOTH, {...own('linux'), engine: DEFAULT_LINUX_ENGINE}],
       ['darwin', BROWSER, own('browser_only')],
       ['darwin', COMPUTER, {...vendor('macos_native_peer_requires_vendor'), engine: DEFAULT_VENDOR_ENGINE}],
       ['darwin', BOTH, {...vendor('macos_native_peer_requires_vendor'), engine: DEFAULT_VENDOR_ENGINE}],   // MAWS client mode does not override macOS computer
@@ -395,7 +398,7 @@ test('with no Node 24 or later, a macOS session the table moves to cua\'s own ho
 test('an explicit CUA_REPL_HOST=cua is honoured where the own host can run, and otherwise refused before launch, never downgraded to vendor', () => {
   for (const extra of IGNORED) for (const [platform, surfaces] of [['linux', COMPUTER], ['linux', BROWSER], ['linux', BOTH], ['darwin', BROWSER]])
     assert.deepEqual(hostFor(platform, surfaces, 'cua', withNode, extra), {host: 'cua', reason: 'explicit', node: NODE24,
-      ...(platform === 'linux' && surfaces.includes('computer') ? {engine: DEFAULT_VENDOR_ENGINE} : {})}, `${platform} ${surfaces} ${JSON.stringify(extra)}`);
+      ...(platform === 'linux' && surfaces.includes('computer') ? {engine: DEFAULT_LINUX_ENGINE} : {})}, `${platform} ${surfaces} ${JSON.stringify(extra)}`);
   // With no Node 24 or later an explicit cua is refused with the resolver's diagnostic, never downgraded to vendor.
   for (const [platform, surfaces] of [['linux', COMPUTER], ['darwin', BROWSER]])
     assert.deepEqual(hostFor(platform, surfaces, 'cua', withoutNode), {code: 'repl_host_node', message: 'cua\'s own REPL host needs Node 24 or later, and none was found'});
@@ -652,7 +655,9 @@ test('connections, the profiles listing and doctor agree with the selection tabl
   const doctorStubs = {inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}), inspectAgent: async () => [],
     inspectChrome: async () => [], inspectLinux: async () => [], verifySignatures: async () => []};
   const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason})`);
-  const status = (...rs) => (rs.some(r => r.code) ? 'fail' : rs.some(r => r.reason === 'own_host_node_unavailable') ? 'warn' : 'pass');
+  // doctor's rule: a refusal fails; the own host's Node missing, or an engine kept on the vendor's with a warning (on
+  // Linux since #171 M5, the default cua engine none of these homes installed), warns
+  const status = (...rs) => (rs.some(r => r.code) ? 'fail' : rs.some(r => r.reason === 'own_host_node_unavailable' || r.engine?.status === 'warn') ? 'warn' : 'pass');
   let rows = 0;
   for (const host of [DARWIN, LINUX]) {
     for (const [routeLabel, register] of Object.entries(ROUTES)) {

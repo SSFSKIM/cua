@@ -125,12 +125,15 @@ test('a drag that fails midway still releases the button, where it was going (th
   assert.deepEqual(mouse().at(-1), {type: 'mouseReleased', x: 3, y: 3, button: 'left', buttons: 0, clickCount: 1, modifiers: 0});
 });
 
-test('cua_scroll moves to the point and synthesizes a mouse scroll gesture of the opposite distances', async () => {
+// The wheel's effect, read back from the page, is wheel-scroll.test.mjs's; this page's reads answer nothing to observe.
+test('cua_scroll moves to the point and sends a mouse wheel of the asked distances there', async () => {
   const {log, run} = setup();
   await run('cua_scroll', {x: 280, y: 200, scroll_x: 0, scroll_y: 400});
-  const gesture = log.find(e => e.method === 'Input.synthesizeScrollGesture');
-  assert.deepEqual(gesture.params, {x: 280, y: 200, xDistance: 0, yDistance: -400, gestureSourceType: 'mouse', preventFling: true, speed: 8000});
-  assert.deepEqual(log.filter(e => e.method === 'Input.dispatchMouseEvent').map(e => e.params.type), ['mouseMoved']);
+  assert.deepEqual(log.filter(e => e.method === 'Input.dispatchMouseEvent').map(e => e.params), [
+    {type: 'mouseMoved', x: 280, y: 200, button: 'none', buttons: 0, modifiers: 0},
+    {type: 'mouseWheel', x: 280, y: 200, deltaX: 0, deltaY: 400, modifiers: 0},
+  ]);
+  assert.equal(log.some(e => e.method === 'Input.synthesizeScrollGesture'), false);
 });
 
 test('cua_keypress presses the keys on the tab; a clipboard shortcut goes to the virtual clipboard instead', async () => {
@@ -190,8 +193,8 @@ test('dom_cua_scroll scrolls at the node, or at the viewport\'s centre without o
   const {log, run} = setup({frames, nodes: {2: {frameId: 'MAIN', localRef: 'r2', target: {tabId: 4}}}, points: {r2: {x: 33, y: 44}}});
   await run('dom_cua_scroll', {node_id: '2', scroll_x: 0, scroll_y: 100});
   await run('dom_cua_scroll', {scroll_x: 10, scroll_y: 0});
-  assert.deepEqual(log.filter(e => e.method === 'Input.synthesizeScrollGesture').map(e => [e.params.x, e.params.y, e.params.xDistance, e.params.yDistance]),
-    [[33, 44, 0, -100], [400, 300, -10, 0]]);
+  assert.deepEqual(log.filter(e => e.params?.type === 'mouseWheel').map(e => [e.params.x, e.params.y, e.params.deltaX, e.params.deltaY]),
+    [[33, 44, 0, 100], [400, 300, 10, 0]]);
 });
 
 test('cua_type and dom_cua_type type by paste into the focused element', async () => {

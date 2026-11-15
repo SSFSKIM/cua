@@ -29,6 +29,10 @@ export function abPlan({browser,editor,reps}){
  out.push(...extras.filter(c=>c.part==='ending-tab'));
  return out.map(c=>({...c,variant:c.variant??'spike',text:c.text??(c.variant==='double-space'?sentence(c.length).replace('word is','word  is').slice(0,c.length):sentence(c.length))}));
 }
+// The startup warmup is a plan-independent clean 30-character cell, so a partial plan (follow-up cohort) still has one.
+export const warmupCell=({browser,editor})=>abPlan({browser,editor,reps:1}).find(c=>c.part==='clean'&&c.length===30);
+// Keys a shard must calibrate: those its cells press plus the warmup's. A partial plan needs fewer than the full set.
+export const calibrationKeys=cells=>{const used=new Set(cells.map(c=>c.key).filter(Boolean));return KEYS.filter(k=>used.has(k))};
 export function answer(raw){
  const err=raw?.error,hasResult=raw!=null&&Object.hasOwn(raw,'result')&&raw.result!=null;
  if((!!err)===hasResult)throw Error('malformed engine response');

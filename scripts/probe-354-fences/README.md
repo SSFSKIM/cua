@@ -51,8 +51,46 @@ gh workflow run probe-354-fences.yml --ref <verified-diagnostic-kit-ref> \
 
 Until permission is granted, use only Node offline tests/lint. Swift compilation and all AX/browser behavior remain unverified for this new instrumentation. Offline artifact collection, from the trusted checkout, is `node scripts/probe-354-fences/offline/caret-table.mjs <caret-artifact-root>`; it never consumes primary rows. The collector renders available diagnostic observations, not a paired-coverage certification: check each arm's `config.json` coverage before drawing a comparison.
 
+## Follow-up measurement cohort (offline-prepared; not dispatched)
+
+`--diagnostic followup` (workflow input `diagnostic=followup`) selects a separate measurement cohort for the **next builder head**. It is not primary evidence: its rates and costs are never pooled with the primary run or the caret cohort, and its artifacts are named `probe-354-followup-<shard>`. The default stays `primary`, whose plan, requests, scratch builds and startup are unchanged; the isolated Firefox caret mode is untouched.
+
+**Before any dispatch, both are still required: the next builder head, pinned in `BRANCH_REF` (and `MAIN_REF` re-checked), and Actions restored.** The workflow still pins the primary run's heads and is dispatch-only (no push trigger); nothing here has been run.
+
+Scope is ten shards, each head with its own expected plan (20 repetitions per head; smoke uses one):
+
+| shard | scope | cells per head |
+| --- | --- | --- |
+| `cft-contenteditable`, `cft-compose`, `firefox-textarea`, `firefox-input`, `firefox-contenteditable`, `firefox-compose` | the full existing plan, which never ran in the primary run | 201, 121, 221, 301, 161, 121 |
+| `safari-textarea` | the existing ending-Return (`ending-return/textarea/spike/<rep>`) and multiline-text (`multiline/textarea/spike/<rep>`) controls, 20 repetitions each, expected `confirmed` (Return is text in a textarea) | 40 |
+| `cft-textarea` | the same 40 text controls, then the four Unicode-cap attempts the fixture's UTF-8 bug invalidated: `truncation/textarea/unicode-cap/<rep>`, branch reps 1, 4 and 7, control rep 7; the caps run last so an early abort cannot cost the controls | branch 43, main 41 |
+| `safari-input` | plain no-key `no-key/input/plain/<rep>` and the existing trusted-secret `secret/input/equality/<rep>`, alternating within and across repetitions | 40 |
+| `safari-contenteditable` | the existing `ending-return/contenteditable/spike/<rep>` cells with their independent per-head foreground DOM and AX reference | 20 |
+
+That is 1267 control and 1269 branch cells at 20 repetitions (2536 both heads), or 142 for a one-repetition smoke. Historical cell ids and repetition numbers are kept, so each retry is the cell it replaces; only the plain no-key cell is new. The text controls scale with `--reps`; the cap attempts are a fixed list, independent of it. Their cause is fixed in the fixture, which now decodes each `/answer` body once as UTF-8 instead of per chunk, so a code point split across HTTP chunks keeps its exact text (regression test in `kit.test.mjs`).
+
+**No-key** means no `press_key` between setup and `type_text`. The plain cell types 64 hex characters (the secret's length and alphabet) into the default seed at offset 3. The secret cell is the existing equality cell, which already presses no key and goes through the actual trusted wrapper with its isolated temporary HOME and the pinned `--source` tree. In the Safari no-key scope only, the other secret variants (mismatch, trailing returns, selections) are not included; the full missing-shard plans, including the Firefox input shard's, are unchanged and keep them.
+
+A partial plan cannot break startup: the warmup is a clean 30-character cell derived from the shard, not looked up in the plan, and only keys that the plan's cells and the warmup press are calibrated (all three for the full shards, as before). Foreground references are acquired for exactly the plan's rendered-text cells.
+
+Every artifact and row records `cohort`. The collector takes `--cohort primary|followup` (default `primary`) and checks each head against that cohort's own expected plan, so the control's one cap attempt and the branch's three are each validated; an artifact or row naming another cohort is rejected before any table is written. `--only all` demands all ten shards, and a partial download is `INCOMPLETE` with the missing cells listed, never certified:
+
+```sh
+node scripts/probe-354-fences/offline/ab-table.mjs <artifact-root> --only all --cohort followup
+```
+
+Plain no-key cells appear in `rates.tsv`, `diagnostics.tsv` (expected `confirmed`) and a new `no-key-confirmation.tsv`, which puts plain beside the trusted-secret equality cells with the same counts and every actual refusal reason. The secret no-key cells keep their `privacy.tsv` audit rows; the plain cell is a public field with nothing to audit. A plain success with a wrong final value is a wrong success like any other cell. No cost table is added for these cells; per-cell timings stay in `rows.jsonl`.
+
+Prepared launch syntax, **after** the two requirements above and owner approval:
+
+```sh
+gh workflow run probe-354-fences.yml --ref <verified-kit-ref> -f diagnostic=followup
+```
+
+Add `-f only=<shard,...>` to run a subset, or `-f reps=1 -f smoke=true` for a labelled smoke.
+
 ## Offline collection
 
-Run the trusted checkout's `offline/ab-table.mjs <artifact-root> --only all` for a full download, or specify the selected browser-editor shard IDs. Without `--only`, scope is explicitly the observed shards. Final collection checks both arms, configs/coverage and expected cell identities. Missing/incomplete evidence exits nonzero while preserving partial tables. Incremental per-cell tables remain available.
+Run the trusted checkout's `offline/ab-table.mjs <artifact-root> --only all` for a full download, or specify the selected browser-editor shard IDs. Without `--only`, scope is explicitly the observed shards. Final collection checks both arms, configs/coverage and expected cell identities. Missing/incomplete evidence exits nonzero while preserving partial tables. Incremental per-cell tables remain available. One cohort per collection: `--cohort followup` for the follow-up cohort (above); artifacts written before cohorts existed are primary.
 
 `summary.json` and `oracle-warnings.tsv` identify rendered cells without usable foreground/post-type AX evidence. Rescoring never invents AX values from an acknowledgement or from HTML. Existing raw rows, reference records, engine logs and both timing paths are retained as evidence.

@@ -9,7 +9,8 @@ import {expectation,CLIP} from '../probe-354/page.mjs';
 import {page,SEED} from './page.mjs';
 import {createFixture,FixtureLost} from './fixture.mjs';
 import {abortReason,coverage} from './classify.mjs';
-import {answer,privacyFindings} from './ab-model.mjs';
+import {answer,privacyFindings,warmupCell,calibrationKeys} from './ab-model.mjs';
+import {FOLLOWUP,FOLLOWUP_SCOPES,CAP_RETRIES} from './followup.mjs';
 import {CARET_MODE,planFor,traceArgs,parseCaretLine,caretLogLine,lateCaretSnapshot,sanitizeCaretRow,writeCaretTables} from './caret.mjs';
 import {writeTables} from './offline/ab-table.mjs';
 import {snapshot} from '../probe-354-substitutions/diagnostic.mjs';
@@ -20,8 +21,8 @@ if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners 
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
 const OUT=arg('out'),ENGINE=arg('engine'),SIDE=arg('side'),KIND=arg('browser'),SHARD=arg('shard'),ARM=arg('arm'),HEAD=arg('head'),REPS=+(arg('reps')??20),SMOKE=arg('smoke')==='true';
 if(!OUT||!ENGINE||!SIDE||!['main','branch'].includes(ARM)||!/^[a-f0-9]{40}$/.test(HEAD??''))throw Error('invalid A/B arguments');
-const DIAGNOSTIC=arg('diagnostic')??'primary',IS_CARET=DIAGNOSTIC===CARET_MODE;
-const cells=planFor({browser:KIND,editor:SHARD,reps:REPS,diagnostic:DIAGNOSTIC});
+const DIAGNOSTIC=arg('diagnostic')??'primary',IS_CARET=DIAGNOSTIC===CARET_MODE,IS_FOLLOWUP=DIAGNOSTIC===FOLLOWUP;
+const cells=planFor({browser:KIND,editor:SHARD,reps:REPS,arm:ARM,diagnostic:DIAGNOSTIC});
 if(cells.some(c=>c.secret)&&!arg('source'))throw Error('secret diagnostics require the pinned --source tree');
 const secretProbe=cells.some(c=>c.secret)?await createSyntheticSecretProbe({sourceRoot:arg('source'),parent:process.env.RUNNER_TEMP}):null;
 mkdirSync(OUT,{recursive:true});
@@ -72,6 +73,9 @@ const meta={kit:process.env.GITHUB_SHA??null,engine:HEAD,arm:ARM,image:process.e
  renderedOracle:'public rendered-text diagnostics require a per-head foreground reference through the same actual type_text route, matching intended editing text and readable post-type AX; measured raw DOM structure/text and post-type AX value are compared to it independently of engine acknowledgements; missing evidence is unscorable; raw innerText/textContent/HTML retained; no secret/password/canvas value evidence',
  secrets:'real trusted wrapper/native service and isolated synthetic HOME; normal-input equality/mismatch, one/three trailing CR, and equal/different same-length private selections; both metadata pairs required to match exactly except snapshotMs, which stays in raw records and timing tables; socket RTT is measured inside the native client separately from trusted-call duration; all latency distributions are informational; Boolean keysUnconfirmed allowed, numeric counts/checkpoints/values/lengths withheld; private fixture states and errors scrubbed in finally before any save or log',
  abort:'3 consecutive invalid cells or 6 setup failures; incomplete coverage and branch contract failures exit nonzero'};
+meta.cohort=DIAGNOSTIC;
+// A partial cohort: its arm-specific plan, not the primary one, is the denominator. Never pooled with other cohorts.
+if(IS_FOLLOWUP)Object.assign(meta,{primaryEvidence:false,pooling:'never pooled with primary or firefox-caret evidence',followup:{scopes:FOLLOWUP_SCOPES[KIND+'-'+SHARD],...(FOLLOWUP_SCOPES[KIND+'-'+SHARD].includes('unicode-cap-retries')?{capRetries:CAP_RETRIES[ARM]}:{}),noKey:'no press_key between setup and type_text; the secret cell uses the trusted wrapper and an isolated synthetic HOME'}});
 if(IS_CARET)Object.assign(meta,{diagnostic:CARET_MODE,primaryEvidence:false,observerEffect:true,answers:'real result/error/meta retained with field-text strings withheld; no primary verdict inferred',sampling:'no post-type DOM sampling; one guarded range/count sidecar approximately 300ms after actual engine reply',race:'not collected',clean:'not collected',pollDefinition:'production compare calls after role/subrole guards',addedObservations:'AXNumberOfCharacters per guarded production poll, plus range/count sidecar approximately 300ms after reply; no DOM post-type sampling',unitInterpretation:'unresolved; raw replies and known public control offsets only'});
 let done=0,valid=0,invalid=0,setupFailures=0,consecutiveInvalid=0,aborted=null;
 const compact=[],calibrations=new Map(),foregroundReferences=new Map();
@@ -148,7 +152,7 @@ async function cell(c,{warmup=false}={}){
  const calibration=c.key?calibrations.get(c.key):null,expected=expectation(calibration?.effect??{text:seedFor(c),selection:initial(c).selection},c.text),requestedFinal=expected.final;
  if(c.expectedText!==undefined)expected.final=c.expectedText;
  if(c.secret)expected.final=secretProbe.expected(privateInitial?.text??seedFor(c),privateInitial?.selection??initial(c).selection);
- let row={...c,recordKind:IS_CARET?'caret-diagnostic':warmup?'warmup':'cell',arm:ARM,browser:KIND,shard:SHARD,kit:meta.kit,engine:HEAD,expectedFinal:c.secret?null:expected.final,requestedFinal:c.expectedText!==undefined?requestedFinal:undefined,calibrationKey:calibration?.key??null,startedAt:Date.now()};
+ let row={...c,recordKind:IS_CARET?'caret-diagnostic':warmup?'warmup':'cell',cohort:DIAGNOSTIC,arm:ARM,browser:KIND,shard:SHARD,kit:meta.kit,engine:HEAD,expectedFinal:c.secret?null:expected.final,requestedFinal:c.expectedText!==undefined?requestedFinal:undefined,calibrationKey:calibration?.key??null,startedAt:Date.now()};
  let w,stage='setup',lost=false;
  try{
   w=await connect();await setup(c,row,privateInitial);
@@ -241,8 +245,10 @@ try{
  }finally{w.close()}
  writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));progress(null);
  if(!IS_CARET){
-  for(const key of ['cmd+a','cmd+z','cmd+v'])await calibrate(key);
-  await cell({...cells.find(c=>c.part==='clean'&&c.length===30),id:'warmup/clean30',auditPositiveControl:true},{warmup:true});
+  // The warmup and calibrations come from the shard, not from the plan: a partial plan may hold no clean cell or no key.
+  const warmup=warmupCell({browser:KIND,editor:SHARD});
+  for(const key of calibrationKeys([...cells,warmup]))await calibrate(key);
+  await cell({...warmup,id:'warmup/clean30',auditPositiveControl:true},{warmup:true});
   for(const c of cells)if(needsForegroundReference(c)&&!foregroundReferences.has(referenceKey(c)))await captureForegroundReference(c);
  }
  for(const c of cells)await cell(c);

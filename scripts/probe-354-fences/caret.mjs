@@ -4,10 +4,14 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {abPlan} from './ab-model.mjs';
 import {matrix} from './matrix.mjs';
+import {FOLLOWUP,followupPlan,followupMatrix} from './followup.mjs';
 export const CARET_MODE='firefox-caret';
-export function planFor({browser,editor,reps,diagnostic='primary'}){
+// Cohort selector shared by the driver, the workflow matrix and the collector. Only the follow-up plan depends on `arm`.
+export function planFor({browser,editor,reps,arm,diagnostic='primary'}){
  if(diagnostic==='primary')return abPlan({browser,editor,reps});
- if(diagnostic!==CARET_MODE||browser!=='firefox'||editor!=='input'||!Number.isInteger(reps)||reps<1)throw Error('caret cohort requires firefox-input and positive repetitions');
+ if(diagnostic===FOLLOWUP)return followupPlan({browser,editor,arm,reps});
+ if(diagnostic!==CARET_MODE)throw Error('unknown cohort: '+diagnostic);
+ if(browser!=='firefox'||editor!=='input'||!Number.isInteger(reps)||reps<1)throw Error('caret cohort requires firefox-input and positive repetitions');
  const out=[],plain='p'.repeat(64),unicode='a𝄞한';
  for(let rep=1;rep<=reps;rep++)for(const c of [
   {variant:'secret-insertion',secret:true,text:'{{secret:PROBE354}}'},
@@ -24,7 +28,9 @@ export function planFor({browser,editor,reps,diagnostic='primary'}){
 }
 export function matrixFor(only='all',diagnostic='primary'){
  if(diagnostic==='primary')return matrix(only);
- if(diagnostic!==CARET_MODE||!['all','firefox-input'].includes(only.trim()))throw Error('caret cohort matrix must be firefox-input');
+ if(diagnostic===FOLLOWUP)return followupMatrix(only);
+ if(diagnostic!==CARET_MODE)throw Error('unknown cohort: '+diagnostic);
+ if(!['all','firefox-input'].includes(only.trim()))throw Error('caret cohort matrix must be firefox-input');
  return matrix('firefox-input');
 }
 export function traceArgs(diagnostic,id){return diagnostic===CARET_MODE?{probe354Audit:id,probe354CaretTrace:true}:{}}
@@ -94,6 +100,6 @@ export function writeCaretTables(out,rows){
  return {cohort:CARET_MODE,primaryEvidence:false,observerEffect:true,cases:cases.length};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
- if(process.argv[2]!=='matrix')throw Error('usage: caret.mjs matrix <only> <primary|firefox-caret>');
+ if(process.argv[2]!=='matrix')throw Error('usage: caret.mjs matrix <only> <primary|firefox-caret|followup>');
  console.log('matrix='+JSON.stringify(matrixFor(process.argv[3]??'all',process.argv[4]??'primary')));
 }

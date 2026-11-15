@@ -23,7 +23,8 @@ export async function createFixture(html,{idleMs=20000,lostMs=5000}={}){
    res.on('close',()=>{clearTimeout(t);if(poll===res)poll=null});return;
   }
   if(url.pathname==='/answer'&&req.method==='POST'){
-   let b='';for await(const c of req)b+=c;res.end('ok');let o;try{o=JSON.parse(b)}catch{return}
+   // Decode the whole body once: a chunk boundary can fall inside a multibyte code point.
+   const chunks=[];for await(const c of req)chunks.push(c);const b=Buffer.concat(chunks).toString('utf8');res.end('ok');let o;try{o=JSON.parse(b)}catch{return}
    o.receivedAt=Date.now();
    if(o.op==='ready'){fx.ready.push({doc:o.doc,nonce:o.nonce,nav:o.nav,href:o.href,visibility:o.visibility,at:o.at,receivedAt:o.receivedAt});readyWaiters.splice(0).forEach(f=>f());return}
    if(!o.doc||o.doc!==fx.bound){if(fx.foreignAnswers.length<50)fx.foreignAnswers.push({doc:o.doc??null,op:o.op??null,kind:o.kind??null,n:o.n??null,cell:o.cell??null,receivedAt:o.receivedAt});return}

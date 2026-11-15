@@ -8,6 +8,7 @@ const {SEED,page}=pageModule;
 import {measuredFrontPid,setupForeground,plan,modeSpec,expectedFinal,analyzeTrace,readbackVerdict,privacyViolation,abortReason,coverage,sentence,FENCE_MODES} from './classify.mjs';
 import {matrix} from './matrix.mjs';
 import {createFixture,FixtureLost} from './fixture.mjs';
+import {request} from 'node:http';
 
 const L=SEED.length;
 let seq=0;
@@ -227,5 +228,25 @@ test('document identity: a hidden realm never takes the visible owner; a lost ow
   b.stop();await new Promise(r=>setTimeout(r,250));
   await assert.rejects(f.command({op:'read',cell:'c6'},100),FixtureLost);
   hidden.stop();
+ }finally{f.close()}
+});
+
+// Primary-run cap cells (branch 1/4/7, control 7) were invalidated when a 10,001-character Hangul seed's answer crossed HTTP chunks.
+test('an /answer body split inside a multibyte code point is decoded to the exact text',async()=>{
+ const f=await createFixture('');
+ try{
+  f.bind('owned');
+  for(const text of ['한','a𝄞한'.repeat(50),'한'.repeat(10001)]){
+   const n=f.send({op:'read',cell:'unicode'}),pending=f.collect(n,1),body=Buffer.from(JSON.stringify({doc:'owned',n,text}));
+   // Cut one byte into the first and the last non-ASCII code point's UTF-8 sequence.
+   const first=body.indexOf(Buffer.from([...text].find(c=>c.codePointAt(0)>127)))+1,last=body.lastIndexOf(Buffer.from([...text].at(-1)))+1;
+   const cuts=[...new Set([first,last])].sort((a,b)=>a-b),parts=[body.subarray(0,cuts[0]),...cuts.slice(1).map((c,i)=>body.subarray(cuts[i],c)),body.subarray(cuts.at(-1))];
+   assert.ok(parts.every(p=>p.length>0)&&cuts.every(i=>(body[i]&0xc0)===0x80),'chunk boundaries fall inside code points');
+   await new Promise((ok,no)=>{
+    const req=request(new URL('answer',f.url),{method:'POST'},res=>{res.resume();res.once('end',ok)});req.once('error',no);
+    (async()=>{for(const p of parts){req.write(p);await new Promise(r=>setTimeout(r,15))}req.end()})();
+   });
+   const [answer]=await pending;assert.equal(answer.text,text);assert.deepEqual([...answer.text].map(c=>c.codePointAt(0)),[...text].map(c=>c.codePointAt(0)));
+  }
  }finally{f.close()}
 });

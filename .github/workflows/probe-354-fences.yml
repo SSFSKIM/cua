@@ -12,10 +12,10 @@ on:
         description: 'Label smoke evidence separately (set reps to 1)'
         default: 'false'
       only:
-        description: 'Comma-separated browser-editor shard ids, or all'
+        description: 'Comma-separated browser-editor shard ids of the selected cohort, or all'
         default: 'all'
       diagnostic:
-        description: 'primary, or isolated firefox-caret observer-effect cohort'
+        description: 'Cohort: primary (default), isolated firefox-caret observer-effect, or followup measurement (ten shards; needs the next builder head in BRANCH_REF)'
         default: 'primary'
 permissions:
   contents: read
@@ -37,7 +37,7 @@ jobs:
           SMOKE: ${{ github.event.inputs.smoke }}
         run: |
           node --input-type=module -e 'import {assertPins} from "./scripts/probe-354-fences/ab-model.mjs"; assertPins(process.env.MAIN_REF, process.env.BRANCH_REF); const n=Number(process.env.REPS); if(![1,20].includes(n)||!(["true","false"].includes(process.env.SMOKE))||((process.env.SMOKE==="true")!==(n===1)))throw Error("use 20/full or 1/smoke");'
-          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/ab-extra.test.mjs scripts/probe-354-fences/ab-secret.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs scripts/probe-354-fences/caret.test.mjs scripts/probe-354-fences/caret-patch.test.mjs scripts/probe-354-fences/offline/caret-table.test.mjs
+          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/ab-extra.test.mjs scripts/probe-354-fences/ab-secret.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs scripts/probe-354-fences/caret.test.mjs scripts/probe-354-fences/caret-patch.test.mjs scripts/probe-354-fences/offline/caret-table.test.mjs scripts/probe-354-fences/followup.test.mjs
       - id: matrix
         env:
           ONLY: ${{ github.event.inputs.only }}
@@ -114,14 +114,14 @@ jobs:
           if [ "$DIAGNOSTIC" = firefox-caret ]; then
             node scripts/probe-354-fences/offline/caret-table.mjs "$RUNNER_TEMP/probe-354-ab/$JOB_ID"
           else
-            node scripts/probe-354-fences/offline/ab-table.mjs "$RUNNER_TEMP/probe-354-ab/$JOB_ID" --only "$JOB_ID"
+            node scripts/probe-354-fences/offline/ab-table.mjs "$RUNNER_TEMP/probe-354-ab/$JOB_ID" --only "$JOB_ID" --cohort "$DIAGNOSTIC"
           fi
           exit "$result"
       - name: Upload rows, incremental tables and provenance
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: ${{ github.event.inputs.diagnostic == 'firefox-caret' && 'probe-354-caret' || 'probe-354-ab' }}-${{ matrix.id }}
+          name: ${{ github.event.inputs.diagnostic == 'firefox-caret' && 'probe-354-caret' || github.event.inputs.diagnostic == 'followup' && 'probe-354-followup' || 'probe-354-ab' }}-${{ matrix.id }}
           path: |
             ${{ runner.temp }}/probe-354-ab/*-audit-patch.json
             ${{ runner.temp }}/probe-354-ab/*-caret-patch.json

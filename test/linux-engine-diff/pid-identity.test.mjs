@@ -13,6 +13,8 @@ import { after, test } from 'node:test';
 import { pidfileIdentity, processIdentity, signalIfSame } from '../../scripts/linux-engine-diff/pid-identity.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 
+// a process's start time and executable are /proc's (pid-identity.mjs): Linux only
+const skip = process.platform !== 'linux' && 'Linux only: /proc';
 const scratch = mkdtempSync(join(tmpdir(), 'cua171-pid-identity-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const children = [];
@@ -48,7 +50,7 @@ const until = async (check, ms = 3000) => {
   return check();
 };
 
-test("a process's identity is its pid, its start time since boot and its executable; a gone pid has none", async () => {
+test("a process's identity is its pid, its start time since boot and its executable; a gone pid has none", { skip }, async () => {
   const child = sleeper();
   await until(() => processIdentity(child.pid)?.exe === '/usr/bin/sleep');
   const id = processIdentity(child.pid);
@@ -61,7 +63,7 @@ test("a process's identity is its pid, its start time since boot and its executa
   assert.equal(processIdentity(child.pid), null);
 });
 
-test('a reused pid is never signalled: another start time or executable under the recorded pid is left alone, with the reason', async () => {
+test('a reused pid is never signalled: another start time or executable under the recorded pid is left alone, with the reason', { skip }, async () => {
   const child = sleeper();
   await until(() => processIdentity(child.pid)?.exe === '/usr/bin/sleep');
   const now = processIdentity(child.pid);
@@ -81,7 +83,7 @@ test('a reused pid is never signalled: another start time or executable under th
   assert.deepEqual(kills, [[child.pid, 'SIGTERM']]);
 });
 
-test("a pidfile's identity is read once the scene's script has become its program, as the terminal's scripts exec it", async () => {
+test("a pidfile's identity is read once the scene's script has become its program, as the terminal's scripts exec it", { skip }, async () => {
   const pidfile = join(scratch, 'scene.pid');
   const child = spawn('sh', ['-c', 'echo $$ > "$1"; sleep 0.3; exec sleep 60', 'sh', pidfile], { stdio: 'ignore', detached: true });
   children.push(child);
@@ -91,7 +93,7 @@ test("a pidfile's identity is read once the scene's script has become its progra
   assert.equal(await pidfileIdentity(join(scratch, 'none.pid'), { program: 'sleep', waitMs: 100 }), null, 'no pidfile, no identity');
 });
 
-test("a scene's close signals its pidfile's pid only while it is the scene's program; a reused one is recorded and left running", async () => {
+test("a scene's close signals its pidfile's pid only while it is the scene's program; a reused one is recorded and left running", { skip }, async () => {
   const desktop = new Desktop({ cua: 'unused', run: 'pidtest', reader: { async close() {} }, startActive: 0, nonce: 'n0' });
   try {
     const program = sleeper();

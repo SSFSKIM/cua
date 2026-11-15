@@ -23,6 +23,10 @@
 // Needs the harness's xprobe built (cargo build --release in scripts/linux-engine-diff/xprobe). Run in the X session's
 // environment, with cua's engine (CUA_LINUX_ENGINE_BIN names a build before its release):
 //   CUA_NATIVE_ENGINE=cua node scripts/accept/linux-device-mode.mjs   JSON report; exit 0 when every step passes
+// or, to show that the default selects cua's engine (#171 M5; ./linux-selection.mjs), with nothing selecting one (the
+// device mode is still each session's own CUA_DESKTOP_MODE, and engine.json's "desktop" may stand):
+//   node scripts/accept/linux-device-mode.mjs --selection default   refused unless no CUA_NATIVE_ENGINE and no "engine"
+//   in engine.json; then cua doctor --json must say the default selected cua's engine. The report records the selection.
 import {execFileSync, spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {existsSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
@@ -35,6 +39,7 @@ import {XPROBE, configure} from '../linux-engine-diff/scenes.mjs';
 import {judgeForegroundSpan, judgeSpan, startWitness} from '../linux-engine-diff/witness.mjs';
 import {declareLiveRun} from '../linux-engine-diff/xspawn.mjs';
 import {pinnedApprovals} from './lib.mjs';
+import {selectionMode, selectionSteps} from './linux-selection.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 
 // the fixture drives the session's display by design, through the harness's X tools too (xspawn.mjs)
@@ -49,7 +54,8 @@ const QUIET_MS = 300;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const steps = [];
 const step = (name, ok, detail) => { steps.push({name, status: ok ? 'PASS' : 'FAIL', ...(detail === undefined ? {} : {detail})}); return ok; };
-const report = {engine: process.env.CUA_NATIVE_ENGINE ?? null, engineBin: process.env.CUA_LINUX_ENGINE_BIN ?? null, text: TEXT, steps};
+const mode = selectionMode(process.argv.slice(2));
+const report = {engine: process.env.CUA_NATIVE_ENGINE ?? null, engineBin: process.env.CUA_LINUX_ENGINE_BIN ?? null, selection: {mode}, text: TEXT, steps};
 const dir = mkdtempSync('/tmp/cua-device-mode-');
 const owned = [];   // {what, child}: every process the fixture started
 const hex = id => `0x${Number(id).toString(16)}`;
@@ -223,9 +229,11 @@ async function terminate({what, child}, ms = 5000) {
 
 let witness = null;
 try {
-  if (!step('preconditions', process.platform === 'linux' && !!process.env.DISPLAY && process.env.CUA_NATIVE_ENGINE === 'cua'
+  // the explicit mode names cua's engine; the default mode names none and shows that the default selects it
+  if (!step('preconditions', process.platform === 'linux' && !!process.env.DISPLAY && (mode === 'default' || process.env.CUA_NATIVE_ENGINE === 'cua')
     && !!findTool('gnome-text-editor', process.env.PATH) && !!findTool('xterm', process.env.PATH) && existsSync(XPROBE),
-    {display: process.env.DISPLAY ?? null, engine: process.env.CUA_NATIVE_ENGINE ?? null, xprobe: existsSync(XPROBE)})) throw new Error('preconditions');
+    {display: process.env.DISPLAY ?? null, engine: process.env.CUA_NATIVE_ENGINE ?? null, mode, xprobe: existsSync(XPROBE)})) throw new Error('preconditions');
+  selectionSteps({mode, env: process.env, cli: CLI, step, report});
   const oracle = new Oracle();
   witness = await startWitness(XPROBE);
   const front = await openFront();

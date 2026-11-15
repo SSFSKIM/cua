@@ -191,6 +191,20 @@ export function inspectLinuxEngine({home, arch, pin}) {
   return {...facts, build: 'unknown'};
 }
 
+// The version of the engine placed in the cua home `home`, as far as its bytes bear it out (#171 M5, F5a), without
+// running it: the pin's when the file holds this machine's pinned asset (`pin`, this cua's by default), else
+// install.json's while that record's SHA-256 is the file's; null when there is no file, or no record of it (absent,
+// unreadable, or another file's: placeLinuxEngine renames the file before it writes the record, so an interrupted
+// downgrade leaves an older engine beside a newer record). Reads the file whole, about 2 MB.
+export function verifiedLinuxEngineVersion({home, arch = process.arch, pin = pinOrNone()}) {
+  const facts = inspectLinuxEngine({home, arch, pin});
+  return facts.exists && facts.build !== 'unknown' ? facts.version : null;
+}
+// This cua's pin, or none where it cannot be read: the record alone then names the version.
+function pinOrNone() {
+  try { return loadEnginePin(); } catch { return null; }
+}
+
 // ---- the local build ----
 
 const runCommand = (command, args, {cwd, passthrough = false} = {}) => {

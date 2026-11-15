@@ -17,6 +17,9 @@
 // the marker once. The pinned vendor engine still fails GTK3 text input (on some architectures it crashes the window).
 // Run with cua's engine in the X session's environment (DISPLAY, XAUTHORITY; the session bus is derived from XDG_RUNTIME_DIR):
 //   CUA_NATIVE_ENGINE=cua node scripts/accept/linux-native.mjs [--screenshot <file>]   JSON report; exit 0 when every step passes
+// or, to show that the default selects cua's engine (#171 M5; ./linux-selection.mjs), with nothing selecting one:
+//   node scripts/accept/linux-native.mjs --selection default   refused unless no CUA_NATIVE_ENGINE and no "engine" in
+//   engine.json; then cua doctor --json must say the default selected cua's engine. The report records the selection.
 import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync} from 'node:fs';
@@ -26,6 +29,7 @@ import {fileURLToPath} from 'node:url';
 import {defaultHome} from '../../src/runtime/layout.mjs';
 import {findTool} from '../../src/runtime/tools.mjs';
 import {pinnedApprovals} from './lib.mjs';
+import {selectionMode, selectionSteps} from './linux-selection.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
@@ -34,7 +38,8 @@ const home = process.env.CUA_HOME ?? defaultHome();
 const runEntries = () => (existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')).sort() : []);
 const steps = [];
 const step = (name, ok, detail) => { steps.push({name, status: ok ? 'PASS' : 'FAIL', ...(detail === undefined ? {} : {detail})}); return ok; };
-const report = {home, sandbox: process.env.CUA_SHIM_SANDBOX ?? '(unset: the platform default)', steps};
+const mode = selectionMode(process.argv.slice(2));
+const report = {home, sandbox: process.env.CUA_SHIM_SANDBOX ?? '(unset: the platform default)', selection: {mode}, steps};
 
 const marker = `cua-f2-${randomBytes(4).toString('hex')}`;
 const dir = mkdtempSync('/tmp/cua-linux-native-');
@@ -55,6 +60,7 @@ try {
   const gEditPath = findTool('gedit', process.env.PATH);
   if (!step('preconditions', process.platform === 'linux' && !!process.env.DISPLAY && !!gEditPath,
     {platform: process.platform, display: process.env.DISPLAY ?? null, gedit: gEditPath ?? null})) throw new Error('preconditions');
+  selectionSteps({mode, env: process.env, cli: CLI, step, report});
   writeFileSync(file, '');
   gedit = spawn(gEditPath, ['--standalone', file], {detached: true, stdio: 'ignore'});
   const runBefore = runEntries();

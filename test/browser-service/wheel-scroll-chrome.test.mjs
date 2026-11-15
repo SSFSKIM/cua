@@ -8,6 +8,8 @@ import {chromePath, realChrome} from './support/real-chrome.mjs';
 import {scrollUnconfirmed, wheelScroll} from '../../src/browser-service/wheel-scroll.mjs';
 
 const skip = chromePath() == null ? 'no Chrome on this machine' : false;
+// a bound per test, so a Chrome that stalls fails here with its reason and never holds the suite to the gate's limit
+const timeout = 60_000;
 const BOUND = 1000;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const rejection = async promise => { try { await promise; } catch (error) { return error; } assert.fail('expected a rejection'); };
@@ -51,7 +53,7 @@ async function setup(t) {
 }
 const timed = async work => { const started = Date.now(); const value = await work; return {value, ms: Date.now() - started}; };
 
-test('real Chrome: a page with room moves and the scroll answers ok; one with none answers ok at once', {skip}, async t => {
+test('real Chrome: a page with room moves and the scroll answers ok; one with none answers ok at once', {skip, timeout}, async t => {
   const {chrome, scroll} = await setup(t);
   assert.equal(await scroll('/tall', {scrollY: 400}), undefined);
   assert.ok(await chrome.evaluate('scrollY') > 0, 'the page moved before the answer');
@@ -59,13 +61,13 @@ test('real Chrome: a page with room moves and the scroll answers ok; one with no
   assert.ok(fits.ms < BOUND / 2, `no room, answered at once (${fits.ms} ms)`);
 });
 
-test('real Chrome: a page that handles the wheel itself gets the honest no-movement answer', {skip}, async t => {
+test('real Chrome: a page that handles the wheel itself gets the honest no-movement answer', {skip, timeout}, async t => {
   const {scroll} = await setup(t);
   const error = await rejection(scroll('/own', {scrollY: 400}));
   assert.deepEqual([error.code, error.message], ['timeout', scrollUnconfirmed(BOUND)]);
 });
 
-test('real Chrome: an inner scroller at its edge chains the wheel to the page, which is watched; overflow:hidden is no scroller', {skip}, async t => {
+test('real Chrome: an inner scroller at its edge chains the wheel to the page, which is watched; overflow:hidden is no scroller', {skip, timeout}, async t => {
   const {chrome, scroll} = await setup(t);
   await chrome.load('/chain');
   await chrome.evaluate('document.getElementById("inner").scrollTop = 1000');
@@ -76,7 +78,7 @@ test('real Chrome: an inner scroller at its edge chains the wheel to the page, w
   assert.ok(await chrome.evaluate('scrollY') > 0);
 });
 
-test('real Chrome: a same-origin frame\'s document is watched; a cross-origin frame cannot be read and answers as before', {skip}, async t => {
+test('real Chrome: a same-origin frame\'s document is watched; a cross-origin frame cannot be read and answers as before', {skip, timeout}, async t => {
   const {chrome, scroll} = await setup(t);
   assert.equal(await scroll('/frame-same', {scrollY: 300}), undefined);
   assert.ok(await chrome.evaluate('document.getElementById("f").contentWindow.scrollY') > 0);
@@ -84,7 +86,7 @@ test('real Chrome: a same-origin frame\'s document is watched; a cross-origin fr
 });
 
 // Review finding 1 (P1): a probe the page does not answer is not "unobservable"; nothing is sent, and the answer says so.
-test('real Chrome: a probe the busy page does not answer within the budget sends no wheel and answers retry-safe', {skip}, async t => {
+test('real Chrome: a probe the busy page does not answer within the budget sends no wheel and answers retry-safe', {skip, timeout}, async t => {
   const {chrome, wheels} = await setup(t);
   await chrome.load('/busy');
   await chrome.evaluate('setTimeout(() => { const end = Date.now() + 3000; while (Date.now() < end); }, 0), 1');
@@ -98,7 +100,7 @@ test('real Chrome: a probe the busy page does not answer within the budget sends
 });
 
 // Review finding 2 (P2): the scroller is the element itself, not a child-index path a new sibling can take over.
-test('real Chrome: a wheel handler that inserts a scrolled sibling before the scroller does not stand in for it', {skip}, async t => {
+test('real Chrome: a wheel handler that inserts a scrolled sibling before the scroller does not stand in for it', {skip, timeout}, async t => {
   const {chrome, scroll} = await setup(t);
   const error = await rejection(scroll('/swap', {scrollY: 300}));
   assert.deepEqual([error.code, error.message], ['timeout', scrollUnconfirmed(BOUND)]);
@@ -106,7 +108,7 @@ test('real Chrome: a wheel handler that inserts a scrolled sibling before the sc
 });
 
 // Review finding 3 (P2): an open shadow root's scroller is found and watched.
-test('real Chrome: a scroller inside an open shadow root is the one watched', {skip}, async t => {
+test('real Chrome: a scroller inside an open shadow root is the one watched', {skip, timeout}, async t => {
   const {chrome, scroll} = await setup(t);
   assert.equal(await scroll('/shadow', {scrollY: 300}), undefined);
   assert.ok(await chrome.evaluate('inner.scrollTop') > 0);
@@ -115,7 +117,7 @@ test('real Chrome: a scroller inside an open shadow root is the one watched', {s
 });
 
 // Review finding 4 (P2): the room follows the scroller's direction; an RTL scroller runs from 0 at its right edge down.
-test('real Chrome: horizontal room in an RTL and an LTR scroller, both directions', {skip}, async t => {
+test('real Chrome: horizontal room in an RTL and an LTR scroller, both directions', {skip, timeout}, async t => {
   const {chrome, scroll} = await setup(t);
   for (const [path, toEdge, inward, sign] of [['/rtl', 100, -100, -1], ['/ltr', -100, 100, 1]]) {
     const edge = await timed(scroll(path, {scrollX: toEdge}));
@@ -126,7 +128,7 @@ test('real Chrome: horizontal room in an RTL and an LTR scroller, both direction
 });
 
 // Review finding 5 (P2): the viewport's own overflow decides whether the document scrolls at all.
-test('real Chrome: a scroll-locked page (overflow hidden on html, or on body) has no room and answers ok at once', {skip}, async t => {
+test('real Chrome: a scroll-locked page (overflow hidden on html, or on body) has no room and answers ok at once', {skip, timeout}, async t => {
   const {scroll} = await setup(t);
   for (const path of ['/locked', '/locked-body']) {
     const locked = await timed(scroll(path, {scrollY: 400}));

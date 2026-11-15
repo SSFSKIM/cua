@@ -30,6 +30,9 @@ function setup({frames = {}, nodes = {}, points = {}, quads = {}} = {}) {
       if (method === 'DOM.getFrameOwner') return {backendNodeId: `owner-${params.frameId}`};
       if (method === 'DOM.getContentQuads') return {quads: [quads[params.backendNodeId]]};
       if (method === 'Page.getLayoutMetrics') return {cssVisualViewport: {clientWidth: 800, clientHeight: 600}};
+      // the wheel scroll's probe (wheel-scroll.mjs) finds nothing to wait for here: its protocol is wheel-scroll.test.mjs's
+      if (method === 'Runtime.evaluate' && params?.expression?.includes('locateScroller')) return {result: {type: 'object', objectId: 'probe'}};
+      if (method === 'Runtime.callFunctionOn' && params?.objectId === 'probe') return {result: {type: 'object', value: {observable: true, room: false}}};
       if (method === 'Runtime.evaluate') return {result: {value: {ok: true, data: {}}}};
       return {};
     },

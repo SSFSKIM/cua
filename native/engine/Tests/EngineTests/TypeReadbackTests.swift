@@ -25,6 +25,8 @@ private final class FakeField {
   /// or none at all.
   var caretAfterTyping: NSRange?
   var caretUnreadableAfterTyping = false
+  /// What a Return adds at the very end of the value, wherever it was typed (a placeholder line far from the caret).
+  var lineAtEndAfterReturn = ""
   private(set) var delivered = false
   /// The selected range a read answers.
   var reportedRange: NSRange? {
@@ -55,6 +57,7 @@ private final class FakeField {
     if typed == "\r" && !returnInserts { return }
     let inserted = transform(typed == "\r" ? "\n" : typed)
     current = (current as NSString).replacingCharacters(in: selection, with: inserted)
+    if typed == "\r" { current += lineAtEndAfterReturn }
     shown = value
     value = current
     range = NSRange(location: selection.location + (inserted as NSString).length, length: 0)
@@ -798,7 +801,22 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(type("head\n", into: FakeApp(middle)).1)["reason"] as? String, "valueMismatch")
     let extra = FakeField(value: "", range: NSRange(location: 0, length: 0))
     extra.transform = { $0 == "e" ? "e\n" : $0 }
-    XCTAssertEqual(record(type("line", into: FakeApp(extra)).1)["reason"] as? String, "valueMismatch")
+    extra.caretAfterTyping = NSRange(location: 4, length: 0)  // the caret where a placeholder line's start would be
+    XCTAssertEqual(record(type("line", into: FakeApp(extra)).1)["reason"] as? String, "valueMismatch", "no ending Return typed")
+    let midField = FakeField(value: "ab", range: NSRange(location: 0, length: 1))
+    midField.lineAtEndAfterReturn = "\n"  // reads expected + "\n", the field's own text after the insertion
+    midField.caretAfterTyping = NSRange(location: ("x\nb" as NSString).length, length: 0)
+    XCTAssertEqual(record(type("x\n", into: FakeApp(midField)).1)["reason"] as? String, "valueMismatch", "the field's text follows")
+
+    // A stale read before the caret never confirms the placeholder line: the read after it shows what the field holds.
+    let stale = FakeField(value: "\n\n", range: NSRange(location: 0, length: 2))  // the old value is expected + "\n"
+    stale.transform = { _ in "Y" }
+    stale.lagReads = 1
+    stale.caretAfterTyping = NSRange(location: 1, length: 0)
+    let (staleError, staleMeta) = type("\n", into: FakeApp(stale))
+    XCTAssertEqual(stale.value, "Y")
+    XCTAssertEqual(staleError?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(staleMeta)["reason"] as? String, "valueMismatch")
     XCTAssertFalse(readbackPlaceholderLine(returnIsText: false, typedEndsInReturn: true, suffixEmpty: true))
 
     // A secret's ending Return: accepted on the caret every concealed confirmation reads anyway, a doubled one refused.

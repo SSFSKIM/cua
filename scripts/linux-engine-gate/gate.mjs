@@ -50,13 +50,14 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PINNED_DEVELOPMENT, REPO_ROOT, candidateLine, gateLabel, isPinnedRule, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
-import { leftoverCheck, leftoverLines, scratchDirs } from '../linux-engine-diff/leftovers.mjs';
+import { leftoverCheck, leftoverLines, scratchDirs, startCheck, startRefusalText } from '../linux-engine-diff/leftovers.mjs';
+import { inTest } from '../linux-engine-diff/hermetic.mjs';
 import { pinnedEngine } from '../linux-engine-diff/pinned-home.mjs';
 import { linuxEnginePath } from '../../src/runtime/linux-engine.mjs';
 import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
@@ -104,6 +105,7 @@ const USAGE = `usage:
   gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
   gate.mjs check --pinned <home>
   gate.mjs leftovers
+  gate.mjs summary --out <dir>
   options: [--vendor <bin>] [--newest <bin>] [--vendor-js <@oai/sky dir>] [--holder <name>]
   --pinned <home>: the CUA_HOME of a run home whose cua install --engine placed the pinned engine (acceptance on the pinned release)`;
 
@@ -135,10 +137,15 @@ export function parseGateArgs(argv, { arch = process.arch, env = process.env } =
       a.step = value();
     } else if (!a.mode && flag === 'check') a.mode = 'check';
     else if (!a.mode && flag === 'leftovers') a.mode = 'leftovers';
+    else if (!a.mode && flag === 'summary') a.mode = 'summary';
     else throw new GateRefused(`unknown argument ${flag}\n${USAGE}`);
   }
   if (!a.mode) throw new GateRefused(USAGE);
   if (a.mode === 'leftovers') return a;
+  if (a.mode === 'summary') {
+    if (!given.out) throw new GateRefused(`summary needs --out <dir>\n${USAGE}`);
+    return { ...a, out: given.out };
+  }
   if (given.pinned && given.candidate) throw new GateRefused('give --pinned or --candidate, not both: acceptance takes the engine a run home\'s cua install placed');
   Object.assign(a, defaultsFor(arch, given.pinned), { device: env.DEVICE || DEVICES_BY_ARCH[arch] || null }, given);
   if (a.pinned) {
@@ -234,6 +241,8 @@ function writeRecord(dir, record) {
     ...(r.unproved ? [`- unproved (declared gaps, not passes): ${r.unproved.length || 'none'}`, ...r.unproved.map((l) => `  - ${l}`)] : []),
     ...(r.unjudged ? [`- unjudged (a pilot takes no top-up; not passes): ${r.unjudged.length || 'none'}`, ...r.unjudged.map((l) => `  - ${l}`)] : []),
     ...(r.end_check ? endCheckText(r.end_check) : []),
+    ...(r.unclean ? (r.unclean.length ? [`- unclean end (the run's own side, not a verdict failure): ${r.unclean.length}`, ...r.unclean.map((l) => `  - ${l}`)] : ["- end: clean (nothing left on the run's own side)"]) : []),
+    ...(r.cleared?.length ? [`- the start check cleared what earlier runs of the harness left: ${r.cleared.map((c) => c.dir).join(', ')}`] : []),
     '',
   ];
   writeFileSync(join(dir, 'README.md'), md.join('\n'));
@@ -273,7 +282,7 @@ function labelledLog(path, label) {
  * step directory that exists, or (a gate) from an unclean checkout. Answers the step's exit code: the harness's, or 1
  * when its private display's watchdog was not clean.
  */
-export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null, leftovers = {} } = {}) {
+export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null, leftovers = inTest() ? { roots: [] } : {}, start: check = startCheck } = {}) {
   const step = stepNamed(a.step);
   if (step.display === ':0') throw new GateRefused(`${step.name} runs on :0, in the declared sitting under task 50's guards: launch it with \`gate.mjs print ${step.name} ...\`'s command; this runner never runs on the person's display`);
   if (held()) throw new GateRefused(`${a.hold} exists: the host is held for sittings, and nothing starts`);
@@ -284,9 +293,14 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   const checkout = checkCheckout({ root, out: a.out, gate: a.gate, git });
   const dir = stepDir(step, a);
   if (existsSync(dir)) throw new GateRefused(`${dir} exists: each execution of a step writes a directory of its own`);
+  // what earlier runs left on their own side (ruling 730): cleared when provably the harness's own and done, else the
+  // step refuses to start, naming it
+  const start = check({ ...leftovers });
+  if (start.refused.length) throw new GateRefused(startRefusalText(start.refused));
   mkdirSync(dir, { recursive: true });
   const { label } = stepLabel(a);
   const record = stepRecord(step, a, { root, checkout, command: launchCommand(step, a, root) });
+  if (start.cleared.length) record.cleared = start.cleared;
   // the harness's out directory, before any script writes in it (services.mjs's Desktop logs there at its start)
   mkdirSync(join(dir, 'run'), { recursive: true });
   // on the pinned release CUA_HOME is the run home, so nothing a step starts resolves the person's default cua home; a
@@ -367,9 +381,61 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   if (existsSync(unproved)) record.unproved = readFileSync(unproved, 'utf8').split('\n').filter(Boolean);
   // what a pilot left unjudged (ruling 722), never a pass: the harness's end or summary row, or R2's list
   if (a.pilot) record.unjudged = pilotUnjudged(dir);
+  // the step's unclean end (ruling 730, part (a)): what its run recorded on its own side, and what the step left
+  record.unclean = stepUnclean(dir, record.end_check);
   writeRecord(dir, record);
   appendFileSync(join(dir, 'stdout.log'), `${label}: ${step.name} exit ${exit}\n`);
   return exit;
+}
+
+/** A step's harness rows (`run/results.jsonl`), each that reads. */
+function harnessRows(dir) {
+  const results = join(dir, 'run', 'results.jsonl');
+  if (!existsSync(results)) return [];
+  return readFileSync(results, 'utf8').split('\n').filter(Boolean).flatMap((l) => {
+    try {
+      return [JSON.parse(l)];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/**
+ * A step's unclean end (ruling 730, part (a)), never a verdict failure: what its run's end recorded on its own side
+ * (the end or summary row's `desktop.unclean`), each scratch directory the step left (the end check's `left_by_step`) and
+ * each session-bus process of one.
+ */
+export function stepUnclean(dir, endCheck) {
+  const own = harnessRows(dir).filter((r) => ['end', 'experiment-summary'].includes(r.kind)).flatMap((r) => r.desktop?.unclean ?? []);
+  const left = endCheck?.left_by_step ?? [];
+  const buses = (endCheck?.buses ?? []).filter((b) => left.some((d) => d.dir === b.dir));
+  return [...own, ...left.map((d) => `its scratch left behind: ${d.dir}`), ...buses.map((b) => `a session bus of it still runs: pid ${b.pid} ${b.program}`)];
+}
+
+/**
+ * The gate's summary of an out root (`gate.mjs summary --out <dir>`): every step's label, exit, unclean end and, for a
+ * :0 step, its sitting's all-clear (sitting.mjs), so T5's and T7's READMEs list every unclean end. Markdown.
+ */
+export function gateSummary(out) {
+  const order = (name) => {
+    const i = STEPS.findIndex((s) => s.name === name);
+    return i < 0 ? STEPS.length : i;
+  };
+  const dirs = readdirSync(out).filter((d) => existsSync(join(out, d, 'step.json'))).sort((x, y) => order(x.split('.')[0]) - order(y.split('.')[0]) || x.localeCompare(y));
+  const lines = ['| step | label | exit | unclean end | :0 all-clear |', '|---|---|---:|---|---|'];
+  let unclean = 0;
+  for (const d of dirs) {
+    const r = JSON.parse(readFileSync(join(out, d, 'step.json'), 'utf8'));
+    const clear = existsSync(join(out, d, 'all-clear.json')) ? JSON.parse(readFileSync(join(out, d, 'all-clear.json'), 'utf8')) : null;
+    const left = [...(r.unclean ?? []), ...(clear?.run ?? [])];
+    if (left.length) unclean += 1;
+    const exit = r.exit ?? clear?.exit ?? '–';
+    const zero = clear ? (clear.clear ? 'clear' : `**not clear**: ${clear.person.join('; ')}`) : '–';
+    lines.push(`| ${r.step} | ${r.label}${r.pilot ? ' (pilot)' : ''} | ${exit} | ${left.length ? `**${left.length}**: ${left.join('; ')}` : 'clean'} | ${zero} |`);
+  }
+  lines.push('', `Unclean ends: ${unclean} of ${dirs.length} steps (the run's own side, never a verdict failure; the next run's start check clears or refuses each).`);
+  return lines.join('\n');
 }
 
 /**
@@ -442,6 +508,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const a = parseGateArgs(process.argv.slice(2));
     if (a.mode === 'list') process.stdout.write(`${listText(a)}\n`);
+    else if (a.mode === 'summary') process.stdout.write(`${gateSummary(a.out)}\n`);
     else if (a.mode === 'leftovers') {
       // the end check alone (a :0 sitting's all-clear): exit 0 when clear, 1 with findings
       const check = leftoverCheck();

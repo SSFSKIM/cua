@@ -47,7 +47,7 @@ test('the first cleanup step throws: the session bus is still stopped and the ru
   assert.deepEqual(desktop.cleanupFailures, ["closing the run's windows: the windows could not be closed: xdotool: BadWindow"]);
 });
 
-test("every failing step is reported, together, and fails the run's ending", async () => {
+test("every failing step is reported, together, and marks the run's end unclean, never a verdict failure (ruling 730)", async () => {
   const { desktop, stopped } = desktopWithBus();
   desktop.close = async () => {
     throw new Error('BadWindow');
@@ -60,10 +60,11 @@ test("every failing step is reported, together, and fails the run's ending", asy
   assert.deepEqual(stopped, ['session']);
   assert.equal(existsSync(desktop.dir), false);
   assert.deepEqual(desktop.cleanupFailures, ["closing the run's windows: BadWindow", "stopping the run's Chrome: the profile is locked"]);
-  assert.deepEqual(desktop.reported, ["the run's cleanup: 2 steps failed, every other step ran: closing the run's windows: BadWindow; stopping the run's Chrome: the profile is locked\n"], 'reported together, once');
+  assert.deepEqual(desktop.reported, ["the run's end is unclean (its own side, not a verdict failure): a cleanup step threw: closing the run's windows: BadWindow; a cleanup step threw: stopping the run's Chrome: the profile is locked\n"], 'reported together, once');
   const { record, foreign } = desktopEnding(desktop.ending);
   assert.deepEqual(record.cleanup_failures, desktop.cleanupFailures);
-  assert.deepEqual(foreign.filter((f) => /cleanup/.test(f)), ["the run's cleanup: closing the run's windows: BadWindow", "the run's cleanup: stopping the run's Chrome: the profile is locked"], 'each fails the run');
+  assert.deepEqual(record.unclean, ["a cleanup step threw: closing the run's windows: BadWindow", "a cleanup step threw: stopping the run's Chrome: the profile is locked"]);
+  assert.deepEqual(foreign, [], 'the run\'s own side: unclean, not a failure');
   // a cleanup with no failure fails nothing
   const clean = desktopWithBus();
   clean.desktop.close = async () => {};
@@ -73,6 +74,7 @@ test("every failing step is reported, together, and fails the run's ending", asy
   assert.deepEqual(clean.desktop.cleanupFailures, []);
   assert.deepEqual(clean.desktop.reported, [], 'nothing to report');
   assert.deepEqual(desktopEnding(clean.desktop.ending).foreign, []);
+  assert.equal(desktopEnding(clean.desktop.ending).record.unclean, undefined);
 });
 
 /** A child process holding a Desktop with a bus of its own, its scratch in `tmp`; `then` is the code that ends it. */

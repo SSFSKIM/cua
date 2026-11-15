@@ -34,6 +34,9 @@ export function desktopLine(record) {
   const line = `desktop: started with ${activeText(record.active_start)}, ended with ${activeText(record.active_end)}, neither acted on; holder ${record.holder ? windowId(record.holder) : 'none'}; the harness's own trace: ${trace.requests} requests, ${changes}, ${audit}`;
   const parts = [line, ...(record.record ? [recordText(record.record)] : [])];
   if (record.skipped?.length) parts.push(`left undone, the window not the run's then: ${record.skipped.map((s) => `${s.what} on ${s.window}`).join('; ')}`);
+  // what the run left on its own side (ruling 730): its end unclean, not a verdict failure
+  if (record.unclean?.length) parts.push(`**its end unclean** (its own side, not a verdict failure): ${record.unclean.join('; ')}`);
+  if (record.leftovers && !record.leftovers.clear) parts.push(`the end check's findings (other runs', left alone): ${record.leftovers.dirs.length} scratch, ${record.leftovers.buses.length} bus processes`);
   return parts.join('; ');
 }
 

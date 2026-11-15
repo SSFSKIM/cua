@@ -30,7 +30,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { closeSync, createReadStream, createWriteStream, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, createReadStream, createWriteStream, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import { tmpdir } from 'node:os';
@@ -48,9 +48,9 @@ import { geditTitle } from './gedit-title.mjs';
 import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
 import { cleanupOnFatal, cleanupOnStop } from './stop.mjs';
-import { signalIfSame } from './pid-identity.mjs';
+import { processIdentity, signalIfSame } from './pid-identity.mjs';
 import { inTest } from './hermetic.mjs';
-import { SCRATCH_PREFIX, leftoverCheck, leftoverLines } from './leftovers.mjs';
+import { SCRATCH_PREFIX, busesIn, leftoverCheck, leftoverLines, startCheck, startRefusalText, writeMarker } from './leftovers.mjs';
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { RECORD_DECLINED, RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
 
@@ -177,8 +177,6 @@ export function desktopEnding(ending) {
   // a run whose watchdog did not end cleanly (stalled, lost before the run ended, failed, or none) ran unwatched
   const { watchdog } = ending;
   if (!watchdog?.clean) foreign.push(`the run's watchdog: ${watchdog ? watchdog.reason : 'there was none'}, so the display went unwatched`);
-  // a cleanup step that failed (`closeEverything`, which tried every step): what it left is unknown
-  for (const f of ending.cleanup ?? []) foreign.push(`the run's cleanup: ${f}`);
   return {
     record: {
       active_start: ending.start,
@@ -190,8 +188,10 @@ export function desktopEnding(ending) {
       // the run's Chrome as its end stopped it (pids it spawned: terminated, killed, still running), and its session bus
       ...(ending.chrome ? { chrome: { spawned: ending.chrome.spawned.length, terminated: ending.chrome.terminated, killed: ending.chrome.killed, left: ending.chrome.left } } : {}),
       ...(ending.session ? { session: ending.session } : {}),
-      // the cleanup's failed steps, each also a failure above; every other step ran (ruling 721)
+      // the cleanup's failed steps (every other step ran, ruling 721), and what the run left on its own side: an
+      // unclean end, never a verdict failure (ruling 730, part (a)); the next run's start check clears it or refuses
       ...(ending.cleanup?.length ? { cleanup_failures: ending.cleanup } : {}),
+      ...(ending.unclean?.length ? { unclean: ending.unclean } : {}),
       // the end check's findings (leftovers.mjs): other runs' scratch and buses, left alone, failing nothing
       ...(ending.leftovers ? { leftovers: ending.leftovers } : {}),
       record: record.skipped ? { skipped: record.skipped } : { clean: record.clean, requests: record.requests, mutating: record.mutating, foreign: record.foreign.slice(0, 10).map(foreignLine), ...(record.foreign.length ? { first_foreign: record.foreign.slice(0, 5).map(({ client, what, window, text }) => ({ client, what, window, request: text })) } : {}), unplaced: record.unplaced ?? 0, unattributed: record.unattributed ?? null, ...(record.error ? { error: record.error } : {}) },
@@ -280,6 +280,8 @@ export class Desktop {
       unhookSignals();
       unhookFatal();
     };
+    // the run's mark on its scratch (leftovers.mjs, ruling 730): what the next run's start check may remove it by
+    writeMarker(this.dir, { run, nonce: this.nonce, pid: process.pid, pid_start: processIdentity(process.pid)?.start ?? 'unknown', created: new Date().toISOString() });
   }
 
   /** The harness's own reader (one cua-engine process), started at its first use. */
@@ -328,6 +330,11 @@ export class Desktop {
     };
     // a signal that landed just before the run began (in its caller's synchronous code): nothing is acquired
     await unlessStopped();
+    // what earlier runs left on their own side (ruling 730): cleared when provably the harness's own and done, else the
+    // run refuses to start, naming it; nothing of this run's is acquired yet
+    const check = startCheck({ own: [this.dir], ...this.leftoverScope() });
+    this.cleared = check.cleared;
+    if (check.refused.length) throw new Error(startRefusalText(check.refused));
     this.unwatchOperations = watchOperations(({ engine, window, start, end }) => {
       if (engine !== this.ownReader) this.operations.push({ window, start, end });
     });
@@ -512,6 +519,26 @@ export class Desktop {
   liveOwned(id) {
     const scene = this.windows.find((w) => w.id === id);
     return Boolean(scene) && this.stillOurs(scene);
+  }
+
+  /** Where the run's start and end checks read: its caller's (`leftoverOptions`), none in a test process (hermetic.mjs). */
+  leftoverScope() {
+    return this.leftoverOptions ?? (inTest() ? { roots: [] } : {});
+  }
+
+  /**
+   * What the run left on its own side once its cleanup ran (ruling 730, part (a)): each cleanup step that threw, its
+   * Chrome's processes still running, its own session bus still running (a bus process naming its scratch), and its
+   * scratch directory still there.
+   */
+  uncleanEnd(failures) {
+    const unclean = failures.map((f) => `a cleanup step threw: ${f}`);
+    const left = this.chromeEnding?.left;
+    const chromeLeft = Array.isArray(left) ? left.length : Number(left) || 0;
+    if (chromeLeft) unclean.push(`its Chrome left ${chromeLeft} process${chromeLeft === 1 ? '' : 'es'} running`);
+    for (const b of busesIn({ only: [this.dir], proc: this.leftoverScope().proc })) unclean.push(`its session bus still runs: pid ${b.pid} ${b.program} (its ${b.by} in ${b.dir})`);
+    if (existsSync(this.dir)) unclean.push(`its scratch directory ${this.dir} is still there`);
+    return unclean;
   }
 
   /** A line the run's end reports beside its records (the cleanup's failures, the end check's findings): stderr. */
@@ -1220,14 +1247,20 @@ export class Desktop {
     // after this run's own is gone, whatever ended the run
     await step('the end check of what runs left', () => {
       // a test process reads no real scratch root unless its test names one (hermetic.mjs), as it reaches no real display
-      this.leftovers = leftoverCheck({ own: [this.dir], ...(this.leftoverOptions ?? (inTest() ? { roots: [] } : {})) });
+      this.leftovers = leftoverCheck({ own: [this.dir], ...this.leftoverScope() });
       const lines = leftoverLines(this.leftovers);
       if (lines.length) this.report(`the end check (findings, left alone): ${lines.join('; ')}\n`);
     });
-    // reported together, beside the run's end (`desktopEnding` fails the run with each)
+    // reported together, beside the run's end
     this.cleanupFailures = failures;
-    if (this.ending) Object.assign(this.ending, { cleanup: failures, leftovers: this.leftovers ?? null });
-    if (failures.length) this.report(`the run's cleanup: ${failures.length} step${failures.length === 1 ? '' : 's'} failed, every other step ran: ${failures.join('; ')}\n`);
+    // what the run left on its own side (ruling 730, part (a)): its end is unclean, never a verdict failure
+    try {
+      this.unclean = this.uncleanEnd(failures);
+    } catch (error) {
+      this.unclean = [...failures.map((f) => `a cleanup step threw: ${f}`), `its end could not be read: ${error.message}`];
+    }
+    if (this.unclean.length) this.report(`the run's end is unclean (its own side, not a verdict failure): ${this.unclean.join('; ')}\n`);
+    if (this.ending) Object.assign(this.ending, { cleanup: failures, unclean: this.unclean, leftovers: this.leftovers ?? null });
     // only once everything is closed: a signal meanwhile still waits for this cleanup
     this.unhookStop();
   }

@@ -6,9 +6,11 @@
 // another run may own them. It runs at every run's end (scenes.mjs `closeEverything`, whatever ended the run) and after
 // every gate step (gate.mjs, whatever ended the step's process), and on its own (`gate.mjs leftovers`).
 
-import { readFileSync, readdirSync, readlinkSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+
+import { processIdentity } from './pid-identity.mjs';
 
 /** The run's scratch directory's name, before mkdtemp's six characters: short, since gedit's titles show the path. */
 export const SCRATCH_PREFIX = 'cua171-run-';
@@ -71,9 +73,9 @@ const scratchPathsIn = (text) => [...text.matchAll(SCRATCH_PATH)].map((m) => m[1
  * (a bus address in its environment naming one) lies in a `cua171-run-*` directory, found by the path they name,
  * whether or not the directory still exists (review finding 2: a run's cleanup removes its scratch even when stopping
  * its bus failed): `{pid, program, dir, by: 'config' | 'socket', dir_exists}`, by pid; none of the directories in
- * `own`. `proc` is /proc, or a test's own.
+ * `own`, or, with `only`, of those directories alone. `proc` is /proc, or a test's own.
  */
-export function busesIn({ own = [], proc = '/proc' } = {}) {
+export function busesIn({ own = [], only = null, proc = '/proc' } = {}) {
   let pids;
   try {
     pids = readdirSync(proc).filter((x) => /^\d+$/.test(x)).map(Number).sort((a, b) => a - b);
@@ -88,8 +90,10 @@ export function busesIn({ own = [], proc = '/proc' } = {}) {
     if (!BUS_PROGRAMS.includes(program)) continue;
     const argv = (read(join(at, 'cmdline')) ?? '').split('\0').filter(Boolean);
     const env = (read(join(at, 'environ')) ?? '').split('\0').filter((kv) => BUS_VARS.some((v) => kv.startsWith(`${v}=`)));
-    const config = argv.flatMap(scratchPathsIn).find((d) => !mine.has(d));
-    const socket = env.flatMap(scratchPathsIn).find((d) => !mine.has(d));
+    // `only`: the buses of those directories alone (a run's own, at its end); else every directory's but `own`
+    const wanted = (d) => (only ? only.includes(d) : !mine.has(d));
+    const config = argv.flatMap(scratchPathsIn).find(wanted);
+    const socket = env.flatMap(scratchPathsIn).find(wanted);
     const dir = config ?? socket;
     if (!dir) continue;
     let exists = false;
@@ -126,3 +130,93 @@ export function leftoverLines(check) {
   }
   return lines;
 }
+
+/**
+ * The marker a run's Desktop writes in its scratch at once (scenes.mjs; ruling 730): the run, its nonce, the process that
+ * made the directory (its pid and start time, pid-identity.mjs) and when. The start check removes a leftover only by it.
+ */
+export const MARKER = 'cua171-run.json';
+
+/** Writes the marker into a run's own scratch. */
+export function writeMarker(dir, info) {
+  writeFileSync(join(dir, MARKER), `${JSON.stringify({ schema: 1, ...info })}\n`, { mode: 0o600 });
+}
+
+/** A scratch's marker, or null when it has none that reads. */
+export function readMarker(dir) {
+  try {
+    const m = JSON.parse(readFileSync(join(dir, MARKER), 'utf8'));
+    return Number.isSafeInteger(m?.pid) && typeof m.pid_start === 'string' && typeof m.created === 'string' ? m : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Every live process (but this one) whose argv or environment names `dir` or a path in it: `{pid, program}`. */
+export function processesNaming(dir, { proc = '/proc' } = {}) {
+  let pids;
+  try {
+    pids = readdirSync(proc).filter((x) => /^\d+$/.test(x)).map(Number).sort((a, b) => a - b);
+  } catch {
+    return [];
+  }
+  const names = (text) => text.split('\0').some((part) => part === dir || part.includes(`${dir}/`) || part.endsWith(`=${dir}`));
+  return pids
+    .filter((pid) => pid !== process.pid)
+    .filter((pid) => names(read(join(proc, String(pid), 'cmdline')) ?? '') || names(read(join(proc, String(pid), 'environ')) ?? ''))
+    .map((pid) => ({ pid, program: programOf(join(proc, String(pid))) }));
+}
+
+/**
+ * The next run's start check (ruling 730, part (a)): every `cua171-run-*` directory under `roots` but the run's own
+ * (`own`), and every session bus of a scratch, cleared or refused. A directory is removed only when it is provably the
+ * harness's own and done: its marker (`MARKER`) reads, it is this user's with mode 700, the run that made it is gone
+ * (no live process has the marker's pid and start time: `identity`), the marker's time is before now, and no live
+ * process names it. Anything else is refused with the reason and left as it is, and so is a bus whose directory is
+ * gone (the check ends no process). Answers `{cleared: [{dir, run}], refused: [{dir, reason}]}`; a run starts only when
+ * nothing is refused.
+ */
+export function startCheck({ own = [], roots = scratchRoots(), proc = '/proc', identity = (pid) => processIdentity(pid, { proc }), uid = process.getuid?.(), now = () => Date.now(), remove = (dir) => rmSync(dir, { recursive: true, force: true }) } = {}) {
+  const mine = new Set(own);
+  const cleared = [];
+  const refused = [];
+  for (const { dir } of scratchDirs(roots).filter((d) => !mine.has(d.dir))) {
+    const marker = readMarker(dir);
+    let st = null;
+    try {
+      st = statSync(dir);
+    } catch {
+      continue;
+    }
+    const naming = processesNaming(dir, { proc });
+    const why = !marker
+      ? "no marker of the harness's: it cannot be proved a run's own"
+      : uid !== undefined && st.uid !== uid
+        ? `owned by uid ${st.uid}, not this user's`
+        : (st.mode & 0o777) !== 0o700
+          ? `mode ${(st.mode & 0o777).toString(8)}, not 700`
+          : identity(marker.pid)?.start === marker.pid_start
+            ? `the run that made it is still running (pid ${marker.pid})`
+            : !(Date.parse(marker.created) <= now())
+              ? `its marker's time ${marker.created} is not before now`
+              : naming.length
+                ? `a live process names it: ${naming.map((p) => `pid ${p.pid} ${p.program}`).join(', ')}`
+                : null;
+    if (why) {
+      refused.push({ dir, reason: why });
+      continue;
+    }
+    remove(dir);
+    cleared.push({ dir, run: marker.run ?? null });
+  }
+  // a bus whose scratch is gone: nothing to remove, and no process is the check's to end (an existing one's bus is a
+  // live process naming it, refused above)
+  for (const b of busesIn({ own, proc })) {
+    if (b.dir_exists) continue;
+    refused.push({ dir: b.dir, reason: `its directory is gone and a process of it still runs: pid ${b.pid} ${b.program}` });
+  }
+  return { cleared, refused };
+}
+
+/** A start check's refusal in one line. */
+export const startRefusalText = (refused) => `the start check refuses to run: ${refused.map((r) => `${r.dir}: ${r.reason}`).join('; ')}`;

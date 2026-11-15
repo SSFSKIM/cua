@@ -292,7 +292,7 @@ test('a pinned step passes the home\'s engine with --pinned to every harness ste
 test('the facade suites on the pinned release: one runner, the installed engine, no ENGINE_BIN, the device named', () => {
   assert.equal(stepScript(stepNamed('R1')), SUITES_SCRIPT, 'one runner, whatever the engine: no step runs M4\'s facade.sh');
   const env = suiteEnv({ candidate: ACC_ENGINE, dir: '/o/R3.pinned-release', gate: 'pinned', logs: '/tmp/l', pinned: true, device: 'cua-171' });
-  assert.deepEqual(env, { ENGINE: 'installed', OUT: '/o/R3.pinned-release/run', LOGS: '/tmp/l', LABEL: 'counted', DEVICE: 'cua-171' });
+  assert.deepEqual(env, { ENGINE: 'installed', OUT: '/o/R3.pinned-release/run', LOGS: '/tmp/l', LABEL: 'counted', PINNED_RULE: 'enforce', DEVICE: 'cua-171' });
   assert.equal(suiteEnv({ candidate: ACC_ENGINE, dir: '/d', gate: false, logs: '/tmp/l', pinned: true, device: 'cua-171' }).LABEL, 'pilot');
 });
 
@@ -416,7 +416,9 @@ test('--pinned with --pilot is a development run on the pinned release: the rule
     assert.equal(parsed.run, `m5-pinned-dev-${s.name}-pilot`);
   }
   const env = suiteEnv({ candidate: ACC_ENGINE, dir: '/d', gate: 'pinned-dev', logs: '/tmp/l', pinned: true, device: 'cua-171' });
-  assert.deepEqual([env.ENGINE, env.LABEL, env.ENGINE_BIN], ['installed', 'pilot', undefined], 'never counted');
+  assert.deepEqual([env.ENGINE, env.LABEL, env.ENGINE_BIN, env.PINNED_RULE], ['installed', 'pilot', undefined, 'enforce'], 'never counted, the rule enforced in its own homes');
+  assert.equal(suiteEnv({ candidate: ACC_ENGINE, dir: '/d', gate: 'pinned', logs: '/tmp/l', pinned: true, device: 'cua-171' }).PINNED_RULE, 'enforce');
+  assert.equal(suiteEnv({ candidate: ACC_ENGINE, dir: '/d', gate: false, logs: '/tmp/l', pinned: true, device: 'cua-171' }).PINNED_RULE, undefined, '--pinned --dev: unchecked');
   assert.match(listText(a, ROOT), /^The gate: .*development run on the pinned release, not acceptance, never counted, pilot \(1\)/);
 });
 

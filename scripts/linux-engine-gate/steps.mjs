@@ -24,7 +24,7 @@
 // the settle's observations, the paste and exit settle, the accept signal's false releases and the late takes, T17's
 // Electron cells, and GTK 4's covered capture.
 
-import { DEVELOPMENT_ON_PINNED, PINNED_DEVELOPMENT, PINNED_RELEASE, isCounted } from '../linux-engine-diff/candidate.mjs';
+import { DEVELOPMENT_ON_PINNED, PINNED_DEVELOPMENT, PINNED_RELEASE, isCounted, isPinnedRule } from '../linux-engine-diff/candidate.mjs';
 import { SCENE_OPS } from '../linux-engine-diff/ops.mjs';
 
 /** The M3 gate's scenes (`m3-gate-musl`), then M4's, in the frozen order. */
@@ -216,6 +216,9 @@ export const suiteEnv = ({ candidate, dir, gate, logs, pinned = false, device })
   OUT: `${dir}/run`,
   LOGS: logs,
   LABEL: isCounted(gate) ? 'counted' : 'pilot',
+  // the pinned rule enforced in the suites' own homes on both pinned modes, apart from whether the run counts (review
+  // finding 1): a development run on the pinned release refuses a home the rule refuses, as acceptance does
+  ...(isPinnedRule(gate) ? { PINNED_RULE: 'enforce' } : {}),
   DEVICE: device,
 });
 

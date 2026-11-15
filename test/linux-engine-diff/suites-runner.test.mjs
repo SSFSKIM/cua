@@ -34,7 +34,7 @@ function part(name, { engine = 'installed', engineBin, env = {}, counted = false
     chmodSync(join(bin, 'git'), 0o755);
     env = { LABEL: 'counted', ...env };
   }
-  writeFileSync(join(bin, 'node'), `#!/bin/bash\ncase "$1" in\n  scripts/repl-parity.mjs|scripts/native-baseline.mjs|*/gate.mjs) exec "${process.execPath}" "${FAKE}" "$@" ;;\n  *) exec "${process.execPath}" "$@" ;;\nesac\n`);
+  writeFileSync(join(bin, 'node'), `#!/bin/bash\ncase "$1" in\n  scripts/repl-parity.mjs|scripts/native-baseline.mjs|*/gate.mjs|bin/cua.mjs) exec "${process.execPath}" "${FAKE}" "$@" ;;\n  *) exec "${process.execPath}" "$@" ;;\nesac\n`);
   writeFileSync(join(bin, 'pgrep'), '#!/bin/sh\nexit 1\n');
   chmodSync(join(bin, 'node'), 0o755);
   chmodSync(join(bin, 'pgrep'), 0o755);
@@ -92,6 +92,28 @@ test("a pilot's baseline takes no top-up (ruling 722): the series only it could 
   // a failure that is not a series a top-up decides still fails a pilot: no TOP-UP NEEDED, the comparison's status
   const failed = part('inner-baseline', { env: { FAKE_COMPARE: 'fail' } });
   assert.notEqual(failed.status, 0);
+});
+
+// review finding 1: the pinned rule binds every home the suites make on both pinned modes, acceptance and a development
+// run on the pinned release (PINNED_RULE=enforce, gate.mjs suiteEnv), whatever the label; a refusal stops the part
+// before any session starts in that home
+test("on the pinned rule a refusal in the suites' own homes stops the part before its session, a pilot's as an acceptance's", () => {
+  for (const counted of [false, true]) {
+    const parity = part('inner-parity', { env: { FAKE_CHECK: '2', PINNED_RULE: 'enforce' }, counted });
+    assert.equal(parity.status, 1, `parity, counted ${counted}`);
+    assert.ok(parity.calls.some((c) => /gate\.mjs check --pinned \/fake\/prepared-home$/.test(c)));
+    assert.ok(!parity.calls.some((c) => /repl-parity\.mjs run /.test(c)), 'no lane started in the refused home');
+    for (const name of ['inner-accept', 'inner-device']) {
+      const fixture = part(name, { env: { FAKE_CHECK: '2', PINNED_RULE: 'enforce' }, counted });
+      assert.equal(fixture.status, 1, `${name}, counted ${counted}`);
+      assert.ok(fixture.calls.some((c) => /gate\.mjs check --pinned \S+\/home\/cua$/.test(c)), fixture.calls.join('\n'));
+      assert.ok(!fixture.calls.some((c) => /watch\.mjs|linux-native|linux-device-mode/.test(c)), 'no fixture started in the refused home');
+    }
+  }
+  // a development run that takes the engine unchecked (gate.mjs --pinned --dev: no PINNED_RULE) logs the refusal, runs on
+  const unchecked = part('inner-parity', { env: { FAKE_CHECK: '2' } });
+  assert.equal(unchecked.status, 0);
+  assert.ok(unchecked.calls.some((c) => /repl-parity\.mjs run /.test(c)));
 });
 
 test('the runner refuses an ambient override, an installed engine given an ENGINE_BIN, a candidate without one, and an unknown ENGINE', () => {

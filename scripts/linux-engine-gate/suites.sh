@@ -21,7 +21,8 @@
 #             the 50 ms sampler, whose record is judged (engine-watch.mjs)                       (--session)
 #   device    scripts/accept/linux-device-mode.mjs, the same way                                  (--session)
 # Environment: ENGINE (installed or candidate), ENGINE_BIN (candidate only), OUT (the evidence directory), LOGS (the log
-# directory), LABEL (pilot or counted; a counted run refuses a dirty tree and any home the pinned rule refuses), DEVICE
+# directory), LABEL (pilot or counted; a counted run refuses a dirty tree and any home the pinned rule refuses),
+# PINNED_RULE (enforce: any home the pinned rule refuses stops its part, whatever LABEL says), DEVICE
 # (the declared Linux device the lanes run on). CUA_LINUX_ENGINE_BIN is refused in the environment either way.
 # usage: suites.sh <part>      Run each part under the host lock (locked.sh), one at a time; gate.mjs runs R1-R4 so.
 set -u
@@ -56,7 +57,9 @@ log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$L/suites.log"; }
 
 # installed: the pinned rule on the engine of the cua home $1, its record into $2. gh's sign-in is the caller's, so the
 # check runs under the HOME (and XDG_CONFIG_HOME) this runner started with, never a run home's. A counted part stops on
-# a refusal; a pilot logs it and runs on (a development run refuses nothing). A candidate is checked by gate.mjs.
+# a refusal, and so does any part on the pinned rule (PINNED_RULE=enforce: acceptance, and a development run on the
+# pinned release, gate.mjs suiteEnv), before any session starts in that home (review finding 1); only a development run
+# that takes the engine unchecked (gate.mjs --pinned --dev) logs a refusal and runs on. A candidate is checked by gate.mjs.
 REAL_HOME=$HOME
 REAL_XDG=${XDG_CONFIG_HOME-}
 pinned_check() {
@@ -66,7 +69,7 @@ pinned_check() {
   env "${config[@]}" HOME="$REAL_HOME" node "$WT/scripts/linux-engine-gate/gate.mjs" check --pinned "$1" > "$2" 2>&1
   local c=$?
   log "pinned check of $1: exit $c, $(head -1 "$2")"
-  [ "$c" -eq 0 ] || [ "$LABEL" != counted ]
+  [ "$c" -eq 0 ] || { [ "$LABEL" != counted ] && [ "${PINNED_RULE:-}" != enforce ]; }
 }
 
 # the run-owned home of the acceptance fixtures: HOME and the XDG directories, an empty secret store, a cua home with the

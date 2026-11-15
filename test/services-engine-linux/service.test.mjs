@@ -297,20 +297,36 @@ test('the settle of a click and a named action follows what it ran: a coordinate
 
 test('the settle\'s clock: the call after an input waits out that input\'s constant before it reaches the engine, and no longer', async t => {
   // The real ActionSettler on a clock the test keeps: only its sleeps move time, so what the call after an input waits is
-  // read off the sleeps it asked for, not off the runner's scheduling. Each sleep notes how many requests the engine had
-  // by then, which orders the wait before the call it holds.
+  // read off the sleeps it asked for, not off the runner's scheduling. Each sleep is held until the test lets it go.
+  // While it is held, clipboard_release, which never waits, goes to the engine; the engine runs requests in order, so a
+  // call that had not waited out the sleep would reach the engine before it.
   const engine = fakeLinuxEngine(t);
   let time = 1000;
   const slept = [];
+  let fellAsleep;
+  let nextSleep = new Promise(resolve => { fellAsleep = resolve; });
   const settler = new ActionSettler({settles: {...SETTLE_MS, press_key: 100, click: 0}, now: () => time,
-    sleep: async ms => { slept.push({ms, engineHad: sent(engine).length}); time += ms; }});
+    sleep: ms => new Promise(wake => {
+      slept.push(ms);
+      const told = fellAsleep;
+      nextSleep = new Promise(resolve => { fellAsleep = resolve; });
+      told(() => { time += ms; wake(); });
+    })});
   const svc = service(t, engine, {settler});
+  const commandsSince = from => sent(engine).slice(from).map(([command]) => command);
   await execute(svc, 'list_windows');
   await execute(svc, 'press_key', {window: W, key: 'a'});
   const afterKey = sent(engine).length;
-  await execute(svc, 'list_windows');
-  assert.deepEqual(slept, [{ms: 100, engineHad: afterKey}], 'press_key\'s 100 ms, slept before the next call reached the engine');
-  assert.deepEqual(sent(engine).slice(afterKey).map(([command]) => command), ['list_windows']);
+  const asleep = nextSleep;
+  const list = execute(svc, 'list_windows');
+  const wake = await asleep;
+  assert.deepEqual(slept, [100], 'press_key\'s 100 ms');
+  await execute(svc, 'clipboard_release', {handle: 'h'});
+  assert.deepEqual(commandsSince(afterKey), ['clipboard_release'], 'the call waiting out the settle has not reached the engine');
+  wake();
+  await list;
+  assert.deepEqual(commandsSince(afterKey), ['clipboard_release', 'list_windows'], 'once the settle has passed, it does');
+  assert.deepEqual(slept, [100], 'and it slept no longer');
   slept.length = 0;
   await execute(svc, 'click', {window: W, x: 1, y: 1});
   await execute(svc, 'list_windows');

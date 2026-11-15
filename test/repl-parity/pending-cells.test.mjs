@@ -122,3 +122,9 @@ test('passing M5 pending cells remain visible on both sides without covering eit
  assert.deepEqual([...diff.pendingObligations].sort(),['api/browser-cuaapi/scroll','api/browser-domcuaapi/scroll']);
  assert.equal(assessAssertions(a.meta,a.rows).coveredCases,12);
 });
+test('#141 is fixed, so a new run can no longer declare the scroll cells pending; recorded runs that did still validate',()=>{
+ for(const logicalCells of [names,[names[0]],[names[1]]])
+  assert.throws(()=>resolvePendingDeclarations({logicalCells,reason:PENDING_REASON,platform:'linux',through:'M5',scenarios,newRun:true}),/retired.*#141/);
+ assert.deepEqual(resolvePendingDeclarations({logicalCells:[],platform:'linux',through:'M5',scenarios,newRun:true}),{pendingEnvironment:[],pendingObligations:[]});
+ assert.equal(resolve(names).pendingObligations.length,2,'the recorded M5 Linux runs keep their declaration');
+});

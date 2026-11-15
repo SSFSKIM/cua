@@ -65,11 +65,14 @@ supplements.set('click',[contract('diagnostics-sampling',scratch('/visible-dom-d
 // ("Playwright selector deadline exceeded") or a CDP command's own ("Timed out after 1ms waiting for CDP command
 // Runtime.evaluate.", or Page.createIsolatedWorld's on a slow scratch tab), on either host and on load alone (#168). No
 // deadline closes that race, since the last poll's command always gets what is left; so the cell observes only what the
-// contract fixes: that a deadline named the error, and the context and diagnostics lines after it, byte for byte.
+// contract fixes: that a deadline named the error, and the context and diagnostics lines after it, byte for byte. The
+// deadline's own wording can run over several lines (the vendor host's did on a loaded runner), so the error is split
+// at the context line, not after its first line.
 const deadlineNamed=/timed out|timeout|deadline exceeded/i;
 const noMatchesContext='locator.waitFor(visible) timed out for selector '+absentSelector;
 supplements.set('waitfor',[contract('diagnostics-no-matches',scratch('/read.html',`try{await scratch.playwright.locator(${JSON.stringify(absentSelector)}).waitFor({state:'visible',timeoutMs:100});return {rejected:false};}
-catch(e){const [origin,...after]=String(e.message??e).split('\\n');return {rejected:true,code:e.code??e.reason??e.name??'Error',deadlineNamed:${deadlineNamed}.test(origin),after};}`),row=>{
+catch(e){const lines=String(e.message??e).split('\\n'),at=lines.indexOf(${JSON.stringify(noMatchesContext)}),cut=at>0?at:1;
+return {rejected:true,code:e.code??e.reason??e.name??'Error',deadlineNamed:${deadlineNamed}.test(lines.slice(0,cut).join('\\n')),after:lines.slice(cut)};}`),row=>{
  const v=row.ok===true?row.value:null;
  if(v?.rejected!==true||v.code!=='Error'||v.deadlineNamed!==true||!Array.isArray(v.after)||v.after.length!==2||v.after[0]!==noMatchesContext)return false;
  const line=typeof v.after[1]==='string'?v.after[1].match(/^Locator diagnostics: (.+)$/):null;

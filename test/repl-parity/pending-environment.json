@@ -3,6 +3,7 @@
   "platform": "linux",
   "through": "M5",
   "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M5 all at product e24a1cd",
+  "retired": "2026-11-15: #141 is fixed (the wheel scroll, src/browser-service/wheel-scroll.mjs), so no new run may declare these cells pending; the scopes remain only to validate the runs recorded with them",
   "scopes": [
     {
       "logicalCell": "input/coordinates#scroll",

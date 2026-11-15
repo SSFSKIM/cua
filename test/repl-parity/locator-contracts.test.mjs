@@ -168,6 +168,9 @@ const deadlineOrigins=[
  'Error: Timed out after 100ms waiting for selector #locator-contract-absent: Timed out after 1ms waiting for CDP command Runtime.evaluate.',
  'Error: Timed out after 100ms waiting for selector #locator-contract-absent: Timed out after 99ms waiting for CDP command Page.createIsolatedWorld.',
  'Error: Timed out after 100ms waiting for selector #locator-contract-absent: Timed out after 100ms waiting for CDP command Page.createIsolatedWorld.',
+ // On a loaded hosted runner the vendor host's first line ran on over five more (#168, parity-browser-stress run
+ // 43675966194, whose summary showed six lines after the first); the lines are withheld there, so these stand in.
+ 'Error: Timed out after 100ms waiting for selector #locator-contract-absent: page busy\n  detail one\n  detail two\n  detail three\n  detail four',
 ];
 const waitForContext='locator.waitFor(visible) timed out for selector #locator-contract-absent';
 function absentScratch(waitFor){

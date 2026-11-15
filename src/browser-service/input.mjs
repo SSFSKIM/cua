@@ -6,16 +6,18 @@
 // The model's coordinate input (`tab.cua.*`) and DOM-CUA input (`tab.dom_cua.*`, by the node ids
 // dom_cua_get_visible_dom lists): CDP mouse events at a viewport point, the agent's cursor aimed first (cursor.mjs),
 // a click's page load waited for (up to its budget, 3 s by default); drags along a path with the left button held,
-// released however the drag ends; scrolls as a synthesized mouse-wheel gesture; key presses (keyboard.mjs) with the
+// released however the drag ends; scrolls by a mouse wheel whose effect is read back (wheel-scroll.mjs; the vendor
+// synthesizes a scroll gesture, which stalls in a renderer starved of frames, #141); key presses (keyboard.mjs) with the
 // clipboard shortcuts served by the virtual clipboard; typing by paste (paste.mjs). A DOM-CUA node is scrolled into
 // view in its frame, its visible centre taken, and the point mapped out through its frames' owners: a node inside an
 // out-of-process frame gets its events in that frame's own target, at its point there. Dropped from Bf: the in-app
-// browser's rounding and closed-shadow-root guard, and its mouseWheel scrolling.
+// browser's rounding and closed-shadow-root guard.
 import {Deadline, LOAD_MS, clamp} from './budgets.mjs';
 import {modifierMask, pressKeys} from './keyboard.mjs';
 import {performClipboardShortcut, typeText} from './paste.mjs';
 import {attemptBudget} from './selectors.mjs';
 import {tabIdOf} from './tabs.mjs';
+import {wheelScroll} from './wheel-scroll.mjs';
 
 const isNested = target => target.sessionId != null || target.targetId != null;                                     // dt
 const targetIdentity = target => `${target.tabId}:${target.sessionId ?? ''}:${target.targetId ?? ''}`;               // Uy
@@ -167,13 +169,11 @@ export class CuaInput {
     }
   }
 
+  // A mouse wheel at the point, its effect read from the page (wheel-scroll.mjs), where the vendor synthesizes a gesture.
   async scrollPoint({modifiers, point, scrollX, scrollY, tabId}) {
     const tab = tabIdOf(tabId);
     await this.dispatchMouseMove(tab, point, modifiers);
-    await this.cdp.call(tab, 'Input.synthesizeScrollGesture', {
-      x: point.x, y: point.y, xDistance: scrollX === 0 ? 0 : -scrollX, yDistance: scrollY === 0 ? 0 : -scrollY,
-      gestureSourceType: 'mouse', preventFling: true, speed: 8000,
-    });
+    await wheelScroll(this.cdp, tab, {modifiers, point, scrollX, scrollY});
   }
 
   // Clicks at `point` (the top document's) `clickCount` times, the events going to `inputTarget` at `inputPoint` when

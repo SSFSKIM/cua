@@ -214,7 +214,7 @@ test('a gap covers only its own operation\'s speed: another operation\'s loss, a
   const rows = gateRows(CANDIDATES[3], 'V3');
   const v = judgeOp(rows, 'chrome-input', 'activate_window');
   const speed = v.declared_gap;
-  const base = { verdict: 'fail', pass: false, engines: v.engines };
+  const base = { verdict: 'fail', pass: false, engines: v.engines, intervals: v.intervals };
   assert.equal(declaredGapVerdict({ ...base, reasons: speed }, { op: 'click', candidate: 'cua', rows: [], audits: {} }), null, 'no gap declares a click');
   const opRows = rows.filter((r) => r.kind === 'sample' && r.scene === 'chrome-input' && r.op === 'activate_window');
   const audits = auditsOf(rows, 'chrome-input', 'activate_window');
@@ -222,4 +222,36 @@ test('a gap covers only its own operation\'s speed: another operation\'s loss, a
   assert.deepEqual(beside.reasons, ['cua: the witness changed']);
   assert.equal(beside.verdict, 'fail');
   assert.equal(declaredGapVerdict({ ...v, verdict: 'pass', pass: true, reasons: [] }, { op: 'activate_window', candidate: 'cua', rows: opRows, audits }), null, 'a pass stays a pass');
+});
+
+// #171 M5, T4's second round (task 87's finding 4, ruling 728): the gap is bounded, as DRAG_SPEED_GAPS' is. Without a
+// bound, activate_window read "declared gap" whatever the size of its loss. A covered series whose interval's upper end
+// (cua − bar) is past `bound_ms`, or that has no interval at all, fails.
+
+test('#373 is bounded at 15 ms a series: the largest measured upper end (11.975, the x64 pilot\'s cold) and room', () => {
+  for (const series of ['cold', 'warm']) assert.equal(declaredSpeedGap({ op: 'activate_window', route: 'window', series }).bound_ms, 15, series);
+});
+
+test("a declared gap holds below its bound and at it, and fails past it or with no interval: the speed's own number is judged", () => {
+  const rows = gateRows(CANDIDATES[3], 'V3');
+  const v = judgeOp(rows, 'chrome-input', 'activate_window');
+  assert.equal(v.verdict, 'declared gap', 'the stored run, within its bound');
+  const opRows = rows.filter((r) => r.kind === 'sample' && r.scene === 'chrome-input' && r.op === 'activate_window' && [...VENDORS, 'cua'].includes(r.engine));
+  const audits = auditsOf(rows, 'chrome-input', 'activate_window');
+  // the stored verdict with its warm interval's upper end moved: the cold one stays as measured
+  const withWarmUpper = (upper) => {
+    const intervals = v.intervals.map((i) => (i.series === 'warm' ? { ...i, interval: [i.interval[0], upper] } : i));
+    return declaredGapVerdict({ ...v, intervals, verdict: 'fail', pass: false, reasons: v.declared_gap }, { op: 'activate_window', candidate: 'cua', rows: opRows, audits });
+  };
+  assert.equal(withWarmUpper(14.9).verdict, 'declared gap', 'below the bound');
+  assert.equal(withWarmUpper(15).verdict, 'declared gap', 'at the bound');
+  const past = withWarmUpper(15.01);
+  assert.equal(past.verdict, 'fail', 'past the bound');
+  assert.equal(past.pass, false);
+  assert.deepEqual(past.reasons.length, 1, past.reasons.join('; '));
+  assert.match(past.reasons[0], /^cua: warm speed beyond its declared gap \(#373, 15 ms\): the interval \[\S+, 15\.01\]/);
+  // a covered series with no interval (fewer than 20 samples a side, never judged) proves no size of loss
+  const none = declaredGapVerdict({ ...v, intervals: v.intervals.filter((i) => i.series !== 'cold'), verdict: 'fail', pass: false, reasons: v.declared_gap }, { op: 'activate_window', candidate: 'cua', rows: opRows, audits });
+  assert.equal(none.verdict, 'fail');
+  assert.match(none.reasons.join('; '), /cua: cold speed beyond its declared gap \(#373, 15 ms\): no interval/);
 });

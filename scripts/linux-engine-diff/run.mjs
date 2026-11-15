@@ -1767,7 +1767,9 @@ const WITNESS_FAILED = 'protocol';
  * A declared speed gap's verdict (deviations.mjs `SPEED_GAPS`; #373's ruling, the design session, sminos 666): null
  * where no gap declares a speed loss of the failing verdict, so it stands. Otherwise **declared gap** (a loss, listed
  * apart, never a pass) when every reason is a speed loss of a series a gap declares, and the operation's other parts
- * hold as the vendor builds' do: every candidate sample answered ok with its effect, as many as the run timed; the
+ * hold as the vendor builds' do, and each covered series' interval (`verdict.intervals`) ends within the gap's
+ * `bound_ms` (ruling 728; past it, or with no interval, the loss fails): every candidate sample answered ok with its
+ * effect, as many as the run timed; the
  * candidate's audit answered ok, with no request the vendor builds' audits of the operation do not show (the activation
  * itself) and no foreign change; and its witness observed every sample and saw no field change that the vendor builds'
  * samples did not. Anything else fails, and so does an observer that did not observe (an audit with no request traced
@@ -1785,6 +1787,15 @@ export function declaredGapVerdict(verdict, { op, candidate, rows, audits, vendo
   const covered = verdict.reasons.filter(gapOf);
   if (!covered.length) return null;
   const kept = verdict.reasons.filter((r) => !gapOf(r));
+  // the gap's bound (ruling 728): a covered series' loss is the gap only while its interval's upper end (cua − bar) is
+  // within `bound_ms`; past it, or with no interval to show its size, the loss fails
+  for (const reason of covered) {
+    const series = SPEED_REASON.exec(reason)[1];
+    const { issue, bound_ms: bound } = gapOf(reason);
+    const interval = verdict.intervals?.find((i) => i.series === series)?.interval;
+    const upper = interval?.[1];
+    if (!(typeof upper === 'number' && typeof bound === 'number' && upper <= bound)) kept.push(`${candidate}: ${series} speed beyond its declared gap (${issue}, ${bound} ms): ${interval ? `the interval [${interval.join(', ')}]` : 'no interval'}; ${reason}`);
+  }
   const mine = rows.filter((r) => r.engine === candidate);
   const theirs = rows.filter((r) => vendors.includes(r.engine));
   const timed = (verdict.engines?.[candidate]?.n_cold ?? 0) + (verdict.engines?.[candidate]?.n_warm ?? 0);

@@ -10,9 +10,9 @@ import {checkHost} from './remote.mjs';
 import {assertManagedNode} from './node-provenance.mjs';
 const INVALID_REPL_HOST='CUA_REPL_HOST must be cua or vendor',INVALID_ENGINE='CUA_NATIVE_ENGINE must be vendor or cua';
 // The engine a computer session drives when nothing selects one, per platform (this oracle's own statement of each,
-// flipped with production's): on macOS the vendor's until #117's M5 flips it; on Linux the vendor's until #171's M5
-// flips it, on the owner's word.
-export const ORACLE_DEFAULT_ENGINE='vendor',ORACLE_LINUX_DEFAULT_ENGINE='vendor';
+// flipped with production's): on macOS the vendor's until #117's M5 flips it; on Linux cua's since #171's M5, on the
+// owner's word.
+export const ORACLE_DEFAULT_ENGINE='vendor',ORACLE_LINUX_DEFAULT_ENGINE='cua';
 // The independent M5 table of production's REPL host selection (src/runtime/launch.mjs replHostFor): CUA_REPL_HOST, then
 // the computer surface on macOS, then the own host's Node. The home's Chrome registration and MAWS client mode take no
 // part since #79 removed the ChatGPT extension route and the vendor browser service's selection: either host runs cua's

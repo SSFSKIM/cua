@@ -39,11 +39,11 @@ function engineAt(path) {
 const installedIn = home => engineAt(join(home, 'engine', 'linux', 'cua-engine'));
 const select = (home, env, options = {}) => nativeEngineFor({env, platform: 'linux', home, ...options});
 
-test('the default is the vendor engine; CUA_NATIVE_ENGINE and engine.json select as on macOS, an unknown value refused', t => {
+test('the default is cua\'s engine (none installed here: the vendor\'s, with a warning); CUA_NATIVE_ENGINE and engine.json select as on macOS, an unknown value refused', t => {
   const {home, user} = cuaHome(t);
-  assert.deepEqual(select(home, {HOME: user}), {engine: 'vendor', reason: 'default', status: 'pass'});
+  assert.deepEqual(select(home, {HOME: user}), {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'});
   assert.deepEqual(select(home, {HOME: user, CUA_NATIVE_ENGINE: 'vendor'}), {engine: 'vendor', reason: 'explicit', status: 'pass'});
-  assert.deepEqual(select(home, {HOME: user, CUA_NATIVE_ENGINE: ''}), {engine: 'vendor', reason: 'default', status: 'pass'}, 'empty reads as unset');
+  assert.deepEqual(select(home, {HOME: user, CUA_NATIVE_ENGINE: ''}), {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'}, 'empty reads as unset');
   assert.throws(() => select(home, {HOME: user, CUA_NATIVE_ENGINE: 'sky'}), {code: 'invalid_setting', message: 'CUA_NATIVE_ENGINE must be vendor or cua'});
   mkdirSync(join(user, '.config', 'cua'), {recursive: true});
   writeFileSync(join(user, '.config', 'cua', 'engine.json'), JSON.stringify({engine: 'vendor'}));
@@ -119,7 +119,7 @@ test('a default cua engine: cua\'s when the installed one is at least MIN_ENGINE
 // (#192 decides it there).
 test('the default is per platform; macOS\'s is the vendor\'s, whatever is installed', () => {
   assert.equal(defaultNativeEngine('darwin'), 'vendor');
-  assert.equal(defaultNativeEngine('linux'), 'vendor');
+  assert.equal(defaultNativeEngine('linux'), 'cua', 'flipped by #171 M5, on the owner\'s word');
   const app = {bundlePath: '/Users/u/Library/Application Support/cua/engine/CuaEngine.app', engineVersion: '0.9.0', build: 'b'};
   assert.deepEqual(nativeEngineFor({env: {HOME: '/Users/u'}, platform: 'darwin', config: () => ({}), installed: () => app}), {engine: 'vendor', reason: 'default', status: 'pass'});
   assert.deepEqual(nativeEngineFor({env: {HOME: '/Users/u'}, config: () => ({}), installed: () => app}), {engine: 'vendor', reason: 'default', status: 'pass'}, 'macOS when no platform is named');
@@ -128,7 +128,7 @@ test('the default is per platform; macOS\'s is the vendor\'s, whatever is instal
 test('CUA_LINUX_ENGINE_BIN names the engine only when the selection is cua: absolute, an executable file, or refused', t => {
   const {dir, home, user} = cuaHome(t);
   const built = engineAt(join(dir, 'checkout', 'target', 'release', 'cua-engine'));
-  assert.deepEqual(select(home, {HOME: user, CUA_LINUX_ENGINE_BIN: 'relative/cua-engine'}), {engine: 'vendor', reason: 'default', status: 'pass'}, 'not read for the vendor engine');
+  assert.deepEqual(select(home, {HOME: user, CUA_NATIVE_ENGINE: 'vendor', CUA_LINUX_ENGINE_BIN: 'relative/cua-engine'}), {engine: 'vendor', reason: 'explicit', status: 'pass'}, 'not read for the vendor engine');
   assert.deepEqual(select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}), {engine: 'cua', reason: 'explicit', status: 'pass', bin: {path: built, lookup: built, source: 'override'}},
     'no engine need be installed');
   installedIn(home);
@@ -148,11 +148,11 @@ test('replHostFor carries a Linux computer session\'s engine, resolved before No
   assert.equal(asked, 0, 'the engine refuses before Node is asked for');
   const browser = replHostFor({platform: 'linux', surfaces: ['browser'], ambient, home, resolveOwnNode: node});
   assert.deepEqual(browser, {host: 'cua', reason: 'linux', node: NODE});
-  const path = installedIn(home);
+  const path = recordedIn(home, MIN_ENGINE_VERSION);   // a version the default takes
   const engine = {engine: 'cua', reason: 'explicit', status: 'pass', bin: {path, lookup: path, source: 'installed'}};
   assert.deepEqual(replHostFor({platform: 'linux', surfaces: ['computer', 'browser'], ambient, home, resolveOwnNode: node}), {host: 'cua', reason: 'linux', node: NODE, engine});
   assert.deepEqual(replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {...ambient, CUA_REPL_HOST: 'cua'}, home, resolveOwnNode: node}), {host: 'cua', reason: 'explicit', node: NODE, engine});
-  assert.deepEqual(replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {HOME: user}, home, resolveOwnNode: node}).engine, {engine: 'vendor', reason: 'default', status: 'pass'});
+  assert.deepEqual(replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {HOME: user}, home, resolveOwnNode: node}).engine, {engine: 'cua', reason: 'default', status: 'pass', bin: {path, lookup: path, source: 'installed'}}, 'the default, by its file\'s version');
   assert.throws(() => replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {...ambient, CUA_REPL_HOST: 'vendor'}, home, resolveOwnNode: node}), {code: 'repl_host_refused'}, 'the vendor host stays refused first');
   // The engine inputs reach the selection, as doctor and the tests pass them.
   assert.equal(replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {HOME: user}, home, resolveOwnNode: node, engine: {config: () => ({engine: 'cua'})}}).engine.reason, 'settings');
@@ -188,7 +188,7 @@ test('a Linux computer launch with cua\'s engine runs cua\'s own service (M3): C
   for (const name of ['CUA_NATIVE_ENGINE', 'CUA_LINUX_ENGINE_BIN']) assert.equal(name in cua.env, false, `${name} is the proxy's alone`);
   const built = engineAt(join(dir, 'checkout', 'cua-engine'));
   assert.equal(launch({CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}).env.CUA_ENGINE_BIN, built);
-  assert.equal(launch({CUA_LINUX_ENGINE_BIN: built}).env.OAI_SKY_LINUX_BIN, runtime.paths.skyLinuxBin, 'the override is read only for cua\'s engine');
+  assert.equal(launch({CUA_NATIVE_ENGINE: 'vendor', CUA_LINUX_ENGINE_BIN: built}).env.OAI_SKY_LINUX_BIN, runtime.paths.skyLinuxBin, 'the override is read only for cua\'s engine');
   // The device mode: the caller's CUA_DESKTOP_MODE, else engine.json's desktop; anything else is refused before launch.
   assert.equal(launch({CUA_NATIVE_ENGINE: 'cua', CUA_DESKTOP_MODE: 'dedicated'}).env.CUA_DESKTOP_MODE, 'dedicated');
   mkdirSync(join(user, '.config', 'cua'), {recursive: true});

@@ -456,9 +456,9 @@ function macosComputerHost({requested, ambient, resolveOwnNode, engine}) {
 // ---- EngineSelection (#117; the native engine's spec, Interfaces) ----
 
 // The engine a computer session drives when nothing selects one, per platform (#171 M5: one constant served both). On
-// macOS the vendor's until #117's M5 flips it to cua's (#192 decides it there). On Linux the vendor's until #171's M5
-// flips it to cua's, on the owner's word.
-const DEFAULT_NATIVE_ENGINES = Object.freeze({darwin: 'vendor', linux: 'vendor'});
+// macOS the vendor's until #117's M5 flips it to cua's (#192 decides it there). On Linux cua's since #171's M5, on the
+// owner's word: a home without one this cua can drive keeps the vendor's, with a warning (linuxEngineFor below).
+const DEFAULT_NATIVE_ENGINES = Object.freeze({darwin: 'vendor', linux: 'cua'});
 export const defaultNativeEngine = (platform = 'darwin') => DEFAULT_NATIVE_ENGINES[platform] ?? DEFAULT_NATIVE_ENGINES.darwin;
 const NATIVE_ENGINES = ['vendor', 'cua'];
 const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${value}" in ~/.config/cua/engine.json` : reason === 'default' ? `the default engine (${value})` : `CUA_NATIVE_ENGINE=${value}`);

@@ -11,7 +11,11 @@
 //
 // After every step, whatever ended its process, the runner makes the end check (leftovers.mjs; rulings 721, 724): the
 // `cua171-run-*` scratch the step left and every other run's, with their session buses, named in the step's record and
-// left alone. `leftovers` makes it alone, for a :0 sitting's all-clear.
+// left alone. `leftovers` makes it alone. Before every step the start check clears what earlier runs provably left of the
+// harness's own, or refuses (leftovers.mjs, ruling 730); a step's unclean end (its run's own side) is in its record, and
+// `summary --out <dir>` lists every step's. A :0 step is printed under the sitting launcher (sitting.mjs), which makes
+// the end check and the sitting's all-clear however the sitting ends, and writes hold-sittings when the person's side
+// is not clear.
 //
 // `--list` prints every step's estimated minutes, display, load and command, with the totals per display and per load.
 // `print` prints one step's command and writes its directory's labelled README; `run` runs one step, and never a `:0`
@@ -88,6 +92,8 @@ export function defaultsFor(arch = process.arch, cuaHome = join(HOME, '.local/sh
 }
 /** Task 50's guards for a `:0` step, as T19's sitting ran them (pointer-route/scripts). */
 const GUARDS = 'docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts';
+/** The :0 sitting's outer launcher, relative to the checkout. */
+const SITTING = 'scripts/linux-engine-gate/sitting.mjs';
 /** The harness's X client, built in the checkout (xtools.mjs `XPROBE`). */
 const XPROBE_BUILT = 'scripts/linux-engine-diff/xprobe/target/release/xprobe';
 
@@ -201,7 +207,10 @@ export function launchCommand(step, a, root = REPO_ROOT) {
   const lock = [a.locked, a.holder];
   if (step.display === ':0') {
     const args = stepArgs(step, { paths: { ...a, candidate: a.candidate ?? '<candidate>' }, gate: a.gate, pilot: a.pilot });
-    return line([...lock, 'env', `WRAP=${join(root, GUARDS, 'wrap71.py')}`, join(root, GUARDS, 'run71.sh'), a.out ? stepDir(step, a) : '<out>/<step>', root, ...args]);
+    const dir = a.out ? stepDir(step, a) : '<out>/<step>';
+    // under the sitting launcher (sitting.mjs): its refusal while hold-sittings exists, the start check, and the end check
+    // and the all-clear however the sitting ends (review finding 3, ruling 730)
+    return line([...lock, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--', 'env', `WRAP=${join(root, GUARDS, 'wrap71.py')}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
   }
   const engine = a.pinned ? ['--pinned', a.pinned] : ['--candidate', a.candidate ?? '<candidate>'];
   return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, ...engine, '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : [])]);
@@ -408,9 +417,14 @@ function harnessRows(dir) {
  */
 export function stepUnclean(dir, endCheck) {
   const own = harnessRows(dir).filter((r) => ['end', 'experiment-summary'].includes(r.kind)).flatMap((r) => r.desktop?.unclean ?? []);
+  return [...own, ...endCheckUnclean(endCheck)];
+}
+
+/** What a step's end check shows it left on its own side: each scratch directory it left, and their session buses. */
+export function endCheckUnclean(endCheck) {
   const left = endCheck?.left_by_step ?? [];
   const buses = (endCheck?.buses ?? []).filter((b) => left.some((d) => d.dir === b.dir));
-  return [...own, ...left.map((d) => `its scratch left behind: ${d.dir}`), ...buses.map((b) => `a session bus of it still runs: pid ${b.pid} ${b.program}`)];
+  return [...left.map((d) => `its scratch left behind: ${d.dir}`), ...buses.map((b) => `a session bus of it still runs: pid ${b.pid} ${b.program}`)];
 }
 
 /**

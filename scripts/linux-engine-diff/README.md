@@ -159,7 +159,24 @@ own, and every session-bus process (`dbus-daemon`, `at-spi-bus-launcher`, `at-sp
 lies in one, listed in the end record's `leftovers` as findings, named and never removed or signalled, since another run
 may own them. A process killed past all of this (SIGKILL) gets the same check from its launcher: `gate.mjs` makes it
 after every step and records it in the step's `step.json` and README (`end_check`), and `gate.mjs leftovers` makes it
-alone.
+alone. A bus is found by the scratch path it names, so one outliving its removed directory is still a finding.
+
+One unclean-end rule, drawn by who can see it (the design session's ruling 730):
+
+- **The run's own side** (a cleanup step that threw, its own session bus still running, its Chrome's processes, its
+  scratch still there, the scratch a step left) marks the end record `unclean`, never a verdict failure; the run's
+  summary, the step's `step.json` and README name it, and `gate.mjs summary --out <dir>` lists every step's. Each
+  Desktop marks its scratch at once (`cua171-run.json`: the run, its pid and start time, when), and the next run's
+  **start check** (every Desktop's start, every gate step, every `:0` sitting) removes a leftover only when it is
+  provably the harness's own and done (the marker, this user's, mode 700, its run gone, no live process naming it),
+  and otherwise refuses to start, naming it and why. It ends no process.
+- **The person's side on `:0`**: gate.mjs prints every `:0` step under `scripts/linux-engine-gate/sitting.mjs`, which
+  refuses while hold-sittings exists, and after the sitting, however it ended, makes the end check and the all-clear
+  (`all-clear.json`, `all-clear.txt` in the step's directory), keeping the sitting's exit. A window of the run's left
+  on `:0`, a held key or button, a process of the run still alive (the only way a grab outlives the sitting), the
+  pointer not put back, a change to a window the harness did not open, the owner's side changed, or a reach into the
+  person's session fails it, and so does a missing record or a failed read; then hold-sittings is written with the
+  reason, and no `:0` work starts until the controller or the design session clears it and removes the file.
 
 ## Instances of the run's own (task 43)
 

@@ -4850,6 +4850,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
         secret is not checked before it is posted, so a secret that went in wrong can still be submitted by its own
         Return. A concealed request in an app that does not move its reported caret past typed text answers
         unconfirmed (item 10.10).
+     9. `typeUnconfirmed` right after an editing key may answer a field that ends up holding the right text, since the
+        snapshot can precede the key's effect (item 10.14): #386.
   8. **The documents.** `docs/cua-api/agent-cursor.md` gains a sixth paragraph: what `typeText` confirms, that
      `typeUnconfirmed` may mean some text went in and the remedy is to observe, then `setValue`; the fields it cannot
      read; the OS's substitutions answering unconfirmed, never a silent success; keys in the text; and `setValue`, or
@@ -4940,7 +4942,22 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          so it adds no read and no wait; an unreadable caret never confirms a secret. Gecko's contenteditable
          (AXApplicationGroup), whose AXValue flattens its line breaks, joins `typeReadbackReturnUnreadSubroles`: its
          Return is a key.
-  Proven offline: `TypeReadbackTests` (42) drive the real keyText through `keyTextReadBack` over a fake app whose field
+     13. **The caret confirms only the value it was read with** (the review of bd63a0cc..5582db9c, P1). The caret seen
+         with one value confirmed whichever accepted value a later read showed: a secret `x` and Return read "x\n" with
+         its caret at {2, 0}, then a late second Return made it "x\n\n" with its caret at {3, 0}, and that read confirmed
+         as the placeholder line. The evidence is now tied to the value it was read with (`ReadbackCandidate`): only a
+         later read of that same value confirms with it, and any other read, an unreadable one included, drops it, so the
+         next accepted value has its caret read again. The schedule stays one for every concealed confirmation: the reads
+         follow what the field shows, never whether the secret equals the text it replaced. The plain path's unchanged
+         value and its placeholder line already checked their carets apart; they take the same rule, so a value that
+         leaves and comes back is not confirmed by the caret seen before it left.
+     14. **A key equivalent's race can read unconfirmed over the right text** (ruling 1ea561bc:738, on the A/B's race
+         cells). The expected value is built from the snapshot, which can be taken before an editing key sent just before
+         (super+a, super+z, super+v) takes effect, so `typeUnconfirmed` may answer a field that ends up holding the right
+         text: 65 of the 296 unconfirmed answers in the race cells held it (Chrome for Testing's super+v cell: 30 of
+         40). The answer stays honest (nothing was confirmed) and its remedy, to observe the field, finds that case; the
+         typing paragraph says so. Its follow-up is #386.
+  Proven offline: `TypeReadbackTests` (44) drive the real keyText through `keyTextReadBack` over a fake app whose field
   takes the posted text: equal, a caret insertion, a late equal inside the window and one past it; a mismatch's
   sentence, excerpt and lengths, a 20,000-character field's answer holding two 200-unit windows at the difference, the
   excerpt's surrogate pairs and quoting; secure by role, subrole or an unreadable subrole with no value or range read,
@@ -4956,14 +4973,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   moves unconfirmed; the focused field found through the primary window when the application names none, the
   application's answer first; an ending Return's placeholder line confirmed with the caret at its start, refused
   doubled, accepted with an unreadable caret, never without an ending Return, mid-field or on a stale read, a secret's
-  on the same schedule; focus moving, a role changing or no longer
+  on the same schedule; the caret confirming only the value it was read with, a secret's late doubled Return refused
+  and a value that left and came back read again, plain or concealed; focus moving, a role changing or no longer
   reading; UTF-16 replacement with emoji and combining marks; a text area's Returns read back as text and a dropped
   one a mismatch, a single-line field's and a combo box's trailing Return confirmed before it is posted, a wrong text
   never submitted, text after it expected without it, a Tab checked in a text area and moving focus answered
   `fieldChanged`, the exclusion set with Gecko's contenteditable, keys alone, empty text, the guard before a key read
   after the checkpoint's wait; the snapshot's read order; an intervention's stop keeping the record; press_key's
-  `keyEffect`. 1,169 engine tests pass, 1 skipped as before. Of 97 parts and bounds of the rule changed in turn
-  (`~/.local/share/187/mutate-354.py`), 89 fail a test. Eight survive by design: the zeroing of the read and the
+  `keyEffect`. 1,171 engine tests pass, 1 skipped as before. Of 101 parts and bounds of the rule changed in turn
+  (`~/.local/share/187/mutate-354.py`), 93 fail a test. Eight survive by design: the zeroing of the read and the
   expected buffers, which no answer shows (`readbackZero` itself is tested), and six reached only by a live type_text:
   the engine's call into the read-back, and the live seam's value, units, subrole-error, identity and main-window
   reads. The service (`cua/typeReadback`,

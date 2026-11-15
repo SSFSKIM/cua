@@ -1,0 +1,36 @@
+{
+  "label": "development run, not a release gate",
+  "step": "R3",
+  "pilot": true,
+  "what": "scripts/accept/linux-native.mjs on the candidate, in a home of the run's",
+  "display": "own",
+  "load": "idle",
+  "minutes": 5,
+  "run_name": null,
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t87-pilot/",
+    "commit": "01ff0648f3afc4a234669cd381395c91543ce3f7",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/pilot-x64/home/engine/linux/cua-engine",
+    "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/pilot-x64/home",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t87-pilot /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t87-pilot/scripts/linux-engine-gate/gate.mjs run R3 --pinned /Users/new/.local/share/cua-171/m5/pilot-x64/home --out /Users/new/.local/share/cua-171/m5/pilot-x64/out --dev --pilot 2",
+  "argv": [
+    "scripts/linux-engine-gate/suites.sh",
+    "accept"
+  ],
+  "env": {
+    "ENGINE": "installed",
+    "OUT": "/Users/new/.local/share/cua-171/m5/pilot-x64/out/R3.development-run.pilot/run",
+    "LOGS": "/tmp/cua171-gl-cjkIuI",
+    "LABEL": "pilot",
+    "DEVICE": "cua-171"
+  },
+  "started": "2026-11-15T04:07:23.342Z",
+  "finished": "2026-11-15T04:10:48.087Z",
+  "exit": 0,
+  "child_exit": 0
+}

@@ -1,0 +1,10 @@
+/tmp/cua171-run-7nTGZK owner=new mode=700 mtime=2026-11-13T10:30:02Z size=12M files=890 layout=yes procs=5 tags=[cua171-diff-m4-gate-D2-0fb96409 ]
+  top: chrome-profile cua171-diff-m4-gate-D2-0fb96409-electron-dragpinned home session tmp 
+/tmp/cua171-run-AdXsUJ owner=new mode=700 mtime=2026-11-09T02:41:43Z size=75M files=991 layout=yes procs=5 tags=[]
+  top: chrome-profile home session tmp 
+/tmp/cua171-run-OJWaJi owner=new mode=700 mtime=2026-11-12T23:54:18Z size=56K files=15 layout=yes procs=5 tags=[cua171-diff-m4-dev-H1-pilot-87369062 ]
+  top: cua171-diff-m4-dev-H1-pilot-87369062-electron-dropsig home session tmp 
+/tmp/cua171-run-lLeOBG owner=new mode=700 mtime=2026-11-10T00:58:57Z size=857M files=3366 layout=yes procs=1 tags=[cua171-diff-t70-idle1-predicates-d4a20e45 ]
+  top: chrome-profile cua171-diff-t70-idle1-predicates-d4a20e45-firefox-predcua cua171-diff-t70-idle1-predicates-d4a20e45-firefox-predcuaanycover cua171-diff-t70-idle1-predicates-d4a20e45-firefox-predpinned home session tmp 
+/tmp/cua171-run-q8ExPO owner=new mode=700 mtime=2026-11-09T02:43:15Z size=80M files=1003 layout=yes procs=5 tags=[]
+  top: chrome-profile home session tmp 

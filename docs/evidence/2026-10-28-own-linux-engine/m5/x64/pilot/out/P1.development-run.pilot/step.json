@@ -1,0 +1,43 @@
+{
+  "label": "development run, not a release gate",
+  "step": "P1",
+  "pilot": true,
+  "what": "T19's predicates manifest: Firefox's click cases",
+  "display": "private",
+  "load": "idle",
+  "minutes": 30,
+  "run_name": "m4-dev-P1-pilot",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t87-pilot/",
+    "commit": "01ff0648f3afc4a234669cd381395c91543ce3f7",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5/pilot-x64/home/engine/linux/cua-engine",
+    "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5/pilot-x64/home",
+  "command": "/Users/new/.local/share/cua-171/locked.sh t87-pilot /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/t87-pilot/scripts/linux-engine-gate/gate.mjs run P1 --pinned /Users/new/.local/share/cua-171/m5/pilot-x64/home --out /Users/new/.local/share/cua-171/m5/pilot-x64/out --dev --pilot 2",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "predicates",
+    "--vendor",
+    "/Users/new/.local/share/cua-171/m5/pilot-x64/home/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "--ops",
+    "click",
+    "--plan",
+    "leave",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5/pilot-x64/home/engine/linux/cua-engine",
+    "--run",
+    "m4-dev-P1-pilot",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5/pilot-x64/out/P1.development-run.pilot/run"
+  ],
+  "started": "2026-11-15T07:47:40.577Z",
+  "finished": "2026-11-15T07:51:40.154Z",
+  "exit": 0,
+  "child_exit": 0,
+  "display_watchdog": "clean"
+}

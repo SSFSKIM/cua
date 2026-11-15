@@ -1,0 +1,41 @@
+{
+  "mode": "session",
+  "harness": "/Users/new/Developer/GitHub/cua/.claude/worktrees/t87-pilot",
+  "command": [
+    "/Users/new/Developer/GitHub/cua/.claude/worktrees/t87-pilot/scripts/linux-engine-gate/suites.sh",
+    "inner-accept"
+  ],
+  "started": "2026-11-15T04:07:23.478Z",
+  "display": ":1",
+  "server": 910781,
+  "bus": "unix:path=/tmp/cua171-gl-cjkIuI/accept/desktop/session/bus/dbus-Js1aOTDPEI,guid=39e3a14d5ecea4a5b7510ec46af92ffb",
+  "busPid": 910788,
+  "a11y": "unix:path=/run/user/501/at-spi/bus_1,guid=764d979bb63075baa4cfd46a6af92ffb",
+  "openbox": 910805,
+  "environment": {
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-910773-86746f4baee4",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-gl-cjkIuI/accept/desktop/session/bus/dbus-Js1aOTDPEI,guid=39e3a14d5ecea4a5b7510ec46af92ffb",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "result": {
+    "code": 0,
+    "signal": null
+  },
+  "busStop": {
+    "terminated": true,
+    "killed": false
+  },
+  "watchdog": {
+    "clean": true,
+    "reason": null
+  },
+  "finished": "2026-11-15T04:10:48.072Z",
+  "ended": [
+    {
+      "what": "openbox",
+      "pid": 910805
+    }
+  ]
+}

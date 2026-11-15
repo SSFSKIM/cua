@@ -1,0 +1,483 @@
+{
+  "measurement": {
+    "schema": 2,
+    "experiment": "171-m5-20261115",
+    "freshInstall": true
+  },
+  "nodeMode": "managed",
+  "preparation": {
+    "device": "cua-171",
+    "home": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs",
+    "userHome": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs.home",
+    "token": "f0211317-07d2-4c6d-8e46-49a6f846288c",
+    "xSession": {
+      "DISPLAY": ":1",
+      "XAUTHORITY": "/tmp/cua171-no-xauthority-1146144-8134fb0b0bf1",
+      "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-gl-lqMIUv/baseline/desktop/session/bus/dbus-mRCaJNtBJs,guid=d3d0f2593f2c30b071f7b67d6af94f63",
+      "XDG_RUNTIME_DIR": "/run/user/501",
+      "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+    },
+    "nodeMode": "managed",
+    "nodeOverride": null,
+    "ownNode": {
+      "path": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/node/24.22.0/bin/node",
+      "version": "v24.22.0"
+    }
+  },
+  "controllerIdentity": {
+    "hostname": "dc-linux171-1e68",
+    "platform": "linux",
+    "arch": "x64",
+    "os": "6.8.0-138-generic",
+    "node": "v24.22.1",
+    "cpu": {
+      "model": "AMD EPYC-Rome Processor",
+      "count": 8
+    }
+  },
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs.home",
+  "xSession": {
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-1146144-8134fb0b0bf1",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-gl-lqMIUv/baseline/desktop/session/bus/dbus-mRCaJNtBJs,guid=d3d0f2593f2c30b071f7b67d6af94f63",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "deviceIdentity": {
+    "alias": "cua-171",
+    "arch": "x64",
+    "hostname": "dc-linux171-1e68",
+    "os": {
+      "name": "Ubuntu",
+      "version": "24.04.4 LTS",
+      "build": "6.8.0-138-generic"
+    },
+    "cpu": {
+      "model": "AMD EPYC-Rome Processor",
+      "count": 8
+    }
+  },
+  "load": {
+    "device": {
+      "before": "22:27:10 up 18 days, 17 min,  4 users,  load average: 0.76, 0.84, 1.10",
+      "after": "22:28:38 up 18 days, 18 min,  4 users,  load average: 0.45, 0.73, 1.04"
+    },
+    "controller": {
+      "before": "22:27:10 up 18 days, 17 min,  3 users,  load average: 0.76, 0.84, 1.10",
+      "after": "22:28:38 up 18 days, 18 min,  4 users,  load average: 0.45, 0.73, 1.04"
+    }
+  },
+  "device": "cua-171",
+  "platform": "linux",
+  "host": "cua",
+  "surface": "computer",
+  "hostAttestations": [
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 177,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "7e629a98-55ca-4e9c-84d4-dfaa9a784c3b",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 171,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "bb3e1325-db11-400f-937b-d0002563535e",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 159,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "47d77537-04e3-410e-9aad-286e5706be6c",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 158,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "521f3b4a-1455-4920-9942-9e53eee9d05e",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 190,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "6d1f8d7a-6a3c-4207-bd97-4b4e914b304b",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 198,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "06ab27c1-eda8-4dd0-ab3e-c97466baff2a",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    }
+  ],
+  "connections": 6,
+  "protocolVersion": "2025-06-18",
+  "environment": {
+    "CUA_REPL_HOST": "cua",
+    "CUA_NATIVE_ENGINE": "cua",
+    "CUA_SHIM_SURFACES": "computer",
+    "CUA_SHIM_PERSIST": "session",
+    "CUA_SHIM_SECRETS": "off",
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/cua171-no-xauthority-1146144-8134fb0b0bf1",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/cua171-gl-lqMIUv/baseline/desktop/session/bus/dbus-mRCaJNtBJs,guid=d3d0f2593f2c30b071f7b67d6af94f63",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "plan": {
+    "samples": 30,
+    "cold": 5,
+    "tasks": 10,
+    "coldPlan": [
+      "miss",
+      "hit",
+      "miss",
+      "hit",
+      "hit"
+    ]
+  },
+  "started": "2026-11-15T06:27:10.384Z",
+  "spikeWaitMs": 986,
+  "elicitations": [
+    {
+      "t": "2026-11-15T06:27:23.109Z",
+      "at": 50290.620168,
+      "app": "org.gnome.gedit",
+      "action": "accept"
+    }
+  ],
+  "complete": true,
+  "nativeEngine": {
+    "requested": "cua",
+    "bin": null,
+    "expected": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/engine/linux/cua-engine",
+    "error": null,
+    "observed": [
+      {
+        "exe": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/engine/linux/cua-engine",
+        "kind": "cua",
+        "parent": "supervisor.mjs",
+        "service": "cua",
+        "role": "launcher-shim",
+        "namesItsParent": true
+      },
+      {
+        "exe": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/engine/linux/cua-engine",
+        "kind": "cua",
+        "parent": "trusted-worker.mjs",
+        "service": "cua"
+      }
+    ]
+  },
+  "engineStop": {},
+  "pinnedEngine": {
+    "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca",
+    "record": {
+      "gate": "pinned",
+      "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca",
+      "target": "x86_64-unknown-linux-musl",
+      "linkage": "static-pie",
+      "version": "cua-engine 0.4.0 (c55c8e08d9cb)",
+      "commit": "01ff0648f3afc4a234669cd381395c91543ce3f7",
+      "clean": true,
+      "attestation": {
+        "verified": true,
+        "signer_workflow": "SSFSKIM/cua/.github/workflows/linux-engine.yml",
+        "attestations": [
+          {
+            "subjects": [
+              {
+                "name": "cua-engine-0.4.0-linux-x64",
+                "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+              },
+              {
+                "name": "cua-engine-0.4.0-linux-arm64",
+                "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42"
+              }
+            ],
+            "predicate": "https://slsa.dev/provenance/v1",
+            "source_commit": "c55c8e08d9cbbb057b8b95434787b1e45d41184c",
+            "source_ref": "refs/heads/release/linux-engine-v0.4.0",
+            "signer": "https://github.com/SSFSKIM/cua/.github/workflows/linux-engine.yml@refs/heads/release/linux-engine-v0.4.0",
+            "run": "https://github.com/SSFSKIM/cua/actions/runs/43637317960/attempts/1",
+            "runner": "github-hosted"
+          },
+          {
+            "subjects": [
+              {
+                "name": "cua-engine-0.4.0-linux-x64",
+                "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+              },
+              {
+                "name": "cua-engine-0.4.0-linux-arm64",
+                "sha256": "0cbde8f06ca2f70a1ea962fd49452591a2ca16961c746f5d90bfccf53e890d42"
+              }
+            ],
+            "predicate": "https://slsa.dev/provenance/v1",
+            "source_commit": "c55c8e08d9cbbb057b8b95434787b1e45d41184c",
+            "source_ref": "refs/heads/feat/171-m4",
+            "signer": "https://github.com/SSFSKIM/cua/.github/workflows/linux-engine.yml@refs/heads/feat/171-m4",
+            "run": "https://github.com/SSFSKIM/cua/actions/runs/43608161213/attempts/1",
+            "runner": "github-hosted"
+          }
+        ]
+      },
+      "pin": {
+        "arch": "x64",
+        "version": "0.4.0",
+        "release": "linux-engine-v0.4.0",
+        "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+      },
+      "installed": {
+        "path": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/engine/linux/install.json",
+        "build": "pinned",
+        "release": "linux-engine-v0.4.0",
+        "version": "0.4.0",
+        "installedAt": "2026-11-15T06:27:01.517Z"
+      },
+      "engine_tree": {
+        "path": "native/linux-engine",
+        "commit": "c55c8e08d9cbbb057b8b95434787b1e45d41184c",
+        "equal": true
+      }
+    }
+  },
+  "commit": "01ff0648f3afc4a234669cd381395c91543ce3f7",
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs",
+  "node": "v24.22.1",
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "runtime": {
+    "release": "26.928.40906-linux-x64"
+  },
+  "sandbox": {
+    "mode": "scoped",
+    "explicit": false
+  },
+  "hardware": {
+    "model": "vServer",
+    "chip": "x64, 8 CPUs",
+    "memoryBytes": 16372285440
+  },
+  "os": {
+    "name": "Ubuntu",
+    "version": "24.04.4 LTS",
+    "build": "6.8.0-138-generic"
+  },
+  "display": {
+    "pixels": "1280 x 800",
+    "resolution": "1280 x 800",
+    "scale": 1,
+    "depth": 24
+  },
+  "gedit": {
+    "version": "gedit - Version 46.2",
+    "locale": {
+      "LANG": "C.UTF-8"
+    },
+    "owned": [
+      {
+        "pid": 1157165,
+        "dir": "/tmp/cua-native-baseline-66vMvi",
+        "file": "/tmp/cua-native-baseline-66vMvi/scratch-2dc20c.txt",
+        "role": "scratch"
+      },
+      {
+        "pid": 1158112,
+        "dir": "/tmp/cua-native-baseline-QHXeLO",
+        "file": "/tmp/cua-native-baseline-QHXeLO/victim-a44427.txt",
+        "role": "victim"
+      },
+      {
+        "pid": 1158417,
+        "dir": "/tmp/cua-native-baseline-BYSBtp",
+        "file": "/tmp/cua-native-baseline-BYSBtp/victim-58c9c1.txt",
+        "role": "victim"
+      }
+    ],
+    "targetCleanup": [
+      {
+        "op": "method.typeText",
+        "terminated": [
+          1158112
+        ],
+        "notOwned": [],
+        "gone": [],
+        "removed": [
+          "/tmp/cua-native-baseline-QHXeLO"
+        ]
+      },
+      {
+        "op": "method.paste",
+        "terminated": [
+          1158417
+        ],
+        "notOwned": [],
+        "gone": [],
+        "removed": [
+          "/tmp/cua-native-baseline-BYSBtp"
+        ]
+      }
+    ],
+    "crashReportsBefore": {
+      "files": 0,
+      "newest": null
+    },
+    "cleanup": {
+      "terminated": [
+        1157165
+      ],
+      "notOwned": [],
+      "gone": [
+        1158112,
+        1158417
+      ],
+      "removed": [
+        "/tmp/cua-native-baseline-66vMvi"
+      ]
+    },
+    "crashReportsAfter": {
+      "files": 0,
+      "newest": null
+    }
+  },
+  "x": {
+    "display": ":1",
+    "xauthority": "/tmp/cua171-no-xauthority-1146144-8134fb0b0bf1",
+    "xauthorityPresent": false,
+    "bus": "unix:path=/tmp/cua171-gl-lqMIUv/baseline/desktop/session/bus/dbus-mRCaJNtBJs,guid=d3d0f2593f2c30b071f7b67d6af94f63"
+  },
+  "helperAtStart": {
+    "helper": "none observed",
+    "helpers": []
+  },
+  "answeringNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-0wZlIs/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "sandboxLaunch": {
+    "launcher": "cua",
+    "tmpdir": "session"
+  },
+  "helpersAtBind": {
+    "helper": "none observed",
+    "helpers": []
+  },
+  "service": {
+    "surface": "computer",
+    "engine": "cua",
+    "answered": "cua"
+  },
+  "leftovers": {
+    "serves": 0,
+    "geditRunning": 0
+  },
+  "finished": "2026-11-15T06:28:38.066Z",
+  "preparationCleanup": {
+    "removed": true
+  }
+}

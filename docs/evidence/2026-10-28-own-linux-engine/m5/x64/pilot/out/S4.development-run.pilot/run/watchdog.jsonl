@@ -1,0 +1,4 @@
+{"kind":"ready","ms":1794727215613,"display":":1","interval_ms":2000,"bound_ms":5000,"pid":1275644}
+{"kind":"ready","ms":1794727215639,"display":":1","interval_ms":2000,"bound_ms":5000,"pid":1275648}
+{"kind":"end","ms":1794727601999,"round_trips":194}
+{"kind":"end","ms":1794727602000,"round_trips":194}

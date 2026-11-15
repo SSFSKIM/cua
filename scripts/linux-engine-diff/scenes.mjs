@@ -47,7 +47,7 @@ import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } 
 import { geditTitle } from './gedit-title.mjs';
 import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
-import { cleanupOnStop } from './stop.mjs';
+import { cleanupOnFatal, cleanupOnStop } from './stop.mjs';
 import { signalIfSame } from './pid-identity.mjs';
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { RECORD_DECLINED, RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
@@ -175,6 +175,8 @@ export function desktopEnding(ending) {
   // a run whose watchdog did not end cleanly (stalled, lost before the run ended, failed, or none) ran unwatched
   const { watchdog } = ending;
   if (!watchdog?.clean) foreign.push(`the run's watchdog: ${watchdog ? watchdog.reason : 'there was none'}, so the display went unwatched`);
+  // a cleanup step that failed (`closeEverything`, which tried every step): what it left is unknown
+  for (const f of ending.cleanup ?? []) foreign.push(`the run's cleanup: ${f}`);
   return {
     record: {
       active_start: ending.start,
@@ -186,6 +188,8 @@ export function desktopEnding(ending) {
       // the run's Chrome as its end stopped it (pids it spawned: terminated, killed, still running), and its session bus
       ...(ending.chrome ? { chrome: { spawned: ending.chrome.spawned.length, terminated: ending.chrome.terminated, killed: ending.chrome.killed, left: ending.chrome.left } } : {}),
       ...(ending.session ? { session: ending.session } : {}),
+      // the cleanup's failed steps, each also a failure above; every other step ran (ruling 721)
+      ...(ending.cleanup?.length ? { cleanup_failures: ending.cleanup } : {}),
       record: record.skipped ? { skipped: record.skipped } : { clean: record.clean, requests: record.requests, mutating: record.mutating, foreign: record.foreign.slice(0, 10).map(foreignLine), ...(record.foreign.length ? { first_foreign: record.foreign.slice(0, 5).map(({ client, what, window, text }) => ({ client, what, window, request: text })) } : {}), unplaced: record.unplaced ?? 0, unattributed: record.unattributed ?? null, ...(record.error ? { error: record.error } : {}) },
     },
     foreign,
@@ -265,7 +269,13 @@ export class Desktop {
     this.starting = null;
     // a run stopped by SIGINT or SIGTERM closes what it opened, as one that ends does (stop.mjs)
     this.stopHooks = [];
-    this.unhookStop = cleanupOnStop(() => this.stop());
+    // and so does a run that meets an error nothing caught, which would end node past every finally (ruling 721)
+    const unhookSignals = cleanupOnStop(() => this.stop());
+    const unhookFatal = cleanupOnFatal(() => this.stop());
+    this.unhookStop = () => {
+      unhookSignals();
+      unhookFatal();
+    };
   }
 
   /** The harness's own reader (one cua-engine process), started at its first use. */
@@ -1168,17 +1178,39 @@ export class Desktop {
    * covers this cleanup too.
    */
   async closeEverything() {
-    await this.close(this.windows.filter((w) => w !== this.holder));
-    await this.ownReader?.close();
+    // every step is tried, whatever an earlier one did (ruling 721): a step that throws is recorded, never the end of
+    // the cleanup, so the session bus and the scratch directory go whatever the windows did
+    const failures = [];
+    const step = async (what, act) => {
+      try {
+        await act();
+      } catch (error) {
+        failures.push(`${what}: ${String(error?.message ?? error).split('\n')[0]}`);
+      }
+    };
+    await step("closing the run's windows", () => this.close(this.windows.filter((w) => w !== this.holder)));
+    await step("closing the harness's reader", () => this.ownReader?.close());
     // the holder last: until here the window manager's fallback lands on it; after it, the window manager chooses
-    if (this.holder && this.windows.includes(this.holder)) await this.close([this.holder]);
-    this.chromeEnding = this.chrome ? await this.chrome.stop() : null;
-    this.sessionEnding = await this.endSession();
-    this.endEngines?.();
-    rmSync(this.dir, { recursive: true, force: true });
-    this.pruneLogs();
-    if (this.trace) this.ending = await this.finishTrace();
-    this.unwatchOperations?.();
+    await step('closing the holder', async () => {
+      if (this.holder && this.windows.includes(this.holder)) await this.close([this.holder]);
+    });
+    await step("stopping the run's Chrome", async () => {
+      this.chromeEnding = this.chrome ? await this.chrome.stop() : null;
+    });
+    await step("stopping the run's session bus", async () => {
+      this.sessionEnding = await this.endSession();
+    });
+    await step("ending the engines' scratch", () => this.endEngines?.());
+    await step("removing the run's scratch directory", () => rmSync(this.dir, { recursive: true, force: true }));
+    await step("pruning the applications' logs", () => this.pruneLogs());
+    await step("stopping the run's trace", async () => {
+      if (this.trace) this.ending = await this.finishTrace();
+    });
+    await step("ending the watch of the engines' operations", () => this.unwatchOperations?.());
+    // reported together, beside the run's end (`desktopEnding` fails the run with each)
+    this.cleanupFailures = failures;
+    if (this.ending) this.ending.cleanup = failures;
+    if (failures.length) process.stderr.write(`the run's cleanup: ${failures.length} step${failures.length === 1 ? '' : 's'} failed, every other step ran: ${failures.join('; ')}\n`);
     // only once everything is closed: a signal meanwhile still waits for this cleanup
     this.unhookStop();
   }

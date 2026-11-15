@@ -49,6 +49,7 @@ import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
 import { cleanupOnFatal, cleanupOnStop } from './stop.mjs';
 import { signalIfSame } from './pid-identity.mjs';
+import { inTest } from './hermetic.mjs';
 import { SCRATCH_PREFIX, leftoverCheck, leftoverLines } from './leftovers.mjs';
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { RECORD_DECLINED, RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
@@ -1218,7 +1219,8 @@ export class Desktop {
     // the end check (rulings 721, 724): every other run's scratch and its session buses, named and left alone, made
     // after this run's own is gone, whatever ended the run
     await step('the end check of what runs left', () => {
-      this.leftovers = leftoverCheck({ own: [this.dir], ...(this.leftoverOptions ?? {}) });
+      // a test process reads no real scratch root unless its test names one (hermetic.mjs), as it reaches no real display
+      this.leftovers = leftoverCheck({ own: [this.dir], ...(this.leftoverOptions ?? (inTest() ? { roots: [] } : {})) });
       const lines = leftoverLines(this.leftovers);
       if (lines.length) this.report(`the end check (findings, left alone): ${lines.join('; ')}\n`);
     });

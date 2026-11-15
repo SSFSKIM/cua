@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import {startFixture} from './fixture/serve.mjs';
 import {runScenario} from '../../scripts/browser-parity/runner.mjs';
 import controls from './scenarios/actions/locators.mjs';
+import coordinates from './scenarios/input/coordinates.mjs';
 const AsyncFunction=Object.getPrototypeOf(async()=>{}).constructor;
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
@@ -73,4 +74,49 @@ test('acknowledging the final record also acknowledges earlier records, even whe
   pending.push(vm.runInContext('record({dragEnd:true})',page));
   await pending[1];
   assert.deepEqual((await (await fetch(fixture.url+'/state')).json()).events,[{dragStart:true},{dragEnd:true}]);
+});
+
+// #168: the drag cell waits for the fixture's acknowledgement of the drag's end, which comes only once the records the
+// page queued before it (the dragStart, and a pointermove's already in the chain) have been POSTed. On a loaded runner
+// each POST is slow; here each takes 900 ms, so the end is acknowledged about two round trips (1.8 s) after the release,
+// past the cell's old 1.5 s. The cell must still see it, within the scenario's 3 s acknowledgement budget, as the type
+// and double cells do.
+test('the drag cell sees the fixture acknowledge the drag\'s end when every queued record is slow to POST',async t=>{
+  const fixture=await startFixture({port:0});const html=await (await fetch(fixture.url+'/input.html')).text();const pending=[];
+  let page;
+  // the page's own record chains (the pointermoves' too) settle before the fixture goes
+  t.after(async()=>{await Promise.allSettled([...pending,vm.runInContext('pointerRecords',page),vm.runInContext('recording',page)]);await fixture.close();});
+  const attributes=new Map(),listeners={},elements=new Map();
+  for(const [,tag,attrs] of html.matchAll(/<(div|output)\b((?:[^>"']|"[^"]*"|'[^']*')*)>/g)){
+    const id=attrs.match(/\bid="([^"]+)"/)?.[1];
+    if(id)elements.set(id,{tag,textContent:'',handlers:Object.fromEntries([...attrs.matchAll(/\b(on\w+)="([^"]*)"/g)].map(m=>m.slice(1)))});
+  }
+  const document={documentElement:{setAttribute:(k,v)=>attributes.set(k.toLowerCase(),String(v))},querySelector:s=>elements.get(s.slice(1)),
+    addEventListener:(name,handler)=>{(listeners[name]??=[]).push(handler);}};
+  page=vm.createContext({document,fetch:async(url,options)=>{await pause(900);return fetch(fixture.url+url,options);}});
+  for(const [,script] of html.matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script,page);
+  const fire=(handler,point)=>{
+    page.target=elements.get('drag');page.pointer={clientX:point.x,clientY:point.y};
+    pending.push(Promise.resolve(vm.runInContext(`(function(event){return (${elements.get('drag').handlers[handler]});}).call(target,pointer)`,page)));
+  };
+  const move=point=>{for(const listener of listeners.pointermove??[])listener({clientX:point.x,clientY:point.y});};
+  const find=selector=>{
+    const attribute=selector.match(/^html\[([^=]+)="([^"]*)"\]$/);
+    if(attribute)return attributes.get(attribute[1])===attribute[2]?document.documentElement:undefined;
+    return elements.get(selector.slice(1));
+  };
+  const waitUntil=async(found,timeoutMs)=>{
+    for(const deadline=Date.now()+timeoutMs;!found();){if(Date.now()>deadline)throw new Error('fixture acknowledgement timed out');await pause(5);}
+  };
+  const tab={
+    cua:{async drag({path}){const [start,...rest]=path;move(start);fire('onpointerdown',start);for(const point of rest)move(point);fire('onpointerup',path.at(-1));}},
+    playwright:{
+      locator:selector=>({waitFor:({timeoutMs})=>waitUntil(()=>find(selector),timeoutMs),textContent:async()=>find(selector)?.textContent??null}),
+      getByText:text=>({waitFor:({timeoutMs})=>waitUntil(()=>[...elements.values()].some(e=>e.textContent===text),timeoutMs)}),
+    },
+  };
+  const drag=coordinates.cells.find(c=>c.label==='drag');
+  assert.equal(await new AsyncFunction('tab',drag.code)(tab),'ended');
+  const events=(await (await fetch(fixture.url+'/state')).json()).events;
+  assert.ok(events.some(e=>e.dragStart&&e.x===60&&e.y===180)&&events.some(e=>e.dragEnd&&e.x===160&&e.y===180),JSON.stringify(events));
 });

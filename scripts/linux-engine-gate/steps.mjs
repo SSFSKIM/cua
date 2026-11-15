@@ -24,7 +24,7 @@
 // the settle's observations, the paste and exit settle, the accept signal's false releases and the late takes, T17's
 // Electron cells, and GTK 4's covered capture.
 
-import { PINNED_RELEASE } from '../linux-engine-diff/candidate.mjs';
+import { DEVELOPMENT_ON_PINNED, PINNED_DEVELOPMENT, PINNED_RELEASE, isCounted } from '../linux-engine-diff/candidate.mjs';
 import { SCENE_OPS } from '../linux-engine-diff/ops.mjs';
 
 /** The M3 gate's scenes (`m3-gate-musl`), then M4's, in the frozen order. */
@@ -151,11 +151,14 @@ export const verdictOps = (step) => [...new Set(step.scenes.flatMap((scene) => s
  */
 export function runName(step, { gate, pilot }) {
   if (gate === 'pinned') return `pinned-${step.name}`;
+  if (gate === PINNED_DEVELOPMENT) return `m5-pinned-dev-${step.name}${pilot ? '-pilot' : ''}`;
   return `m5-${gate ? 'gate' : 'dev'}-${step.name}${pilot ? '-pilot' : ''}`;
 }
 
 /** The label every artifact of a step carries, and the directory name's form of it (candidate.mjs `gateLabel`). */
 export function stepLabel({ gate, pilot }) {
+  // a pilot on the pinned rule is a development run on the pinned release (`PINNED_DEVELOPMENT`), never counted
+  if (gate === PINNED_DEVELOPMENT) return { label: DEVELOPMENT_ON_PINNED, slug: `development-run.pinned${pilot ? '.pilot' : ''}`, pilot: Boolean(pilot) };
   if (gate && pilot) throw new Error('a pilot is never a release gate, nor acceptance: drop --pilot, or run it as a development run');
   if (gate === 'pinned') return { label: PINNED_RELEASE, slug: 'pinned-release', pilot: false };
   return { label: gate ? 'release gate' : 'development run, not a release gate', slug: gate ? 'release-gate' : `development-run${pilot ? '.pilot' : ''}`, pilot: Boolean(pilot) };
@@ -167,7 +170,8 @@ export function stepLabel({ gate, pilot }) {
  * checks), a gate's verdict run takes none (it is a gate unless `--dev`); a development run's verdict takes `--dev`;
  * acceptance on the pinned release (`gate` 'pinned') gives either kind `--pinned`, candidate.mjs's pinned rule. A
  * pilot (`pilot`, a count) runs the step's smallest form: its `pilot` transform, or `--trials <count>`, and for a
- * verdict one block.
+ * verdict one block; and the harness's `--pilot`, so it takes no top-up and reports what it could not decide unjudged
+ * (ruling 722). A pilot on the pinned rule (`gate` 'pinned-dev') gives `--pinned --pilot`.
  */
 export function stepArgs(step, { paths, gate, pilot = null }) {
   const run = runName(step, { gate, pilot });
@@ -178,7 +182,8 @@ export function stepArgs(step, { paths, gate, pilot = null }) {
       '--scene', step.scenes.join(','), '--ops', verdictOps(step).join(','),
       '--blocks', pilot ? '1' : '3', '--run', run,
       ...(step.ballast ? ['--ballast', 'gate'] : []),
-      ...(gate === 'pinned' ? ['--pinned'] : gate ? [] : ['--dev']),
+      ...(gate === 'pinned' || gate === PINNED_DEVELOPMENT ? ['--pinned'] : gate ? [] : ['--dev']),
+      ...(pilot ? ['--pilot'] : []),
     ];
   }
   if (step.kind === 'facade') return ['--vendor-js', paths.vendorJs, '--engine', paths.candidate, ...step.args];
@@ -186,7 +191,7 @@ export function stepArgs(step, { paths, gate, pilot = null }) {
   if (step.kind === 'suite') return [...step.args];
   const base = fill(step.args);
   const sized = pilot ? (step.pilot ?? ((args, n) => [...args, '--trials', String(n)]))(base, pilot) : base;
-  return [...sized, '--cua', paths.candidate, '--run', run, ...(gate === 'pinned' ? ['--pinned'] : gate ? ['--gate'] : [])];
+  return [...sized, '--cua', paths.candidate, '--run', run, ...(gate === 'pinned' || gate === PINNED_DEVELOPMENT ? ['--pinned'] : gate ? ['--gate'] : []), ...(pilot ? ['--pilot'] : [])];
 }
 
 /** The harness script a step runs, relative to the checkout: a suite's is suites.sh, whatever its engine. */
@@ -205,7 +210,7 @@ export const suiteEnv = ({ candidate, dir, gate, logs, pinned = false, device })
   ...(pinned ? {} : { ENGINE_BIN: candidate }),
   OUT: `${dir}/run`,
   LOGS: logs,
-  LABEL: gate ? 'counted' : 'pilot',
+  LABEL: isCounted(gate) ? 'counted' : 'pilot',
   DEVICE: device,
 });
 

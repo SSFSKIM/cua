@@ -922,7 +922,7 @@ export async function runDrag(args, { desktop, emit }) {
     cells.push(row);
     if (kind === 'select') selectRuns[family] = judged;
     const took = (label) => `${judged.filter((r) => r.engine === label && r.took).length}/${judged.filter((r) => r.engine === label).length}`;
-    const verdict = !row.reference && !row.load ? (row.pinned_took === 0 ? 'no vendor effect: not judged' : 'no usable pinned reference: not judged') : cuaLanes.map((l) => `${l} ${cellVerdict(row, l)}`).join(', ');
+    const verdict = !row.reference && !row.load ? (row.pinned_took === 0 ? 'no vendor effect: not judged' : 'no usable pinned reference: not judged') : cuaLanes.map((l) => `${l} ${cellVerdict(row, l, { pilot: Boolean(args.pilot) })}`).join(', ');
     const witnessClean = judged.every((r) => r.witness) ? 'clean' : '**changed**';
     md.push(`| ${FAMILIES[family].title} | ${kind} | ${lanes.map((l) => took(l.label)).join(' | ')} | ${lanes.slice(1).map((l) => r1(row.ms[l.label])).join(' | ')} | ${r1(row.ms.pinned)} | ${witnessClean} | ${judgeNotes(row, cuaLanes)} | ${verdict} |`);
     process.stdout.write(`${md.at(-1)}\n`);
@@ -974,9 +974,10 @@ export async function runDrag(args, { desktop, emit }) {
           };
           await measure(n, 0);
           // a long path's speed still undetermined is sampled on, every lane alike, to 40 a side (topUpRuns), for the
-          // shipped lane where the run has one (a measurement lane that misses would otherwise always run to 40)
+          // shipped lane where the run has one (a measurement lane that misses would otherwise always run to 40); a
+          // pilot takes no top-up, and its undecided speed is unjudged (ruling 722)
           const topUpLanes = cuaLanes.includes('cua') ? ['cua'] : cuaLanes;
-          for (let total = n; isLongPath(family, kind) && !args.load; ) {
+          for (let total = n; isLongPath(family, kind) && !args.load && !args.pilot; ) {
             const now = judgeRuns(kind, runs).runs;
             const more = Math.max(0, ...topUpLanes.map((l) => topUpRuns(dragSpeed(now, { candidate: l, vendors }), total)));
             if (!more) break;
@@ -1014,10 +1015,11 @@ export async function runDrag(args, { desktop, emit }) {
   }
   const missing = cells.filter((c) => c.pinned_took > 0 && Object.values(c.lanes).some((l) => !l.pass));
   md.push('', missing.length ? `Cells where a cua lane missed a run the pinned build took: ${missing.map((c) => `${c.family} ${c.drag} (${Object.entries(c.lanes).filter(([, l]) => !l.pass).map(([k]) => k).join(', ')})`).join('; ')}.` : 'No cua lane missed a run the pinned build took.');
-  const verdict = dragVerdict(cells);
+  const verdict = dragVerdict(cells, { pilot: Boolean(args.pilot) });
   const completeness = dragCompleteness(plan, cells, errors);
   md.push('', cuaLanes.includes('cua') ? `The judges' verdict for \`cua\`: ${verdict.pass ? 'PASS' : `**FAIL**: ${verdict.failed.join('; ')}`}.` : 'No shipped `cua` lane: measured, not judged.');
   // a declared speed gap is listed apart, never a pass (deviations.mjs DRAG_SPEED_GAPS)
   if (verdict.declared.length) md.push('', `Declared speed gaps (listed apart, not passes): ${verdict.declared.join('; ')}.`);
-  return { md, complete: completeness.complete, pass: verdict.pass, failed: [...completeness.failed, ...verdict.failed] };
+  if (verdict.unjudged) md.push('', `Unjudged in this pilot (no top-up; not passes): ${verdict.unjudged.join('; ')}.`);
+  return { md, complete: completeness.complete, pass: verdict.pass, failed: [...completeness.failed, ...verdict.failed], ...(verdict.unjudged ? { unjudged: verdict.unjudged } : {}) };
 }

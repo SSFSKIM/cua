@@ -32,7 +32,10 @@
 // architecture, from that home's runtime. The facade suites run the one runner (suites.sh) with ENGINE=installed: it
 // passes no engine and checks each of its own homes by the same rule, on the device the environment names (`DEVICE`,
 // else this architecture's VM); on a `--candidate`, ENGINE=candidate names it, as M4's facade.sh did. `check --pinned <home>` runs the rule alone and prints its record. `--pinned --dev` takes the
-// home's engine unchecked, as a development run (a pilot).
+// home's engine unchecked, as a development run; `--pinned <home> --pilot <n>` (no `--dev`) is a development run on the
+// pinned release (M5's T4 round 2, task 87's finding 1): the pinned rule run inside the step, every record labelled
+// "development run on the pinned release, not acceptance, never counted". A pilot takes no top-up (ruling 722), and its
+// record lists what it left unjudged.
 //
 // Labels (the design session's condition): every directory and file a step writes carries "release gate" or
 // "development run, not a release gate": the step's directory is named `<step>.release-gate` or
@@ -47,7 +50,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { REPO_ROOT, candidateLine, gateLabel, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
+import { PINNED_DEVELOPMENT, REPO_ROOT, candidateLine, gateLabel, isPinnedRule, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
 import { pinnedEngine } from '../linux-engine-diff/pinned-home.mjs';
 import { linuxEnginePath } from '../../src/runtime/linux-engine.mjs';
 import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
@@ -131,14 +134,15 @@ export function parseGateArgs(argv, { arch = process.arch, env = process.env } =
   Object.assign(a, defaultsFor(arch, given.pinned), { device: env.DEVICE || DEVICES_BY_ARCH[arch] || null }, given);
   if (a.pinned) {
     a.candidate = linuxEnginePath(a.pinned);
-    if (a.gate) a.gate = 'pinned';
+    // a pilot on the pinned rule is a development run on the pinned release, never counted (task 87's finding 1)
+    if (a.gate) a.gate = a.pilot ? PINNED_DEVELOPMENT : 'pinned';
   }
   if (a.mode === 'check') {
     if (!a.pinned) throw new GateRefused(`check needs --pinned <home>\n${USAGE}`);
     if (!a.gate) throw new GateRefused('check is the pinned rule itself: no --dev');
     return a;
   }
-  if (a.gate && a.pilot) throw new GateRefused('a pilot is never a release gate, nor acceptance: give --dev with --pilot');
+  if (a.gate && a.pilot && a.gate !== PINNED_DEVELOPMENT) throw new GateRefused('a pilot is never a release gate, nor acceptance: give --dev with --pilot, or --pinned <home> for a development run on the pinned release');
   if (a.mode !== 'list') {
     if (!STEPS.some((s) => s.name === a.step)) throw new GateRefused(`no gate step ${a.step}; the steps: ${STEPS.map((s) => s.name).join(', ')}`);
     if (!a.candidate) throw new GateRefused(`${a.mode} needs --pinned <home> or --candidate <file>\n${USAGE}`);
@@ -168,7 +172,7 @@ export function checkCheckout({ root = REPO_ROOT, out, gate, git = (args) => exe
   return { commit, clean: true };
 }
 
-const runsFrom = (gate) => (gate === 'pinned' ? 'acceptance on the pinned release runs from a clean git checkout' : "a gate runs from a clean git checkout at the candidate's commit");
+const runsFrom = (gate) => (gate === 'pinned' ? 'acceptance on the pinned release runs from a clean git checkout' : gate === PINNED_DEVELOPMENT ? 'a development run on the pinned release runs from a clean git checkout (the pinned rule)' : "a gate runs from a clean git checkout at the candidate's commit");
 
 const quote = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, "'\\''")}'`);
 const line = (argv) => argv.map(quote).join(' ');
@@ -219,6 +223,7 @@ function writeRecord(dir, record) {
     ...(r.started ? [`- started ${r.started}`] : []),
     ...(r.finished ? [`- finished ${r.finished}; exit ${r.exit}${r.display_watchdog ? `; private display's watchdog: ${r.display_watchdog}` : ''}`] : []),
     ...(r.unproved ? [`- unproved (declared gaps, not passes): ${r.unproved.length || 'none'}`, ...r.unproved.map((l) => `  - ${l}`)] : []),
+    ...(r.unjudged ? [`- unjudged (a pilot takes no top-up; not passes): ${r.unjudged.length || 'none'}`, ...r.unjudged.map((l) => `  - ${l}`)] : []),
     '',
   ];
   writeFileSync(join(dir, 'README.md'), md.join('\n'));
@@ -285,7 +290,7 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
     store = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
     try {
       const prepared = await prepare({ source: a.candidate, gate: a.gate, dir: store, root });
-      candidatePath = a.gate === 'pinned' ? pinned(a.candidate, prepared.record).cua : prepared.path;
+      candidatePath = isPinnedRule(a.gate) ? pinned(a.candidate, prepared.record).cua : prepared.path;
       record.candidate.record = prepared.record;
     } catch (error) {
       rmSync(store, { recursive: true, force: true });
@@ -344,9 +349,30 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   // its exit status: the suites runner writes them, and the step's README and step.json list them
   const unproved = join(dir, 'run', 'baseline', 'unproved.txt');
   if (existsSync(unproved)) record.unproved = readFileSync(unproved, 'utf8').split('\n').filter(Boolean);
+  // what a pilot left unjudged (ruling 722), never a pass: the harness's end or summary row, or R2's list
+  if (a.pilot) record.unjudged = pilotUnjudged(dir);
   writeRecord(dir, record);
   appendFileSync(join(dir, 'stdout.log'), `${label}: ${step.name} exit ${exit}\n`);
   return exit;
+}
+
+/**
+ * What a pilot step left unjudged, as its run wrote it: the harness's last `end` (a verdict run) or `experiment-summary`
+ * row's `unjudged` in `run/results.jsonl`, or the suites runner's `run/baseline/unjudged.txt` (R2).
+ */
+function pilotUnjudged(dir) {
+  const listed = join(dir, 'run', 'baseline', 'unjudged.txt');
+  if (existsSync(listed)) return readFileSync(listed, 'utf8').split('\n').filter(Boolean);
+  const results = join(dir, 'run', 'results.jsonl');
+  if (!existsSync(results)) return [];
+  const rows = readFileSync(results, 'utf8').split('\n').filter(Boolean).flatMap((l) => {
+    try {
+      return [JSON.parse(l)];
+    } catch {
+      return [];
+    }
+  });
+  return rows.filter((r) => ['end', 'experiment-summary'].includes(r.kind)).flatMap((r) => r.unjudged ?? []);
 }
 
 const noEngine = (a) => `no engine at ${a.candidate}: install it in the run home first, CUA_HOME=${a.pinned} node bin/cua.mjs install --engine`;

@@ -15,7 +15,8 @@
 #             When the comparison names series only a top-up can decide (TOP-UP NEEDED), one top-up: three more runs a
 #             lane under $OUT/baseline-topup/, and compare --engines with it, whose verdict is the part's (the gate's R2,
 #             the design session, 2026-11-13). A series reported UNPROVED under a declared gap (F8a) is logged and
-#             listed in $OUT/baseline/unproved.txt, which the step's record carries (gate.mjs)
+#             listed in $OUT/baseline/unproved.txt, which the step's record carries (gate.mjs). A pilot (LABEL=pilot)
+#             takes no top-up (ruling 722): the series only it could decide are unjudged, $OUT/baseline/unjudged.txt
 #   accept    scripts/accept/linux-native.mjs, CUA_NATIVE_ENGINE=cua, in a home of the run's (installed: checked), under
 #             the 50 ms sampler, whose record is judged (engine-watch.mjs)                       (--session)
 #   device    scripts/accept/linux-device-mode.mjs, the same way                                  (--session)
@@ -131,6 +132,13 @@ case "$part" in
     # Acceptance 3's remedy, once: the series the sitting left undetermined, when only they fail it, pooled with one
     # top-up of the same engine and display (the same private desktop and experiment); never a second
     need=$(sed -n 's/^TOP-UP NEEDED: //p' "$L/compare.out")
+    # a pilot takes no top-up (ruling 722): the series only a top-up could decide are unjudged, listed in
+    # $OUT/baseline/unjudged.txt for the step's record, never a pass; nothing else failed, so the part does not fail
+    if [ "$c" -ne 0 ] && [ -n "$need" ] && [ "$LABEL" = pilot ]; then
+      for op in $need; do echo "UNJUDGED (a pilot takes no top-up; not a pass): $op"; done > "$OUT/baseline/unjudged.txt"
+      log "pilot: no top-up; unjudged $need"
+      exit 0
+    fi
     if [ "$c" -ne 0 ] && [ -n "$need" ]; then
       log "top-up for $need"
       sitting "$OUT/baseline-topup" "topup-"

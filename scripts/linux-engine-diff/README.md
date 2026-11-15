@@ -116,6 +116,19 @@ HOME of the run's under its scratch, with an empty secret store, CUA_HOME the ru
 it selects the installed engine itself; the services the harness builds in its own process (the settle, the facade's
 two services) are given that installed path, and so are the wire-driven verdict runs and experiments.
 
+### A pilot (`--pilot`, #171 M5's T4 round 2)
+
+`--pilot` marks a development run as a pilot, a step's smallest form (`gate.mjs --pilot <n>` passes it with the form):
+it takes no top-up (the design session's ruling 722), so a pilot step lasts about as long as its form, not its full
+step. A series it could not decide is reported **unjudged** in every record it writes: a verdict run's verdict
+`unjudged` (`run.mjs` `pilotVerdict`) and its `end` row's `unjudged` list, a drag cell's speed and the events
+experiment's groups in their summary row's `unjudged`, R2's `unjudged.txt` (`suites.sh`). Unjudged is never a pass, so
+the run's line reads "no verdict FAIL", never "every verdict PASS"; it fails nothing, and everything else a run judges
+(answers, witness, audit, effect, a decided loss) is judged as before. With `--pinned` a pilot is a **development run on
+the pinned release** (`gate` `pinned-dev`, candidate.mjs `PINNED_DEVELOPMENT`): its engine taken by the pinned rule
+above, so the rule runs inside the step, every artifact labelled `development run on the pinned release, not
+acceptance, never counted`. `--pilot` is refused with `--gate`, and on a verdict run without `--dev` or `--pinned`.
+
 ## M4's gate as steps (`../linux-engine-gate/`, T18)
 
 `scripts/linux-engine-gate/steps.mjs` is the gate as one runnable sequence: steps of 45 minutes or less, each a valid run of its own (its
@@ -126,8 +139,10 @@ labelled directory; `run <step>` runs one step that is not `:0`'s, under the hos
 `locked.sh`). The `:0` steps are only ever printed: they run in the declared sitting through task 50's guards
 (`run71.sh` under `wrap71.py`). A gate step runs from a clean checkout at the candidate's commit (a symlinked
 `node_modules` counts as a change), with its out directory outside it; `--dev` runs a development build, and `--dev
---pilot <n>` each step's smallest form. Each step's directory is named `<step>.release-gate` or
-`<step>.development-run[.pilot]` and opens with a README and `step.json` carrying the label. T17's Electron cells
+--pilot <n>` each step's smallest form; `--pinned <home> --pilot <n>` the same as a development run on the pinned
+release, the pinned rule run inside the step. Each step's directory is named `<step>.release-gate`,
+`<step>.pinned-release`, `<step>.development-run[.pilot]` or `<step>.development-run.pinned.pilot` and opens with a README
+and `step.json` carrying the label; a pilot's record lists what it left unjudged. T17's Electron cells
 (`drop-signals --family electron --plan t17-fix3`) are judged by `drop-signals-judge.mjs` `electronDropVerdict`: a false
 ok, a missing landing, an error for a drop that landed and a missing cell fail; landed drops answered unconfirmed are
 findings with their counts.

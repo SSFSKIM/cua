@@ -607,9 +607,18 @@ export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], cand
  * failing (Acceptance 3) and every `required` group judged, none left with too few samples; through the vendor client the
  * times include its deferred settle, so they are recorded, not judged.
  */
-export function eventsPass({ answers, speeds, via, required = [] }) {
+export function eventsPass({ answers, speeds, via, required = [], pilot = false }) {
   if (via === 'vendor-js') return answers;
+  // a pilot takes no top-up (ruling 722): a group it left too short or undetermined is unjudged (`pilotUnjudged`), never
+  // a pass, and fails nothing; a decided loss and a wrong answer still fail
+  if (pilot) return answers && speeds.every((s) => s.verdict !== 'fail');
   return answers && speeds.every((s) => s.verdict !== 'fail' && s.verdict !== 'undetermined') && missingSpeedGroups(speeds, required).length === 0;
+}
+
+/** A pilot's groups no top-up decided (ruling 722): undetermined ones and required ones too short to judge, by name. */
+export function pilotUnjudged(speeds, required = []) {
+  const open = speeds.filter((s) => s.verdict === 'undetermined').map((s) => `${s.route} ${s.command} ${s.series}`);
+  return [...new Set([...open, ...missingSpeedGroups(speeds, required).map((g) => `${g.route} ${g.command} ${g.series}`)])];
 }
 
 /**
@@ -849,7 +858,8 @@ export async function runEvents(args, emit) {
         const sofar = { blocks, mismatches: blocks.flatMap((b) => b.mismatches) };
         const stage = eventStage(eventSpeeds(scenarioRows, { ...sofar, final: false }), eventSpeeds(scenarioRows, { ...sofar, final: true }), frozen);
         frozen = stage.frozen;
-        if (!stage.needs.length || more > TOP_UPS) break;
+        // a pilot takes no top-up (ruling 722): what its rounds leave open is unjudged
+        if (!stage.needs.length || more > TOP_UPS || args.pilot) break;
         const extra = topUpRoundsFor(stage.needs, rounds);
         emit({ kind: 'events-top-up', top_up: more, rounds: extra, groups: stage.needs.map((s) => ({ route: s.route, command: s.command, series: s.series, n: s.n, target: s.target, interval: s.interval, bar: s.bar })) });
         blocks.push(await desktopBlocks(engines, env, emit, { rounds: extra, firstRound: rounds, commands: new Set(stage.needs.map((s) => s.command)) }));
@@ -901,5 +911,7 @@ export async function runEvents(args, emit) {
     if (listed('declared gap').length) md.push('', `Declared speed gaps (deviations.mjs; not a pass): ${line(listed('declared gap'), (s) => `${f(s.medians.cua)} against ${f(s.bar)}, ${s.gap.section}: ${s.gap.reason}`)}.`);
     if (listed('fail').length) md.push('', `cua is slower than the faster vendor build over the wire: ${line(listed('fail'), (s) => `${f(s.medians.cua)} against ${f(s.bar)}, [${s.interval.join(', ')}]`)}.`);
   }
-  return { md, pass: eventsPass({ answers: pass, speeds, via, required }), answers: pass, speeds, missing };
+  const unjudged = args.pilot && via !== 'vendor-js' ? pilotUnjudged(speeds, required) : [];
+  if (unjudged.length) md.push('', `Unjudged in this pilot (no top-up; not passes): ${unjudged.join('; ')}.`);
+  return { md, pass: eventsPass({ answers: pass, speeds, via, required, pilot: Boolean(args.pilot) }), answers: pass, speeds, missing, unjudged };
 }

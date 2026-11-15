@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { DEVELOPMENT_RUN, PINNED_RELEASE, RELEASE_GATE, candidateLine, gateLabel } from './candidate.mjs';
+import { DEVELOPMENT_ON_PINNED, DEVELOPMENT_RUN, PINNED_RELEASE, RELEASE_GATE, candidateLine, gateLabel } from './candidate.mjs';
 import { matrixMarkdown } from './matrix-judge.mjs';
 import { UNCONFIRMED_LANDED_SHARE, dropCounts, summarizeEngine, verdictLine } from './stats.mjs';
 
@@ -57,7 +57,7 @@ const frac = (rows, key) => {
 /** What a run name's rows of more than one kind of execution mix: their labels, or "executions of different kinds". */
 const kindsMixed = (kinds) => {
   if ([...kinds].some((k) => gateLabel(k) === null)) return 'executions of different kinds';
-  const named = { [RELEASE_GATE]: 'a release gate', [PINNED_RELEASE]: PINNED_RELEASE, [DEVELOPMENT_RUN]: 'a development run' };
+  const named = { [RELEASE_GATE]: 'a release gate', [PINNED_RELEASE]: PINNED_RELEASE, [DEVELOPMENT_ON_PINNED]: 'a development run on the pinned release', [DEVELOPMENT_RUN]: 'a development run' };
   return Object.keys(named).filter((label) => [...kinds].some((k) => gateLabel(k) === label)).map((label) => named[label]).join(' and ');
 };
 

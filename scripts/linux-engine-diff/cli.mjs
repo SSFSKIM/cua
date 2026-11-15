@@ -6,14 +6,17 @@
 // during the experiment); and #267's: a verdict run is a release gate on the attested candidate `--cua` names
 // (candidate.mjs), or `--dev`, a run on any build that is not one; and M4's T18: an experiment that joins the gate
 // (`--gate`) takes its candidate through the same preparation, and one run without it is labelled a development run; and
-// M5's T1: `--pinned`, either kind run as acceptance on the pinned release (candidate.mjs's pinned rule).
+// M5's T1: `--pinned`, either kind run as acceptance on the pinned release (candidate.mjs's pinned rule); and M5's T4
+// round 2: `--pilot`, a development run's smallest form with no top-up, `--pinned --pilot` one on the pinned release.
+
+import { PINNED_DEVELOPMENT } from './candidate.mjs';
 
 export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
-      [--dev | --pinned] [--ballast gate] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
+      [--dev | --pinned] [--pilot] [--ballast gate] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>] [--trace-engine (with --dev)]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route|writer-drag --cua <bin> --out <dir> [--run <name>] [--gate | --pinned]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle|drop-signals|predicates|pointer-route|writer-drag --cua <bin> --out <dir> [--run <name>] [--gate | --pinned] [--pilot]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short | --dnd-select] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] [--lanes <list>] [--trace] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop, qt-activation)
       [--released <bin>] [--kinds click,key-click,press_key,drag,scroll] (qt-activation)
@@ -83,6 +86,10 @@ export function parseArgs(argv) {
     // acceptance on the pinned release (#171 M5, T1): a verdict run's or an experiment's engine checked by candidate.mjs's
     // pinned rule, and every artifact labelled so (`gate` 'pinned')
     else if (flag === '--pinned') pinned = true;
+    // a pilot (#171 M5, T4 round 2; ruling 722): the step's smallest form, a development run only, that takes no top-up
+    // and reports a series it could not decide unjudged, never a pass; with --pinned, a development run on the pinned
+    // release (`gate` 'pinned-dev'), its engine taken by the pinned rule
+    else if (flag === '--pilot') a.pilot = true;
     else if (flag === '--no-counts') a.counts = false;
     else if (flag === '--no-audit') a.audit = false;
     // the dnd experiment without its 100 ms grab sampler, whose own grabs can fail Chrome's drag-start grab (M3.1)
@@ -192,10 +199,12 @@ export function parseArgs(argv) {
   if (a.dndCold) a.coverMs ??= 0;
   if (a.dev && a.mode !== 'run') throw new Error('--dev is the verdict run\'s: an experiment is a development run unless --gate');
   if (a.gate && a.mode !== 'experiment') throw new Error('--gate is the experiments\': a verdict run is a release gate unless --dev');
+  if (a.pilot && (a.gate || (a.mode === 'run' && !a.dev && !pinned))) throw new Error("--pilot is a development run's: give --dev or --pinned (a verdict run), or no --gate (an experiment)");
+  if (a.pilot && !['run', 'experiment'].includes(a.mode)) throw new Error("--pilot is a verdict run's or an experiment's");
   if (pinned) {
     if (a.gate || a.dev) throw new Error('--pinned is a rule of its own: acceptance on the pinned release, not with --gate or --dev');
     if (!['run', 'experiment'].includes(a.mode)) throw new Error('--pinned is a verdict run\'s or an experiment\'s');
-    a.gate = 'pinned';
+    a.gate = a.pilot ? PINNED_DEVELOPMENT : 'pinned';
   }
   // the proxy is on the timed path: a measurement, never a gate's
   if (a.traceEngine && !(a.mode === 'run' && a.dev)) throw new Error("--trace-engine is a development run's (--dev): its proxy is on the timed path");

@@ -248,7 +248,8 @@ test('--pinned <home> takes the engine its cua install placed, as acceptance on 
   assert.deepEqual([a.gate, a.pinned, a.candidate], ['pinned', ACC, ACC_ENGINE]);
   assert.equal(parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--dev', '--pilot', '1'], { arch: 'x64', env: {} }).gate, false);
   assert.throws(() => parseGateArgs(['run', 'D1', '--pinned', ACC, '--candidate', '/c', '--out', '/o']), /--pinned or --candidate, not both/);
-  assert.throws(() => parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--pilot', '1']), /never a release gate|never acceptance/);
+  // a pilot on the pinned rule is a development run on the pinned release (task 87's finding 1): see below
+  assert.equal(parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--pilot', '1']).gate, 'pinned-dev');
   assert.throws(() => parseGateArgs(['run', 'D1', '--out', '/o']), /needs --pinned <home> or --candidate <file>/);
   assert.deepEqual([parseGateArgs(['check', '--pinned', ACC]).mode, parseGateArgs(['check', '--pinned', ACC]).candidate], ['check', ACC_ENGINE]);
   assert.throws(() => parseGateArgs(['check', '--candidate', '/c']), /check needs --pinned <home>/);
@@ -391,4 +392,93 @@ test("a pinned suite step: the installed engine, no ENGINE_BIN, CUA_HOME the run
   const record = JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8'));
   assert.deepEqual(record.unproved, ['UNPROVED (a declared gap, not a pass; ruling 9): click [-1, 3] ms, bound 1 ms, 40 / 40 samples']);
   assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /- unproved \(declared gaps, not passes\): 1\n  - UNPROVED \(a declared gap, not a pass; ruling 9\): click/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// #171 M5, T4's second round: a pilot takes no top-up (ruling 722), and a pilot can run the pinned rule (task 87's
+// finding 1): `--pinned <home> --pilot <n>`, a development run on the pinned release, never counted, every record saying so
+
+test('--pinned with --pilot is a development run on the pinned release: the rule runs, labelled apart, never counted', () => {
+  const a = parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--pilot', '1'], { arch: 'x64', env: {} });
+  assert.deepEqual([a.gate, a.candidate, a.pilot], ['pinned-dev', ACC_ENGINE, 1]);
+  assert.throws(() => parseGateArgs(['run', 'D1', '--candidate', '/c', '--out', '/o', '--pilot', '1']), /never a release gate/, 'a candidate pilot still needs --dev');
+  assert.equal(parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--dev', '--pilot', '1']).gate, false, '--dev still takes the engine unchecked');
+  assert.deepEqual(stepLabel({ gate: 'pinned-dev', pilot: 1 }), { label: 'development run on the pinned release, not acceptance, never counted', slug: 'development-run.pinned.pilot', pilot: true });
+  assert.equal(stepDir(stepNamed('D1'), a), '/o/D1.development-run.pinned.pilot');
+  assert.match(launchCommand(stepNamed('D1'), a, ROOT), new RegExp(`gate\\.mjs run D1 --pinned ${ACC} --out /o --pilot 1$`));
+  assert.match(launchCommand(stepNamed('V3'), a, ROOT), new RegExp(`--blocks 1 --run m5-pinned-dev-V3-pilot --pinned --pilot$`), "the :0 step's printed command too");
+  for (const s of STEPS.filter((x) => ['verdict', 'experiment'].includes(x.kind))) {
+    const parsed = parseArgs([...stepArgs(s, { paths: a, gate: 'pinned-dev', pilot: 1 }), '--out', '/o']);
+    assert.equal(parsed.gate, 'pinned-dev', s.name);
+    assert.equal(parsed.pilot, true, s.name);
+    assert.equal(parsed.cua, ACC_ENGINE, s.name);
+    assert.equal(parsed.run, `m5-pinned-dev-${s.name}-pilot`);
+  }
+  const env = suiteEnv({ candidate: ACC_ENGINE, dir: '/d', gate: 'pinned-dev', logs: '/tmp/l', pinned: true, device: 'cua-171' });
+  assert.deepEqual([env.ENGINE, env.LABEL, env.ENGINE_BIN], ['installed', 'pilot', undefined], 'never counted');
+  assert.match(listText(a, ROOT), /^The gate: .*development run on the pinned release, not acceptance, never counted, pilot \(1\)/);
+});
+
+test('every pilot step tells the harness it is a pilot; no gate or acceptance step does', () => {
+  for (const s of STEPS.filter((x) => ['verdict', 'experiment'].includes(x.kind))) {
+    assert.equal(parseArgs([...stepArgs(s, { paths: PATHS, gate: false, pilot: 2 }), '--out', '/o']).pilot, true, s.name);
+    for (const gate of [true, 'pinned', false]) assert.equal(parseArgs([...stepArgs(s, { paths: PATHS, gate }), '--out', '/o']).pilot, undefined, `${s.name} ${gate}`);
+  }
+});
+
+test("a pinned pilot's facade step: the rule runs on the home's engine, the installed engine runs, the record says what it is", async () => {
+  const { home, engine, seen, prepare, pinned } = pinnedFixture();
+  const out = fresh('out');
+  const a = parseGateArgs(['run', 'FB', '--pinned', home, '--out', out, '--pilot', '1'], { arch: 'x64', env: {} });
+  const privateDisplay = async ({ args, env }) => {
+    Object.assign(seen, { args, env });
+    return { code: 0, clean: true };
+  };
+  const exit = await runStep(a, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: engine, prepare, pinned, privateDisplay });
+  assert.equal(exit, 0);
+  assert.deepEqual(seen.prepared, { source: engine, gate: 'pinned-dev' }, 'the pinned rule, inside the step');
+  assert.equal(seen.args[seen.args.indexOf('--engine') + 1], engine, 'the installed engine, not the copy');
+  const dir = join(out, 'FB.development-run.pinned.pilot');
+  const record = JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8'));
+  assert.equal(record.label, 'development run on the pinned release, not acceptance, never counted');
+  assert.equal(record.pilot, true);
+  const readme = readFileSync(join(dir, 'README.md'), 'utf8');
+  assert.match(readme, /^# FB \(development run on the pinned release, not acceptance, never counted, pilot\)/);
+  assert.doesNotMatch(readme, /acceptance on the pinned release|release gate/, 'never read as acceptance or a gate');
+  assert.equal(readFileSync(join(dir, 'stdout.log'), 'utf8').split('\n')[0], 'development run on the pinned release, not acceptance, never counted');
+});
+
+test("a pilot step's record lists what it left unjudged, from the harness's end row or summary row, and from R2's list", async () => {
+  const candidate = join(fresh('c'), 'cua-engine');
+  writeFileSync(candidate, 'x');
+  const out = fresh('out');
+  const rows = (dir, row) => {
+    mkdirSync(join(dir, 'run'), { recursive: true });
+    writeFileSync(join(dir, 'run', 'results.jsonl'), `${JSON.stringify({ run: 'r', kind: 'meta' })}\n${JSON.stringify(row)}\n`);
+  };
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate };
+  // the harness writes its rows; the display wrapper's stand-in writes the row the run would end with
+  const a = parseGateArgs(['run', 'D1', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
+  const exit = await runStep(a, { ...deps, privateDisplay: async ({ dir }) => {
+    rows(dir, { run: 'r', kind: 'experiment-summary', complete: true, failed: [], unjudged: ['chrome canvas: cua speed unjudged (a pilot takes no top-up)'] });
+    return { code: 0, clean: true };
+  } });
+  assert.equal(exit, 0);
+  const dir = join(out, 'D1.development-run.pilot');
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8')).unjudged, ['chrome canvas: cua speed unjudged (a pilot takes no top-up)']);
+  assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /- unjudged \(a pilot takes no top-up; not passes\): 1\n  - chrome canvas: cua speed unjudged/);
+  const v = parseGateArgs(['run', 'FB', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
+  await runStep(v, { ...deps, privateDisplay: async ({ dir: d }) => {
+    rows(d, { run: 'r', kind: 'end', pass: true, failed: [], unjudged: ['chrome-input move cua'] });
+    return { code: 0, clean: true };
+  } });
+  assert.deepEqual(JSON.parse(readFileSync(join(out, 'FB.development-run.pilot', 'step.json'), 'utf8')).unjudged, ['chrome-input move cua']);
+  // R2's pilot: the suites runner lists the series only a top-up could decide, and takes none
+  const root = fresh('root');
+  mkdirSync(join(root, SUITES_SCRIPT, '..'), { recursive: true });
+  writeFileSync(join(root, SUITES_SCRIPT), '#!/bin/bash\nmkdir -p "$OUT/baseline" && echo "UNJUDGED (a pilot takes no top-up; not a pass): click" > "$OUT/baseline/unjudged.txt"\n');
+  await runStep(parseGateArgs(['run', 'R2', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']), { ...deps, root });
+  assert.deepEqual(JSON.parse(readFileSync(join(out, 'R2.development-run.pilot', 'step.json'), 'utf8')).unjudged, ['UNJUDGED (a pilot takes no top-up; not a pass): click']);
+  const text = readFileSync(new URL(`../../${SUITES_SCRIPT}`, import.meta.url), 'utf8');
+  assert.match(text, /if \[ "\$c" -ne 0 \] && \[ -n "\$need" \] && \[ "\$LABEL" = pilot \]; then\n(.*\n){1,3}\s+exit 0\n\s+fi\n\s+if \[ "\$c" -ne 0 \] && \[ -n "\$need" \]; then\n\s+log "top-up for/, "a pilot's R2 ends before its top-up");
 });

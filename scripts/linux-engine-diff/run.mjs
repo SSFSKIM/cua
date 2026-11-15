@@ -22,7 +22,7 @@ import { verifySceneIdentity } from './app-identity.mjs';
 import { auditForeign, foreignLine } from './foreign.mjs';
 import { foregroundStart } from './foreground-start.mjs';
 import { startMonitor } from './busmon.mjs';
-import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
+import { candidateLine, gateLabel, isPinnedRule, prepareCandidate } from './candidate.mjs';
 import { pinnedEngine } from './pinned-home.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
@@ -972,6 +972,34 @@ export function windowTopUp(open, { warmPerRound }) {
   return { series: [...new Set(open.map((u) => u.series))], rounds: Math.max(deficit('cold'), warmRounds), warmRounds, open };
 }
 
+/** A pilot's decision on a series its blocks left open: it takes no top-up (ruling 722), so the series is unjudged. */
+export const PILOT_UNDECIDED = 'unjudged: a pilot takes no top-up';
+
+/**
+ * The decisions closing the series still open when no top-up follows (`speedDecisions`' `open`), each on the samples
+ * it has: undetermined once the top-ups are spent, a failure; in a pilot, which takes none, `PILOT_UNDECIDED`.
+ */
+export function closeOpenSeries(open, opRows, { vendors, pilot = false }) {
+  return open.map((u) => {
+    const rows = opRows.filter((r) => [...vendors, u.candidate].includes(r.engine) && r.series === u.series);
+    return { candidate: u.candidate, series: u.series, keys: rows.map(sampleKey), samples: u.samples, verdict: pilot ? PILOT_UNDECIDED : 'undetermined, the top-ups spent' };
+  });
+}
+
+/**
+ * A pilot's verdict (ruling 722): each speed reason of a series the judge left undetermined (`verdict.undetermined`) is
+ * moved to `unjudged`, never a pass and no failure; every other reason (an answer, the witness, the audit, the effect, a
+ * decided loss) still fails. `{pass: false, verdict, reasons, unjudged}`, `verdict` 'unjudged' when nothing else failed;
+ * null when no reason is a series left open.
+ */
+export function pilotVerdict(verdict) {
+  const open = new Set((verdict.undetermined ?? []).map((u) => u.series));
+  const unjudged = verdict.reasons.filter((r) => open.has(SPEED_REASON.exec(r)?.[1]));
+  if (!unjudged.length) return null;
+  const reasons = verdict.reasons.filter((r) => !unjudged.includes(r));
+  return { pass: false, verdict: reasons.length ? 'fail' : 'unjudged', reasons, unjudged };
+}
+
 /**
  * One operation's verdict for a candidate with its frozen speed decisions: the speed judged on each decided series'
  * own samples (`decided`), everything else (answers, witness, audit, effect) on every sample, the top-ups' included.
@@ -1039,8 +1067,9 @@ export async function runDiff(args, { start = diffRun, prepare = prepareCandidat
     remove();
   });
   try {
-    // a release gate unless --dev; --pinned (args.gate 'pinned'), acceptance on the pinned release
-    preparing = prepare({ source: args.cua, gate: args.gate === 'pinned' ? 'pinned' : !args.dev, dir, signal: stopping.signal });
+    // a release gate unless --dev; --pinned (args.gate 'pinned'), acceptance on the pinned release, and with --pilot
+    // ('pinned-dev') a development run on it: either takes the pinned rule
+    preparing = prepare({ source: args.cua, gate: isPinnedRule(args.gate) ? args.gate : !args.dev, dir, signal: stopping.signal });
     let candidate;
     try {
       candidate = await preparing;
@@ -1051,7 +1080,7 @@ export async function runDiff(args, { start = diffRun, prepare = prepareCandidat
     if (stopping.signal.aborted) await new Promise(() => {});
     process.stdout.write(`${gateLabel(candidate.record.gate) ?? 'release gate'}; ${candidateLine(candidate.record)}\n`);
     // on the pinned release the copy is the check's alone: the run drives the installed engine itself (ruling 708)
-    const cua = args.gate === 'pinned' ? pinned(args.cua, candidate.record).cua : candidate.path;
+    const cua = isPinnedRule(args.gate) ? pinned(args.cua, candidate.record).cua : candidate.path;
     return await start({ ...args, run, cua }, candidate.record, { handoff: unhook });
   } finally {
     unhook();
@@ -1334,12 +1363,11 @@ async function diffRun(args, candidate, { handoff }) {
           const looked = speedDecisions(opRows, { vendors: VENDORS, candidates, text: isText(op), parity, decided });
           decided = looked.decided;
           for (const d of looked.fresh) emit({ kind: 'speed-decision', scene: sceneName, op, look, ...d });
-          const plan = look < TOP_UP_PLANS ? windowTopUp(looked.open, { warmPerRound: samplesFor(op) }) : null;
+          // a pilot takes no top-up (ruling 722): what its blocks leave open is closed unjudged
+          const plan = !args.pilot && look < TOP_UP_PLANS ? windowTopUp(looked.open, { warmPerRound: samplesFor(op) }) : null;
           if (!plan) {
-            for (const u of looked.open) {
-              const rows = opRows.filter((r) => [...VENDORS, u.candidate].includes(r.engine) && r.series === u.series);
-              const d = { candidate: u.candidate, series: u.series, keys: rows.map(sampleKey), samples: u.samples, verdict: 'undetermined, the top-ups spent' };
-              decided.set(`${u.candidate}|${u.series}`, d);
+            for (const d of closeOpenSeries(looked.open, opRows, { vendors: VENDORS, pilot: args.pilot })) {
+              decided.set(`${d.candidate}|${d.series}`, d);
               emit({ kind: 'speed-decision', scene: sceneName, op, look, ...d });
             }
             break;
@@ -1633,6 +1661,8 @@ async function diffRun(args, candidate, { handoff }) {
         if (declared.length) extra.deviations = declared;
         // a reason added beside the judge (the bus trace, the bus-call bound, the foreground audit) is a failure, parity or not
         if (verdict.reasons.length) verdict.verdict = 'fail';
+        // a pilot's series left open without a top-up: unjudged, apart from the failures, before a declaration reads them
+        if (args.pilot) Object.assign(verdict, pilotVerdict(verdict) ?? {});
         // a declared refusal (M3.1): every cua sample the declared sentence with the witness unchanged excuses the
         // refusal's own answer and effect difference; the audit and every other failure stand
         const refusal = declaredRefusal({ op, scene: sceneName });
@@ -1713,7 +1743,7 @@ async function diffRun(args, candidate, { handoff }) {
   // judged once every window of the run's is closed: its own trace covers the cleanup
   const ending = desktopEnding(desktop.ending);
   const outcome = runOutcome(judged.verdicts, { ...judged.options, foreign: [...engineForeign, ...ending.foreign] });
-  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, declared: outcome.declared, restores: outcome.restores, ...(outcome.sceneEnds ? { scene_ends: outcome.sceneEnds } : {}), desktop: ending.record, finished: new Date().toISOString() });
+  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, declared: outcome.declared, ...(outcome.unjudged ? { unjudged: outcome.unjudged } : {}), restores: outcome.restores, ...(outcome.sceneEnds ? { scene_ends: outcome.sceneEnds } : {}), desktop: ending.record, finished: new Date().toISOString() });
   writeSummary(args.out);
   const label = gateLabel(candidate.gate);
   process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${label ? `${label}: ` : ''}${verdictLine(outcome)}\nresults: ${results}\n`);

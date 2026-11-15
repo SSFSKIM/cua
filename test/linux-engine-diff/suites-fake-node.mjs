@@ -2,7 +2,7 @@
 // FAKE_* variables, every call appended to FAKE_LOG. The runner's other node calls run the real node.
 //   FAKE_DIFF       repl-parity diff's exit status (0)
 //   FAKE_CLEANUP    the exit statuses of repl-parity cleanup-prepared, in call order, comma-separated (0)
-//   FAKE_COMPARE    native-baseline compare --engines's answers in call order, comma-separated: pass, topup, unproved
+//   FAKE_COMPARE    native-baseline compare --engines's answers in call order, comma-separated: pass, topup, unproved, fail
 import { appendFileSync, readFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
@@ -28,6 +28,10 @@ if (script.endsWith('native-baseline.mjs')) {
   const answer = pick(process.env.FAKE_COMPARE, nth(/native-baseline\.mjs compare/), 'pass');
   if (answer === 'topup') {
     console.error('TOP-UP NEEDED: click');
+    console.error('VERDICT: FAIL');
+    process.exit(1);
+  }
+  if (answer === 'fail') {
     console.error('VERDICT: FAIL');
     process.exit(1);
   }

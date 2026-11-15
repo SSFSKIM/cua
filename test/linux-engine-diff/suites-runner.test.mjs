@@ -19,13 +19,21 @@ const scratch = mkdtempSync(join(tmpdir(), 'cua171-suites-test-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 let n = 0;
 
-/** One part of the runner, its harness commands faked: `{status, stderr, calls, out}`. */
-function part(name, { engine = 'installed', engineBin, env = {} } = {}) {
+/**
+ * One part of the runner, its harness commands faked: `{status, stderr, calls, out}`. `counted`: a counted part (LABEL
+ * counted), on a git of the test's own that answers a clean tree, so the checkout's own state does not decide it.
+ */
+function part(name, { engine = 'installed', engineBin, env = {}, counted = false } = {}) {
   const dir = join(scratch, `run-${n++}`);
   const bin = join(dir, 'bin');
   spawnSync('mkdir', ['-p', bin, join(dir, 'out'), join(dir, 'logs')]);
   const fakeLog = join(dir, 'calls.log');
   writeFileSync(fakeLog, '');
+  if (counted) {
+    writeFileSync(join(bin, 'git'), '#!/bin/sh\ncase "$1" in rev-parse) echo 0123456789abcdef0123456789abcdef01234567 ;; esac\n');
+    chmodSync(join(bin, 'git'), 0o755);
+    env = { LABEL: 'counted', ...env };
+  }
   writeFileSync(join(bin, 'node'), `#!/bin/bash\ncase "$1" in\n  scripts/repl-parity.mjs|scripts/native-baseline.mjs|*/gate.mjs) exec "${process.execPath}" "${FAKE}" "$@" ;;\n  *) exec "${process.execPath}" "$@" ;;\nesac\n`);
   writeFileSync(join(bin, 'pgrep'), '#!/bin/sh\nexit 1\n');
   chmodSync(join(bin, 'node'), 0o755);
@@ -59,7 +67,7 @@ test('on the installed engine the parity lanes are named no engine and the prepa
 });
 
 test("the baseline: one top-up when the comparison asks for it, the cua runs checked on the installed engine, the unproved series kept for the step's record", () => {
-  const r = part('inner-baseline', { env: { FAKE_COMPARE: 'topup,unproved' } });
+  const r = part('inner-baseline', { env: { FAKE_COMPARE: 'topup,unproved' }, counted: true });
   assert.equal(r.status, 0, r.stderr);
   const cua = r.calls.filter((c) => /native-baseline\.mjs run .*--engine cua/.test(c));
   assert.equal(cua.length, 6, 'three cua runs in the sitting and three in its top-up');
@@ -73,6 +81,17 @@ test("the baseline: one top-up when the comparison asks for it, the cua runs che
   assert.equal(named.length, 3);
   assert.ok(named.every((l) => /--engine-bin \/c\/cua-engine/.test(l) && !/--pinned-check/.test(l)));
   assert.equal(readFileSync(join(c.out, 'baseline', 'unproved.txt'), 'utf8'), '', 'none unproved');
+});
+
+test("a pilot's baseline takes no top-up (ruling 722): the series only it could decide are unjudged, listed for the record, and the part does not fail", () => {
+  const r = part('inner-baseline', { env: { FAKE_COMPARE: 'topup' } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.calls.filter((c) => /native-baseline\.mjs run .*--engine cua/.test(c)).length, 3, 'the sitting alone');
+  assert.ok(!r.calls.some((c) => /--top-up-baseline/.test(c)), 'no pooled comparison');
+  assert.equal(readFileSync(join(r.out, 'baseline', 'unjudged.txt'), 'utf8'), 'UNJUDGED (a pilot takes no top-up; not a pass): click\n');
+  // a failure that is not a series a top-up decides still fails a pilot: no TOP-UP NEEDED, the comparison's status
+  const failed = part('inner-baseline', { env: { FAKE_COMPARE: 'fail' } });
+  assert.notEqual(failed.status, 0);
 });
 
 test('the runner refuses an ambient override, an installed engine given an ENGINE_BIN, a candidate without one, and an unknown ENGINE', () => {

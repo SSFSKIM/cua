@@ -12,7 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { declaredParity } from './deviations.mjs';
+import { declaredParity, declaredSpeedGap } from './deviations.mjs';
 import { FIRST_ROUNDS, TOP_UP_TO, blockAnswerMismatches, eventSpeeds, eventStage, medianDifferenceInterval } from './events.mjs';
 import { OPS } from './ops.mjs';
 import { judgeWithDecisions } from './run.mjs';
@@ -58,6 +58,8 @@ export function rejudge(rows, run) {
     if (before.verdict === 'declared refusal') verdict = speed.length ? 'fail' : before.verdict;
     // a declared unconfirmed answer is not judged on speed (run.mjs declaredRefusalVerdict)
     else if (before.verdict === 'declared unconfirmed') verdict = before.verdict;
+    // a declared speed gap stands while each speed loss is a series it declares (run.mjs declaredGapVerdict judged the rest)
+    else if (before.verdict === 'declared gap') verdict = speed.every((x) => declaredSpeedGap({ op, route: 'window', series: SPEED_REASON.exec(x)[1] })) ? before.verdict : 'fail';
     else if (others.length || speed.length) verdict = 'fail';
     else verdict = now.parity.length ? 'parity' : 'pass';
     if (verdict !== before.verdict) changed.push({ scene, op, candidate, before: before.verdict, after: verdict, speed_before: before.speed, speed_after: speed });

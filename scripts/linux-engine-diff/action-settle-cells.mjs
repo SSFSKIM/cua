@@ -430,6 +430,141 @@ export function runClass(row) {
   return row.late_ms !== null && row.late_ms !== undefined ? 'late' : 'never';
 }
 
+/**
+ * Whether the lane's judge reads a run's failure (a settle-run row: its scene, input kind and lane) for #302, a limit
+ * declared at T8 (Decision Log, 2026-11-07): an Electron page's key release reaches the tree after press_key's settle in
+ * about a third of the runs, at every step, the vendor's 100 included. Only on the shipped lane (#371): a search lane's
+ * held step sets the service's constants, which the limit must not lower.
+ */
+export const judgesLateKeyUp = ({ scene, input, lane }) => input === 'press_key' && /^electron-/.test(scene) && lane === 'shipped';
+
+/**
+ * Why a failing run is not #302, or null when it is (the design session's ruling, sminos 659 and 682, encoded by #371).
+ * It must be the lane's `late` class (every answer ok, nothing invalid, the effect late), with the desktop left alone
+ * (a clean span, and the front window still active where the cell has one: a desktop-route cell's `front_active` is
+ * null), and its record must show all three:
+ *   1. the key-down inside the settle: the reading straight after it has key_downs one more than before, and last_key
+ *      the key sent;
+ *   2. the key-up late: that reading has key_ups unchanged, and the late bound saw it come (`late_ms`);
+ *   3. key_ups equal to key_downs at the next before-read: `next`, the next timed run on the same page, its counters
+ *      continuing from this run's, before its own input.
+ */
+export function lateKeyUpMiss(run, next) {
+  return ownLateKeyUpMiss(run) ?? caughtUpMiss(run, next);
+}
+
+/** `lateKeyUpMiss` on the run's own record: its class, its desktop, criteria 1 and 2. */
+function ownLateKeyUpMiss(run) {
+  const cls = runClass(run);
+  if (cls !== 'late') return `class ${cls}`;
+  if (run.desktop_clean !== true || run.front_active === false) return 'the desktop changed';
+  const { before: b, after: a } = run;
+  if (!b || !a || typeof b.key_downs !== 'number' || typeof b.key_ups !== 'number') return 'no key counters in the record';
+  if (!(a.key_downs === b.key_downs + 1 && a.last_key === run.sent?.key)) return `criterion 1: key_downs ${b.key_downs} -> ${a.key_downs}, last_key ${a.last_key}`;
+  if (!(a.key_ups === b.key_ups && run.late_ms !== null && run.late_ms !== undefined)) return `criterion 2: key_ups ${b.key_ups} -> ${a.key_ups}, late_ms ${run.late_ms}`;
+  return null;
+}
+
+/** `lateKeyUpMiss`'s criterion 3: the next before-read on the same page caught up with the key's release. */
+function caughtUpMiss(run, next) {
+  const n = next?.before;
+  // an error row has no reading; a fresh page's counters start again
+  if (!n || typeof n.key_downs !== 'number' || n.key_downs < run.after.key_downs) return 'criterion 3: no next before-read on the same page';
+  if (n.key_ups !== n.key_downs) return `criterion 3: the next before-read (trial ${next.trial}) has key_ups ${n.key_ups}, key_downs ${n.key_downs}`;
+  return null;
+}
+
+/**
+ * A series' runs (in order) judged by the lane's rule, with #302 where the cell takes it (`judgesLateKeyUp`). Each run
+ * is `pass` (the lane's own rule, `runPasses`), `#302` (`lateKeyUpMiss`, its next before-read the series' next run, or
+ * `next` after the last: the run after the series on the same page, where a stored record shows one), `pending` (#302
+ * but for a next before-read not taken yet), `false ok` (`falseOk`) or `fail`. One rule for every cell (the design
+ * session's ruling 707): a #302 run counts toward the streak, listed apart in `late_302`; any other miss is honest and
+ * breaks the streak, which a later one may cover, the lane's 30 consecutive passes in at most 60 (a pending run counts
+ * as such a miss until its next before-read comes); and a false ok fails the series whatever streak follows (ruling
+ * 650's hard failure), listed in `false_ok`. `oks` counts a pending run as a miss and `hopeful` as a pass; `lost` says
+ * no later run can pass the series, for the live stop rule. Returns `{judged, oks, hopeful, runs, misses, streak,
+ * reached, late_302, false_ok, lost}`.
+ */
+export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, next } = {}) {
+  const judged = rows.map((r, i) => {
+    if (r.ok) return { trial: r.trial, cls: 'pass' };
+    const hard = falseOk(r);
+    if (hard) return { trial: r.trial, cls: 'false ok', why: hard };
+    if (!judgesLateKeyUp(r)) return { trial: r.trial, cls: 'fail', why: `class ${runClass(r)}` };
+    const own = ownLateKeyUpMiss(r);
+    if (own) return { trial: r.trial, cls: 'fail', why: own };
+    const after = rows[i + 1] ?? next;
+    // all but its next before-read, which the series has not taken yet
+    if (!after) return { trial: r.trial, cls: 'pending', late_ms: r.late_ms };
+    const why = caughtUpMiss(r, after);
+    return why === null ? { trial: r.trial, cls: '#302', late_ms: r.late_ms } : { trial: r.trial, cls: 'fail', why };
+  });
+  const oks = judged.map((j) => j.cls === 'pass' || j.cls === '#302');
+  const hopeful = judged.map((j) => j.cls === 'pass' || j.cls === '#302' || j.cls === 'pending');
+  const falseOks = judged.filter((j) => j.cls === 'false ok');
+  const verdict = seriesVerdict(oks, need);
+  const reached = verdict.reached && falseOks.length === 0;
+  const lost = !reached && (falseOks.length > 0 || hopeless(hopeful, need, max));
+  // the lane's misses, a #302 run among them: it is listed apart, never hidden
+  const misses = judged.filter((j) => j.cls !== 'pass').length;
+  return { judged, oks, hopeful, ...verdict, misses, reached, late_302: judged.filter((j) => j.cls === '#302').map(({ trial, late_ms }) => ({ trial, late_ms })), false_ok: falseOks, lost };
+}
+
+/**
+ * Why a run is a false ok (ruling 650's hard failure, which ruling 707 makes the settle lane's in every cell), or null:
+ * every answer a success, nothing invalid, the requested effect not landed within the late bound, and either the
+ * reading after the input the same as the one before it in every field (no effect), or the readings showing the effect
+ * on another target (`wrongTarget`). A right-target effect of the wrong size (a scroll that took two of three wheel
+ * steps, a key-down with no key-up) is a landing miss, honest, not this. A control's genuine menuUnconfirmed is no ok,
+ * so the answers exclude it; the cell's `expected_error` flag does not, since it marks every run of the control, one
+ * that answered ok included.
+ */
+function falseOk(run) {
+  if (runClass(run) !== 'never' || !run.answers?.length || !run.answers.every((a) => a.ok === true)) return null;
+  if (run.before == null || run.after == null) return null;
+  if (JSON.stringify(run.before) === JSON.stringify(run.after)) return 'answered ok with no effect';
+  const elsewhere = wrongTarget(SCENES[run.scene]?.effects, run.input, run.before, run.after, run.sent ?? {});
+  return elsewhere ? `answered ok, and the effect landed on another target: ${elsewhere}` : null;
+}
+
+/**
+ * Where a run's readings show its kind's effect on another element or place than the one requested (`sent`), or null.
+ * The readings that can show one:
+ * - the input page: a context event names its element (`context_on`): another than the cell's (`sent.on`, else the Menu
+ *   button a right click and the menu control aim at, the control's stored rows predating `sent.on`); the pad counts
+ *   its own presses (`downs`) and the Press button its clicks, so a coordinate click or drag released with no press on
+ *   the pad, a pad click that clicked the button instead, or an element's click that reached the pad or a context event
+ *   instead;
+ * - an editor or field: a click's caret, or a drag's selection, outside the line it aimed at.
+ * Coverage limit: every other kind and scene has no reading of another target. The input page's keys, moves and wheel
+ * steps are counted document-wide; a field's or a terminal's text, xterm's recorded reports, Writer's paragraphs, and
+ * the GTK, Qt and GTK 4 scenes' counters belong to the target alone. A miss there is judged by its reading's change
+ * only: none is a false ok, any other a landing miss.
+ */
+export function wrongTarget(effects, kind, before, after, sent) {
+  if (effects === 'input-page') {
+    const context = rose(before, after, 'context');
+    if (['right_click', 'secondary_action', 'menu_unconfirmed'].includes(kind) && context) {
+      const aimed = sent.on ?? (kind === 'right_click' || kind === 'menu_unconfirmed' ? 'menu' : null);
+      if (aimed && after.context_on !== aimed) return `the context event reached ${after.context_on}, not ${aimed}`;
+    }
+    const pressed = grew(before, after, 'downs');
+    const released = grew(before, after, 'ups');
+    const clicked = grew(before, after, 'clicks');
+    if (['click', 'drag', 'drag_handle'].includes(kind) && released && !pressed) return 'released with no press on the pad';
+    if (kind === 'click' && clicked) return 'the Press button took the click';
+    if (kind === 'click_element' && !clicked && (pressed || context)) return `the ${pressed ? 'pad' : 'page'} took it, not the Press button`;
+  }
+  if (effects === 'editor' || effects === 'field') {
+    if (!Array.isArray(sent.line)) return null;
+    if (kind === 'click' && Number.isInteger(after.caret) && after.caret !== before.caret && !insideLine(sent.line, after.caret)) return `the caret went to ${after.caret}, outside the line clicked`;
+    const sel = after.selection;
+    if ((kind === 'drag' || kind === 'drag_handle') && Array.isArray(sel) && sel[1] > sel[0] && !same(sel, before.selection) && !(insideLine(sent.line, sel[0]) && insideLine(sent.line, sel[1]))) return `the selection ${JSON.stringify(sel)} lies outside the line dragged`;
+  }
+  return null;
+}
+
 /** Whether a series can no longer reach `need` consecutive passes in `max` runs. */
 export function hopeless(oks, need = CONSECUTIVE, max = MAX_RUNS) {
   const { streak, reached } = seriesVerdict(oks, need);
@@ -528,7 +663,8 @@ export function settleVerdict(series, { search, cells }) {
   const held = {};
   const md = ['| cell | lane | runs | misses (late / never / refused / invalid) | streak at the end | verdict |', '|---|---|---:|---|---:|---|'];
   for (const s of series) {
-    md.push(`| ${s.cell} | ${s.lane} | ${s.runs} | ${s.misses} (${s.late} / ${s.never} / ${s.refused ?? 0} / ${s.invalid ?? 0}) | ${s.streak} | ${s.reached ? `${s.need} consecutive` : 'not reached'} |`);
+    const limit = s.late_302?.length ? `, ${s.late_302.length} of them #302` : '';
+    md.push(`| ${s.cell} | ${s.lane} | ${s.runs} | ${s.misses} (${s.late} / ${s.never} / ${s.refused ?? 0} / ${s.invalid ?? 0}) | ${s.streak} | ${s.reached ? `${s.need} consecutive${limit}` : `not reached${limit}`} |`);
     if (s.need < CONSECUTIVE) failed.push(`${s.cell} (${s.lane}): a development series of ${s.need}, not the ${CONSECUTIVE} the rule needs`);
   }
   for (const name of cells) {
@@ -541,8 +677,39 @@ export function settleVerdict(series, { search, cells }) {
       held[name] = heldStep(mine);
       if (held[name] === null) failed.push(`${name}: no step held (${mine.map((s) => s.lane).join(', ')})`);
     } else {
-      for (const s of mine) if (!s.reached) failed.push(`${name} (${s.lane}): no ${s.need} consecutive passing runs in ${s.runs}`);
+      for (const s of mine) {
+        if (s.reached) continue;
+        // a false ok fails the series whatever its streak (judgeSettleSeries)
+        const falseOk = s.false_ok?.length ? `${s.false_ok.length} of ${s.runs} runs were a false ok (${s.false_ok.slice(0, 5).map((f) => `trial ${f.trial}: ${f.why}`).join('; ')})` : null;
+        failed.push(`${name} (${s.lane}): ${falseOk ?? `no ${s.need} consecutive passing runs in ${s.runs}`}`);
+      }
     }
   }
+  return { md, failed, held };
+}
+
+/**
+ * A lanes or search sitting's verdict (`runSettle`'s end): its series (`settleVerdict`, over the cells it opened), and
+ * every failure of the sitting beside them, each its own: a planned cell that could not be opened (`skipped`,
+ * `{cell, why}`), an audit that failed, a cell the sitting audits (`audited`) with no audit, a change to a window it did
+ * not open (`foreign`), and the private display's watchdog. Returns `{md, failed, held}`.
+ */
+export function sittingVerdict({ series, cells, search, skipped = [], audits = [], audited = [], foreign = [], watchdog = { clean: true } }) {
+  const opened = (cell) => !skipped.some((s) => s.cell === cell);
+  const { md, failed, held } = settleVerdict(series, { search, cells: cells.filter(opened) });
+  for (const s of skipped) failed.push(`${s.cell} could not be opened: ${s.why}`);
+  for (const a of audits) if (!a.pass) failed.push(`${a.cell}: the audit failed: ${a.failed.join('; ')}`);
+  const unaudited = audited.filter((cell) => opened(cell) && !audits.some((a) => a.cell === cell));
+  if (unaudited.length) failed.push(`no audit of ${unaudited.join(', ')}`);
+  for (const f of foreign) failed.push(`a window the experiment did not open was changed: ${f}`);
+  if (!watchdog.clean) failed.push(`the private display's watchdog: ${watchdog.reason}`);
+  if (search) md.push('', '| cell | held step (ms) |', '|---|---:|', ...Object.entries(held).map(([c, ms]) => `| ${c} | ${ms ?? '**none**'} |`));
+  if (audits.length) md.push('', '| cell | audit | requests | runs that ran their input | effects missed |', '|---|---|---:|---:|---:|', ...audits.map((a) => `| ${a.cell} | ${a.pass ? 'clean' : `**${a.failed.join('; ')}**`} | ${a.requests} | ${a.runs.filter((r) => r.class !== 'invalid' && r.class !== 'refused').length} of ${a.runs.length} | ${a.missed} |`));
+  const limited = series.filter((s) => s.late_302?.length);
+  if (limited.length) {
+    md.push('', "**#302**, a declared limit (an Electron page's key release reached the tree after press_key's settle, the key-down inside it and the release caught up by the next run's reading): counted toward the streak, listed apart.", '');
+    md.push('| cell | lane | #302 runs | the key-up seen after the answer (ms) |', '|---|---|---:|---|', ...limited.map((s) => `| ${s.cell} | ${s.lane} | ${s.late_302.length} of ${s.runs} | ${s.late_302.map((l) => l.late_ms).join(', ')} |`));
+  }
+  if (failed.length) md.push('', `**Incomplete or failed:** ${failed.join('; ')}.`);
   return { md, failed, held };
 }

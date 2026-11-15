@@ -120,7 +120,7 @@ test("a declared refusal is a recorded loss: listed apart, never a pass, not a f
   assert.ok(!DEVICE_REFUSAL.test('drag path must contain at least two points'));
   const verdict = (pass, extra = {}) => ({ kind: 'verdict', candidate: 'cua', scene: 'chrome-input', op: 'drag', pass, reasons: [], ...extra });
   const outcome = runOutcome([verdict(true, { op: 'move' }), verdict(false, { verdict: 'declared refusal' })], { valid: true });
-  assert.deepEqual(outcome, { valid: true, pass: true, failed: [], parity: [], refused: ['chrome-input drag cua'], code: 0 });
+  assert.deepEqual(outcome, { valid: true, pass: true, failed: [], parity: [], refused: ['chrome-input drag cua'], declared: { 'declared refusal': ['chrome-input drag cua'] }, code: 0 });
   assert.match(verdictLine(outcome), /^no verdict FAIL; declared refusal \(a loss, not a pass\): chrome-input drag cua$/);
 });
 

@@ -407,7 +407,9 @@ function endCheckText(e) {
   if (e.clear) return ['- end check: clear (no cua171-run-* directory or session bus of one)'];
   const of = (dirs) => ({ dirs, buses: e.buses.filter((b) => dirs.some((d) => d.dir === b.dir)) });
   const left = leftoverLines(of(e.left_by_step)).map((l) => l.replace(/^a cua171-run-\* directory not this run's, left alone: /, 'left by this step: '));
-  const lines = [...left, ...leftoverLines(of(e.foreign))];
+  // the buses whose directory neither list holds (gone, or outside the roots): named too
+  const orphans = e.buses.filter((b) => ![...e.left_by_step, ...e.foreign].some((d) => d.dir === b.dir));
+  const lines = [...left, ...leftoverLines(of(e.foreign)), ...leftoverLines({ dirs: [], buses: orphans })];
   return [`- end check (findings, left alone): ${e.left_by_step.length + e.foreign.length + e.buses.length}`, ...lines.map((l) => `  - ${l}`)];
 }
 

@@ -96,3 +96,23 @@ test("the run's end record carries the check, made after its own scratch is gone
   assert.match(reported[0], /^the end check \(findings, left alone\): a cua171-run-\* directory not this run's/);
   assert.equal(existsSync(old), true);
 });
+
+// review finding 2: a bus outlives its scratch (the cleanup removes the scratch even when stopping the bus failed), so a
+// bus is found by the scratch path in its config, argv or environment, whether or not the directory still exists
+test("a session bus whose scratch is gone is still a finding, named by the path it names; the run's own bus is not", () => {
+  const root = fresh('tmp');
+  const proc = fresh('proc');
+  const gone = join(root, 'cua171-run-Gone12');
+  const own = join(root, 'cua171-run-OwnRun');
+  processIn(proc, 700, { exe: '/usr/bin/dbus-daemon', argv: ['dbus-daemon', `--config-file=${gone}/session/session.conf`, '--nofork'] });
+  processIn(proc, 701, { exe: '/usr/libexec/at-spi-bus-launcher', argv: ['/usr/libexec/at-spi-bus-launcher'], env: { DBUS_SESSION_BUS_ADDRESS: `unix:path=${gone}/session/bus/dbus-x,guid=1` } });
+  processIn(proc, 702, { exe: '/usr/bin/dbus-daemon', argv: ['dbus-daemon', `--config-file=${own}/session/session.conf`] });
+  const check = leftoverCheck({ own: [own], roots: [root], proc });
+  assert.deepEqual(check.dirs, []);
+  assert.deepEqual(check.buses.map((b) => [b.pid, b.program, b.dir, b.by, b.dir_exists]), [[700, 'dbus-daemon', gone, 'config', false], [701, 'at-spi-bus-launcher', gone, 'socket', false]]);
+  assert.equal(check.clear, false, 'an orphaned bus is never all-clear');
+  assert.deepEqual(leftoverLines(check), [
+    `a session-bus process of a cua171-run-* directory that is gone, left alone: pid 700 dbus-daemon (its config in ${gone})`,
+    `a session-bus process of a cua171-run-* directory that is gone, left alone: pid 701 at-spi-bus-launcher (its socket in ${gone})`,
+  ]);
+});

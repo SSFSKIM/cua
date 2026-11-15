@@ -62,20 +62,25 @@ function programOf(dir) {
   }
 }
 
+/** A scratch directory's path inside a text (an argument, a bus address): `<...>/cua171-run-XXXXXX`, mkdtemp's six. */
+const SCRATCH_PATH = new RegExp(`(/[^\\s,;=]*?/${SCRATCH_PREFIX}[A-Za-z0-9]{6})(?=/|$|[,;\\s])`, 'g');
+const scratchPathsIn = (text) => [...text.matchAll(SCRATCH_PATH)].map((m) => m[1]);
+
 /**
- * The session-bus processes (`BUS_PROGRAMS`) whose config (an argument naming a path in the directory) or socket (a
- * bus address in its environment naming one) lies in one of `dirs`: `{pid, program, dir, by: 'config' | 'socket'}`, by
- * pid. `proc` is /proc, or a test's own.
+ * The session-bus processes (`BUS_PROGRAMS`) whose config (an argument naming a path in a scratch directory) or socket
+ * (a bus address in its environment naming one) lies in a `cua171-run-*` directory, found by the path they name,
+ * whether or not the directory still exists (review finding 2: a run's cleanup removes its scratch even when stopping
+ * its bus failed): `{pid, program, dir, by: 'config' | 'socket', dir_exists}`, by pid; none of the directories in
+ * `own`. `proc` is /proc, or a test's own.
  */
-export function busesIn(dirs, { proc = '/proc' } = {}) {
-  if (!dirs.length) return [];
+export function busesIn({ own = [], proc = '/proc' } = {}) {
   let pids;
   try {
     pids = readdirSync(proc).filter((x) => /^\d+$/.test(x)).map(Number).sort((a, b) => a - b);
   } catch {
     return [];
   }
-  const inside = (text, dir) => text === dir || text.includes(`${dir}/`);
+  const mine = new Set(own);
   const out = [];
   for (const pid of pids) {
     const at = join(proc, String(pid));
@@ -83,13 +88,17 @@ export function busesIn(dirs, { proc = '/proc' } = {}) {
     if (!BUS_PROGRAMS.includes(program)) continue;
     const argv = (read(join(at, 'cmdline')) ?? '').split('\0').filter(Boolean);
     const env = (read(join(at, 'environ')) ?? '').split('\0').filter((kv) => BUS_VARS.some((v) => kv.startsWith(`${v}=`)));
-    for (const dir of dirs) {
-      const by = argv.some((a) => inside(a, dir)) ? 'config' : env.some((kv) => inside(kv, dir)) ? 'socket' : null;
-      if (by) {
-        out.push({ pid, program, dir, by });
-        break;
-      }
+    const config = argv.flatMap(scratchPathsIn).find((d) => !mine.has(d));
+    const socket = env.flatMap(scratchPathsIn).find((d) => !mine.has(d));
+    const dir = config ?? socket;
+    if (!dir) continue;
+    let exists = false;
+    try {
+      exists = statSync(dir).isDirectory();
+    } catch {
+      // gone: the bus outlived its scratch
     }
+    out.push({ pid, program, dir, by: config ? 'config' : 'socket', dir_exists: exists });
   }
   return out;
 }
@@ -101,16 +110,19 @@ export function busesIn(dirs, { proc = '/proc' } = {}) {
 export function leftoverCheck({ own = [], roots = scratchRoots(), proc = '/proc' } = {}) {
   const mine = new Set(own);
   const dirs = scratchDirs(roots).filter((d) => !mine.has(d.dir));
-  const buses = busesIn(dirs.map((d) => d.dir), { proc });
+  const buses = busesIn({ own, proc });
   return { roots, dirs, buses, clear: dirs.length === 0 && buses.length === 0 };
 }
 
-/** The check in lines, each a finding: every directory, then each of its buses under it. */
+/** The check in lines, each a finding: every directory, each of its buses under it, then the buses of directories gone. */
 export function leftoverLines(check) {
   const lines = [];
   for (const d of check.dirs) {
     lines.push(`a cua171-run-* directory not this run's, left alone: ${d.dir} (modified ${d.modified})`);
     for (const b of check.buses.filter((x) => x.dir === d.dir)) lines.push(`a session-bus process of it, left alone: pid ${b.pid} ${b.program} (its ${b.by} in ${d.dir})`);
+  }
+  for (const b of check.buses.filter((x) => !check.dirs.some((d) => d.dir === x.dir))) {
+    lines.push(`a session-bus process of a cua171-run-* directory ${b.dir_exists ? 'outside the roots read' : 'that is gone'}, left alone: pid ${b.pid} ${b.program} (its ${b.by} in ${b.dir})`);
   }
   return lines;
 }

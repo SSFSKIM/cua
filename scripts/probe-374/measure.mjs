@@ -24,7 +24,8 @@ mkdirSync(OUT, {recursive: true});
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const sh = (cmd, args) => spawnSync(cmd, args, {encoding: 'utf8', timeout: 20_000});
 const started = Date.now();
-const budget = () => { if (Date.now() - started > 80 * 60_000) throw new Error('80 minute measurement budget exceeded'); };
+// The measurement stops after 80 minutes and still writes its summary over the rows it has (the job allows 120).
+const overBudget = () => Date.now() - started > 80 * 60_000;
 const WINDOW = {x: 420, y: 60, w: 620, h: 600};
 
 // The engine over its socket (the 4-byte little-endian length framing the service's client uses).
@@ -155,8 +156,8 @@ const meta = {family: FAMILY, reps: REPS, cells: CELLS.map(c => c[0]), placement
 writeFileSync(join(OUT, 'config.json'), JSON.stringify(meta, null, 2));
 
 const find = (nodes, label) => nodes.find(n => [n.description, n.title, n.identifier].includes(label));
-async function observe(label) {
-  for (let i = 0; i < 60; i++) {
+async function observe(label, tries) {
+  for (let i = 0; i < tries; i++) {
     const r = await w.execute('get_app_state', {pid, includeScreenshot: false});
     const node = r.result && find(r.result.nodes ?? [], label);
     if (node) return {node, lineage: r.result.lineage};
@@ -178,16 +179,18 @@ async function reset() {
 if (FAMILY !== 'appkit') { const deadline = Date.now() + 60_000; while (!latest && Date.now() < deadline) await sleep(100); if (!latest) throw new Error('fixture page never reported'); }
 
 const rows = [];
-for (const placement of PLACEMENTS) {
+let stopped = false;
+measure: for (const placement of PLACEMENTS) {
   for (let rep = 0; rep < REPS; rep++) {
     for (const [cell, label] of CELLS) {
-      budget();
+      if (overBudget()) { stopped = true; break measure; }
       const row = {family: FAMILY, cell, placement, rep, label};
       try {
         row.reset = await reset();
         row.front = await ask({op: 'front', pid: placement === 'foreground' ? pid : coverPid});
         await sleep(300);
-        const {node, lineage} = await observe(label);
+        // The first look waits up to 30 s for the app and its page to come up; later ones 5 s.
+        const {node, lineage} = await observe(label, rows.some(r => r.cell === cell) ? 10 : 60);
         if (!node) { row.offered = null; row.answer = 'targetNotFound'; }
         else {
           row.role = node.role; row.offered = (node.actions ?? []).includes('AXShowMenu');
@@ -217,7 +220,7 @@ for (const placement of PLACEMENTS) {
 }
 await ask({op: 'close', pid});
 const summary = summarize(rows);
-const verdict = gate(summary);
+const verdict = {...gate(summary), stopped};
 writeFileSync(join(OUT, 'summary.json'), JSON.stringify({meta, verdict, summary}, null, 2));
 writeFileSync(join(OUT, 'summary.md'), `# #374 ${FAMILY} (${meta.appVersion})\n\n${table(summary)}\n\nfalse ok: ${verdict.falseOk}; open cells: ${verdict.open.join('; ') || 'none'}\n`);
 console.log(table(summary));

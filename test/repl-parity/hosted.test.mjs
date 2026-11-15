@@ -252,6 +252,13 @@ test('the script refuses to run off a GitHub-hosted macOS runner and touches not
       assert.equal(run.status, 2, `${item} ${value}`);
       assert.match(run.stderr, refusal, `${item} ${value}`);
     }
+    // The diagnosis-only Chrome flags take only their one named set; anything else would reach Chrome's command line.
+    const flagged = value => spawnSync('sh', [join(HOSTED, 'hosted.sh'), 'browser'], {encoding: 'utf8', env: {PATH: process.env.PATH, HOME: home, PARITY_CHROME_FLAGS: value}});
+    for (const [value, refusal] of [['--remote-debugging-port=9222', /^hosted-parity: PARITY_CHROME_FLAGS must be anti-throttling/], ['anti-throttling', /^hosted-parity: refused: /]]) {
+      const run = flagged(value);
+      assert.equal(run.status, 2, value);
+      assert.match(run.stderr, refusal, value);
+    }
     assert.deepEqual(readdirSync(home), ['tmp']);
   } finally { rmSync(home, {recursive: true, force: true}); }
 });

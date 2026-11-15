@@ -40,7 +40,10 @@
 #
 # Load, for diagnosis only (#168): PARITY_STRESS=cpu:<n> runs n CPU burners per core (`yes`, at the job's priority)
 # while the browser item's api suite runs on both hosts, so a race that an idle runner hides can show. Unset, nothing
-# changes; gate parity-browser-stress sets it, by hand only, and gate parity-browser never does.
+# changes; gate parity-browser-stress sets it, by hand only, and gate parity-browser never does. Beside it, also for
+# diagnosis only, PARITY_CHROME_FLAGS=anti-throttling launches the harness Chrome with
+# --disable-renderer-backgrounding, --disable-backgrounding-occluded-windows and --disable-background-timer-throttling,
+# which tells a CPU-starved renderer from a throttled one (#141, #168).
 set -u
 ITEM=${1:-}
 case "$ITEM" in denials|browser) ;; *) echo "usage: sh scripts/repl-parity/hosted/hosted.sh denials|browser" >&2; exit 2 ;; esac
@@ -49,6 +52,11 @@ case "$STRESS" in
   '') ;;
   cpu:[1-9]) [ "$ITEM" = browser ] || { echo "hosted-parity: PARITY_STRESS is for the browser item" >&2; exit 2; } ;;
   *) echo "hosted-parity: PARITY_STRESS must be cpu:<1-9>" >&2; exit 2 ;;
+esac
+case "${PARITY_CHROME_FLAGS:-}" in
+  '') CHROME_FLAGS='' ;;
+  anti-throttling) CHROME_FLAGS='--disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling' ;;
+  *) echo "hosted-parity: PARITY_CHROME_FLAGS must be anti-throttling" >&2; exit 2 ;;
 esac
 if [ "$(uname -s)" != Darwin ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then
   echo "hosted-parity: refused: it edits ~/.ssh, starts an sshd and registers a native host under the real HOME, so it runs only on a GitHub-hosted macOS runner" >&2
@@ -140,8 +148,10 @@ register() {
   cp "$manifest" "$HOME/Library/Application Support/Google/Chrome for Testing/NativeMessagingHosts/"
 }
 launch_chrome() {
+  [ -z "$CHROME_FLAGS" ] || say "chrome flags: ${PARITY_CHROME_FLAGS}"
+  # $CHROME_FLAGS is unquoted on purpose: one of the fixed sets above, split into its flags.
   "$CFT" --user-data-dir="$UDD" --profile-directory=Default --no-first-run --no-default-browser-check \
-    --disable-search-engine-choice-screen --load-extension="$R/extension" about:blank > /dev/null 2> "$ERR/chrome" 3>&- &
+    --disable-search-engine-choice-screen $CHROME_FLAGS --load-extension="$R/extension" about:blank > /dev/null 2> "$ERR/chrome" 3>&- &
   echo $! > "$S/chrome.pid"
   n=0; while [ ! -d "$UDD/Default" ] && [ $n -lt 60 ]; do sleep 1; n=$((n + 1)); done
   [ -d "$UDD/Default" ] || { say "Chrome made no Default profile in 60 s"; return 1; }

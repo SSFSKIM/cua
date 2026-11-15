@@ -43,6 +43,15 @@ export function readyLines(r, key) {
 // Why a case failed, in fixture data only (#168, ruling 719): what the cells answered and what the fixture recorded,
 // each string a fixture word or withheld, so no path, address, environment or stderr leaves the runner.
 const TIMEOUT = /timed out|timeout|deadline exceeded/i;
+// An error by its kind, never its text: whether it timed out, the CDP command it names as timing out (a method name such
+// as Runtime.evaluate), whether the tab's debugger was gone, and whether the locator's own deadline ran out.
+export function errorKind(message) {
+  const text = typeof message === 'string' ? message : '';
+  const cdp = text.match(/waiting for CDP command ([A-Z][A-Za-z]*\.[A-Za-z]+)/)?.[1];
+  return `timeout ${TIMEOUT.test(text)}${cdp ? ` cdp ${cdp}` : ''}`
+    + `${/Debugger is not attached|Debugger unattached|debugger.*detached/i.test(text) ? ' detached true' : ''}`
+    + `${/selector deadline exceeded/i.test(text) ? ' selector-deadline true' : ''}`;
+}
 const FIXTURE_DATA_CHARS = 400;
 // A fixture's own words ('pointer', 'ended', 'dragStart'): narrower than a label, with no path or address in it.
 const FIXTURE_WORD = /^[A-Za-z0-9][A-Za-z0-9._:+-]{0,80}$/;
@@ -56,7 +65,8 @@ export function fixtureData(value) {
   return text.length > FIXTURE_DATA_CHARS ? `${text.slice(0, FIXTURE_DATA_CHARS)}...` : text;
 }
 const parsedJSON = text => { try { return fixtureData(JSON.parse(text)); } catch { return '<withheld>'; } };
-// The reasons support/assertions.mjs's expectValues gives, by kind; any other reason is only named `other`.
+// The reasons support/assertions.mjs's expectValues gives, by kind; any other reason is named `other`, with the case's
+// cells it mentions.
 export function reasonLine(reason, cellLabels) {
   const text = typeof reason === 'string' ? reason : '';
   let m = text.match(/^fixture side effects differ: (.*)$/s);
@@ -65,19 +75,21 @@ export function reasonLine(reason, cellLabels) {
   if (m && cellLabels.includes(m[1])) {
     const result = m[2].match(/^unexpected fixture result (.*)$/s);
     if (result) return `    reason unexpected-result cell ${label(m[1])}: ${parsedJSON(result[1])}`;
-    return `    reason cell-error cell ${label(m[1])} timeout ${TIMEOUT.test(m[2])}`;
+    return `    reason cell-error cell ${label(m[1])} ${errorKind(m[2])}`;
   }
   if (text === 'unexpected cell count') return '    reason cell-count';
-  return '    reason other';
+  const words = new Set(text.split(/\s+/).map(token => token.replace(/[:,.;]+$/, '')));
+  const named = cellLabels.filter(cell => words.has(cell));
+  return `    reason other${named.length ? ` names ${named.map(label).join(',')}` : ''}`;
 }
-// One cell's outcome: ok, its time and its value labelled, or its error's code and whether it was a timeout.
+// One cell's outcome: ok, its time and its value labelled, or its error's code and kind (errorKind).
 export function cellLine(row) {
   const ms = typeof row.ms === 'number' ? ` ms ${Math.round(row.ms)}` : '';
   let result;
   try { result = parseCell(row); } catch { return `    cell ${label(row.cell)}: no result marker${ms}`; }
   if (result.ok) return `    cell ${label(row.cell)}: ok true${ms} value ${fixtureData(result.value)}`;
   const message = typeof result.error?.message === 'string' ? result.error.message : '';
-  return `    cell ${label(row.cell)}: ok false${ms} error ${label(result.error?.code)} timeout ${TIMEOUT.test(message)}`;
+  return `    cell ${label(row.cell)}: ok false${ms} error ${label(result.error?.code)} ${errorKind(message)}`;
 }
 // A run passes when its summary (repl-parity.mjs run's last stdout line) shows a complete run of at least one case whose
 // assertions passed (a declared vendor defect recorded counts as passed; the diff judges it).

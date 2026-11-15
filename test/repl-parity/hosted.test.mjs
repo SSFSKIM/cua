@@ -187,6 +187,38 @@ test('a failed case\'s lines say why in fixture data only: the reason\'s kind, e
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 
+test('a failed cell\'s error is told by its kind without its text: the CDP command that timed out, a detached debugger, the selector deadline; an other reason names the cells it mentions', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hosted-run-'));
+  const id = 'api/browser-playwrightlocator/waitfor';
+  const failing = (name, message) => ({case: id, cell: name, ok: true, isError: false, ms: 10,
+    content: [{type: 'text', text: `CUA_PARITY_RESULT ${JSON.stringify({ok: false, error: {code: 'Error', message}, $imageCount: 0})}`}]});
+  try {
+    writeFileSync(join(dir, 'meta.json'), JSON.stringify({complete: true}));
+    const rows = [
+      failing('cdp', `Error: Timed out after 1500ms waiting for selector text=ended: Timed out after 1ms waiting for CDP command Runtime.evaluate.\nat /Users/runner/${PLANTED}`),
+      failing('deadline', 'Error: Playwright selector deadline exceeded\nlocator.waitFor(visible) timed out for selector #x'),
+      failing('detached', `Debugger is not attached to the tab with id: 5. ${PLANTED}`),
+      failing('odd-command', `Timed out after 9ms waiting for CDP command ${PLANTED}/x.`),
+      failing('plain', `Error: boom at /Users/runner/${PLANTED}`),
+      {case: id, cell: 'locator-contract-diagnostics-no-matches', ok: true, isError: false, ms: 318,
+        content: [{type: 'text', text: `CUA_PARITY_RESULT ${JSON.stringify({ok: true, value: {rejected: true, after: ['a sentence', `at /Users/runner/${PLANTED}`]}, $imageCount: 0})}`}]},
+      {case: id, assertion: {ok: false, reason: `${id}: locator-contract-diagnostics-no-matches did not satisfy the vendor locator contract ${PLANTED}`}},
+    ];
+    writeFileSync(join(dir, 'results.jsonl'), rows.map(r => JSON.stringify(r)).join('\n'));
+    const {lines} = runLines(JSON.stringify({cases: 1, complete: true, assertions: 'FAIL'}), dir, 'cua/api');
+    assert.equal(lines.join('\n').includes(PLANTED), false);
+    assert.deepEqual(lines.slice(2), [`  failed assertion: ${id} -`,
+      '    reason other names locator-contract-diagnostics-no-matches',
+      '    cell cdp: ok false ms 10 error Error timeout true cdp Runtime.evaluate',
+      '    cell deadline: ok false ms 10 error Error timeout true selector-deadline true',
+      '    cell detached: ok false ms 10 error Error timeout false detached true',
+      '    cell odd-command: ok false ms 10 error Error timeout true',
+      '    cell plain: ok false ms 10 error Error timeout false',
+      '    cell locator-contract-diagnostics-no-matches: ok true ms 318 value {"rejected":true,"after":["<withheld>","<withheld>"]}',
+      '  rows 7, failed assertions 1']);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+});
+
 test('a public reader given an unreadable report prints a fixed line, never the parser\'s message', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hosted-public-'));
   try {

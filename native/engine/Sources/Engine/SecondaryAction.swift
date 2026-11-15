@@ -8,7 +8,9 @@ import Foundation
 // SAIExpand and SAICollapse, which toggle AXDisclosing. The element is scrolled into view first. A page scroll first
 // tries the scroll bar's page button. On a menu-bar item, AXPick with a menu records the item (MenuRecord.swift) and
 // AXCancel clears the record; neither sends anything. Any other success clears the app's record. Route 1, or route 3
-// when the app does not believe it has focus (its activation held, FocusHold.swift).
+// when the app does not believe it has focus (its activation held, FocusHold.swift). Show Menu (AXShowMenu) answers
+// success only once a menu is seen to open within 1 s, else `menuUnconfirmed` (#374, MenuConfirm.swift), where the
+// vendor answers success on the Accessibility call's.
 
 /// One action an element offers: its name and the description the model names it by.
 struct OfferedAction: Equatable {
@@ -100,6 +102,11 @@ extension Engine {
       if actionRoute(for: target, app: app, connection: context.connection) == .activation {
         try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
       }
+      // #374: a Show Menu answers success only once a menu is seen to open (MenuConfirm.swift); the menus open before
+      // it are read first, so one already open confirms nothing.
+      let showsMenu = chosen.name == kAXShowMenuAction
+      let menuApplications = showsMenu ? menuApplicationPids(owner: target.owner, appPid: appPid).map { prepare(AXUIElementCreateApplication($0)) } : []
+      let menusBefore = showsMenu ? openMenus(element: target.element, applications: menuApplications, ax: ax).map(\.menu) : []
       try guarding.checkInFlight()
       var performed = AXError.failure
       // The cursor points at the element after the action returns, and only when it succeeded (Cursor/CursorHub.swift).
@@ -108,8 +115,15 @@ extension Engine {
         return performed == .success
       }
       context.connection.markActed(app)
-      guard performed == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(chosen.description.prefix(256)) action.") }
+      guard performed == .success || (showsMenu && showMenuSent(performed)) else {
+        throw EngineError(name: "actionFailed", "The element did not accept the \(chosen.description.prefix(256)) action.")
+      }
       context.connection.clearMenuRecord(app: app.key)
+      if showsMenu {
+        let record = awaitShownMenu(element: target.element, applications: menuApplications, before: menusBefore, performed: performed, ax: ax)
+        meta.menu = record
+        try menuAnswer(record, app: app.displayName)
+      }
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

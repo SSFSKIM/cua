@@ -490,7 +490,9 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     pointOutsideScreenshot (#328: a click, scroll or drag point outside the screenshot its coordinates came from, refused
     with nothing posted; its sentence gives the image's size and asks for a point inside it); scrollUnconfirmed (#328: a
     scroll whose container under the point was not seen to move, the bar's fallback included, or that has no readable
-    container; its sentence asks the model to observe before scrolling again)
+    container; its sentence asks the model to observe before scrolling again); menuUnconfirmed (#374: a Show Menu sent
+    whose menu was not seen to open within 1 s; its sentence says the app may have shown its own menu or ignored the
+    request, and asks the model to observe before any retry)
   activationGuardMs: route 3's guard time, present only when a guard ran; activationClick: what the inert-point rule
     decided at the window's AXActivationPoint when an activation ran, "posted" there or the reason it was not ("noPoint",
     "outsideFrame", "spared", "control", "actionsUnknown", "hitTestFailed"); activationClickKind: the click that
@@ -554,6 +556,8 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     null, outcome: "moved" | "atEnd" | "unconfirmed", atEnd?: true, endBefore?: true, moved?: points the asked way,
     by?: "content" | "tracked" | "hit" | "bar", barBefore?, barAfter?, firstMoveMs?, polls, barWrite?, barWriteError?,
     fallbackSkipped?: "web" | "clipped", containerBy?: "window", walked?, readMs, ms}
+  menu (#374, on a Show Menu's result and its menuUnconfirmed): {seen: "application" | "element" | "focus" | null,
+    openBefore, polls, ms, actionError?: the AXShowMenu's AXError when it was cannotComplete, taken as sent}
   pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): ⌘V was sent and the text
     read from the clipboard, but no effect was seen, or none could be (Decision Log, #187); or, at stage "returnEffect", a
     Return between two of type_text's lines showed no effect, and the next line was not pasted (its own sentence)
@@ -4714,6 +4718,64 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     browser measured exposes one; the case is covered by unit tests only.
   Date/Author: 2026-11-09, cursor235's lane-1 implementer for the design session's ruling 31a62775 on #298; the live
   results 2026-11-10.
+
+- Decision (#374, 2026-11-15, `fix/374-menu-unconfirmed`; the issue's intent as amended by its comment, the Linux
+  fix's design input of cua #171 ruling 687; spawned by #171 M4's Linux gate, rulings 684 and 685; the four choices
+  below agreed by the dispatching session): **perform_secondary_action "Show Menu" (AXShowMenu) answers success only
+  once a menu is seen to open within 1 s, and `menuUnconfirmed` otherwise, the "sent, effect not seen" family's answer
+  beside `clickUnconfirmed` and `scrollUnconfirmed`; a refusal ("the menu could not be confirmed"), as the issue first
+  had it, is not built.** A deliberate departure from the vendor, which answers success as soon as the Accessibility
+  call does, menu or none.
+  1. **Why not a refusal.** A web page or Electron app that handles contextmenu itself (preventDefault and its own HTML
+     menu, as Docs-style apps do) shows no native menu, so confirming a native menu would refuse a request that worked.
+     `menuUnconfirmed` says the action was sent and no menu was seen, which is true in both cases, and names the case
+     where the page drew its own. It matches the Linux engine's answer of the same name (Linux spec, Decision Log
+     2026-11-14, candidate 3).
+  2. **What counts as the menu** (MenuConfirm.swift `openMenus`), read once just before the action and then at once
+     and every 20 ms (`menuConfirmIntervalMs`) for up to 1 s (`menuConfirmWindowMs`, Linux's MENU_WAIT) after it
+     returns: an AXMenu child of the application element, under the element's serving process and the app's
+     (`application`: where AppKit, Chromium, Electron, Gecko and Safari put a popped-up context menu); an AXMenu child
+     of the element (`element`: a popup or menu button's own menu); and the app's AXFocusedUIElement or one of its 3
+     nearest ancestors with role AXMenu (`focus`: a page's ARIA role=menu, which Chrome and Safari expose as AXMenu,
+     sits inside the page, and the WAI-ARIA menu pattern moves the focus onto its first item). A menu open before the
+     action, by identity, confirms nothing by itself. The reads stop one interval past the window, so an app whose
+     every read hangs for the 1 s messaging timeout ends the wait one read past it. **The stated limit:** an ARIA menu
+     that takes no focus and is not the element's child is not seen, and answers `menuUnconfirmed`.
+  3. **Polled, not notified.** AXMenuOpened would need an observer on each process registered before the action and a
+     run loop serviced through the wait, for a gain of at most one interval; the poll would still be needed for an
+     ARIA menu and as the backstop. The poll reads the state the model will act on: a menu that opened and closed again
+     within the wait (Chromium's on an unfocused window, as the Linux gate found) is not open, and the answer says so.
+  4. **A timed-out Show Menu counts as sent** (`showMenuSent`). An app that runs the menu's tracking loop inside the
+     action replies only once the menu closes, so the call answers kAXErrorCannotComplete after the element's 1 s
+     messaging timeout with the menu open; main answered that `actionFailed` ("did not accept"). The menu is looked for
+     after cannotComplete as after success, and the AXError rides in the record (`actionError`). Every other AXError is
+     `actionFailed` as before. A menu is still required for success, so the worst case moves from `actionFailed` to
+     `menuUnconfirmed`. **Unverified:** that AppKit's AXShowMenu blocks this way is a reading, not yet observed on this
+     engine; the live kit's AppKit fixture has a view whose Show Menu runs its menu inside the action
+     (`appkit-blocking`), so the hosted run observes the cannotComplete path, and every cell records the AXError.
+  5. **The record** rides as meta `menu` (`cua/menu` through the service): {seen: "application" | "element" | "focus" |
+     null, openBefore, polls, ms, actionError?}, value-free. The app's menu record (MenuRecord.swift) is cleared on
+     either answer, since the action was sent.
+  6. **A posted right click stays at click's own contract**, matching Linux. click_element has no right-button route
+     that sends AXShowMenu on macOS: the ladder (`elementClickPlan`) takes the action route only for a plain single left
+     click on an element advertising AXPick or AXPress; every right click, element or coordinate, is a posted pointer
+     event, the person's own gesture, with no AXShowMenu fallback, and it answers as any posted click does. Linux
+     confirms only its AX fallback for an element with no visible point, not its posted right click. Left for the
+     design session to rule on if it disagrees.
+  7. **The comparisons.** No cell of comparison A (`compare --engines`; the baseline's method cases are paste, scroll,
+     selectText, setValue and typeText), of the `native-mac` parity suite (accessibility text only) or of the method
+     matrix (its performSecondaryAction cells perform "Scroll Down" and an action no element offers) performs Show Menu,
+     so this departure moves no compared row and needs no declaration today. A cell that adds Show Menu declares its
+     difference from the vendor as a departure citing this entry (`fault: "departure"`, `decisionLog`), as Linux's
+     `scripts/linux-engine-diff/deviations.mjs` declares its `menuUnconfirmed` samples.
+  8. **The model's document.** One sentence closes agent-cursor.md's fourth paragraph (the surface inventory's "Table 3
+     addition (2026-11-15, #374)").
+  The live check is a hosted kit on a dispatch-only workflow (`probe/374-measure`, `.github/workflows/probe-374.yml`,
+  `scripts/probe-374/README.md`), not yet run while GitHub Actions is billing-locked: one job per family, AppKit (a
+  fixture app), Chrome for Testing, Electron, Firefox and Safari, each with a native-menu cell, an ARIA-menu cell on the
+  web families, a preventDefault page as the negative control, and on AppKit a view that takes AXShowMenu and shows
+  nothing (the ignored case) and one that runs its menu inside the action (item 4).
+  Date/Author: 2026-11-15, cursor235's implementer for #374 (design 1ea561bc:733).
 
 ## Outcomes & Retrospective
 

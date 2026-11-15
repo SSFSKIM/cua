@@ -109,6 +109,8 @@ struct InputMeta {
   var stalePoint: StalePointRecord?
   /// #328's scroll confirmation (ScrollConfirm.swift): the container read, the move seen, the end, the fallback's write.
   var scroll: ScrollConfirmRecord?
+  /// #374's Show Menu confirmation (MenuConfirm.swift): where the new menu was seen, or that none was, and the wait.
+  var menu: MenuConfirmRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -172,6 +174,7 @@ struct InputMeta {
     if let pointerEstablish { wire["pointerEstablish"] = pointerEstablish.wire }
     if let stalePoint { wire["stalePoint"] = stalePoint.wire }
     if let scroll { wire["scroll"] = scroll.wire }
+    if let menu { wire["menu"] = menu.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }

@@ -395,11 +395,27 @@ export function landed(effects, kind, before, after, run = {}) {
 }
 
 /**
- * Whether a cell's answers are the ones it expects: each a success, but the control's (`menu_unconfirmed`), whose one
- * request must answer menuUnconfirmed (deviations.mjs `MENU_UNCONFIRMED`), since the page cancels the menu it asked for.
+ * The settle cells that expect a refusal, by kind: the error each one request must answer, and why an ok there is
+ * false. The control (`menu_unconfirmed`) must answer menuUnconfirmed (deviations.mjs `MENU_UNCONFIRMED`), since the
+ * page cancels the menu it asked for.
+ */
+export const EXPECTED_REFUSALS = {
+  menu_unconfirmed: {
+    name: 'menuUnconfirmed',
+    error: MENU_UNCONFIRMED,
+    why: 'the page cancels the menu, so none appeared',
+  },
+};
+
+/** Whether a cell's kind expects a refusal (`EXPECTED_REFUSALS`). */
+export const expectsRefusal = (kind) => Object.hasOwn(EXPECTED_REFUSALS, kind);
+
+/**
+ * Whether a cell's answers are the ones it expects: each a success, but a refusal cell's (`EXPECTED_REFUSALS`), whose
+ * one request must answer its error.
  */
 export function answersAsExpected(kind, answers) {
-  if (kind === 'menu_unconfirmed') return answers.length === 1 && answers[0].ok === false && MENU_UNCONFIRMED.test(String(answers[0].error ?? ''));
+  if (expectsRefusal(kind)) return answers.length === 1 && answers[0].ok === false && EXPECTED_REFUSALS[kind].error.test(String(answers[0].error ?? ''));
   return answers.every((a) => a.ok);
 }
 
@@ -512,15 +528,28 @@ export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, ne
 }
 
 /**
- * Why a run is a false ok (ruling 650's hard failure, which ruling 707 makes the settle lane's in every cell), or null:
- * every answer a success, nothing invalid, the requested effect not landed within the late bound, and either the
- * reading after the input the same as the one before it in every field (no effect), or the readings showing the effect
- * on another target (`wrongTarget`). A right-target effect of the wrong size (a scroll that took two of three wheel
- * steps, a key-down with no key-up) is a landing miss, honest, not this. A control's genuine menuUnconfirmed is no ok,
- * so the answers exclude it; the cell's `expected_error` flag does not, since it marks every run of the control, one
- * that answered ok included.
+ * Why a run is a false ok (ruling 650's hard failure, which ruling 707 makes the settle lane's in every cell), or null.
+ * In a cell that expects a refusal (`EXPECTED_REFUSALS`; a stored row's `expected_error` marks one too), any ok among
+ * its answers, whatever the reading shows or when: the cell exists to prove the refusal, so an ok there claims what did
+ * not happen (the menu control's: a menu the page cancelled); the coordinator's ruling and the design session's,
+ * sminos 715, in the spirit of 650 and 687. The reading's own false ok, if any, is named beside it. A genuine refusal is
+ * no ok.
+ * In every other cell (`effectlessOk`): every answer a success, nothing invalid, the requested effect not landed within
+ * the late bound, and either the reading after the input the same as the one before it in every field (no effect), or
+ * the readings showing the effect on another target (`wrongTarget`). A right-target effect of the wrong size (a scroll
+ * that took two of three wheel steps, a key-down with no key-up) is a landing miss, honest, not this.
  */
 function falseOk(run) {
+  if (expectsRefusal(run.input) || run.expected_error === true) {
+    if (!run.answers?.some((a) => a.ok === true)) return null;
+    const shown = effectlessOk(run);
+    return `answered ok where the cell expects its refusal (${EXPECTED_REFUSALS[run.input]?.name ?? 'an error'}): ${EXPECTED_REFUSALS[run.input]?.why ?? 'the cell exists to prove it'}${shown ? `; ${shown}` : ''}`;
+  }
+  return effectlessOk(run);
+}
+
+/** `falseOk` read from the run's answers and readings alone: every answer ok, and no effect, or one on another target. */
+function effectlessOk(run) {
   if (runClass(run) !== 'never' || !run.answers?.length || !run.answers.every((a) => a.ok === true)) return null;
   if (run.before == null || run.after == null) return null;
   if (JSON.stringify(run.before) === JSON.stringify(run.after)) return 'answered ok with no effect';

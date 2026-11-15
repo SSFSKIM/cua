@@ -47,7 +47,7 @@ import { POINTER_INSIDE, parkInside } from './drag.mjs';
 import { AsyncOracle } from './bus-client.mjs';
 import { startOwner, startReader } from './clip.mjs';
 import {
-  ACTIVATING, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, answersAsExpected, auditVerdict, cellName, cellsFor, chosenPlan, judgeSettleSeries, landed, laneSettles, planLanes,
+  ACTIVATING, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, answersAsExpected, auditVerdict, expectsRefusal, cellName, cellsFor, chosenPlan, judgeSettleSeries, landed, laneSettles, planLanes,
   runClass, runPasses, settleOf, settledFields, sittingVerdict,
 } from './action-settle-cells.mjs';
 import { Engine, runTmpdirInProcess } from './engine.mjs';
@@ -520,12 +520,12 @@ async function oneRun(ctx, cell, sc, svc, settler, trial) {
     const { answers, after, answered, answered_ms: answeredMs, read_ms: readMs, waited_ms: waitedMs } = span.value;
     const background = cell.route === 'background' && !ACTIVATING.includes(cell.kind);
     const frontActive = background ? activeWindow() === ctx.desktop.front.id : null;
-    // each a success, but the control's menuUnconfirmed (action-settle-cells.mjs `answersAsExpected`)
+    // each a success, but a refusal cell's expected error (action-settle-cells.mjs `answersAsExpected`)
     const answersOk = answersAsExpected(cell.kind, answers);
     const invalid = [];
     const awaited = cell.kind === 'activate_click' ? 'click' : settleOf(cell);
     // a failure defers nothing (src/services/engine/linux/methods.mjs), the control's included
-    if (cell.kind === 'menu_unconfirmed') {
+    if (expectsRefusal(cell.kind)) {
       if (answersOk && settler.deferred.length) invalid.push(`the service deferred ${settler.deferred.join(', ')} after an error`);
     } else if (answersOk && settler.deferred.at(-1) !== awaited) invalid.push(`the service settled it as ${settler.deferred.at(-1)}, not ${awaited}`);
     const fields = settledFields(sc.effects, cell.kind);
@@ -574,7 +574,7 @@ async function oneRun(ctx, cell, sc, svc, settler, trial) {
       late_ms: lateMs,
       ...(invalid.length ? { invalid: invalid.join('; ').slice(0, 300) } : {}),
       ...(left.length ? { left } : {}),
-      ...(cell.kind === 'menu_unconfirmed' ? { expected_error: true } : {}),
+      ...(expectsRefusal(cell.kind) ? { expected_error: true } : {}),
       answers: answers.map((a) => (a.ok ? { ok: true } : { ok: false, error: a.error })),
       deferred: [...settler.deferred],
       source,

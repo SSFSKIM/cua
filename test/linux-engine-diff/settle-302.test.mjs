@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  ACTIVATING, FAMILY_SCENES, cellName, cellsFor, judgeSettleSeries, judgesLateKeyUp, lateKeyUpMiss, sittingVerdict,
+  ACTIVATING, EXPECTED_REFUSALS, FAMILY_SCENES, cellName, cellsFor, expectsRefusal, judgeSettleSeries, judgesLateKeyUp, lateKeyUpMiss, sittingVerdict,
 } from '../../scripts/linux-engine-diff/action-settle-cells.mjs';
 import { CANDIDATES, gateRows } from './gate-rows.mjs';
 
@@ -239,7 +239,7 @@ for (const { candidate, step, counts } of RULED) {
   });
 }
 
-test("the menu control: an ok where it expects menuUnconfirmed is no expected error, and a false ok there fails the series after 30 good runs", () => {
+test("the menu control: an ok where it expects menuUnconfirmed fails the series after 30 good runs, whatever its effect reads", () => {
   const CONTROL = 'electron-input menu_unconfirmed background';
   const stored = () => gateRows(CANDIDATES[3], 'L3b').filter((r) => r.kind === 'settle-run' && r.cell === CONTROL);
   const good = stored();
@@ -254,18 +254,26 @@ test("the menu control: an ok where it expects menuUnconfirmed is no expected er
     return [r, ...good.map((g, i) => ({ ...g, trial: i + 1 }))];
   };
   const page = (r) => ({ ...r.before, context: r.before.context + 1 });
+  // the page cancels the menu the control asks for, so an ok claims a menu that never appeared: hard whatever the
+  // reading shows (the coordinator's ruling, fix 6), the reading's detail kept beside it where it shows one
+  const control = /^answered ok where the cell expects its refusal \(menuUnconfirmed\): the page cancels the menu/;
   const elsewhere = {
-    'an unexpected ok with no effect': (r) => { r.after = { ...r.before }; },
-    'an unexpected ok on another target, `sent.on` recorded': (r) => { r.after = { ...page(r), context_on: 'native' }; r.sent = { ...r.sent, on: 'menu' }; },
-    'an unexpected ok on another target, as a stored row records `sent` (the control aims at the Menu button)': (r) => { r.after = { ...page(r), context_on: 'native' }; },
+    'an unexpected ok with no effect': [(r) => { r.after = { ...r.before }; }, /no effect/],
+    'an unexpected ok on another target, `sent.on` recorded': [(r) => { r.after = { ...page(r), context_on: 'native' }; r.sent = { ...r.sent, on: 'menu' }; }, /another target: the context event reached native, not menu/],
+    'an unexpected ok on another target, as a stored row records `sent` (the control aims at the Menu button)': [(r) => { r.after = { ...page(r), context_on: 'native' }; }, /another target: the context event reached native, not menu/],
+    'an unexpected ok with its context event on the Menu button': [(r) => { Object.assign(r, { landed: true, after: { ...page(r), context_on: 'menu' } }); }, null],
+    'an unexpected ok whose context event came late (the lane looks for none: its answer is not as expected)': [(r) => { Object.assign(r, { late_ms: 240, after: { ...r.before } }); }, null],
+    'an unexpected ok on a run the readers could not judge': [(r) => { Object.assign(r, { invalid: 'a reader failed' }); }, null],
+    'an ok after the refusal, two answers': [(r) => { r.answers = [{ ok: false, error: good[0].answers[0].error }, { ok: true }]; r.after = { ...page(r), context_on: 'menu' }; r.landed = true; }, null],
   };
-  for (const [name, edit] of Object.entries(elsewhere)) {
+  for (const [name, [edit, detail]] of Object.entries(elsewhere)) {
     const v = judgeSettleSeries(unexpected(edit), { need: 30 });
     assert.equal(v.streak, 30, name);
     assert.equal(v.reached, false, name);
     assert.equal(v.lost, true, name);
     assert.equal(v.false_ok[0]?.trial, 0, name);
-    assert.match(v.false_ok[0].why, name.includes('no effect') ? /no effect/ : /another target: the context event reached native, not menu/, name);
+    assert.match(v.false_ok[0].why, control, name);
+    if (detail) assert.match(v.false_ok[0].why, detail, name);
   }
   // the genuine error stays honest whatever its reading shows: its answer is no ok
   const genuine = stored()[0];
@@ -278,7 +286,27 @@ test("the menu control: an ok where it expects menuUnconfirmed is no expected er
   const rows = gateRows(CANDIDATES[3], 'L3b');
   const r = rows.find((x) => x.kind === 'settle-run' && x.cell === CONTROL);
   Object.assign(r, { ok: false, landed: false, late_ms: null, answers: [{ ok: true }], after: { ...r.before } });
-  assert.ok(judgeRecord(rows).failed.includes(`${CONTROL} (shipped): 1 of 30 runs were a false ok (trial ${r.trial}: answered ok with no effect)`));
+  assert.ok(judgeRecord(rows).failed.some((f) => f.startsWith(`${CONTROL} (shipped): 1 of 30 runs were a false ok (trial ${r.trial}: answered ok where the cell expects its refusal`)), judgeRecord(rows).failed.join('; '));
+  // the refusal's cell alone: another cell's ok is judged by its effect, as before
+  assert.equal(judgeSettleSeries([{ ...stored()[0], input: 'secondary_action', cell: 'electron-input secondary_action background', expected_error: undefined, ok: false, landed: true, answers: [{ ok: true }] }, ...good.map((g, i) => ({ ...g, trial: i + 1 }))], { need: 30 }).false_ok.length, 0);
+});
+
+test('every expected-error cell, not the menu control alone: an ok among its answers is hard whatever its effect (sminos 715)', () => {
+  const unconfirmed = 'showContextMenu was sent and no menu was seen within 1 s; the application may have shown its own menu or ignored the request; read the window before retrying';
+  // each kind the table names expects its refusal, and a run answering ok there fails the series after 30 good runs
+  for (const kind of Object.keys(EXPECTED_REFUSALS)) {
+    assert.equal(expectsRefusal(kind), true, kind);
+    const cell = `electron-input ${kind} background`;
+    const good = (trial) => ({ ...run(trial, { ok: true, late_ms: null }), cell, input: kind, expected_error: true, answers: [{ ok: false, error: kind === 'menu_unconfirmed' ? unconfirmed : 'its refusal' }] });
+    const okRun = { ...good(0), ok: false, landed: true, answers: [{ ok: true }] };
+    const v = judgeSettleSeries([okRun, ...Array.from({ length: 30 }, (_, i) => good(i + 1))], { need: 30 });
+    assert.equal(v.reached, false, kind);
+    assert.match(v.false_ok[0].why, /expects its refusal/, kind);
+  }
+  assert.equal(expectsRefusal('secondary_action'), false, 'the confirmed cell expects its menu');
+  // a row its run marked as an expected-error cell is judged so, whatever its kind
+  const marked = { ...run(0, { late_ms: null }), input: 'right_click', expected_error: true, landed: true, answers: [{ ok: true }] };
+  assert.match(judgeSettleSeries([marked], { need: 30 }).false_ok[0]?.why ?? '', /^answered ok where the cell expects its refusal \(an error\)/);
 });
 
 test("candidate 2's L3c: its scroll that took two of three wheel steps is a landing miss, not a false ok, so the step stands", () => {

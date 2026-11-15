@@ -266,3 +266,21 @@ test('the script refuses to run off a GitHub-hosted macOS runner and touches not
 test('the runner is a declared darwin device', () => {
   assert.deepEqual(declaredDevice('hosted-macos'), {platform: 'darwin'});
 });
+
+test('a failed cell that says what it saw (`; seen {...}`, #168) prints that in fixture data, its paths and text withheld', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hosted-run-'));
+  const id = 'api/browser-cuaapi/type';
+  const seen = {focused: false, active: {tag: 'body', id: ''}, value: '', where: `/Users/runner/${PLANTED}`};
+  const message = `the typed text was not acknowledged within 3000ms; seen ${JSON.stringify(seen)}`;
+  try {
+    writeFileSync(join(dir, 'meta.json'), JSON.stringify({complete: true}));
+    writeFileSync(join(dir, 'results.jsonl'), [
+      {case: id, cell: 'type', ok: true, isError: false, ms: 3319, content: [{type: 'text', text: `CUA_PARITY_RESULT ${JSON.stringify({ok: false, error: {code: 'Error', message}, $imageCount: 0})}`}]},
+      {case: id, assertion: {ok: false, reason: `type: ${message}`}},
+    ].map(r => JSON.stringify(r)).join('\n'));
+    const {lines} = runLines(JSON.stringify({cases: 1, complete: true, assertions: 'FAIL'}), dir, 'vendor/api');
+    assert.equal(lines.join('\n').includes(PLANTED), false);
+    const view = '{"focused":false,"active":{"tag":"body","id":""},"value":"","where":"<withheld>"}';
+    assert.deepEqual(lines.slice(3, 5), [`    reason cell-error cell type timeout false seen ${view}`, `    cell type: ok false ms 3319 error Error timeout false seen ${view}`]);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+});

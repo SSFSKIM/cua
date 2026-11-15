@@ -43,6 +43,12 @@ export function readyLines(r, key) {
 // Why a case failed, in fixture data only (#168, ruling 719): what the cells answered and what the fixture recorded,
 // each string a fixture word or withheld, so no path, address, environment or stderr leaves the runner.
 const TIMEOUT = /timed out|timeout|deadline exceeded/i;
+// What a cell's own error says it saw, in its `; seen {...}` tail (a scenario's diagnosis, #168), as fixture data.
+const seenOf = text => {
+  const tail = /; seen (\{.*\})$/s.exec(text)?.[1];
+  if (tail == null) return '';
+  try { return ` seen ${fixtureData(JSON.parse(tail))}`; } catch { return ' seen <withheld>'; }
+};
 // An error by its kind, never its text: whether it timed out, the CDP command it names as timing out (a method name such
 // as Runtime.evaluate), whether the tab's debugger was gone, and whether the locator's own deadline ran out.
 export function errorKind(message) {
@@ -50,11 +56,12 @@ export function errorKind(message) {
   const cdp = text.match(/waiting for CDP command ([A-Z][A-Za-z]*\.[A-Za-z]+)/)?.[1];
   return `timeout ${TIMEOUT.test(text)}${cdp ? ` cdp ${cdp}` : ''}`
     + `${/Debugger is not attached|Debugger unattached|debugger.*detached/i.test(text) ? ' detached true' : ''}`
-    + `${/selector deadline exceeded/i.test(text) ? ' selector-deadline true' : ''}`;
+    + `${/selector deadline exceeded/i.test(text) ? ' selector-deadline true' : ''}`
+    + seenOf(text);
 }
 const FIXTURE_DATA_CHARS = 400;
 // A fixture's own words ('pointer', 'ended', 'dragStart'): narrower than a label, with no path or address in it.
-const FIXTURE_WORD = /^[A-Za-z0-9][A-Za-z0-9._:+-]{0,80}$/;
+const FIXTURE_WORD = /^(?:[A-Za-z0-9][A-Za-z0-9._:+-]{0,80})?$/;     // the empty string too: an element with no id, an empty input
 const word = value => (FIXTURE_WORD.test(value) ? value : '<withheld>');
 const project = value => typeof value === 'string' ? word(value)
   : Array.isArray(value) ? value.map(project)

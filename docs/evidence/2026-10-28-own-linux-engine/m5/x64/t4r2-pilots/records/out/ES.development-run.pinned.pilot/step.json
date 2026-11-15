@@ -1,0 +1,49 @@
+{
+  "label": "development run on the pinned release, not acceptance, never counted",
+  "step": "ES",
+  "pilot": true,
+  "what": "T7b's engine stop through cua serve itself, the run home's installed engine: every production path (idle, eof, signal, remote, held-back) and case (hold, burst, pairs, handle), 10 runs each",
+  "display": "own",
+  "load": "idle",
+  "minutes": 15,
+  "run_name": "m5-pinned-dev-ES-pilot",
+  "checkout": {
+    "root": "/Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a458977939f1feb0d/",
+    "commit": "2807b4ee3eedd229a6077784e5f39586396dee0a",
+    "clean": true
+  },
+  "candidate": {
+    "path": "/Users/new/.local/share/cua-171/m5-t4r2/home/engine/linux/cua-engine",
+    "sha256": "751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca"
+  },
+  "pinned_home": "/Users/new/.local/share/cua-171/m5-t4r2/home",
+  "command": "/Users/new/.local/share/cua-171/locked.sh m5-t4r2 /usr/bin/node /Users/new/Developer/GitHub/cua/.claude/worktrees/agent-a458977939f1feb0d/scripts/linux-engine-gate/gate.mjs run ES --pinned /Users/new/.local/share/cua-171/m5-t4r2/home --out /Users/new/.local/share/cua-171/m5-t4r2/out --pilot 1",
+  "argv": [
+    "scripts/linux-engine-diff.mjs",
+    "--experiment",
+    "engine-stop",
+    "--lanes",
+    "drain",
+    "--trials",
+    "1",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5-t4r2/home/engine/linux/cua-engine",
+    "--run",
+    "m5-pinned-dev-ES-pilot",
+    "--pinned",
+    "--pilot",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5-t4r2/out/ES.development-run.pinned.pilot/run"
+  ],
+  "started": "2026-11-15T11:03:50.210Z",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  },
+  "finished": "2026-11-15T11:05:22.983Z",
+  "exit": 0,
+  "child_exit": 0,
+  "unjudged": []
+}

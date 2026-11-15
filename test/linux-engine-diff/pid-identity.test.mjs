@@ -17,15 +17,11 @@ import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 const skip = process.platform !== 'linux' && 'Linux only: /proc';
 const scratch = mkdtempSync(join(tmpdir(), 'cua171-pid-identity-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
+// each child by its handle, never its number: a child already reaped is never signalled (its pid may be another's now)
 const children = [];
+const running = (child) => child.exitCode === null && child.signalCode === null;
 after(() => {
-  for (const c of children) {
-    try {
-      process.kill(c.pid, 'SIGKILL');
-    } catch {
-      // ended
-    }
-  }
+  for (const c of children) if (running(c)) c.kill('SIGKILL');
 });
 
 /** A process of the test's own, as a scene's program is: `sleep`, in a group of its own. */
@@ -34,14 +30,7 @@ function sleeper() {
   children.push(child);
   return child;
 }
-const alive = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
+
 const until = async (check, ms = 3000) => {
   for (const end = Date.now() + ms; Date.now() < end; ) {
     if (check()) return true;
@@ -58,7 +47,7 @@ test("a process's identity is its pid, its start time since boot and its executa
   assert.match(id.start, /^\d+$/);
   assert.equal(id.exe, '/usr/bin/sleep');
   assert.deepEqual(processIdentity(child.pid), id, 'the same process reads the same');
-  process.kill(child.pid, 'SIGKILL');
+  child.kill('SIGKILL');
   await until(() => processIdentity(child.pid) === null);
   assert.equal(processIdentity(child.pid), null);
 });
@@ -76,7 +65,7 @@ test('a reused pid is never signalled: another start time or executable under th
     assert.match(result.reason, new RegExp(`pid ${child.pid} is another process now`));
   }
   assert.deepEqual(kills, [], 'nothing signalled');
-  assert.equal(alive(child.pid), true);
+  assert.equal(running(child), true);
   assert.deepEqual(signalIfSame(null, 'SIGTERM', { kill }), { signalled: false, reason: 'no identity was recorded when the scene opened' });
   // the process itself is signalled
   assert.deepEqual(signalIfSame(now, 'SIGTERM', { kill }), { signalled: true });
@@ -105,7 +94,7 @@ test("a scene's close signals its pidfile's pid only while it is the scene's pro
     const reused = { kind: 'family', id: 0, pid: group.pid, group: true, pidfile, pidIdentity: { ...processIdentity(program.pid), start: '1' } };
     desktop.windows.push(reused);
     await desktop.close([reused]);
-    assert.equal(alive(program.pid), true, "the pid's process now is not the scene's: never signalled");
+    assert.equal(running(program), true, "the pid's process now is not the scene's: never signalled");
     assert.equal(desktop.skips.length, 1);
     assert.equal(desktop.skips[0].what, 'signal');
     assert.match(desktop.skips[0].reason, new RegExp(`the pid ${pidfile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} names: pid ${program.pid} is another process now`));
@@ -114,7 +103,7 @@ test("a scene's close signals its pidfile's pid only while it is the scene's pro
     const own = { kind: 'family', id: 0, pid: group2.pid, group: true, pidfile, pidIdentity: processIdentity(program.pid) };
     desktop.windows.push(own);
     await desktop.close([own]);
-    assert.ok(await until(() => !alive(program.pid) || processIdentity(program.pid) === null), 'its own program ended');
+    assert.ok(await until(() => !running(program)), 'its own program ended');
   } finally {
     desktop.unhookStop();
     rmSync(desktop.dir, { recursive: true, force: true });

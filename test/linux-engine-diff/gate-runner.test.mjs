@@ -16,6 +16,7 @@ import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { planOps } from '../../scripts/linux-engine-diff/run.mjs';
 import { dropSignalsVerdict } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
 import { PREDICATE_KINDS } from '../../scripts/linux-engine-diff/predicates.mjs';
+import { controlRootRefusal } from '../../scripts/linux-engine-diff/engine-stop.mjs';
 
 const scratch = mkdtempSync(join(tmpdir(), 'cua171-gate-test-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -525,4 +526,31 @@ test('`gate.mjs leftovers` runs the end check on its own, for a :0 sitting\'s al
   const { status, stdout } = spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/linux-engine-gate/gate.mjs', import.meta.url)), 'leftovers'], { encoding: 'utf8', env: { ...process.env, TMPDIR: fresh('tmp') } });
   assert.ok([0, 1].includes(status), stdout);
   assert.match(stdout, /^end check: (clear|\d+ findings?, left alone)/);
+});
+
+// #171 M5, T4's second round (task 87's finding 2, ruling 728): engine-stop's `cua serve` on the pinned release is a gate
+// step of its own, so the frozen list backs the Decision Log's claim that it selects the run home's installed engine
+
+test("ES runs engine-stop's drain lane through cua serve on every production path and case, on a private server of its own", () => {
+  const es = stepNamed('ES');
+  assert.deepEqual([es.kind, es.display, es.load], ['experiment', 'own', 'idle']);
+  assert.ok(es.minutes <= MAX_STEP_MINUTES);
+  const names = STEPS.map((s) => s.name);
+  assert.equal(names.indexOf('ES'), names.indexOf('F2') + 1, "beside T7 revised's stops, the private idle steps' own");
+  const parsed = parseArgs([...stepArgs(es, { paths: PATHS, gate: true }), '--out', '/o']);
+  assert.deepEqual([parsed.experiment, parsed.lanes, parsed.paths, parsed.cases, parsed.controlRoot], ['engine-stop', ['drain'], undefined, undefined, undefined], 'every path and case, the drain lane alone: no control checkout');
+  assert.equal(parsed.samplesTrials, undefined, 'its 10 runs a cell');
+  const a = parseGateArgs(['print', 'ES', '--pinned', ACC, '--out', '/o'], { arch: 'x64', env: {} });
+  const pinned = parseArgs([...stepArgs(es, { paths: a, gate: 'pinned' }), '--out', '/o']);
+  assert.deepEqual([pinned.gate, pinned.cua, pinned.run], ['pinned', ACC_ENGINE, 'pinned-ES']);
+  assert.equal(parseArgs([...stepArgs(es, { paths: a, gate: 'pinned-dev', pilot: 1 }), '--out', '/o']).samplesTrials, 1, 'its pilot: one run a cell');
+  assert.match(listText(a, ROOT), /^ES\s+\d+ min\s+own\s+idle\s+.*cua serve.*\n\s+.*gate\.mjs run ES --pinned /m);
+  assert.match(launchCommand(es, a, ROOT), new RegExp(`gate\\.mjs run ES --pinned ${ACC} --out /o$`));
+});
+
+test('engine-stop needs a control checkout only for its kill lane', () => {
+  assert.equal(controlRootRefusal({ lanes: ['drain'] }), null);
+  assert.match(controlRootRefusal({ lanes: ['drain', 'kill'] }), /--control-root names the checkout whose REPL host is the control/);
+  assert.match(controlRootRefusal({}), /--control-root/, 'both lanes by default');
+  assert.equal(controlRootRefusal({ controlRoot: '/c' }), null);
 });

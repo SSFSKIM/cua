@@ -16,7 +16,7 @@
 // drop, the thumbs, Writer unprimed since T16 removed the priming); the events experiment's `move`; the settle through
 // the service as shipped (T8, T16's 25 ms drag); the facade suites on the candidate (repl-parity, native-baseline with
 // compare --engines, linux-native, linux-device-mode: suites.sh, M4's facade.sh made one runner); T7 revised's acceptance on the shipped engine (the focus-timer
-// experiment's shipped lane and its stops); the device cases of #263 and #264 (V5's device-chrome-dnd, and the real late
+// experiment's shipped lane and its stops); T7b's engine stop through cua serve on the installed engine (ES, from M5); the device cases of #263 and #264 (V5's device-chrome-dnd, and the real late
 // takes of `t14-late`, which the device scene cannot produce, judged by drop-signals-judge.mjs `chromeDropVerdict`);
 // T19's predicates manifest, Firefox's drag and drop included (P6); T17's Electron cells (`t17-fix3`, judged by
 // `electronDropVerdict`). Apart in the same sitting, at twice the load
@@ -102,6 +102,11 @@ export const STEPS = [
   experiment('F1a', 'own', 'idle', 20, FOCUS_KEYS, 'T7 revised on the shipped engine: burst, A-B-A, key then paste'),
   experiment('F1b', 'own', 'idle', 12, FOCUS_CLICKS, 'T7 revised on the shipped engine: click then paste, a click into another field then paste'),
   experiment('F2', 'own', 'idle', 8, FOCUS_STOPS, 'T7 revised: SIGTERM straight after keys and after clicks, 30 each on Chrome and Electron, and SIGKILL as the control', { pilot: asIs }),
+  // T7b's stop through cua serve itself (M5's T4 round 2, ruling 728): on the pinned release the serve runs in a HOME of
+  // the run's and selects the run home's installed engine itself, each run's one engine that installed path, so the
+  // Decision Log's claim for it stands on a gate step. The drain lane alone: the kill lane's control is a checkout from
+  // before T7b, no gate's. 17 cells of 10 runs; M4's 160 runs took 12 min
+  experiment('ES', 'own', 'idle', 15, ['--experiment', 'engine-stop', '--lanes', 'drain'], "T7b's engine stop through cua serve itself, the run home's installed engine: every production path (idle, eof, signal, remote, held-back) and case (hold, burst, pairs, handle), 10 runs each"),
   experiment('P1', 'private', 'idle', 30, predicates('click'), "T19's predicates manifest: Firefox's click cases", { pilot: leavePilot }),
   experiment('P2', 'private', 'idle', 30, predicates('scroll'), "T19's predicates manifest: scroll", { pilot: leavePilot }),
   experiment('P3', 'private', 'idle', 30, predicates('move'), "T19's predicates manifest: move", { pilot: leavePilot }),

@@ -39,7 +39,9 @@ wheel route ran side by side on the same Chrome.
 | new (wheel, 5711371c) | idle | 10/10, 80 ms | 10/10, 87 ms | 10/10, 82 ms | 10/10, 87 ms |
 | new (wheel, 5711371c) | cpu2 | 10/10, 125 ms | 10/10, 137 ms | 10/10, 109 ms | 10/10, 114 ms |
 
-The fix wave's own tests, in a real headless Chrome, are in `review-fix/`: `red-at-bcf80db7.txt` (the five finding tests fail, the four others pass), `green-real-chrome.txt` (9/9), and `covering-suites.txt`.
+**Rerun on the second fix wave (98c77619)**, where the probe starts from Chrome's own hit test (`trials-98c77619.jsonl`): the wheel moved **80/80** (median 84–141 ms; front, behind, unfocused and dom, idle and cpu2). The gesture again failed 0/10 behind another tab, and 0/10 on the detach cascade.
+
+The fix waves' own tests, in a real headless Chrome, are in `review-fix/`. The second wave's are `red-at-daa74a58.txt` (the overlap and closed-shadow tests fail) and `covering-suites-wave2.txt` (471/473, 2 skipped).: `red-at-bcf80db7.txt` (the five finding tests fail, the four others pass), `green-real-chrome.txt` (9/9), and `covering-suites.txt`.
 
 "10/10" means the cell answered `{before: 0, moved: true}`. The times are each cell's own duration (median). Every row
 is in `trials.jsonl`.

@@ -412,8 +412,9 @@ async function experimentRun(args, { emit, results }) {
   if (args.experiment === 'focus-timer') {
     // on a private X server of its own, like the AT-SPI probe (focus-timer.mjs), its load started there
     emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
-    const { md, complete, failed, ending } = await runFocusTimer(args, { emit, run, startLoad });
-    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    const { md, complete, failed, unjudged = [], ending } = await runFocusTimer(args, { emit, run, startLoad });
+    // a pilot's series shorter than its minimum (ruling 730), listed apart, never a pass
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, ...(unjudged.length ? { unjudged } : {}), desktop: ending.record, finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);
     return complete;
@@ -430,8 +431,9 @@ async function experimentRun(args, { emit, results }) {
   if (args.experiment === 'settle') {
     // through cua's own service, on a private X server of its own (action-settle.mjs), its load started there
     emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, kinds: args.kinds ?? [], routes: args.routes ?? [], lanes: args.lanes ?? null, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
-    const { md, complete, failed, ending } = await runSettle(args, { emit, run, startLoad });
-    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    const { md, complete, failed, unjudged = [], ending } = await runSettle(args, { emit, run, startLoad });
+    // a pilot's series shorter than its minimum (ruling 730), listed apart, never a pass
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, ...(unjudged.length ? { unjudged } : {}), desktop: ending.record, finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);
     return complete;

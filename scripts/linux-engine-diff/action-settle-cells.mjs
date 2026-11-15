@@ -805,14 +805,18 @@ export function auditVerdict({ clean, requests, runs }, need) {
  * cell of the sitting with no series fails it, and so does a development series (`--trials` below 30). Returns the
  * summary's lines, the failures and each cell's held step (search sittings).
  */
-export function settleVerdict(series, { search, cells }) {
+export function settleVerdict(series, { search, cells, pilot = false }) {
   const failed = [];
+  // a pilot's series shorter than the rule's minimum (ruling 730): unjudged, never passed, a false ok still a failure
+  const unjudged = [];
+  const short = (s) => pilot && s.need < CONSECUTIVE;
   const held = {};
   const md = ['| cell | lane | runs | misses (late / never / refused / invalid) | streak at the end | verdict |', '|---|---|---:|---|---:|---|'];
   for (const s of series) {
     const limit = s.late_302?.length ? `, ${s.late_302.length} of them #302` : '';
     md.push(`| ${s.cell} | ${s.lane} | ${s.runs} | ${s.misses} (${s.late} / ${s.never} / ${s.refused ?? 0} / ${s.invalid ?? 0}) | ${s.streak} | ${s.reached ? `${s.need} consecutive${limit}` : `not reached${limit}`} |`);
-    if (s.need < CONSECUTIVE) failed.push(`${s.cell} (${s.lane}): a development series of ${s.need}, not the ${CONSECUTIVE} the rule needs`);
+    if (short(s)) unjudged.push(`${s.cell} (${s.lane}): a series of ${s.need}, shorter than the ${CONSECUTIVE} the rule needs (a pilot)`);
+    else if (s.need < CONSECUTIVE) failed.push(`${s.cell} (${s.lane}): a development series of ${s.need}, not the ${CONSECUTIVE} the rule needs`);
   }
   for (const name of cells) {
     const mine = series.filter((s) => s.cell === name);
@@ -828,11 +832,13 @@ export function settleVerdict(series, { search, cells }) {
         if (s.reached) continue;
         // a false ok fails the series whatever its streak (judgeSettleSeries)
         const falseOk = s.false_ok?.length ? `${s.false_ok.length} of ${s.runs} runs were a false ok (${s.false_ok.slice(0, 5).map((f) => `trial ${f.trial}: ${f.why}`).join('; ')})` : null;
+        // a pilot's short series that did not reach its streak decides nothing, unless a run was a false ok
+        if (short(s) && !falseOk) continue;
         failed.push(`${name} (${s.lane}): ${falseOk ?? `no ${s.need} consecutive passing runs in ${s.runs}`}`);
       }
     }
   }
-  return { md, failed, held };
+  return { md, failed, held, unjudged };
 }
 
 /**
@@ -841,9 +847,9 @@ export function settleVerdict(series, { search, cells }) {
  * `{cell, why}`), an audit that failed, a cell the sitting audits (`audited`) with no audit, a change to a window it did
  * not open (`foreign`), and the private display's watchdog. Returns `{md, failed, held}`.
  */
-export function sittingVerdict({ series, cells, search, skipped = [], audits = [], audited = [], foreign = [], watchdog = { clean: true } }) {
+export function sittingVerdict({ series, cells, search, skipped = [], audits = [], audited = [], foreign = [], watchdog = { clean: true }, pilot = false }) {
   const opened = (cell) => !skipped.some((s) => s.cell === cell);
-  const { md, failed, held } = settleVerdict(series, { search, cells: cells.filter(opened) });
+  const { md, failed, held, unjudged } = settleVerdict(series, { search, cells: cells.filter(opened), pilot });
   for (const s of skipped) failed.push(`${s.cell} could not be opened: ${s.why}`);
   for (const a of audits) if (!a.pass) failed.push(`${a.cell}: the audit failed: ${a.failed.join('; ')}`);
   const unaudited = audited.filter((cell) => opened(cell) && !audits.some((a) => a.cell === cell));
@@ -857,6 +863,7 @@ export function sittingVerdict({ series, cells, search, skipped = [], audits = [
     md.push('', "**#302**, a declared limit (an Electron page's key release reached the tree after press_key's settle, the key-down inside it and the release caught up by the next run's reading): counted toward the streak, listed apart.", '');
     md.push('| cell | lane | #302 runs | the key-up seen after the answer (ms) |', '|---|---|---:|---|', ...limited.map((s) => `| ${s.cell} | ${s.lane} | ${s.late_302.length} of ${s.runs} | ${s.late_302.map((l) => l.late_ms).join(', ')} |`));
   }
+  if (unjudged.length) md.push('', `Unjudged in this pilot (a series shorter than its minimum; not a pass): ${unjudged.join('; ')}.`);
   if (failed.length) md.push('', `**Incomplete or failed:** ${failed.join('; ')}.`);
-  return { md, failed, held };
+  return { md, failed, held, unjudged };
 }

@@ -20,6 +20,8 @@ import { eventsPass, medianDifferenceInterval } from '../../scripts/linux-engine
 import { renderSummary } from '../../scripts/linux-engine-diff/report.mjs';
 import { PILOT_UNDECIDED, closeOpenSeries, judgeWithDecisions, pilotVerdict, speedDecisions } from '../../scripts/linux-engine-diff/run.mjs';
 import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
+import { settleVerdict, sittingVerdict } from '../../scripts/linux-engine-diff/action-settle-cells.mjs';
+import { focusTimerVerdict } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 const VENDORS = ['pinned', 'newest'];
 const PILOT_V3 = join(dirname(fileURLToPath(import.meta.url)), '../../docs/evidence/2026-10-28-own-linux-engine/m5/x64/pilot/out/V3.development-run.pilot/run/results.jsonl.gz');
@@ -147,4 +149,34 @@ test('the pilot flag: a development run only; with --pinned, a development run o
   assert.equal(isPinnedRule('pinned'), true);
   assert.equal(isPinnedRule(true), false);
   assert.equal(isPinnedRule(false), false);
+});
+
+// ruling 730: a settle-family series too short for its minimum (S1–S4, F1a/b, F3a/b, L3a–e) reports unjudged in a pilot,
+// never passed; a false ok still fails it, and a counted run keeps the minimum
+test("a pilot's settle series shorter than the rule's 30 is unjudged, never passed; a false ok still fails; a full run keeps the minimum", () => {
+  const cell = 'chrome-input press_key background';
+  const series = (over = {}) => ({ cell, lane: 'shipped', reached: true, runs: 2, misses: 0, streak: 2, need: 2, late: 0, never: 0, ...over });
+  const full = settleVerdict([series()], { search: false, cells: [cell] });
+  assert.match(full.failed.join('; '), /a development series of 2, not the 30 the rule needs/, 'a full run: the minimum stands');
+  const pilot = settleVerdict([series()], { search: false, cells: [cell], pilot: true });
+  assert.deepEqual(pilot.failed, []);
+  assert.deepEqual(pilot.unjudged, [`${cell} (shipped): a series of 2, shorter than the 30 the rule needs (a pilot)`]);
+  // a miss in a short series is no verdict either way; a false ok is
+  assert.deepEqual(settleVerdict([series({ reached: false, misses: 1, streak: 1, late: 1 })], { search: false, cells: [cell], pilot: true }).failed, []);
+  const falseOk = settleVerdict([series({ reached: false, misses: 1, false_ok: [{ trial: 1, why: 'no effect' }] })], { search: false, cells: [cell], pilot: true });
+  assert.match(falseOk.failed.join('; '), /1 of 2 runs were a false ok/);
+  const sitting = sittingVerdict({ series: [series()], cells: [cell], search: false, pilot: true });
+  assert.deepEqual([sitting.failed, sitting.unjudged.length], [[], 1]);
+  assert.match(sitting.md.join('\n'), /Unjudged in this pilot \(a series shorter than its minimum; not a pass\)/);
+  assert.doesNotMatch(sitting.md.join('\n'), /Incomplete or failed/);
+});
+
+test("a pilot's focus-timer series shorter than the proof's 30 is unjudged; a full run keeps the minimum", () => {
+  const s = { family: 'chrome', lane: 'shipped', scenario: 'burst', runs: 2, misses: 0, streak: 2, need: 2, reached: true };
+  const input = { series: [s], audits: [], stops: [], skipped: [] };
+  assert.match(focusTimerVerdict(input, { families: ['chrome'] }).failed.join('; '), /a development series of 2/);
+  const pilot = focusTimerVerdict(input, { families: ['chrome'], pilot: true });
+  assert.deepEqual(pilot.failed, []);
+  assert.deepEqual(pilot.unjudged, ['chrome burst: a series of 2, shorter than the 30 the proof needs (a pilot)']);
+  assert.deepEqual(focusTimerVerdict({ ...input, series: [{ ...s, reached: false, misses: 1 }] }, { families: ['chrome'], pilot: true }).failed, [], 'a miss in a short series: no verdict');
 });

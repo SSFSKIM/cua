@@ -5,15 +5,19 @@
 // every session-bus process whose config or socket lies in one, as a finding: named, never removed or signalled, since
 // another run may own them. It runs at every run's end (scenes.mjs `closeEverything`, whatever ended the run) and after
 // every gate step (gate.mjs, whatever ended the step's process), and on its own (`gate.mjs leftovers`).
+//
+// The next run's start check (ruling 730) refuses to start on any leftover, naming it and its evidence, and removes
+// nothing (fix wave 3). A leftover is removed only by the explicit command `gate.mjs leftovers --remove <dir>
+// --confirm`, whose proof needs every process of this user's fully observed (process-references.mjs).
 
-import { existsSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
 import { processState } from './pid-identity.mjs';
+import { SCRATCH_PREFIX, observeProcesses, referenceText, referencesTo, scratchPathsIn, scratchReferences, unobservedText } from './process-references.mjs';
 
-/** The run's scratch directory's name, before mkdtemp's six characters: short, since gedit's titles show the path. */
-export const SCRATCH_PREFIX = 'cua171-run-';
+export { SCRATCH_PREFIX };
 
 /** The programs of a run's session bus (session-bus.mjs): its daemon, the accessibility bus launcher and its registry. */
 export const BUS_PROGRAMS = ['dbus-daemon', 'dbus-broker', 'at-spi-bus-launcher', 'at-spi2-registryd'];
@@ -63,10 +67,6 @@ function programOf(dir) {
     return BUS_PROGRAMS.find((p) => p.startsWith(comm) && comm.length) ?? comm;
   }
 }
-
-/** A scratch directory's path inside a text (an argument, a bus address): `<...>/cua171-run-XXXXXX`, mkdtemp's six. */
-const SCRATCH_PATH = new RegExp(`(/[^\\s,;=]*?/${SCRATCH_PREFIX}[A-Za-z0-9]{6})(?=/|$|[,;\\s])`, 'g');
-const scratchPathsIn = (text) => [...text.matchAll(SCRATCH_PATH)].map((m) => m[1]);
 
 /**
  * The session-bus processes (`BUS_PROGRAMS`) whose config (an argument naming a path in a scratch directory) or socket
@@ -133,7 +133,8 @@ export function leftoverLines(check) {
 
 /**
  * The marker a run's Desktop writes in its scratch at once (scenes.mjs; ruling 730): the run, its nonce, the process that
- * made the directory (its pid and start time, pid-identity.mjs) and when. The start check removes a leftover only by it.
+ * made the directory (its pid and start time, pid-identity.mjs) and when. A leftover is removed only by it, and only
+ * through the explicit command (`removalProof`).
  */
 export const MARKER = 'cua171-run.json';
 
@@ -152,119 +153,121 @@ export function readMarker(dir) {
   }
 }
 
-/**
- * Every live process but this one, as far as it can be read: `{pid, program, texts}` (its argv and environment, NUL
- * separated), or `{pid, program, unread}` when a process of this user's has an argv or environment that cannot be read
- * (fix wave 2: unknown, never empty). Another user's process is left out: it cannot reach a mode-700 directory of this
- * user's (root aside).
- */
-export function processTable({ proc = '/proc', uid = process.getuid?.() } = {}) {
-  let pids;
-  try {
-    pids = readdirSync(proc).filter((x) => /^\d+$/.test(x)).map(Number).sort((a, b) => a - b);
-  } catch {
-    return [];
-  }
-  const out = [];
-  const boot = bootTime(proc);
-  for (const pid of pids.filter((p) => p !== process.pid)) {
-    const at = join(proc, String(pid));
-    const owner = /^Uid:\s+(\d+)/m.exec(read(join(at, 'status')) ?? '')?.[1];
-    if (owner !== undefined && uid !== undefined && Number(owner) !== uid) continue;
-    const texts = [];
-    let unread = null;
-    for (const what of ['cmdline', 'environ']) {
-      try {
-        texts.push(readFileSync(join(at, what), 'utf8'));
-      } catch (error) {
-        // a process that ended meanwhile is gone, not unread
-        if (existsSync(at)) unread = `pid ${pid}'s ${what === 'cmdline' ? 'argv' : 'environment'} cannot be read (${error.code ?? error.message})`;
-      }
-    }
-    if (!existsSync(at)) continue;
-    const st = processState(pid, { proc });
-    const started = st.state === 'live' && boot !== null ? boot + Number(st.start) / USER_HZ : null;
-    out.push(unread ? { pid, program: programOf(at), unread, started } : { pid, program: programOf(at), texts });
-  }
-  return out;
+/** A marker's creator by its stat alone (pid-identity.mjs `processState`): `{absent, text}`; unreadable is never absent. */
+function creatorOf(marker, creator) {
+  if (!/^\d+$/.test(marker.pid_start)) return { absent: false, text: `the start time of pid ${marker.pid} is unknown (${marker.pid_start})` };
+  const made = creator(marker.pid);
+  if (made.state === 'absent') return { absent: true, text: `pid ${marker.pid} is absent` };
+  if (made.state === 'unknown') return { absent: false, text: `pid ${marker.pid} cannot be read (${made.reason})` };
+  if (made.start === marker.pid_start) return { absent: false, text: `pid ${marker.pid} is still running` };
+  return { absent: true, text: `pid ${marker.pid} is another process now (start ${made.start}; the creator's was ${marker.pid_start})` };
 }
 
-/** /proc's clock for start times (USER_HZ, 100 on Linux), and the boot's wall time in seconds (/proc/stat), or null. */
-const USER_HZ = 100;
-const bootTime = (proc) => {
-  const m = /^btime (\d+)$/m.exec(read(join(proc, 'stat')) ?? '');
-  return m ? Number(m[1]) : null;
-};
-
-const namesDir = (text, dir) => text.split('\0').some((part) => part === dir || part.includes(`${dir}/`) || part.endsWith(`=${dir}`));
-
-/** Every live process (but this one) whose argv or environment names `dir` or a path in it: `{pid, program}`. */
-export function processesNaming(dir, { proc = '/proc', table = processTable({ proc }) } = {}) {
-  return table.filter((p) => p.texts?.some((t) => namesDir(t, dir))).map(({ pid, program }) => ({ pid, program }));
-}
+/** The observed processes referring to `dir`, each as a finding (`pid N program (its cwd, fds)`). */
+const referencing = (processes, dir) => processes.map((p) => [p, referencesTo(p, dir)]).filter(([, by]) => by.length).map(([p, by]) => referenceText(p, by));
 
 /**
- * The next run's start check (ruling 730, part (a)): every `cua171-run-*` directory under `roots` but the run's own
- * (`own`), and every session bus of a scratch, cleared or refused. A directory is removed only when it is provably the
- * harness's own and done: its marker (`MARKER`) reads, it is this user's with mode 700, the run that made it is gone
- * (no live process has the marker's pid and start time: `identity`), the marker's time is before now, and no live
- * process names it. Anything else is refused with the reason and left as it is, and so is a bus whose directory is
- * gone (the check ends no process). Answers `{cleared: [{dir, run}], refused: [{dir, reason}]}`; a run starts only when
- * nothing is refused.
+ * The start check (ruling 730, part (a); fix wave 3): every `cua171-run-*` directory under `roots` but the run's own
+ * (`own`), and every scratch already gone that a live process of this user's still refers to (a session bus, a scene
+ * process that outlived its run), each refused with its evidence. It removes nothing and signals nothing. Removing a
+ * directory needs every process of this user's fully observed, which a start cannot count on ((sd-pam)'s environment
+ * never reads), so removal is `removeLeftover`'s: a person's or the controller's explicit command. Here a field that
+ * could not be read is evidence of nothing, so an unobservable process blocks no run. Answers `{refused: [{dir,
+ * reason}]}`; a run starts only when it is empty.
  */
-export function startCheck({ own = [], roots = scratchRoots(), proc = '/proc', creator = (pid) => processState(pid, { proc }), uid = process.getuid?.(), now = () => Date.now(), remove = (dir) => rmSync(dir, { recursive: true, force: true }) } = {}) {
+export function startCheck({ own = [], roots = scratchRoots(), proc = '/proc', creator = (pid) => processState(pid, { proc }), uid = process.getuid?.() } = {}) {
   const mine = new Set(own);
-  const cleared = [];
+  const { processes } = observeProcesses({ proc, uid });
+  const listed = scratchDirs(roots).filter((d) => !mine.has(d.dir)).map((d) => d.dir);
   const refused = [];
-  const table = processTable({ proc, uid });
-  // a process whose argv or environment cannot be read is unknown, unless it started before the directory was made: its
-  // argv and environment are its exec's, so it cannot name a path that did not exist then ((sd-pam), for one)
-  const unreadFor = (marker) => table.filter((p) => p.unread && !(p.started !== null && p.started !== undefined && p.started * 1000 < Date.parse(marker.created))).map((p) => p.unread);
-  for (const { dir } of scratchDirs(roots).filter((d) => !mine.has(d.dir))) {
+  for (const dir of listed) {
     const marker = readMarker(dir);
+    const refs = referencing(processes, dir);
     let st = null;
     try {
       st = statSync(dir);
     } catch {
-      continue;
+      // gone meanwhile: still named, as it was there
     }
-    // the creator by its stat alone: absent, or its pid now another start's, is gone; unreadable is unknown (wave 2)
-    const made = marker && /^\d+$/.test(marker.pid_start) ? creator(marker.pid) : null;
-    const naming = processesNaming(dir, { table });
-    const why = !marker
-      ? "no marker of the harness's: it cannot be proved a run's own"
-      : uid !== undefined && st.uid !== uid
-        ? `owned by uid ${st.uid}, not this user's`
-        : (st.mode & 0o777) !== 0o700
-          ? `mode ${(st.mode & 0o777).toString(8)}, not 700`
-          : !/^\d+$/.test(marker.pid_start)
-            ? `the start time of the run that made it is unknown (${marker.pid_start}), so it cannot be proved gone`
-            : made?.state === 'unknown'
-              ? `whether the run that made it (pid ${marker.pid}) still runs cannot be read (${made.reason})`
-              : made?.state === 'live' && made.start === marker.pid_start
-                ? `the run that made it is still running (pid ${marker.pid})`
-                : !(Date.parse(marker.created) <= now())
-                  ? `its marker's time ${marker.created} is not before now`
-                  : naming.length
-                    ? `a live process names it: ${naming.map((p) => `pid ${p.pid} ${p.program}`).join(', ')}`
-                    : unreadFor(marker).length
-                      ? `whether a live process names it cannot be read: ${unreadFor(marker).join('; ')}`
-                      : null;
-    if (why) {
-      refused.push({ dir, reason: why });
-      continue;
+    const evidence = [
+      ...(marker ? [`its marker reads (run ${marker.run ?? 'unnamed'}, pid ${marker.pid})`, `its creator ${creatorOf(marker, creator).text}`] : ["no marker of the harness's"]),
+      ...(st && uid !== undefined && st.uid !== uid ? [`owned by uid ${st.uid}, not this user's`] : []),
+      ...(st && (st.mode & 0o777) !== 0o700 ? [`mode ${(st.mode & 0o777).toString(8)}, not 700`] : []),
+      refs.length ? `referenced by ${refs.join(', ')}` : 'no observed process references it',
+    ];
+    refused.push({ dir, reason: `a cua171-run-* directory not this run's: ${evidence.join('; ')}; the start check removes nothing: \`gate.mjs leftovers --remove ${dir} --confirm\` removes it once its proof holds` });
+  }
+  // a scratch already gone: nothing to remove, and no process is the check's to end
+  const gone = new Map();
+  for (const p of processes) {
+    for (const { dir, by } of scratchReferences(p)) {
+      if (mine.has(dir) || listed.includes(dir) || existsSync(dir)) continue;
+      const holders = gone.get(dir) ?? new Map();
+      gone.set(dir, holders);
+      holders.set(p, [...(holders.get(p) ?? []), by]);
     }
-    remove(dir);
-    cleared.push({ dir, run: marker.run ?? null });
   }
-  // residue of a scratch already gone (a session bus, a scene process that outlived its run): nothing to remove, and no
-  // process is the check's to end, so the start refuses, naming it (wave 2: any process naming the path, by its path)
-  for (const p of table.filter((x) => x.texts)) {
-    const gone = [...new Set(p.texts.flatMap((t) => t.split('\0')).flatMap(scratchPathsIn))].filter((d) => !mine.has(d) && !existsSync(d));
-    for (const d of gone) refused.push({ dir: d, reason: `its directory is gone and a process naming it still runs: pid ${p.pid} ${p.program}` });
-  }
-  return { cleared, refused };
+  for (const [dir, holders] of gone) refused.push({ dir, reason: `its directory is gone and a process still references it: ${[...holders].map(([p, by]) => referenceText(p, by)).join(', ')}` });
+  return { refused };
 }
 
 /** A start check's refusal in one line. */
 export const startRefusalText = (refused) => `the start check refuses to run: ${refused.map((r) => `${r.dir}: ${r.reason}`).join('; ')}`;
+
+/**
+ * The proof that a leftover scratch directory may be removed (fix wave 3; `gate.mjs leftovers --remove <dir>`), every
+ * condition read and shown: it is a `cua171-run-*` directory and not a link; its marker reads; it is this user's, mode
+ * 700; the run that made it is absent by its stat (gone, or its pid another start's); the marker's time is before now;
+ * every process of this user's was fully observed (argv, environ, cwd, root, exe, fds and maps); and none refers to
+ * it. `{dir, holds, checks: [{what, holds, detail}], text}`. Nothing is removed or signalled here.
+ */
+export function removalProof(dir, { proc = '/proc', creator = (pid) => processState(pid, { proc }), uid = process.getuid?.(), now = () => Date.now() } = {}) {
+  const path = resolve(dir);
+  const checks = [];
+  const check = (what, holds, detail) => checks.push({ what, holds: Boolean(holds), detail });
+  let st = null;
+  let unread = null;
+  try {
+    st = lstatSync(path);
+  } catch (error) {
+    unread = error.code ?? error.message;
+  }
+  const name = basename(path);
+  const scratch = Boolean(st?.isDirectory()) && name.startsWith(SCRATCH_PREFIX) && name.length > SCRATCH_PREFIX.length;
+  check('a cua171-run-* directory, not a link', scratch, scratch ? path : !st ? `${path} cannot be read (${unread})` : st.isSymbolicLink() ? `${path} is a link` : !st.isDirectory() ? `${path} is not a directory` : `${name} is not a cua171-run-* name`);
+  if (scratch) {
+    const marker = readMarker(path);
+    check('its marker reads', marker, marker ? `run ${marker.run ?? 'unnamed'}, pid ${marker.pid}, created ${marker.created}` : `no ${MARKER} of the harness's reads`);
+    check("this user's", uid === undefined || st.uid === uid, `owned by uid ${st.uid}`);
+    check('mode 700', (st.mode & 0o777) === 0o700, `mode ${(st.mode & 0o777).toString(8)}`);
+    const made = marker ? creatorOf(marker, creator) : { absent: false, text: 'no marker names it' };
+    check('its creator is absent', made.absent, made.text);
+    check("its marker's time is before now", marker && Date.parse(marker.created) <= now(), marker ? `created ${marker.created}` : 'no marker');
+    const { processes, unlisted } = observeProcesses({ proc, uid });
+    const unobserved = processes.filter((p) => p.unobserved.length);
+    check('every same-user process was fully observed', !unlisted && !unobserved.length, unlisted ?? (unobserved.length ? unobserved.map(unobservedText).join('; ') : `${processes.length} processes, each's argv, environ, cwd, root, exe, fds and maps`));
+    const refs = referencing(processes, path);
+    check('no same-user process references it', !refs.length, refs.length ? refs.join(', ') : 'none of those observed');
+  }
+  const holds = checks.every((c) => c.holds);
+  const text = [`the removal proof of ${path}:`, ...checks.map((c) => `- ${c.holds ? 'holds' : 'FAILS'}: ${c.what}: ${c.detail}`)].join('\n');
+  return { dir: path, holds, checks, text };
+}
+
+/**
+ * `gate.mjs leftovers --remove <dir> [--confirm]`: the proof printed first, then the directory removed only when the
+ * proof holds and `confirm` is given. Never signals. `{proof, removed, text}`.
+ */
+export function removeLeftover(dir, { confirm = false, remove = (d) => rmSync(d, { recursive: true }), ...options } = {}) {
+  const proof = removalProof(dir, options);
+  const lines = [proof.text];
+  let removed = false;
+  if (!proof.holds) lines.push(`refused: ${proof.checks.filter((c) => !c.holds).map((c) => c.what).join('; ')}: not proved; nothing removed`);
+  else if (!confirm) lines.push('the proof holds; not removed without --confirm');
+  else {
+    remove(proof.dir);
+    removed = true;
+    lines.push(`removed ${proof.dir}`);
+  }
+  return { proof, removed, text: lines.join('\n') };
+}

@@ -167,10 +167,21 @@ One unclean-end rule, drawn by who can see it (the design session's ruling 730):
 - **The run's own side** (a cleanup step that threw, its own session bus still running, its Chrome's processes, its
   scratch still there, the scratch a step left) marks the end record `unclean`, never a verdict failure; the run's
   summary, the step's `step.json` and README name it, and `gate.mjs summary --out <dir>` lists every step's. Each
-  Desktop marks its scratch at once (`cua171-run.json`: the run, its pid and start time, when), and the next run's
-  **start check** (every Desktop's start, every gate step, every `:0` sitting) removes a leftover only when it is
-  provably the harness's own and done (the marker, this user's, mode 700, its run gone, no live process naming it),
-  and otherwise refuses to start, naming it and why. It ends no process.
+  Desktop marks its scratch at once (`cua171-run.json`: the run, its pid and start time, when). The next run's
+  **start check** (every Desktop's start, every gate step, every `:0` sitting) detects and refuses; it never removes
+  and never signals. On any leftover (a `cua171-run-*` directory but the run's own, marked or not, or a scratch
+  already gone that a process of this user's still refers to: an orphaned bus, a scene process that outlived its run)
+  it refuses to start, naming each one with its evidence (its marker, its creator, the processes referring to it).
+  **Removal is a separate, explicit command** for a person or the controller: `gate.mjs leftovers --remove <dir>`
+  prints the proof, and with `--confirm` removes the directory only when every part holds: a `cua171-run-*` directory
+  (not a link), its marker, this user's, mode 700, its creator absent by its stat, the marker's time before now, every
+  process of this user's fully observed, and none referring to it. Otherwise it refuses with the reason (exit 2).
+  One reference model serves both (`process-references.mjs`): each process's argv, environment, cwd, root,
+  executable, open files and mappings, read from /proc, every field kept that was read when another was not. A
+  reference is a literal or relative path naming the directory in argv or environment, or a link inside it, a
+  `(deleted)` one included. A field that cannot be read is unobserved: never proof of absence, so it fails the
+  removal proof, and in detection never proof of presence, so it blocks no run. (On the x64 VM `(sd-pam)` is never
+  observable, so the removal proof refuses there, and a leftover is a person's to remove by hand.)
 - **The person's side on `:0`**: gate.mjs prints every `:0` step under `scripts/linux-engine-gate/sitting.mjs`, which
   refuses while hold-sittings exists, and after the sitting, however it ended, makes the end check and the all-clear
   (`all-clear.json`, `all-clear.txt` in the step's directory), keeping the sitting's exit. A window of the run's left

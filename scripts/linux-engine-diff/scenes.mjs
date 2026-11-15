@@ -189,7 +189,7 @@ export function desktopEnding(ending) {
       ...(ending.chrome ? { chrome: { spawned: ending.chrome.spawned.length, terminated: ending.chrome.terminated, killed: ending.chrome.killed, left: ending.chrome.left } } : {}),
       ...(ending.session ? { session: ending.session } : {}),
       // the cleanup's failed steps (every other step ran, ruling 721), and what the run left on its own side: an
-      // unclean end, never a verdict failure (ruling 730, part (a)); the next run's start check clears it or refuses
+      // unclean end, never a verdict failure (ruling 730, part (a)); the next run's start check refuses on it
       ...(ending.cleanup?.length ? { cleanup_failures: ending.cleanup } : {}),
       ...(ending.unclean?.length ? { unclean: ending.unclean } : {}),
       // the end check's findings (leftovers.mjs): other runs' scratch and buses, left alone, failing nothing
@@ -284,7 +284,7 @@ export class Desktop {
       unhookSignals();
       unhookFatal();
     };
-    // the run's mark on its scratch (leftovers.mjs, ruling 730): what the next run's start check may remove it by
+    // the run's mark on its scratch (leftovers.mjs, ruling 730): what the explicit removal command proves it by
     writeMarker(this.dir, { run, nonce: this.nonce, pid: process.pid, pid_start: processIdentity(process.pid)?.start ?? 'unknown', created: new Date().toISOString() });
   }
 
@@ -334,10 +334,9 @@ export class Desktop {
     };
     // a signal that landed just before the run began (in its caller's synchronous code): nothing is acquired
     await unlessStopped();
-    // what earlier runs left on their own side (ruling 730): cleared when provably the harness's own and done, else the
-    // run refuses to start, naming it; nothing of this run's is acquired yet
+    // what earlier runs left on their own side (ruling 730): the run refuses to start on any of it, naming it and its
+    // evidence, and removes nothing (fix wave 3); nothing of this run's is acquired yet
     const check = startCheck({ own: [this.dir], ...this.leftoverScope() });
-    this.cleared = check.cleared;
     if (check.refused.length) throw new Error(startRefusalText(check.refused));
     this.unwatchOperations = watchOperations(({ engine, window, start, end }) => {
       if (engine !== this.ownReader) this.operations.push({ window, start, end });

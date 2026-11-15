@@ -154,7 +154,7 @@ export async function runSitting({ dir, hold, command, terminal = 'end', reads =
   const endCheck = stepEndCheck(before, leftovers);
   const judged = judgeSitting(dir, reads, terminal);
   const own = endCheckUnclean(endCheck);
-  const record = { finished: new Date().toISOString(), exit, ...(signal ? { signal } : {}), ...judged, run: [...judged.run, ...own], end_check: endCheck, ...(start.cleared.length ? { cleared: start.cleared } : {}) };
+  const record = { finished: new Date().toISOString(), exit, ...(signal ? { signal } : {}), ...judged, run: [...judged.run, ...own], end_check: endCheck };
   writeFileSync(join(dir, 'all-clear.json'), `${JSON.stringify(record, null, 2)}\n`);
   writeFileSync(join(dir, 'all-clear.txt'), [
     `all-clear: ${record.clear ? 'clear' : 'NOT CLEAR (hold-sittings written; no :0 work until it is cleared and reported)'}`,

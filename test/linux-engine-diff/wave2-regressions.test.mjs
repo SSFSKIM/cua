@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { startCheck, writeMarker } from '../../scripts/linux-engine-diff/leftovers.mjs';
+import { removalProof, startCheck, writeMarker } from '../../scripts/linux-engine-diff/leftovers.mjs';
 import { processState } from '../../scripts/linux-engine-diff/pid-identity.mjs';
 import { focusTimerVerdict } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 import { Desktop, desktopEnding } from '../../scripts/linux-engine-diff/scenes.mjs';
@@ -40,17 +40,19 @@ function marked(root, tag, { pid = 4242, start = '777' } = {}) {
   return dir;
 }
 
-// finding 1
+// finding 1 (fix wave 3: the start check removes nothing; what wave 2 cleared, the removal proof now decides)
+const creatorCheck = (proof) => proof.checks.find((c) => c.what === 'its creator is absent');
+const observedCheck = (proof) => proof.checks.find((c) => c.what === 'every same-user process was fully observed');
+
 test('a creator whose start matches but whose exe cannot be read is alive, not gone: its scratch stays', () => {
   const root = fresh('tmp');
   const proc = fresh('proc');
   const dir = marked(root, 'Live01', { pid: 4242, start: '777' });
   processIn(proc, 4242, { start: '777', argv: ['node'], env: {} });
   assert.deepEqual(processState(4242, { proc }), { state: 'live', start: '777' });
-  const { cleared, refused } = startCheck({ roots: [root], proc });
-  assert.deepEqual(cleared, []);
-  assert.match(refused[0].reason, /the run that made it is still running \(pid 4242\)/);
-  assert.equal(existsSync(dir), true);
+  const { refused } = startCheck({ roots: [root], proc });
+  assert.match(refused[0].reason, /its creator pid 4242 is still running/);
+  assert.deepEqual([creatorCheck(removalProof(dir, { proc })).holds, existsSync(dir)], [false, true]);
 });
 
 test("a creator that cannot be observed refuses removal; one absent, or its pid reused by another start, is gone", () => {
@@ -59,31 +61,39 @@ test("a creator that cannot be observed refuses removal; one absent, or its pid 
   const dir = marked(root, 'Unobs1', { pid: 5000 });
   mkdirSync(join(proc, '5000'));
   assert.equal(processState(5000, { proc }).state, 'unknown');
-  assert.match(startCheck({ roots: [root], proc }).refused[0].reason, /whether the run that made it .*still runs cannot be read/);
+  assert.match(startCheck({ roots: [root], proc }).refused[0].reason, /its creator pid 5000 cannot be read/);
+  assert.equal(creatorCheck(removalProof(dir, { proc })).holds, false);
   assert.equal(existsSync(dir), true);
   assert.equal(processState(5001, { proc }).state, 'absent');
-  // in a /proc with nothing unreadable in it: the pid now another start's is gone
+  // the pid now another start's is gone
   const clean = fresh('proc');
   processIn(clean, 5002, { start: '999', argv: ['x'], env: {} });
   const reused = marked(fresh('tmp'), 'Reused', { pid: 5002, start: '777' });
-  assert.deepEqual(startCheck({ roots: [join(reused, '..')], proc: clean }).cleared.map((c) => c.dir), [reused]);
+  assert.match(creatorCheck(removalProof(reused, { proc: clean })).detail, /pid 5002 is another process now/);
+  assert.equal(creatorCheck(removalProof(reused, { proc: clean })).holds, true);
 });
 
-test("a process of this user's whose argv or environment cannot be read refuses removal; another user's cannot reach a 700 directory", () => {
+test("a process of this user's whose argv or environment cannot be read refuses removal, however old; another user's cannot reach a 700 directory", () => {
   const root = fresh('tmp');
   const proc = fresh('proc');
   const dir = marked(root, 'Unread', { pid: 6000 });
   processIn(proc, 6001, { argv: ['gedit'], uid: process.getuid() });
-  assert.match(startCheck({ roots: [root], proc }).refused[0].reason, /pid 6001's environment cannot be read/);
+  assert.match(observedCheck(removalProof(dir, { proc })).detail, /pid 6001's environ \(ENOENT\)/);
   assert.equal(existsSync(dir), true);
-  // one that started before the directory was made cannot name it (its argv and environment are its exec's)
+  // wave 2 exempted one that started before the directory was made; an old process can still chdir into it, open a
+  // file there or be handed an fd, so it is unobserved like any other (the review of d76d1a7f)
   const early = fresh('proc');
   writeFileSync(join(early, 'stat'), 'cpu 0\nbtime 1700000000\n');
   processIn(early, 6003, { argv: ['(sd-pam)'], uid: process.getuid(), start: '100' });
-  assert.deepEqual(startCheck({ roots: [root], proc: early }).cleared.map((c) => c.dir), [dir]);
+  const old = removalProof(dir, { proc: early });
+  assert.deepEqual([old.holds, observedCheck(old).holds], [false, false]);
+  assert.match(observedCheck(old).detail, /pid 6003's environ/);
+  assert.equal(existsSync(dir), true);
+  // in detection an unread field is evidence of nothing: the start refuses the directory itself, not for (sd-pam)
+  assert.doesNotMatch(startCheck({ roots: [root], proc: early }).refused[0].reason, /6003/);
   const other = fresh('proc');
   processIn(other, 6002, { argv: ['root-thing'], uid: 0 });
-  assert.deepEqual(startCheck({ roots: [root], proc: other }).refused, []);
+  assert.equal(observedCheck(removalProof(dir, { proc: other })).holds, true);
 });
 
 // finding 2
@@ -154,5 +164,5 @@ test("a scene process that outlives its run is unclean, and the next start refus
   assert.deepEqual(desktopEnding(desktop.ending).record.unclean, ['a process it spawned still runs: pid 7100 gedit-scene']);
   assert.equal(existsSync(desktop.dir), false);
   const next = startCheck({ roots: [fresh('tmp')], proc });
-  assert.match(next.refused.map((r) => r.reason).join(), /its directory is gone and a process naming it still runs: pid 7100/);
+  assert.match(next.refused.map((r) => r.reason).join(), /its directory is gone and a process still references it: pid 7100/);
 });

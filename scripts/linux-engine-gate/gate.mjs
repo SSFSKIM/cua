@@ -7,12 +7,14 @@
 //   node scripts/linux-engine-gate/gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
 //   node scripts/linux-engine-gate/gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
 //   node scripts/linux-engine-gate/gate.mjs check --pinned <home>
-//   node scripts/linux-engine-gate/gate.mjs leftovers
+//   node scripts/linux-engine-gate/gate.mjs leftovers [--remove <dir> [--confirm]]
 //
 // After every step, whatever ended its process, the runner makes the end check (leftovers.mjs; rulings 721, 724): the
 // `cua171-run-*` scratch the step left and every other run's, with their session buses, named in the step's record and
-// left alone. `leftovers` makes it alone. Before every step the start check clears what earlier runs provably left of the
-// harness's own, or refuses (leftovers.mjs, ruling 730); a step's unclean end (its run's own side) is in its record, and
+// left alone. `leftovers` makes it alone. Before every step the start check refuses to start on anything earlier runs
+// left, naming it and its evidence, and removes nothing (leftovers.mjs, ruling 730, fix wave 3); `leftovers --remove
+// <dir>` prints the proof that one may go and, given `--confirm`, removes it only when the proof holds. A step's unclean
+// end (its run's own side) is in its record, and
 // `summary --out <dir>` lists every step's. A :0 step is printed under the sitting launcher (sitting.mjs), which makes
 // the end check and the sitting's all-clear however the sitting ends, and writes hold-sittings when the person's side
 // is not clear.
@@ -60,7 +62,7 @@ import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PINNED_DEVELOPMENT, REPO_ROOT, candidateLine, gateLabel, isPinnedRule, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
-import { leftoverCheck, leftoverLines, scratchDirs, startCheck, startRefusalText } from '../linux-engine-diff/leftovers.mjs';
+import { leftoverCheck, leftoverLines, removeLeftover, scratchDirs, startCheck, startRefusalText } from '../linux-engine-diff/leftovers.mjs';
 import { inTest } from '../linux-engine-diff/hermetic.mjs';
 import { pinnedEngine } from '../linux-engine-diff/pinned-home.mjs';
 import { linuxEnginePath } from '../../src/runtime/linux-engine.mjs';
@@ -110,7 +112,7 @@ const USAGE = `usage:
   gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
   gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
   gate.mjs check --pinned <home>
-  gate.mjs leftovers
+  gate.mjs leftovers [--remove <dir> [--confirm]]
   gate.mjs summary --out <dir>
   options: [--vendor <bin>] [--newest <bin>] [--vendor-js <@oai/sky dir>] [--holder <name>]
   --pinned <home>: the CUA_HOME of a run home whose cua install --engine placed the pinned engine (acceptance on the pinned release)`;
@@ -120,7 +122,7 @@ const USAGE = `usage:
  * runtime when `--pinned` names one), and the suites' device is `env.DEVICE`, else `arch`'s VM. A flag still wins.
  */
 export function parseGateArgs(argv, { arch = process.arch, env = process.env } = {}) {
-  const a = { mode: null, step: null, gate: true, pilot: null, candidate: null, pinned: null, out: null };
+  const a = { mode: null, step: null, gate: true, pilot: null, candidate: null, pinned: null, out: null, remove: null, confirm: false };
   const given = {};
   const flags = { '--candidate': 'candidate', '--pinned': 'pinned', '--out': 'out', '--vendor': 'vendor', '--newest': 'newest', '--vendor-js': 'vendorJs', '--holder': 'holder' };
   for (let i = 0; i < argv.length; i++) {
@@ -130,6 +132,8 @@ export function parseGateArgs(argv, { arch = process.arch, env = process.env } =
       return argv[++i];
     };
     if (flag === '--list') a.mode = 'list';
+    else if (flag === '--remove') a.remove = resolve(value());
+    else if (flag === '--confirm') a.confirm = true;
     else if (flag === '--dev') a.gate = false;
     else if (flag === '--pilot') {
       a.pilot = Number(value());
@@ -147,6 +151,8 @@ export function parseGateArgs(argv, { arch = process.arch, env = process.env } =
     else throw new GateRefused(`unknown argument ${flag}\n${USAGE}`);
   }
   if (!a.mode) throw new GateRefused(USAGE);
+  if (a.confirm && !a.remove) throw new GateRefused(`--confirm needs --remove <dir>\n${USAGE}`);
+  if (a.remove && a.mode !== 'leftovers') throw new GateRefused(`--remove belongs to leftovers\n${USAGE}`);
   if (a.mode === 'leftovers') return a;
   if (a.mode === 'summary') {
     if (!given.out) throw new GateRefused(`summary needs --out <dir>\n${USAGE}`);
@@ -251,7 +257,6 @@ function writeRecord(dir, record) {
     ...(r.unjudged ? [`- unjudged (a pilot takes no top-up; not passes): ${r.unjudged.length || 'none'}`, ...r.unjudged.map((l) => `  - ${l}`)] : []),
     ...(r.end_check ? endCheckText(r.end_check) : []),
     ...(r.unclean ? (r.unclean.length ? [`- unclean end (the run's own side, not a verdict failure): ${r.unclean.length}`, ...r.unclean.map((l) => `  - ${l}`)] : ["- end: clean (nothing left on the run's own side)"]) : []),
-    ...(r.cleared?.length ? [`- the start check cleared what earlier runs of the harness left: ${r.cleared.map((c) => c.dir).join(', ')}`] : []),
     '',
   ];
   writeFileSync(join(dir, 'README.md'), md.join('\n'));
@@ -302,14 +307,13 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   const checkout = checkCheckout({ root, out: a.out, gate: a.gate, git });
   const dir = stepDir(step, a);
   if (existsSync(dir)) throw new GateRefused(`${dir} exists: each execution of a step writes a directory of its own`);
-  // what earlier runs left on their own side (ruling 730): cleared when provably the harness's own and done, else the
-  // step refuses to start, naming it
+  // what earlier runs left on their own side (ruling 730): the step refuses to start on any of it, naming it and its
+  // evidence; nothing is removed (`leftovers --remove` is the explicit command)
   const start = check({ ...leftovers });
   if (start.refused.length) throw new GateRefused(startRefusalText(start.refused));
   mkdirSync(dir, { recursive: true });
   const { label } = stepLabel(a);
   const record = stepRecord(step, a, { root, checkout, command: launchCommand(step, a, root) });
-  if (start.cleared.length) record.cleared = start.cleared;
   // the harness's out directory, before any script writes in it (services.mjs's Desktop logs there at its start)
   mkdirSync(join(dir, 'run'), { recursive: true });
   // on the pinned release CUA_HOME is the run home, so nothing a step starts resolves the person's default cua home; a
@@ -448,7 +452,7 @@ export function gateSummary(out) {
     const zero = clear ? (clear.clear ? 'clear' : `**not clear**: ${clear.person.join('; ')}`) : '–';
     lines.push(`| ${r.step} | ${r.label}${r.pilot ? ' (pilot)' : ''} | ${exit} | ${left.length ? `**${left.length}**: ${left.join('; ')}` : 'clean'} | ${zero} |`);
   }
-  lines.push('', `Unclean ends: ${unclean} of ${dirs.length} steps (the run's own side, never a verdict failure; the next run's start check clears or refuses each).`);
+  lines.push('', `Unclean ends: ${unclean} of ${dirs.length} steps (the run's own side, never a verdict failure; the next run's start check refuses to start on what each left; \`gate.mjs leftovers --remove <dir> --confirm\` removes it once its proof holds).`);
   return lines.join('\n');
 }
 
@@ -523,6 +527,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const a = parseGateArgs(process.argv.slice(2));
     if (a.mode === 'list') process.stdout.write(`${listText(a)}\n`);
     else if (a.mode === 'summary') process.stdout.write(`${gateSummary(a.out)}\n`);
+    else if (a.mode === 'leftovers' && a.remove) {
+      // the explicit removal: the proof first; exit 0 when removed or when it holds without --confirm, 2 when refused
+      const result = removeLeftover(a.remove, { confirm: a.confirm });
+      process.stdout.write(`${result.text}\n`);
+      process.exit(result.proof.holds ? 0 : 2);
+    }
     else if (a.mode === 'leftovers') {
       // the end check alone (a :0 sitting's all-clear): exit 0 when clear, 1 with findings
       const check = leftoverCheck();

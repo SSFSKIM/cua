@@ -501,7 +501,7 @@ test("every step's record carries the end check, made after its process ended ho
   // the step's harness died past its cleanup: its scratch stays, and so does another run's (one the start check let be,
   // its own test's: here a check that refuses nothing, as when that run had been running beside it under no lock)
   const a = parseGateArgs(['run', 'D2', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
-  const exit = await runStep(a, { ...deps, start: () => ({ cleared: [], refused: [] }), privateDisplay: async () => {
+  const exit = await runStep(a, { ...deps, start: () => ({ refused: [] }), privateDisplay: async () => {
     mkdirSync(join(root, 'cua171-run-7nTGZK'));
     return { code: null, signal: 'SIGKILL', clean: true };
   } });
@@ -559,9 +559,9 @@ test('engine-stop needs a control checkout only for its kill lane', () => {
 });
 
 // ruling 730, part (a): a step's unclean end (what its run left on its own side) is named in its record and README and
-// listed by the gate's summary, and a step starts only once the start check cleared or found nothing
+// listed by the gate's summary, and a step starts only once the start check found nothing (fix wave 3: it removes nothing)
 
-test("a step refuses to start while the start check refuses what earlier runs left, naming it; what it clears is recorded", async () => {
+test("a step refuses to start while the start check refuses what earlier runs left, naming it, and leaves it there", async () => {
   const candidate = join(fresh('c'), 'cua-engine');
   writeFileSync(candidate, 'x');
   const out = fresh('out');
@@ -569,8 +569,9 @@ test("a step refuses to start while the start check refuses what earlier runs le
   mkdirSync(join(root, 'cua171-run-NoMark'), { mode: 0o700 });
   const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate, leftovers: { roots: [root], proc: fresh('proc') }, privateDisplay: async () => ({ code: 0, clean: true }) };
   const a = parseGateArgs(['run', 'D2', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
-  await assert.rejects(runStep(a, deps), (e) => e instanceof GateRefused && /the start check refuses to run: .*cua171-run-NoMark: no marker of the harness's/.test(e.message));
+  await assert.rejects(runStep(a, deps), (e) => e instanceof GateRefused && /the start check refuses to run: .*cua171-run-NoMark: .*no marker of the harness's/.test(e.message));
   assert.deepEqual(readdirSync(out), [], 'nothing of the step was written');
+  assert.equal(existsSync(join(root, 'cua171-run-NoMark')), true, 'the leftover is left as it was');
 });
 
 test("a step's record names its unclean end, from its run's end row and from what the step left; the gate's summary lists every one", async () => {

@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { candidateLine, gateLabel } from './candidate.mjs';
+import { DEVELOPMENT_RUN, PINNED_RELEASE, RELEASE_GATE, candidateLine, gateLabel } from './candidate.mjs';
 import { matrixMarkdown } from './matrix-judge.mjs';
 import { UNCONFIRMED_LANDED_SHARE, dropCounts, summarizeEngine, verdictLine } from './stats.mjs';
 
@@ -54,6 +54,12 @@ const frac = (rows, key) => {
   const known = rows.filter((r) => typeof r[key] === 'boolean');
   return known.length ? `${known.filter((r) => r[key]).length}/${known.length}` : '–';
 };
+/** What a run name's rows of more than one kind of execution mix: their labels, or "executions of different kinds". */
+const kindsMixed = (kinds) => {
+  if ([...kinds].some((k) => gateLabel(k) === null)) return 'executions of different kinds';
+  const named = { [RELEASE_GATE]: 'a release gate', [PINNED_RELEASE]: PINNED_RELEASE, [DEVELOPMENT_RUN]: 'a development run' };
+  return Object.keys(named).filter((label) => [...kinds].some((k) => gateLabel(k) === label)).map((label) => named[label]).join(' and ');
+};
 
 export function renderSummary(lines) {
   const runs = [...new Set(lines.map((l) => l.run))];
@@ -68,7 +74,8 @@ export function renderSummary(lines) {
       const metas = rows.filter((r) => r.kind === 'meta');
       const labelled = rows.filter((r) => r.kind === 'meta' || r.kind === 'experiment-summary');
       const candidates = new Set(metas.map((r) => r.candidate?.sha256 ?? null));
-      const mix = new Set(labelled.map((r) => r.gate)).size > 1 ? 'a release gate and a development run' : candidates.size > 1 ? 'two or more candidates' : metas.length > 1 ? `${metas.length} executions` : null;
+      const kinds = new Set(labelled.map((r) => r.gate));
+      const mix = kinds.size > 1 ? kindsMixed(kinds) : candidates.size > 1 ? 'two or more candidates' : metas.length > 1 ? `${metas.length} executions` : null;
       if (mix) {
         out.push(`## ${run} (not judged: its rows mix ${mix})`, '', 'Each execution needs a run name of its own; these rows are no verdict.', '');
         continue;
@@ -88,8 +95,7 @@ export function renderSummary(lines) {
     // judged, so no row's label stands for another execution's
     const kinds = new Set(rows.filter((r) => r.kind === 'meta' || r.kind === 'end').map((r) => r.gate));
     if (kinds.size > 1) {
-      const mix = kinds.has(true) && kinds.has(false) ? 'a release gate and a development run' : 'executions of different kinds';
-      out.push(`## ${run} (not judged: its rows mix ${mix})`, '', 'Each execution needs a run name of its own; these rows are no verdict.', '');
+      out.push(`## ${run} (not judged: its rows mix ${kindsMixed(kinds)})`, '', 'Each execution needs a run name of its own; these rows are no verdict.', '');
       continue;
     }
     const label = gateLabel(meta?.gate);

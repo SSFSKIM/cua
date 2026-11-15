@@ -41,6 +41,9 @@
 //     place of the one installed in the run's home (CUA_LINUX_ENGINE_BIN; before the first release, the local build).
 //     No approved engine: that is macOS's. The run is complete only when the requested engine, at the executable the
 //     lane names, was the only engine below the run's serves (read by /proc/<pid>/exe, ./native-baseline/linux.mjs).
+//     --pinned-check (the cua lane on its installed engine, #171 M5): after the preparation and before any session,
+//     the run's own home is checked by the pinned rule on the device (scripts/linux-engine-gate/gate.mjs check); a home
+//     it refuses ends the run, and the rule's record is the run's `pinnedEngine` (meta.json).
 //     Device declarations live in repl-parity/devices.mjs; native preparation needs no H4 home or Chrome binding.
 //   node scripts/native-baseline.mjs summary docs/evidence/<dir>
 //   node scripts/native-baseline.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
@@ -93,7 +96,7 @@ import {execute, remoteCommand} from './browser-parity/topology.mjs';
 import * as cells from './native-baseline/cells.mjs';
 import {linuxAdapter} from './native-baseline/linux.mjs';
 import {macosAdapter} from './native-baseline/macos.mjs';
-import {assertOwnNode, assertSurface, handshakeScript, HOSTS, preflightScript, PROTOCOL_VERSION, serveCommand, preparationScript, SPIKE_SCRIPT} from './native-baseline/remote.mjs';
+import {assertOwnNode, assertSurface, handshakeScript, HOSTS, pinnedCheckOf, pinnedCheckScript, preflightScript, PROTOCOL_VERSION, serveCommand, preparationScript, SPIKE_SCRIPT} from './native-baseline/remote.mjs';
 import {browserAdapter} from './native-baseline/browser.mjs';
 import {DEFAULT_PLAN, hostProblem, readRuns, renderMarkdown, summarize} from './native-baseline/summary.mjs';
 import {compare, compareLanes, compareSameHost, LANE_MODES, renderComparison} from './native-baseline/compare.mjs';
@@ -128,7 +131,7 @@ const liveIo = device => ({
 });
 
 export async function run(options) {
-  const {device, out, host, engine, approvedEngine, engineBin, node, display, experiment, surface = 'computer', approvedRuntime, io = liveIo(device)} = options;
+  const {device, out, host, engine, approvedEngine, engineBin, node, display, experiment, surface = 'computer', approvedRuntime, pinnedCheck = false, io = liveIo(device)} = options;
   const declaration = declaredDevice(device);
   if (!HOSTS.includes(host)) throw new Error('run requires --host vendor|cua');
   assertSurface(surface);
@@ -139,6 +142,9 @@ export async function run(options) {
   if (declaration.platform === 'darwin' && surface === 'computer' && !approvedRuntime)
     throw new Error('a macOS computer run needs --approved-runtime <CUA_HOME whose runtime copy the owner approved>: a fresh install would raise the screen-capture confirmation again');
   if (approvedRuntime !== undefined && !/^\/[^\0\n]*$/.test(approvedRuntime)) throw new Error('--approved-runtime needs an absolute path');
+  // --pinned-check (#171 M5, the design session's ruling 708): the cua lane's own home checked by the pinned rule
+  if (pinnedCheck && (declaration.platform !== 'linux' || surface !== 'computer' || engine !== 'cua' || engineBin !== undefined))
+    throw new Error('--pinned-check is a Linux computer run\'s on cua\'s installed engine: --engine cua, no --engine-bin');
   const file = join(resolve(out), 'meta.json');
   if (existsSync(file) || existsSync(join(resolve(out),'preparation.json')) || existsSync(join(resolve(out),'results.jsonl'))) throw new Error('Output directory already contains a run');
   mkdirSync(resolve(out), {recursive:true});
@@ -146,7 +152,10 @@ export async function run(options) {
   let code;
   try {
     writeFileSync(join(resolve(out),'preparation.json'),JSON.stringify(prepared,null,2)+'\n');
-    code = await runPrepared({...options, surface, io, prepared});
+    // the run's own home, made by its preparation's cua install, checked before any session starts; a refusal ends the
+    // run here, its preparation cleaned up below
+    const pinnedEngine = pinnedCheck ? pinnedCheckOf(io.remote(pinnedCheckScript(prepared.home)), prepared.home) : null;
+    code = await runPrepared({...options, surface, io, prepared, pinnedEngine});
   }
   finally {
     const meta = existsSync(file) ? JSON.parse(readFileSync(file,'utf8')) : null;
@@ -173,7 +182,7 @@ export async function run(options) {
   return code;
 }
 
-async function runPrepared({device, out, host, engine, approvedEngine, engineBin, node, experiment, prepared, surface, samples = DEFAULT_PLAN.samples, cold = DEFAULT_PLAN.cold, tasks = DEFAULT_PLAN.tasks, display = prepared.xSession.DISPLAY ?? ':0', spikeWaitMs = 3 * 3600_000, activateMs, io, log = console.log}) {
+async function runPrepared({device, out, host, engine, approvedEngine, engineBin, node, experiment, prepared, pinnedEngine = null, surface, samples = DEFAULT_PLAN.samples, cold = DEFAULT_PLAN.cold, tasks = DEFAULT_PLAN.tasks, display = prepared.xSession.DISPLAY ?? ':0', spikeWaitMs = 3 * 3600_000, activateMs, io, log = console.log}) {
   if (device === 'local') throw new Error('the native baseline runs on a device (--device <ssh alias>), never on this machine');
   if (!HOSTS.includes(host)) throw new Error('run requires --host vendor|cua');
   assertOwnNode(host, node);
@@ -231,7 +240,8 @@ async function runPrepared({device, out, host, engine, approvedEngine, engineBin
     device, platform: pre.platform, host, surface, hostAttestations: [], connections: 0, protocolVersion: PROTOCOL_VERSION,
     environment: {CUA_REPL_HOST: host, ...(engine === undefined ? {} : {CUA_NATIVE_ENGINE: engine}), ...(engineBin === undefined ? {} : {CUA_LINUX_ENGINE_BIN: engineBin}), ...(node === undefined ? {} : {CUA_NODE: node}), CUA_SHIM_SURFACES: surface, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(linux ? prepared.xSession : {})},
     plan: {samples, cold, tasks, coldPlan: COLD_PLAN}, started: new Date().toISOString(), spikeWaitMs: Date.now() - waitStarted, elicitations: [], complete: false,
-    ...(nativeEngine ? {nativeEngine, engineStop: {start: prepared.engineStop}} : {})};
+    ...(nativeEngine ? {nativeEngine, engineStop: {start: prepared.engineStop}} : {}),
+    ...(pinnedEngine ? {pinnedEngine} : {})};
   Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, ...(pre.ownNode ? {ownNode: pre.ownNode} : {}), runtime: {release: pre.release}, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display});
   adapter.start(meta, pre);
   log(`device ${device} (${pre.platform}): ${[pre.hardware?.model, pre.hardware?.chip].filter(Boolean).join(', ')} ${pre.os?.name ?? ''} ${pre.os?.version ?? ''}, runtime ${pre.release}, clone ${pre.commit.slice(0, 10)}, host ${host}${nativeEngine?.approved ? `, engine ${engine} (approved build ${nativeEngine.approved.build.slice(0, 12)})` : nativeEngine ? `, engine ${engine} (${nativeEngine.expected})` : ''}, ${surface} surface`);
@@ -466,7 +476,7 @@ export function compareDirs(baselineDir, candidateDir, {out, sameHost = false, l
 export async function main(argv = process.argv.slice(2)) {
   const {values, positionals} = parseArgs({args: argv, allowPositionals: true, options: {
     device: {type: 'string'}, host: {type: 'string'}, engine: {type: 'string'}, 'engine-bin': {type: 'string'}, node: {type: 'string'}, display: {type: 'string'}, experiment: {type:'string'}, commit:{type:'string'}, out: {type: 'string'},
-    surfaces: {type: 'string', default: 'computer'}, 'same-host': {type: 'boolean', default: false}, 'top-up-baseline': {type: 'string', multiple: true}, 'top-up-candidate': {type: 'string', multiple: true}, 'approved-runtime': {type: 'string'}, 'approved-engine': {type: 'string'},
+    surfaces: {type: 'string', default: 'computer'}, 'same-host': {type: 'boolean', default: false}, 'pinned-check': {type: 'boolean', default: false}, 'top-up-baseline': {type: 'string', multiple: true}, 'top-up-candidate': {type: 'string', multiple: true}, 'approved-runtime': {type: 'string'}, 'approved-engine': {type: 'string'},
     ...Object.fromEntries(Object.keys(LANE_MODES).map(mode => [mode, {type: 'boolean', default: false}])),
     samples: {type: 'string', default: String(DEFAULT_PLAN.samples)}, cold: {type: 'string', default: String(DEFAULT_PLAN.cold)}, tasks: {type: 'string', default: String(DEFAULT_PLAN.tasks)}}});
   const [action, dir, other] = positionals;
@@ -487,7 +497,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (!values.out) throw new Error('run requires --out');
   const count = name => { const n = Number(values[name]); if (!Number.isInteger(n) || n < 1) throw new Error(`--${name} must be a positive integer`); return n; };
   assertSurface(values.surfaces);
-  return run({device: values.device, host: values.host, engine: values.engine, approvedEngine: values['approved-engine'], engineBin: values['engine-bin'], surface: values.surfaces, node: values.node, display: values.display, approvedRuntime: values['approved-runtime'], experiment:values.experiment, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
+  return run({device: values.device, host: values.host, engine: values.engine, approvedEngine: values['approved-engine'], engineBin: values['engine-bin'], surface: values.surfaces, node: values.node, display: values.display, approvedRuntime: values['approved-runtime'], pinnedCheck: values['pinned-check'], experiment:values.experiment, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

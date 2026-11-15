@@ -73,6 +73,21 @@ export function preparationScript(action, options) {
   if (!['prepare','cleanup'].includes(action)) throw new Error('Invalid native preparation action');
   return `cd ${PARITY_CHECKOUT} && node scripts/native-baseline/prepare.mjs ${action} ${quote(JSON.stringify(options))}`;
 }
+// The pinned rule (#171 M5, T1's fix wave; ruling 708) on the engine of the run's prepared cua home `home`, run in the
+// parity clone on the device (scripts/linux-engine-gate/gate.mjs check, candidate.mjs): its output, then a last line
+// `PINNED_EXIT:<status>`, so a refusal reaches the controller as an answer, not as a failed command (`pinnedCheckOf`).
+export function pinnedCheckScript(home) {
+  if (!/^\/[^\0\n]*$/.test(home ?? '')) throw new Error('the pinned check needs the prepared home\'s absolute path');
+  return `cd ${PARITY_CHECKOUT} && { node scripts/linux-engine-gate/gate.mjs check --pinned ${quote(home)} 2>&1; echo "PINNED_EXIT:$?"; }`;
+}
+// pinnedCheckScript's answer -> {sha256, record}: the rule's record (its last JSON line); throws with the refusal.
+export function pinnedCheckOf(output, home) {
+  const lines = String(output).trim().split('\n');
+  const status = /^PINNED_EXIT:(\d+)$/.exec(lines.at(-1) ?? '')?.[1];
+  if (status !== '0') throw new Error(`the run's home ${home} does not hold the pinned release's engine (the pinned rule ${status === undefined ? 'gave no answer' : `exit ${status}`}): ${lines.slice(0, -1).join(' ').trim() || 'no output'}`);
+  const record = JSON.parse(lines.at(-2));
+  return {sha256: record.sha256, record};
+}
 // The extended regular expression (for pgrep -f) of a serve that serveCommand started from `checkout`. The bracketed
 // [b] keeps it from matching the command line of the shell that runs pgrep with it.
 export const servePattern = checkout => `${checkout.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/([b]in/cua\\.mjs serve|[s]cripts/native-baseline/serve\\.mjs)`;

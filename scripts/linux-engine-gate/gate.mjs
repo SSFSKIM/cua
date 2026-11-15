@@ -3,9 +3,10 @@
 // launcher above the harness, as the sittings' private-run.mjs scripts were, so it lives outside scripts/linux-engine-diff/:
 // it starts Xvfb, Openbox, an xterm and node itself, which the harness's own source checks forbid any harness module.
 //
-//   node scripts/linux-engine-gate/gate.mjs --list [--candidate <file>] [--out <dir>] [--dev] [--pilot <n>]
-//   node scripts/linux-engine-gate/gate.mjs print <step> --candidate <file> --out <dir> [--dev] [--pilot <n>]
-//   node scripts/linux-engine-gate/gate.mjs run <step> --candidate <file> --out <dir> [--dev] [--pilot <n>]
+//   node scripts/linux-engine-gate/gate.mjs --list [--pinned <home> | --candidate <file>] [--out <dir>] [--dev] [--pilot <n>]
+//   node scripts/linux-engine-gate/gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
+//   node scripts/linux-engine-gate/gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
+//   node scripts/linux-engine-gate/gate.mjs check --pinned <home>
 //
 // `--list` prints every step's estimated minutes, display, load and command, with the totals per display and per load.
 // `print` prints one step's command and writes its directory's labelled README; `run` runs one step, and never a `:0`
@@ -21,6 +22,18 @@
 // build as a development run; `--pilot <n>` runs each step's smallest form (`--trials <n>` or its own), a development
 // run only.
 //
+// M5 (#171 M5, T1): **acceptance on the pinned release**. `--pinned <home>` names a run home (its CUA_HOME) whose own
+// `cua install --engine` placed the pinned engine, `<home>/engine/linux/cua-engine`; every step takes that engine by
+// candidate.mjs's pinned rule (the pin's bytes for this architecture, attested, its --version the attested commit's, the
+// checkout's native/linux-engine/ that commit's, no override in the environment), checked by the harness for its own
+// steps and here for the facade and suite steps, and labelled "acceptance on the pinned release". What runs is that
+// installed file itself, never the check's copy, and every child gets CUA_HOME the run home (a `cua serve` the harness
+// starts, a HOME of the run's too: pinned-home.mjs; the design session's ruling 708). The vendor builds follow the
+// architecture, from that home's runtime. The facade suites run the one runner (suites.sh) with ENGINE=installed: it
+// passes no engine and checks each of its own homes by the same rule, on the device the environment names (`DEVICE`,
+// else this architecture's VM); on a `--candidate`, ENGINE=candidate names it, as M4's facade.sh did. `check --pinned <home>` runs the rule alone and prints its record. `--pinned --dev` takes the
+// home's engine unchecked, as a development run (a pilot).
+//
 // Labels (the design session's condition): every directory and file a step writes carries "release gate" or
 // "development run, not a release gate": the step's directory is named `<step>.release-gate` or
 // `<step>.development-run[.pilot]`, its README.md and step.json open with the label, its logs' first line is the label,
@@ -34,21 +47,34 @@ import { homedir, tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { REPO_ROOT, candidateLine, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
+import { REPO_ROOT, candidateLine, gateLabel, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
+import { pinnedEngine } from '../linux-engine-diff/pinned-home.mjs';
+import { linuxEnginePath } from '../../src/runtime/linux-engine.mjs';
 import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
 
 const HOME = homedir();
-/** The paths of this VM's sittings (task 73's env.sh): the pinned and newest vendor builds and the vendor's client. */
-export const DEFAULTS = {
-  vendor: join(HOME, '.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64'),
-  newest: join(HOME, '.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64'),
-  vendorJs: join(HOME, '.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky'),
-  // task 59's Mozilla Firefox, first on PATH in every M4 sitting (its README says why)
-  firefoxDir: join(HOME, '.local/share/cua-171/task59/bin'),
-  locked: join(HOME, '.local/share/cua-171/locked.sh'),
-  holder: 't18-gate',
-  hold: join(HOME, '.local/share/cua-171/hold-sittings'),
-};
+/** The pinned vendor release, whose runtime holds the pinned vendor build and the vendor's client. */
+const VENDOR_RELEASE = '26.928.40906';
+/** #171's VMs as scripts/repl-parity/devices.mjs declares them, by architecture: the suites' device by default. */
+export const DEVICES_BY_ARCH = { x64: 'cua-171', arm64: 'cua-171-arm64' };
+/**
+ * The paths of the sittings (task 73's env.sh, the spec's Concrete Steps) on a machine of `arch`: the pinned vendor build
+ * and the vendor's client from the runtime of the cua home `cuaHome` (the pinned run home, else the default home, as M4
+ * ran), the newest vendor build where the run extracted it, and the run's tools.
+ */
+export function defaultsFor(arch = process.arch, cuaHome = join(HOME, '.local/share/cua')) {
+  const sky = join(cuaHome, 'runtimes', `${VENDOR_RELEASE}-linux-${arch}`, 'cua_node/lib/node_modules/@oai/sky');
+  return {
+    vendor: join(sky, 'bin/linux', `sky_linux_${arch}`),
+    newest: join(HOME, '.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux', `sky_linux_${arch}`),
+    vendorJs: sky,
+    // task 59's Mozilla Firefox, first on PATH in every M4 sitting (its README says why)
+    firefoxDir: join(HOME, '.local/share/cua-171/task59/bin'),
+    locked: join(HOME, '.local/share/cua-171/locked.sh'),
+    holder: 't18-gate',
+    hold: join(HOME, '.local/share/cua-171/hold-sittings'),
+  };
+}
 /** Task 50's guards for a `:0` step, as T19's sitting ran them (pointer-route/scripts). */
 const GUARDS = 'docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts';
 /** The harness's X client, built in the checkout (xtools.mjs `XPROBE`). */
@@ -63,14 +89,21 @@ export class GateRefused extends Error {
 }
 
 const USAGE = `usage:
-  gate.mjs --list [--candidate <file>] [--out <dir>] [--dev] [--pilot <n>]
-  gate.mjs print <step> --candidate <file> --out <dir> [--dev] [--pilot <n>]
-  gate.mjs run <step> --candidate <file> --out <dir> [--dev] [--pilot <n>]
-  options: [--vendor <bin>] [--newest <bin>] [--vendor-js <@oai/sky dir>] [--holder <name>]`;
+  gate.mjs --list [--pinned <home> | --candidate <file>] [--out <dir>] [--dev] [--pilot <n>]
+  gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
+  gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
+  gate.mjs check --pinned <home>
+  options: [--vendor <bin>] [--newest <bin>] [--vendor-js <@oai/sky dir>] [--holder <name>]
+  --pinned <home>: the CUA_HOME of a run home whose cua install --engine placed the pinned engine (acceptance on the pinned release)`;
 
-export function parseGateArgs(argv) {
-  const a = { mode: null, step: null, gate: true, pilot: null, ...DEFAULTS, candidate: null, out: null };
-  const flags = { '--candidate': 'candidate', '--out': 'out', '--vendor': 'vendor', '--newest': 'newest', '--vendor-js': 'vendorJs', '--holder': 'holder' };
+/**
+ * The runner's arguments. `arch` and `env` are the machine's: the vendor paths follow `arch` (from the pinned home's
+ * runtime when `--pinned` names one), and the suites' device is `env.DEVICE`, else `arch`'s VM. A flag still wins.
+ */
+export function parseGateArgs(argv, { arch = process.arch, env = process.env } = {}) {
+  const a = { mode: null, step: null, gate: true, pilot: null, candidate: null, pinned: null, out: null };
+  const given = {};
+  const flags = { '--candidate': 'candidate', '--pinned': 'pinned', '--out': 'out', '--vendor': 'vendor', '--newest': 'newest', '--vendor-js': 'vendorJs', '--holder': 'holder' };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = () => {
@@ -82,25 +115,41 @@ export function parseGateArgs(argv) {
     else if (flag === '--pilot') {
       a.pilot = Number(value());
       if (!Number.isInteger(a.pilot) || a.pilot < 1) throw new GateRefused('--pilot needs a positive whole number of trials');
-    } else if (flag in flags) a[flags[flag]] = resolve(value());
-    else if (!a.mode && ['print', 'run'].includes(flag)) {
+    } else if (flag in flags) {
+      const key = flags[flag];
+      const v = value();
+      given[key] = key === 'holder' ? v : resolve(v);
+    } else if (!a.mode && ['print', 'run'].includes(flag)) {
       a.mode = flag;
       a.step = value();
-    } else throw new GateRefused(`unknown argument ${flag}\n${USAGE}`);
+    } else if (!a.mode && flag === 'check') a.mode = 'check';
+    else throw new GateRefused(`unknown argument ${flag}\n${USAGE}`);
   }
   if (!a.mode) throw new GateRefused(USAGE);
-  if (a.gate && a.pilot) throw new GateRefused('a pilot is never a release gate: give --dev with --pilot');
+  if (given.pinned && given.candidate) throw new GateRefused('give --pinned or --candidate, not both: acceptance takes the engine a run home\'s cua install placed');
+  Object.assign(a, defaultsFor(arch, given.pinned), { device: env.DEVICE || DEVICES_BY_ARCH[arch] || null }, given);
+  if (a.pinned) {
+    a.candidate = linuxEnginePath(a.pinned);
+    if (a.gate) a.gate = 'pinned';
+  }
+  if (a.mode === 'check') {
+    if (!a.pinned) throw new GateRefused(`check needs --pinned <home>\n${USAGE}`);
+    if (!a.gate) throw new GateRefused('check is the pinned rule itself: no --dev');
+    return a;
+  }
+  if (a.gate && a.pilot) throw new GateRefused('a pilot is never a release gate, nor acceptance: give --dev with --pilot');
   if (a.mode !== 'list') {
     if (!STEPS.some((s) => s.name === a.step)) throw new GateRefused(`no gate step ${a.step}; the steps: ${STEPS.map((s) => s.name).join(', ')}`);
-    if (!a.candidate || !a.out) throw new GateRefused(`${a.mode} needs --candidate and --out\n${USAGE}`);
+    if (!a.candidate) throw new GateRefused(`${a.mode} needs --pinned <home> or --candidate <file>\n${USAGE}`);
+    if (!a.out) throw new GateRefused(`${a.mode} needs --out\n${USAGE}`);
   }
   return a;
 }
 
 /**
  * A gate's checkout: clean, its commit read (candidate.mjs reads the same with `git -C`, and the candidate must be built
- * from it), and the out directory outside it. Answers the commit; refuses otherwise. A development run's checkout is
- * read and recorded, never refused.
+ * from it, or on the pinned release hold its engine sources unchanged), and the out directory outside it. Answers the
+ * commit; refuses otherwise. A development run's checkout is read and recorded, never refused.
  */
 export function checkCheckout({ root = REPO_ROOT, out, gate, git = (args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }) {
   let commit = null;
@@ -109,14 +158,16 @@ export function checkCheckout({ root = REPO_ROOT, out, gate, git = (args) => exe
     commit = git(['rev-parse', 'HEAD']).trim();
     changes = git(['status', '--porcelain']).split('\n').filter(Boolean);
   } catch (error) {
-    if (gate) throw new GateRefused(`a gate runs from a clean git checkout at the candidate's commit, and ${root} could not be read: ${String(error.message).split('\n')[0]}`);
+    if (gate) throw new GateRefused(`${runsFrom(gate)}, and ${root} could not be read: ${String(error.message).split('\n')[0]}`);
   }
   if (!gate) return { commit, clean: changes ? changes.length === 0 : null };
-  if (changes.length) throw new GateRefused(`a gate runs from a clean git checkout at the candidate's commit, and ${root} has ${changes.length} changes (${changes.slice(0, 5).map((l) => l.slice(3)).join(', ')}): commit or remove them (a symlinked node_modules counts; install it)`);
+  if (changes.length) throw new GateRefused(`${runsFrom(gate)}, and ${root} has ${changes.length} changes (${changes.slice(0, 5).map((l) => l.slice(3)).join(', ')}): commit or remove them (a symlinked node_modules counts; install it)`);
   const rel = relative(root, out);
   if (!rel.startsWith('..') && !rel.startsWith('/')) throw new GateRefused(`the out directory ${out} is inside the checkout ${root}: its files would make the checkout unclean mid-gate; write outside it and copy the evidence in after`);
   return { commit, clean: true };
 }
+
+const runsFrom = (gate) => (gate === 'pinned' ? 'acceptance on the pinned release runs from a clean git checkout' : "a gate runs from a clean git checkout at the candidate's commit");
 
 const quote = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, "'\\''")}'`);
 const line = (argv) => argv.map(quote).join(' ');
@@ -131,12 +182,13 @@ export function launchCommand(step, a, root = REPO_ROOT) {
     const args = stepArgs(step, { paths: { ...a, candidate: a.candidate ?? '<candidate>' }, gate: a.gate, pilot: a.pilot });
     return line([...lock, 'env', `WRAP=${join(root, GUARDS, 'wrap71.py')}`, join(root, GUARDS, 'run71.sh'), a.out ? stepDir(step, a) : '<out>/<step>', root, ...args]);
   }
-  return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, '--candidate', a.candidate ?? '<candidate>', '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : [])]);
+  const engine = a.pinned ? ['--pinned', a.pinned] : ['--candidate', a.candidate ?? '<candidate>'];
+  return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, ...engine, '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : [])]);
 }
 
 /** `--list`: every step's minutes, display, load and what it covers, its command, and the totals. */
 export function listText(a, root = REPO_ROOT) {
-  const out = [`M4's gate: ${STEPS.length} steps, each ${MAX_STEP_MINUTES} min or less (estimated), ${a.gate ? 'release gate' : `development run, not a release gate${a.pilot ? `, pilot (${a.pilot})` : ''}`}`, ''];
+  const out = [`The gate: ${STEPS.length} steps, each ${MAX_STEP_MINUTES} min or less (estimated), ${gateLabel(a.gate)}${a.pilot ? `, pilot (${a.pilot})` : ''}${a.pinned ? `, the engine of ${a.pinned}` : ''}`, ''];
   for (const s of STEPS) {
     out.push(`${s.name.padEnd(4)} ${String(s.minutes).padStart(3)} min  ${s.display.padEnd(7)} ${s.load.padEnd(12)} ${s.what}`);
     out.push(`     ${launchCommand(s, a, root)}`);
@@ -144,7 +196,7 @@ export function listText(a, root = REPO_ROOT) {
   const t = totals();
   const fmt = (o) => Object.entries(o).map(([k, v]) => `${k} ${v} min`).join(', ');
   out.push('', `total ${t.all} min (${(t.all / 60).toFixed(1)} h); per display: ${fmt(t.display)}; per load: ${fmt(t.load)}`);
-  out.push(`A gate step runs from a clean git checkout at the candidate's commit (${root}); its out directory lies outside it. The :0 steps are launched in the declared sitting, never by this runner.`);
+  out.push(`A gate step runs from a clean git checkout (${root})${a.gate === true ? " at the candidate's commit" : ''}; its out directory lies outside it. The :0 steps are launched in the declared sitting, never by this runner.`);
   return out.join('\n');
 }
 
@@ -165,6 +217,7 @@ function writeRecord(dir, record) {
     `- command: \`${r.command}\``,
     ...(r.started ? [`- started ${r.started}`] : []),
     ...(r.finished ? [`- finished ${r.finished}; exit ${r.exit}${r.display_watchdog ? `; private display's watchdog: ${r.display_watchdog}` : ''}`] : []),
+    ...(r.unproved ? [`- unproved (declared gaps, not passes): ${r.unproved.length || 'none'}`, ...r.unproved.map((l) => `  - ${l}`)] : []),
     '',
   ];
   writeFileSync(join(dir, 'README.md'), md.join('\n'));
@@ -179,7 +232,7 @@ function stepRecord(step, a, { root, checkout, command }) {
   } catch {
     // a missing candidate: the record says so, and `run` refuses it
   }
-  return { label, step: step.name, pilot, what: step.what, display: step.display, load: step.load, minutes: step.minutes, run_name: ['facade', 'suite'].includes(step.kind) ? null : runName(step, a), checkout: { root, ...checkout }, candidate: { path: a.candidate, sha256: digest }, command };
+  return { label, step: step.name, pilot, what: step.what, display: step.display, load: step.load, minutes: step.minutes, run_name: ['facade', 'suite'].includes(step.kind) ? null : runName(step, a), checkout: { root, ...checkout }, candidate: { path: a.candidate, sha256: digest }, pinned_home: a.pinned ?? null, command };
 }
 
 /** `print`: the step's labelled directory and README, and its command. */
@@ -204,12 +257,12 @@ function labelledLog(path, label) {
  * step directory that exists, or (a gate) from an unclean checkout. Answers the step's exit code: the harness's, or 1
  * when its private display's watchdog was not clean.
  */
-export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT) } = {}) {
+export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null } = {}) {
   const step = stepNamed(a.step);
   if (step.display === ':0') throw new GateRefused(`${step.name} runs on :0, in the declared sitting under task 50's guards: launch it with \`gate.mjs print ${step.name} ...\`'s command; this runner never runs on the person's display`);
   if (held()) throw new GateRefused(`${a.hold} exists: the host is held for sittings, and nothing starts`);
   if (loadRunning()) throw new GateRefused('stress-ng is running: a step starts only on a host with no load running');
-  if (!existsSync(a.candidate)) throw new GateRefused(`no candidate at ${a.candidate}`);
+  if (!existsSync(a.candidate)) throw new GateRefused(a.pinned ? noEngine(a) : `no candidate at ${a.candidate}`);
   // the harness's own X client (the display's watchdog, the witness): a fresh checkout has none until it is built
   if (!existsSync(xprobe)) throw new GateRefused(`the harness's X client is not built: cargo build --release --manifest-path ${join(root, 'scripts/linux-engine-diff/xprobe/Cargo.toml')}`);
   const checkout = checkCheckout({ root, out: a.out, gate: a.gate, git });
@@ -220,28 +273,33 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   const record = stepRecord(step, a, { root, checkout, command: launchCommand(step, a, root) });
   // the harness's out directory, before any script writes in it (services.mjs's Desktop logs there at its start)
   mkdirSync(join(dir, 'run'), { recursive: true });
-  const env = { ...process.env, PATH: existsSync(a.firefoxDir) ? `${a.firefoxDir}:${process.env.PATH}` : process.env.PATH };
-  // the facade step's script has no candidate checks of its own: a gate's runs here, its copy removed at the end
+  // on the pinned release CUA_HOME is the run home, so nothing a step starts resolves the person's default cua home; a
+  // service the harness starts runs in a HOME of the run's too (pinned-home.mjs)
+  const env = { ...process.env, PATH: existsSync(a.firefoxDir) ? `${a.firefoxDir}:${process.env.PATH}` : process.env.PATH, ...(a.pinned ? { CUA_HOME: a.pinned } : {}) };
+  // the facade step's script has no candidate checks of its own: a gate's runs here, its copy removed at the end; on
+  // the pinned release the copy is the check's alone, and the step runs the installed engine cua's selection picks
   let store = null;
   let candidatePath = a.candidate;
   if (['facade', 'suite'].includes(step.kind) && a.gate) {
     store = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
     try {
-      const prepared = await prepareCandidate({ source: a.candidate, gate: true, dir: store, root });
-      candidatePath = prepared.path;
+      const prepared = await prepare({ source: a.candidate, gate: a.gate, dir: store, root });
+      candidatePath = a.gate === 'pinned' ? pinned(a.candidate, prepared.record).cua : prepared.path;
       record.candidate.record = prepared.record;
     } catch (error) {
       rmSync(store, { recursive: true, force: true });
       throw error;
     }
   }
-  // a suite's out is facade.sh's environment (`suiteEnv`), every other script's its --out; a suite's logs are written to
+  // a suite's out is suites.sh's environment (`suiteEnv`), every other script's its --out; a suite's logs are written to
   // a short scratch directory (its session bus's socket lies there) and copied into the step's `logs/` at its end
   const args = [...stepArgs(step, { paths: { ...a, candidate: candidatePath }, gate: a.gate, pilot: a.pilot }), ...(step.kind === 'suite' ? [] : ['--out', join(dir, 'run')])];
-  record.argv = [stepScript(step), ...args];
+  const script = stepScript(step);
+  record.argv = [script, ...args];
   // under /tmp itself, whatever TMPDIR names (a macOS TMPDIR alone is about 50 bytes): the socket's 108 bytes
   const suiteLogs = step.kind === 'suite' ? mkdtempSync('/tmp/cua171-gl-') : null;
-  if (suiteLogs) record.env = suiteEnv({ candidate: candidatePath, dir, gate: a.gate, logs: suiteLogs });
+  const suiteVars = suiteLogs ? suiteEnv({ candidate: candidatePath, dir, gate: a.gate, logs: suiteLogs, pinned: Boolean(a.pinned), device: a.device }) : null;
+  if (suiteVars) record.env = suiteVars;
   record.started = new Date().toISOString();
   writeRecord(dir, record);
   const out = labelledLog(join(dir, 'stdout.log'), label);
@@ -250,7 +308,7 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   try {
     if (step.display === 'own') {
       const { DISPLAY, XAUTHORITY, ...own } = env;
-      // a suite is facade.sh's part, its out and logs in the step's directory, each with the label beside it
+      // a suite is suites.sh's part, its out and logs in the step's directory, each with the label beside it
       const suite = step.kind === 'suite';
       if (suite) {
         for (const sub of ['run', 'logs']) {
@@ -258,9 +316,9 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
           writeFileSync(join(dir, sub, 'LABEL'), `${label}\n`);
         }
       }
-      const [command, argv] = suite ? ['bash', [join(root, stepScript(step)), ...args]] : [process.execPath, [join(root, stepScript(step)), ...args]];
-      const childEnv = suite ? { ...own, ...suiteEnv({ candidate: candidatePath, dir, gate: a.gate, logs: suiteLogs }) } : own;
-      const child = spawn(command, argv, { cwd: root, env: childEnv, stdio: ['ignore', out, err] });
+      const [command, argv] = suite ? ['bash', [join(root, script), ...args]] : [process.execPath, [join(root, script), ...args]];
+      const childEnv = suite ? { ...own, ...suiteVars } : own;
+      const child = spawnChild(command, argv, { cwd: root, env: childEnv, stdio: ['ignore', out, err] });
       const forward = (signal) => child.kill(signal);
       process.on('SIGTERM', forward);
       process.on('SIGINT', forward);
@@ -268,8 +326,8 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
       process.off('SIGTERM', forward);
       process.off('SIGINT', forward);
     } else {
-      const { runOnPrivateDisplay } = await import('./display.mjs');
-      result = await runOnPrivateDisplay({ dir, label, script: join(root, stepScript(step)), args, cwd: root, env, out, err });
+      const runOnPrivateDisplay = privateDisplay ?? (await import('./display.mjs')).runOnPrivateDisplay;
+      result = await runOnPrivateDisplay({ dir, label, script: join(root, script), args, cwd: root, env, out, err });
     }
   } finally {
     if (store) rmSync(store, { recursive: true, force: true });
@@ -281,9 +339,29 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   }
   const exit = result.code === 0 && result.clean ? 0 : result.code === 2 ? 2 : 1;
   Object.assign(record, { finished: new Date().toISOString(), exit, child_exit: result.code ?? result.signal, ...(step.display === 'private' ? { display_watchdog: result.clean ? 'clean' : result.reason } : {}) });
+  // a series the comparison reports unproved under a declared gap (R2, F8a) is the step's record, never inferred from
+  // its exit status: the suites runner writes them, and the step's README and step.json list them
+  const unproved = join(dir, 'run', 'baseline', 'unproved.txt');
+  if (existsSync(unproved)) record.unproved = readFileSync(unproved, 'utf8').split('\n').filter(Boolean);
   writeRecord(dir, record);
   appendFileSync(join(dir, 'stdout.log'), `${label}: ${step.name} exit ${exit}\n`);
   return exit;
+}
+
+const noEngine = (a) => `no engine at ${a.candidate}: install it in the run home first, CUA_HOME=${a.pinned} node bin/cua.mjs install --engine`;
+
+/**
+ * `check --pinned <home>`: the pinned rule alone on the home's engine (candidate.mjs), its copy removed after. Answers the
+ * record; a refusal is thrown as the rule's `CandidateRefused`. The facade suites' runner checks each of its homes so.
+ */
+export async function checkPinned(a, { root = REPO_ROOT, prepare = prepareCandidate } = {}) {
+  if (!existsSync(a.candidate)) throw new GateRefused(noEngine(a));
+  const store = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
+  try {
+    return (await prepare({ source: a.candidate, gate: 'pinned', dir: store, root })).record;
+  } finally {
+    rmSync(store, { recursive: true, force: true });
+  }
 }
 
 function pgrep(name) {
@@ -300,6 +378,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const a = parseGateArgs(process.argv.slice(2));
     if (a.mode === 'list') process.stdout.write(`${listText(a)}\n`);
     else if (a.mode === 'print') process.stdout.write(`${printStep(a)}\n`);
+    else if (a.mode === 'check') {
+      const record = await checkPinned(a);
+      process.stdout.write(`${gateLabel(record.gate)}: ${a.candidate}\n${candidateLine(record)}\n${JSON.stringify(record)}\n`);
+    }
     else process.exit(await runStep(a));
   } catch (error) {
     if (error instanceof GateRefused || error.name === 'CandidateRefused') {

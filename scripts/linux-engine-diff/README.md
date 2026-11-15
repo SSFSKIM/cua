@@ -88,6 +88,34 @@ nothing run. Either way the run's `meta` and summary rows, its `summary.md` head
 stdout carry its label, `release gate` or `development run, not a release gate`; a gate verdict run's heading and
 verdict line now say `release gate` too.
 
+### Acceptance on the pinned release (`--pinned`, #171 M5)
+
+M5 runs on the release already pinned, from a checkout past it (M5's harness changes), so a release gate's commit rule
+cannot hold. `--pinned`, on a verdict run or an experiment in place of `--dev` or `--gate`, checks the candidate by the
+pinned rule instead and labels every artifact `acceptance on the pinned release` (`gate` is `pinned` in the `meta` and
+`end` rows). The candidate is the engine a run home's `cua install --engine` placed, `<CUA_HOME>/engine/linux/cua-engine`
+(`scripts/linux-engine-gate/gate.mjs --pinned <CUA_HOME>` names it for every step). In order, it refuses:
+
+- an override in the environment: `CUA_LINUX_ENGINE_BIN` set and not empty;
+- bytes that are not the checkout pin's asset for this host's architecture (`runtime/engine/linux-engine.json`), the
+  other architecture's asset named as such;
+- an engine with no `install.json` beside it recording a `pinned` build of the pin's release and those bytes: one no
+  `cua install` placed;
+- then, as a gate's: not a static musl ELF for this host, an unclean checkout, an unattested file, a digest mismatch;
+- a checkout whose `native/linux-engine/` differs from every attested source commit's (`git diff --name-only <commit>
+  HEAD -- native/linux-engine`), the files named, or that cannot be compared (the commit not fetched);
+- then, the engine's first run, a `--version` that does not name that commit or the pin's version.
+
+The record adds `pin` (`arch`, `version`, `release`, `sha256`), `installed` (the install record) and `engine_tree` (the
+commit whose engine sources the checkout holds); `attestation` keeps the attestations of that commit.
+
+What a pinned run runs is the installed file itself, never the check's copy (the design session's ruling 708,
+`pinned-home.mjs`): the one cua's own selection picks in that home with `CUA_NATIVE_ENGINE=cua` and no override,
+refused unless it is the checked file with the checked bytes. A `cua serve` the harness starts (engine-stop) runs in a
+HOME of the run's under its scratch, with an empty secret store, CUA_HOME the run home and no `CUA_LINUX_ENGINE_BIN`, so
+it selects the installed engine itself; the services the harness builds in its own process (the settle, the facade's
+two services) are given that installed path, and so are the wire-driven verdict runs and experiments.
+
 ## M4's gate as steps (`../linux-engine-gate/`, T18)
 
 `scripts/linux-engine-gate/steps.mjs` is the gate as one runnable sequence: steps of 45 minutes or less, each a valid run of its own (its
@@ -1203,6 +1231,7 @@ Two shared helpers came out of T16's fix wave (the design session, 2026-11-10), 
 | `cli.mjs` | the command line |
 | `../linux-engine-gate/` | M4's gate as steps (T18): `steps.mjs` the plan and its commands, `gate.mjs` the runner that lists, prints or runs one, `display.mjs` a step's private display, `norecord.mjs` its harness script with no whole-run RECORD; a launcher above the harness, outside this directory's source checks |
 | `candidate.mjs` | a verdict run's cua candidate: stored, its target read, its attestation verified; a gate's refusals |
+| `pinned-home.mjs` | on the pinned release: the installed engine cua's selection runs, and a `cua serve`'s home of the run's |
 | `engine.mjs` | an engine process over the wire |
 | `run.mjs`, `ops.mjs` | the differential run and its operations |
 | `audit.mjs` | the X request audit through `xtrace` |

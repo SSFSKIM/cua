@@ -10,12 +10,22 @@
 // its `--version`, the checkout's commit and whether it is clean, and what `gh attestation verify --format json`
 // verified (gh's plain output prints nothing when it is not on a terminal). An experiment that joins the gate (`--gate`,
 // M4's T18) takes its candidate through the same preparation (experiments.mjs `runExperiment`).
+//
+// M5 (#171 M5, T1; the M5 pre-flight's §1.1) runs on the release already pinned, from a checkout past it (M5's harness
+// changes), so its rule is another: **acceptance on the pinned release** (`gate` 'pinned', `--pinned`). It takes the
+// engine a run home's `cua install` placed (install.json beside it, build `pinned`, the pin's release), and refuses unless
+// no override is set in the environment (CUA_LINUX_ENGINE_BIN), its sha256 is the pin's asset for this architecture
+// (runtime/engine/linux-engine.json in the checkout), the release workflow's attestation names those bytes, the
+// checkout's native/linux-engine/ equals the attested commit's (so the released bytes are the engine this checkout
+// builds), and its `--version` names that commit and the pin's version.
 
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { chmodSync, copyFileSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { ENGINE_RECORD, engineAsset, parseEnginePin } from '../../src/runtime/linux-engine.mjs';
 
 export const REPO = 'SSFSKIM/cua';
 export const WORKFLOW = '.github/workflows/linux-engine.yml';
@@ -124,6 +134,85 @@ async function verifyAttestation(path, run) {
 
 const first = (result) => (result.status === 0 ? result.stdout.trim() : null);
 
+/** The engine's sources, whose state at the checkout must be the released commit's for the pinned rule. */
+export const ENGINE_TREE = 'native/linux-engine';
+/** The override the pinned rule refuses in the environment: the harnesses' path to an engine that is not installed. */
+const OVERRIDE = 'CUA_LINUX_ENGINE_BIN';
+
+/** The checkout's pin (runtime/engine/linux-engine.json), or a refusal reason. */
+function checkoutPin(root) {
+  try {
+    return { pin: parseEnginePin(JSON.parse(readFileSync(join(root, 'runtime', 'engine', 'linux-engine.json'), 'utf8'))) };
+  } catch (error) {
+    return { refused: `the checkout's pin (${join(root, 'runtime/engine/linux-engine.json')}) could not be read: ${error.message}` };
+  }
+}
+
+/**
+ * Whether `source` is what `cua install` placed for `pinned` ({release, sha256}): an install.json beside it (the run
+ * home's engine directory) recording a pinned build of that release and those bytes. A refusal reason, or null.
+ */
+function installRecordProblem(source, pinned, sha256) {
+  const path = join(dirname(source), ENGINE_RECORD);
+  let record;
+  try {
+    record = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    return { refused: `the engine ${source} has no install.json beside it that reads (${error.code ?? error.message}): install the engine in a run home (CUA_HOME=<home> node bin/cua.mjs install --engine) and name that home (gate.mjs --pinned <home>)` };
+  }
+  if (record?.build !== 'pinned' || record.release !== pinned.release) {
+    return { refused: `the engine's install.json (${path}) records build ${record?.build} of ${record?.release ?? 'no release'}, not the pinned release ${pinned.release}: run cua install --engine in that home` };
+  }
+  if (record.sha256 !== sha256) return { refused: `the engine's install.json (${path}) names another sha256 (${record.sha256}) than its file's (${sha256}): run cua install --engine in that home` };
+  return { record: { path, build: record.build, release: record.release, version: record.version, installedAt: record.installedAt ?? null } };
+}
+
+/**
+ * The pinned rule's checks before the engine's ELF is read, in order: no override in `env`; the bytes the pin's asset
+ * for `hostArch` (the other architecture's named as such); the install record of a run home's `cua install`. Answers
+ * `{pin, installed}`, or `{refused}`.
+ */
+function pinnedProblem({ source, sha256, root, env, hostArch }) {
+  if (env[OVERRIDE]) return { refused: `an override is set: ${OVERRIDE}=${env[OVERRIDE]}: unset it` };
+  const read = checkoutPin(root);
+  if (read.refused) return read;
+  let asset;
+  try {
+    asset = engineAsset(read.pin, hostArch);
+  } catch (error) {
+    return { refused: error.message };
+  }
+  const pin = { arch: hostArch, version: read.pin.version, release: read.pin.release, sha256: asset.sha256 };
+  if (sha256 !== asset.sha256) {
+    const other = Object.entries(read.pin.assets).find(([arch, a]) => arch !== hostArch && a.sha256 === sha256)?.[0];
+    if (other) return { refused: `not the pinned engine for this host: its sha256 ${sha256} is the pin's ${other} asset of ${pin.release}, and this host is ${hostArch}` };
+    return { refused: `not the pinned engine: its sha256 is ${sha256}, and the pin's ${hostArch} asset of ${pin.release} is ${asset.sha256}` };
+  }
+  const installed = installRecordProblem(source, pin, sha256);
+  if (installed.refused) return installed;
+  return { pin, installed: installed.record };
+}
+
+/**
+ * The attested commit whose `native/linux-engine/` the checkout at HEAD holds unchanged, of `commits` (the commits the
+ * verified attestations name as the bytes' source), or a refusal naming what differs or why it could not be compared.
+ */
+async function engineTreeAt(commits, { root, run }) {
+  const reasons = [];
+  for (const commit of commits) {
+    const diff = await run('git', ['-C', root, 'diff', '--name-only', commit, 'HEAD', '--', ENGINE_TREE]);
+    if (diff.status !== 0) {
+      const why = (diff.stderr || diff.stdout || '').trim().split('\n').filter(Boolean).at(-1) ?? `exit ${diff.status}`;
+      reasons.push(`the checkout's ${ENGINE_TREE}/ could not be compared with ${commit} (${why}): git fetch origin ${commit}, then run again`);
+      continue;
+    }
+    const files = diff.stdout.split('\n').filter(Boolean);
+    if (files.length === 0) return { commit };
+    reasons.push(`the checkout's ${ENGINE_TREE}/ differs from ${commit}'s, the released bytes' source (${files.length} files: ${files.slice(0, 5).join(', ')}${files.length > 5 ? ', …' : ''}): an engine change ends with its own release, pinned, before acceptance runs on it`);
+  }
+  return { refused: reasons.join('; ') };
+}
+
 /**
  * Stores `source` as `<dir>/cua-engine`, mode 0700, and checks it: `{path, record}`. `dir` is the caller's, made empty
  * before and removed by it whatever happens, so a stop during the checks (which run git, gh and the candidate) leaves
@@ -135,15 +224,25 @@ const first = (result) => (result.status === 0 ? result.stdout.trim() : null);
  * answers `{status, stdout, stderr}` (or a promise of it); the tests pass a fake git, gh and engine. `signal`, an
  * AbortSignal, stops the checks: the command in flight is killed (SIGKILL) and reaped, and the promise rejects with a
  * `PreparationStopped`, never an ordinary command result.
+ *
+ * `gate` 'pinned' is acceptance on the pinned release (the header): before the ELF is read it refuses an override in
+ * `env`, bytes that are not the checkout pin's asset for this host (the other architecture's named), and an engine with
+ * no install record of a pinned `cua install` beside it; then, as a gate, a file that is not a static musl ELF for this
+ * host, an unclean checkout, bytes no attestation names; then a checkout whose native/linux-engine/ differs from every
+ * attested commit's; and, the engine run only then, a `--version` that names neither that commit nor the pin's version.
  */
-export async function prepareCandidate({ source, gate, dir, signal, root = REPO_ROOT, hostArch = process.arch, run: runWith = runCommand }) {
+export async function prepareCandidate({ source, gate, dir, signal, root = REPO_ROOT, hostArch = process.arch, env = process.env, run: runWith = runCommand }) {
   // the run's stop ends the checks: a command in flight is killed and waited for, and none starts after it
   const run = (command, args) => {
     if (signal?.aborted) throw new PreparationStopped();
     return runWith(command, args, { signal });
   };
+  const pinnedRule = gate === 'pinned';
   const refuse = (why) => {
-    throw new CandidateRefused(`${why}${gate ? '. A gate takes the release workflow\'s attested artifact of the checked-out commit (scripts/linux-engine-diff/README.md, "The candidate"); --dev runs any build, not as a release gate' : ''}`);
+    const rule = pinnedRule
+      ? '. Acceptance on the pinned release takes the engine a run home\'s cua install placed, at the pin, attested, its sources unchanged in the checkout (scripts/linux-engine-diff/README.md, "The candidate"); --dev runs any build, not as acceptance'
+      : '. A gate takes the release workflow\'s attested artifact of the checked-out commit (scripts/linux-engine-diff/README.md, "The candidate"); --dev runs any build, not as a release gate';
+    throw new CandidateRefused(`${why}${gate ? rule : ''}`);
   };
   const path = join(dir, 'cua-engine');
   try {
@@ -171,6 +270,11 @@ export async function prepareCandidate({ source, gate, dir, signal, root = REPO_
     record.version = first(await run(path, ['--version']));
     return { path, record };
   }
+  if (pinnedRule) {
+    const pinned = pinnedProblem({ source, sha256: record.sha256, root, env, hostArch });
+    if (pinned.refused) refuse(pinned.refused);
+    Object.assign(record, { pin: pinned.pin, installed: pinned.installed, engine_tree: null });
+  }
 
   const host = HOST_ARCHES[hostArch] ?? hostArch;
   if (!elf) refuse('the candidate is not an ELF file');
@@ -191,14 +295,26 @@ export async function prepareCandidate({ source, gate, dir, signal, root = REPO_
     const named = verified.attestations.flatMap((a) => a.subjects.map((s) => `${s.name} ${s.sha256}`)).join(', ');
     refuse(`digest mismatch: the candidate's sha256 is ${record.sha256}, and the verified attestations name ${named}`);
   }
-  if (!mine.some((a) => a.source_commit === commit)) {
+  // the commit the bytes were built from: the checkout's own (a release gate), or, on the pinned release, an attested
+  // commit whose engine sources the checkout holds unchanged
+  let built = commit;
+  if (pinnedRule) {
+    const tree = await engineTreeAt([...new Set(mine.map((a) => a.source_commit))], { root, run });
+    if (tree.refused) refuse(tree.refused);
+    built = tree.commit;
+    record.engine_tree = { path: ENGINE_TREE, commit: built, equal: true };
+  } else if (!mine.some((a) => a.source_commit === commit)) {
     refuse(`commit mismatch: the candidate was built from ${[...new Set(mine.map((a) => a.source_commit))].join(', ')}, and the checkout is at ${commit}`);
   }
-  // attested: the release workflow built these bytes from this commit, so the candidate may now be run
+  // attested: the release workflow built these bytes from that commit, so the candidate may now be run
   record.version = first(await run(path, ['--version']));
-  const named = /^cua-engine \S+ \(([0-9a-f]{12})\)$/.exec(record.version ?? '')?.[1];
-  if (!named || !commit.startsWith(named)) refuse(`the candidate's --version answers ${JSON.stringify(record.version)}, which does not name the checkout's commit ${commit.slice(0, 12)}`);
-  record.attestation = { verified: true, signer_workflow: SIGNER_WORKFLOW, attestations: mine };
+  const answered = /^cua-engine (\S+) \(([0-9a-f]{12})\)$/.exec(record.version ?? '');
+  const named = answered?.[2];
+  if (!named || !built.startsWith(named)) {
+    refuse(`the candidate's --version answers ${JSON.stringify(record.version)}, which does not name ${pinnedRule ? `the attested commit ${built.slice(0, 12)}` : `the checkout's commit ${commit.slice(0, 12)}`}`);
+  }
+  if (pinnedRule && answered[1] !== record.pin.version) refuse(`the candidate's --version answers ${JSON.stringify(record.version)}, which does not name the pin's version ${record.pin.version}`);
+  record.attestation = { verified: true, signer_workflow: SIGNER_WORKFLOW, attestations: pinnedRule ? mine.filter((a) => a.source_commit === built) : mine };
   return { path, record };
 }
 
@@ -209,14 +325,20 @@ export async function prepareCandidate({ source, gate, dir, signal, root = REPO_
  */
 export const RELEASE_GATE = 'release gate';
 export const DEVELOPMENT_RUN = 'development run, not a release gate';
-export const gateLabel = (gate) => (gate === true ? RELEASE_GATE : gate === false ? DEVELOPMENT_RUN : null);
+/** M5's label: a run on the pinned release, by the pinned rule (`gate` 'pinned'). */
+export const PINNED_RELEASE = 'acceptance on the pinned release';
+export const gateLabel = (gate) => (gate === true ? RELEASE_GATE : gate === 'pinned' ? PINNED_RELEASE : gate === false ? DEVELOPMENT_RUN : null);
 
-/** The candidate in one line of the summary: its sha256, target, version, and its attestation or why there is none. */
+/**
+ * The candidate in one line of the summary: its sha256, target, version, and its attestation or why there is none; on
+ * the pinned release, also the pin's asset it is and the commit whose engine sources the checkout holds.
+ */
 export function candidateLine(c) {
   const built = `sha256 ${c.sha256}, ${c.target ?? 'not an ELF file'}${c.linkage ? ` ${c.linkage}` : ''}, ${c.version ?? 'no --version answer'}`;
   if (!c.attestation) return `candidate: ${built}; attestation not checked (a development run)${c.clean === false ? '; checkout not clean' : ''}`;
+  const pinned = c.pin && c.engine_tree ? `; the pin's ${c.pin.arch} asset of ${c.pin.release}; ${c.engine_tree.path} as at ${c.engine_tree.commit}, the checkout at ${c.commit}` : '';
   const proofs = c.attestation.attestations.map((a) => `${WORKFLOW} run ${a.run}, built from ${a.source_commit} (${a.source_ref}) on a ${a.runner} runner`);
-  return `candidate: ${built}; attestation verified: ${proofs.join('; ')}`;
+  return `candidate: ${built}${pinned}; attestation verified: ${proofs.join('; ')}`;
 }
 
 /**

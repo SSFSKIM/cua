@@ -12,6 +12,9 @@ import {Deadline} from '../../src/browser-service/budgets.mjs';
 import {BrowserServiceError} from '../../src/browser-service/errors.mjs';
 import {HELPER_MISSING, INJECTED_GLOBAL, InjectedScripts, WORLD_NAME, installExpression, pageError} from '../../src/browser-service/injected.mjs';
 import {FAKE_INJECTED_SOURCE, el, iframe, pageWorld} from './support/page-world.mjs';
+import {BackendApi, connect} from '../../src/browser-service/backend.mjs';
+import {nativePipe, startRealHost} from './support/real-host.mjs';
+import {defaultCdp} from '../helpers/fake-cua-extension.mjs';
 
 const TAB = 7;
 const MAIN = `MAIN-${TAB}`;
@@ -186,4 +189,32 @@ test('a world lost while the script is installed is made again: the next use suc
   other.after('Page.createIsolatedWorld', () => other.navigate(MAIN, {elements: [el('p', {id: 'go', text: 'Go'})], silent: true}));
   const handle = await new SelectorEngine(fresh.cdp, fresh).resolve('#go', TAB, {deadline: new Deadline(2000)});
   assert.ok(handle.backendNodeId > 0);
+});
+
+// #168, on the real host: a locator evaluation whose budget runs out while its Runtime.evaluate is in flight leaves the
+// tab's debugger attached, so the next action in that tab runs on it without a re-attach. Before, the host detached
+// the tab at its own copy of the budget, and the next action met a detached tab.
+test('real host: a locator evaluation that runs out of budget mid-evaluate keeps the tab\'s debugger; the next action needs no re-attach', async t => {
+  const host = await startRealHost(t, {cdp: ({method, params}) => (method === 'Page.getFrameTree' ? {frameTree: {frame: {id: 'MAIN'}}}
+    : method === 'Page.createIsolatedWorld' ? {executionContextId: 9} : defaultCdp({method, params}))});
+  const api = new BackendApi(await connect(host.socketPath, {nativePipe}), {getTurnMetadata: () => ({session_id: 'injected-real', turn_id: 't1'})});
+  t.after(() => api.close());
+  const cdp = new CdpController(api);
+  const {id: tabId} = await api.createTab();
+  const injected = new InjectedScripts(cdp, {source: 'globalThis.stand_in = true'});
+  const target = {tabId};
+  await injected.evaluateValue(target, null, '1', {deadline: new Deadline(2000)});
+  const attaches = () => host.ext.calls.filter(c => c.method === 'debugger.attach').length;
+  const before = attaches();
+  host.ext.holdCdp('Runtime.evaluate');
+  const error = await rejection(injected.evaluateValue(target, null, 'slow', {deadline: new Deadline(100)}));
+  assert.equal(error.code, 'timeout');
+  // the evaluate stays in flight past the host's own copy of the budget (its timer, at the 100 ms it was given), as a
+  // slow page's does; only then does it answer
+  await new Promise(resolve => setTimeout(resolve, 400));
+  host.ext.releaseCdp('Runtime.evaluate', {result: {type: 'string', value: 'late'}});
+  assert.deepEqual(host.ext.calls.filter(c => c.method === 'debugger.detach'), [], 'the host kept the tab\'s debugger');
+  assert.equal(host.ext.state.held.has(`tab:${tabId}`), true);
+  assert.deepEqual(await cdp.call(tabId, 'DOM.enable'), {});
+  assert.equal(attaches(), before, 'the next action ran on the same attachment');
 });

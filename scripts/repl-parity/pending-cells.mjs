@@ -41,8 +41,10 @@ export function loadAlternativeProofs(){
  proofs=policy.proofs.map(proof=>{const files=Object.fromEntries(Object.entries(proof.files).map(([name,sha])=>{const bytes=readFileSync(join(root,proof.path,name));assert.equal(createHash('sha256').update(bytes).digest('hex'),sha,'alternate live proof pin mismatch');return [name,bytes.toString()];}));return {path:proof.path,meta:JSON.parse(files['meta.json']),rows:files['results.jsonl'].trim().split('\n').map(JSON.parse)};});
  return proofs;
 }
-export function resolvePendingDeclarations({logicalCells=[],reason,platform,through,scenarios,caseIds}={}){
+// `newRun` a run about to be made, not one recorded: a retired policy (#141 fixed) declares nothing pending for it.
+export function resolvePendingDeclarations({logicalCells=[],reason,platform,through,scenarios,caseIds,newRun=false}={}){
  if(!logicalCells.length){if(reason)throw Error('pending reason requires a declared cell');return {pendingEnvironment:[],pendingObligations:[]};}
+ if(newRun&&policy.retired)throw Error(`The ${policy.issue} pending declaration is retired: ${policy.retired}`);
  if(platform!==policy.platform||through!==policy.through)throw Error(`Pending cells are approved only for Linux through ${policy.through}`);
  if(reason!==policy.reason)throw Error('Pending reason must match the approved #141 reason');
  if(new Set(logicalCells).size!==logicalCells.length)throw Error('Duplicate pending logical cell');

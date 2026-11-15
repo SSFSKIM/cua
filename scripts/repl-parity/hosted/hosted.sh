@@ -31,14 +31,33 @@
 #
 # Public output (the repository is public). The log carries only each step's PASS/FAIL/SKIP line with its duration and
 # the summary, and the `hosted-parity:` lines: the image and versions, booleans, exit statuses, cua's outcome and reason
-# codes, the runs' counts and failed case ids, the diffs' counts and undeclared differences' ids, the denial kinds
-# (public.mjs, denials-within.mjs). Every command's stderr goes to the scratch root and the log gets only `stderr
+# codes, the runs' counts and failed case ids, each failed case's reason and cells in fixture data only (the kind of
+# reason, each cell's outcome, time and labelled value; #168), the diffs' counts and undeclared differences' ids, the
+# denial kinds (public.mjs, denials-within.mjs). Every command's stderr goes to the scratch root and the log gets only `stderr
 # withheld (<n> lines)`; reports, run directories and the raw `log stream` output stay in the scratch root, the denial
 # log removed as soon as it is judged and the root at exit. No artifact. Every step's failure fails the gate; a step that
 # depends on a failed one is reported SKIP.
+#
+# Load, for diagnosis only (#168): PARITY_STRESS=cpu:<n> runs n CPU burners per core (`yes`, at the job's priority)
+# while the browser item's api suite runs on both hosts, so a race that an idle runner hides can show. Unset, nothing
+# changes; gate parity-browser-stress sets it, by hand only, and gate parity-browser never does. Beside it, also for
+# diagnosis only, PARITY_CHROME_FLAGS=anti-throttling launches the harness Chrome with
+# --disable-renderer-backgrounding, --disable-backgrounding-occluded-windows and --disable-background-timer-throttling,
+# which tells a CPU-starved renderer from a throttled one (#141, #168).
 set -u
 ITEM=${1:-}
 case "$ITEM" in denials|browser) ;; *) echo "usage: sh scripts/repl-parity/hosted/hosted.sh denials|browser" >&2; exit 2 ;; esac
+STRESS=${PARITY_STRESS:-}
+case "$STRESS" in
+  '') ;;
+  cpu:[1-9]) [ "$ITEM" = browser ] || { echo "hosted-parity: PARITY_STRESS is for the browser item" >&2; exit 2; } ;;
+  *) echo "hosted-parity: PARITY_STRESS must be cpu:<1-9>" >&2; exit 2 ;;
+esac
+case "${PARITY_CHROME_FLAGS:-}" in
+  '') CHROME_FLAGS='' ;;
+  anti-throttling) CHROME_FLAGS='--disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling' ;;
+  *) echo "hosted-parity: PARITY_CHROME_FLAGS must be anti-throttling" >&2; exit 2 ;;
+esac
 if [ "$(uname -s)" != Darwin ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then
   echo "hosted-parity: refused: it edits ~/.ssh, starts an sshd and registers a native host under the real HOME, so it runs only on a GitHub-hosted macOS runner" >&2
   exit 2
@@ -59,7 +78,18 @@ exec 3>&2
 say() { echo "hosted-parity: $*" >&3; }
 
 prepared=no
+BURNERS=''
+stress_stop() { [ -z "$BURNERS" ] || kill $BURNERS 2> /dev/null; BURNERS=''; }
+# stress_start: the burners PARITY_STRESS names, one `yes` each, their pids kept so that only they are stopped.
+stress_start() {
+  [ -n "$STRESS" ] || return 0
+  b_cores=$(sysctl -n hw.ncpu) b_i=0
+  b_n=$((b_cores * ${STRESS#cpu:}))
+  while [ $b_i -lt $b_n ]; do yes > /dev/null 3>&- & BURNERS="$BURNERS $!"; b_i=$((b_i + 1)); done
+  say "stress: $b_n CPU burners ($STRESS on $b_cores cores) while suite api runs"
+}
 cleanup() {
+  stress_stop
   [ "$prepared" = no ] || node scripts/repl-parity.mjs cleanup-prepared --device "$DEVICE" > /dev/null 2>&1
   sudo -n pkill -f "log stream --style ndjson" 2> /dev/null
   [ -f "$S/chrome.pid" ] && kill "$(cat "$S/chrome.pid")" 2> /dev/null
@@ -118,8 +148,10 @@ register() {
   cp "$manifest" "$HOME/Library/Application Support/Google/Chrome for Testing/NativeMessagingHosts/"
 }
 launch_chrome() {
+  [ -z "$CHROME_FLAGS" ] || say "chrome flags: ${PARITY_CHROME_FLAGS}"
+  # $CHROME_FLAGS is unquoted on purpose: one of the fixed sets above, split into its flags.
   "$CFT" --user-data-dir="$UDD" --profile-directory=Default --no-first-run --no-default-browser-check \
-    --disable-search-engine-choice-screen --load-extension="$R/extension" about:blank > /dev/null 2> "$ERR/chrome" 3>&- &
+    --disable-search-engine-choice-screen $CHROME_FLAGS --load-extension="$R/extension" about:blank > /dev/null 2> "$ERR/chrome" 3>&- &
   echo $! > "$S/chrome.pid"
   n=0; while [ ! -d "$UDD/Default" ] && [ $n -lt 60 ]; do sleep 1; n=$((n + 1)); done
   [ -d "$UDD/Default" ] || { say "Chrome made no Default profile in 60 s"; return 1; }
@@ -282,8 +314,10 @@ diff_suite() {
 if [ "$ITEM" = browser ]; then
   for suite in api docs-profiles; do
     sides=$ok
+    [ "$suite" != api ] || stress_start
     gated $ok "vendor host, suite $suite" run vendor "$suite" || sides=no
     gated $ok "cua host, suite $suite" run cua "$suite" || sides=no
+    stress_stop
     gated $sides "diff $suite: no undeclared difference" diff_suite "$suite"
   done
 fi

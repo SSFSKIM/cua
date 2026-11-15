@@ -261,3 +261,29 @@ test('resolveAll names the frame the query ran in when nothing matches: a same-p
   assert.deepEqual([missing.handles, missing.frameId], [[], MAIN], 'a frame not there: the world the query ran in');
   assert.equal(browser.objects.size, 0);
 });
+
+// #168: a locator's CDP command is bounded by the locator's own budget, so when it runs out the timeout is the caller's
+// and not a stuck debugger. Every command the locator engine sends keeps the tab's debugger on that timeout (as waits,
+// evaluate and downloads already do); without it the host detaches the tab and the next action meets it detached.
+test('every CDP command a locator sends keeps the tab\'s debugger when its budget runs out: same-process, cross-origin and out-of-process frames, handles and a timed-out poll', async () => {
+  const {browser, selectors} = setup([el('button', {id: 'go', text: 'Go'}),
+    iframe({id: 'f', frame: {id: 'SAME', elements: [el('li', {text: '1'})]}}),
+    iframe({id: 'x', name: 'pay', frame: {id: 'CROSS', url: 'https://other.test/pay', access: 'cross', elements: [el('input', {id: 'card'})]}}),
+    iframe({id: 'o', frame: {id: 'OOPIF', url: 'https://oop.test/', access: 'oopif', elements: [el('li', {text: '3'})]}})]);
+  const deadline = new Deadline(2000);
+  const handle = await selectors.resolve('#go', TAB, {deadline});
+  await handle.evaluate(element => element.textContent, {deadline: new Deadline(1000)});
+  await selectors.resolveAll(`#f${ENTER_FRAME}li`, TAB, {deadline});
+  await selectors.resolve(`#x${ENTER_FRAME}#card`, TAB, {deadline});
+  await selectors.evaluateOnSelectorAll(`#o${ENTER_FRAME}li`, TAB, elements => elements.length, {deadline});
+  await rejection(selectors.resolve('#missing', TAB, {deadline: new Deadline(250)}));
+  // The locator engine's own commands; the controller's attachment setup (Page.enable, Target.setAutoAttach, an
+  // out-of-process frame's session and its frame tree) is the controller's, not the locator's.
+  const LOCATOR = ['Runtime.evaluate', 'Page.createIsolatedWorld', 'DOM.resolveNode', 'Runtime.callFunctionOn', 'DOM.describeNode',
+    'Runtime.getProperties', 'Runtime.releaseObject', 'Runtime.releaseObjectGroup'];
+  const commands = browser.calls.filter(c => c.op === 'executeCdp' && LOCATOR.includes(c.method));
+  const methods = new Set(commands.map(c => c.method));
+  for (const method of ['Runtime.evaluate', 'Page.createIsolatedWorld', 'DOM.resolveNode', 'Runtime.callFunctionOn', 'DOM.describeNode'])
+    assert.ok(methods.has(method), `the paths above sent ${method}`);
+  assert.deepEqual(commands.filter(c => c.preserveDebuggerOnTimeout !== true).map(c => c.method), [], 'every locator command keeps the debugger');
+});

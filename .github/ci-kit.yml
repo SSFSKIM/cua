@@ -204,12 +204,12 @@ gates:
       - "src/services/sky.mjs"
       - "runtime/releases/**"
       - ".github/ci-kit.yml"
-  # #168, diagnosis only: gate parity-browser's run with the hosted Mac loaded while suite api runs (PARITY_STRESS, one
-  # CPU burner per core; scripts/repl-parity/hosted/hosted.sh's header), to expose a race an idle runner hides. Dispatch
+  # #168, diagnosis only: gate parity-browser's run with the hosted Mac loaded while suite api runs (PARITY_STRESS, two
+  # CPU burners per core; scripts/repl-parity/hosted/hosted.sh's header), to expose a race an idle runner hides. Dispatch
   # only, so no ci/** ref's run selects it on its own: `ci-gate --gates parity-browser-stress`. Its verdict is evidence,
   # never a gate on a change.
   - name: parity-browser-stress
     on: [dispatch]
     lane: hosted-macos
     timeout: 50
-    run: PARITY_STRESS=cpu:1 sh scripts/repl-parity/hosted/hosted.sh browser
+    run: PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser

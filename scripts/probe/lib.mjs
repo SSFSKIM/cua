@@ -108,7 +108,7 @@ export const ENGINE_META_KEY = 'cua/nativeEngine';
 
 // The engine a lane pins, so the account's ~/.config/cua/engine.json never chooses it (the whole-M1b rule): `flag`
 // (--engine), else CUA_NATIVE_ENGINE in `env` (empty reads as unset, as the launcher reads it), else `defaultEngine`
-// (the launcher's DEFAULT_NATIVE_ENGINE). -> {engine, pinnedBy}; an unknown value throws.
+// (the launcher's defaultNativeEngine for the platform). -> {engine, pinnedBy}; an unknown value throws.
 export function pinnedEngine({flag, env, defaultEngine}) {
   if (flag !== undefined) {
     if (!NATIVE_ENGINES.includes(flag)) throw new Error(`--engine must be ${NATIVE_ENGINES.join(' or ')}`);

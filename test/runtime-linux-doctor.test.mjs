@@ -44,7 +44,11 @@ test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and s
     resolveOwnNode: () => '/opt/node-24/bin/node'});   // healthy includes a Node 24 for the own host, whatever runs the tests
   const rows = byName(report);
   assert.equal(report.ok, true);
-  assert.equal(rows['repl.host'].status, 'pass');
+  // This home holds the runtime, not cua's engine: since #171 M5 the Linux default is cua's engine, so a session here
+  // keeps the vendor's with a warning (engine_not_installed), and the engine row says so; nothing fails.
+  assert.equal(rows['repl.host'].status, 'warn');
+  assert.equal(rows.engine.status, 'warn');
+  assert.match(rows.engine.detail, /cua's engine is the default, but none is installed, .*\(engine_not_installed\)/);
   for (const name of ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures', 'sandbox', 'sandbox.launcher', 'sandbox.userns'])
     assert.equal(rows[name]?.status, 'pass', name);
   assert.equal(rows['runtime.ipc'].detail, 'not applicable on linux');
@@ -56,7 +60,7 @@ test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and s
   assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=scoped \(the default\): .*no network \(the trusted services do, so the computer-use helper reaches the X display and the session bus\)/);
   assert.equal(rows['secrets.helper'], undefined);
   assert.equal(rows['secrets.store'].status, 'pass', 'Linux has the same file store');
-  assert.equal(summarize(report), 'passive runtime checks pass');
+  assert.equal(summarize(report), 'passive runtime checks pass; see WARN lines (warn: repl.host, engine)');
 });
 
 // #115 M3: every scoped or default launch on Linux runs under cua's pinned helper, which needs bubblewrap and user

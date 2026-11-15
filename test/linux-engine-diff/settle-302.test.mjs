@@ -318,14 +318,22 @@ test('every expected-error cell, not the menu control alone: an ok among its ans
 
 test('every settle cell kind has its reading judgment: the requested fields, the other-target fields, whether partial', () => {
   const kinds = new Set(CELLS.map((c) => `${SCENES[c.scene].effects} ${c.kind}`));
+  // an entry, or each of its actions' (`byAction`)
+  const variants = (entry) => (entry.byAction ? Object.entries(entry.byAction) : [['', entry]]);
   for (const k of kinds) {
     const [effects, kind] = k.split(' ');
     const entry = SETTLE_READINGS[effects]?.[kind];
     assert.ok(entry, `${k}: no entry in SETTLE_READINGS, so it cannot be judged`);
-    assert.ok(entry.requested.length > 0, k);
-    assert.equal(typeof entry.partial, 'boolean', k);
-    for (const f of entry.elsewhere) assert.ok(!entry.requested.includes(f), `${k}: ${f} is requested and elsewhere`);
+    for (const [action, v] of variants(entry)) {
+      const name = `${k}${action ? ` ${action}` : ''}`;
+      assert.ok(v.requested.length > 0, name);
+      assert.ok(v.minimum.length > 0 && v.minimum.every((f) => v.requested.includes(f)), `${name}: the minimum effect is among the requested fields`);
+      assert.equal(typeof v.partial, 'boolean', name);
+      for (const f of v.elsewhere) assert.ok(!v.requested.includes(f), `${name}: ${f} is requested and elsewhere`);
+    }
   }
+  // a named action the table does not know is refused too
+  assert.throws(() => judgeSettleSeries([{ ...run(0, { late_ms: null }), scene: 'chrome-input', input: 'secondary_action', sent: { action: 'focus' } }], { need: 30 }), /secondary_action's action focus/);
   // no entry the cells do not run
   for (const [effects, byKind] of Object.entries(SETTLE_READINGS)) for (const kind of Object.keys(byKind)) assert.ok(kinds.has(`${effects} ${kind}`), `${effects} ${kind}: no cell runs it`);
   // a cell missing from the table is refused, not judged by its whole reading
@@ -342,8 +350,48 @@ test('every settle cell kind has its reading judgment: the requested fields, the
   assert.ok(seen.size >= 40, `the stored records hold ${seen.size} judged kinds`);
   for (const [k, fields] of seen) {
     const [effects, kind] = k.split(' ');
-    const entry = SETTLE_READINGS[effects][kind];
-    for (const f of [...entry.requested, ...entry.elsewhere]) assert.ok(fields.includes(f), `${k}: ${f} is not in its reading (${fields.join(', ')})`);
+    for (const [, v] of variants(SETTLE_READINGS[effects][kind])) for (const f of [...v.requested, ...v.elsewhere]) assert.ok(fields.includes(f), `${k}: ${f} is not in its reading (${fields.join(', ')})`);
+  }
+});
+
+test("the effect itself, not its delivery, and a named action judged by what it ran (the re-review of fix 7)", () => {
+  const page = (over = {}) => ({ moves: 0, downs: 0, ups: 0, drags: 0, key_downs: 0, key_ups: 0, last_key: 'none', scroll: 0, context: 0, context_on: 'none', clicks: 0, pointer_at: [10, 10], wheels: 0, wheel_legacy: 0, ...over });
+  const miss = (scene, input, before, after, sent = {}) => ({ ...run(0, { late_ms: null, before, after }), scene, input, sent, cell: `${scene} ${input} background` });
+  const goods = (r) => passes(1, 30).map((g) => ({ ...g, scene: r.scene, input: r.input, cell: r.cell }));
+  const judgedAs = (r) => {
+    const v = judgeSettleSeries([r, ...goods(r)], { need: 30 });
+    return { v, why: v.false_ok[0]?.why ?? v.judged[0].why };
+  };
+  const hard = {
+    // Chromium's context menu on the Native button: a click counted instead is another target
+    "showContextMenu with no context event and the Press button's click raised": [miss('chrome-input', 'secondary_action', page(), page({ clicks: 1 }), { action: 'showContextMenu', on: 'native' }), /another target: clicks changed/],
+    'showContextMenu with nothing changed': [miss('chrome-input', 'secondary_action', page(), page(), { action: 'showContextMenu', on: 'native' }), /no effect/],
+    // Gecko's press of the Press button: its click is the effect, a context event another target
+    'press with no click': [miss('firefox-input', 'secondary_action', page(), page({ moves: 2 }), { action: 'press' }), /no effect/],
+    'press that raised a context event instead': [miss('firefox-input', 'secondary_action', page(), page({ context: 1, context_on: 'press' }), { action: 'press' }), /another target: context changed/],
+    // delivery alone: the wheel events came and the page did not move (ruling 650's no scroll)
+    'a scroll whose wheel came and whose page stayed at 0': [miss('firefox-input', 'scroll', page({ wheels: 4 }), page({ wheels: 5, wheel_legacy: -120 }), { direction: 'down', steps: 3 }), /no effect/],
+    "a drag whose button pressed and released with no drag": [miss('chrome-input', 'drag', page(), page({ downs: 1, ups: 1 })), /no effect/],
+    'a move whose motion event came where the pointer already was': [miss('chrome-input', 'move', page(), page({ moves: 1 })), /no effect/],
+    "an activation the application reported with no window manager's": [miss('gedit', 'activate_window', { wm: false, active: false }, { wm: false, active: true }), /no effect/],
+    'a key-up with no key-down': [miss('chrome-input', 'press_key', page(), page({ key_ups: 1, last_key: 'x' })), /no effect/],
+  };
+  for (const [name, [r, reason]] of Object.entries(hard)) {
+    const { v, why } = judgedAs(r);
+    assert.equal(v.reached, false, name);
+    assert.equal(v.false_ok.length, 1, `${name}: ${why}`);
+    assert.match(why, reason, name);
+  }
+  // still honest, a later streak covering it: a right-target effect short of the requested one
+  const honest = {
+    'a scroll that moved the page on too few wheel steps (L3c)': miss('firefox-input', 'scroll', page({ wheels: 138 }), page({ wheels: 140, scroll: 414 }), { direction: 'down', steps: 3 }),
+    "a press whose click counted twice": miss('firefox-input', 'secondary_action', page(), page({ clicks: 2 }), { action: 'press' }),
+    'a drag counted with its release not': miss('chrome-input', 'drag', page(), page({ downs: 1, drags: 1 })),
+  };
+  for (const [name, r] of Object.entries(honest)) {
+    const { v, why } = judgedAs(r);
+    assert.equal(v.reached, true, `${name}: ${why}`);
+    assert.deepEqual(v.false_ok, [], name);
   }
 });
 

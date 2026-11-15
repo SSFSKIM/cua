@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// M5 T2 fix 7 (ruling 716): M4's stored release-gate records read again by the settle lane's reading-table judge
-// (action-settle-cells.mjs SETTLE_READINGS) and by #373's witness-observed gap (run.mjs declaredGapVerdict). A read of
-// stored rows, not a rerun. For each candidate's settle step (S1-S4, L3a-e) and V3, it prints:
+// M5 T2 fix 7, its table corrected in fix 8 (ruling 716): M4's stored release-gate records read again by the settle
+// lane's reading-table judge (action-settle-cells.mjs SETTLE_READINGS) and by #373's witness-observed gap (run.mjs
+// declaredGapVerdict). A read of stored rows, not a rerun. For each candidate's settle step (S1-S4, L3a-e) and V3, it
+// prints:
 // - every run whose classification (pass, #302, pending, false ok, fail) differs between the judge before fix 7
 //   (fc6e74f1, read from git) and the table judge, and how many honest misses' reasons changed only in their wording;
 // - the step's verdict under the table judge beside the one M4 recorded (m4/gate/README.md: the shipped judge's, or the

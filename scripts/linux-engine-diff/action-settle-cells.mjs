@@ -559,18 +559,23 @@ function missWhy(run) {
  * kind: `requested`, the fields that are the requested effect; `elsewhere`, the fields that change only when the effect
  * went to another target; `aim`, where a requested field's own value can show another target (`context`: the element a
  * context event names, against the one aimed at; `line`: a caret or selection outside the line aimed at; `pad`: the
- * pad's release with no press on the pad); and `partial`, whether a right-target effect can be of the wrong size (L3c's
- * scroll that took two of three wheel steps, a key-down with no key-up). A scene's reading measures several kinds at
- * once (the input page counts pointer, key, wheel and context events, and Blink moves the pointer by itself), so a
- * kind's effect is read in its own fields alone, never in the whole reading. `judgeReading` defines the judgments.
+ * pad's release with no press on the pad); `minimum`, the requested fields whose change is the effect itself, as
+ * opposed to its delivery (a scroll's position, not its wheel events; a drag's drag, not its button's press and
+ * release; a move's new place, not a motion event Blink sends by itself; the window manager's activation, not the
+ * application's own word), every requested field where the two are one; and `partial`, whether a right-target effect
+ * can be of the wrong size (L3c's scroll that moved the page on two of three wheel steps, a key-down with no key-up).
+ * A kind whose request names what it runs resolves by `sent.action` (`byAction`: a named action is a Chromium button's
+ * context menu or a Gecko button's press, action-settle.mjs). A scene's reading measures several kinds at once (the
+ * input page counts pointer, key, wheel and context events, and Blink moves the pointer by itself), so a kind's effect
+ * is read in its own fields alone, never in the whole reading. `judgeReading` defines the judgments.
  *
  * Coverage limit, where `elsewhere` is empty and no `aim` applies: the reading cannot show another target. The input
  * page counts keys and wheel steps document-wide and its moves on the pad alone; a field's or a terminal's text, xterm's
  * recorded reports, the clipboard, the window manager's activation and the GTK, Qt and GTK 4 scenes' counters belong to
  * the target alone. There, only no effect and an honest miss are told apart.
  */
-const reading = (requested, { elsewhere = [], aim = null, partial = false } = {}) => ({ requested, elsewhere, aim, partial });
-const ACTIVATION = reading(['wm', 'active'], { partial: true });
+const reading = (requested, { elsewhere = [], aim = null, partial = false, minimum = requested } = {}) => ({ requested, elsewhere, aim, partial, minimum });
+const ACTIVATION = reading(['wm', 'active'], { minimum: ['wm'], partial: true });
 const TEXT_KINDS = {
   press_key: reading(['text']),
   key_down: reading(['text']),
@@ -584,20 +589,26 @@ const SELECTION = reading(['selection'], { aim: 'line', partial: true });
 const PRESSES = reading(['presses']);
 export const SETTLE_READINGS = {
   'input-page': {
-    press_key: reading(['key_downs', 'key_ups', 'last_key'], { partial: true }),
-    key_down: reading(['key_downs', 'last_key']),
-    key_up: reading(['key_ups', 'last_key']),
-    click: reading(['downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', partial: true }),
+    press_key: reading(['key_downs', 'key_ups', 'last_key'], { minimum: ['key_downs'], partial: true }),
+    key_down: reading(['key_downs', 'last_key'], { minimum: ['key_downs'] }),
+    key_up: reading(['key_ups', 'last_key'], { minimum: ['key_ups'] }),
+    click: reading(['downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', minimum: ['downs'], partial: true }),
     click_element: reading(['clicks'], { elsewhere: ['downs', 'context'] }),
-    right_click: reading(['context', 'context_on'], { elsewhere: ['clicks'], aim: 'context' }),
-    // a Gecko button's named action is its press, a Chromium one's its context menu (action-settle.mjs)
-    secondary_action: reading(['context', 'context_on', 'clicks'], { aim: 'context' }),
-    menu_unconfirmed: reading(['context', 'context_on'], { elsewhere: ['clicks'], aim: 'context' }),
-    move: reading(['moves', 'pointer_at'], { partial: true }),
-    move_relative: reading(['moves', 'pointer_at'], { partial: true }),
-    scroll: reading(['wheels', 'wheel_legacy', 'scroll'], { partial: true }),
-    drag: reading(['drags', 'downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', partial: true }),
-    drag_handle: reading(['drags', 'downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', partial: true }),
+    right_click: reading(['context', 'context_on'], { elsewhere: ['clicks'], aim: 'context', minimum: ['context'] }),
+    // the Press button's press (Gecko), whose click only it counts, or the Native button's context menu (Chromium)
+    secondary_action: {
+      byAction: {
+        press: reading(['clicks'], { elsewhere: ['downs', 'context'] }),
+        showContextMenu: reading(['context', 'context_on'], { elsewhere: ['clicks'], aim: 'context', minimum: ['context'] }),
+      },
+    },
+    menu_unconfirmed: reading(['context', 'context_on'], { elsewhere: ['clicks'], aim: 'context', minimum: ['context'] }),
+    move: reading(['moves', 'pointer_at'], { minimum: ['pointer_at'], partial: true }),
+    move_relative: reading(['moves', 'pointer_at'], { minimum: ['pointer_at'], partial: true }),
+    // the operation's own outcome is the page moving (ops.mjs `scroll`); its wheel events are the delivery
+    scroll: reading(['wheels', 'wheel_legacy', 'scroll'], { minimum: ['scroll'], partial: true }),
+    drag: reading(['drags', 'downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', minimum: ['drags'], partial: true }),
+    drag_handle: reading(['drags', 'downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', minimum: ['drags'], partial: true }),
   },
   field: { press_key: TEXT_KINDS.press_key, type_text: TEXT_KINDS.type_text, clipboard_read: TEXT_KINDS.clipboard_read, clipboard_write: TEXT_KINDS.clipboard_write, activate_window: ACTIVATION },
   editor: { ...TEXT_KINDS, click: CARET, key_click: CARET, drag: SELECTION, drag_handle: SELECTION },
@@ -635,29 +646,36 @@ export const SETTLE_READINGS = {
   },
 };
 
-/** A settle cell's reading judgment (`SETTLE_READINGS`); a kind with none cannot be judged, so it is refused. */
-export function readingOf(effects, kind) {
+/**
+ * A settle cell's reading judgment (`SETTLE_READINGS`), resolved by what the run sent where the kind's request names
+ * what it runs (`byAction`); a kind or action with none cannot be judged, so it is refused.
+ */
+export function readingOf(effects, kind, sent = {}) {
   const entry = SETTLE_READINGS[effects]?.[kind];
   if (!entry) throw new Error(`no reading judgment for ${kind} in a${/^[aeiou]/.test(effects ?? '') ? 'n' : ''} ${effects} scene (SETTLE_READINGS)`);
-  return entry;
+  if (!entry.byAction) return entry;
+  const chosen = entry.byAction[sent.action];
+  if (!chosen) throw new Error(`no reading judgment for ${kind}'s action ${sent.action} in a${/^[aeiou]/.test(effects) ? 'n' : ''} ${effects} scene (SETTLE_READINGS)`);
+  return chosen;
 }
 
 /**
  * A run's miss, every answer ok and the effect not landed within the late bound, judged by its kind's reading
  * (`SETTLE_READINGS`): `another target` when an `elsewhere` field changed or the `aim` shows another element or place;
- * else `no effect` when none of the `requested` fields changed; else a right-target effect short of the requested one,
- * honest (ruling 650), `partial` where the kind's effect has a size, `other` where it has none (a single event of
+ * else `no effect` when none of the `minimum` fields changed, its delivery alone notwithstanding (ruling 650: a scroll
+ * whose wheel events came and whose page did not move had no effect); else a right-target effect short of the requested
+ * one, honest (ruling 650), `partial` where the kind's effect has a size, `other` where it has none (a single event of
  * another key, say). Returns `{judgment, why}`.
  */
 export function judgeReading(effects, kind, before, after, sent = {}) {
-  const entry = readingOf(effects, kind);
+  const entry = readingOf(effects, kind, sent);
   const moved = (f) => !same(before?.[f], after?.[f]);
   const changed = entry.requested.filter(moved);
   const elsewhere = entry.elsewhere.filter(moved);
   const aimed = aimMiss(entry.aim, kind, before, after, sent);
   if (elsewhere.length) return { judgment: 'another target', why: `${elsewhere.join(', ')} changed, the reading of another target` };
   if (aimed) return { judgment: 'another target', why: aimed };
-  if (!changed.length) return { judgment: 'no effect', why: `none of ${entry.requested.join(', ')} changed` };
+  if (!entry.minimum.some(moved)) return { judgment: 'no effect', why: `none of ${entry.minimum.join(', ')} changed${changed.length ? ` (${changed.join(', ')} did: its delivery alone)` : ''}` };
   return entry.partial ? { judgment: 'partial', why: `a partial effect: ${changed.join(', ')} changed` } : { judgment: 'other', why: `an effect not the one requested: ${changed.join(', ')} changed` };
 }
 

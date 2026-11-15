@@ -239,6 +239,48 @@ for (const { candidate, step, counts } of RULED) {
   });
 }
 
+test("the menu control: an ok where it expects menuUnconfirmed is no expected error, and a false ok there fails the series after 30 good runs", () => {
+  const CONTROL = 'electron-input menu_unconfirmed background';
+  const stored = () => gateRows(CANDIDATES[3], 'L3b').filter((r) => r.kind === 'settle-run' && r.cell === CONTROL);
+  const good = stored();
+  assert.equal(good.length, 30);
+  assert.ok(good.every((r) => r.ok && r.expected_error && r.answers[0].ok === false), 'the stored runs: each answered menuUnconfirmed');
+  assert.equal(judgeSettleSeries(good, { need: 30 }).reached, true);
+  // one stored run edited into an unexpected ok: the engine answered ok, and the cell's flag still says it expects an error
+  const unexpected = (edit) => {
+    const r = stored()[0];
+    Object.assign(r, { ok: false, landed: false, late_ms: null, answers: [{ ok: true }] });
+    edit(r);
+    return [r, ...good.map((g, i) => ({ ...g, trial: i + 1 }))];
+  };
+  const page = (r) => ({ ...r.before, context: r.before.context + 1 });
+  const elsewhere = {
+    'an unexpected ok with no effect': (r) => { r.after = { ...r.before }; },
+    'an unexpected ok on another target, `sent.on` recorded': (r) => { r.after = { ...page(r), context_on: 'native' }; r.sent = { ...r.sent, on: 'menu' }; },
+    'an unexpected ok on another target, as a stored row records `sent` (the control aims at the Menu button)': (r) => { r.after = { ...page(r), context_on: 'native' }; },
+  };
+  for (const [name, edit] of Object.entries(elsewhere)) {
+    const v = judgeSettleSeries(unexpected(edit), { need: 30 });
+    assert.equal(v.streak, 30, name);
+    assert.equal(v.reached, false, name);
+    assert.equal(v.lost, true, name);
+    assert.equal(v.false_ok[0]?.trial, 0, name);
+    assert.match(v.false_ok[0].why, name.includes('no effect') ? /no effect/ : /another target: the context event reached native, not menu/, name);
+  }
+  // the genuine error stays honest whatever its reading shows: its answer is no ok
+  const genuine = stored()[0];
+  Object.assign(genuine, { ok: false, landed: false, after: { ...genuine.before } });
+  const v = judgeSettleSeries([genuine, ...good.map((g, i) => ({ ...g, trial: i + 1 }))], { need: 30 });
+  assert.equal(v.reached, true);
+  assert.deepEqual(v.false_ok, []);
+  assert.equal(v.judged[0].cls, 'fail');
+  // through the sitting: the stored step fails by the control's false ok, by name
+  const rows = gateRows(CANDIDATES[3], 'L3b');
+  const r = rows.find((x) => x.kind === 'settle-run' && x.cell === CONTROL);
+  Object.assign(r, { ok: false, landed: false, late_ms: null, answers: [{ ok: true }], after: { ...r.before } });
+  assert.ok(judgeRecord(rows).failed.includes(`${CONTROL} (shipped): 1 of 30 runs were a false ok (trial ${r.trial}: answered ok with no effect)`));
+});
+
 test("candidate 2's L3c: its scroll that took two of three wheel steps is a landing miss, not a false ok, so the step stands", () => {
   const v = judgeRecord(gateRows(CANDIDATES[2], 'L3c'));
   assert.deepEqual(v.failed, []);

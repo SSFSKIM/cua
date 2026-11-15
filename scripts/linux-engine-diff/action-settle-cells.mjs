@@ -516,10 +516,12 @@ export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, ne
  * every answer a success, nothing invalid, the requested effect not landed within the late bound, and either the
  * reading after the input the same as the one before it in every field (no effect), or the readings showing the effect
  * on another target (`wrongTarget`). A right-target effect of the wrong size (a scroll that took two of three wheel
- * steps, a key-down with no key-up) is a landing miss, honest, not this. A control's expected error is no ok.
+ * steps, a key-down with no key-up) is a landing miss, honest, not this. A control's genuine menuUnconfirmed is no ok,
+ * so the answers exclude it; the cell's `expected_error` flag does not, since it marks every run of the control, one
+ * that answered ok included.
  */
 function falseOk(run) {
-  if (runClass(run) !== 'never' || run.expected_error || !run.answers?.length || !run.answers.every((a) => a.ok === true)) return null;
+  if (runClass(run) !== 'never' || !run.answers?.length || !run.answers.every((a) => a.ok === true)) return null;
   if (run.before == null || run.after == null) return null;
   if (JSON.stringify(run.before) === JSON.stringify(run.after)) return 'answered ok with no effect';
   const elsewhere = wrongTarget(SCENES[run.scene]?.effects, run.input, run.before, run.after, run.sent ?? {});
@@ -530,9 +532,10 @@ function falseOk(run) {
  * Where a run's readings show its kind's effect on another element or place than the one requested (`sent`), or null.
  * The readings that can show one:
  * - the input page: a context event names its element (`context_on`): another than the cell's (`sent.on`, else the Menu
- *   button a right click aims at); the pad counts its own presses (`downs`) and the Press button its clicks, so a
- *   coordinate click or drag released with no press on the pad, a pad click that clicked the button instead, or an
- *   element's click that reached the pad or a context event instead;
+ *   button a right click and the menu control aim at, the control's stored rows predating `sent.on`); the pad counts
+ *   its own presses (`downs`) and the Press button its clicks, so a coordinate click or drag released with no press on
+ *   the pad, a pad click that clicked the button instead, or an element's click that reached the pad or a context event
+ *   instead;
  * - an editor or field: a click's caret, or a drag's selection, outside the line it aimed at.
  * Coverage limit: every other kind and scene has no reading of another target. The input page's keys, moves and wheel
  * steps are counted document-wide; a field's or a terminal's text, xterm's recorded reports, Writer's paragraphs, and
@@ -543,7 +546,7 @@ export function wrongTarget(effects, kind, before, after, sent) {
   if (effects === 'input-page') {
     const context = rose(before, after, 'context');
     if (['right_click', 'secondary_action', 'menu_unconfirmed'].includes(kind) && context) {
-      const aimed = sent.on ?? (kind === 'right_click' ? 'menu' : null);
+      const aimed = sent.on ?? (kind === 'right_click' || kind === 'menu_unconfirmed' ? 'menu' : null);
       if (aimed && after.context_on !== aimed) return `the context event reached ${after.context_on}, not ${aimed}`;
     }
     const pressed = grew(before, after, 'downs');

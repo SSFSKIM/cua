@@ -15,13 +15,13 @@ on:
         description: 'Comma-separated browser-editor shard ids of the selected cohort, or all'
         default: 'all'
       diagnostic:
-        description: 'Cohort: primary (default), isolated firefox-caret observer-effect, or followup measurement (ten shards; needs the next builder head in BRANCH_REF)'
+        description: 'Cohort: primary (default), isolated firefox-caret observer-effect, or followup measurement (ten shards; builder 3141f170 pinned)'
         default: 'primary'
 permissions:
   contents: read
 env:
   MAIN_REF: '9020bb18acb9091f817a4b648f7c332174b11153'
-  BRANCH_REF: 'bd63a0ccbfc557ed6cdbe04e1a666b3df124d094'
+  BRANCH_REF: '3141f1709451ebf77e3b94c5500308d105619f6f'
 jobs:
   plan:
     runs-on: ubuntu-latest

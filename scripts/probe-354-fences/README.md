@@ -30,7 +30,7 @@ The one-/three-trailing-CR pair and equal-/different-selection pair must each ha
 
 ## Isolated Firefox caret cohort (offline-prepared; permission held)
 
-`--diagnostic firefox-caret` is a separate observer-effect cohort. The default is `primary`: its plan, requests and audit-only scratch build remain unchanged. The diagnostic matrix is restricted to Firefox/input and runs one owned engine per head with the same fixture and real trusted secret wrapper/temp HOME. No new push trigger is present. The pinned source refs remain 9020bb18/bd63a0cc.
+`--diagnostic firefox-caret` is a separate observer-effect cohort. The default is `primary`: its plan, requests and audit-only scratch build remain unchanged. The diagnostic matrix is restricted to Firefox/input and runs one owned engine per head with the same fixture and real trusted secret wrapper/temp HOME. No new push trigger is present. The workflow now pins control 9020bb18 and builder 3141f170; the historical primary run used branch bd63a0cc.
 
 Each repetition has six cases: normal concealed insertion, equal-selected secret, different-selected secret, public ASCII identical replacement, public ASCII insertion, and a short public non-ASCII identical replacement. The non-ASCII control's code points are U+0061/U+1D11E/U+D55C: 3 code points, 4 UTF-16 units and 8 UTF-8 bytes, with those known end-offset candidates recorded. ASCII observations alone cannot identify units. No automatic unit or caret-timing conclusion is made; the real route is retained, so a different route is not silently treated as equivalent.
 
@@ -53,9 +53,9 @@ Until permission is granted, use only Node offline tests/lint. Swift compilation
 
 ## Follow-up measurement cohort (offline-prepared; not dispatched)
 
-`--diagnostic followup` (workflow input `diagnostic=followup`) selects a separate measurement cohort for the **next builder head**. It is not primary evidence: its rates and costs are never pooled with the primary run or the caret cohort, and its artifacts are named `probe-354-followup-<shard>`. The default stays `primary`, whose plan, requests, scratch builds and startup are unchanged; the isolated Firefox caret mode is untouched.
+`--diagnostic followup` (workflow input `diagnostic=followup`) selects a separate measurement cohort for builder **3141f170**. Its artifacts are named `probe-354-followup-<shard>` and are collected separately. The control remains **9020bb18**, so matching control cells can be combined with the primary run's control results; do not pool different branch heads or observer-effect caret measurements. The collector continues to reject mixed raw cohorts. The default stays `primary`, whose plan, requests, scratch builds and startup are unchanged; the isolated Firefox caret mode is untouched.
 
-**Before any dispatch, both are still required: the next builder head, pinned in `BRANCH_REF` (and `MAIN_REF` re-checked), and Actions restored.** The workflow still pins the primary run's heads and is dispatch-only (no push trigger); nothing here has been run.
+**Builder `3141f1709451ebf77e3b94c5500308d105619f6f` is now pinned in `BRANCH_REF`; `MAIN_REF` remains `9020bb18acb9091f817a4b648f7c332174b11153`. Do not dispatch until the coordinator reports Actions restored and authorizes the run.** The workflow is dispatch-only (no push trigger); nothing here has been run.
 
 Scope is ten shards, each head with its own expected plan (20 repetitions per head; smoke uses one):
 
@@ -81,10 +81,11 @@ node scripts/probe-354-fences/offline/ab-table.mjs <artifact-root> --only all --
 
 Plain no-key cells appear in `rates.tsv`, `diagnostics.tsv` (expected `confirmed`) and a new `no-key-confirmation.tsv`, which puts plain beside the trusted-secret equality cells with the same counts and every actual refusal reason. The secret no-key cells keep their `privacy.tsv` audit rows; the plain cell is a public field with nothing to audit. A plain success with a wrong final value is a wrong success like any other cell. No cost table is added for these cells; per-cell timings stay in `rows.jsonl`.
 
-Prepared launch syntax, **after** the two requirements above and owner approval:
+Prepared launch syntax, **only after** the coordinator lifts the Actions hold:
 
 ```sh
-gh workflow run probe-354-fences.yml --ref <verified-kit-ref> -f diagnostic=followup
+gh workflow run 413201833 -R SSFSKIM/cua --ref probe/354-measure \
+  -f diagnostic=followup -f only=all -f reps=20 -f smoke=false
 ```
 
 Add `-f only=<shard,...>` to run a subset, or `-f reps=1 -f smoke=true` for a labelled smoke.

@@ -31,14 +31,17 @@ const match=(tag,text)=>({tag,role:null,type:null,ariaLabel:null,text,visible:tr
 const longText='A link whose text runs long enough to be cut. A link whose text runs long enough to be cut. A link whose text runs long ';
 const sampling={kind:'multiple_matches',action:'click',locator:'.grid button, a[title="Counter link"]',matchCount:251,visibleCount:251,matches:[match('a',longText),match('button','g0'),match('button','g1'),match('button','g2'),match('button','g3')],truncated:true};
 const empty={kind:'no_matches',action:'waitFor',locator:'#locator-contract-absent',matchCount:0,visibleCount:0,matches:[],truncated:false};
-const diagnostic=(value,description)=>failure(`Error: ${description}\n${value.action==='click'?'waiting on click for selector '+value.locator:'locator.waitFor(visible) timed out for selector '+value.locator}\nLocator diagnostics: ${JSON.stringify(value)}`);
+const diagnosticMessage=(value,description)=>`Error: ${description}\n${value.action==='click'?'waiting on click for selector '+value.locator:'locator.waitFor(visible) timed out for selector '+value.locator}\nLocator diagnostics: ${JSON.stringify(value)}`;
+const diagnostic=(value,description)=>failure(diagnosticMessage(value,description));
+// What the no-matches waitFor cell returns: its error's lines after the first, which a racing deadline names (#168).
+const noMatches=success({rejected:true,code:'Error',deadlineNamed:true,after:['locator.waitFor(visible) timed out for selector #locator-contract-absent','Locator diagnostics: '+JSON.stringify(empty)]});
 function expected(method){
  if(method==='and'||method==='or')return [failure(sameTab),failure(`locator.${method} requires a PlaywrightLocator`)];
  if(method==='filter')return [failure(sameTab),failure(sameTab),failure('locator.filter has requires a PlaywrightLocator'),failure('locator.filter hasNot requires a PlaywrightLocator'),failure('locator.filter visible must be a boolean'),success([1,2])];
  if(method==='locator')return [failure(sameTab),failure(sameTab),failure('locator.filter has requires a PlaywrightLocator'),failure('locator.filter hasNot requires a PlaywrightLocator'),failure('locator.locator requires a selector'),success([1,2])];
  if(method==='all')return [success({before:['Click','','click',null],cached:'',after:'recorded'})];
  if(method==='click')return [diagnostic(sampling,'strict mode violation: multiple elements')];
- return [diagnostic(empty,'timed out waiting for visible')];
+ return [noMatches];
 }
 
 test('augmentation adds only source-required locator contracts without changing the input scenarios',()=>{
@@ -85,7 +88,12 @@ test('assertions require every appended observation and reject arbitrary errors,
 test('diagnostic oracles check all source fields, sample cap, text truncation, classification and action context',async()=>{
  assert.equal(longText.length,120);
  for(const [method,original,description] of [['click',sampling,'strict mode violation'],['waitfor',empty,'timeout']]){
-  const s=augmented(method),check=diag=>s.assert({results:[success('base'),diagnostic(diag,description)]});
+  // the click cell's error is its row; the waitFor cell's is what the cell itself makes of the error thrown at it
+  const s=augmented(method);
+  const row=async message=>method==='click'?failure(message):(await runCell(cell('waitfor','diagnostics-no-matches'),absentScratch(()=>{throw new Error(message);}).globals)).result;
+  const verdict=async message=>s.assert({results:[success('base'),await row(message)]});
+  const check=diag=>verdict(diagnosticMessage(diag,description));
+  assert.equal((await check(original)).ok,true,method);
   for(const key of Object.keys(original)){
    const changed=structuredClone(original);delete changed[key];assert.equal((await check(changed)).ok,false,`${method}/${key}`);
   }
@@ -94,10 +102,8 @@ test('diagnostic oracles check all source fields, sample cap, text truncation, c
    {...sampling,matches:[{...sampling.matches[0],text:longText+'x'},...sampling.matches.slice(1)]},
    {...sampling,matches:[{...sampling.matches[0],disabled:true},...sampling.matches.slice(1)]},
   ])assert.equal((await check(changed)).ok,false);
-  const missingContext=failure(`Error: ${description}\nLocator diagnostics: ${JSON.stringify(original)}`);
-  assert.equal((await s.assert({results:[success('base'),missingContext]})).ok,false);
-  const malformed=failure(`waiting on click for selector ${original.locator}\nLocator diagnostics: {`);
-  assert.equal((await s.assert({results:[success('base'),malformed]})).ok,false);
+  assert.equal((await verdict(`Error: ${description}\nLocator diagnostics: ${JSON.stringify(original)}`)).ok,false,`${method}: missing context`);
+  assert.equal((await verdict(`waiting on click for selector ${original.locator}\nLocator diagnostics: {`)).ok,false,`${method}: malformed`);
  }
 });
 
@@ -153,6 +159,44 @@ test('collection cache cell exercises independent relative keys, external-action
  assert.equal((await augmented('all').assert({results:[success('base'),observed.result]})).ok,true);
  const stale=success({before:['Click','','click',null],cached:'',after:''});
  assert.equal((await augmented('all').assert({results:[success('base'),stale]})).ok,false);
+});
+
+// The first lines the waitFor cell's error has had on real Chrome (docs/evidence/2026-10-14-own-repl-host-parity, both
+// hosts; #168): whichever of the locator's deadline and a CDP command's own runs out first names the error.
+const deadlineOrigins=[
+ 'Error: Playwright selector deadline exceeded',
+ 'Error: Timed out after 100ms waiting for selector #locator-contract-absent: Timed out after 1ms waiting for CDP command Runtime.evaluate.',
+ 'Error: Timed out after 100ms waiting for selector #locator-contract-absent: Timed out after 99ms waiting for CDP command Page.createIsolatedWorld.',
+ 'Error: Timed out after 100ms waiting for selector #locator-contract-absent: Timed out after 100ms waiting for CDP command Page.createIsolatedWorld.',
+];
+const waitForContext='locator.waitFor(visible) timed out for selector #locator-contract-absent';
+function absentScratch(waitFor){
+ const calls=[];
+ const scratch={goto:async url=>calls.push(['goto',url]),close:async()=>calls.push('close'),playwright:{locator:selector=>{calls.push(['locator',selector]);return {waitFor:async options=>{calls.push(['waitFor',{...options}]);return waitFor();}};}}};
+ return {calls,globals:{fixtureURL:'http://fixture',browser:{tabs:{new:async()=>{calls.push('new');return scratch;}}}}};
+}
+const waitForCheck=async result=>(await augmented('waitfor').assert({results:[success('base'),result]})).ok;
+
+test('the no-matches waitFor cell observes the same thing whichever deadline names its error, so the race between them cannot reach the diff',async()=>{
+ const observations=[];
+ for(const origin of deadlineOrigins){
+  const scratch=absentScratch(()=>{throw new Error(`${origin}\n${waitForContext}\nLocator diagnostics: ${JSON.stringify(empty)}`);});
+  const observed=await runCell(cell('waitfor','diagnostics-no-matches'),scratch.globals);
+  assert.deepEqual(scratch.calls,['new',['goto','http://fixture/read.html'],['locator','#locator-contract-absent'],['waitFor',{state:'visible',timeoutMs:100}],'close'],origin);
+  assert.equal(await waitForCheck(observed.result),true,origin);
+  observations.push(observed.result);
+ }
+ for(const observed of observations.slice(1))assert.deepEqual(observed,observations[0]);
+ for(const [why,waitFor] of [
+  ['a wait that finds the absent selector',async()=>{}],
+  ['an error that names no deadline',()=>{throw new Error(`Error: method not implemented\n${waitForContext}\nLocator diagnostics: ${JSON.stringify(empty)}`);}],
+  ['an error without the diagnostics line',()=>{throw new Error(`${deadlineOrigins[0]}\n${waitForContext}`);}],
+  ['an error without the action context',()=>{throw new Error(`${deadlineOrigins[0]}\nLocator diagnostics: ${JSON.stringify(empty)}`);}],
+  ['diagnostics that found a match',()=>{throw new Error(`${deadlineOrigins[0]}\n${waitForContext}\nLocator diagnostics: ${JSON.stringify({...empty,matchCount:1})}`);}],
+ ]){
+  const observed=await runCell(cell('waitfor','diagnostics-no-matches'),absentScratch(waitFor).globals);
+  assert.equal(await waitForCheck(observed.result),false,why);
+ }
 });
 
 test('every supplemental browser cell is a complete parsable raw MCP envelope',()=>{

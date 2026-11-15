@@ -61,7 +61,20 @@ function diagnostics(expected,context,origin){
  };
 }
 supplements.set('click',[contract('diagnostics-sampling',scratch('/visible-dom-dense.html',`await scratch.playwright.locator(${JSON.stringify(sampleSelector)}).click({timeoutMs:1000});return true;`),diagnostics(sampling,'waiting on click for selector '+sampleSelector,/strict mode violation/i))]);
-supplements.set('waitfor',[contract('diagnostics-no-matches',scratch('/read.html',`await scratch.playwright.locator(${JSON.stringify(absentSelector)}).waitFor({state:'visible',timeoutMs:100});return true;`),diagnostics(absent,'locator.waitFor(visible) timed out for selector '+absentSelector,/timed out|timeout/i))]);
+// The no-matches wait runs out of its 100 ms, and two deadlines race to name the error's first line: the locator's
+// ("Playwright selector deadline exceeded") or a CDP command's own ("Timed out after 1ms waiting for CDP command
+// Runtime.evaluate.", or Page.createIsolatedWorld's on a slow scratch tab), on either host and on load alone (#168). No
+// deadline closes that race, since the last poll's command always gets what is left; so the cell observes only what the
+// contract fixes: that a deadline named the error, and the context and diagnostics lines after it, byte for byte.
+const deadlineNamed=/timed out|timeout|deadline exceeded/i;
+const noMatchesContext='locator.waitFor(visible) timed out for selector '+absentSelector;
+supplements.set('waitfor',[contract('diagnostics-no-matches',scratch('/read.html',`try{await scratch.playwright.locator(${JSON.stringify(absentSelector)}).waitFor({state:'visible',timeoutMs:100});return {rejected:false};}
+catch(e){const [origin,...after]=String(e.message??e).split('\\n');return {rejected:true,code:e.code??e.reason??e.name??'Error',deadlineNamed:${deadlineNamed}.test(origin),after};}`),row=>{
+ const v=row.ok===true?row.value:null;
+ if(v?.rejected!==true||v.code!=='Error'||v.deadlineNamed!==true||!Array.isArray(v.after)||v.after.length!==2||v.after[0]!==noMatchesContext)return false;
+ const line=typeof v.after[1]==='string'?v.after[1].match(/^Locator diagnostics: (.+)$/):null;
+ return line!=null&&isDeepStrictEqual(JSON.parse(line[1]),absent);
+})]);
 
 // Keep raw MCP results and all caller context intact. Only slice the original assertion's
 // results/timings; appended cells have their own independent source-grounded expectations.

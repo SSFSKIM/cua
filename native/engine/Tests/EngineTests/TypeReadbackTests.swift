@@ -38,7 +38,11 @@ private final class FakeField {
   /// A change after this many value reads (a field turning secure, unreadable, or re-created).
   var changeAfterReads: Int?
   var change: (FakeField) -> Void = { _ in }
+  /// A change after this many selected-range reads (a late key landing between a caret read and the next value read).
+  var changeAfterRangeReads: Int?
+  var changeAtRange: (FakeField) -> Void = { _ in }
   var calls: [String] = []
+  private var rangeReads = 0
   private(set) var initialRange: NSRange?
   private var shown: String?
   private var lagLeft = 0
@@ -73,6 +77,13 @@ private final class FakeField {
     shown = value
     return value
   }
+
+  func readRange() -> NSRange? {
+    calls.append("range")
+    rangeReads += 1
+    defer { if rangeReads == changeAfterRangeReads { changeAtRange(self) } }
+    return reportedRange
+  }
 }
 
 /// The fake app: its focused field, a clock that advances only by the poll's sleeps, and the reads over both.
@@ -89,7 +100,7 @@ private final class FakeApp {
                   subrole: { $0.calls.append("subrole"); return $0.subrole },
                   value: { $0.readValue() },
                   valueUnits: { field in field.readValue().map { Array($0.utf16) } },
-                  range: { $0.calls.append("range"); return $0.reportedRange },
+                  range: { $0.readRange() },
                   same: { $0 === $1 },
                   now: { self.clock },
                   sleep: { self.clock += $0; self.sleeps += 1 })
@@ -841,6 +852,46 @@ final class TypeReadbackTests: XCTestCase {
     let plain = schedule(false), placeholder = schedule(true)
     XCTAssertEqual(plain.calls, placeholder.calls)
     XCTAssertEqual(plain.sleeps, placeholder.sleeps)
+  }
+
+  /// The review of bd63a0cc..5582db9c (P1): the caret confirms only the value it was read with. A text area reads "x\n" with
+  /// its caret right, then a late second Return makes it "x\n\n", its caret one on: that is the placeholder line's value,
+  /// and the caret seen with "x\n" must not confirm it.
+  func testTheCaretConfirmsOnlyTheValueItWasReadWith() {
+    func doubling(_ before: String, selected: NSRange) -> FakeField {
+      let area = FakeField(value: before, range: selected)
+      area.changeAfterRangeReads = 2  // the snapshot's caret read, then the poll's first: the second Return lands after it
+      area.changeAtRange = { $0.value = "x\n\n"; $0.range = NSRange(location: 3, length: 0) }
+      return area
+    }
+    let secret = doubling("", selected: NSRange(location: 0, length: 0))
+    let (error, meta) = type("x\n", into: FakeApp(secret), concealed: true)
+    XCTAssertEqual(secret.value, "x\n\n")
+    XCTAssertEqual(error?.errorName, "typeUnconfirmed", "a secret's doubled Return is not confirmed by the caret of the read before")
+    XCTAssertEqual(record(meta)["reason"] as? String, "unchanged")
+    XCTAssertGreaterThan(secret.calls.filter { $0 == "range" }.count, 2, "the caret is read again with the new value")
+
+    // The plain path's unchanged value (a Return typed over the selected one) and its placeholder line likewise.
+    let plain = doubling("x\n", selected: NSRange(location: 1, length: 1))
+    let (plainError, plainMeta) = type("\n", into: FakeApp(plain))
+    XCTAssertEqual(plain.value, "x\n\n")
+    XCTAssertEqual(plainError?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(plainMeta)["reason"] as? String, "valueMismatch")
+  }
+
+  /// The caret evidence lasts only while the reads show its value: a read of anything else drops it, so the same value
+  /// coming back has its caret read again (here moved back to where it was, which never confirms).
+  func testAReadOfAnotherValueDropsTheCaretEvidence() {
+    for concealed in [false, true] {
+      let field = FakeField(value: "a", range: NSRange(location: 0, length: 1))  // "a" typed over itself: the caret must move
+      field.changeAfterRangeReads = 2  // after the poll's first caret read, which sees it moved
+      field.changeAtRange = { $0.value = "b" }
+      field.changeAfterReads = 3  // the snapshot's value read, "a", then "b": the value comes back, its caret at the start
+      field.change = { $0.value = "a"; $0.range = NSRange(location: 0, length: 0) }
+      let (error, meta) = type("a", into: FakeApp(field), concealed: concealed)
+      XCTAssertEqual(error?.errorName, "typeUnconfirmed", "concealed: \(concealed)")
+      XCTAssertEqual(record(meta)["reason"] as? String, "unchanged", "concealed: \(concealed)")
+    }
   }
 
   func testOnlyKeysAndEmptyText() {

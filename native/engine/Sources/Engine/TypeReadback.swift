@@ -248,6 +248,13 @@ enum ReadbackRead: Equatable {
   case differs(cut: Bool, actual: String?)
 }
 
+/// The value an equal read matched, which the caret evidence is tied to: the expected value, or it and an ending
+/// Return's placeholder line (`readbackPlaceholderLine`).
+enum ReadbackCandidate: Equatable {
+  case expected
+  case placeholderLine
+}
+
 /// One poll of the snapshotted field: role and subrole re-read before every value read, a field that is no longer the
 /// snapshot's role, or is secure or unreadable, read no further. `closed` names such a field; otherwise `last` is what
 /// the last value read answered (`compare`).
@@ -416,12 +423,17 @@ final class TypeReadback<Element> {
     // Where the expected value is the snapshot's own, equality needs the caret past the insertion as well, and then a
     // value read taken after that caret read (the review of dad56362..af1860ef, P1: a stale value read before a newer
     // caret confirmed what the app had already changed). `equalAfterCaret` judges an equal read: the first one to see the
-    // caret only sets `caretSeen`, and only a later equal read counts.
+    // caret only sets `caretSeenWith`, and only a later equal read counts.
+    // The caret evidence belongs to the value it was read with (the review of bd63a0cc..5582db9c, P1: a secret's caret seen
+    // with its expected value confirmed the placeholder line a doubled Return read as after it). Each read takes the
+    // evidence (`seenWith`), and only a read of that same value keeps it or confirms with it; any other read drops it, so
+    // a value that matches next has its caret read again.
     let range16 = range, readRange = reads.range
-    var caretSeen = false
-    func equalAfterCaret(_ element: Element, unchanged: Bool, inserted: Int) -> ReadbackRead {
-      guard unchanged, !caretSeen else { return .equal }
-      if readRange(element) == NSRange(location: range16.location + inserted, length: 0) { caretSeen = true }
+    var caretSeenWith: ReadbackCandidate?
+    func equalAfterCaret(_ element: Element, _ candidate: ReadbackCandidate, seenWith: ReadbackCandidate?, unchanged: Bool,
+                         inserted: Int) -> ReadbackRead {
+      guard unchanged, seenWith != candidate else { return .equal }
+      if readRange(element) == NSRange(location: range16.location + inserted, length: 0) { caretSeenWith = candidate }
       return .equalUnconsumed
     }
     if concealed {
@@ -443,11 +455,16 @@ final class TypeReadback<Element> {
       let inserted = expected.count - (value.count - range.length)
       let valueUnits = reads.valueUnits
       poll = readbackPoll(field, role: role, reads: reads) { element in
+        let seenWith = caretSeenWith
+        caretSeenWith = nil
         guard var read = valueUnits(element) else { return .unreadable }
         defer { readbackZero(&read) }
         if readbackMayBeTruncated(units: read) { return .differs(cut: true, actual: nil) }  // a cut read never counts as equal
-        guard read == expected || (placeholder && read == expectedPlaceholder) else { return .differs(cut: false, actual: nil) }
-        return equalAfterCaret(element, unchanged: true, inserted: inserted)
+        let candidate: ReadbackCandidate
+        if read == expected { candidate = .expected } else if placeholder, read == expectedPlaceholder { candidate = .placeholderLine } else {
+          return .differs(cut: false, actual: nil)
+        }
+        return equalAfterCaret(element, candidate, seenWith: seenWith, unchanged: true, inserted: inserted)
       }
     } else {
       let typed = typedUnits.map(readbackInsertion).joined()
@@ -460,24 +477,24 @@ final class TypeReadback<Element> {
       // the expected value's length, then a fresh read after that caret read; a caret one further on is a doubled
       // Return, a mismatch; an unreadable caret is accepted, the ruling's stated residual.
       let withPlaceholder = expected + "\n", placeholderCaret = NSRange(location: (expected as NSString).length, length: 0)
-      var placeholderCaretSeen = false
-      func placeholderAfterCaret(_ element: Element, _ read: String) -> ReadbackRead {
-        if placeholderCaretSeen { record.placeholderLine = true; return .equal }
-        guard let caret = readRange(element) else {
-          placeholderCaretSeen = true
-          record.placeholderCaretUnread = true
-          return .equalUnconsumed
-        }
-        guard caret == placeholderCaret else { return .differs(cut: false, actual: read) }
-        placeholderCaretSeen = true
+      func placeholderAfterCaret(_ element: Element, _ read: String, seenWith: ReadbackCandidate?) -> ReadbackRead {
+        if seenWith == .placeholderLine { record.placeholderLine = true; return .equal }
+        let caret = readRange(element)
+        if let caret, caret != placeholderCaret { return .differs(cut: false, actual: read) }
+        caretSeenWith = .placeholderLine
+        record.placeholderCaretUnread = caret == nil
         return .equalUnconsumed
       }
       poll = readbackPoll(field, role: role, reads: reads) { element in
+        let seenWith = caretSeenWith
+        caretSeenWith = nil
         guard let read = value(element) else { return .unreadable }
         if readbackMayBeTruncated(read) { return .differs(cut: true, actual: read) }  // a cut read never counts as equal
         // Code units, never Swift's ==, which takes canonically equivalent strings of different lengths for equal.
-        if read.utf16.elementsEqual(expected.utf16) { return equalAfterCaret(element, unchanged: unchanged, inserted: inserted) }
-        if placeholder, read.utf16.elementsEqual(withPlaceholder.utf16) { return placeholderAfterCaret(element, read) }
+        if read.utf16.elementsEqual(expected.utf16) {
+          return equalAfterCaret(element, .expected, seenWith: seenWith, unchanged: unchanged, inserted: inserted)
+        }
+        if placeholder, read.utf16.elementsEqual(withPlaceholder.utf16) { return placeholderAfterCaret(element, read, seenWith: seenWith) }
         return .differs(cut: false, actual: read)
       }
       if case .differs(_, let actual?) = poll.last { excerpt = { readbackExcerpt(expected: expected, actual: actual) } }

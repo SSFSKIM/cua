@@ -22,12 +22,16 @@ export async function realChrome(t, pages = {}) {
   const requests = [];
   const server = createServer((req, res) => {
     const body = pages[new URL(req.url, 'http://x').pathname];
-    requests.push({host: req.headers.host?.split(':')[0], path: new URL(req.url, 'http://x').pathname, found: body != null});
+    requests.push({host: req.headers.host?.split(':')[0], port: Number(req.headers.host?.split(':')[1]), path: new URL(req.url, 'http://x').pathname, found: body != null});
     res.writeHead(body == null ? 404 : 200, {'content-type': 'text/html'});
     res.end(body ?? 'missing');
   });
+  // a second port on the same host serves the same table: a same-site, cross-origin frame (Chrome may keep it in the
+  // page's own renderer)
+  const second = createServer((req, res) => server.emit('request', req, res));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const port = server.address().port;
+  await new Promise(resolve => second.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port, port2 = second.address().port;
   const home = mkdtempSync(join(tmpdir(), 'cua-real-chrome-'));
   // Puppeteer's quiet set beside headless: no keychain or password-store prompt (macOS), no background fetches
   const child = spawn(path, ['--headless=new', `--user-data-dir=${join(home, 'profile')}`, '--remote-debugging-port=0', '--no-first-run',
@@ -38,8 +42,7 @@ export async function realChrome(t, pages = {}) {
     socket?.close();
     child.kill();
     await Promise.race([new Promise(resolve => (child.exitCode != null ? resolve() : child.once('exit', resolve))), sleep(5000).then(() => child.kill('SIGKILL'))]);
-    server.closeAllConnections();
-    server.close();
+    for (const s of [server, second]) { s.closeAllConnections(); s.close(); }
     // Chrome's helpers can still be writing its profile as it exits (macOS): retried, and a leftover tmp dir is no failure
     try { rmSync(home, {recursive: true, force: true, maxRetries: 10, retryDelay: 200}); } catch {}
   });
@@ -81,7 +84,7 @@ export async function realChrome(t, pages = {}) {
     },
   };
   await send('Page.enable');
-  const url = (pathname, origin = '127.0.0.1') => `http://${origin}:${port}${pathname}`;
+  const url = (pathname, origin = '127.0.0.1', {other = false} = {}) => `http://${origin}:${other ? port2 : port}${pathname}`;
   const evaluate = async expression => (await send('Runtime.evaluate', {expression, returnByValue: true, awaitPromise: true})).result?.value;
   const load = async (pathname, {origin} = {}) => {
     const loaded = new Promise(resolve => { const l = msg => { if (msg.method === 'Page.loadEventFired') { listeners.splice(listeners.indexOf(l), 1); resolve(); } }; listeners.push(l); });

@@ -16,8 +16,8 @@
 //  - Room: the scroll waits, up to the action budget, for that scroller to move in the requested direction; when it
 //    does not, the answer says what is known: the wheel was sent, nothing was seen to scroll, and the page may handle
 //    the wheel itself (a map, a virtual list), so observe it before retrying.
-//  - A point in a frame the page cannot read cannot be observed: the wheel is sent and the scroll answers, as the
-//    gesture did. A closed shadow root is searched as an open one is: the hit test sees into it, and from inside its
+//  - A point in a cross-origin frame (any, wherever Chrome renders it) cannot be observed: the wheel is sent and the
+//    scroll answers, as the gesture did. A closed shadow root is searched as an open one is: the hit test sees into it, and from inside its
 //    tree its host is reachable.
 //  - A probe the page does not answer (busy, navigating, or failing) sends no wheel: the scroll answers the contract's
 //    timeout with nothing scrolled, safe to retry (the design session's ruling on the review's P1). A wheel queued into
@@ -62,6 +62,19 @@ function locateFrom(dx, dy) {
     const root = el.getRootNode();
     return root !== el && root.host != null ? root.host : null;
   };
+  // Any cross-origin frame between the hit node's window and the top makes the point unobservable, whatever renderer
+  // Chrome put that frame in (a same-site one may share the page's): the answer must not change with process allocation.
+  const crossOrigin = win => {
+    for (let level = win; ;) {
+      let parent, owner;
+      try { parent = level.parent; } catch { return true; }
+      if (parent === level) return false;
+      try { owner = level.frameElement; } catch { return true; }
+      if (owner == null) return true;
+      level = parent;
+    }
+  };
+  if (crossOrigin((this.ownerDocument ?? this).defaultView)) return {observable: false};
   let el = this.nodeType === 1 ? this : this.parentElement ?? this.getRootNode?.().host ?? this.ownerDocument?.scrollingElement ?? null;
   if (el != null && (el.tagName === 'IFRAME' || el.tagName === 'FRAME')) {
     let content = null;

@@ -53,6 +53,10 @@ const PAGES = {
     const slow = document.getElementById('slow');
     slow.addEventListener('wheel', e => { e.preventDefault(); setTimeout(() => { slow.scrollTop = 100; }, 400); }, {passive: false});</script>`),
   '/cross-inner': page(tall),
+  // the same host on another port: same-site, cross-origin; one inner page scrolls, the other takes the wheel
+  '/frame-port': page('<iframe id="f" style="border:0;width:300px;height:200px" src="__PORT__"></iframe>'),
+  '/port-scroll': page(tall),
+  '/port-prevent': page(tall + '<script>addEventListener("wheel", e => e.preventDefault(), {passive: false});</script>'),
 };
 
 async function setup(t) {
@@ -60,6 +64,7 @@ async function setup(t) {
   const pages = {...PAGES};
   const chrome = await realChrome(t, pages);
   pages['/frame-cross'] = PAGES['/frame-cross'].replace('__CROSS__', chrome.url('/cross-inner', 'localhost'));
+  for (const inner of ['scroll', 'prevent']) pages[`/frame-port-${inner}`] = PAGES['/frame-port'].replace('__PORT__', chrome.url(`/port-${inner}`, '127.0.0.1', {other: true}));
   const scroll = (path, args) => (async () => { await chrome.load(path); return wheelScroll(chrome.cdp, 1, {modifiers: 0, point: {x: 100, y: 100}, scrollX: 0, scrollY: 0, boundMs: BOUND, ...args}); })();
   const wheels = () => chrome.cdp.sent.filter(c => c.method === 'Input.dispatchMouseEvent' && c.params.type === 'mouseWheel').length;
   return {chrome, scroll, wheels};
@@ -170,4 +175,18 @@ test('real Chrome: a scroller inside a closed shadow root is found and watched; 
   assert.ok(await chrome.evaluate('inner.scrollTop') > 0, 'the closed root\'s scroller moved before the answer');
   const error = await rejection(scroll('/closed?prevent', {scrollY: 300}));
   assert.deepEqual([error.code, error.message], ['timeout', scrollUnconfirmed(BOUND)]);
+});
+
+// Re-review 2 finding (P2): every cross-origin frame is unobservable, whatever renderer Chrome puts it in (ruling: an
+// answer must not change with process allocation).
+test('real Chrome: a same-site cross-origin frame (the same host, another port) is unobservable: the wheel goes and the scroll answers ok, whether the frame scrolls or takes the wheel', {skip, timeout}, async t => {
+  const {chrome, scroll} = await setup(t);
+  for (const inner of ['scroll', 'prevent']) {
+    const answered = await timed(scroll(`/frame-port-${inner}`, {scrollY: 300}));
+    assert.equal(answered.value, undefined, inner);
+    assert.ok(answered.ms < BOUND / 2, `${inner}: answered without waiting (${answered.ms} ms)`);
+    assert.ok(chrome.requests.some(r => r.path === `/port-${inner}` && r.host === '127.0.0.1' && r.found), `${inner}: the frame loaded its cross-origin page`);
+  }
+  assert.equal(await scroll('/frame-same', {scrollY: 300}), undefined);
+  assert.ok(await chrome.evaluate('document.getElementById("f").contentWindow.scrollY') > 0, 'a same-origin frame is still observed');
 });

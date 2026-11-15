@@ -48,6 +48,7 @@ import { geditTitle } from './gedit-title.mjs';
 import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
 import { cleanupOnStop } from './stop.mjs';
+import { signalIfSame } from './pid-identity.mjs';
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { RECORD_DECLINED, RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
 
@@ -1114,13 +1115,11 @@ export class Desktop {
    */
   async close(scenes) {
     for (const scene of [...scenes].reverse()) {
-      // a window another process owns (gnome-terminal's server): its program, whose PID it wrote, ends first
+      // a window another process owns (gnome-terminal's server): its program, whose PID it wrote, ends first, signalled
+      // only while that pid is still the program the scene started (pid-identity.mjs, ruling 725); else left, recorded
       if (scene.pidfile) {
-        try {
-          process.kill(Number(readFileSync(scene.pidfile, 'utf8').trim()), 'SIGTERM');
-        } catch {
-          // never started, or already gone
-        }
+        const sent = signalIfSame(scene.pidIdentity ?? null, 'SIGTERM');
+        if (!sent.signalled && sent.reason !== 'gone') this.skip('signal', scene.id ?? null, `the pid ${scene.pidfile} names: ${sent.reason}`);
       }
       try {
         if (scene.kind === 'chrome') {

@@ -142,7 +142,7 @@ test('the public readers print labels, booleans and counts; free text is withhel
     const {lines, ok} = runLines(`progress ${PLANTED}\n${JSON.stringify({cases: 2, complete: false, assertions: 'FAIL', coveredCases: ['cells/a'], recordedVendorDefects: 0, out: `/x/${PLANTED}`})}\n`, dir, 'cua/cells');
     assert.equal(lines.join('\n').includes(PLANTED), false);
     assert.deepEqual(lines, ['hosted-parity: run cua/cells: cases 2 complete false assertions FAIL covered 1 pending 0 vendorDefects 0',
-      '  meta: complete false error present (withheld)', '  failed assertion: cells/b 3', '  rows 2, failed assertions 1']);
+      '  meta: complete false error present (withheld)', '  failed assertion: cells/b 3', '    reason other', '  rows 2, failed assertions 1']);
     assert.equal(ok, false);
     const passed = runLines(JSON.stringify({cases: 2, complete: true, assertions: 'PASS', coveredCases: ['a', 'b']}), dir, 'cua/cells');
     assert.deepEqual([passed.ok, passed.lines.length], [true, 1]);
@@ -151,6 +151,39 @@ test('the public readers print labels, booleans and counts; free text is withhel
       assert.equal(runLines(stdout, join(dir, 'absent'), 'cua/cells').ok, false, stdout);
     const reader = spawnSync(process.execPath, [join(HOSTED, 'public.mjs'), 'run', join(dir, 'absent.out'), join(dir, 'absent'), 'cua/cells'], {encoding: 'utf8'});
     assert.equal(reader.status, 1);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('a failed case\'s lines say why in fixture data only: the reason\'s kind, each cell\'s outcome, timing and labelled value', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hosted-run-'));
+  const cell = (name, row, ms) => ({case: 'api/browser-cuaapi/drag', cell: name, ok: true, isError: false, ms,
+    content: [{type: 'text', text: `progress ${PLANTED}\nCUA_PARITY_RESULT ${JSON.stringify({...row, $imageCount: 0})}`}], meta: {'cua/taskId': PLANTED}});
+  const timedOut = {ok: false, error: {code: 'Error', message: `Timed out after 1500ms waiting for selector text=ended at /Users/runner/${PLANTED}`}};
+  const sideEffects = {events: [{text: 'pointer'}, {pointer: {x: 60, y: 180}}, {dragStart: true, x: 60, y: 180}, {note: `/Users/runner/${PLANTED}`}, {host: `runner@${PLANTED}.local`, dir: `Users/runner/${PLANTED}`}]};
+  const reasons = [
+    [`drag: ${timedOut.error.message}`, '    reason cell-error cell drag timeout true'],
+    [`scroll: unexpected fixture result ${JSON.stringify({before: 0, moved: false})}`, '    reason unexpected-result cell scroll: {"before":0,"moved":false}'],
+    [`fixture side effects differ: ${JSON.stringify(sideEffects)}`, '    reason side-effects: {"events":[{"text":"pointer"},{"pointer":{"x":60,"y":180}},{"dragStart":true,"x":60,"y":180},{"note":"<withheld>"},{"host":"<withheld>","dir":"<withheld>"}]}'],
+    [`api/browser-cuaapi/drag: ${PLANTED} at /Users/runner`, '    reason other'],
+  ];
+  try {
+    writeFileSync(join(dir, 'meta.json'), JSON.stringify({complete: true}));
+    for (const [reason, line] of reasons) {
+      const rows = [cell('type', {ok: true, value: 'pointer'}, 486.4), cell('drag', timedOut, 1712.9), cell('scroll', {ok: true, value: {before: 0, moved: false}}, 228),
+        {case: 'api/browser-cuaapi/drag', cell: 'odd', ok: true, content: [{type: 'text', text: PLANTED}], ms: 3},
+        {case: 'api/other', cell: 'a', ok: true, content: [], ms: 1}, {case: 'api/other', assertion: {ok: true}},
+        {case: 'api/browser-cuaapi/drag', assertion: {ok: false, reason}}];
+      writeFileSync(join(dir, 'results.jsonl'), rows.map(r => JSON.stringify(r)).join('\n'));
+      const {lines} = runLines(JSON.stringify({cases: 2, complete: true, assertions: 'FAIL', coveredCases: ['api/other']}), dir, 'cua/api');
+      assert.equal(lines.join('\n').includes(PLANTED), false, reason);
+      assert.equal(lines.join('\n').includes('/Users/runner'), false, reason);
+      assert.deepEqual(lines.slice(2), ['  failed assertion: api/browser-cuaapi/drag -', line,
+        '    cell type: ok true ms 486 value "pointer"',
+        '    cell drag: ok false ms 1713 error Error timeout true',
+        '    cell scroll: ok true ms 228 value {"before":0,"moved":false}',
+        '    cell odd: no result marker ms 3',
+        '  rows 7, failed assertions 1'], reason);
+    }
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 

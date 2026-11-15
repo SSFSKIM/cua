@@ -31,8 +31,9 @@
 #
 # Public output (the repository is public). The log carries only each step's PASS/FAIL/SKIP line with its duration and
 # the summary, and the `hosted-parity:` lines: the image and versions, booleans, exit statuses, cua's outcome and reason
-# codes, the runs' counts and failed case ids, the diffs' counts and undeclared differences' ids, the denial kinds
-# (public.mjs, denials-within.mjs). Every command's stderr goes to the scratch root and the log gets only `stderr
+# codes, the runs' counts and failed case ids, each failed case's reason and cells in fixture data only (the kind of
+# reason, each cell's outcome, time and labelled value; #168), the diffs' counts and undeclared differences' ids, the
+# denial kinds (public.mjs, denials-within.mjs). Every command's stderr goes to the scratch root and the log gets only `stderr
 # withheld (<n> lines)`; reports, run directories and the raw `log stream` output stay in the scratch root, the denial
 # log removed as soon as it is judged and the root at exit. No artifact. Every step's failure fails the gate; a step that
 # depends on a failed one is reported SKIP.

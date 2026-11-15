@@ -36,10 +36,11 @@
 // `capabilities` first), with the session's display and bus, and stops it once it has answered; it starts nothing
 // while cua's engine is not what sessions run, no file it does not recognize, and nothing without a display, since the
 // engine starts only on one (the report is then unread, and the display row says why). `pass` for the pinned engine
-// with every capability; `warn` for a local build, an older release, CUA_LINUX_ENGINE_BIN, the default's fallback, an
-// unread report for want of a display, or a capability the backend lacks; `fail` for refused sessions, an unknown or
-// unexecutable file, an invalid device mode, or an engine whose report fails as a session's start would; `skip` while
-// the vendor's engine is preferred.
+// with every capability; `warn` for a local build, an older release, CUA_LINUX_ENGINE_BIN, the default's fallback (no
+// engine installed, or, #171 M5's F5, one older than this cua needs or whose record does not match it: the row says
+// which, and that `cua install --engine` replaces it), an unread report for want of a display, or a capability the
+// backend lacks; `fail` for refused sessions, an unknown or unexecutable file, an invalid device mode, or an engine
+// whose report fails as a session's start would; `skip` while the vendor's engine is preferred.
 import {realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {CuaError} from './errors.mjs';
@@ -49,6 +50,7 @@ import {readEngineSettings} from './engine-sign.mjs';
 import {desktopModeFor, nativeEngineSetting} from './launch.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {inspectLinuxEngine, loadEnginePin} from './linux-engine.mjs';
+import {MIN_ENGINE_VERSION} from '../services/engine/linux/client.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
@@ -112,7 +114,7 @@ export async function engineCheck({env, platform, arch = process.arch, home, ses
 
   const config = engine.config ?? (() => readEngineSettings({env}));
   let preferred;
-  try { preferred = nativeEngineSetting({env, config, ...(engine.defaultEngine ? {defaultEngine: engine.defaultEngine} : {})}); } catch (error) {
+  try { preferred = nativeEngineSetting({env, platform, config, ...(engine.defaultEngine ? {defaultEngine: engine.defaultEngine} : {})}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     const refused = {code: error.code, message: error.message};
     return {row: result('engine', 'fail', `${error.message}; every ${linux ? 'Linux' : 'macOS'} computer session is refused (${error.code})`),
@@ -197,6 +199,13 @@ function linuxHeld(facts, say) {
   return facts.executable ? words : `${words}; ${say('fail', 'it is not executable, so no session runs it: cua install --engine places it again')}`;
 }
 
+// Why the default keeps the vendor's engine though one of cua's is installed (launch.mjs nativeEngineFor; #171 M5, F5
+// and F5a), from what the inspection read.
+const DEFAULT_FALLBACK = {
+  engine_outdated: facts => `the installed cua-engine ${facts.version} is older than ${MIN_ENGINE_VERSION}, which this cua needs, so`,
+  engine_unrecorded: () => 'the installed engine\'s install.json does not match its file, so its version is unknown and',
+};
+
 const DESKTOP_WORDS = {
   explicit: mode => `CUA_DESKTOP_MODE=${mode}`,
   settings: mode => `"desktop": "${mode}" in ${SETTINGS}`,
@@ -215,8 +224,11 @@ async function linuxRow(selection, {env, config, session, facts, readCapabilitie
     return {row: result('engine', 'skip', `cua's engine is not selected: ${why}${serves}. CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ${SETTINGS}, selects cua's own: ${held}`), report};
   }
   if (selection.refused) return {row: result('engine', 'fail', `cua's engine is preferred (${source('cua')}), but sessions here are refused (${selection.refused.code}; see repl.host): ${held}`), report};
-  if (selection.selected !== 'cua')
-    return {row: result('engine', 'warn', `cua's engine is the default, but none is installed, so Linux computer sessions keep the vendor's sky_linux helper (${selection.reason}): ${held}`), report};
+  if (selection.selected !== 'cua') {
+    const fallback = DEFAULT_FALLBACK[selection.reason];
+    return {row: result('engine', 'warn', fallback ? `cua's engine is the default, but ${fallback(facts)} Linux computer sessions keep the vendor's sky_linux helper until cua install --engine replaces it (${selection.reason}): ${held}`
+      : `cua's engine is the default, but none is installed, so Linux computer sessions keep the vendor's sky_linux helper (${selection.reason}): ${held}`), report};
+  }
   const bin = session.engine.bin;
   const runs = bin.source === 'override'
     ? say('warn', `${bin.path}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), ${SERVICE_WORDS}; installed: ${held}`)

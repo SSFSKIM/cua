@@ -2247,6 +2247,23 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **T4's static round** (task 84). Vendor declarations are per architecture, scoped to the vendor release their defect names, so arm64 fails closed until its outcomes are declared. A vendor lane's ended text window is restarted, counted and never scored, in a fresh audit lifecycle per segment; a candidate's ended window stops the run. The `:0` guards read the person from the session's uid and passwd home, and fail closed on a missing home.
   Date/Author: 2026-11-15, the plan-executor (session linux171), from tasks 81–84 and their reviews, on the design session's rulings 704–716.
 
+- Decision (2026-11-15, M5 T6 on x64, the pilot as run): task 87, at wave 0's tip 01ff0648, on `linux-engine-v0.4.0` from the pilot's own run home. Development runs, never counted. Evidence: `docs/evidence/2026-10-28-own-linux-engine/m5/x64/pilot/` (9f941f20).
+  - **What ran.**
+    - `gate.mjs check --pinned` passed.
+    - Of 43 private steps in the pilot form (`--dev --pilot 2`), 30 exited 0 (R1–R4 among them) and 13 exited 1 only because a development series of 2 is too short (S1–S4, F1a, F1b, L3a–e, F3a, F3b), as in M4's pilot. No false ok and nothing refused.
+    - On the pinned path, without `--dev`: C1 exited 0, R4 passed 18/18, and engine-stop `--pinned` passed 4/4, run directly.
+    - V3 on `:0` (GO 720, 04:40–05:16Z) exited 0. #373's gap was declared and the two menuUnconfirmed cells read declared; every guard was clean.
+  - **Old leftovers** (721, 724, 725). The five `/tmp/cua171-run-*` were the Desktop scratch directories of earlier private runs that a throw or the watchdog's stop kept `Desktop.closeEverything` from removing, so its end check never ran. They are identified and removed. Nothing in the harness or the gate kills by name.
+  - **To T4's second round:**
+    - the pilot form skips top-ups (722);
+    - `closeEverything` runs every step, and the end check lists foreign run directories and their buses (721, 724);
+    - scenes.mjs verifies a pidfile's pid before signalling it (725);
+    - a pilot can run the pinned rule inside a step;
+    - #373's `SPEED_GAPS` entry gets a `bound_ms` like `DRAG_SPEED_GAPS`', since without one any size of loss reads as declared;
+    - the records' holder and run names.
+  - The settle streak and P6's Fisher judge are not reached by a series of 2. They were exercised by the M4 re-read (716) and are judged in T5.
+  Date/Author: 2026-11-15, the plan-executor (session linux171), from task 87's report.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  ACTIVATING, EXPECTED_REFUSALS, FAMILY_SCENES, cellName, cellsFor, expectsRefusal, judgeSettleSeries, judgesLateKeyUp, lateKeyUpMiss, sittingVerdict,
+  ACTIVATING, CELLS, EXPECTED_REFUSALS, FAMILY_SCENES, SCENES, SETTLE_READINGS, cellName, cellsFor, expectsRefusal, judgeSettleSeries, judgesLateKeyUp, lateKeyUpMiss, sittingVerdict,
 } from '../../scripts/linux-engine-diff/action-settle-cells.mjs';
 import { CANDIDATES, gateRows } from './gate-rows.mjs';
 
@@ -89,7 +89,7 @@ test('ruling 707: an honest miss breaks the streak in every cell, and a later st
 test("ruling 650's hard failure, in every cell: an ok with no effect fails the series whatever streak follows", () => {
   // every answer ok, the reading as it was before, nothing late: the input had no effect
   const noEffect = (trial) => run(trial, { late_ms: null, after: keys(trial, trial) });
-  for (const scene of ['electron-input', 'chrome-input', 'gedit-text']) {
+  for (const scene of ['electron-input', 'chrome-input', 'gedit']) {
     const v = judgeSettleSeries([noEffect(0), ...passes(1, 30)].map((r) => ({ ...r, scene })), { need: 30 });
     assert.equal(v.streak, 30, scene);
     assert.equal(v.reached, false, scene);
@@ -110,6 +110,9 @@ test("ruling 650's hard failure, in every cell: an ok with no effect fails the s
     'a coordinate click whose press missed the pad': wrong('click', page(), page({ ups: 1 })),
     "an element's click that reached the pad instead": wrong('click_element', page(), page({ downs: 1, ups: 1 })),
     "an editor's click whose caret landed outside the line": wrong('click', { caret: 4 }, { caret: 90 }, { line: [10, 40] }, 'gedit'),
+    // the review's finding 2: a key then a click is a click, its caret judged by the line it aimed at
+    "a key_click whose caret landed outside the line": wrong('key_click', { caret: 4 }, { caret: 90 }, { line: [10, 40] }, 'kate'),
+    "an editor's drag whose selection lies outside the line": wrong('drag', { selection: [0, 0] }, { selection: [60, 80] }, { line: [10, 40] }, 'writer'),
   };
   for (const [name, miss] of Object.entries(elsewhere)) {
     const v = judgeSettleSeries([miss, ...passes(1, 30).map((r) => ({ ...r, scene: miss.scene, input: miss.input }))], { need: 30 });
@@ -118,7 +121,8 @@ test("ruling 650's hard failure, in every cell: an ok with no effect fails the s
     assert.match(v.false_ok[0].why, /another target/, name);
   }
   // the right button, the right line: a miss there is the effect's size or its time, honest
-  assert.deepEqual(judgeSettleSeries([wrong('right_click', page(), page({ downs: 1 }))], { need: 30 }).false_ok, [], 'the context event never came: no other target shown');
+  // no effect is judged by the kind's own fields: a pad press is no context event, so the right click had none
+  assert.match(judgeSettleSeries([wrong('right_click', page(), page({ downs: 1 }))], { need: 30 }).false_ok[0]?.why ?? '', /no effect/, 'the context event never came');
   assert.deepEqual(judgeSettleSeries([wrong('click', { caret: 4 }, { caret: 20 }, { line: [10, 40] }, 'gedit')], { need: 30 }).false_ok, [], 'the caret inside the line');
   // a partial effect is no false ok: a landing miss (ruling 650), which a later streak covers
   const partialScroll = { ...run(0, { late_ms: null }), scene: 'firefox-input', input: 'scroll', before: { wheels: 138, scroll: 0 }, after: { wheels: 140, scroll: 414 } };
@@ -229,9 +233,12 @@ for (const { candidate, step, counts } of RULED) {
         assert.ok(missed.every((k) => k === index || k === index + 1), `${cell}: ${name}: only the edited runs move`);
         assert.equal(v.failed.some((f) => f.startsWith(cell)), !coversWithout(before, missed), `${cell}: ${name}: ${v.failed.join('; ') || 'passed'}`);
       }
-      // the hard failure: the key never arrived, every answer ok
-      const v = judge((rows) => { const r = first302(rows, cell); Object.assign(r, { late_ms: null, after: { ...r.before } }); });
-      assert.ok(v.failed.includes(`${cell} (shipped): 1 of ${before.length} runs were a false ok (trial ${first.trial}: answered ok with no effect)`), `${cell}: ok with no effect: ${v.failed.join('; ')}`);
+      // the hard failure: the key never arrived, every answer ok; and so when a counter of another kind moved (the
+      // review's finding 1: Blink moves the pointer by itself, so the page's moves can rise with no input of the kind)
+      for (const [name, after] of [['the reading unchanged', (b) => ({ ...b })], ['its moves risen, its keys not', (b) => ({ ...b, moves: b.moves + 1 })]]) {
+        const v = judge((rows) => { const r = first302(rows, cell); Object.assign(r, { late_ms: null, after: after(r.before) }); });
+        assert.ok(v.failed.includes(`${cell} (shipped): 1 of ${before.length} runs were a false ok (trial ${first.trial}: answered ok with no effect)`), `${cell}: ok with no effect, ${name}: ${v.failed.join('; ')}`);
+      }
     }
     for (const [name, edit] of Object.entries(RUN_WIDE)) assert.notDeepEqual(judge(edit).failed, [], name);
     assert.match(judge(() => {}, { foreign: ['the harness: 0x00a00003 ConfigureWindow (raised)'] }).failed.join(), /a window the experiment did not open was changed/);
@@ -309,10 +316,42 @@ test('every expected-error cell, not the menu control alone: an ok among its ans
   assert.match(judgeSettleSeries([marked], { need: 30 }).false_ok[0]?.why ?? '', /^answered ok where the cell expects its refusal \(an error\)/);
 });
 
+test('every settle cell kind has its reading judgment: the requested fields, the other-target fields, whether partial', () => {
+  const kinds = new Set(CELLS.map((c) => `${SCENES[c.scene].effects} ${c.kind}`));
+  for (const k of kinds) {
+    const [effects, kind] = k.split(' ');
+    const entry = SETTLE_READINGS[effects]?.[kind];
+    assert.ok(entry, `${k}: no entry in SETTLE_READINGS, so it cannot be judged`);
+    assert.ok(entry.requested.length > 0, k);
+    assert.equal(typeof entry.partial, 'boolean', k);
+    for (const f of entry.elsewhere) assert.ok(!entry.requested.includes(f), `${k}: ${f} is requested and elsewhere`);
+  }
+  // no entry the cells do not run
+  for (const [effects, byKind] of Object.entries(SETTLE_READINGS)) for (const kind of Object.keys(byKind)) assert.ok(kinds.has(`${effects} ${kind}`), `${effects} ${kind}: no cell runs it`);
+  // a cell missing from the table is refused, not judged by its whole reading
+  assert.throws(() => judgeSettleSeries([{ ...run(0, { late_ms: null }), scene: 'gedit', input: 'scroll' }], { need: 30 }), /no reading judgment for scroll in an editor scene/);
+  // every field the table names is in the stored readings of each scene and kind the gate records hold
+  const seen = new Map();
+  for (const out of Object.values(CANDIDATES)) {
+    for (const step of ['S1', 'S2', 'S3', 'S4', 'L3a', 'L3b', 'L3c', 'L3d', 'L3e']) {
+      let rows;
+      try { rows = gateRows(out, step); } catch { continue; }
+      for (const r of rows) if (r.kind === 'settle-run' && r.before && !r.before.error) seen.set(`${SCENES[r.scene].effects} ${r.input}`, Object.keys(r.before));
+    }
+  }
+  assert.ok(seen.size >= 40, `the stored records hold ${seen.size} judged kinds`);
+  for (const [k, fields] of seen) {
+    const [effects, kind] = k.split(' ');
+    const entry = SETTLE_READINGS[effects][kind];
+    for (const f of [...entry.requested, ...entry.elsewhere]) assert.ok(fields.includes(f), `${k}: ${f} is not in its reading (${fields.join(', ')})`);
+  }
+});
+
 test("candidate 2's L3c: its scroll that took two of three wheel steps is a landing miss, not a false ok, so the step stands", () => {
   const v = judgeRecord(gateRows(CANDIDATES[2], 'L3c'));
   assert.deepEqual(v.failed, []);
   const s = v.series.find((x) => x.cell === 'firefox-input scroll dedicated');
   assert.deepEqual(s.false_ok, []);
   assert.equal(s.judged.filter((j) => j.cls === 'fail').length, 1);
+  assert.match(s.judged.find((j) => j.cls === 'fail').why, /^class never: a partial effect: wheels, wheel_legacy, scroll changed/, 'its kind is partial-capable');
 });

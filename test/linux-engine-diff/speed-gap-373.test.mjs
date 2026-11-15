@@ -102,6 +102,11 @@ for (const candidate of [1, 3]) {
       "the ancestry watcher failed to start in every lane's audit": (r) => { for (const a of r.filter((x) => x.kind === 'audit' && x.scene === 'chrome-input' && x.op === 'activate_window')) a.ancestry = 'the ancestry watcher did not start: xprobe watch exited 1'; },
       "the ancestry watcher failed in cua's audit alone": (r) => { at(r, 'audit', 'cua')[0].ancestry = 'the ancestry watcher ended before the audit did (exit 1)'; },
       "the trace saw no request in any lane's audit": (r) => { for (const a of r.filter((x) => x.kind === 'audit' && x.scene === 'chrome-input' && x.op === 'activate_window')) a.traced = false; },
+      // the review's finding 3: a witness that failed (judgeSpan: `clean: false, fields: ['protocol']`) observed nothing,
+      // whatever the vendor builds' witnesses saw, theirs failing too
+      "a witness protocol failure on cua's sample": (r) => { Object.assign(at(r, 'sample', 'cua')[4], { witness: false, witness_fields: ['protocol'], witness_changes: [] }); },
+      "a witness protocol failure on every lane's sample": (r) => { for (const e of [...VENDORS, 'cua']) Object.assign(at(r, 'sample', e)[4], { witness: false, witness_fields: ['protocol'], witness_changes: [] }); },
+      "a cua sample with no witness": (r) => { const s = at(r, 'sample', 'cua')[4]; delete s.witness; delete s.witness_fields; delete s.witness_changes; },
     };
     for (const [name, edit] of Object.entries(opControls)) {
       const rows = gateRows(CANDIDATES[candidate], 'V3');

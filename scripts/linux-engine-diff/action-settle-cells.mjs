@@ -507,7 +507,7 @@ export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, ne
     if (r.ok) return { trial: r.trial, cls: 'pass' };
     const hard = falseOk(r);
     if (hard) return { trial: r.trial, cls: 'false ok', why: hard };
-    if (!judgesLateKeyUp(r)) return { trial: r.trial, cls: 'fail', why: `class ${runClass(r)}` };
+    if (!judgesLateKeyUp(r)) return { trial: r.trial, cls: 'fail', why: missWhy(r) };
     const own = ownLateKeyUpMiss(r);
     if (own) return { trial: r.trial, cls: 'fail', why: own };
     const after = rows[i + 1] ?? next;
@@ -533,64 +533,160 @@ export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, ne
  * its answers, whatever the reading shows or when: the cell exists to prove the refusal, so an ok there claims what did
  * not happen (the menu control's: a menu the page cancelled); the coordinator's ruling and the design session's,
  * sminos 715, in the spirit of 650 and 687. The reading's own false ok, if any, is named beside it. A genuine refusal is
- * no ok.
- * In every other cell (`effectlessOk`): every answer a success, nothing invalid, the requested effect not landed within
- * the late bound, and either the reading after the input the same as the one before it in every field (no effect), or
- * the readings showing the effect on another target (`wrongTarget`). A right-target effect of the wrong size (a scroll
- * that took two of three wheel steps, a key-down with no key-up) is a landing miss, honest, not this.
+ * no ok. In every other cell, `readingFalseOk`.
  */
 function falseOk(run) {
   if (expectsRefusal(run.input) || run.expected_error === true) {
     if (!run.answers?.some((a) => a.ok === true)) return null;
-    const shown = effectlessOk(run);
+    const shown = readingFalseOk(run);
     return `answered ok where the cell expects its refusal (${EXPECTED_REFUSALS[run.input]?.name ?? 'an error'}): ${EXPECTED_REFUSALS[run.input]?.why ?? 'the cell exists to prove it'}${shown ? `; ${shown}` : ''}`;
   }
-  return effectlessOk(run);
-}
-
-/** `falseOk` read from the run's answers and readings alone: every answer ok, and no effect, or one on another target. */
-function effectlessOk(run) {
-  if (runClass(run) !== 'never' || !run.answers?.length || !run.answers.every((a) => a.ok === true)) return null;
-  if (run.before == null || run.after == null) return null;
-  if (JSON.stringify(run.before) === JSON.stringify(run.after)) return 'answered ok with no effect';
-  const elsewhere = wrongTarget(SCENES[run.scene]?.effects, run.input, run.before, run.after, run.sent ?? {});
-  return elsewhere ? `answered ok, and the effect landed on another target: ${elsewhere}` : null;
+  return readingFalseOk(run);
 }
 
 /**
- * Where a run's readings show its kind's effect on another element or place than the one requested (`sent`), or null.
- * The readings that can show one:
- * - the input page: a context event names its element (`context_on`): another than the cell's (`sent.on`, else the Menu
- *   button a right click and the menu control aim at, the control's stored rows predating `sent.on`); the pad counts
- *   its own presses (`downs`) and the Press button its clicks, so a coordinate click or drag released with no press on
- *   the pad, a pad click that clicked the button instead, or an element's click that reached the pad or a context event
- *   instead;
- * - an editor or field: a click's caret, or a drag's selection, outside the line it aimed at.
- * Coverage limit: every other kind and scene has no reading of another target. The input page's keys, moves and wheel
- * steps are counted document-wide; a field's or a terminal's text, xterm's recorded reports, Writer's paragraphs, and
- * the GTK, Qt and GTK 4 scenes' counters belong to the target alone. A miss there is judged by its reading's change
- * only: none is a false ok, any other a landing miss.
+ * An honest miss's reason: its class, and for one whose every answer was ok and whose effect never came, what its kind's
+ * reading shows (`judgeReading`: a partial effect, or another effect than the one requested).
  */
-export function wrongTarget(effects, kind, before, after, sent) {
-  if (effects === 'input-page') {
-    const context = rose(before, after, 'context');
-    if (['right_click', 'secondary_action', 'menu_unconfirmed'].includes(kind) && context) {
-      const aimed = sent.on ?? (kind === 'right_click' || kind === 'menu_unconfirmed' ? 'menu' : null);
-      if (aimed && after.context_on !== aimed) return `the context event reached ${after.context_on}, not ${aimed}`;
-    }
-    const pressed = grew(before, after, 'downs');
-    const released = grew(before, after, 'ups');
-    const clicked = grew(before, after, 'clicks');
-    if (['click', 'drag', 'drag_handle'].includes(kind) && released && !pressed) return 'released with no press on the pad';
-    if (kind === 'click' && clicked) return 'the Press button took the click';
-    if (kind === 'click_element' && !clicked && (pressed || context)) return `the ${pressed ? 'pad' : 'page'} took it, not the Press button`;
+function missWhy(run) {
+  const cls = runClass(run);
+  if (cls !== 'never' || !run.answers?.length || !run.answers.every((a) => a.ok === true) || run.before == null || run.after == null) return `class ${cls}`;
+  return `class never: ${judgeReading(SCENES[run.scene]?.effects, run.input, run.before, run.after, run.sent ?? {}).why}`;
+}
+
+/**
+ * What each settle cell's reading shows of its kind (the review of fix 6, ruling 716), by the scene's effects and the
+ * kind: `requested`, the fields that are the requested effect; `elsewhere`, the fields that change only when the effect
+ * went to another target; `aim`, where a requested field's own value can show another target (`context`: the element a
+ * context event names, against the one aimed at; `line`: a caret or selection outside the line aimed at; `pad`: the
+ * pad's release with no press on the pad); and `partial`, whether a right-target effect can be of the wrong size (L3c's
+ * scroll that took two of three wheel steps, a key-down with no key-up). A scene's reading measures several kinds at
+ * once (the input page counts pointer, key, wheel and context events, and Blink moves the pointer by itself), so a
+ * kind's effect is read in its own fields alone, never in the whole reading. `judgeReading` defines the judgments.
+ *
+ * Coverage limit, where `elsewhere` is empty and no `aim` applies: the reading cannot show another target. The input
+ * page counts keys and wheel steps document-wide and its moves on the pad alone; a field's or a terminal's text, xterm's
+ * recorded reports, the clipboard, the window manager's activation and the GTK, Qt and GTK 4 scenes' counters belong to
+ * the target alone. There, only no effect and an honest miss are told apart.
+ */
+const reading = (requested, { elsewhere = [], aim = null, partial = false } = {}) => ({ requested, elsewhere, aim, partial });
+const ACTIVATION = reading(['wm', 'active'], { partial: true });
+const TEXT_KINDS = {
+  press_key: reading(['text']),
+  key_down: reading(['text']),
+  type_text: reading(['text'], { partial: true }),
+  clipboard_read: reading(['clipboard']),
+  clipboard_write: reading(['text']),
+  activate_window: ACTIVATION,
+};
+const CARET = reading(['caret'], { aim: 'line' });
+const SELECTION = reading(['selection'], { aim: 'line', partial: true });
+const PRESSES = reading(['presses']);
+export const SETTLE_READINGS = {
+  'input-page': {
+    press_key: reading(['key_downs', 'key_ups', 'last_key'], { partial: true }),
+    key_down: reading(['key_downs', 'last_key']),
+    key_up: reading(['key_ups', 'last_key']),
+    click: reading(['downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', partial: true }),
+    click_element: reading(['clicks'], { elsewhere: ['downs', 'context'] }),
+    right_click: reading(['context', 'context_on'], { elsewhere: ['clicks'], aim: 'context' }),
+    // a Gecko button's named action is its press, a Chromium one's its context menu (action-settle.mjs)
+    secondary_action: reading(['context', 'context_on', 'clicks'], { aim: 'context' }),
+    menu_unconfirmed: reading(['context', 'context_on'], { elsewhere: ['clicks'], aim: 'context' }),
+    move: reading(['moves', 'pointer_at'], { partial: true }),
+    move_relative: reading(['moves', 'pointer_at'], { partial: true }),
+    scroll: reading(['wheels', 'wheel_legacy', 'scroll'], { partial: true }),
+    drag: reading(['drags', 'downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', partial: true }),
+    drag_handle: reading(['drags', 'downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', partial: true }),
+  },
+  field: { press_key: TEXT_KINDS.press_key, type_text: TEXT_KINDS.type_text, clipboard_read: TEXT_KINDS.clipboard_read, clipboard_write: TEXT_KINDS.clipboard_write, activate_window: ACTIVATION },
+  editor: { ...TEXT_KINDS, click: CARET, key_click: CARET, drag: SELECTION, drag_handle: SELECTION },
+  paragraphs: { press_key: TEXT_KINDS.press_key, key_down: TEXT_KINDS.key_down, type_text: TEXT_KINDS.type_text, click: CARET, drag: SELECTION, activate_window: ACTIVATION },
+  screen: {
+    press_key: TEXT_KINDS.press_key,
+    key_down: TEXT_KINDS.key_down,
+    type_text: TEXT_KINDS.type_text,
+    click: reading(['text'], { partial: true }),
+    scroll: reading(['text'], { partial: true }),
+    activate_window: ACTIVATION,
+  },
+  record: {
+    press_key: reading(['bytes']),
+    click: reading(['bytes'], { partial: true }),
+    drag: reading(['bytes'], { partial: true }),
+    scroll: reading(['bytes'], { partial: true }),
+  },
+  'settle-scene': {
+    click: PRESSES,
+    key_click: PRESSES,
+    click_element: PRESSES,
+    secondary_action: PRESSES,
+    activate_click: PRESSES,
+    move: reading(['moves'], { partial: true }),
+    scroll: reading(['scrolls'], { partial: true }),
+  },
+  counter: { click_element: PRESSES, secondary_action: PRESSES },
+  'gtk4-input': {
+    press_key: reading(['keys']),
+    click: PRESSES,
+    move: reading(['moves'], { partial: true }),
+    scroll: reading(['scroll'], { partial: true }),
+    drag: reading(['scale'], { partial: true }),
+  },
+};
+
+/** A settle cell's reading judgment (`SETTLE_READINGS`); a kind with none cannot be judged, so it is refused. */
+export function readingOf(effects, kind) {
+  const entry = SETTLE_READINGS[effects]?.[kind];
+  if (!entry) throw new Error(`no reading judgment for ${kind} in a${/^[aeiou]/.test(effects ?? '') ? 'n' : ''} ${effects} scene (SETTLE_READINGS)`);
+  return entry;
+}
+
+/**
+ * A run's miss, every answer ok and the effect not landed within the late bound, judged by its kind's reading
+ * (`SETTLE_READINGS`): `another target` when an `elsewhere` field changed or the `aim` shows another element or place;
+ * else `no effect` when none of the `requested` fields changed; else a right-target effect short of the requested one,
+ * honest (ruling 650), `partial` where the kind's effect has a size, `other` where it has none (a single event of
+ * another key, say). Returns `{judgment, why}`.
+ */
+export function judgeReading(effects, kind, before, after, sent = {}) {
+  const entry = readingOf(effects, kind);
+  const moved = (f) => !same(before?.[f], after?.[f]);
+  const changed = entry.requested.filter(moved);
+  const elsewhere = entry.elsewhere.filter(moved);
+  const aimed = aimMiss(entry.aim, kind, before, after, sent);
+  if (elsewhere.length) return { judgment: 'another target', why: `${elsewhere.join(', ')} changed, the reading of another target` };
+  if (aimed) return { judgment: 'another target', why: aimed };
+  if (!changed.length) return { judgment: 'no effect', why: `none of ${entry.requested.join(', ')} changed` };
+  return entry.partial ? { judgment: 'partial', why: `a partial effect: ${changed.join(', ')} changed` } : { judgment: 'other', why: `an effect not the one requested: ${changed.join(', ')} changed` };
+}
+
+/** Where a requested field's value shows another target (`SETTLE_READINGS`' `aim`), or null. */
+function aimMiss(aim, kind, before, after, sent) {
+  if (aim === 'context' && grew(before, after, 'context')) {
+    // a right click aims at the Menu button, and so does the menu control, whose stored rows predate `sent.on`
+    const target = sent.on ?? (kind === 'right_click' || kind === 'menu_unconfirmed' ? 'menu' : null);
+    if (target && after.context_on !== target) return `the context event reached ${after.context_on}, not ${target}`;
   }
-  if (effects === 'editor' || effects === 'field') {
-    if (!Array.isArray(sent.line)) return null;
-    if (kind === 'click' && Number.isInteger(after.caret) && after.caret !== before.caret && !insideLine(sent.line, after.caret)) return `the caret went to ${after.caret}, outside the line clicked`;
-    const sel = after.selection;
-    if ((kind === 'drag' || kind === 'drag_handle') && Array.isArray(sel) && sel[1] > sel[0] && !same(sel, before.selection) && !(insideLine(sent.line, sel[0]) && insideLine(sent.line, sel[1]))) return `the selection ${JSON.stringify(sel)} lies outside the line dragged`;
+  if (aim === 'pad' && grew(before, after, 'ups') && !grew(before, after, 'downs')) return 'released with no press on the pad';
+  if (aim === 'line' && Array.isArray(sent.line)) {
+    if (Number.isInteger(after?.caret) && after.caret !== before?.caret && !insideLine(sent.line, after.caret)) return `the caret went to ${after.caret}, outside the line aimed at`;
+    const sel = after?.selection;
+    if (Array.isArray(sel) && sel[1] > sel[0] && !same(sel, before?.selection) && !(insideLine(sent.line, sel[0]) && insideLine(sent.line, sel[1]))) return `the selection ${JSON.stringify(sel)} lies outside the line aimed at`;
   }
+  return null;
+}
+
+/**
+ * `falseOk` read from the run's answers and its kind's reading: every answer ok, nothing invalid, the effect not landed
+ * within the late bound, and `judgeReading` finding no effect or another target.
+ */
+function readingFalseOk(run) {
+  if (runClass(run) !== 'never' || !run.answers?.length || !run.answers.every((a) => a.ok === true)) return null;
+  if (run.before == null || run.after == null) return null;
+  const { judgment, why } = judgeReading(SCENES[run.scene]?.effects, run.input, run.before, run.after, run.sent ?? {});
+  if (judgment === 'no effect') return 'answered ok with no effect';
+  if (judgment === 'another target') return `answered ok, and the effect landed on another target: ${why}`;
   return null;
 }
 

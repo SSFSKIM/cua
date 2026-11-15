@@ -1,0 +1,21 @@
+c1 S1: recorded pass (ruling: #302); the table judge pass; the judge before fix 7 pass
+c1 S2: recorded pass; the table judge pass; the judge before fix 7 pass
+c1 S3: recorded pass; the table judge pass; the judge before fix 7 pass
+c1 S4: recorded pass; the table judge pass; the judge before fix 7 pass
+  c1 V3 chrome-input activate_window cua: stored fail; the gap judge declared gap
+c1 V3: recorded pass (ruling: #373); the gap judge pass; cua's activate_window samples the witness did not observe: 0 of 40
+c2 S1: recorded pass (ruling: #302); the table judge pass; the judge before fix 7 pass
+c2 L3a: recorded FAIL (Chrome context-menu Copy stuck; ruled a defect, rerun on candidate 3); the table judge FAIL (chrome-text clipboard_read background (shipped): no 30 consecutive passing runs in 31; chrome-text clipboard_write background (shipped): no 30 consecutive passing runs in 31; chrome-text clipboard_read background: the audit failed: 5 of 5 runs did not run their input (context menu did not open; no clipboard action was sent; context menu did not open; no clipboard action was sent; context menu did not open; no clipboard action was sent; context menu did not open; no clipboard action was sent; context menu did not open; no clipboard action was sent); chrome-text clipboard_write background: the audit failed: 5 of 5 runs did not run their input (chrome-text clipboard_write background: the clipboard_read for its handle failed: context menu did not open; no clipboard action was sent; chrome-text clipboard_write background: the clipboard_read for its handle failed: context menu did not open; no clipboard action was sent; chrome-text clipboard_)); the judge before fix 7 FAIL
+c2 L3b: recorded pass (ruling: #302); the table judge pass; the judge before fix 7 pass
+c2 L3c: recorded pass; the table judge pass; the judge before fix 7 pass
+c2 L3d: recorded pass; the table judge pass; the judge before fix 7 pass
+c2 L3e: recorded pass; the table judge pass; the judge before fix 7 pass
+c3 S1: recorded pass (ruling: #302); the table judge pass; the judge before fix 7 pass
+c3 S2: recorded pass; the table judge pass; the judge before fix 7 pass
+c3 S4: recorded pass; the table judge pass; the judge before fix 7 pass
+c3 L3a: recorded pass; the table judge pass; the judge before fix 7 pass
+c3 L3b: recorded pass (ruling: #302); the table judge pass; the judge before fix 7 pass
+  c3 V3 chrome-input activate_window cua: stored fail; the gap judge declared gap
+c3 V3: recorded pass (ruling: #373); the gap judge pass; cua's activate_window samples the witness did not observe: 0 of 40
+
+read: 17 steps (15 settle, 2 V3), 507 settle series, 15358 settle runs, 2 V3 activate_window verdicts; runs whose classification changed: 0; honest misses whose reason was only reworded: 1; step verdicts moved against M4's record: 0

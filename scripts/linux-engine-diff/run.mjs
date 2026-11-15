@@ -1760,17 +1760,21 @@ export function lifecycleAudit(judgedSegments) {
   return { audited, foreign, judged: { clean: audited.clean && foreign.length === 0 && watchedAll, sent, foreign: lines, observed, forbidden: [...new Set([...sent, ...lines, ...errors])] } };
 }
 
+/** The field witness.mjs `judgeSpan` records for a span its witness could not read. */
+const WITNESS_FAILED = 'protocol';
+
 /**
  * A declared speed gap's verdict (deviations.mjs `SPEED_GAPS`; #373's ruling, the design session, sminos 666): null
  * where no gap declares a speed loss of the failing verdict, so it stands. Otherwise **declared gap** (a loss, listed
  * apart, never a pass) when every reason is a speed loss of a series a gap declares, and the operation's other parts
  * hold as the vendor builds' do: every candidate sample answered ok with its effect, as many as the run timed; the
  * candidate's audit answered ok, with no request the vendor builds' audits of the operation do not show (the activation
- * itself) and no foreign change; and its witness saw no field change that the vendor builds' samples did not. Anything
- * else fails, and so does an audit that did not observe (no request traced, or its window watcher failed), shared by
- * every lane or not. `rows`: the operation's samples, every engine's; `audits`: engine to the run's audit (`{oks, sent,
- * foreign, observed: {traced, watched, error}}`, `sent` the engine's own forbidden requests by name). Returns `{pass,
- * verdict, reasons, gap, declared_gap}` or null.
+ * itself) and no foreign change; and its witness observed every sample and saw no field change that the vendor builds'
+ * samples did not. Anything else fails, and so does an observer that did not observe (an audit with no request traced
+ * or its window watcher failed, a witness that could not read a sample), shared by every lane or not. `rows`: the
+ * operation's samples, every engine's; `audits`: engine to the run's audit (`{oks, sent, foreign, observed: {traced,
+ * watched, error}}`, `sent` the engine's own forbidden requests by name). Returns `{pass, verdict, reasons, gap,
+ * declared_gap}` or null.
  */
 export function declaredGapVerdict(verdict, { op, candidate, rows, audits, vendors = VENDORS, gaps = SPEED_GAPS }) {
   if (verdict.verdict !== 'fail') return null;
@@ -1801,7 +1805,12 @@ export function declaredGapVerdict(verdict, { op, candidate, rows, audits, vendo
     if (extra.length) kept.push(`${candidate}: the audit shows requests the vendor builds' do not: ${extra.join(', ')}`);
     if (audit.foreign?.length) kept.push(`${candidate}: the audit shows ${audit.foreign.length} foreign change(s)`);
   }
-  const fields = (rs) => new Set(rs.flatMap((r) => (r.witness_changes ?? []).map((c) => c.field)));
+  // the witness observed every candidate sample: a span it could not read (witness.mjs judgeSpan: `protocol`) or no
+  // witness at all proves nothing of the desktop, whatever the vendor builds' witnesses saw, theirs failing too
+  const unobserved = mine.filter((r) => typeof r.witness !== 'boolean' || (r.witness_fields ?? []).includes(WITNESS_FAILED)).length;
+  if (unobserved) kept.push(`${candidate}: the witness did not observe ${unobserved} of ${mine.length} samples`);
+  // what the witness saw change, apart from its own failure: the fields it judged (notifies too) and their changes
+  const fields = (rs) => new Set(rs.flatMap((r) => [...(r.witness_fields ?? []), ...(r.witness_changes ?? []).map((c) => c.field)]).filter((f) => f !== WITNESS_FAILED));
   const vendorFields = fields(theirs);
   const extraFields = [...fields(mine)].filter((f) => !vendorFields.has(f));
   if (extraFields.length) kept.push(`${candidate}: the witness saw ${extraFields.join(', ')} change, which the vendor builds' did not`);

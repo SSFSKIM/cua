@@ -7,8 +7,11 @@ export function median(values) {
   return xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
 }
 
-/** The verdicts of a declared loss against the vendor (deviations.mjs REFUSALS): listed apart, never a pass, not a failure. */
-export const DECLARED_LOSSES = ['declared refusal', 'declared unconfirmed'];
+/**
+ * The verdicts of a declared loss against the vendor (deviations.mjs REFUSALS and SPEED_GAPS): listed apart, never a
+ * pass, not a failure.
+ */
+export const DECLARED_LOSSES = ['declared refusal', 'declared unconfirmed', 'declared gap'];
 
 /**
  * A run's outcome from its verdict rows (Interfaces: exit 0 only when the negative check held and every verdict
@@ -22,15 +25,17 @@ export const DECLARED_LOSSES = ['declared refusal', 'declared unconfirmed'];
  * (M5's T4); a vendor's restarts fail nothing, and each reason it gives (a candidate's restart) is one more failure.
  * `foreign`: each change of a window the harness did not open (audit.mjs `auditForeign`, by the harness or an engine
  * it drove), and each trace that could not show there was none, is one more failure, whatever the verdicts.
+ * `planned` (run.mjs `plannedVerdicts`): each verdict the plan owes that the run did not draw is one more failure.
  */
-export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null, warmUps = null, sceneEnds = null, foreign = [] }) {
+export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null, warmUps = null, sceneEnds = null, foreign = [], planned = null }) {
   const name = (v) => `${v.scene} ${v.op} ${v.candidate}`;
   const judged = verdicts.filter((v) => v.kind === 'verdict');
   const drops = dropCounts(judged);
   const parity = judged.filter((v) => !v.pass && v.verdict === 'parity').map(name);
-  // a declared refusal or unconfirmed answer (deviations.mjs REFUSALS) is a recorded loss: listed apart, never a pass,
-  // not a failure
+  // a declared refusal, unconfirmed answer or speed gap (deviations.mjs REFUSALS, SPEED_GAPS) is a recorded loss: listed
+  // apart, never a pass, not a failure; `declared` names each by its verdict, `refused` all of them
   const refused = judged.filter((v) => !v.pass && DECLARED_LOSSES.includes(v.verdict)).map(name);
+  const declared = Object.fromEntries(DECLARED_LOSSES.map((d) => [d, judged.filter((v) => !v.pass && v.verdict === d).map(name)]).filter(([, names]) => names.length));
   const failed = judged.filter((v) => !v.pass && !['parity', ...DECLARED_LOSSES].includes(v.verdict)).map(name);
   // the gate's rule for harness-side preparation failures (prepare.mjs): a cap exceeded fails the run
   if (faults && !faults.pass) failed.push(`harness preparation failures over the cap (${faults.reasons.join('; ')})`);
@@ -38,9 +43,11 @@ export function runOutcome(verdicts, { valid, faults = null, restores = null, st
   if (sceneEnds && !sceneEnds.pass) failed.push(...sceneEnds.reasons);
   if (stop) failed.push(stop);
   for (const f of foreign) failed.push(`a window the harness did not open was changed: ${f}`);
+  // a verdict the plan owes (run.mjs plannedVerdicts) and the run did not draw
+  for (const p of planned ?? []) if (!judged.some((v) => name(v) === p)) failed.push(`${p}: no verdict`);
   if (drops.finding) failed.push(drops.finding);
   const pass = failed.length === 0;
-  return { valid, pass, failed, parity, refused, ...(restores ? { restores } : {}), ...(sceneEnds ? { sceneEnds: sceneEnds.lanes } : {}), code: valid && pass ? 0 : 1 };
+  return { valid, pass, failed, parity, refused, declared, ...(restores ? { restores } : {}), ...(sceneEnds ? { sceneEnds: sceneEnds.lanes } : {}), code: valid && pass ? 0 : 1 };
 }
 
 /** The share of a run's landed drops left unconfirmed above which the run has a finding (the design session, 2026-11-10). */
@@ -65,11 +72,13 @@ export function dropCounts(verdicts) {
  * the scene text put back per lane (task 24) and the text windows a lane ended (M5's T4), every lane named, when the run
  * counted them.
  */
-export function verdictLine({ pass, failed, parity = [], refused = [], restores = null, sceneEnds = null }, strong = (s) => s) {
+export function verdictLine({ pass, failed, parity = [], refused = [], declared = null, restores = null, sceneEnds = null }, strong = (s) => s) {
   const perLane = (counts) => Object.entries(counts).map(([lane, n]) => `${lane} ${n}`).join(', ');
   const restored = restores ? `; text restores (the first word put back before a sample): ${perLane(restores)}` : '';
   const ended = sceneEnds ? `; text windows a lane ended (a vendor's restarted, never scored): ${perLane(sceneEnds)}` : '';
-  const listed = `${parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : ''}${refused.length ? `; ${strong('declared refusal')} (a loss, not a pass): ${refused.join(', ')}` : ''}${restored}${ended}`;
+  // each declared loss by its own verdict; an end row from before `declared` names them all declared refusals
+  const losses = Object.entries(declared ?? (refused.length ? { 'declared refusal': refused } : {}));
+  const listed = `${parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : ''}${losses.map(([d, names]) => `; ${strong(d)} (a loss, not a pass): ${names.join(', ')}`).join('')}${restored}${ended}`;
   if (!pass) return `${strong('FAIL')}: ${failed.join(', ')}${listed}`;
   return `${parity.length || refused.length ? 'no verdict FAIL' : 'every verdict PASS'}${listed}`;
 }

@@ -486,9 +486,7 @@ async function experimentRun(args, { emit, results }) {
       const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd, 'drop-signals': runDropSignals, predicates: runPredicates, 'pointer-route': runPointerRoute, 'writer-drag': runWriterDrag }[args.experiment];
       const result = await measure(args, { desktop, emit });
       md = result.md;
-      // the drag experiment's judges (T10) and the predicate cases' (T15) fail the run as an incomplete one does; the others
-      // report completeness only
-      outcome = { complete: result.complete && result.pass !== false, failed: result.failed };
+      outcome = measuredOutcome(result);
       // the gate's drop-signals cells are judged (drop-signals-judge.mjs `dropSignalsVerdict`): T17's Electron cells and
       // T14's Chrome cells. A false ok, an unreported late take, a broken pending contract, a missing landing or a
       // missing cell fails the run; the unconfirmed drops are findings with their counts. A gate run of any other plan
@@ -512,9 +510,24 @@ async function experimentRun(args, { emit, results }) {
   // the harness's own trace, judged once every window of the run's is closed: a change of a window it did not open
   // makes the run incomplete, whatever it measured
   const ending = desktopEnding(desktop.ending);
-  if (ending.foreign.length) outcome = { complete: false, failed: [...outcome.failed, ...ending.foreign.map((f) => `a window the harness did not open was changed: ${f}`)] };
+  outcome = finishOutcome(outcome, ending.foreign);
   emit({ kind: 'experiment-summary', markdown: md, complete: outcome.complete, failed: outcome.failed, desktop: ending.record, finished: new Date().toISOString() });
   process.stdout.write(`${md.join('\n')}\n`);
   writeSummary(args.out);
   return outcome.complete;
+}
+
+/**
+ * A measuring experiment's outcome from its result (`{complete, pass, failed}`): the drag experiment's judges (T10) and
+ * the predicate cases' (T15) fail the run as an incomplete one does; the others report completeness only.
+ */
+export const measuredOutcome = (result) => ({ complete: result.complete && result.pass !== false, failed: result.failed });
+
+/**
+ * The outcome as the run ends it, with the harness's own trace judged once every window of the run's is closed: each
+ * change of a window it did not open (`foreign`) makes the run incomplete, whatever it measured.
+ */
+export function finishOutcome(outcome, foreign) {
+  if (!foreign.length) return outcome;
+  return { complete: false, failed: [...outcome.failed, ...foreign.map((f) => `a window the harness did not open was changed: ${f}`)] };
 }

@@ -321,12 +321,16 @@ export function settledFields(effects, kind) {
  * Whether a kind's complete effect shows in a reading of its scene (`after`), against the reading before the run
  * (`before`); `run` carries what the run sent (the key, the text, the clicked line, the copied word, the scroll's
  * direction and steps) and, where `settledFields` names fields, the scene's settled reading (`settled`), which the
- * reading must equal in them.
+ * reading must equal in them. The pass and the miss come from one source: a reading the kind's table entry
+ * (`SETTLE_READINGS`, `judgeReading`) shows as no effect or another target is never the effect, however the kind's own
+ * check below reads it (the re-review of fix 8: Blink's own motion at the pointer's place raises `moves`, which a move's
+ * check alone took for the move). The same holds for a late effect, which is read through this too.
  */
 export function landed(effects, kind, before, after, run = {}) {
   if (!before || !after) return false;
   const fields = settledFields(effects, kind);
   if (fields && !(run.settled && fields.every((f) => same(after[f], run.settled[f])))) return false;
+  if (['no effect', 'another target'].includes(judgeReading(effects, kind, before, after, run).judgment)) return false;
   // the window manager's activation done (`_NET_ACTIVE_WINDOW` names the window, as it does once it has raised it), and
   // the application's own word where it gives one (its frame's ACTIVE state; Chromium reports none, null)
   if (kind === 'activate_window') return before.wm === false && after.wm === true && after.active !== false;
@@ -395,11 +399,27 @@ export function landed(effects, kind, before, after, run = {}) {
 }
 
 /**
- * Whether a cell's answers are the ones it expects: each a success, but the control's (`menu_unconfirmed`), whose one
- * request must answer menuUnconfirmed (deviations.mjs `MENU_UNCONFIRMED`), since the page cancels the menu it asked for.
+ * The settle cells that expect a refusal, by kind: the error each one request must answer, and why an ok there is
+ * false. The control (`menu_unconfirmed`) must answer menuUnconfirmed (deviations.mjs `MENU_UNCONFIRMED`), since the
+ * page cancels the menu it asked for.
+ */
+export const EXPECTED_REFUSALS = {
+  menu_unconfirmed: {
+    name: 'menuUnconfirmed',
+    error: MENU_UNCONFIRMED,
+    why: 'the page cancels the menu, so none appeared',
+  },
+};
+
+/** Whether a cell's kind expects a refusal (`EXPECTED_REFUSALS`). */
+export const expectsRefusal = (kind) => Object.hasOwn(EXPECTED_REFUSALS, kind);
+
+/**
+ * Whether a cell's answers are the ones it expects: each a success, but a refusal cell's (`EXPECTED_REFUSALS`), whose
+ * one request must answer its error.
  */
 export function answersAsExpected(kind, answers) {
-  if (kind === 'menu_unconfirmed') return answers.length === 1 && answers[0].ok === false && MENU_UNCONFIRMED.test(String(answers[0].error ?? ''));
+  if (expectsRefusal(kind)) return answers.length === 1 && answers[0].ok === false && EXPECTED_REFUSALS[kind].error.test(String(answers[0].error ?? ''));
   return answers.every((a) => a.ok);
 }
 
@@ -428,6 +448,268 @@ export function runClass(row) {
   if (!row.expected_error && row.answers?.some((a) => !a.ok)) return 'refused';
   if (row.landed) return 'desktop';
   return row.late_ms !== null && row.late_ms !== undefined ? 'late' : 'never';
+}
+
+/**
+ * Whether the lane's judge reads a run's failure (a settle-run row: its scene, input kind and lane) for #302, a limit
+ * declared at T8 (Decision Log, 2026-11-07): an Electron page's key release reaches the tree after press_key's settle in
+ * about a third of the runs, at every step, the vendor's 100 included. Only on the shipped lane (#371): a search lane's
+ * held step sets the service's constants, which the limit must not lower.
+ */
+export const judgesLateKeyUp = ({ scene, input, lane }) => input === 'press_key' && /^electron-/.test(scene) && lane === 'shipped';
+
+/**
+ * Why a failing run is not #302, or null when it is (the design session's ruling, sminos 659 and 682, encoded by #371).
+ * It must be the lane's `late` class (every answer ok, nothing invalid, the effect late), with the desktop left alone
+ * (a clean span, and the front window still active where the cell has one: a desktop-route cell's `front_active` is
+ * null), and its record must show all three:
+ *   1. the key-down inside the settle: the reading straight after it has key_downs one more than before, and last_key
+ *      the key sent;
+ *   2. the key-up late: that reading has key_ups unchanged, and the late bound saw it come (`late_ms`);
+ *   3. key_ups equal to key_downs at the next before-read: `next`, the next timed run on the same page, its counters
+ *      continuing from this run's, before its own input.
+ */
+export function lateKeyUpMiss(run, next) {
+  return ownLateKeyUpMiss(run) ?? caughtUpMiss(run, next);
+}
+
+/** `lateKeyUpMiss` on the run's own record: its class, its desktop, criteria 1 and 2. */
+function ownLateKeyUpMiss(run) {
+  const cls = runClass(run);
+  if (cls !== 'late') return `class ${cls}`;
+  if (run.desktop_clean !== true || run.front_active === false) return 'the desktop changed';
+  const { before: b, after: a } = run;
+  if (!b || !a || typeof b.key_downs !== 'number' || typeof b.key_ups !== 'number') return 'no key counters in the record';
+  if (!(a.key_downs === b.key_downs + 1 && a.last_key === run.sent?.key)) return `criterion 1: key_downs ${b.key_downs} -> ${a.key_downs}, last_key ${a.last_key}`;
+  if (!(a.key_ups === b.key_ups && run.late_ms !== null && run.late_ms !== undefined)) return `criterion 2: key_ups ${b.key_ups} -> ${a.key_ups}, late_ms ${run.late_ms}`;
+  return null;
+}
+
+/** `lateKeyUpMiss`'s criterion 3: the next before-read on the same page caught up with the key's release. */
+function caughtUpMiss(run, next) {
+  const n = next?.before;
+  // an error row has no reading; a fresh page's counters start again
+  if (!n || typeof n.key_downs !== 'number' || n.key_downs < run.after.key_downs) return 'criterion 3: no next before-read on the same page';
+  if (n.key_ups !== n.key_downs) return `criterion 3: the next before-read (trial ${next.trial}) has key_ups ${n.key_ups}, key_downs ${n.key_downs}`;
+  return null;
+}
+
+/**
+ * A series' runs (in order) judged by the lane's rule, with #302 where the cell takes it (`judgesLateKeyUp`). Each run
+ * is `pass` (the lane's own rule, `runPasses`), `#302` (`lateKeyUpMiss`, its next before-read the series' next run, or
+ * `next` after the last: the run after the series on the same page, where a stored record shows one), `pending` (#302
+ * but for a next before-read not taken yet), `false ok` (`falseOk`) or `fail`. One rule for every cell (the design
+ * session's ruling 707): a #302 run counts toward the streak, listed apart in `late_302`; any other miss is honest and
+ * breaks the streak, which a later one may cover, the lane's 30 consecutive passes in at most 60 (a pending run counts
+ * as such a miss until its next before-read comes); and a false ok fails the series whatever streak follows (ruling
+ * 650's hard failure), listed in `false_ok`. `oks` counts a pending run as a miss and `hopeful` as a pass; `lost` says
+ * no later run can pass the series, for the live stop rule. Returns `{judged, oks, hopeful, runs, misses, streak,
+ * reached, late_302, false_ok, lost}`.
+ */
+export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, next } = {}) {
+  const judged = rows.map((r, i) => {
+    if (r.ok) return { trial: r.trial, cls: 'pass' };
+    const hard = falseOk(r);
+    if (hard) return { trial: r.trial, cls: 'false ok', why: hard };
+    if (!judgesLateKeyUp(r)) return { trial: r.trial, cls: 'fail', why: missWhy(r) };
+    const own = ownLateKeyUpMiss(r);
+    if (own) return { trial: r.trial, cls: 'fail', why: own };
+    const after = rows[i + 1] ?? next;
+    // all but its next before-read, which the series has not taken yet
+    if (!after) return { trial: r.trial, cls: 'pending', late_ms: r.late_ms };
+    const why = caughtUpMiss(r, after);
+    return why === null ? { trial: r.trial, cls: '#302', late_ms: r.late_ms } : { trial: r.trial, cls: 'fail', why };
+  });
+  const oks = judged.map((j) => j.cls === 'pass' || j.cls === '#302');
+  const hopeful = judged.map((j) => j.cls === 'pass' || j.cls === '#302' || j.cls === 'pending');
+  const falseOks = judged.filter((j) => j.cls === 'false ok');
+  const verdict = seriesVerdict(oks, need);
+  const reached = verdict.reached && falseOks.length === 0;
+  const lost = !reached && (falseOks.length > 0 || hopeless(hopeful, need, max));
+  // the lane's misses, a #302 run among them: it is listed apart, never hidden
+  const misses = judged.filter((j) => j.cls !== 'pass').length;
+  return { judged, oks, hopeful, ...verdict, misses, reached, late_302: judged.filter((j) => j.cls === '#302').map(({ trial, late_ms }) => ({ trial, late_ms })), false_ok: falseOks, lost };
+}
+
+/**
+ * Why a run is a false ok (ruling 650's hard failure, which ruling 707 makes the settle lane's in every cell), or null.
+ * In a cell that expects a refusal (`EXPECTED_REFUSALS`; a stored row's `expected_error` marks one too), any ok among
+ * its answers, whatever the reading shows or when: the cell exists to prove the refusal, so an ok there claims what did
+ * not happen (the menu control's: a menu the page cancelled); the coordinator's ruling and the design session's,
+ * sminos 715, in the spirit of 650 and 687. The reading's own false ok, if any, is named beside it. A genuine refusal is
+ * no ok. In every other cell, `readingFalseOk`.
+ */
+function falseOk(run) {
+  if (expectsRefusal(run.input) || run.expected_error === true) {
+    if (!run.answers?.some((a) => a.ok === true)) return null;
+    const shown = readingFalseOk(run);
+    return `answered ok where the cell expects its refusal (${EXPECTED_REFUSALS[run.input]?.name ?? 'an error'}): ${EXPECTED_REFUSALS[run.input]?.why ?? 'the cell exists to prove it'}${shown ? `; ${shown}` : ''}`;
+  }
+  return readingFalseOk(run);
+}
+
+/**
+ * An honest miss's reason: its class, and for one whose every answer was ok and whose effect never came, what its kind's
+ * reading shows (`judgeReading`: a partial effect, or another effect than the one requested).
+ */
+function missWhy(run) {
+  const cls = runClass(run);
+  if (cls !== 'never' || !run.answers?.length || !run.answers.every((a) => a.ok === true) || run.before == null || run.after == null) return `class ${cls}`;
+  return `class never: ${judgeReading(SCENES[run.scene]?.effects, run.input, run.before, run.after, run.sent ?? {}).why}`;
+}
+
+/**
+ * What each settle cell's reading shows of its kind (the review of fix 6, ruling 716), by the scene's effects and the
+ * kind: `requested`, the fields that are the requested effect; `elsewhere`, the fields that change only when the effect
+ * went to another target; `aim`, where a requested field's own value can show another target (`context`: the element a
+ * context event names, against the one aimed at; `line`: a caret or selection outside the line aimed at; `pad`: the
+ * pad's release with no press on the pad); `minimum`, the requested fields whose change is the effect itself, as
+ * opposed to its delivery (a scroll's position, not its wheel events; a drag's drag, not its button's press and
+ * release; a move's new place, not a motion event Blink sends by itself; the window manager's activation, not the
+ * application's own word), every requested field where the two are one; and `partial`, whether a right-target effect
+ * can be of the wrong size (L3c's scroll that moved the page on two of three wheel steps, a key-down with no key-up).
+ * A kind whose request names what it runs resolves by `sent.action` (`byAction`: a named action is a Chromium button's
+ * context menu or a Gecko button's press, action-settle.mjs). A scene's reading measures several kinds at once (the
+ * input page counts pointer, key, wheel and context events, and Blink moves the pointer by itself), so a kind's effect
+ * is read in its own fields alone, never in the whole reading. `judgeReading` defines the judgments.
+ *
+ * Coverage limit, where `elsewhere` is empty and no `aim` applies: the reading cannot show another target. The input
+ * page counts keys and wheel steps document-wide and its moves on the pad alone; a field's or a terminal's text, xterm's
+ * recorded reports, the clipboard, the window manager's activation and the GTK, Qt and GTK 4 scenes' counters belong to
+ * the target alone. There, only no effect and an honest miss are told apart.
+ */
+const reading = (requested, { elsewhere = [], aim = null, partial = false, minimum = requested } = {}) => ({ requested, elsewhere, aim, partial, minimum });
+const ACTIVATION = reading(['wm', 'active'], { minimum: ['wm'], partial: true });
+const TEXT_KINDS = {
+  press_key: reading(['text']),
+  key_down: reading(['text']),
+  type_text: reading(['text'], { partial: true }),
+  clipboard_read: reading(['clipboard']),
+  clipboard_write: reading(['text']),
+  activate_window: ACTIVATION,
+};
+const CARET = reading(['caret'], { aim: 'line' });
+const SELECTION = reading(['selection'], { aim: 'line', partial: true });
+const PRESSES = reading(['presses']);
+export const SETTLE_READINGS = {
+  'input-page': {
+    press_key: reading(['key_downs', 'key_ups', 'last_key'], { minimum: ['key_downs'], partial: true }),
+    key_down: reading(['key_downs', 'last_key'], { minimum: ['key_downs'] }),
+    key_up: reading(['key_ups', 'last_key'], { minimum: ['key_ups'] }),
+    click: reading(['downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', minimum: ['downs'], partial: true }),
+    click_element: reading(['clicks'], { elsewhere: ['downs', 'context'] }),
+    right_click: reading(['context', 'context_on'], { elsewhere: ['clicks'], aim: 'context', minimum: ['context'] }),
+    // the Press button's press (Gecko), whose click only it counts, or the Native button's context menu (Chromium)
+    secondary_action: {
+      byAction: {
+        press: reading(['clicks'], { elsewhere: ['downs', 'context'] }),
+        showContextMenu: reading(['context', 'context_on'], { elsewhere: ['clicks'], aim: 'context', minimum: ['context'] }),
+      },
+    },
+    menu_unconfirmed: reading(['context', 'context_on'], { elsewhere: ['clicks'], aim: 'context', minimum: ['context'] }),
+    move: reading(['moves', 'pointer_at'], { minimum: ['pointer_at'], partial: true }),
+    move_relative: reading(['moves', 'pointer_at'], { minimum: ['pointer_at'], partial: true }),
+    // the operation's own outcome is the page moving (ops.mjs `scroll`); its wheel events are the delivery
+    scroll: reading(['wheels', 'wheel_legacy', 'scroll'], { minimum: ['scroll'], partial: true }),
+    drag: reading(['drags', 'downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', minimum: ['drags'], partial: true }),
+    drag_handle: reading(['drags', 'downs', 'ups'], { elsewhere: ['clicks'], aim: 'pad', minimum: ['drags'], partial: true }),
+  },
+  field: { press_key: TEXT_KINDS.press_key, type_text: TEXT_KINDS.type_text, clipboard_read: TEXT_KINDS.clipboard_read, clipboard_write: TEXT_KINDS.clipboard_write, activate_window: ACTIVATION },
+  editor: { ...TEXT_KINDS, click: CARET, key_click: CARET, drag: SELECTION, drag_handle: SELECTION },
+  paragraphs: { press_key: TEXT_KINDS.press_key, key_down: TEXT_KINDS.key_down, type_text: TEXT_KINDS.type_text, click: CARET, drag: SELECTION, activate_window: ACTIVATION },
+  screen: {
+    press_key: TEXT_KINDS.press_key,
+    key_down: TEXT_KINDS.key_down,
+    type_text: TEXT_KINDS.type_text,
+    click: reading(['text'], { partial: true }),
+    scroll: reading(['text'], { partial: true }),
+    activate_window: ACTIVATION,
+  },
+  record: {
+    press_key: reading(['bytes']),
+    click: reading(['bytes'], { partial: true }),
+    drag: reading(['bytes'], { partial: true }),
+    scroll: reading(['bytes'], { partial: true }),
+  },
+  'settle-scene': {
+    click: PRESSES,
+    key_click: PRESSES,
+    click_element: PRESSES,
+    secondary_action: PRESSES,
+    activate_click: PRESSES,
+    move: reading(['moves'], { partial: true }),
+    scroll: reading(['scrolls'], { partial: true }),
+  },
+  counter: { click_element: PRESSES, secondary_action: PRESSES },
+  'gtk4-input': {
+    press_key: reading(['keys']),
+    click: PRESSES,
+    move: reading(['moves'], { partial: true }),
+    scroll: reading(['scroll'], { partial: true }),
+    drag: reading(['scale'], { partial: true }),
+  },
+};
+
+/**
+ * A settle cell's reading judgment (`SETTLE_READINGS`), resolved by what the run sent where the kind's request names
+ * what it runs (`byAction`); a kind or action with none cannot be judged, so it is refused.
+ */
+export function readingOf(effects, kind, sent = {}) {
+  const entry = SETTLE_READINGS[effects]?.[kind];
+  if (!entry) throw new Error(`no reading judgment for ${kind} in a${/^[aeiou]/.test(effects ?? '') ? 'n' : ''} ${effects} scene (SETTLE_READINGS)`);
+  if (!entry.byAction) return entry;
+  const chosen = entry.byAction[sent.action];
+  if (!chosen) throw new Error(`no reading judgment for ${kind}'s action ${sent.action} in a${/^[aeiou]/.test(effects) ? 'n' : ''} ${effects} scene (SETTLE_READINGS)`);
+  return chosen;
+}
+
+/**
+ * A run's miss, every answer ok and the effect not landed within the late bound, judged by its kind's reading
+ * (`SETTLE_READINGS`): `another target` when an `elsewhere` field changed or the `aim` shows another element or place;
+ * else `no effect` when none of the `minimum` fields changed, its delivery alone notwithstanding (ruling 650: a scroll
+ * whose wheel events came and whose page did not move had no effect); else a right-target effect short of the requested
+ * one, honest (ruling 650), `partial` where the kind's effect has a size, `other` where it has none (a single event of
+ * another key, say). Returns `{judgment, why}`.
+ */
+export function judgeReading(effects, kind, before, after, sent = {}) {
+  const entry = readingOf(effects, kind, sent);
+  const moved = (f) => !same(before?.[f], after?.[f]);
+  const changed = entry.requested.filter(moved);
+  const elsewhere = entry.elsewhere.filter(moved);
+  const aimed = aimMiss(entry.aim, kind, before, after, sent);
+  if (elsewhere.length) return { judgment: 'another target', why: `${elsewhere.join(', ')} changed, the reading of another target` };
+  if (aimed) return { judgment: 'another target', why: aimed };
+  if (!entry.minimum.some(moved)) return { judgment: 'no effect', why: `none of ${entry.minimum.join(', ')} changed${changed.length ? ` (${changed.join(', ')} did: its delivery alone)` : ''}` };
+  return entry.partial ? { judgment: 'partial', why: `a partial effect: ${changed.join(', ')} changed` } : { judgment: 'other', why: `an effect not the one requested: ${changed.join(', ')} changed` };
+}
+
+/** Where a requested field's value shows another target (`SETTLE_READINGS`' `aim`), or null. */
+function aimMiss(aim, kind, before, after, sent) {
+  if (aim === 'context' && grew(before, after, 'context')) {
+    // a right click aims at the Menu button, and so does the menu control, whose stored rows predate `sent.on`
+    const target = sent.on ?? (kind === 'right_click' || kind === 'menu_unconfirmed' ? 'menu' : null);
+    if (target && after.context_on !== target) return `the context event reached ${after.context_on}, not ${target}`;
+  }
+  if (aim === 'pad' && grew(before, after, 'ups') && !grew(before, after, 'downs')) return 'released with no press on the pad';
+  if (aim === 'line' && Array.isArray(sent.line)) {
+    if (Number.isInteger(after?.caret) && after.caret !== before?.caret && !insideLine(sent.line, after.caret)) return `the caret went to ${after.caret}, outside the line aimed at`;
+    const sel = after?.selection;
+    if (Array.isArray(sel) && sel[1] > sel[0] && !same(sel, before?.selection) && !(insideLine(sent.line, sel[0]) && insideLine(sent.line, sel[1]))) return `the selection ${JSON.stringify(sel)} lies outside the line aimed at`;
+  }
+  return null;
+}
+
+/**
+ * `falseOk` read from the run's answers and its kind's reading: every answer ok, nothing invalid, the effect not landed
+ * within the late bound, and `judgeReading` finding no effect or another target.
+ */
+function readingFalseOk(run) {
+  if (runClass(run) !== 'never' || !run.answers?.length || !run.answers.every((a) => a.ok === true)) return null;
+  if (run.before == null || run.after == null) return null;
+  const { judgment, why } = judgeReading(SCENES[run.scene]?.effects, run.input, run.before, run.after, run.sent ?? {});
+  if (judgment === 'no effect') return 'answered ok with no effect';
+  if (judgment === 'another target') return `answered ok, and the effect landed on another target: ${why}`;
+  return null;
 }
 
 /** Whether a series can no longer reach `need` consecutive passes in `max` runs. */
@@ -528,7 +810,8 @@ export function settleVerdict(series, { search, cells }) {
   const held = {};
   const md = ['| cell | lane | runs | misses (late / never / refused / invalid) | streak at the end | verdict |', '|---|---|---:|---|---:|---|'];
   for (const s of series) {
-    md.push(`| ${s.cell} | ${s.lane} | ${s.runs} | ${s.misses} (${s.late} / ${s.never} / ${s.refused ?? 0} / ${s.invalid ?? 0}) | ${s.streak} | ${s.reached ? `${s.need} consecutive` : 'not reached'} |`);
+    const limit = s.late_302?.length ? `, ${s.late_302.length} of them #302` : '';
+    md.push(`| ${s.cell} | ${s.lane} | ${s.runs} | ${s.misses} (${s.late} / ${s.never} / ${s.refused ?? 0} / ${s.invalid ?? 0}) | ${s.streak} | ${s.reached ? `${s.need} consecutive${limit}` : `not reached${limit}`} |`);
     if (s.need < CONSECUTIVE) failed.push(`${s.cell} (${s.lane}): a development series of ${s.need}, not the ${CONSECUTIVE} the rule needs`);
   }
   for (const name of cells) {
@@ -541,8 +824,39 @@ export function settleVerdict(series, { search, cells }) {
       held[name] = heldStep(mine);
       if (held[name] === null) failed.push(`${name}: no step held (${mine.map((s) => s.lane).join(', ')})`);
     } else {
-      for (const s of mine) if (!s.reached) failed.push(`${name} (${s.lane}): no ${s.need} consecutive passing runs in ${s.runs}`);
+      for (const s of mine) {
+        if (s.reached) continue;
+        // a false ok fails the series whatever its streak (judgeSettleSeries)
+        const falseOk = s.false_ok?.length ? `${s.false_ok.length} of ${s.runs} runs were a false ok (${s.false_ok.slice(0, 5).map((f) => `trial ${f.trial}: ${f.why}`).join('; ')})` : null;
+        failed.push(`${name} (${s.lane}): ${falseOk ?? `no ${s.need} consecutive passing runs in ${s.runs}`}`);
+      }
     }
   }
+  return { md, failed, held };
+}
+
+/**
+ * A lanes or search sitting's verdict (`runSettle`'s end): its series (`settleVerdict`, over the cells it opened), and
+ * every failure of the sitting beside them, each its own: a planned cell that could not be opened (`skipped`,
+ * `{cell, why}`), an audit that failed, a cell the sitting audits (`audited`) with no audit, a change to a window it did
+ * not open (`foreign`), and the private display's watchdog. Returns `{md, failed, held}`.
+ */
+export function sittingVerdict({ series, cells, search, skipped = [], audits = [], audited = [], foreign = [], watchdog = { clean: true } }) {
+  const opened = (cell) => !skipped.some((s) => s.cell === cell);
+  const { md, failed, held } = settleVerdict(series, { search, cells: cells.filter(opened) });
+  for (const s of skipped) failed.push(`${s.cell} could not be opened: ${s.why}`);
+  for (const a of audits) if (!a.pass) failed.push(`${a.cell}: the audit failed: ${a.failed.join('; ')}`);
+  const unaudited = audited.filter((cell) => opened(cell) && !audits.some((a) => a.cell === cell));
+  if (unaudited.length) failed.push(`no audit of ${unaudited.join(', ')}`);
+  for (const f of foreign) failed.push(`a window the experiment did not open was changed: ${f}`);
+  if (!watchdog.clean) failed.push(`the private display's watchdog: ${watchdog.reason}`);
+  if (search) md.push('', '| cell | held step (ms) |', '|---|---:|', ...Object.entries(held).map(([c, ms]) => `| ${c} | ${ms ?? '**none**'} |`));
+  if (audits.length) md.push('', '| cell | audit | requests | runs that ran their input | effects missed |', '|---|---|---:|---:|---:|', ...audits.map((a) => `| ${a.cell} | ${a.pass ? 'clean' : `**${a.failed.join('; ')}**`} | ${a.requests} | ${a.runs.filter((r) => r.class !== 'invalid' && r.class !== 'refused').length} of ${a.runs.length} | ${a.missed} |`));
+  const limited = series.filter((s) => s.late_302?.length);
+  if (limited.length) {
+    md.push('', "**#302**, a declared limit (an Electron page's key release reached the tree after press_key's settle, the key-down inside it and the release caught up by the next run's reading): counted toward the streak, listed apart.", '');
+    md.push('| cell | lane | #302 runs | the key-up seen after the answer (ms) |', '|---|---|---:|---|', ...limited.map((s) => `| ${s.cell} | ${s.lane} | ${s.late_302.length} of ${s.runs} | ${s.late_302.map((l) => l.late_ms).join(', ')} |`));
+  }
+  if (failed.length) md.push('', `**Incomplete or failed:** ${failed.join('; ')}.`);
   return { md, failed, held };
 }

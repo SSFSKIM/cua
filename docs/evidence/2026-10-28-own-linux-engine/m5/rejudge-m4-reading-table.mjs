@@ -5,6 +5,8 @@
 // prints:
 // - every run whose classification (pass, #302, pending, false ok, fail) differs between the judge before fix 7
 //   (fc6e74f1, read from git) and the table judge, and how many honest misses' reasons changed only in their wording;
+// - every stored passing run the table refuses (no effect or another target on its readings), which the live judge's
+//   landed() now refuses too (fix 9: a pass and a miss from one source);
 // - the step's verdict under the table judge beside the one M4 recorded (m4/gate/README.md: the shipped judge's, or the
 //   re-judge script's where a ruling passed the step), and whether it moved.
 // Usage, from the repository's root: node docs/evidence/2026-10-28-own-linux-engine/m5/rejudge-m4-reading-table.mjs
@@ -66,7 +68,7 @@ const RECORDED = {
 const passes = (recorded) => recorded.startsWith('pass');
 
 const out = [];
-const counts = { steps: 0, series: 0, runs: 0, changed: 0, reworded: 0, moved: 0, v3: 0 };
+const counts = { steps: 0, series: 0, runs: 0, passing: 0, refused: 0, changed: 0, reworded: 0, moved: 0, v3: 0 };
 for (const [candidate, steps] of Object.entries(RECORDED)) {
   for (const [step, recorded] of Object.entries(steps)) {
     if (step === 'V3') continue;
@@ -75,6 +77,15 @@ for (const [candidate, steps] of Object.entries(RECORDED)) {
     const then = judgeRecord(prior, rows);
     counts.steps++;
     counts.series += now.series.length;
+    // each stored pass read through the table: landed() refuses what it shows as no effect or another target
+    for (const r of rows.filter((x) => x.kind === 'settle-run' && x.ok)) {
+      counts.passing++;
+      const { judgment, why } = table.judgeReading(table.SCENES[r.scene].effects, r.input, r.before, r.after, r.sent ?? {});
+      if (judgment === 'no effect' || judgment === 'another target') {
+        counts.refused++;
+        out.push(`  REFUSED c${candidate} ${step} ${r.cell} (${r.lane}) trial ${r.trial}: a stored pass the table reads as ${judgment} (${why})`);
+      }
+    }
     for (const s of now.series) {
       const was = then.series.find((x) => x.cell === s.cell && x.lane === s.lane && x.load === s.load);
       s.judged.forEach((j, i) => {
@@ -123,6 +134,6 @@ for (const [candidate, steps] of Object.entries(RECORDED)) {
     out.push(`c${candidate} V3: recorded ${steps.V3}; the gap judge ${verdict}${outcome.failed.length ? ` (${outcome.failed.join('; ')})` : ''}; cua's activate_window samples the witness did not observe: ${unobserved} of ${samples.length}${moved ? '  ** VERDICT MOVED **' : ''}`);
   }
 }
-out.push('', `read: ${counts.steps} steps (${counts.steps - 2} settle, 2 V3), ${counts.series} settle series, ${counts.runs} settle runs, ${counts.v3} V3 activate_window verdicts; runs whose classification changed: ${counts.changed}; honest misses whose reason was only reworded: ${counts.reworded}; step verdicts moved against M4's record: ${counts.moved}`);
+out.push('', `read: ${counts.steps} steps (${counts.steps - 2} settle, 2 V3), ${counts.series} settle series, ${counts.runs} settle runs (${counts.passing} stored passes, of which the table refuses ${counts.refused}), ${counts.v3} V3 activate_window verdicts; runs whose classification changed: ${counts.changed}; honest misses whose reason was only reworded: ${counts.reworded}; step verdicts moved against M4's record: ${counts.moved}`);
 process.stdout.write(`${out.join('\n')}\n`);
-process.exitCode = counts.moved ? 1 : 0;
+process.exitCode = counts.moved || counts.refused || counts.changed ? 1 : 0;

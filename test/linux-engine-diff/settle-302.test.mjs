@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  ACTIVATING, CELLS, EXPECTED_REFUSALS, FAMILY_SCENES, SCENES, SETTLE_READINGS, cellName, cellsFor, expectsRefusal, judgeSettleSeries, judgesLateKeyUp, lateKeyUpMiss, sittingVerdict,
+  ACTIVATING, CELLS, EXPECTED_REFUSALS, FAMILY_SCENES, SCENES, SETTLE_READINGS, cellName, cellsFor, expectsRefusal, judgeSettleSeries, judgesLateKeyUp, lateKeyUpMiss, landed, runPasses, sittingVerdict,
 } from '../../scripts/linux-engine-diff/action-settle-cells.mjs';
 import { CANDIDATES, gateRows } from './gate-rows.mjs';
 
@@ -393,6 +393,43 @@ test("the effect itself, not its delivery, and a named action judged by what it 
     assert.equal(v.reached, true, `${name}: ${why}`);
     assert.deepEqual(v.false_ok, [], name);
   }
+});
+
+test("a pass and a miss decided by one source: a row oneRun builds through landed and runPasses is no pass the table refuses", () => {
+  const page = (over = {}) => ({ moves: 0, downs: 0, ups: 0, drags: 0, key_downs: 0, key_ups: 0, last_key: 'none', scroll: 0, context: 0, context_on: 'none', clicks: 0, pointer_at: [10, 10], wheels: 0, wheel_legacy: 0, ...over });
+  // as oneRun: the effect from landed (the scene's settled reading, where it decides one, the reading after), then the
+  // run's pass from runPasses, every answer ok and the desktop left alone
+  const asOneRun = (scene, input, before, after, sent = {}) => {
+    const effect = landed(SCENES[scene].effects, input, before, after, { ...sent, settled: after });
+    const ok = runPasses({ route: 'background', kind: input, answersOk: true, landed: effect, desktopClean: true, frontActive: true });
+    return { ...run(0, { ok, late_ms: null, before, after }), landed: effect, scene, input, sent, cell: `${scene} ${input} background` };
+  };
+  const goods = (r) => passes(1, 30).map((g) => ({ ...g, scene: r.scene, input: r.input, cell: r.cell }));
+  const cases = {
+    // the review's reproduction: Blink's own motion at the pointer's place, `moves` 0 to 1
+    "a move's motion event at the pointer's place": [asOneRun('chrome-input', 'move', page(), page({ moves: 1 })), /no effect/],
+    "a relative move's motion event at the pointer's place": [asOneRun('electron-input', 'move_relative', page(), page({ moves: 1 }), { dx: 40 }), /no effect/],
+    // where landed's own check holds and an other-target field moved with it
+    "a pad click the Press button counted too": [asOneRun('chrome-input', 'click', page(), page({ downs: 1, ups: 1, clicks: 1 })), /another target: clicks/],
+    "an element click the pad counted too": [asOneRun('chrome-input', 'click_element', page(), page({ clicks: 1, downs: 1 })), /another target: downs/],
+    "a right click that clicked the Press button too": [asOneRun('chrome-input', 'right_click', page(), page({ context: 1, context_on: 'menu', clicks: 1 })), /another target: clicks/],
+    "a context menu request that clicked the Press button too": [asOneRun('chrome-input', 'secondary_action', page(), page({ context: 1, context_on: 'native', clicks: 1 }), { action: 'showContextMenu', on: 'native' }), /another target: clicks/],
+    "a press that raised a context event too": [asOneRun('firefox-input', 'secondary_action', page(), page({ clicks: 1, context: 1, context_on: 'press' }), { action: 'press' }), /another target: context/],
+    "a drag the Press button counted as a click": [asOneRun('chrome-input', 'drag', page(), page({ drags: 1, downs: 1, ups: 1, clicks: 1 })), /another target: clicks/],
+  };
+  for (const [name, [r, reason]] of Object.entries(cases)) {
+    assert.equal(r.ok, false, `${name}: no pass`);
+    const v = judgeSettleSeries([r, ...goods(r)], { need: 30 });
+    assert.equal(v.reached, false, name);
+    assert.match(v.false_ok[0]?.why ?? v.judged[0].why, reason, name);
+  }
+  // the right-target effects still pass, through the same helpers
+  for (const [name, r] of Object.entries({
+    'a move to a new place': asOneRun('chrome-input', 'move', page(), page({ moves: 3, pointer_at: [40, 30] })),
+    'a pad click': asOneRun('chrome-input', 'click', page(), page({ downs: 1, ups: 1, moves: 1, pointer_at: [20, 20] })),
+    'a context menu request on its button': asOneRun('chrome-input', 'secondary_action', page(), page({ context: 1, context_on: 'native' }), { action: 'showContextMenu', on: 'native' }),
+    'a scroll that moved the page on every wheel step': asOneRun('firefox-input', 'scroll', page(), page({ wheels: 3, scroll: 300 }), { direction: 'down', steps: 3 }),
+  })) assert.equal(r.ok, true, name);
 });
 
 test("candidate 2's L3c: its scroll that took two of three wheel steps is a landing miss, not a false ok, so the step stands", () => {

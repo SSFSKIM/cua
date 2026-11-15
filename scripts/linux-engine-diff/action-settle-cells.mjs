@@ -321,12 +321,16 @@ export function settledFields(effects, kind) {
  * Whether a kind's complete effect shows in a reading of its scene (`after`), against the reading before the run
  * (`before`); `run` carries what the run sent (the key, the text, the clicked line, the copied word, the scroll's
  * direction and steps) and, where `settledFields` names fields, the scene's settled reading (`settled`), which the
- * reading must equal in them.
+ * reading must equal in them. The pass and the miss come from one source: a reading the kind's table entry
+ * (`SETTLE_READINGS`, `judgeReading`) shows as no effect or another target is never the effect, however the kind's own
+ * check below reads it (the re-review of fix 8: Blink's own motion at the pointer's place raises `moves`, which a move's
+ * check alone took for the move). The same holds for a late effect, which is read through this too.
  */
 export function landed(effects, kind, before, after, run = {}) {
   if (!before || !after) return false;
   const fields = settledFields(effects, kind);
   if (fields && !(run.settled && fields.every((f) => same(after[f], run.settled[f])))) return false;
+  if (['no effect', 'another target'].includes(judgeReading(effects, kind, before, after, run).judgment)) return false;
   // the window manager's activation done (`_NET_ACTIVE_WINDOW` names the window, as it does once it has raised it), and
   // the application's own word where it gives one (its frame's ACTIVE state; Chromium reports none, null)
   if (kind === 'activate_window') return before.wm === false && after.wm === true && after.active !== false;

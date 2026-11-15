@@ -18,4 +18,4 @@ c3 L3b: recorded pass (ruling: #302); the table judge pass; the judge before fix
   c3 V3 chrome-input activate_window cua: stored fail; the gap judge declared gap
 c3 V3: recorded pass (ruling: #373); the gap judge pass; cua's activate_window samples the witness did not observe: 0 of 40
 
-read: 17 steps (15 settle, 2 V3), 507 settle series, 15358 settle runs, 2 V3 activate_window verdicts; runs whose classification changed: 0; honest misses whose reason was only reworded: 1; step verdicts moved against M4's record: 0
+read: 17 steps (15 settle, 2 V3), 507 settle series, 15358 settle runs (15245 stored passes, of which the table refuses 0), 2 V3 activate_window verdicts; runs whose classification changed: 0; honest misses whose reason was only reworded: 1; step verdicts moved against M4's record: 0

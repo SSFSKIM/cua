@@ -84,7 +84,7 @@ test('every experiment step parses; a gate\'s takes --gate, a development run\'s
     const gate = parseArgs([...stepArgs(s, { paths: PATHS, gate: true }), '--out', '/o']);
     assert.equal(gate.mode, 'experiment', s.name);
     assert.equal(gate.gate, true, s.name);
-    assert.equal(gate.run, `m4-gate-${s.name}`);
+    assert.equal(gate.run, `m5-gate-${s.name}`, 'M5\'s run names (task 87\'s finding 6)');
     assert.equal(parseArgs([...stepArgs(s, { paths: PATHS, gate: false }), '--out', '/o']).gate, undefined, s.name);
     assert.equal(gate.loadFactor === 2, s.load === 'load2', `${s.name}: twice the load exactly when planned so`);
     assert.equal(gate.ballast === 'gate', s.load === 'gate-windows', `${s.name}: the gate's window load`);
@@ -132,7 +132,7 @@ test('a pilot is a development run in its smallest form: --trials, the leave cas
   assert.throws(() => parseGateArgs(['run', 'D1', '--candidate', '/c', '--out', '/o', '--pilot', '2']), (e) => e instanceof GateRefused && /never a release gate/.test(e.message));
   const pilot = (name) => parseArgs([...stepArgs(stepNamed(name), { paths: PATHS, gate: false, pilot: 2 }), '--out', '/o']);
   assert.equal(pilot('D1').samplesTrials, 2);
-  assert.equal(pilot('D1').run, 'm4-dev-D1-pilot');
+  assert.equal(pilot('D1').run, 'm5-dev-D1-pilot');
   assert.equal(pilot('L1').load, false, 'the drag at load refuses fewer than 40 a side, so its pilot drops the load');
   assert.equal(pilot('L1').samplesTrials, 2);
   assert.equal(pilot('L3a').loadFactor, 2, 'other load steps keep their load');
@@ -151,7 +151,7 @@ test('a gate runs only from a clean checkout whose commit reads, writing outside
 test('a :0 step is printed as task 50\'s guarded sitting under the host lock, and the runner refuses to run it', async () => {
   const a = parseGateArgs(['print', 'V1', '--candidate', PATHS.candidate, '--out', '/gate']);
   const command = launchCommand(stepNamed('V1'), a, ROOT);
-  assert.match(command, /locked\.sh t18-gate env WRAP=\/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/wrap71\.py \/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/run71\.sh \/gate\/V1\.release-gate \/checkout --vendor /);
+  assert.match(command, /locked\.sh m5-gate env WRAP=\/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/wrap71\.py \/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/run71\.sh \/gate\/V1\.release-gate \/checkout --vendor /);
   assert.doesNotMatch(command, / --out /, 'run71.sh gives the harness its --out');
   const run = parseGateArgs(['run', 'Z0', '--candidate', PATHS.candidate, '--out', '/gate']);
   await assert.rejects(runStep(run, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false }), /runs on :0.*never runs on the person's display/);
@@ -193,7 +193,7 @@ test('a step\'s directory carries its label: its name, its README and its step.j
 test('--list prints every step\'s minutes, display and command, and the totals per display and per load', () => {
   const text = listText(parseGateArgs(['--list']), ROOT);
   for (const s of STEPS) assert.match(text, new RegExp(`^${s.name}\\s+${s.minutes} min\\s+${s.display.replace(':', '\\:')}`, 'm'));
-  assert.equal(text.split('\n').filter((l) => /locked\.sh t18-gate /.test(l)).length, STEPS.length);
+  assert.equal(text.split('\n').filter((l) => /locked\.sh m5-gate /.test(l)).length, STEPS.length, 'M5\'s default holder, unless --holder names one');
   const t = totals();
   assert.match(text, new RegExp(`total ${t.all} min .*per display: :0 ${t.display[':0']} min, private ${t.display.private} min; per load: idle ${t.load.idle} min, gate-windows ${t.load['gate-windows']} min, load2 ${t.load.load2} min`));
 });

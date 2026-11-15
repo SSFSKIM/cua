@@ -71,7 +71,8 @@ export function defaultsFor(arch = process.arch, cuaHome = join(HOME, '.local/sh
     // task 59's Mozilla Firefox, first on PATH in every M4 sitting (its README says why)
     firefoxDir: join(HOME, '.local/share/cua-171/task59/bin'),
     locked: join(HOME, '.local/share/cua-171/locked.sh'),
-    holder: 't18-gate',
+    // the host lock's holder a step's command and record name, unless `--holder` names the executor's own
+    holder: 'm5-gate',
     hold: join(HOME, '.local/share/cua-171/hold-sittings'),
   };
 }

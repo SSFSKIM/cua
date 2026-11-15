@@ -147,11 +147,11 @@ export const verdictOps = (step) => [...new Set(step.scenes.flatMap((scene) => s
 
 /**
  * A step's run name: one of its own per execution kind, so a gate's rows, a development run's and acceptance on the
- * pinned release's (`gate` 'pinned') never share one.
+ * pinned release's (`gate` 'pinned') never share one. M5's (task 87's finding 6; M4's read `m4-gate-` and `m4-dev-`).
  */
 export function runName(step, { gate, pilot }) {
   if (gate === 'pinned') return `pinned-${step.name}`;
-  return `m4-${gate ? 'gate' : 'dev'}-${step.name}${pilot ? '-pilot' : ''}`;
+  return `m5-${gate ? 'gate' : 'dev'}-${step.name}${pilot ? '-pilot' : ''}`;
 }
 
 /** The label every artifact of a step carries, and the directory name's form of it (candidate.mjs `gateLabel`). */

@@ -12,7 +12,7 @@ wheel route ran side by side on the same Chrome.
   `me` profile were not touched. The script stopped only what it started (its Xvfb, its Chrome, its burners), all under
   the host lock.
 - **Routes:** `old` is the tree at d988641e, which scrolls with `Input.synthesizeScrollGesture`. `new` is the tree at
-  d5960d35, which scrolls with a mouse wheel and reads the effect back (`src/browser-service/wheel-scroll.mjs`).
+  d5960d35 (first table) and at 5711371c (the rerun), which scrolls with a mouse wheel and reads the effect back (`src/browser-service/wheel-scroll.mjs`).
 - **Conditions** (`probe.mjs`), each preceded by a scroll back to the top:
   - `coordinates-front` and `dom-front`: the agent's tab in front of its window.
   - `coordinates-behind`: the window's first tab (about:blank) in front, the agent's tab behind it. That is where cua's
@@ -29,6 +29,17 @@ wheel route ran side by side on the same Chrome.
 | old (gesture) | cpu2 | 10/10, 154 ms | 10/10, 152 ms | **0/10**, the same 10 s timeout | **0/10**, the same detach |
 | new (wheel) | idle | 10/10, 83 ms | 10/10, 87 ms | 10/10, 86 ms | 10/10, 84 ms |
 | new (wheel) | cpu2 | 10/10, 107 ms | 10/10, 118 ms | 10/10, 96 ms | 10/10, 112 ms |
+
+**Rerun on the review fix wave (5711371c)**, the code that merges, with the same harness and the gesture beside it (`trials-5711371c.jsonl`, `run-5711371c.log`):
+
+| route | load | front | dom front | behind | front, unfocused |
+|---|---|---|---|---|---|
+| old (gesture) | idle | 10/10, 119 ms | 10/10, 122 ms | **0/10**, the 10 s timeout | **0/10**, `Debugger unattached` |
+| old (gesture) | cpu2 | 10/10, 141 ms | 10/10, 154 ms | **0/10**, the 10 s timeout | **0/10**, `Debugger unattached` |
+| new (wheel, 5711371c) | idle | 10/10, 80 ms | 10/10, 87 ms | 10/10, 82 ms | 10/10, 87 ms |
+| new (wheel, 5711371c) | cpu2 | 10/10, 125 ms | 10/10, 137 ms | 10/10, 109 ms | 10/10, 114 ms |
+
+The fix wave's own tests, in a real headless Chrome, are in `review-fix/`: `red-at-bcf80db7.txt` (the five finding tests fail, the four others pass), `green-real-chrome.txt` (9/9), and `covering-suites.txt`.
 
 "10/10" means the cell answered `{before: 0, moved: true}`. The times are each cell's own duration (median). Every row
 is in `trials.jsonl`.

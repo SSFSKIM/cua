@@ -14,12 +14,15 @@ const CANDIDATES = [process.env.CUA_TEST_CHROME, '/Applications/Google Chrome fo
 export const chromePath = () => CANDIDATES.find(p => existsSync(p)) ?? null;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-// -> {cdp, load(html, {origin}), evaluate(expression), url(path, origin), close()}; `pages` maps a path to its HTML.
+// -> {cdp, load(path, {origin}), evaluate(expression), url(path, origin), requests}; `pages` maps a path to its HTML, read
+// at each request, and `requests` lists what the pages asked for ({host, path, found}).
 export async function realChrome(t, pages = {}) {
   const path = chromePath();
   if (path == null) return null;
+  const requests = [];
   const server = createServer((req, res) => {
     const body = pages[new URL(req.url, 'http://x').pathname];
+    requests.push({host: req.headers.host?.split(':')[0], path: new URL(req.url, 'http://x').pathname, found: body != null});
     res.writeHead(body == null ? 404 : 200, {'content-type': 'text/html'});
     res.end(body ?? 'missing');
   });
@@ -37,7 +40,8 @@ export async function realChrome(t, pages = {}) {
     await Promise.race([new Promise(resolve => (child.exitCode != null ? resolve() : child.once('exit', resolve))), sleep(5000).then(() => child.kill('SIGKILL'))]);
     server.closeAllConnections();
     server.close();
-    rmSync(home, {recursive: true, force: true});
+    // Chrome's helpers can still be writing its profile as it exits (macOS): retried, and a leftover tmp dir is no failure
+    try { rmSync(home, {recursive: true, force: true, maxRetries: 10, retryDelay: 200}); } catch {}
   });
   const portFile = join(home, 'profile', 'DevToolsActivePort');
   for (let i = 0; i < 400 && !existsSync(portFile); i++) await sleep(50);
@@ -85,5 +89,5 @@ export async function realChrome(t, pages = {}) {
     await Promise.race([loaded, sleep(20_000).then(() => { throw new Error(`real Chrome did not load ${pathname} in 20 s`); })]);
     sent.length = 0;
   };
-  return {cdp, load, evaluate, url};
+  return {cdp, load, evaluate, url, requests};
 }

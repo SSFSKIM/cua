@@ -5,19 +5,20 @@
 // page has the event; the scroll it starts is read back instead.
 //
 // Before the wheel, the page names what the wheel would scroll: the first element outward from the one at the point,
-// with room in the requested direction. The search goes into open shadow roots and same-origin frames under the point,
-// then outward along the composed tree and through frames' owners, as Chrome chains a wheel; a document's scrolling
+// with room in the requested direction. It starts from the node Chrome hit-tests at the point (DOM.getNodeForLocation,
+// which sees into same-process frames and into open and closed shadow trees alike) and goes outward along the composed
+// tree and through frames' owners, as Chrome chains a wheel; a document's scrolling
 // element scrolls unless the viewport's overflow (html's, else body's) is hidden or clip; horizontal room follows the
 // scroller's direction (an RTL scroller runs from 0 at its right edge into negative offsets). The scroller is held as
-// the element itself (a remote object in a group the scroll releases), never found again by position, so nothing the
+// the element itself (a remote object in an object group of the scroll's own, which it releases; scrolls in a tab can overlap), never found again by position, so nothing the
 // page inserts can stand in for it, and the page never sees the probe.
 //  - No room anywhere: nothing can move, so the wheel is sent and the scroll answers at once, as the gesture did.
 //  - Room: the scroll waits, up to the action budget, for that scroller to move in the requested direction; when it
 //    does not, the answer says what is known: the wheel was sent, nothing was seen to scroll, and the page may handle
 //    the wheel itself (a map, a virtual list), so observe it before retrying.
 //  - A point in a frame the page cannot read cannot be observed: the wheel is sent and the scroll answers, as the
-//    gesture did. A closed shadow root is its host's content: what is inside cannot be read, so the room is its host's
-//    and its ancestors', and a scroll that only something inside it could take answers the no-movement answer above.
+//    gesture did. A closed shadow root is searched as an open one is: the hit test sees into it, and from inside its
+//    tree its host is reachable.
 //  - A probe the page does not answer (busy, navigating, or failing) sends no wheel: the scroll answers the contract's
 //    timeout with nothing scrolled, safe to retry (the design session's ruling on the review's P1). A wheel queued into
 //    a stalled renderer would land later and unconfirmed.
@@ -26,7 +27,9 @@ import {BrowserServiceError} from './errors.mjs';
 
 const POLL_MS = 50;
 const RELEASE_MS = 1000;
+const NO_NODE_AT_LOCATION = 'No node found at given location';    // DOM.getNodeForLocation past the content
 const GROUP = 'cua-wheel-scroll';
+let groups = 0;                     // each scroll holds and releases its own object group: scrolls in a tab can overlap
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export const scrollUnconfirmed = ms => `Timed out after ${ms}ms waiting for the scroll to take effect: the wheel was sent, but nothing was seen to `
@@ -34,59 +37,51 @@ export const scrollUnconfirmed = ms => `Timed out after ${ms}ms waiting for the 
 export const scrollUnprobed = ms => `Timed out after ${ms}ms: the page did not answer the scroll's probe, so no wheel was sent; nothing was scrolled, `
   + 'so it is safe to retry.';
 
-// In the page: what a wheel of (dx, dy) at (x, y) would scroll -> {observable: true, room: true, scroller, left, top},
+// In the page, on the node Chrome hit-tested at the point (DOM.getNodeForLocation, which sees into closed shadow trees
+// too): what a wheel of (dx, dy) there would scroll -> {observable: true, room: true, scroller, left, top},
 // {observable: true, room: false}, or {observable: false} when the point is in a frame the page cannot read.
-function locateScroller(x, y, dx, dy) {
-  const styleOf = (doc, el) => doc.defaultView.getComputedStyle(el);
+function locateFrom(dx, dy) {
+  const styleOf = el => el.ownerDocument.defaultView.getComputedStyle(el);
   const viewportOverflow = (doc, key) => {
-    const own = styleOf(doc, doc.documentElement)[key];
-    return own !== 'visible' || doc.body == null ? own : styleOf(doc, doc.body)[key];
+    const own = styleOf(doc.documentElement)[key];
+    return own !== 'visible' || doc.body == null ? own : styleOf(doc.body)[key];
   };
-  const scrolls = (doc, el, key) => (el === doc.scrollingElement ? !/^(hidden|clip)$/.test(viewportOverflow(doc, key))
-    : /^(auto|scroll|overlay)$/.test(styleOf(doc, el)[key]));
-  const hasRoom = (doc, el) => {
+  const scrolls = (el, key) => (el === el.ownerDocument.scrollingElement ? !/^(hidden|clip)$/.test(viewportOverflow(el.ownerDocument, key))
+    : /^(auto|scroll|overlay)$/.test(styleOf(el)[key]));
+  const hasRoom = el => {
     const roomY = dy > 0 ? el.scrollHeight - el.clientHeight - el.scrollTop : dy < 0 ? el.scrollTop : 0;
-    const maxX = el.scrollWidth - el.clientWidth, left = el.scrollLeft, rtl = styleOf(doc, el).direction === 'rtl';
+    const maxX = el.scrollWidth - el.clientWidth, left = el.scrollLeft, rtl = styleOf(el).direction === 'rtl';
     const roomX = dx > 0 ? (rtl ? -left : maxX - left) : dx < 0 ? (rtl ? maxX + left : left) : 0;
-    return (dy !== 0 && roomY >= 1 && scrolls(doc, el, 'overflowY')) || (dx !== 0 && roomX >= 1 && scrolls(doc, el, 'overflowX'));
+    return (dy !== 0 && roomY >= 1 && scrolls(el, 'overflowY')) || (dx !== 0 && roomX >= 1 && scrolls(el, 'overflowX'));
   };
-  // the composed tree's parent within one document: a slot, else the parent, else a shadow root's host
+  // the composed tree's parent within one document: a slot, else the parent, else a shadow root's host (open or closed:
+  // from inside its tree, a closed root's host is reachable)
   const parentOf = el => {
     if (el.assignedSlot != null) return el.assignedSlot;
     if (el.parentElement != null) return el.parentElement;
     const root = el.getRootNode();
     return root !== el && root.host != null ? root.host : null;
   };
-  // The documents from the top one in to the point's, each with the element the chaining starts from in it.
-  const levels = [];
-  let doc = document, px = x, py = y;
-  for (;;) {
-    let el = doc.elementFromPoint(px, py);
-    for (let inner; el?.shadowRoot != null && (inner = el.shadowRoot.elementFromPoint(px, py)) != null && inner !== el;) el = inner;
-    if (el != null && (el.tagName === 'IFRAME' || el.tagName === 'FRAME')) {
-      let content = null;
-      try { content = el.contentDocument; } catch {}
-      if (content == null) return {observable: false};
-      levels.push({doc, start: el});
-      const box = el.getBoundingClientRect();
-      px -= box.left + el.clientLeft;
-      py -= box.top + el.clientTop;
-      doc = content;
-      continue;
-    }
-    levels.push({doc, start: el ?? doc.scrollingElement});
-    break;
+  let el = this.nodeType === 1 ? this : this.parentElement ?? this.getRootNode?.().host ?? this.ownerDocument?.scrollingElement ?? null;
+  if (el != null && (el.tagName === 'IFRAME' || el.tagName === 'FRAME')) {
+    let content = null;
+    try { content = el.contentDocument; } catch {}
+    if (content == null) return {observable: false};
+    el = content.scrollingElement;
   }
-  const found = el => ({observable: true, room: true, scroller: el, left: el.scrollLeft, top: el.scrollTop});
-  for (let level = levels.length - 1; level >= 0; level--) {
-    const {doc: here, start} = levels[level];
+  const found = scroller => ({observable: true, room: true, scroller, left: scroller.scrollLeft, top: scroller.scrollTop});
+  // outward through this document, its scrolling element last, then on from its frame's owner in the parent document
+  while (el != null) {
+    const doc = el.ownerDocument;
     let sawRoot = false;
-    // a frame owner's level starts from the owner's parent: the owner itself scrolls nothing of its document
-    for (let el = level === levels.length - 1 ? start : parentOf(start); el != null; el = parentOf(el)) {
-      if (el === here.scrollingElement) sawRoot = true;
-      if (hasRoom(here, el)) return found(el);
+    for (; el != null; el = parentOf(el)) {
+      if (el === doc.scrollingElement) sawRoot = true;
+      if (hasRoom(el)) return found(el);
     }
-    if (!sawRoot && here.scrollingElement != null && hasRoom(here, here.scrollingElement)) return found(here.scrollingElement);
+    if (!sawRoot && doc.scrollingElement != null && hasRoom(doc.scrollingElement)) return found(doc.scrollingElement);
+    let owner = null;
+    try { owner = doc.defaultView.frameElement; } catch {}
+    el = owner == null ? null : parentOf(owner);
   }
   return {observable: true, room: false};
 }
@@ -96,7 +91,6 @@ const SCROLLER = 'function () { return this.scroller; }';
 // the held scroller's offsets now, or null once it has left its document
 const POSITION = 'function () { return this.isConnected ? {left: this.scrollLeft, top: this.scrollTop} : null; }';
 
-const call = (fn, ...args) => `(${fn.toString()})(${args.map(a => JSON.stringify(a)).join(', ')})`;
 const answered = result => {
   if (result == null || result.exceptionDetails != null) throw new Error('the scroll probe threw');
   return result.result;
@@ -110,17 +104,29 @@ const movedFrom = (before, now, dx, dy) => now != null
 // pointer is already there. `boundMs` bounds the probe, and then the wait for the effect.
 export async function wheelScroll(cdp, tabId, {modifiers, point, scrollX, scrollY, boundMs = DEFAULT_ACTION_MS}) {
   const page = (method, params, deadline) => cdp.call(tabId, method, params, {deadline, preserveOnTimeout: true});
-  const release = () => page('Runtime.releaseObjectGroup', {objectGroup: GROUP}, new Deadline(RELEASE_MS)).catch(() => {});
+  const group = `${GROUP}-${++groups}`;
+  const release = () => page('Runtime.releaseObjectGroup', {objectGroup: group}, new Deadline(RELEASE_MS)).catch(() => {});
   try {
     let facts, scroller = null;
     try {
       const probe = new Deadline(boundMs);
-      const located = answered(await page('Runtime.evaluate', {expression: call(locateScroller, point.x, point.y, scrollX, scrollY), returnByValue: false, objectGroup: GROUP}, probe));
+      // the node at the point as Chrome hit-tests it (closed shadow trees included), or past the content the document
+      let node;
+      try {
+        const hit = await page('DOM.getNodeForLocation', {x: Math.round(point.x), y: Math.round(point.y), includeUserAgentShadowDOM: false}, probe);
+        node = (await page('DOM.resolveNode', {backendNodeId: hit.backendNodeId, objectGroup: group}, probe))?.object?.objectId;
+      } catch (error) {
+        if (!String(error?.message).includes(NO_NODE_AT_LOCATION)) throw error;
+        node = answered(await page('Runtime.evaluate', {expression: 'document.documentElement', returnByValue: false, objectGroup: group}, probe))?.objectId;
+      }
+      if (node == null) throw new Error('the scroll probe found no node at the point');
+      const located = answered(await page('Runtime.callFunctionOn', {objectId: node, functionDeclaration: locateFrom.toString(),
+        arguments: [{value: scrollX}, {value: scrollY}], returnByValue: false, objectGroup: group}, probe));
       if (located?.objectId == null) throw new Error('the scroll probe answered no object');
       facts = answered(await page('Runtime.callFunctionOn', {objectId: located.objectId, functionDeclaration: FACTS, returnByValue: true}, probe))?.value;
       if (facts == null || typeof facts !== 'object') throw new Error('the scroll probe answered nothing');
       if (facts.observable === true && facts.room) {
-        scroller = answered(await page('Runtime.callFunctionOn', {objectId: located.objectId, functionDeclaration: SCROLLER, returnByValue: false, objectGroup: GROUP}, probe))?.objectId;
+        scroller = answered(await page('Runtime.callFunctionOn', {objectId: located.objectId, functionDeclaration: SCROLLER, returnByValue: false, objectGroup: group}, probe))?.objectId;
         if (scroller == null) throw new Error('the scroll probe lost its scroller');
       }
     } catch {

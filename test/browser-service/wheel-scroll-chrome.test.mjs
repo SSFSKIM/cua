@@ -10,7 +10,8 @@ import {scrollUnconfirmed, wheelScroll} from '../../src/browser-service/wheel-sc
 const skip = chromePath() == null ? 'no Chrome on this machine' : false;
 // a bound per test, so a Chrome that stalls fails here with its reason and never holds the suite to the gate's limit
 const timeout = 60_000;
-const BOUND = 1000;
+// the production bound: a cold Chrome's first wheel on a loaded runner (hosted macOS) took more than 1 s
+const BOUND = 3000;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const rejection = async promise => { try { await promise; } catch (error) { return error; } assert.fail('expected a rejection'); };
 const page = body => `<!doctype html><html><head><style>body{margin:0}</style></head><body>${body}</body></html>`;
@@ -41,12 +42,24 @@ const PAGES = {
   '/locked-body': page(tall).replace('<body>', '<body style="overflow:hidden">'),
   '/frame-same': page(`<iframe id="f" style="border:0;width:300px;height:200px" srcdoc='<body style="margin:0"><div style="height:2000px"></div></body>'></iframe>`),
   '/frame-cross': page('<iframe id="f" style="border:0;width:300px;height:200px" src="__CROSS__"></iframe>'),
+  // closed shadow roots: a scroller inside one, and nothing outside it with room
+  '/closed': page(`<div id="host"></div><script>
+    const root = document.getElementById('host').attachShadow({mode: 'closed'});
+    root.innerHTML = '<div id="s" style="overflow:auto;width:300px;height:200px"><div style="height:1000px"></div></div>';
+    window.inner = root.getElementById('s');
+    if (location.search === '?prevent') inner.addEventListener('wheel', e => e.preventDefault(), {passive: false});</script>`),
+  // two regions: a box whose page script scrolls it 400 ms after the wheel, and a plain one beside it with no room
+  '/overlap': page(`${box('slow')}<div id="plain" style="position:absolute;left:500px;top:0;width:300px;height:200px"></div><script>
+    const slow = document.getElementById('slow');
+    slow.addEventListener('wheel', e => { e.preventDefault(); setTimeout(() => { slow.scrollTop = 100; }, 400); }, {passive: false});</script>`),
   '/cross-inner': page(tall),
 };
 
 async function setup(t) {
-  const chrome = await realChrome(t, PAGES);
-  PAGES['/frame-cross'] = PAGES['/frame-cross'].replace('__CROSS__', chrome.url('/cross-inner', 'localhost'));
+  // each Chrome its own table: the cross-origin frame names this server's port, never an earlier one's
+  const pages = {...PAGES};
+  const chrome = await realChrome(t, pages);
+  pages['/frame-cross'] = PAGES['/frame-cross'].replace('__CROSS__', chrome.url('/cross-inner', 'localhost'));
   const scroll = (path, args) => (async () => { await chrome.load(path); return wheelScroll(chrome.cdp, 1, {modifiers: 0, point: {x: 100, y: 100}, scrollX: 0, scrollY: 0, boundMs: BOUND, ...args}); })();
   const wheels = () => chrome.cdp.sent.filter(c => c.method === 'Input.dispatchMouseEvent' && c.params.type === 'mouseWheel').length;
   return {chrome, scroll, wheels};
@@ -83,19 +96,20 @@ test('real Chrome: a same-origin frame\'s document is watched; a cross-origin fr
   assert.equal(await scroll('/frame-same', {scrollY: 300}), undefined);
   assert.ok(await chrome.evaluate('document.getElementById("f").contentWindow.scrollY') > 0);
   assert.equal(await scroll('/frame-cross', {scrollY: 300}), undefined);
+  assert.ok(chrome.requests.some(r => r.host === 'localhost' && r.path === '/cross-inner' && r.found), 'the frame loaded the cross-origin page');
 });
 
 // Review finding 1 (P1): a probe the page does not answer is not "unobservable"; nothing is sent, and the answer says so.
 test('real Chrome: a probe the busy page does not answer within the budget sends no wheel and answers retry-safe', {skip, timeout}, async t => {
   const {chrome, wheels} = await setup(t);
   await chrome.load('/busy');
-  await chrome.evaluate('setTimeout(() => { const end = Date.now() + 3000; while (Date.now() < end); }, 0), 1');
+  await chrome.evaluate('setTimeout(() => { const end = Date.now() + 5000; while (Date.now() < end); }, 0), 1');
   await sleep(50);
   const error = await rejection(wheelScroll(chrome.cdp, 1, {modifiers: 0, point: {x: 100, y: 100}, scrollX: 0, scrollY: 400, boundMs: BOUND}));
   assert.equal(error.code, 'timeout');
   assert.match(error.message, /the page did not answer the scroll's probe.*nothing was scrolled, so it is safe to retry/);
   assert.equal(wheels(), 0, 'no wheel was sent');
-  await sleep(3000);
+  await sleep(5000);
   assert.deepEqual([await chrome.evaluate('window.wheels'), await chrome.evaluate('scrollY')], [0, 0], 'and none lands later');
 });
 
@@ -135,4 +149,25 @@ test('real Chrome: a scroll-locked page (overflow hidden on html, or on body) ha
     assert.equal(locked.value, undefined, path);
     assert.ok(locked.ms < BOUND / 2, `${path}: answered at once (${locked.ms} ms)`);
   }
+});
+
+// Re-review finding 1 (P2): each scroll holds its own remote objects; one ending does not release another's.
+test('real Chrome: two scrolls in one tab overlap, and the one that ends first leaves the other its scroller', {skip, timeout}, async t => {
+  const {chrome} = await setup(t);
+  await chrome.load('/overlap');
+  const scrollAt = (x, args) => wheelScroll(chrome.cdp, 1, {modifiers: 0, point: {x, y: 100}, scrollX: 0, scrollY: 0, boundMs: BOUND, ...args});
+  const slow = scrollAt(100, {scrollY: 300});
+  await sleep(100);
+  assert.equal(await scrollAt(600, {scrollY: 300}), undefined, 'the plain region has no room and answers at once');
+  assert.equal(await slow, undefined, 'the slow box moved to 100 within the bound, and its scroll saw it');
+  assert.equal(await chrome.evaluate('document.getElementById("slow").scrollTop'), 100);
+});
+
+// Re-review finding 2 (P2): a closed shadow root is searched as an open one is.
+test('real Chrome: a scroller inside a closed shadow root is found and watched; with the wheel taken, the honest answer, never ok', {skip, timeout}, async t => {
+  const {chrome, scroll} = await setup(t);
+  assert.equal(await scroll('/closed', {scrollY: 300}), undefined);
+  assert.ok(await chrome.evaluate('inner.scrollTop') > 0, 'the closed root\'s scroller moved before the answer');
+  const error = await rejection(scroll('/closed?prevent', {scrollY: 300}));
+  assert.deepEqual([error.code, error.message], ['timeout', scrollUnconfirmed(BOUND)]);
 });

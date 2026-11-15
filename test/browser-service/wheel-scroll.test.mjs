@@ -18,7 +18,9 @@ function page({facts = {observable: true, room: true, left: 0, top: 0}, position
     async call(tabId, method, params, options = {}) {
       log.push({method, params, options});
       if (fail === method || (fail === 'facts' && params.functionDeclaration?.includes('observable'))) throw new Error('Timed out after 3000ms waiting for CDP command ' + method + '.');
-      if (method === 'Runtime.evaluate') return fail === 'exception' ? {exceptionDetails: {text: 'Uncaught'}} : {result: {type: 'object', objectId: 'probe'}};
+      if (method === 'DOM.getNodeForLocation') return {backendNodeId: 7};
+      if (method === 'DOM.resolveNode') return {object: {type: 'object', objectId: 'node'}};
+      if (method === 'Runtime.callFunctionOn' && params.objectId === 'node') return fail === 'exception' ? {exceptionDetails: {text: 'Uncaught'}} : {result: {type: 'object', objectId: 'probe'}};
       if (method === 'Runtime.callFunctionOn' && params.objectId === 'probe') {
         return params.functionDeclaration.includes('this.scroller') ? {result: {type: 'object', objectId: 'scroller'}} : {result: {type: 'object', value: facts}};
       }
@@ -32,7 +34,7 @@ function page({facts = {observable: true, room: true, left: 0, top: 0}, position
 }
 
 test('a probe that fails or does not answer sends no wheel, and answers the timeout with nothing scrolled', async () => {
-  for (const fail of ['Runtime.evaluate', 'exception', 'facts']) {
+  for (const fail of ['DOM.getNodeForLocation', 'DOM.resolveNode', 'exception', 'facts']) {
     const {scroll, methods} = page({fail});
     const error = await rejection(scroll());
     assert.deepEqual([error.code, error.message], ['timeout', scrollUnprobed(300)], fail);
@@ -45,9 +47,11 @@ test('a probe that fails or does not answer sends no wheel, and answers the time
 test('with room, the wheel goes after the probe, the held scroller is read until it moves, and the objects are released', async () => {
   const {scroll, log, methods} = page({positions: [{left: 0, top: 0}, {left: 0, top: 0}, {left: 0, top: 120}]});
   assert.equal(await scroll(), undefined);
-  assert.deepEqual(methods(), ['Runtime.evaluate', 'Runtime.callFunctionOn', 'Runtime.callFunctionOn', 'Input.dispatchMouseEvent',
-    'Runtime.callFunctionOn', 'Runtime.callFunctionOn', 'Runtime.callFunctionOn', 'Runtime.releaseObjectGroup']);
-  assert.deepEqual(log[0].params.returnByValue, false, 'the probe answers the scroller as an object, not a path');
+  assert.deepEqual(methods(), ['DOM.getNodeForLocation', 'DOM.resolveNode', 'Runtime.callFunctionOn', 'Runtime.callFunctionOn', 'Runtime.callFunctionOn',
+    'Input.dispatchMouseEvent', 'Runtime.callFunctionOn', 'Runtime.callFunctionOn', 'Runtime.callFunctionOn', 'Runtime.releaseObjectGroup']);
+  assert.equal(log[2].params.returnByValue, false, 'the probe answers the scroller as an object, not a path');
+  const groups = new Set(log.map(e => e.params.objectGroup).filter(Boolean));
+  assert.equal(groups.size, 1, 'one object group of its own, held and released');
   assert.deepEqual(log.find(e => e.method === 'Input.dispatchMouseEvent').params, {type: 'mouseWheel', x: 280, y: 200, deltaX: 0, deltaY: 400, modifiers: 0});
   assert.ok(log.filter(e => e.method !== 'Input.dispatchMouseEvent').every(e => e.options.preserveOnTimeout === true && e.options.deadline != null),
     'every page read keeps the debugger, bounded');
@@ -69,7 +73,7 @@ test('with no room, or a point that cannot be observed, the wheel is sent and th
   for (const facts of [{observable: true, room: false}, {observable: false, room: false}]) {
     const {scroll, methods} = page({facts});
     assert.equal(await scroll(), undefined);
-    assert.deepEqual(methods(), ['Runtime.evaluate', 'Runtime.callFunctionOn', 'Input.dispatchMouseEvent', 'Runtime.releaseObjectGroup'], JSON.stringify(facts));
+    assert.deepEqual(methods(), ['DOM.getNodeForLocation', 'DOM.resolveNode', 'Runtime.callFunctionOn', 'Runtime.callFunctionOn', 'Input.dispatchMouseEvent', 'Runtime.releaseObjectGroup'], JSON.stringify(facts));
   }
 });
 
@@ -79,5 +83,12 @@ test('cua_scroll aims the cursor, moves to the point, then scrolls there by the 
   const session = {cdp, cursor, platform: 'linux', input: new CuaInput(cdp, cursor, {}, {platform: 'linux'})};
   cdp.callTarget = (target, method, params, options) => cdp.call(target.tabId, method, params, options);
   assert.deepEqual(await INPUT_HANDLERS.cua_scroll({browser_id: 'b', tab_id: '4', x: 280, y: 200, scroll_x: 0, scroll_y: 400}, session), {});
-  assert.deepEqual(methods(), ['Input.dispatchMouseEvent', 'Runtime.evaluate', 'Runtime.callFunctionOn', 'Input.dispatchMouseEvent', 'Runtime.releaseObjectGroup']);
+  assert.deepEqual(methods(), ['Input.dispatchMouseEvent', 'DOM.getNodeForLocation', 'DOM.resolveNode', 'Runtime.callFunctionOn', 'Runtime.callFunctionOn', 'Input.dispatchMouseEvent', 'Runtime.releaseObjectGroup']);
+});
+
+test('two scrolls never share an object group: each releases only its own', async () => {
+  const a = page({facts: {observable: true, room: false}}), b = page({facts: {observable: true, room: false}});
+  await a.scroll(); await b.scroll();
+  const groupOf = log => log.find(e => e.method === 'Runtime.releaseObjectGroup').params.objectGroup;
+  assert.notEqual(groupOf(a.log), groupOf(b.log));
 });

@@ -111,5 +111,6 @@ test("the route audit watches its window's ancestry before the engine starts, an
   const watched = pass.indexOf('watchAncestry(p, ');
   assert.ok(watched > 0, 'the audit pass starts the watcher on its proxy');
   assert.ok(watched < pass.indexOf('makeEngine('), 'before the engine connects');
-  assert.match(pass, /const clean = audited\.clean && foreign\.length === 0 && ancestry\.watched;/);
+  // every lifecycle's watch (one per audit lifecycle, a recovered window's included: M5's T4 fix wave 1)
+  assert.match(pass, /const clean = audited\.clean && foreign\.length === 0 && judgedSegments\.every\(\(j\) => j\.ancestry\.watched\);/);
 });

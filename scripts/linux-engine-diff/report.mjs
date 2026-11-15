@@ -239,9 +239,10 @@ export function renderSummary(lines) {
     }
     out.push(...prepareFaultsMarkdown(rows));
     out.push(...textRestoresMarkdown(rows));
+    out.push(...textSceneEndsMarkdown(rows));
     const end = rows.find((r) => r.kind === 'end');
     const endLabel = gateLabel(end?.gate);
-    const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine(end, (s) => `**${s}**`)}`;
+    const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine({ ...end, sceneEnds: end.scene_ends ?? null }, (s) => `**${s}**`)}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
     // a run from before the harness audited its own trace has no record
     if (end && 'desktop' in end) out.push(desktopLine(end.desktop), '');
@@ -272,6 +273,27 @@ export function textRestoresMarkdown(rows) {
   for (const r of restores.samples) {
     const what = r.lost ? `found '${r.found}', **never put back: a sample of its lane left the text wrong, and the run stopped**` : `found '${r.found}', put back '${r.inserted}'`;
     out.push(`- ${r.scene} ${r.op} ${r.engine} ${r.block}/${r.i}${r.series ? ` (${r.series})` : ''}${r.warm_up ? ", the backstop's warm-up" : r.resample ? ', its resample' : ''}: ${what}`);
+  }
+  return out;
+}
+
+/**
+ * The text windows a lane ended (scene-ended.mjs, M5's T4): the count per lane, every lane named, and each end with the
+ * request that last reached the window and what took its place: a vendor's restart, the run's end (nothing restarted),
+ * or a candidate's stop. A run from before the count has no record and shows nothing.
+ */
+export function textSceneEndsMarkdown(rows) {
+  const ends = rows.find((r) => r.kind === 'text-scene-ends');
+  if (!ends) return [];
+  const head = `Text windows a lane ended (a vendor's restarted before its next request, never scored; a candidate's stops the run): ${Object.entries(ends.lanes).map(([lane, n]) => `${lane} ${n}`).join(', ')}`;
+  if (!ends.ended.length) return ['', `${head}.`];
+  const out = ['', `${head}:`, ''];
+  for (const e of ends.ended) {
+    const at = e.op ? `${e.op} ${e.engine} ${e.block}/${e.i}` : `${e.engine}, the ${e.pass} pass`;
+    const last = e.last ? ` after ${e.last.op} ${e.last.block}/${e.last.i}` : '';
+    const r = e.restart;
+    const then = e.kind === 'scene-lost' ? '**the run stopped: a request of its lane ended the application**' : r ? `restarted (${e.scene} ${r.old_pid} replaced by ${r.new_pid}, window ${r.old_id} by ${r.new_id}${warmUpText(r.warm_up)}${r.then ? `; the warm-up ended it too (${r.warm_up_ended}), restarted again unwarmed: window ${r.then.new_id}` : ''})` : 'not restarted: no request was left for it';
+    out.push(`- ${e.scene} ${at}: ${e.ended}${last}; ${then}`);
   }
   return out;
 }

@@ -479,6 +479,20 @@ export class Desktop {
     return typeof title === 'string' && title.includes(scene.label);
   }
 
+  /**
+   * Whether a lane's scene window has ended since the run opened it (M5's T4, scene-ended.mjs): null while it is still
+   * the run's (`stillOurs`), else `gone` (no window of its id) or `replaced` (a window of its id that is not the run's,
+   * whose title is never recorded). An end is taken only when every one of `reads` reads, `gapMs` apart, finds the
+   * window not the run's, so a read the load made fail never ends a lane.
+   */
+  async sceneEnded(scene, { reads = 3, gapMs = 200 } = {}) {
+    for (let n = 0; n < reads; n++) {
+      if (n) await sleep(gapMs);
+      if (this.stillOurs(scene)) return null;
+    }
+    return this.windowTitle(scene.id) === null ? 'gone' : 'replaced';
+  }
+
   /** Whether `id` is a window of the run's open now, and still the one it opened (`stillOurs`): the run's to act on. */
   liveOwned(id) {
     const scene = this.windows.find((w) => w.id === id);

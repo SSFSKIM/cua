@@ -94,6 +94,8 @@ export function judgeTextRestores(rows, lanes) {
   const samples = rows.flatMap((r) => {
     if (r.kind === 'text-lost') return [at(r, { found: r.found, lost: true })];
     if (r.kind === 'audit') return (r.text_restores ?? []).map(({ i, ...record }) => at({ ...r, block: 'audit', i }, record));
+    // a restart's warm-up (scene-ended.mjs, M5's T4), on the restart's own row
+    if (r.kind === 'scene-ended') return r.restart?.warm_up?.text_restored ? [at(r, { ...r.restart.warm_up.text_restored, warm_up: true })] : [];
     if (!['sample', 'prepare-failure', 'text-bus'].includes(r.kind)) return [];
     const own = r.text_restored ? [at(r, r.text_restored)] : [];
     if (r.kind !== 'prepare-failure') return own;

@@ -37,6 +37,7 @@ import { OPS, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs'
 import { Oracle } from './oracle.mjs';
 import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, judgeWarmUps, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
 import { writeSummary } from './report.mjs';
+import { CandidateSceneEnded, auditInSegments, invalidRestartRow, judgeSceneEnds, keepLaneScene, mergeAudits, restartLaneScene } from './scene-ended.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress, desktopEnding } from './scenes.mjs';
 import { xdotool, xprobe } from './xtools.mjs';
@@ -211,6 +212,8 @@ export function differingField(reference, candidate) {
 export async function runSample(s) {
   // `traceMark(tag)`: the audit pass's mark in its trace, so a case can attribute requests to its steps (M4's T4)
   const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness, cuaVersion: s.cuaVersion, traceMark: s.traceMark };
+  // the request that last reached the window, which an end of the window found before the next one names (scene-ended.mjs)
+  if (s.target) s.target.lastRequest = { op: s.op, block: s.block, i: s.i };
   return withSampleCleanup(ctx, () => measureSample(s, ctx));
 }
 
@@ -1073,6 +1076,8 @@ async function diffRun(args, candidate, { handoff }) {
     throw new Error("M2's text operations and paste cases run over the wire; their facade-level proof is the facade suites (repl-parity's native text cases, the native baseline)");
   }
   const blockPlan = plan.filter((p) => !isCase(p.op));
+  // whether any lane has text windows of its own (M5's T4 counts what ended them)
+  const textPlanned = blockPlan.some((p) => isText(p.op));
   const samplesFor = (op) => OPS[op].warmSamples ?? (inputOp(op) ? args.samplesInput : args.samplesTree);
 
   // the run's desktop; the window active before the run opens anything is recorded, marked, and never activated again
@@ -1142,6 +1147,25 @@ async function diffRun(args, candidate, { handoff }) {
         windows[scene].text[label] = await open(`text_${label.replace(/[^a-z0-9]+/gi, '_')}`, true);
       }
     }
+    // M5's T4 (scene-ended.mjs): a lane's own text window looked at before each request of its lane's; a vendor's that
+    // ended is restarted as the backstop restores a scene, warmed by the operation for a warm sample (`warmUp`), and a
+    // candidate's stops the run. Answers `{window, restart}`
+    const laneScene = (sceneName, label, at, warmUp = null) =>
+      keepLaneScene({
+        desktop,
+        windows,
+        sceneName,
+        label,
+        vendors: VENDORS,
+        at,
+        emit,
+        restart: () =>
+          restartLaneScene({
+            restore: (w) => restoreLaneScene({ desktop, windows, sceneName, label, occlusion: args.occlusion, warmUp: w }),
+            endedNow: () => desktop.sceneEnded(windows[sceneName].text[label]),
+            warmUp,
+          }),
+      });
     const needsStub = plan.some((p) => inputOp(p.op) || isCase(p.op));
     const stubScene = needsStub ? await desktop.openChrome('stub', 'scene.html') : null;
     await desktop.openFront(args.occlusion);
@@ -1162,6 +1186,8 @@ async function diffRun(args, candidate, { handoff }) {
     const measureSeries = async ({ sceneName, op, label, block, n }) => {
       const spec = engineSpecFor(engines.find((e) => e.label === label), op, sceneName);
       let target = measuredTarget(windows, sceneName, op, label);
+      // the series' cold sample finds its lane's text window still the run's, or a fresh one (M5's T4)
+      if (isText(op)) target = (await laneScene(sceneName, label, { op, block, i: 0, series: 'cold' })).window;
       if (target && args.occlusion === 'visible') desktop.raise(target);
       // a development run's candidate engine through a trace proxy of the series's own (`--trace-engine`), each sample's
       // span in the trace kept on its row
@@ -1169,6 +1195,9 @@ async function diffRun(args, candidate, { handoff }) {
       const env = trace ? { ...(OPS[op].apps ? launch.env : {}), ...trace.env } : OPS[op].apps ? launch.env : undefined;
       let engine = makeEngine(spec, env);
       const sample = (i) => runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion });
+      // a warm sample's fresh window brought to the series' state by the operation itself, run once untimed with its own
+      // preparation and witness, as the series' samples ran it (fix round 1): the backstop's and a restart's alike
+      const warmUpFor = (i) => async (fresh) => warmUpRecord(await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target: fresh, op, i, block, label, sceneName, cuaVersion }));
       const traced = (i) =>
         trace.span(i, () => sample(i)).then(({ value, xtrace }) => {
           if (value.row) value.row.xtrace = xtrace;
@@ -1176,6 +1205,17 @@ async function diffRun(args, candidate, { handoff }) {
         });
       try {
         for (let i = 0; i < n; i++) {
+          // each warm sample finds its lane's text window still the run's, or a fresh one warmed (M5's T4); a restart
+          // whose warm-up's preparation was refused could not reproduce the warm condition, so the sample is left invalid
+          // and not taken, as the backstop leaves one (fix wave 1)
+          if (isText(op) && i > 0) {
+            const kept = await laneScene(sceneName, label, { op, block, i, series: 'warm' }, warmUpFor(i));
+            target = kept.window;
+            if (kept.restart?.invalid) {
+              emit(invalidRestartRow({ label, sceneName, op, block, i, restart: kept.restart }));
+              continue;
+            }
+          }
           // the gate's rule for a harness-side preparation failure (prepare.mjs): one resample in the sample's condition,
           // a cold sample's on a fresh engine, a text window's after the backstop restored the lane's scene (task 24)
           const taken = await sampleUnderRule({
@@ -1188,10 +1228,7 @@ async function diffRun(args, candidate, { handoff }) {
             },
             restoreScene: isText(op)
               ? async ({ cold }) => {
-                  // a warm sample's fresh window is brought to the series' state by the operation itself, run once
-                  // untimed with its own preparation and witness, as the series' samples ran it (fix round 1)
-                  const warmUp = cold ? null : async (fresh) => warmUpRecord(await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target: fresh, op, i, block, label, sceneName, cuaVersion }));
-                  const record = await restoreLaneScene({ desktop, windows, sceneName, label, occlusion: args.occlusion, warmUp });
+                  const record = await restoreLaneScene({ desktop, windows, sceneName, label, occlusion: args.occlusion, warmUp: cold ? null : warmUpFor(i) });
                   target = windows[sceneName].text[label];
                   return record;
                 }
@@ -1341,35 +1378,50 @@ async function diffRun(args, candidate, { handoff }) {
     if (args.audit) {
       for (const { scene: sceneName, op } of auditPlan(plan)) {
         for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
-          const target = measuredTarget(windows, sceneName, op, spec.label);
+          if (isText(op)) await laneScene(sceneName, spec.label, { op, block: 'audit', i: 0, series: 'cold' });
           const oks = [];
           // each audited request's answer, for the device cases' judge: the expected outcome, not only a clean trace
           const answered = [];
           // each audited sample's scene-text restore, counted in the lane's total (prepare.mjs judgeTextRestores) and
           // never a timed sample
           const restoredText = [];
-          // the proxy, the watcher and the engine, each ended however the samples go
-          const { trace: traceText, ancestry, watcher: watch, proxy } = await withRouteAudit(
-            {
-              openProxy: () => startProxy(),
-              // the audited window's ancestry in the trace's own replies and events, read before the engine connects, so
-              // the foreign-window judge knows which frame holds it and when it ends (task 53)
-              watch: (p) => (Number.isSafeInteger(target?.id) && target.id > 0 ? watchAncestry(p, target.id) : null),
-              startEngine: (p) => makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: p.env.DISPLAY, XAUTHORITY: p.env.XAUTHORITY }),
-              after: async () => {
-                if (ownWindow(op)) target.retainedBy = null;
-                if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
-              },
+          // the audit's two requests in one lifecycle while the window lasts: a request that ended its lane's text window
+          // ends its lifecycle, and the next is audited on the recovered window in a fresh one, its ancestry watched anew
+          // (scene-ended.mjs `auditInSegments`, M5's T4 fix wave 1); a candidate's ended window stops the run there
+          const segments = await auditInSegments({
+            samples: 2,
+            ended: async () => isText(op) && Boolean(await desktop.sceneEnded(measuredTarget(windows, sceneName, op, spec.label))),
+            recover: (next) => laneScene(sceneName, spec.label, { op, block: 'audit', i: next, series: 'cold' }),
+            segment: async ({ from, samples, stopAfter }) => {
+              const target = measuredTarget(windows, sceneName, op, spec.label);
+              let ran = 0;
+              // the proxy, the watcher and the engine, each ended however the samples go
+              const life = await withRouteAudit(
+                {
+                  openProxy: () => startProxy(),
+                  // the audited window's ancestry in the trace's own replies and events, read before the engine connects,
+                  // so the foreign-window judge knows which frame holds it and when it ends (task 53)
+                  watch: (p) => (Number.isSafeInteger(target?.id) && target.id > 0 ? watchAncestry(p, target.id) : null),
+                  startEngine: (p) => makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: p.env.DISPLAY, XAUTHORITY: p.env.XAUTHORITY }),
+                  after: async () => {
+                    if (ownWindow(op)) target.retainedBy = null;
+                    if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
+                  },
+                },
+                async (engine, p) => {
+                  for (let i = from; i < samples; i++) {
+                    const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion, traceMark: (tag) => p.mark(`${tag}:${i}`) });
+                    if (row.text_restored) restoredText.push({ i, ...row.text_restored });
+                    oks.push(row.ok);
+                    answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
+                    ran++;
+                    if (await stopAfter(i)) break;
+                  }
+                },
+              );
+              return { ran, target, ...life };
             },
-            async (engine, p) => {
-              for (let i = 0; i < 2; i++) {
-                const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion, traceMark: (tag) => p.mark(`${tag}:${i}`) });
-                if (row.text_restored) restoredText.push({ i, ...row.text_restored });
-                oks.push(row.ok);
-                answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
-              }
-            },
-          );
+          });
           // a cua request that must take the foreground route is audited against that route: only its target's activation,
           // raise and focus and XTEST input (M2 whole-branch review)
           const foregroundAudit = !VENDORS.includes(spec.label) && routeOf(op, sceneName) === 'foreground';
@@ -1377,24 +1429,33 @@ async function diffRun(args, candidate, { handoff }) {
           // (minimized.mjs: nothing sent for a refusal, the target's activation alone for an activation, and for a
           // release the hold proven and then exactly its release, attributed by the case's marks in the trace)
           const nothingAudit = OPS[op].device === 'refusal';
-          const trace = parseXtrace(traceText);
           const auditKind = op in MINIMIZED_OPS ? minimizedAuditKind(op) : op in IDENTITY_OPS ? identityAuditKind(op) : foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
-          const audited = {
-            foreground: () => auditForeground(trace, target.id),
-            'nothing-sent': () => auditNothingSent(trace),
-            background: () => auditRequests(trace),
-            'held-release': () => auditHeldRelease(trace, target.id, { route: OPS[op].holdRoute, marks: proxy.marks }),
-          }[auditKind]();
-          // whatever the operation's route, no request of the engine's may change a window the harness did not open; its
-          // XTEST input may land in a window of a live harness window's client (task 53)
-          const judgedForeign = auditForeign(trace, { registered: desktop.registry(), root: desktop.root, routeAudit: true });
-          const { foreign } = judgedForeign;
+          // each lifecycle's trace judged on its own window, then the judgments as one
+          const judgedSegments = segments.map((seg) => {
+            const trace = parseXtrace(seg.trace);
+            const audited = {
+              foreground: () => auditForeground(trace, seg.target.id),
+              'nothing-sent': () => auditNothingSent(trace),
+              background: () => auditRequests(trace),
+              'held-release': () => auditHeldRelease(trace, seg.target.id, { route: OPS[op].holdRoute, marks: seg.proxy.marks }),
+            }[auditKind]();
+            // whatever the operation's route, no request of the engine's may change a window the harness did not open;
+            // its XTEST input may land in a window of a live harness window's client (task 53)
+            return { audited, judgedForeign: auditForeign(trace, { registered: desktop.registry(), root: desktop.root, routeAudit: true }), ancestry: seg.ancestry, watch: seg.watcher };
+          });
+          const audited = mergeAudits(judgedSegments.map((j) => j.audited));
+          const foreign = judgedSegments.flatMap((j) => j.judgedForeign.foreign);
+          const unplaced = judgedSegments.map((j) => j.judgedForeign.unplaced).filter(Boolean);
+          const ancestryErrors = judgedSegments.map((j) => j.ancestry.error).filter(Boolean);
+          const watched = judgedSegments.filter((j) => j.watch);
+          const single = segments.length === 1;
           engineForeign.push(...foreign.map((f) => `${spec.label} on ${sceneName} ${op}: ${foreignLine(f)}`));
           // a watcher that did not watch to the end leaves the judge's knowledge of the window's end unproven
-          const clean = audited.clean && foreign.length === 0 && ancestry.watched;
+          const clean = audited.clean && foreign.length === 0 && judgedSegments.every((j) => j.ancestry.watched);
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
-          audits[`${sceneName}|${op}|${spec.label}`] = { clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set([...audited.forbidden.map((f) => f.what), ...foreign.map(foreignLine), ...(ancestry.error ? [ancestry.error] : [])])] };
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(foreign.some((f) => 'parent' in f) ? { foreign_parents: foreign.slice(0, 10).map((f) => f.parent ?? null) } : {}), ...(watch ? { ancestry: ancestry.error ?? watch.chain } : {}), ...(judgedForeign.unplaced ? { xtest_unplaced: judgedForeign.unplaced } : {}) });
+          audits[`${sceneName}|${op}|${spec.label}`] = { clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set([...audited.forbidden.map((f) => f.what), ...foreign.map(foreignLine), ...ancestryErrors])] };
+          const ancestryOf = (j) => j.ancestry.error ?? j.watch.chain;
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(single ? {} : { lifecycles: segments.length }), ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(foreign.some((f) => 'parent' in f) ? { foreign_parents: foreign.slice(0, 10).map((f) => f.parent ?? null) } : {}), ...(watched.length ? { ancestry: single ? ancestryOf(watched[0]) : watched.map(ancestryOf) } : {}), ...(unplaced.length ? { xtest_unplaced: single ? unplaced[0] : unplaced } : {}) });
           desktop.focusFront();
         }
       }
@@ -1406,6 +1467,7 @@ async function diffRun(args, candidate, { handoff }) {
     if (args.counts && via === 'wire') {
       for (const { scene: sceneName, op } of blockPlan.filter((p) => isText(p.op))) {
         for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
+          await laneScene(sceneName, spec.label, { op, block: 'bus', i: 0, series: 'cold' });
           const target = measuredTarget(windows, sceneName, op, spec.label);
           const engine = makeEngine({ ...spec, stats: false });
           const monitor = await startMonitor(busAddress);
@@ -1427,6 +1489,12 @@ async function diffRun(args, candidate, { handoff }) {
           desktop.focusFront();
         }
       }
+    }
+
+    // The run's last look at every lane's text window (M5's T4): an end after its lane's last request is counted too, a
+    // candidate's stopping the run, and nothing is restarted
+    for (const [sceneName, { text }] of Object.entries(windows)) {
+      for (const label of Object.keys(text)) await keepLaneScene({ desktop, windows, sceneName, label, vendors: VENDORS, at: { pass: 'end' }, restart: null, emit });
     }
 
     // The paste safety cases (safety.mjs): cua alone, on windows of their own, the bus watched for the whole phase.
@@ -1612,17 +1680,23 @@ async function diffRun(args, candidate, { handoff }) {
     emit({ kind: 'text-restores', ...restores });
     // the backstop's warm-ups: a candidate's that failed fails the run (fix round 1)
     const warmUps = judgeWarmUps(after, VENDORS);
-    judged = { verdicts, options: { valid, faults, restores: restores.lanes, warmUps } };
+    // the text windows a lane ended (M5's T4): a vendor's restarts counted, never scored
+    const sceneEnds = textPlanned ? judgeSceneEnds(after, labels, VENDORS) : null;
+    if (sceneEnds) emit({ kind: 'text-scene-ends', ...sceneEnds });
+    judged = { verdicts, options: { valid, faults, restores: restores.lanes, warmUps, sceneEnds } };
   } catch (error) {
-    if (!(error instanceof CandidateTextLost)) throw error;
-    // a candidate's own text window lost its first word: a sample of its lane left the person's text wrong, so the run
-    // stops as a failure there, never put back and never absorbed (task 24)
-    const at = error.sample;
-    emit({ kind: 'text-lost', ...at, ...error.record });
+    if (!(error instanceof CandidateTextLost) && !(error instanceof CandidateSceneEnded)) throw error;
+    // a candidate's own text window lost its first word, or ended (M5's T4): a sample of its lane left the person's text
+    // wrong or ended the application, so the run stops as a failure there, never put back, restarted or absorbed (task 24)
+    const at = error.sample ?? error.record;
+    emit(error instanceof CandidateTextLost ? { kind: 'text-lost', ...at, ...error.record } : { kind: 'scene-lost', ...error.record });
     const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
     const restores = judgeTextRestores(rows, labels);
     emit({ kind: 'text-restores', ...restores });
-    judged = { verdicts: [], options: { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), stop: `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}: ${error.message}; the run stopped there` } };
+    const sceneEnds = textPlanned ? judgeSceneEnds(rows, labels, VENDORS) : null;
+    if (sceneEnds) emit({ kind: 'text-scene-ends', ...sceneEnds });
+    const where = at.op ? `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}` : `${at.scene} ${at.engine}, the ${at.pass} pass`;
+    judged = { verdicts: [], options: { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), sceneEnds, stop: `${where}: ${error.message}; the run stopped there` } };
   } finally {
     if (witness) await witness.stop();
     await desktop.closeAll();
@@ -1630,7 +1704,7 @@ async function diffRun(args, candidate, { handoff }) {
   // judged once every window of the run's is closed: its own trace covers the cleanup
   const ending = desktopEnding(desktop.ending);
   const outcome = runOutcome(judged.verdicts, { ...judged.options, foreign: [...engineForeign, ...ending.foreign] });
-  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, desktop: ending.record, finished: new Date().toISOString() });
+  emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, ...(outcome.sceneEnds ? { scene_ends: outcome.sceneEnds } : {}), desktop: ending.record, finished: new Date().toISOString() });
   writeSummary(args.out);
   const label = gateLabel(candidate.gate);
   process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${label ? `${label}: ` : ''}${verdictLine(outcome)}\nresults: ${results}\n`);

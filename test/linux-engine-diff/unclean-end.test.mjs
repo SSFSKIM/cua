@@ -71,6 +71,10 @@ test('the start check refuses, with the reason, whatever it cannot prove is the 
   assert.match(why[named], /a live process names it: pid 300 dbus-daemon/);
   assert.match(why[gone], /its directory is gone and a process of it still runs: pid 301 at-spi-bus-launcher/);
   for (const dir of [unmarked, live, open, named]) assert.equal(existsSync(dir), true, `${dir} untouched`);
+  // a marker whose run's start time is unknown proves nothing gone
+  const unknown = scratchOf(fresh('tmp'), 'Unkn01', { start: 'unknown' });
+  assert.match(startCheck({ roots: [join(unknown, '..')], proc: fresh('proc'), identity: dead }).refused[0].reason, /the start time of the run that made it is unknown/);
+  assert.equal(existsSync(unknown), true);
   // the run's own is never the check's
   assert.deepEqual(startCheck({ own: [named, unmarked, live, open], roots: [root], proc: fresh('proc'), identity }).refused, []);
 });
@@ -80,7 +84,8 @@ test("a Desktop marks its scratch at once, and its start refuses what the check 
   try {
     const marker = readMarker(desktop.dir);
     assert.equal(marker.pid, process.pid);
-    assert.match(marker.pid_start, /^\d+$/);
+    // the start time is /proc's: on another system unknown, which the start check never takes for gone
+    assert.match(marker.pid_start, process.platform === 'linux' ? /^\d+$/ : /^unknown$/);
     assert.equal(marker.run, 'marked');
     assert.ok(existsSync(join(desktop.dir, MARKER)));
     const root = fresh('tmp');

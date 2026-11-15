@@ -195,6 +195,8 @@ export function startCheck({ own = [], roots = scratchRoots(), proc = '/proc', i
         ? `owned by uid ${st.uid}, not this user's`
         : (st.mode & 0o777) !== 0o700
           ? `mode ${(st.mode & 0o777).toString(8)}, not 700`
+          : !/^\d+$/.test(marker.pid_start)
+            ? `the start time of the run that made it is unknown (${marker.pid_start}), so it cannot be proved gone`
           : identity(marker.pid)?.start === marker.pid_start
             ? `the run that made it is still running (pid ${marker.pid})`
             : !(Date.parse(marker.created) <= now())

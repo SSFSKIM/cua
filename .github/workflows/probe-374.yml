@@ -1,0 +1,69 @@
+name: probe-374
+# #374's live check (scripts/probe-374/README.md): perform_secondary_action "Show Menu" against an independent menu
+# oracle, one job per app family, the candidate engine (the fix) beside main's as the control. Dispatch only.
+on:
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: 'Repetitions per cell and placement (10 for the measurement; 1 for a smoke run)'
+        default: '10'
+permissions:
+  contents: read
+env:
+  CANDIDATE_REF: 'fc2711e340e6a1f2daf514b76926d27cb764974b'
+  CONTROL_REF: 'b99232def1e37307848dd1ccb08726729eb81b66'
+jobs:
+  measure:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        family: [appkit, cft, electron, firefox, safari]
+        engine: [candidate, control]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apps
+        env:
+          FAMILY: ${{ matrix.family }}
+        run: |
+          echo "image ${ImageOS:-?} ${ImageVersion:-?}; $(sw_vers | tr '\n' ' ')"
+          case "$FAMILY" in
+            electron) npm ci; node -e "console.log(require('electron'))" ;;
+            firefox)
+              if [ ! -d /Applications/Firefox.app ]; then brew install --cask firefox; fi
+              xattr -dr com.apple.quarantine /Applications/Firefox.app 2>/dev/null || true
+              mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+              printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json
+              defaults read /Applications/Firefox.app/Contents/Info CFBundleShortVersionString ;;
+            safari) defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString ;;
+          esac
+      - name: Build the engine and the kit's tools, only on the runner
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          git log -1 --format='kit %H %s'
+          ref="$CANDIDATE_REF"; if [ "$ENGINE" = control ]; then ref="$CONTROL_REF"; fi
+          echo "ENGINE_REF=$ref" >> "$GITHUB_ENV"
+          git worktree add --detach "$RUNNER_TEMP/src" "$ref"
+          swift build -c release --package-path "$RUNNER_TEMP/src/native/engine" --scratch-path "$RUNNER_TEMP/build"
+          swiftc -O -o "$RUNNER_TEMP/oracle374" scripts/probe-374/oracle.swift
+          swiftc -O -o "$RUNNER_TEMP/appkit374" scripts/probe-374/appkit.swift
+      - name: Measure
+        env:
+          FAMILY: ${{ matrix.family }}
+          ENGINE: ${{ matrix.engine }}
+          REPS: ${{ github.event.inputs.reps || '10' }}
+        run: |
+          node scripts/probe-374/measure.mjs --family "$FAMILY" --engine "$RUNNER_TEMP/build/release/cua-engine" --oracle "$RUNNER_TEMP/oracle374" --appkit "$RUNNER_TEMP/appkit374" --reps "$REPS" --out "$RUNNER_TEMP/probe-374/$FAMILY-$ENGINE"
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-374-${{ matrix.family }}-${{ matrix.engine }}
+          path: ${{ runner.temp }}/probe-374/**
+          if-no-files-found: warn

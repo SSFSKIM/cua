@@ -52,19 +52,22 @@ const readText = (path) => {
 };
 
 /** :0's reads after a sitting, read only: the keys and buttons held, and how many windows carry the harness's title. */
-export function liveReads({ display = ':0', xauthority = join(userInfo().homedir, '.Xauthority') } = {}) {
+export function liveReads({ display = ':0', xauthority = join(userInfo().homedir, '.Xauthority'), run = execFileSync } = {}) {
   const env = { ...process.env, DISPLAY: display, XAUTHORITY: xauthority };
-  const list = (args) => JSON.parse(execFileSync(XPROBE, args, { env, encoding: 'utf8', timeout: 10000 }).trim());
+  const opts = { env, encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] };
+  const list = (args) => JSON.parse(run(XPROBE, args, opts).trim());
   return {
     keysDown: () => list(['keys-down']),
     buttonsDown: () => list(['buttons-down']),
     windowsLeft: () => {
       try {
-        return execFileSync('xdotool', ['search', '--name', HARNESS_TITLE], { env, encoding: 'utf8', timeout: 10000 }).split('\n').filter(Boolean).length;
+        return run('xdotool', ['search', '--name', HARNESS_TITLE], opts).split('\n').filter(Boolean).length;
       } catch (error) {
-        // xdotool's 1 with nothing on stdout: no window matched
-        if (error.status === 1 && !String(error.stdout ?? '').trim()) return 0;
-        throw error;
+        // xdotool's 1 with nothing on stdout and no error reported: no window matched. Anything reported is an unread
+        // search (wave 2, as owner-watch.sh reads it), never zero windows
+        const said = String(error.stderr ?? '').trim();
+        if (error.status === 1 && !String(error.stdout ?? '').trim() && !said) return 0;
+        throw new Error(`the window search failed: ${said || error.message}`);
       }
     },
   };
@@ -74,7 +77,13 @@ export function liveReads({ display = ':0', xauthority = join(userInfo().homedir
  * A sitting's all-clear from its directory's records and :0's reads (`reads`: `keysDown`, `buttonsDown`, `windowsLeft`):
  * `{clear, person, run}`, `person` what the person can see or feel (each fails it), `run` what the run left on its own side.
  */
-export function judgeSitting(dir, reads) {
+/** The terminal row a step's run writes: a verdict run's `end`, an experiment's `experiment-summary` (Z0's). */
+export const terminalKindOf = (step) => (step.kind === 'verdict' ? 'end' : 'experiment-summary');
+
+/** A foreign-window change in a run's failures (any controlled client's: the harness's, the record's, an engine's). */
+const FOREIGN = /^a window the harness did not open was changed: (?!the run's watchdog:|the run's cleanup:)/;
+
+export function judgeSitting(dir, reads, terminal = 'end') {
   const person = [];
   const read = (what, f) => {
     try {
@@ -108,9 +117,9 @@ export function judgeSitting(dir, reads) {
       return [];
     }
   });
-  const end = rows.findLast((r) => r.kind === 'end');
-  if (!end) person.push("the harness's end row is missing, so its audit of the windows it did not open is unshown");
-  else for (const f of end.failed ?? []) if (/^a window the harness did not open was changed: (the harness|the run's record):/.test(f)) person.push(f);
+  const end = rows.findLast((r) => r.kind === terminal);
+  if (!end) person.push(`the harness's terminal row (${terminal}) is missing, so its audit of the windows it did not open is unshown`);
+  else for (const f of end.failed ?? []) if (FOREIGN.test(f)) person.push(f);
   const run = end?.desktop?.unclean ?? [];
   return { clear: person.length === 0, person, run };
 }
@@ -120,7 +129,7 @@ export function judgeSitting(dir, reads) {
  * then the end check and the all-clear written in `dir`, `hold` written when it is not clear. Answers the command's
  * own status (128 + a signal's number when a signal ended it).
  */
-export async function runSitting({ dir, hold, command, reads = liveReads(), leftovers = {}, spawnChild = spawn, out = process.stdout }) {
+export async function runSitting({ dir, hold, command, terminal = 'end', reads = liveReads(), leftovers = {}, spawnChild = spawn, out = process.stdout }) {
   if (existsSync(hold)) {
     out.write(`sitting refused: ${hold} exists (${(readText(hold) ?? '').trim().split('\n').at(-1)}): no :0 work until it is cleared and reported\n`);
     return 5;
@@ -143,7 +152,7 @@ export async function runSitting({ dir, hold, command, reads = liveReads(), left
   process.off('SIGINT', forward);
   const exit = code ?? 128 + (constants.signals[signal] ?? 0);
   const endCheck = stepEndCheck(before, leftovers);
-  const judged = judgeSitting(dir, reads);
+  const judged = judgeSitting(dir, reads, terminal);
   const own = endCheckUnclean(endCheck);
   const record = { finished: new Date().toISOString(), exit, ...(signal ? { signal } : {}), ...judged, run: [...judged.run, ...own], end_check: endCheck, ...(start.cleared.length ? { cleared: start.cleared } : {}) };
   writeFileSync(join(dir, 'all-clear.json'), `${JSON.stringify(record, null, 2)}\n`);
@@ -172,5 +181,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.stderr.write('usage: sitting.mjs --dir <step dir> --hold <hold-sittings> -- <command...>\n');
     process.exit(2);
   }
-  process.exit(await runSitting({ dir, hold, command: argv.slice(at + 1) }));
+  process.exit(await runSitting({ dir, hold, terminal: flag('--terminal') ?? 'end', command: argv.slice(at + 1) }));
 }

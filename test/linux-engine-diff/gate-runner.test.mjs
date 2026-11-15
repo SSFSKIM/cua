@@ -152,7 +152,7 @@ test('a gate runs only from a clean checkout whose commit reads, writing outside
 test('a :0 step is printed as task 50\'s guarded sitting under the host lock, and the runner refuses to run it', async () => {
   const a = parseGateArgs(['print', 'V1', '--candidate', PATHS.candidate, '--out', '/gate']);
   const command = launchCommand(stepNamed('V1'), a, ROOT);
-  assert.match(command, /locked\.sh m5-gate \S+ \/checkout\/scripts\/linux-engine-gate\/sitting\.mjs --dir \/gate\/V1\.release-gate --hold \S+ -- env WRAP=\/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/wrap71\.py \/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/run71\.sh \/gate\/V1\.release-gate \/checkout --vendor /);
+  assert.match(command, /locked\.sh m5-gate \S+ \/checkout\/scripts\/linux-engine-gate\/sitting\.mjs --dir \/gate\/V1\.release-gate --hold \S+ --terminal end -- env WRAP=\/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/wrap71\.py \/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/run71\.sh \/gate\/V1\.release-gate \/checkout --vendor /);
   assert.doesNotMatch(command, / --out /, 'run71.sh gives the harness its --out');
   const run = parseGateArgs(['run', 'Z0', '--candidate', PATHS.candidate, '--out', '/gate']);
   await assert.rejects(runStep(run, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false }), /runs on :0.*never runs on the person's display/);

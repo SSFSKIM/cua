@@ -6,11 +6,11 @@
 // another run may own them. It runs at every run's end (scenes.mjs `closeEverything`, whatever ended the run) and after
 // every gate step (gate.mjs, whatever ended the step's process), and on its own (`gate.mjs leftovers`).
 
-import { readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
-import { processIdentity } from './pid-identity.mjs';
+import { processState } from './pid-identity.mjs';
 
 /** The run's scratch directory's name, before mkdtemp's six characters: short, since gedit's titles show the path. */
 export const SCRATCH_PREFIX = 'cua171-run-';
@@ -152,19 +152,55 @@ export function readMarker(dir) {
   }
 }
 
-/** Every live process (but this one) whose argv or environment names `dir` or a path in it: `{pid, program}`. */
-export function processesNaming(dir, { proc = '/proc' } = {}) {
+/**
+ * Every live process but this one, as far as it can be read: `{pid, program, texts}` (its argv and environment, NUL
+ * separated), or `{pid, program, unread}` when a process of this user's has an argv or environment that cannot be read
+ * (fix wave 2: unknown, never empty). Another user's process is left out: it cannot reach a mode-700 directory of this
+ * user's (root aside).
+ */
+export function processTable({ proc = '/proc', uid = process.getuid?.() } = {}) {
   let pids;
   try {
     pids = readdirSync(proc).filter((x) => /^\d+$/.test(x)).map(Number).sort((a, b) => a - b);
   } catch {
     return [];
   }
-  const names = (text) => text.split('\0').some((part) => part === dir || part.includes(`${dir}/`) || part.endsWith(`=${dir}`));
-  return pids
-    .filter((pid) => pid !== process.pid)
-    .filter((pid) => names(read(join(proc, String(pid), 'cmdline')) ?? '') || names(read(join(proc, String(pid), 'environ')) ?? ''))
-    .map((pid) => ({ pid, program: programOf(join(proc, String(pid))) }));
+  const out = [];
+  const boot = bootTime(proc);
+  for (const pid of pids.filter((p) => p !== process.pid)) {
+    const at = join(proc, String(pid));
+    const owner = /^Uid:\s+(\d+)/m.exec(read(join(at, 'status')) ?? '')?.[1];
+    if (owner !== undefined && uid !== undefined && Number(owner) !== uid) continue;
+    const texts = [];
+    let unread = null;
+    for (const what of ['cmdline', 'environ']) {
+      try {
+        texts.push(readFileSync(join(at, what), 'utf8'));
+      } catch (error) {
+        // a process that ended meanwhile is gone, not unread
+        if (existsSync(at)) unread = `pid ${pid}'s ${what === 'cmdline' ? 'argv' : 'environment'} cannot be read (${error.code ?? error.message})`;
+      }
+    }
+    if (!existsSync(at)) continue;
+    const st = processState(pid, { proc });
+    const started = st.state === 'live' && boot !== null ? boot + Number(st.start) / USER_HZ : null;
+    out.push(unread ? { pid, program: programOf(at), unread, started } : { pid, program: programOf(at), texts });
+  }
+  return out;
+}
+
+/** /proc's clock for start times (USER_HZ, 100 on Linux), and the boot's wall time in seconds (/proc/stat), or null. */
+const USER_HZ = 100;
+const bootTime = (proc) => {
+  const m = /^btime (\d+)$/m.exec(read(join(proc, 'stat')) ?? '');
+  return m ? Number(m[1]) : null;
+};
+
+const namesDir = (text, dir) => text.split('\0').some((part) => part === dir || part.includes(`${dir}/`) || part.endsWith(`=${dir}`));
+
+/** Every live process (but this one) whose argv or environment names `dir` or a path in it: `{pid, program}`. */
+export function processesNaming(dir, { proc = '/proc', table = processTable({ proc }) } = {}) {
+  return table.filter((p) => p.texts?.some((t) => namesDir(t, dir))).map(({ pid, program }) => ({ pid, program }));
 }
 
 /**
@@ -176,10 +212,14 @@ export function processesNaming(dir, { proc = '/proc' } = {}) {
  * gone (the check ends no process). Answers `{cleared: [{dir, run}], refused: [{dir, reason}]}`; a run starts only when
  * nothing is refused.
  */
-export function startCheck({ own = [], roots = scratchRoots(), proc = '/proc', identity = (pid) => processIdentity(pid, { proc }), uid = process.getuid?.(), now = () => Date.now(), remove = (dir) => rmSync(dir, { recursive: true, force: true }) } = {}) {
+export function startCheck({ own = [], roots = scratchRoots(), proc = '/proc', creator = (pid) => processState(pid, { proc }), uid = process.getuid?.(), now = () => Date.now(), remove = (dir) => rmSync(dir, { recursive: true, force: true }) } = {}) {
   const mine = new Set(own);
   const cleared = [];
   const refused = [];
+  const table = processTable({ proc, uid });
+  // a process whose argv or environment cannot be read is unknown, unless it started before the directory was made: its
+  // argv and environment are its exec's, so it cannot name a path that did not exist then ((sd-pam), for one)
+  const unreadFor = (marker) => table.filter((p) => p.unread && !(p.started !== null && p.started !== undefined && p.started * 1000 < Date.parse(marker.created))).map((p) => p.unread);
   for (const { dir } of scratchDirs(roots).filter((d) => !mine.has(d.dir))) {
     const marker = readMarker(dir);
     let st = null;
@@ -188,7 +228,9 @@ export function startCheck({ own = [], roots = scratchRoots(), proc = '/proc', i
     } catch {
       continue;
     }
-    const naming = processesNaming(dir, { proc });
+    // the creator by its stat alone: absent, or its pid now another start's, is gone; unreadable is unknown (wave 2)
+    const made = marker && /^\d+$/.test(marker.pid_start) ? creator(marker.pid) : null;
+    const naming = processesNaming(dir, { table });
     const why = !marker
       ? "no marker of the harness's: it cannot be proved a run's own"
       : uid !== undefined && st.uid !== uid
@@ -197,13 +239,17 @@ export function startCheck({ own = [], roots = scratchRoots(), proc = '/proc', i
           ? `mode ${(st.mode & 0o777).toString(8)}, not 700`
           : !/^\d+$/.test(marker.pid_start)
             ? `the start time of the run that made it is unknown (${marker.pid_start}), so it cannot be proved gone`
-          : identity(marker.pid)?.start === marker.pid_start
-            ? `the run that made it is still running (pid ${marker.pid})`
-            : !(Date.parse(marker.created) <= now())
-              ? `its marker's time ${marker.created} is not before now`
-              : naming.length
-                ? `a live process names it: ${naming.map((p) => `pid ${p.pid} ${p.program}`).join(', ')}`
-                : null;
+            : made?.state === 'unknown'
+              ? `whether the run that made it (pid ${marker.pid}) still runs cannot be read (${made.reason})`
+              : made?.state === 'live' && made.start === marker.pid_start
+                ? `the run that made it is still running (pid ${marker.pid})`
+                : !(Date.parse(marker.created) <= now())
+                  ? `its marker's time ${marker.created} is not before now`
+                  : naming.length
+                    ? `a live process names it: ${naming.map((p) => `pid ${p.pid} ${p.program}`).join(', ')}`
+                    : unreadFor(marker).length
+                      ? `whether a live process names it cannot be read: ${unreadFor(marker).join('; ')}`
+                      : null;
     if (why) {
       refused.push({ dir, reason: why });
       continue;
@@ -211,11 +257,11 @@ export function startCheck({ own = [], roots = scratchRoots(), proc = '/proc', i
     remove(dir);
     cleared.push({ dir, run: marker.run ?? null });
   }
-  // a bus whose scratch is gone: nothing to remove, and no process is the check's to end (an existing one's bus is a
-  // live process naming it, refused above)
-  for (const b of busesIn({ own, proc })) {
-    if (b.dir_exists) continue;
-    refused.push({ dir: b.dir, reason: `its directory is gone and a process of it still runs: pid ${b.pid} ${b.program}` });
+  // residue of a scratch already gone (a session bus, a scene process that outlived its run): nothing to remove, and no
+  // process is the check's to end, so the start refuses, naming it (wave 2: any process naming the path, by its path)
+  for (const p of table.filter((x) => x.texts)) {
+    const gone = [...new Set(p.texts.flatMap((t) => t.split('\0')).flatMap(scratchPathsIn))].filter((d) => !mine.has(d) && !existsSync(d));
+    for (const d of gone) refused.push({ dir: d, reason: `its directory is gone and a process naming it still runs: pid ${p.pid} ${p.program}` });
   }
   return { cleared, refused };
 }

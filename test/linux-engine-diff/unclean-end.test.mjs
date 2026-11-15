@@ -44,7 +44,7 @@ const dead = () => null;
 test("the start check removes a scratch that is provably the harness's own: its marker, its run gone, no live process naming it", () => {
   const root = fresh('tmp');
   const dir = scratchOf(root, 'Dead01');
-  const result = startCheck({ roots: [root], proc: fresh('proc'), identity: dead });
+  const result = startCheck({ roots: [root], proc: fresh('proc'), creator: () => ({ state: "absent" }) });
   assert.deepEqual(result.refused, []);
   assert.deepEqual(result.cleared.map((c) => c.dir), [dir]);
   assert.equal(existsSync(dir), false);
@@ -61,22 +61,22 @@ test('the start check refuses, with the reason, whatever it cannot prove is the 
   // a bus whose scratch is gone: nothing to remove, and the process is not the check's to end
   const gone = join(root, 'cua171-run-Gone99');
   processIn(proc, 301, { exe: '/usr/libexec/at-spi-bus-launcher', argv: ['at-spi-bus-launcher'], env: { DBUS_SESSION_BUS_ADDRESS: `unix:path=${gone}/session/bus/x` } });
-  const identity = (pid) => (pid === 99 ? { pid, start: '555', exe: '/usr/bin/node' } : null);
-  const { cleared, refused } = startCheck({ roots: [root], proc, identity });
+  const creator = (pid) => (pid === 99 ? { state: 'live', start: '555' } : { state: 'absent' });
+  const { cleared, refused } = startCheck({ roots: [root], proc, creator });
   assert.deepEqual(cleared, []);
   const why = Object.fromEntries(refused.map((r) => [r.dir, r.reason]));
   assert.match(why[unmarked], /no marker of the harness's/);
   assert.match(why[live], /the run that made it is still running \(pid 99\)/);
   assert.match(why[open], /mode 755, not 700/);
   assert.match(why[named], /a live process names it: pid 300 dbus-daemon/);
-  assert.match(why[gone], /its directory is gone and a process of it still runs: pid 301 at-spi-bus-launcher/);
+  assert.match(why[gone], /its directory is gone and a process naming it still runs: pid 301 at-spi-bus-launcher/);
   for (const dir of [unmarked, live, open, named]) assert.equal(existsSync(dir), true, `${dir} untouched`);
   // a marker whose run's start time is unknown proves nothing gone
   const unknown = scratchOf(fresh('tmp'), 'Unkn01', { start: 'unknown' });
-  assert.match(startCheck({ roots: [join(unknown, '..')], proc: fresh('proc'), identity: dead }).refused[0].reason, /the start time of the run that made it is unknown/);
+  assert.match(startCheck({ roots: [join(unknown, '..')], proc: fresh('proc'), creator: () => ({ state: "absent" }) }).refused[0].reason, /the start time of the run that made it is unknown/);
   assert.equal(existsSync(unknown), true);
   // the run's own is never the check's
-  assert.deepEqual(startCheck({ own: [named, unmarked, live, open], roots: [root], proc: fresh('proc'), identity }).refused, []);
+  assert.deepEqual(startCheck({ own: [named, unmarked, live, open], roots: [root], proc: fresh('proc'), creator }).refused, []);
 });
 
 test("a Desktop marks its scratch at once, and its start refuses what the check refuses, before anything of the run's starts", async () => {

@@ -48,7 +48,7 @@ import { geditTitle } from './gedit-title.mjs';
 import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
 import { cleanupOnFatal, cleanupOnStop } from './stop.mjs';
-import { processIdentity, signalIfSame } from './pid-identity.mjs';
+import { processIdentity, processState, signalIfSame } from './pid-identity.mjs';
 import { inTest } from './hermetic.mjs';
 import { SCRATCH_PREFIX, busesIn, leftoverCheck, leftoverLines, startCheck, startRefusalText, writeMarker } from './leftovers.mjs';
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
@@ -273,6 +273,10 @@ export class Desktop {
     this.starting = null;
     // a run stopped by SIGINT or SIGTERM closes what it opened, as one that ends does (stop.mjs)
     this.stopHooks = [];
+    // every process the run spawned (`spawnApp`): its pid, label, start time and whether it exited, so its end can tell
+    // a survivor (wave 2); and each signal its close sent that failed for a reason other than the process being gone
+    this.spawned = [];
+    this.closeErrors = [];
     // and so does a run that meets an error nothing caught, which would end node past every finally (ruling 721)
     const unhookSignals = cleanupOnStop(() => this.stop());
     const unhookFatal = cleanupOnFatal(() => this.stop());
@@ -537,6 +541,12 @@ export class Desktop {
     const chromeLeft = Array.isArray(left) ? left.length : Number(left) || 0;
     if (chromeLeft) unclean.push(`its Chrome left ${chromeLeft} process${chromeLeft === 1 ? '' : 'es'} running`);
     for (const b of busesIn({ only: [this.dir], proc: this.leftoverScope().proc })) unclean.push(`its session bus still runs: pid ${b.pid} ${b.program} (its ${b.by} in ${b.dir})`);
+    for (const e of this.closeErrors ?? []) unclean.push(`a scene's close failed: ${e}`);
+    for (const c of (this.spawned ?? []).filter((x) => !x.exited)) {
+      const now = processState(c.pid, { proc: this.leftoverScope().proc });
+      if (now.state === 'live' && now.start === c.start) unclean.push(`a process it spawned still runs: pid ${c.pid} ${c.label}`);
+      else if (now.state === 'unknown') unclean.push(`whether a process it spawned still runs cannot be read: pid ${c.pid} ${c.label} (${now.reason})`);
+    }
     if (existsSync(this.dir)) unclean.push(`its scratch directory ${this.dir} is still there`);
     return unclean;
   }
@@ -638,6 +648,9 @@ export class Desktop {
       // `stdout: 'pipe'` for a scene program that reports on it (pages/identity-windows.py)
       const child = xSpawn(cmd, args, { ...options, env, stdio: ['ignore', stdout, fd === null ? 'ignore' : fd], detached: true });
       child.unref();
+      const entry = { pid: child.pid, label, start: processState(child.pid).start ?? null, exited: false };
+      child.once('exit', () => (entry.exited = true));
+      this.spawned.push(entry);
       return child;
     } finally {
       // the child holds its own copy
@@ -1184,8 +1197,9 @@ export class Desktop {
         }
         else if (scene.group) process.kill(-scene.pid, 'SIGTERM');
         else process.kill(scene.pid, 'SIGTERM');
-      } catch {
-        // already gone
+      } catch (error) {
+        // already gone; anything else is kept for the run's end (an unclean end, never swallowed)
+        if (error?.code !== 'ESRCH') this.closeErrors.push(`closing ${scene.label ?? scene.id ?? scene.pid}: ${error?.message ?? error}`);
       }
     }
     this.windows = this.windows.filter((w) => !scenes.includes(w));

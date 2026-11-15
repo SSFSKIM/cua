@@ -210,7 +210,7 @@ export function launchCommand(step, a, root = REPO_ROOT) {
     const dir = a.out ? stepDir(step, a) : '<out>/<step>';
     // under the sitting launcher (sitting.mjs): its refusal while hold-sittings exists, the start check, and the end check
     // and the all-clear however the sitting ends (review finding 3, ruling 730)
-    return line([...lock, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--', 'env', `WRAP=${join(root, GUARDS, 'wrap71.py')}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
+    return line([...lock, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--terminal', step.kind === 'verdict' ? 'end' : 'experiment-summary', '--', 'env', `WRAP=${join(root, GUARDS, 'wrap71.py')}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
   }
   const engine = a.pinned ? ['--pinned', a.pinned] : ['--candidate', a.candidate ?? '<candidate>'];
   return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, ...engine, '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : [])]);

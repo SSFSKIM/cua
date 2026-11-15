@@ -151,7 +151,8 @@ findings with their counts.
 
 A run's end (`Desktop.closeEverything`) tries every step whatever an earlier one did: the windows, the reader, the
 holder, the run's Chrome, the session bus, the engines' scratch, the scratch directory, the logs, the trace. The failures
-are reported together on stderr and in the end record (`cleanup_failures`), and each fails the run. It runs on a normal
+are recorded in the end record (`cleanup_failures`) and mark the run's end unclean: never a verdict failure (the one
+rule below, ruling 730). It runs on a normal
 end, a throw (each runner's `finally`), a stop (SIGINT, SIGTERM, the watchdog's own stop) and an error nothing caught
 (`stop.mjs` `cleanupOnFatal`: an uncaught exception, a child's unhandled `error` event, an unhandled rejection; then exit
 1). Its last step is the end check (`leftovers.mjs`): every `cua171-run-*` directory under TMPDIR and /tmp but the run's

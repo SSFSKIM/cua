@@ -71,7 +71,7 @@ test('each thing the person can see or feel fails the all-clear, by the guard th
 test('the printed :0 command runs under the sitting launcher, which refuses while hold-sittings exists', () => {
   const a = parseGateArgs(['print', 'V3', '--pinned', '/runs/home', '--out', '/gate', '--pilot', '1'], { arch: 'x64', env: {} });
   const command = launchCommand(stepNamed('V3'), a, '/checkout');
-  assert.match(command, /locked\.sh m5-gate \S+ \/checkout\/scripts\/linux-engine-gate\/sitting\.mjs --dir \/gate\/V3\.development-run\.pinned\.pilot --hold \S+\/hold-sittings -- env WRAP=\S+\/wrap71\.py \S+\/run71\.sh \/gate\/V3\.development-run\.pinned\.pilot \/checkout /);
+  assert.match(command, /locked\.sh m5-gate \S+ \/checkout\/scripts\/linux-engine-gate\/sitting\.mjs --dir \/gate\/V3\.development-run\.pinned\.pilot --hold \S+\/hold-sittings --terminal end -- env WRAP=\S+\/wrap71\.py \S+\/run71\.sh \/gate\/V3\.development-run\.pinned\.pilot \/checkout /);
 });
 
 test("the sitting launcher keeps the child's exit, records the end check and the all-clear however the step ended, and holds :0 on what the person can see", async () => {

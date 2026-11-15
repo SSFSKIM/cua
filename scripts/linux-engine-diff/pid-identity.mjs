@@ -5,7 +5,7 @@
 // opens (its start time since boot and its executable, from /proc), and its close signals the pid only while both are
 // the same. Anything else is left alone, and the reason recorded.
 
-import { readFileSync, readlinkSync } from 'node:fs';
+import { existsSync, readFileSync, readlinkSync } from 'node:fs';
 import { basename } from 'node:path';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -63,4 +63,22 @@ export async function pidfileIdentity(pidfile, { program, waitMs = 3000, read = 
     if (id && (!program || basename(id.exe) === program)) return id;
     if (Date.now() >= end) return null;
   }
+}
+
+/**
+ * Whether a pid's process is there, from its stat alone (its exe need not read): `{state: 'absent'}` (no such process),
+ * `{state: 'live', start}` (its start time in ticks since boot), or `{state: 'unknown', reason}` when the process is
+ * there and its stat cannot be read (fix wave 2: an unreadable process is never taken for a gone one).
+ */
+export function processState(pid, { proc = '/proc' } = {}) {
+  const at = `${proc}/${pid}`;
+  let stat;
+  try {
+    stat = readFileSync(`${at}/stat`, 'utf8');
+  } catch (error) {
+    if (!existsSync(at)) return { state: 'absent' };
+    return { state: 'unknown', reason: error.code ?? String(error.message) };
+  }
+  const start = stat.slice(stat.lastIndexOf(')') + 2).trim().split(' ')[19];
+  return /^\d+$/.test(start ?? '') ? { state: 'live', start } : { state: 'unknown', reason: 'its stat does not read' };
 }

@@ -751,7 +751,7 @@ async function series(ctx, family, lane, name, windows) {
   const wrongText = rows.filter((r) => !Object.values(r.exact).every(Boolean)).length;
   const missCauses = {};
   for (const r of rows) if (r.miss) missCauses[r.miss] = (missCauses[r.miss] ?? 0) + 1;
-  const out = { family, lane, scenario: name, need, ...verdict, raw: { misses: raw.misses, streak: raw.streak, reached: raw.reached }, wrong_text: wrongText, miss_causes: missCauses, ...(PASTES.includes(name) ? { confirm_rules: confirmRules(rows), settle: settleCost(rows) } : {}), burst_ms_median: tenth(median(rows.map((r) => r.burst_ms))), first_miss: rows.find((r) => !r.ok) ?? null };
+  const out = { family, lane, scenario: name, need, ...verdict, raw: { misses: raw.misses, streak: raw.streak, reached: raw.reached }, wrong_text: wrongText, miss_causes: missCauses, false_ok: rows.filter((r) => !r.ok && r.answered_ok).length, ...(PASTES.includes(name) ? { confirm_rules: confirmRules(rows), settle: settleCost(rows) } : {}), burst_ms_median: tenth(median(rows.map((r) => r.burst_ms))), first_miss: rows.find((r) => !r.ok) ?? null };
   emit({ kind: 'focus-timer-series', ...out });
   return out;
 }
@@ -985,9 +985,13 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped, notAppl
     if (judged(s.lane)) {
       const need = s.need ?? CONSECUTIVE;
       const name = `${s.family} ${s.scenario}${s.lane === 'shipped' ? '' : ` (${s.lane})`}`;
+      // a run answered ok with the wrong result is a false ok in any series, a pilot's short one too (wave 2); a stored
+      // series from before `false_ok` is read by its first miss
+      const falseOks = s.false_ok ?? (s.first_miss && s.first_miss.ok === false && s.first_miss.answered_ok === true ? 1 : 0);
       if (pilot && need < CONSECUTIVE) {
-        verdict = '**unjudged** (a pilot)';
-        unjudged.push(`${name}: a series of ${need}, shorter than the ${CONSECUTIVE} the proof needs (a pilot)`);
+        verdict = falseOks ? '**false ok**' : '**unjudged** (a pilot)';
+        if (falseOks) failed.push(`${name}: ${falseOks} of ${s.runs} runs answered ok with the wrong text (a false ok)`);
+        else unjudged.push(`${name}: a series of ${need}, shorter than the ${CONSECUTIVE} the proof needs (a pilot)`);
       } else {
         verdict = s.reached ? `${need} consecutive` : '**not reached**';
         if (!s.reached) failed.push(`${name}: no ${need} consecutive passing runs in ${s.runs}`);

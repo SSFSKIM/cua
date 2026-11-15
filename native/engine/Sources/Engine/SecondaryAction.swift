@@ -103,10 +103,10 @@ extension Engine {
         try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
       }
       // #374: a Show Menu answers success only once a menu is seen to open (MenuConfirm.swift); the menus open before
-      // it are read first, so one already open confirms nothing.
+      // it are read first, so one already open, or a source whose baseline did not read, confirms nothing.
       let showsMenu = chosen.name == kAXShowMenuAction
       let menuApplications = showsMenu ? menuApplicationPids(owner: target.owner, appPid: appPid).map { prepare(AXUIElementCreateApplication($0)) } : []
-      let menusBefore = showsMenu ? openMenus(element: target.element, applications: menuApplications, ax: ax).map(\.menu) : []
+      let menusBefore = showsMenu ? openMenus(element: target.element, applications: menuApplications, ax: ax) : MenuReading()
       try guarding.checkInFlight()
       var performed = AXError.failure
       // The cursor points at the element after the action returns, and only when it succeeded (Cursor/CursorHub.swift).

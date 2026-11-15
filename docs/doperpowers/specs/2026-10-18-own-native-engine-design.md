@@ -557,7 +557,8 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     by?: "content" | "tracked" | "hit" | "bar", barBefore?, barAfter?, firstMoveMs?, polls, barWrite?, barWriteError?,
     fallbackSkipped?: "web" | "clipped", containerBy?: "window", walked?, readMs, ms}
   menu (#374, on a Show Menu's result and its menuUnconfirmed): {seen: "application" | "element" | "focus" | null,
-    openBefore, polls, ms, actionError?: the AXShowMenu's AXError when it was cannotComplete, taken as sent}
+    openBefore, polls, ms, actionError?: the AXShowMenu's AXError when it was cannotComplete, taken as sent,
+    unreadBefore?: the sources the baseline could not read in full, which confirm nothing}
   pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): ⌘V was sent and the text
     read from the clipboard, but no effect was seen, or none could be (Decision Log, #187); or, at stage "returnEffect", a
     Return between two of type_text's lines showed no effect, and the next line was not pasted (its own sentence)
@@ -4738,8 +4739,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      of the element (`element`: a popup or menu button's own menu); and the app's AXFocusedUIElement or one of its 3
      nearest ancestors with role AXMenu (`focus`: a page's ARIA role=menu, which Chrome and Safari expose as AXMenu,
      sits inside the page, and the WAI-ARIA menu pattern moves the focus onto its first item). A menu open before the
-     action, by identity, confirms nothing by itself. The reads stop one interval past the window, so an app whose
-     every read hangs for the 1 s messaging timeout ends the wait one read past it. **The stated limit:** an ARIA menu
+     action, by identity, confirms nothing by itself, and neither does a source whose baseline read was not complete
+     (a children or focus read that failed, a role that did not read, a parent missing below the window: the record's
+     `unreadBefore`), since a menu open before may have gone unread there (the review of 74d674cc, P2). The deadline is
+     checked before every read, a children list's role reads included, and the reads stop one interval past the window,
+     so an app whose every read hangs for the 1 s messaging timeout ends the wait one read past it (the same review,
+     P2: a stall on each child's role had cost one timeout per child). **The stated limit:** an ARIA menu
      that takes no focus and is not the element's child is not seen, and answers `menuUnconfirmed`.
   3. **Polled, not notified.** AXMenuOpened would need an observer on each process registered before the action and a
      run loop serviced through the wait, for a gain of at most one interval; the poll would still be needed for an
@@ -4754,7 +4759,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      engine; the live kit's AppKit fixture has a view whose Show Menu runs its menu inside the action
      (`appkit-blocking`), so the hosted run observes the cannotComplete path, and every cell records the AXError.
   5. **The record** rides as meta `menu` (`cua/menu` through the service): {seen: "application" | "element" | "focus" |
-     null, openBefore, polls, ms, actionError?}, value-free. The app's menu record (MenuRecord.swift) is cleared on
+     null, openBefore, polls, ms, actionError?, unreadBefore?}, value-free. The app's menu record (MenuRecord.swift) is cleared on
      either answer, since the action was sent.
   6. **A posted right click stays at click's own contract**, matching Linux. click_element has no right-button route
      that sends AXShowMenu on macOS: the ladder (`elementClickPlan`) takes the action route only for a plain single left

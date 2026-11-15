@@ -52,7 +52,7 @@ private final class MenuScene {
 
   /// The menu wait run after `act` (the action), with the baseline read before it, as performSecondaryAction runs it.
   func confirm(element: Int = 10, performed: AXError = .success, act: () -> Void = {}) -> MenuConfirmRecord {
-    let before = openMenus(element: el(element), applications: [el(1)], ax: ax.ops).map(\.menu)
+    let before = openMenus(element: el(element), applications: [el(1)], ax: ax.ops)
     act()
     return awaitShownMenu(element: el(element), applications: [el(1)], before: before, performed: performed, ax: ax.ops)
   }
@@ -88,11 +88,11 @@ final class MenuConfirmTests: XCTestCase {
     let ops = scene.ax.ops
     var reads = 0
     var ax = ops
-    ax.children = { element in
+    ax.childrenRead = { element in
       if FakeAX.id(element) == 1 { reads += 1; if reads == 4 { scene.openApplicationMenu() } }  // the third read after the action
-      return ops.children(element)
+      return ops.childrenRead(element)
     }
-    let before = openMenus(element: el(10), applications: [el(1)], ax: ax).map(\.menu)
+    let before = openMenus(element: el(10), applications: [el(1)], ax: ax)
     let record = awaitShownMenu(element: el(10), applications: [el(1)], before: before, performed: .success, ax: ax)
     XCTAssertEqual(record.seen, .application)
     XCTAssertEqual(record.polls, 3)
@@ -208,13 +208,80 @@ final class MenuConfirmTests: XCTestCase {
     let ops = scene.ax.ops
     var ax = ops
     var hung = false
-    ax.children = { element in if hung { scene.ax.clock += 1000 }; return ops.children(element) }
-    let before = openMenus(element: el(10), applications: [el(1)], ax: ax).map(\.menu)
+    ax.childrenRead = { element in if hung { scene.ax.clock += 1000 }; return ops.childrenRead(element) }
+    let before = openMenus(element: el(10), applications: [el(1)], ax: ax)
     hung = true
     let record = awaitShownMenu(element: el(10), applications: [el(1)], before: before, performed: .success, ax: ax)
     XCTAssertNil(record.seen)
     XCTAssertEqual(record.polls, 1)
     XCTAssertEqual(record.ms, 2000, "the application's read, then the element's, which began inside the deadline; no focus read")
+  }
+
+  /// An app that answers its children and then stalls on each child's role ends the wait one read past its window too:
+  /// the deadline is checked before every read, the role reads inside a children list included.
+  func testAnAppStallingOnEachRoleEndsTheWaitOneReadPastIt() {
+    let scene = MenuScene()
+    scene.ax.children[1] = Array(60..<70)
+    for id in 60..<70 { scene.ax.roles[id] = kAXWindowRole }
+    let ops = scene.ax.ops
+    var ax = ops
+    var hung = false
+    ax.role = { element in if hung { scene.ax.clock += 1000 }; return ops.role(element) }
+    let before = openMenus(element: el(10), applications: [el(1)], ax: ax)
+    hung = true
+    let record = awaitShownMenu(element: el(10), applications: [el(1)], before: before, performed: .success, ax: ax)
+    XCTAssertNil(record.seen)
+    XCTAssertEqual(record.polls, 1)
+    XCTAssertEqual(record.ms, 2000, "the first child's role, then the second's, begun inside the deadline; not ten seconds")
+  }
+
+  /// A source whose baseline read failed confirms nothing: a menu open throughout, unread before the action and read
+  /// after it, is not the action's.
+  func testAMenuUnderASourceTheBaselineCouldNotReadDoesNotCount() {
+    let scene = MenuScene()
+    scene.openApplicationMenu()
+    scene.ax.unreadable = [1]
+    let before = openMenus(element: el(10), applications: [el(1)], ax: scene.ax.ops)
+    XCTAssertEqual(before.unread, [.application, .focus])
+    scene.ax.unreadable = []
+    let record = awaitShownMenu(element: el(10), applications: [el(1)], before: before, performed: .success, ax: scene.ax.ops)
+    XCTAssertNil(record.seen, "the open menu was unread in the baseline")
+    XCTAssertEqual(record.unreadBefore, ["application", "focus"])
+    XCTAssertEqual(record.wire["unreadBefore"] as? [String], ["application", "focus"])
+  }
+
+  /// The other sources still confirm when one did not read: the popup's own menu with the application unread.
+  func testAnotherSourceStillConfirmsWhenOneDidNotRead() {
+    let scene = MenuScene()
+    scene.ax.unreadable = [1]
+    let before = openMenus(element: el(11), applications: [el(1)], ax: scene.ax.ops)
+    scene.ax.unreadable = []
+    scene.openElementMenu()
+    let record = awaitShownMenu(element: el(11), applications: [el(1)], before: before, performed: .success, ax: scene.ax.ops)
+    XCTAssertEqual(record.seen, .element)
+  }
+
+  /// A child whose role does not read leaves its source unread, since it may be a menu.
+  func testAChildWhoseRoleDoesNotReadLeavesItsSourceUnread() {
+    let scene = MenuScene()
+    scene.openApplicationMenu()
+    let ops = scene.ax.ops
+    var ax = ops
+    ax.role = { FakeAX.id($0) == 20 ? nil : ops.role($0) }
+    XCTAssertEqual(openMenus(element: el(10), applications: [el(1)], ax: ax).unread, [.application])
+  }
+
+  /// The focus's walk with a parent missing below the window leaves the focus unread: an ARIA menu above it went unread.
+  func testAFocusWalkCutShortLeavesTheFocusUnread() {
+    let scene = MenuScene()
+    scene.openARIAMenu()
+    scene.ax.parents[31] = nil
+    XCTAssertEqual(openMenus(element: el(10), applications: [el(1)], ax: scene.ax.ops).unread, [.focus])
+    scene.ax.parents[31] = 30
+    scene.focus(10)
+    let reading = openMenus(element: el(10), applications: [el(1)], ax: scene.ax.ops)
+    XCTAssertEqual(reading.unread, [], "a walk that reaches the window is read in full")
+    XCTAssertTrue(reading.menus.isEmpty)
   }
 
   /// The two processes a menu is looked for under: the element's serving process and the app's, once each.

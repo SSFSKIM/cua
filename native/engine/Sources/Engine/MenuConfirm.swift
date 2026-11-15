@@ -14,7 +14,8 @@ import Foundation
 // - the application's focused element, or one of its nearest `menuFocusLevels` ancestors, that is an AXMenu
 //   (`focus`): a page's ARIA menu (role=menu, which Chrome and Safari expose as AXMenu) sits inside the page, not under
 //   the application, and the WAI-ARIA menu pattern moves the focus onto its first item.
-// A menu open before the action (by identity, CFEqual) confirms nothing by itself. A page that handles contextmenu
+// A menu open before the action (by identity, CFEqual) confirms nothing by itself, and neither does a source whose
+// baseline read failed (`MenuReading.unread`), where a menu open before may have gone unread. A page that handles contextmenu
 // itself and draws its own menu with no menu role, or an app that takes the action and opens nothing, answers
 // `menuUnconfirmed`, which says so: cua cannot tell those two apart.
 //
@@ -33,8 +34,8 @@ let menuFocusLevels = 3
 
 /// What the Show Menu's confirmation found (meta `menu`, value-free): where the new menu was seen (`application`,
 /// `element` or `focus`; null when none was), how many menus were open before the action, the reads after it and the
-/// milliseconds from the action's return to the last of them, and the action's AXError when it was not success (a
-/// timeout, `showMenuSent`).
+/// milliseconds from the action's return to the last of them, the action's AXError when it was not success (a timeout,
+/// `showMenuSent`), and the sources the baseline could not read in full.
 struct MenuConfirmRecord: Equatable {
   enum Seen: String { case application, element, focus }
   var seen: Seen?
@@ -42,11 +43,14 @@ struct MenuConfirmRecord: Equatable {
   var polls: Int
   var ms: Double
   var actionError: Int32? = nil
+  /// The sources the baseline could not read in full (`MenuReading.unread`), which confirm nothing.
+  var unreadBefore: [String] = []
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["seen": seen?.rawValue ?? NSNull(), "openBefore": openBefore, "polls": polls,
                                "ms": (ms * 10).rounded() / 10]
     if let actionError { wire["actionError"] = Int(actionError) }
+    if !unreadBefore.isEmpty { wire["unreadBefore"] = unreadBefore }
     return wire
   }
 }
@@ -57,45 +61,72 @@ struct MenuConfirmRecord: Equatable {
 /// action (`actionFailed`, as before).
 func showMenuSent(_ performed: AXError) -> Bool { performed == .success || performed == .cannotComplete }
 
+
 /// The processes a menu is looked for under: the element's serving process, then the app's when it is another.
 func menuApplicationPids(owner: pid_t, appPid: pid_t) -> [pid_t] { owner == appPid ? [owner] : [owner, appPid] }
 
-/// The menus open now that a Show Menu on `element` could have opened, each with where it was seen, in the order
-/// above. Reads stop once `deadline` (on `ax.now`'s clock) has passed, so a hung app costs at most one read past it.
-func openMenus(element: AXUIElement, applications: [AXUIElement], ax: AXOps, deadline: Double = .infinity) -> [(menu: AXUIElement, seen: MenuConfirmRecord.Seen)] {
+/// One reading of the menus open now that a Show Menu on `element` could have opened, each with where it was seen, and
+/// the sources whose reading was not complete (`unread`): a read that failed (the children or the focused element, a
+/// role that did not read, a parent missing below the window) or that the deadline cut short. A source unread in the
+/// baseline confirms nothing during the wait, since a menu seen there may have been open before the action.
+struct MenuReading {
   var menus: [(menu: AXUIElement, seen: MenuConfirmRecord.Seen)] = []
+  var unread: Set<MenuConfirmRecord.Seen> = []
+}
+
+/// Reads the menus open now, in the order above. The deadline (on `ax.now`'s clock) is checked before every read, so a
+/// hung app costs at most one read past it.
+func openMenus(element: AXUIElement, applications: [AXUIElement], ax: AXOps, deadline: Double = .infinity) -> MenuReading {
+  var reading = MenuReading()
   let spent = { ax.now() >= deadline }
-  for application in applications {
-    if spent() { return menus }
-    menus += ax.children(application).filter { ax.role($0) == kAXMenuRole }.map { ($0, .application) }
-  }
-  if spent() { return menus }
-  menus += ax.children(element).filter { ax.role($0) == kAXMenuRole }.map { ($0, .element) }
-  for application in applications {
-    if spent() { return menus }
-    var node = ax.element(application, kAXFocusedUIElementAttribute)
-    for _ in 0...menuFocusLevels {
-      guard let current = node, !spent() else { break }
-      if ax.role(current) == kAXMenuRole { menus.append((current, .focus)); break }
-      node = ax.parent(current)
+  /// The AXMenu children of `parent`, read child by child.
+  func menuChildren(_ parent: AXUIElement, _ seen: MenuConfirmRecord.Seen) {
+    guard !spent() else { reading.unread.insert(seen); return }
+    guard let children = ax.childrenRead(parent) else { reading.unread.insert(seen); return }
+    for child in children {
+      guard !spent() else { reading.unread.insert(seen); return }
+      guard let role = ax.role(child) else { reading.unread.insert(seen); continue }
+      if role == kAXMenuRole { reading.menus.append((child, seen)) }
     }
   }
-  return menus
+  for application in applications { menuChildren(application, .application) }
+  menuChildren(element, .element)
+  for application in applications {
+    guard !spent() else { reading.unread.insert(.focus); break }
+    let focused = ax.focusedElement(application)
+    guard focused.readable else { reading.unread.insert(.focus); continue }
+    var node = focused.element
+    for _ in 0...menuFocusLevels {
+      guard let current = node else { break }
+      guard !spent() else { reading.unread.insert(.focus); break }
+      guard let role = ax.role(current) else { reading.unread.insert(.focus); break }
+      if role == kAXMenuRole { reading.menus.append((current, .focus)); break }
+      if role == kAXWindowRole || role == kAXApplicationRole { break }
+      guard !spent() else { reading.unread.insert(.focus); break }
+      node = ax.parent(current)
+      if node == nil { reading.unread.insert(.focus) }  // an element below the window always has a parent
+    }
+  }
+  return reading
 }
 
 /// The menu wait after a Show Menu that was sent (`showMenuSent`): `openMenus` read at once and every
-/// `menuConfirmIntervalMs` until one that is not among `before` (the menus open before the action) appears, or
-/// `menuConfirmWindowMs` has passed. The reads stop one interval past the window (`openMenus`'s deadline), so the last
-/// poll reads in full and an app whose every read hangs for the messaging timeout ends the wait at one read past it.
-func awaitShownMenu(element: AXUIElement, applications: [AXUIElement], before: [AXUIElement], performed: AXError, ax: AXOps) -> MenuConfirmRecord {
+/// `menuConfirmIntervalMs` until a menu appears that is not among `before`'s (the baseline read before the action)
+/// through a source `before` read in full, or `menuConfirmWindowMs` has passed. The reads stop one interval past the
+/// window (`openMenus`'s deadline), so the last poll reads in full and an app whose every read hangs for the messaging
+/// timeout ends the wait one read past it.
+func awaitShownMenu(element: AXUIElement, applications: [AXUIElement], before: MenuReading, performed: AXError, ax: AXOps) -> MenuConfirmRecord {
   let start = ax.now()
-  var record = MenuConfirmRecord(seen: nil, openBefore: before.count, polls: 0, ms: 0,
-                                 actionError: performed == .success ? nil : performed.rawValue)
+  var record = MenuConfirmRecord(seen: nil, openBefore: before.menus.count, polls: 0, ms: 0,
+                                 actionError: performed == .success ? nil : performed.rawValue,
+                                 unreadBefore: before.unread.map(\.rawValue).sorted())
   while true {
     record.polls += 1
     let open = openMenus(element: element, applications: applications, ax: ax, deadline: start + menuConfirmWindowMs + menuConfirmIntervalMs)
     record.ms = ax.now() - start
-    if let new = open.first(where: { menu in !before.contains { ax.same($0, menu.menu) } }) {
+    if let new = open.menus.first(where: { menu in
+      !before.unread.contains(menu.seen) && !before.menus.contains { ax.same($0.menu, menu.menu) }
+    }) {
       record.seen = new.seen
       return record
     }

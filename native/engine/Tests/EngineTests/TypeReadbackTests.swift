@@ -349,6 +349,31 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(meta)["reason"] as? String, "unchanged")
   }
 
+  /// #354's A/B (run 43752829833): an app that is not active answers no focused element at the application; its primary
+  /// window still names the field. The application's answer comes first; the focused window before the main one.
+  func testTheFocusedFieldFallsBackToThePrimaryWindowsWhenTheApplicationAnswersNone() {
+    final class Node { let name: String; var focused: Node?; var focusedWindow: Node?; var mainWindow: Node?; init(_ n: String) { name = n } }
+    let app = Node("app"), field = Node("field"), main = Node("main"), other = Node("other")
+    var reads: [String] = []
+    func lookup() -> String? {
+      readbackFocusedField(application: app, focused: { reads.append("focused@\($0.name)"); return $0.focused },
+                           primaryWindow: { node in reads.append("window"); return node.focusedWindow ?? node.mainWindow })?.name
+    }
+    main.focused = field
+    app.mainWindow = main
+    XCTAssertEqual(lookup(), "field", "an inactive app: its main window's focused element")
+    XCTAssertEqual(reads, ["focused@app", "window", "focused@main"])
+    app.focusedWindow = Node("focusedWindow")
+    app.focusedWindow?.focused = other
+    XCTAssertEqual(lookup(), "other", "the focused window before the main one")
+    app.focused = field
+    reads = []
+    XCTAssertEqual(lookup(), "field", "the application's own answer first")
+    XCTAssertEqual(reads, ["focused@app"], "no window read when the application answers")
+    app.focused = nil; app.focusedWindow = nil; app.mainWindow = nil
+    XCTAssertNil(lookup(), "no window: no field")
+  }
+
   func testAConcealedTextIntoASecureFieldIsNeverRead() {
     let field = FakeField(value: "", range: NSRange(location: 0, length: 0))
     field.role = "AXSecureTextField"

@@ -157,10 +157,14 @@ extension ReadbackReads where Element == AXUIElement {
     ReadbackReads(focused: {
       let application = AXUIElementCreateApplication(pid)
       AXUIElementSetMessagingTimeout(application, typeReadbackMessagingTimeout)
-      guard let raw = attribute(application, kAXFocusedUIElementAttribute), CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
-      let field = raw as! AXUIElement
-      AXUIElementSetMessagingTimeout(field, typeReadbackMessagingTimeout)
-      return field
+      func element(_ of: AXUIElement, _ name: String) -> AXUIElement? {
+        guard let raw = attribute(of, name), CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
+        let found = raw as! AXUIElement
+        AXUIElementSetMessagingTimeout(found, typeReadbackMessagingTimeout)
+        return found
+      }
+      return readbackFocusedField(application: application, focused: { element($0, kAXFocusedUIElementAttribute) },
+                                  primaryWindow: { element($0, kAXFocusedWindowAttribute) ?? element($0, kAXMainWindowAttribute) })
     }, role: { stringAttribute($0, kAXRoleAttribute) }, subrole: liveReadbackSubrole,
        value: { stringAttribute($0, kAXValueAttribute) }, valueUnits: liveReadbackValueUnits, range: { element in
       guard let range = rangeWire(attribute(element, kAXSelectedTextRangeAttribute)), let location = range["location"],
@@ -168,6 +172,16 @@ extension ReadbackReads where Element == AXUIElement {
       return NSRange(location: location, length: length)
     }, same: { CFEqual($0, $1) })
   }
+}
+
+/// The field typed keys reach: the application's AXFocusedUIElement, else its primary window's (AXFocusedWindow, else
+/// AXMainWindow). An app that is not active can answer no focused element at the application (#354's A/B, run
+/// 43752829833: background Safari answered none for its focused input in 120 of 120 cells that took no route 3 hold
+/// first, and found it in every cell whose ⌘ key had just taken one), while its window still names the element its
+/// first responder holds, where the posted keys go.
+func readbackFocusedField<Element>(application: Element, focused: (Element) -> Element?, primaryWindow: (Element) -> Element?) -> Element? {
+  if let field = focused(application) { return field }
+  return primaryWindow(application).flatMap(focused)
 }
 
 /// AXValue copied straight from its CFString into a buffer the caller owns and zeroes (no Swift String is made of it).

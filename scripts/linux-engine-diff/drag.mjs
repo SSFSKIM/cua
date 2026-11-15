@@ -46,7 +46,7 @@
 
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
 
-import { LOAD_RUNS, cellVerdict, controlVerdict, dragSpeed, dragVerdict, judgeNotes, loadCounts, thumbReach, topUpRuns } from './drag-judge.mjs';
+import { LOAD_RUNS, cellVerdict, controlVerdict, dragSpeed, dragVerdict, dragVerdictText, judgeNotes, loadCounts, thumbReach, topUpRuns } from './drag-judge.mjs';
 import { Engine } from './engine.mjs';
 import { FAMILIES, familyNames, openFamily, readGtk4Status } from './families.mjs';
 import { preorder } from './normalize.mjs';
@@ -1017,7 +1017,7 @@ export async function runDrag(args, { desktop, emit }) {
   md.push('', missing.length ? `Cells where a cua lane missed a run the pinned build took: ${missing.map((c) => `${c.family} ${c.drag} (${Object.entries(c.lanes).filter(([, l]) => !l.pass).map(([k]) => k).join(', ')})`).join('; ')}.` : 'No cua lane missed a run the pinned build took.');
   const verdict = dragVerdict(cells, { pilot: Boolean(args.pilot) });
   const completeness = dragCompleteness(plan, cells, errors);
-  md.push('', cuaLanes.includes('cua') ? `The judges' verdict for \`cua\`: ${verdict.pass ? 'PASS' : `**FAIL**: ${verdict.failed.join('; ')}`}.` : 'No shipped `cua` lane: measured, not judged.');
+  md.push('', cuaLanes.includes('cua') ? `The judges' verdict for \`cua\`: ${dragVerdictText(verdict)}.` : 'No shipped `cua` lane: measured, not judged.');
   // a declared speed gap is listed apart, never a pass (deviations.mjs DRAG_SPEED_GAPS)
   if (verdict.declared.length) md.push('', `Declared speed gaps (listed apart, not passes): ${verdict.declared.join('; ')}.`);
   if (verdict.unjudged) md.push('', `Unjudged in this pilot (no top-up; not passes): ${verdict.unjudged.join('; ')}.`);

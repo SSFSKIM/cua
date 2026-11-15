@@ -215,6 +215,16 @@ export function dragVerdict(cells, { lane = 'cua', pilot = false } = {}) {
 }
 
 /**
+ * The run's drag verdict in the summary's words: PASS only when nothing failed and nothing is unjudged; a pilot's
+ * unjudged speeds (ruling 722) read "no FAIL", never PASS.
+ */
+export function dragVerdictText(verdict) {
+  if (!verdict.pass) return `**FAIL**: ${verdict.failed.join('; ')}`;
+  const n = verdict.unjudged?.length ?? 0;
+  return n ? `no FAIL; unjudged in this pilot (not a pass): ${n} speed${n === 1 ? '' : 's'}` : 'PASS';
+}
+
+/**
  * A cell's verdict for one lane, as the summary shows it: PASS, a declared speed gap (never a pass), in a pilot its
  * speed unjudged (never a pass), or **FAIL**.
  */

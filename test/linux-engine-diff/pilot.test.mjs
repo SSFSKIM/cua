@@ -15,7 +15,7 @@ import { gunzipSync } from 'node:zlib';
 
 import { DEVELOPMENT_ON_PINNED, PINNED_DEVELOPMENT, gateLabel, isPinnedRule } from '../../scripts/linux-engine-diff/candidate.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { dragVerdict, laneFailures } from '../../scripts/linux-engine-diff/drag-judge.mjs';
+import { dragVerdict, dragVerdictText, laneFailures } from '../../scripts/linux-engine-diff/drag-judge.mjs';
 import { eventsPass, medianDifferenceInterval } from '../../scripts/linux-engine-diff/events.mjs';
 import { renderSummary } from '../../scripts/linux-engine-diff/report.mjs';
 import { PILOT_UNDECIDED, closeOpenSeries, judgeWithDecisions, pilotVerdict, speedDecisions } from '../../scripts/linux-engine-diff/run.mjs';
@@ -102,6 +102,10 @@ test("a pilot's drag: a long path's speed undecided without its top-ups is unjud
   // a missed run still fails a pilot
   const missed = { ...cell, lanes: { cua: { took: 1, n: 2, misses: [1], witness: false, pass: false } } };
   assert.equal(dragVerdict([missed], { pilot: true }).pass, false);
+  // the summary's line never reads PASS while a speed is unjudged (task 88's live D3 pilot read "PASS" beside it)
+  assert.equal(dragVerdictText(v), 'no FAIL; unjudged in this pilot (not a pass): 1 speed');
+  assert.equal(dragVerdictText(dragVerdict([])), 'PASS');
+  assert.match(dragVerdictText(dragVerdict([missed], { pilot: true })), /^\*\*FAIL\*\*: chrome canvas: cua missed runs 1/);
 });
 
 test("a pilot's events: a group too short or undetermined without its top-ups is unjudged, apart; a loss and a wrong answer still fail", () => {

@@ -212,6 +212,15 @@ test('the script refuses to run off a GitHub-hosted macOS runner and touches not
     const usage = spawnSync('sh', [join(HOSTED, 'hosted.sh'), 'cfprefs'], {encoding: 'utf8', env: {PATH: process.env.PATH, HOME: home}});
     assert.equal(usage.status, 2);
     assert.match(usage.stderr, /^usage: /);
+    // The diagnosis-only load (#168) takes only cpu:<1-9> and only for the browser item; a valid one still meets the guard.
+    const stressed = (item, value) => spawnSync('sh', [join(HOSTED, 'hosted.sh'), item], {encoding: 'utf8', env: {PATH: process.env.PATH, HOME: home, PARITY_STRESS: value}});
+    for (const [item, value, refusal] of [['browser', 'cpu', /^hosted-parity: PARITY_STRESS must be cpu:<1-9>/], ['browser', 'cpu:0', /must be cpu:<1-9>/],
+      ['denials', 'cpu:1', /^hosted-parity: PARITY_STRESS is for the browser item/], ['browser', 'cpu:1', /^hosted-parity: refused: /]]) {
+      const run = stressed(item, value);
+      assert.equal(run.status, 2, `${item} ${value}`);
+      assert.match(run.stderr, refusal, `${item} ${value}`);
+    }
+    assert.deepEqual(readdirSync(home), ['tmp']);
   } finally { rmSync(home, {recursive: true, force: true}); }
 });
 

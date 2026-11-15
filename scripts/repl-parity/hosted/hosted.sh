@@ -37,9 +37,19 @@
 # withheld (<n> lines)`; reports, run directories and the raw `log stream` output stay in the scratch root, the denial
 # log removed as soon as it is judged and the root at exit. No artifact. Every step's failure fails the gate; a step that
 # depends on a failed one is reported SKIP.
+#
+# Load, for diagnosis only (#168): PARITY_STRESS=cpu:<n> runs n CPU burners per core (`yes`, at the job's priority)
+# while the browser item's api suite runs on both hosts, so a race that an idle runner hides can show. Unset, nothing
+# changes; gate parity-browser-stress sets it, by hand only, and gate parity-browser never does.
 set -u
 ITEM=${1:-}
 case "$ITEM" in denials|browser) ;; *) echo "usage: sh scripts/repl-parity/hosted/hosted.sh denials|browser" >&2; exit 2 ;; esac
+STRESS=${PARITY_STRESS:-}
+case "$STRESS" in
+  '') ;;
+  cpu:[1-9]) [ "$ITEM" = browser ] || { echo "hosted-parity: PARITY_STRESS is for the browser item" >&2; exit 2; } ;;
+  *) echo "hosted-parity: PARITY_STRESS must be cpu:<1-9>" >&2; exit 2 ;;
+esac
 if [ "$(uname -s)" != Darwin ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then
   echo "hosted-parity: refused: it edits ~/.ssh, starts an sshd and registers a native host under the real HOME, so it runs only on a GitHub-hosted macOS runner" >&2
   exit 2
@@ -60,7 +70,18 @@ exec 3>&2
 say() { echo "hosted-parity: $*" >&3; }
 
 prepared=no
+BURNERS=''
+stress_stop() { [ -z "$BURNERS" ] || kill $BURNERS 2> /dev/null; BURNERS=''; }
+# stress_start: the burners PARITY_STRESS names, one `yes` each, their pids kept so that only they are stopped.
+stress_start() {
+  [ -n "$STRESS" ] || return 0
+  b_cores=$(sysctl -n hw.ncpu) b_i=0
+  b_n=$((b_cores * ${STRESS#cpu:}))
+  while [ $b_i -lt $b_n ]; do yes > /dev/null 3>&- & BURNERS="$BURNERS $!"; b_i=$((b_i + 1)); done
+  say "stress: $b_n CPU burners ($STRESS on $b_cores cores) while suite api runs"
+}
 cleanup() {
+  stress_stop
   [ "$prepared" = no ] || node scripts/repl-parity.mjs cleanup-prepared --device "$DEVICE" > /dev/null 2>&1
   sudo -n pkill -f "log stream --style ndjson" 2> /dev/null
   [ -f "$S/chrome.pid" ] && kill "$(cat "$S/chrome.pid")" 2> /dev/null
@@ -283,8 +304,10 @@ diff_suite() {
 if [ "$ITEM" = browser ]; then
   for suite in api docs-profiles; do
     sides=$ok
+    [ "$suite" != api ] || stress_start
     gated $ok "vendor host, suite $suite" run vendor "$suite" || sides=no
     gated $ok "cua host, suite $suite" run cua "$suite" || sides=no
+    stress_stop
     gated $sides "diff $suite: no undeclared difference" diff_suite "$suite"
   done
 fi

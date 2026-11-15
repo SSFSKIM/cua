@@ -337,6 +337,13 @@ export class SelectorEngine {
   injected;
   groups = 0;                    // the object groups nodesFor has used
 
+  // A locator's CDP command, bounded by the locator's budget: when that runs out the timeout is the caller's, not a stuck
+  // debugger, so the host keeps the tab's debugger and the next action in the tab runs on it (#168; as waits, evaluate
+  // and downloads do).
+  call(target, method, params, options = {}) {
+    return this.cdp.callTarget(target, method, params, {...options, preserveOnTimeout: true});
+  }
+
   // --- the interface ------------------------------------------------------------------------------------------------
 
   async resolve(selector, frame, {deadline = new Deadline(DEFAULT_ACTION_MS), strict = false, retry = true, scrollFrameIntoView} = {}) {
@@ -385,11 +392,11 @@ export class SelectorEngine {
     const options = {deadline: attemptBudget(deadline)};
     await this.injected.install(handle.target, handle.frameId, options);
     const executionContextId = await this.injected.world(handle.target, handle.frameId, options);
-    const {object} = await this.cdp.callTarget(handle.target, 'DOM.resolveNode', {backendNodeId: handle.backendNodeId, executionContextId}, options);
+    const {object} = await this.call(handle.target, 'DOM.resolveNode', {backendNodeId: handle.backendNodeId, executionContextId}, options);
     if (object?.objectId == null) throw new Error('Playwright node has no document-bound handle');
     let result;
     try {
-      result = await this.cdp.callTarget(handle.target, 'Runtime.callFunctionOn', {
+      result = await this.call(handle.target, 'Runtime.callFunctionOn', {
         arguments: arg == null ? [] : [{value: arg}], awaitPromise: true, functionDeclaration: handleFunction(fn.toString()),
         objectId: object.objectId, returnByValue: true, userGesture: true,
       }, options);
@@ -459,8 +466,8 @@ export class SelectorEngine {
       }
       checkSelectorDeadline(deadline);
       const [described, node] = await Promise.allSettled([
-        this.cdp.callTarget(scope.target, 'Runtime.callFunctionOn', {functionDeclaration: describeFrameElement.toString(), objectId: frameObject, returnByValue: true}, {deadline}),
-        this.cdp.callTarget(scope.target, 'DOM.describeNode', {objectId: frameObject}, {deadline}),
+        this.call(scope.target, 'Runtime.callFunctionOn', {functionDeclaration: describeFrameElement.toString(), objectId: frameObject, returnByValue: true}, {deadline}),
+        this.call(scope.target, 'DOM.describeNode', {objectId: frameObject}, {deadline}),
       ]);
       if (described.status === 'rejected') throw described.reason;
       owned.push(...objectsOf(described.value));
@@ -485,7 +492,7 @@ export class SelectorEngine {
   // The frame a frame element shows, by its URL and name in the frame tree when DOM.describeNode does not name it.
   async frameIdForFrameMatch(target, info, options) {
     if (info.frameUrl == null) return null;
-    const {frameTree} = await this.cdp.callTarget(target, 'Page.getFrameTree', undefined, options);
+    const {frameTree} = await this.call(target, 'Page.getFrameTree', undefined, options);
     const matches = frameList(frameTree).filter(f => f.url === info.frameUrl && (info.frameName == null || f.name === info.frameName));
     return matches.length === 1 ? matches[0].id : null;
   }
@@ -506,7 +513,7 @@ export class SelectorEngine {
       if (error != null) throw error;
       const objectId = found.result?.objectId;
       if (objectId == null) throw new Error('Playwright selector did not resolve to a DOM node');
-      const {node} = await this.cdp.callTarget(scope.target, 'DOM.describeNode', {objectId}, {deadline});
+      const {node} = await this.call(scope.target, 'DOM.describeNode', {objectId}, {deadline});
       const frameId = scope.selector.includes(ENTER_FRAME) ? (await this.frameIdForElement(scope.target, objectId, {deadline})) ?? found.frameId : found.frameId;
       return {backendNodeId: node.backendNodeId, frameId};
     } finally {
@@ -524,10 +531,10 @@ export class SelectorEngine {
         {expression: elementsExpression(scope.selector), returnByValue: false, objectGroup}, {deadline});
       const error = pageError(found);
       if (error != null) throw error;
-      const {result: properties} = await this.cdp.callTarget(scope.target, 'Runtime.getProperties', {objectId: found.result.objectId, ownProperties: true}, {deadline});
+      const {result: properties} = await this.call(scope.target, 'Runtime.getProperties', {objectId: found.result.objectId, ownProperties: true}, {deadline});
       const byIndex = new Map(properties.filter(p => /^\d+$/.test(p.name)).map(p => [Number(p.name), p.value?.objectId]));
       const elementIds = [...byIndex.keys()].filter(i => i >= 2).sort((a, b) => a - b).map(i => byIndex.get(i));
-      const describe = objectId => this.cdp.callTarget(scope.target, 'DOM.describeNode', {objectId}, {deadline});
+      const describe = objectId => this.call(scope.target, 'DOM.describeNode', {objectId}, {deadline});
       const frameElement = byIndex.get(0);
       const [frameNode, documentNode, ...nodes] = await Promise.all([
         frameElement == null ? undefined : describe(frameElement), describe(byIndex.get(1)), ...elementIds.map(describe),
@@ -538,20 +545,20 @@ export class SelectorEngine {
         handles: nodes.map(({node}) => new ElementHandle(this, {backendNodeId: node.backendNodeId, frameId, target: scope.target, oopifFrameChain: scope.oopifFrameChain, selector})),
       };
     } finally {
-      await this.cdp.callTarget(scope.target, 'Runtime.releaseObjectGroup', {objectGroup}, {deadline: new Deadline(POLL_MS)}).catch(() => {});
+      await this.call(scope.target, 'Runtime.releaseObjectGroup', {objectGroup}, {deadline: new Deadline(POLL_MS)}).catch(() => {});
     }
   }
 
   // The frame an element's document is in, when it is a child frame of the world's (frameIdForElementObject).
   async frameIdForElement(target, objectId, options) {
-    const found = await this.cdp.callTarget(target, 'Runtime.callFunctionOn', {functionDeclaration: ownerFrameElement.toString(), objectId, returnByValue: false}, options);
+    const found = await this.call(target, 'Runtime.callFunctionOn', {functionDeclaration: ownerFrameElement.toString(), objectId, returnByValue: false}, options);
     const owned = objectsOf(found);
     try {
       const error = pageError(found);
       if (error != null) throw error;
       const frameElement = found.result?.objectId;
       if (frameElement == null) return undefined;
-      const {node} = await this.cdp.callTarget(target, 'DOM.describeNode', {objectId: frameElement}, options);
+      const {node} = await this.call(target, 'DOM.describeNode', {objectId: frameElement}, options);
       return node.frameId;
     } finally {
       await this.injected.release(target, owned);

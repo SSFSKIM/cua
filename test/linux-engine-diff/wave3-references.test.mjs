@@ -6,6 +6,7 @@
 // signalled; the processes are a /proc of the test's own.
 
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +14,7 @@ import { after, test } from 'node:test';
 
 import { removalProof, removeLeftover, startCheck, writeMarker } from '../../scripts/linux-engine-diff/leftovers.mjs';
 import { observeProcesses, referencesTo, scratchReferences } from '../../scripts/linux-engine-diff/process-references.mjs';
+import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 import { parseGateArgs } from '../../scripts/linux-engine-gate/gate.mjs';
 
 const scratch = mkdtempSync(join(tmpdir(), 'cua171-wave3-test-'));
@@ -190,4 +192,27 @@ test("gate.mjs leftovers takes --remove <dir> and --confirm; --confirm alone is 
   assert.deepEqual(['remove', 'confirm'].map((k) => parseGateArgs(['leftovers', '--remove', '/tmp/cua171-run-Abc123', '--confirm'])[k]), ['/tmp/cua171-run-Abc123', true]);
   assert.equal(parseGateArgs(['leftovers']).remove, null);
   assert.throws(() => parseGateArgs(['leftovers', '--confirm']), /--confirm needs --remove <dir>/);
+});
+
+// the suite under the lock: a parallel test's child holding its own removed scratch reached a test-default start check
+// through the real /proc. A test process's default reads no real process table (`proc: null`), as it reads no real root.
+test("a test process's default start check reads no real process: another test's child in a removed scratch is not a leftover", { skip: process.platform !== 'linux' }, async () => {
+  const held = mkdtempSync(join(fresh('real'), 'cua171-run-'));
+  const child = spawn('sleep', ['30'], { cwd: held, stdio: 'ignore' });
+  try {
+    await new Promise((r) => child.once('spawn', r));
+    rmSync(held, { recursive: true });
+    assert.match(startCheck({ roots: [] }).refused.map((r) => r.reason).join(), new RegExp(`pid ${child.pid} sleep \\(its cwd\\)`), 'the real /proc shows it');
+    const desktop = new Desktop({ cua: 'unused', run: 'scope', reader: { async close() {} }, startActive: 0, nonce: 'n0' });
+    try {
+      assert.deepEqual(startCheck({ own: [desktop.dir], ...desktop.leftoverScope() }).refused, []);
+    } finally {
+      desktop.unhookStop();
+      rmSync(desktop.dir, { recursive: true, force: true });
+    }
+    assert.equal(observeProcesses({ proc: null }).unlisted, 'no process table is read here');
+    assert.equal(removalProof(fresh('x'), { proc: null }).holds, false);
+  } finally {
+    child.kill();
+  }
 });

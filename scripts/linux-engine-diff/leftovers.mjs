@@ -73,9 +73,10 @@ function programOf(dir) {
  * (a bus address in its environment naming one) lies in a `cua171-run-*` directory, found by the path they name,
  * whether or not the directory still exists (review finding 2: a run's cleanup removes its scratch even when stopping
  * its bus failed): `{pid, program, dir, by: 'config' | 'socket', dir_exists}`, by pid; none of the directories in
- * `own`, or, with `only`, of those directories alone. `proc` is /proc, or a test's own.
+ * `own`, or, with `only`, of those directories alone. `proc` is /proc, a test's own, or null for none.
  */
 export function busesIn({ own = [], only = null, proc = '/proc' } = {}) {
+  if (proc === null) return [];
   let pids;
   try {
     pids = readdirSync(proc).filter((x) => /^\d+$/.test(x)).map(Number).sort((a, b) => a - b);

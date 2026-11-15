@@ -524,9 +524,18 @@ export class Desktop {
     return Boolean(scene) && this.stillOurs(scene);
   }
 
-  /** Where the run's start and end checks read: its caller's (`leftoverOptions`), none in a test process (hermetic.mjs). */
+  /**
+   * Where the run's start and end checks read: its caller's (`leftoverOptions`); in a test process no real scratch root
+   * and no real process table (hermetic.mjs; `proc: null`), so a parallel test's processes are never this run's
+   * leftovers. The checks of the run's own (its bus, its children) read the real /proc wherever it is not named.
+   */
   leftoverScope() {
-    return this.leftoverOptions ?? (inTest() ? { roots: [] } : {});
+    return this.leftoverOptions ?? (inTest() ? { roots: [], proc: null } : {});
+  }
+
+  /** The /proc the checks of the run's own read: the caller's, else the real one. */
+  ownProc() {
+    return this.leftoverScope().proc ?? undefined;
   }
 
   /**
@@ -539,10 +548,10 @@ export class Desktop {
     const left = this.chromeEnding?.left;
     const chromeLeft = Array.isArray(left) ? left.length : Number(left) || 0;
     if (chromeLeft) unclean.push(`its Chrome left ${chromeLeft} process${chromeLeft === 1 ? '' : 'es'} running`);
-    for (const b of busesIn({ only: [this.dir], proc: this.leftoverScope().proc })) unclean.push(`its session bus still runs: pid ${b.pid} ${b.program} (its ${b.by} in ${b.dir})`);
+    for (const b of busesIn({ only: [this.dir], proc: this.ownProc() })) unclean.push(`its session bus still runs: pid ${b.pid} ${b.program} (its ${b.by} in ${b.dir})`);
     for (const e of this.closeErrors ?? []) unclean.push(`a scene's close failed: ${e}`);
     for (const c of (this.spawned ?? []).filter((x) => !x.exited)) {
-      const now = processState(c.pid, { proc: this.leftoverScope().proc });
+      const now = processState(c.pid, { proc: this.ownProc() });
       if (now.state === 'live' && now.start === c.start) unclean.push(`a process it spawned still runs: pid ${c.pid} ${c.label}`);
       else if (now.state === 'unknown') unclean.push(`whether a process it spawned still runs cannot be read: pid ${c.pid} ${c.label} (${now.reason})`);
     }

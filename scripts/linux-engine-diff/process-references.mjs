@@ -87,11 +87,13 @@ function observeOne(pid, at) {
 
 /**
  * Every live process of this user's but this one (`self`), as far as each can be read: `{processes, unlisted}`, where
- * `unlisted` is the reason /proc could not be listed (then nothing was observed at all), else null. Another user's
- * process is left out: it cannot reach a mode-700 directory of this user's (root aside). A process whose owner cannot
- * be read is kept, as possibly this user's.
+ * `unlisted` is the reason /proc could not be listed or was not read (`proc: null`), and then nothing was observed at
+ * all; else null. Another user's process is left out: it cannot reach a mode-700 directory of this user's (root
+ * aside). A process whose owner cannot be read is kept, as possibly this user's.
  */
 export function observeProcesses({ proc = '/proc', uid = process.getuid?.(), self = process.pid } = {}) {
+  // a test process names its own /proc or reads none (hermetic.mjs)
+  if (proc === null) return { processes: [], unlisted: 'no process table is read here' };
   let pids;
   try {
     pids = readdirSync(proc).filter((x) => /^\d+$/.test(x)).map(Number).sort((a, b) => a - b);

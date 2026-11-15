@@ -296,7 +296,7 @@ function labelledLog(path, label) {
  * step directory that exists, or (a gate) from an unclean checkout. Answers the step's exit code: the harness's, or 1
  * when its private display's watchdog was not clean.
  */
-export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null, leftovers = inTest() ? { roots: [] } : {}, start: check = startCheck } = {}) {
+export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null, leftovers = inTest() ? { roots: [], proc: null } : {}, start: check = startCheck } = {}) {
   const step = stepNamed(a.step);
   if (step.display === ':0') throw new GateRefused(`${step.name} runs on :0, in the declared sitting under task 50's guards: launch it with \`gate.mjs print ${step.name} ...\`'s command; this runner never runs on the person's display`);
   if (held()) throw new GateRefused(`${a.hold} exists: the host is held for sittings, and nothing starts`);

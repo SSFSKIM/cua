@@ -117,8 +117,21 @@ func readbackZero(_ buffer: inout [UInt16]) {
 }
 
 /// The subroles of an AXTextArea whose Return the hosted cells show is not read back as "\n": there a Return counts as a
-/// key that can leave or submit. None measured so far.
-let typeReadbackReturnUnreadSubroles: Set<String> = []
+/// key that can leave or submit. Gecko's contenteditable (AXApplicationGroup, the spike's run 42815192390) flattens its
+/// line breaks in AXValue (ruling 1ea561bc:737). Safari's contenteditable carries no subrole, as its text area and
+/// Chromium's do; its one failure, an ending Return read with its empty last line's placeholder, is accepted by the
+/// caret instead (`readbackPlaceholderLine`).
+let typeReadbackReturnUnreadSubroles: Set<String> = ["AXApplicationGroup"]
+
+/// Whether an ending Return's placeholder line may be accepted (the design session's ruling 1ea561bc:737 on #354's A/B,
+/// run 43752829833: Safari's contenteditable reads an ending Return as "\n\n", the empty last line's placeholder, in 20
+/// of 20, while a Return between lines reads back exactly): in a field that takes a Return as text, when the typed text
+/// ends in a Return and nothing of the field follows the insertion, a read of the expected value and exactly one more
+/// "\n" is the same text. The caret tells it from a Return typed twice: after an ending Return it sits at the start of
+/// the placeholder line, the expected value's length; after a doubled one, one further on.
+func readbackPlaceholderLine(returnIsText: Bool, typedEndsInReturn: Bool, suffixEmpty: Bool) -> Bool {
+  returnIsText && typedEndsInReturn && suffixEmpty
+}
 
 /// Whether a field takes a Return as text: an AXTextArea whose subrole is not one the cells exclude.
 func readbackReturnIsText(role: String, subrole: ReadbackSubrole, unread: Set<String> = typeReadbackReturnUnreadSubroles) -> Bool {
@@ -301,6 +314,10 @@ struct TypeReadbackRecord: Equatable {
   var actualLength: Int?
   /// The mismatch stopped the text before a key it was checked ahead of, so the key and what follows were not sent.
   var stoppedBeforeKey = false
+  /// Confirmed with an ending Return's placeholder line (`readbackPlaceholderLine`), and whether the caret that told it
+  /// from a doubled Return could not be read (accepted all the same, the ruling's residual). A plain request's only.
+  var placeholderLine = false
+  var placeholderCaretUnread = false
   /// A concealed request's record (the review of dad56362..af1860ef, P2): no count and no poll time on the wire, since the
   /// checkpoints, the keys and the reads and time of each checkpoint's poll tell how many control characters and
   /// segments the secret holds (a secret of keys alone, its length); a key left unconfirmed is a flag.
@@ -322,6 +339,8 @@ struct TypeReadbackRecord: Equatable {
     if let expectedLength { wire["expectedLength"] = expectedLength }
     if let actualLength { wire["actualLength"] = actualLength }
     if stoppedBeforeKey { wire["stoppedBeforeKey"] = true }
+    if placeholderLine { wire["placeholderLine"] = true }
+    if placeholderCaretUnread { wire["placeholderCaretUnread"] = true }
     return wire
   }
 }
@@ -386,8 +405,10 @@ final class TypeReadback<Element> {
 
   /// Polls for the snapshot with its selection replaced by units `0..<end`, then checks the field is still the focus.
   private func confirm(through end: Int, beforeKey: Bool) throws {
-    guard case .expect(let field, let role, let before, let range, _) = plan else { return }
+    guard case .expect(let field, let role, let before, let range, let returnIsText) = plan else { return }
     let typedUnits = units[0..<end].filter { !leaves($0) }  // a key that can leave adds nothing to the field
+    let placeholder = readbackPlaceholderLine(returnIsText: returnIsText, typedEndsInReturn: typedUnits.last?.text == [0x0D],
+                                              suffixEmpty: range.location + range.length == (before as NSString).length)
     let poll: ReadbackPoll
     var excerpt: (() -> ReadbackExcerpt)?  // a plain mismatch's, made only once the field is known to be the same
     let started = reads.now()
@@ -412,6 +433,10 @@ final class TypeReadback<Element> {
       expected += value[(range.location + range.length)...]
       defer { readbackZero(&expected) }
       if readbackMayBeTruncated(units: expected) { throw unconfirmed(.possiblyTruncated, beforeKey) }
+      // A secret's ending Return with its placeholder line: the same caret, at the expected value's length, is required
+      // of every concealed confirmation, so accepting it adds no read and no wait (ruling 1ea561bc:737).
+      var expectedPlaceholder = placeholder ? expected + [0x0A] : []
+      defer { readbackZero(&expectedPlaceholder) }
       // One schedule for every concealed confirmation (the review of a8e55870..8f465bf9, P2): the caret evidence and a
       // value read after it are always required, never only when the secret equals the text it replaced, so the reads
       // and waits do not tell whether a secret matches a selection the caller chose.
@@ -421,7 +446,7 @@ final class TypeReadback<Element> {
         guard var read = valueUnits(element) else { return .unreadable }
         defer { readbackZero(&read) }
         if readbackMayBeTruncated(units: read) { return .differs(cut: true, actual: nil) }  // a cut read never counts as equal
-        guard read == expected else { return .differs(cut: false, actual: nil) }
+        guard read == expected || (placeholder && read == expectedPlaceholder) else { return .differs(cut: false, actual: nil) }
         return equalAfterCaret(element, unchanged: true, inserted: inserted)
       }
     } else {
@@ -431,12 +456,29 @@ final class TypeReadback<Element> {
       let unchanged = expected.utf16.elementsEqual(before.utf16)
       let inserted = (expected as NSString).length - ((before as NSString).length - range.length)
       let value = reads.value
+      // The placeholder line (`readbackPlaceholderLine`): the read must be the expected value and one "\n", the caret at
+      // the expected value's length, then a fresh read after that caret read; a caret one further on is a doubled
+      // Return, a mismatch; an unreadable caret is accepted, the ruling's stated residual.
+      let withPlaceholder = expected + "\n", placeholderCaret = NSRange(location: (expected as NSString).length, length: 0)
+      var placeholderCaretSeen = false
+      func placeholderAfterCaret(_ element: Element, _ read: String) -> ReadbackRead {
+        if placeholderCaretSeen { record.placeholderLine = true; return .equal }
+        guard let caret = readRange(element) else {
+          placeholderCaretSeen = true
+          record.placeholderCaretUnread = true
+          return .equalUnconsumed
+        }
+        guard caret == placeholderCaret else { return .differs(cut: false, actual: read) }
+        placeholderCaretSeen = true
+        return .equalUnconsumed
+      }
       poll = readbackPoll(field, role: role, reads: reads) { element in
         guard let read = value(element) else { return .unreadable }
         if readbackMayBeTruncated(read) { return .differs(cut: true, actual: read) }  // a cut read never counts as equal
         // Code units, never Swift's ==, which takes canonically equivalent strings of different lengths for equal.
-        guard read.utf16.elementsEqual(expected.utf16) else { return .differs(cut: false, actual: read) }
-        return equalAfterCaret(element, unchanged: unchanged, inserted: inserted)
+        if read.utf16.elementsEqual(expected.utf16) { return equalAfterCaret(element, unchanged: unchanged, inserted: inserted) }
+        if placeholder, read.utf16.elementsEqual(withPlaceholder.utf16) { return placeholderAfterCaret(element, read) }
+        return .differs(cut: false, actual: read)
       }
       if case .differs(_, let actual?) = poll.last { excerpt = { readbackExcerpt(expected: expected, actual: actual) } }
     }

@@ -21,6 +21,18 @@ private final class FakeField {
   var ignoresInput = false
   /// An app that takes the text but reports its selected range where it was before (`initialRange`).
   var moveCaret = true
+  /// Once typed into, the selected range the field reports instead of its own (a contenteditable's placeholder line),
+  /// or none at all.
+  var caretAfterTyping: NSRange?
+  var caretUnreadableAfterTyping = false
+  private(set) var delivered = false
+  /// The selected range a read answers.
+  var reportedRange: NSRange? {
+    guard delivered else { return range }
+    if caretUnreadableAfterTyping { return nil }
+    if let caretAfterTyping { return caretAfterTyping }
+    return moveCaret ? range : initialRange
+  }
   /// A change after this many value reads (a field turning secure, unreadable, or re-created).
   var changeAfterReads: Int?
   var change: (FakeField) -> Void = { _ in }
@@ -47,6 +59,7 @@ private final class FakeField {
     value = current
     range = NSRange(location: selection.location + (inserted as NSString).length, length: 0)
     lagLeft = lagReads
+    delivered = true
   }
 
   func readValue() -> String? {
@@ -73,7 +86,7 @@ private final class FakeApp {
                   subrole: { $0.calls.append("subrole"); return $0.subrole },
                   value: { $0.readValue() },
                   valueUnits: { field in field.readValue().map { Array($0.utf16) } },
-                  range: { $0.calls.append("range"); return $0.moveCaret ? $0.range : $0.initialRange },
+                  range: { $0.calls.append("range"); return $0.reportedRange },
                   same: { $0 === $1 },
                   now: { self.clock },
                   sleep: { self.clock += $0; self.sleeps += 1 })
@@ -731,12 +744,85 @@ final class TypeReadbackTests: XCTestCase {
   /// A Return where the cells show it is not read back counts as a key that can leave; none is listed yet.
   func testAReturnIsTextOnlyInAMultiLineFieldTheCellsHaveNotExcluded() {
     XCTAssertTrue(readbackReturnIsText(role: "AXTextArea", subrole: .absent))
-    XCTAssertTrue(readbackReturnIsText(role: "AXTextArea", subrole: .value("AXApplicationGroup")), "Firefox's contenteditable")
-    XCTAssertFalse(readbackReturnIsText(role: "AXTextArea", subrole: .value("AXApplicationGroup"), unread: ["AXApplicationGroup"]))
+    XCTAssertFalse(readbackReturnIsText(role: "AXTextArea", subrole: .value("AXApplicationGroup")), "Firefox's contenteditable")
+    XCTAssertTrue(readbackReturnIsText(role: "AXTextArea", subrole: .value("AXApplicationGroup"), unread: []))
     XCTAssertFalse(readbackReturnIsText(role: "AXTextField", subrole: .absent))
     XCTAssertFalse(readbackReturnIsText(role: "AXTextField", subrole: .value("AXSearchField")))
     XCTAssertFalse(readbackReturnIsText(role: "AXComboBox", subrole: .absent))
-    XCTAssertTrue(typeReadbackReturnUnreadSubroles.isEmpty)
+    XCTAssertEqual(typeReadbackReturnUnreadSubroles, ["AXApplicationGroup"], "ruling 1ea561bc:737")
+    // Through the typing: a Return between lines in Firefox's contenteditable is a key, checked before it.
+    let gecko = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    gecko.subrole = .value("AXApplicationGroup")
+    gecko.returnInserts = false  // its AXValue shows no line break
+    let (error, meta) = type("one\ntwo", into: FakeApp(gecko))
+    XCTAssertNil(error)
+    XCTAssertEqual(record(meta)["checkpoints"] as? Int, 1)
+    XCTAssertEqual(record(meta)["keysUnconfirmed"] as? Int, 1)
+  }
+
+  /// Ruling 1ea561bc:737 on #354's A/B (run 43752829833): Safari's contenteditable reads an ending Return as "\n\n", its
+  /// empty last line's placeholder. In a field that takes a Return as text, a read of the expected value and exactly one
+  /// more "\n" confirms when the caret sits at the expected value's length (the placeholder line's start); a doubled
+  /// Return, its caret one further on, does not; an unreadable caret is accepted, the stated residual.
+  func testAnEndingReturnsPlaceholderLineConfirmsOnlyWithTheCaretAtItsStart() {
+    func field(caretAt offset: Int?) -> FakeField {
+      // A contenteditable: an ending Return shows the placeholder line, the caret where `offset` says (nil: unreadable).
+      let editable = FakeField(value: "", range: NSRange(location: 0, length: 0))
+      editable.transform = { $0 == "\n" ? "\n\n" : $0 }
+      editable.caretAfterTyping = offset.map { NSRange(location: $0, length: 0) }
+      editable.caretUnreadableAfterTyping = offset == nil
+      return editable
+    }
+    let expected = "First line\n"
+    let length = (expected as NSString).length
+    let editable = field(caretAt: length)
+    let (error, meta) = type(expected, into: FakeApp(editable))
+    XCTAssertEqual(editable.value, "First line\n\n")
+    XCTAssertNil(error, "a contenteditable's ending Return, its caret at the placeholder line's start, confirms")
+    XCTAssertEqual(record(meta)["placeholderLine"] as? Bool, true)
+    XCTAssertNil(record(meta)["keysUnconfirmed"], "the Return is text, confirmed with the rest (ruling 589)")
+
+    let doubled = field(caretAt: length + 1)  // a text area given the Return twice reads the same value, its caret one on
+    let (refused, refusedMeta) = type(expected, into: FakeApp(doubled))
+    XCTAssertEqual(refused?.errorName, "typeUnconfirmed")
+    XCTAssertEqual(record(refusedMeta)["reason"] as? String, "valueMismatch")
+
+    let unread = field(caretAt: nil)
+    let (accepted, acceptedMeta) = type(expected, into: FakeApp(unread))
+    XCTAssertNil(accepted, "an unreadable caret is accepted, the ruling's stated residual")
+    XCTAssertEqual(record(acceptedMeta)["placeholderCaretUnread"] as? Bool, true)
+
+    // Never when text of the field follows the insertion, nor without an ending Return, nor in a single-line field.
+    let middle = FakeField(value: "tail", range: NSRange(location: 0, length: 0))
+    middle.transform = { $0 == "\n" ? "\n\n" : $0 }
+    XCTAssertEqual(record(type("head\n", into: FakeApp(middle)).1)["reason"] as? String, "valueMismatch")
+    let extra = FakeField(value: "", range: NSRange(location: 0, length: 0))
+    extra.transform = { $0 == "e" ? "e\n" : $0 }
+    XCTAssertEqual(record(type("line", into: FakeApp(extra)).1)["reason"] as? String, "valueMismatch")
+    XCTAssertFalse(readbackPlaceholderLine(returnIsText: false, typedEndsInReturn: true, suffixEmpty: true))
+
+    // A secret's ending Return: accepted on the caret every concealed confirmation reads anyway, a doubled one refused.
+    let secret = field(caretAt: ("pw\n" as NSString).length)
+    XCTAssertNil(type("pw\n", into: FakeApp(secret), concealed: true).0)
+    let doubledSecret = field(caretAt: ("pw\n" as NSString).length + 1)
+    XCTAssertEqual(record(type("pw\n", into: FakeApp(doubledSecret), concealed: true).1)["reason"] as? String, "unchanged")
+  }
+
+  /// The placeholder line costs a secret no read and no wait of its own: the same schedule as any concealed answer.
+  func testASecretsPlaceholderLineTakesTheSameSchedule() {
+    func schedule(_ placeholderLine: Bool) -> (calls: [String], sleeps: Int) {
+      let editable = FakeField(value: "", range: NSRange(location: 0, length: 0))
+      if placeholderLine {
+        editable.transform = { $0 == "\n" ? "\n\n" : $0 }
+        editable.caretAfterTyping = NSRange(location: 3, length: 0)
+      }
+      let app = FakeApp(editable)
+      XCTAssertNil(type("pw\n", into: app, concealed: true).0)
+      return (editable.calls, app.sleeps)
+    }
+    let plain = schedule(false), placeholder = schedule(true)
+    XCTAssertEqual(plain.calls, placeholder.calls)
+    XCTAssertEqual(plain.sleeps, placeholder.sleeps)
   }
 
   func testOnlyKeysAndEmptyText() {

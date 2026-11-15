@@ -56,6 +56,13 @@ test("a pilot step's undecided series is reported unjudged: the x64 pilot's V3 b
   // the summary reads it from the end row as run.mjs writes it
   const end = { kind: 'end', run: 'r', gate: false, valid: true, pass: outcome.pass, failed: outcome.failed, parity: [], refused: [], unjudged: outcome.unjudged };
   assert.match(renderSummary([{ kind: 'meta', run: 'r', gate: false, engines: [] }, end]), /no verdict FAIL; \*\*unjudged\*\* \(a pilot takes no top-up; not a pass\): chrome-input move cua/);
+  // and its samples and verdict rows: the operation's row reads unjudged, never FAIL (the review's finding 5)
+  const samples = rows.filter((r) => r.scene === 'chrome-input' && r.op === 'move').map((r) => ({ ...r, run: 'r' }));
+  const summary = renderSummary([{ kind: 'meta', run: 'r', gate: false, engines: [], blocks: 1 }, ...samples, { kind: 'verdict', run: 'r', scene: 'chrome-input', op: 'move', candidate: 'cua', ...verdict }, end]);
+  const row = summary.split('\n').find((l) => l.startsWith('| chrome-input | move | cua |'));
+  assert.ok(row, summary);
+  assert.match(row, /\*\*unjudged\*\* \(a pilot takes no top-up\), not a pass: cua: cold /);
+  assert.doesNotMatch(row, /FAIL/);
 });
 
 test('a pilot still fails what it can judge: a missed effect beside the unjudged speed, and an operation of no series', () => {

@@ -581,7 +581,7 @@ async function oneRun(ctx, cell, sc, svc, settler, trial) {
       before: shown(before.reading),
       after: after.ok ? shown(after.value) : { error: after.error },
       ...(run.settled ? { settled: shown(run.settled) } : {}),
-      sent: { key: run.key, point: run.point, path: run.path, direction: run.direction, steps: run.steps, text: run.text, dx: run.dx, line: run.line, action: run.action },
+      sent: { key: run.key, point: run.point, path: run.path, direction: run.direction, steps: run.steps, text: run.text, dx: run.dx, line: run.line, action: run.action, on: run.on },
       desktop_clean: desktopClean,
       front_active: frontActive,
       ...(desktopClean ? {} : { witness: judgeSpan(span.report).fields, activations: spanActivations(span.report) }),

@@ -101,6 +101,25 @@ test("ruling 650's hard failure, in every cell: an ok with no effect fails the s
   // the menu control's expected menuUnconfirmed is no ok: an honest answer, whatever it shows
   const control = run(0, { answers: [{ ok: false, error: 'showContextMenu was sent and no menu was seen within 1 s' }], expected_error: true, late_ms: null, after: keys(0, 0), scene: 'chrome-input' });
   assert.deepEqual(judgeSettleSeries([control, ...passes(1, 30)], { need: 30 }).false_ok, []);
+  // an ok on another target is hard too (ruling 650): the requested effect unlanded, and the readings show it elsewhere
+  const page = (over = {}) => ({ downs: 0, ups: 0, drags: 0, clicks: 0, context: 0, context_on: 'none', key_downs: 0, key_ups: 0, ...over });
+  const wrong = (input, before, after, sent = {}, scene = 'electron-input') => ({ ...run(0, { late_ms: null, before, after }), scene, input, sent });
+  const elsewhere = {
+    "a right click whose context event named another button": wrong('right_click', page(), page({ context: 1, context_on: 'native' })),
+    "a named context action that reached another button than it named": wrong('secondary_action', page(), page({ context: 1, context_on: 'menu' }), { action: 'showContextMenu', on: 'native' }),
+    'a coordinate click whose press missed the pad': wrong('click', page(), page({ ups: 1 })),
+    "an element's click that reached the pad instead": wrong('click_element', page(), page({ downs: 1, ups: 1 })),
+    "an editor's click whose caret landed outside the line": wrong('click', { caret: 4 }, { caret: 90 }, { line: [10, 40] }, 'gedit'),
+  };
+  for (const [name, miss] of Object.entries(elsewhere)) {
+    const v = judgeSettleSeries([miss, ...passes(1, 30).map((r) => ({ ...r, scene: miss.scene, input: miss.input }))], { need: 30 });
+    assert.equal(v.reached, false, name);
+    assert.equal(v.false_ok[0]?.cls, 'false ok', name);
+    assert.match(v.false_ok[0].why, /another target/, name);
+  }
+  // the right button, the right line: a miss there is the effect's size or its time, honest
+  assert.deepEqual(judgeSettleSeries([wrong('right_click', page(), page({ downs: 1 }))], { need: 30 }).false_ok, [], 'the context event never came: no other target shown');
+  assert.deepEqual(judgeSettleSeries([wrong('click', { caret: 4 }, { caret: 20 }, { line: [10, 40] }, 'gedit')], { need: 30 }).false_ok, [], 'the caret inside the line');
   // a partial effect is no false ok: a landing miss (ruling 650), which a later streak covers
   const partialScroll = { ...run(0, { late_ms: null }), scene: 'firefox-input', input: 'scroll', before: { wheels: 138, scroll: 0 }, after: { wheels: 140, scroll: 414 } };
   assert.equal(judgeSettleSeries([partialScroll, ...passes(1, 30)], { need: 30 }).reached, true);
@@ -212,7 +231,7 @@ for (const { candidate, step, counts } of RULED) {
       }
       // the hard failure: the key never arrived, every answer ok
       const v = judge((rows) => { const r = first302(rows, cell); Object.assign(r, { late_ms: null, after: { ...r.before } }); });
-      assert.ok(v.failed.includes(`${cell} (shipped): 1 of ${before.length} runs answered ok with no effect (trial ${first.trial})`), `${cell}: ok with no effect: ${v.failed.join('; ')}`);
+      assert.ok(v.failed.includes(`${cell} (shipped): 1 of ${before.length} runs were a false ok (trial ${first.trial}: answered ok with no effect)`), `${cell}: ok with no effect: ${v.failed.join('; ')}`);
     }
     for (const [name, edit] of Object.entries(RUN_WIDE)) assert.notDeepEqual(judge(edit).failed, [], name);
     assert.match(judge(() => {}, { foreign: ['the harness: 0x00a00003 ConfigureWindow (raised)'] }).failed.join(), /a window the experiment did not open was changed/);

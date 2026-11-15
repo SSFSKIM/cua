@@ -489,7 +489,8 @@ function caughtUpMiss(run, next) {
 export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, next } = {}) {
   const judged = rows.map((r, i) => {
     if (r.ok) return { trial: r.trial, cls: 'pass' };
-    if (falseOk(r)) return { trial: r.trial, cls: 'false ok', why: 'answered ok with no effect' };
+    const hard = falseOk(r);
+    if (hard) return { trial: r.trial, cls: 'false ok', why: hard };
     if (!judgesLateKeyUp(r)) return { trial: r.trial, cls: 'fail', why: `class ${runClass(r)}` };
     const own = ownLateKeyUpMiss(r);
     if (own) return { trial: r.trial, cls: 'fail', why: own };
@@ -511,16 +512,54 @@ export function judgeSettleSeries(rows, { need = CONSECUTIVE, max = 2 * need, ne
 }
 
 /**
- * Whether a run answered ok and had no effect at all (ruling 650's hard failure, which ruling 707 makes the settle
- * lane's in every cell): every answer a success, nothing invalid, no effect within the late bound, and the reading after
- * the input the same as the one before it, every field. A partial effect (a scroll that took two of three wheel steps,
- * a key-down with no key-up) changes the reading: a landing miss, honest, not this. An effect on another target than
- * the cell's reads, in the scene's readings, as either: nothing changed, or the wrong field did. A control's expected
- * error is no ok.
+ * Why a run is a false ok (ruling 650's hard failure, which ruling 707 makes the settle lane's in every cell), or null:
+ * every answer a success, nothing invalid, the requested effect not landed within the late bound, and either the
+ * reading after the input the same as the one before it in every field (no effect), or the readings showing the effect
+ * on another target (`wrongTarget`). A right-target effect of the wrong size (a scroll that took two of three wheel
+ * steps, a key-down with no key-up) is a landing miss, honest, not this. A control's expected error is no ok.
  */
 function falseOk(run) {
-  if (runClass(run) !== 'never' || run.expected_error || !run.answers?.length || !run.answers.every((a) => a.ok === true)) return false;
-  return run.before != null && run.after != null && JSON.stringify(run.before) === JSON.stringify(run.after);
+  if (runClass(run) !== 'never' || run.expected_error || !run.answers?.length || !run.answers.every((a) => a.ok === true)) return null;
+  if (run.before == null || run.after == null) return null;
+  if (JSON.stringify(run.before) === JSON.stringify(run.after)) return 'answered ok with no effect';
+  const elsewhere = wrongTarget(SCENES[run.scene]?.effects, run.input, run.before, run.after, run.sent ?? {});
+  return elsewhere ? `answered ok, and the effect landed on another target: ${elsewhere}` : null;
+}
+
+/**
+ * Where a run's readings show its kind's effect on another element or place than the one requested (`sent`), or null.
+ * The readings that can show one:
+ * - the input page: a context event names its element (`context_on`): another than the cell's (`sent.on`, else the Menu
+ *   button a right click aims at); the pad counts its own presses (`downs`) and the Press button its clicks, so a
+ *   coordinate click or drag released with no press on the pad, a pad click that clicked the button instead, or an
+ *   element's click that reached the pad or a context event instead;
+ * - an editor or field: a click's caret, or a drag's selection, outside the line it aimed at.
+ * Coverage limit: every other kind and scene has no reading of another target. The input page's keys, moves and wheel
+ * steps are counted document-wide; a field's or a terminal's text, xterm's recorded reports, Writer's paragraphs, and
+ * the GTK, Qt and GTK 4 scenes' counters belong to the target alone. A miss there is judged by its reading's change
+ * only: none is a false ok, any other a landing miss.
+ */
+export function wrongTarget(effects, kind, before, after, sent) {
+  if (effects === 'input-page') {
+    const context = rose(before, after, 'context');
+    if (['right_click', 'secondary_action', 'menu_unconfirmed'].includes(kind) && context) {
+      const aimed = sent.on ?? (kind === 'right_click' ? 'menu' : null);
+      if (aimed && after.context_on !== aimed) return `the context event reached ${after.context_on}, not ${aimed}`;
+    }
+    const pressed = grew(before, after, 'downs');
+    const released = grew(before, after, 'ups');
+    const clicked = grew(before, after, 'clicks');
+    if (['click', 'drag', 'drag_handle'].includes(kind) && released && !pressed) return 'released with no press on the pad';
+    if (kind === 'click' && clicked) return 'the Press button took the click';
+    if (kind === 'click_element' && !clicked && (pressed || context)) return `the ${pressed ? 'pad' : 'page'} took it, not the Press button`;
+  }
+  if (effects === 'editor' || effects === 'field') {
+    if (!Array.isArray(sent.line)) return null;
+    if (kind === 'click' && Number.isInteger(after.caret) && after.caret !== before.caret && !insideLine(sent.line, after.caret)) return `the caret went to ${after.caret}, outside the line clicked`;
+    const sel = after.selection;
+    if ((kind === 'drag' || kind === 'drag_handle') && Array.isArray(sel) && sel[1] > sel[0] && !same(sel, before.selection) && !(insideLine(sent.line, sel[0]) && insideLine(sent.line, sel[1]))) return `the selection ${JSON.stringify(sel)} lies outside the line dragged`;
+  }
+  return null;
 }
 
 /** Whether a series can no longer reach `need` consecutive passes in `max` runs. */
@@ -638,7 +677,7 @@ export function settleVerdict(series, { search, cells }) {
       for (const s of mine) {
         if (s.reached) continue;
         // a false ok fails the series whatever its streak (judgeSettleSeries)
-        const falseOk = s.false_ok?.length ? `${s.false_ok.length} of ${s.runs} runs answered ok with no effect (trial ${s.false_ok.slice(0, 5).map((f) => f.trial).join(', ')})` : null;
+        const falseOk = s.false_ok?.length ? `${s.false_ok.length} of ${s.runs} runs were a false ok (${s.false_ok.slice(0, 5).map((f) => `trial ${f.trial}: ${f.why}`).join('; ')})` : null;
         failed.push(`${name} (${s.lane}): ${falseOk ?? `no ${s.need} consecutive passing runs in ${s.runs}`}`);
       }
     }

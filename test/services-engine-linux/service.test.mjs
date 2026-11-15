@@ -295,19 +295,26 @@ test('the settle of a click and a named action follows what it ran: a coordinate
   assert.equal(await settleOf('click', {window: W, element_id: 'n#Tk'}), `defer ${longest}`);
 });
 
-test('the settle\'s real clock: the call after an input waits out that input\'s constant', async t => {
+test('the settle\'s clock: the call after an input waits out that input\'s constant before it reaches the engine, and no longer', async t => {
+  // The real ActionSettler on a clock the test keeps: only its sleeps move time, so what the call after an input waits is
+  // read off the sleeps it asked for, not off the runner's scheduling. Each sleep notes how many requests the engine had
+  // by then, which orders the wait before the call it holds.
   const engine = fakeLinuxEngine(t);
-  const settles = {...SETTLE_MS, press_key: 100, click: 0};
-  const svc = service(t, engine, {settler: new ActionSettler({settles})});
+  let time = 1000;
+  const slept = [];
+  const settler = new ActionSettler({settles: {...SETTLE_MS, press_key: 100, click: 0}, now: () => time,
+    sleep: async ms => { slept.push({ms, engineHad: sent(engine).length}); time += ms; }});
+  const svc = service(t, engine, {settler});
   await execute(svc, 'list_windows');
   await execute(svc, 'press_key', {window: W, key: 'a'});
-  let started = performance.now();
+  const afterKey = sent(engine).length;
   await execute(svc, 'list_windows');
-  assert.ok(performance.now() - started >= 95, `waited ${performance.now() - started} ms after press_key`);
+  assert.deepEqual(slept, [{ms: 100, engineHad: afterKey}], 'press_key\'s 100 ms, slept before the next call reached the engine');
+  assert.deepEqual(sent(engine).slice(afterKey).map(([command]) => command), ['list_windows']);
+  slept.length = 0;
   await execute(svc, 'click', {window: W, x: 1, y: 1});
-  started = performance.now();
   await execute(svc, 'list_windows');
-  assert.ok(performance.now() - started < 50, `waited ${performance.now() - started} ms after a click whose constant is 0`);
+  assert.deepEqual(slept, [], 'a click whose constant is 0 holds the next call not at all');
 });
 
 test('drag handles: start, move_to and end reach the engine as drag_handle actions; the vendor\'s state sentences', async t => {

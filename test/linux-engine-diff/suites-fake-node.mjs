@@ -4,9 +4,10 @@
 //   FAKE_CLEANUP    the exit statuses of repl-parity cleanup-prepared, in call order, comma-separated (0)
 //   FAKE_COMPARE    native-baseline compare --engines's answers in call order, comma-separated: pass, topup, unproved, fail
 //   FAKE_CHECK      gate.mjs check --pinned's exit status (0)
+//   FAKE_PROBE      the fallback probe's exit statuses (scripts/accept/linux-fallback.mjs), in call order (0)
 //   bin/cua.mjs install (a fixture's run home) answers 0 and installs nothing
-//   FAKE_CHECK      gate.mjs check --pinned's exit status (0)
-//   bin/cua.mjs install (a fixture's run home) answers 0 and installs nothing
+// The sampler (watch.mjs, which would run the fixture) and the fallback probe log the selection they ran with too, as
+// `ENV CUA_NATIVE_ENGINE=<value>` or `ENV CUA_NATIVE_ENGINE unset`.
 import { appendFileSync, readFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
@@ -17,6 +18,9 @@ const nth = (pattern) => calls().filter((l) => pattern.test(l)).length - 1;
 const pick = (list, i, fallback) => (list ? list.split(',')[i] ?? list.split(',').at(-1) : fallback);
 
 const [script, action] = args;
+const selection = () => appendFileSync(log, `ENV CUA_NATIVE_ENGINE${process.env.CUA_NATIVE_ENGINE === undefined ? ' unset' : `=${process.env.CUA_NATIVE_ENGINE}`}\n`);
+if (script.endsWith('/watch.mjs') && !script.endsWith('engine-watch.mjs')) { selection(); process.exit(0); }
+if (script.endsWith('linux-fallback.mjs')) { selection(); process.exit(Number(pick(process.env.FAKE_PROBE, nth(/linux-fallback\.mjs/), '0'))); }
 if (script.endsWith('repl-parity.mjs')) {
   if (action === 'prepare') console.log(JSON.stringify({ ownedPreparation: { home: '/fake/prepared-home' }, display: ':9', xSession: { DBUS_SESSION_BUS_ADDRESS: 'unix:path=/fake/bus' } }));
   if (action === 'cleanup-prepared') process.exit(Number(pick(process.env.FAKE_CLEANUP, nth(/cleanup-prepared/), '0')));

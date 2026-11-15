@@ -4840,9 +4840,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      4. Cut detection rests on the cap's units as stated above; a Chromium cut in another unit would show as a mismatch,
         never as a false equal, unless the cut text happened to equal the expected one.
      5. A contenteditable whose AXValue does not show a Return as "\n" answers a Return in it unconfirmed, as a
-        mismatch; the measured cells typed no newline. Where the cells show one, its subrole joins
-        `typeReadbackReturnUnreadSubroles` and its Return becomes a key that can leave; a text area and a contenteditable
-        that read alike cannot be told apart.
+        mismatch, unless its subrole is in `typeReadbackReturnUnreadSubroles` (Gecko's AXApplicationGroup, item 10.12),
+        where its Return is a key. A text area and a contenteditable that read alike cannot be told apart. Where the
+        caret cannot be read, a doubled ending Return may read as confirmed in a multi-line field (item 10.12).
      6. The paste route is outside the read-back (item 3): #361.
      7. A concealed comparison zeroes the buffers the read-back owns; the CFString the app's reply was decoded into, and
         the request's own text, are immutable and released, not overwritten.
@@ -4870,7 +4870,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          `concealedMismatch`, saying only that the field does not match what was typed: no excerpt, no values and no
          lengths, since a length tells the secret's.
       2. **A Return in a multi-line field is text** (call 2): in an AXTextArea, unless its subrole is one the cells
-         show does not read a Return back (`typeReadbackReturnUnreadSubroles`, empty until one does), a Return is "\n"
+         show does not read a Return back (`typeReadbackReturnUnreadSubroles`, Gecko's since item 10.12), a Return is "\n"
          in the expected value, verified like any character, with no checkpoint. Only a key that can leave or submit (a
          Return in a single-line field, a Tab anywhere, any other keyed control character) keeps the checkpoint, adds
          nothing to the expected value and is counted `keysUnconfirmed` wherever it falls; text after it is expected in
@@ -4918,7 +4918,29 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          secret replaced; without both within the budget it answers `typeUnconfirmed`, reason `unchanged`, whose
          sentence no longer says the selection held the same text. Plain input keeps its path. This replaces the
          limit, stated before, of the extra read over the same text.
-  Proven offline: `TypeReadbackTests` (39) drive the real keyText through `keyTextReadBack` over a fake app whose field
+     11. **The focused field through the window** (the hosted A/B, run 43752829833, on bd63a0cc; ruling 1ea561bc:737).
+         Background Safari answered no application-level `AXFocusedUIElement` for its focused input in 120 of 120
+         cells that took no route 3 hold first (every secret cell; the keys still landed, 20 of 20) and found it in all
+         664 cells whose ⌘ key had just taken one, so any plain `type_text` into a background app with no hold would
+         have answered `noFocusedElement` too; the A/B's plain cells all pressed a ⌘ key first. When the application
+         answers none, the read-back asks its primary window (AXFocusedWindow, else AXMainWindow) for its
+         `AXFocusedUIElement`, where the posted keys go (`readbackFocusedField`), with the same guards; the identity
+         check uses the same lookup. To be verified on the next hosted run; a route 3 hold for the read-back, should the
+         window not answer, goes to the design session first.
+     12. **An ending Return's placeholder line** (the same A/B; ruling 1ea561bc:737). Safari's contenteditable read an
+         ending Return as "\n\n", its empty last line's placeholder, in 20 of 20, while a Return between lines read back
+         exactly in 20 of 20; it carries no subrole, as Safari's and Chromium's text areas do. A Return stays text in a
+         multi-line field (ruling 589). When the typed text ends in a Return in such a field and nothing of the field
+         follows the insertion, a read of the expected value and exactly one more "\n" confirms only when
+         AXSelectedTextRange reads {expected length, 0}, the placeholder line's start, then a fresh read after that
+         caret read (`readbackPlaceholderLine`); a Return typed twice in a text area reads the same value with its caret
+         one further on and answers `valueMismatch`. An unreadable caret is accepted (`placeholderCaretUnread` in a plain
+         meta): the stated residual, a doubled ending Return may read as confirmed in a multi-line field. A secret's
+         ending Return stays text and takes the same acceptance on the caret every concealed confirmation already reads,
+         so it adds no read and no wait; an unreadable caret never confirms a secret. Gecko's contenteditable
+         (AXApplicationGroup), whose AXValue flattens its line breaks, joins `typeReadbackReturnUnreadSubroles`: its
+         Return is a key.
+  Proven offline: `TypeReadbackTests` (42) drive the real keyText through `keyTextReadBack` over a fake app whose field
   takes the posted text: equal, a caret insertion, a late equal inside the window and one past it; a mismatch's
   sentence, excerpt and lengths, a 20,000-character field's answer holding two 200-unit windows at the difference, the
   excerpt's surrogate pairs and quoting; secure by role, subrole or an unreadable subrole with no value or range read,
@@ -4931,17 +4953,20 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   confirming, plain or concealed; a concealed record giving one Return and three identical meta, and a secret's keys
   making no checkpoint (one wait for `a\nb\nc`, `abc\n\n` and keys alone) while the caller's own still do, and every
   concealed confirmation taking the same reads and waits over the same text as over another, a caret that never
-  moves unconfirmed; focus
-  moving, a role changing or no longer
+  moves unconfirmed; the focused field found through the primary window when the application names none, the
+  application's answer first; an ending Return's placeholder line confirmed with the caret at its start, refused
+  doubled, accepted with an unreadable caret, never without an ending Return, mid-field or on a stale read, a secret's
+  on the same schedule; focus moving, a role changing or no longer
   reading; UTF-16 replacement with emoji and combining marks; a text area's Returns read back as text and a dropped
   one a mismatch, a single-line field's and a combo box's trailing Return confirmed before it is posted, a wrong text
   never submitted, text after it expected without it, a Tab checked in a text area and moving focus answered
-  `fieldChanged`, the exclusion set, keys alone, empty text, the guard before a key read after the checkpoint's wait;
-  the snapshot's read order; an intervention's stop keeping the record; press_key's `keyEffect`. 1,166 engine tests
-  pass, 1 skipped as before. Of 80 parts and bounds of the rule changed in turn (`~/.local/share/187/mutate-354.py`),
-  73 fail a test. Seven survive by design: the zeroing of the read and the expected buffers, which no answer shows
-  (`readbackZero` itself is tested), and five reached only by a live type_text: the engine's call into the read-back,
-  and the live seam's value, units, subrole-error and identity reads. The service (`cua/typeReadback`,
+  `fieldChanged`, the exclusion set with Gecko's contenteditable, keys alone, empty text, the guard before a key read
+  after the checkpoint's wait; the snapshot's read order; an intervention's stop keeping the record; press_key's
+  `keyEffect`. 1,169 engine tests pass, 1 skipped as before. Of 97 parts and bounds of the rule changed in turn
+  (`~/.local/share/187/mutate-354.py`), 89 fail a test. Eight survive by design: the zeroing of the read and the
+  expected buffers, which no answer shows (`readbackZero` itself is tested), and six reached only by a live type_text:
+  the engine's call into the read-back, and the live seam's value, units, subrole-error, identity and main-window
+  reads. The service (`cua/typeReadback`,
   `cua/keyEffect`, the sentence reaching the model), the wrapper's admission and the matrix's expected difference have
   node tests.
   **The merge gate** (the ruling): a hosted A/B against main on the spike's cells, the real engine's answers, with the

@@ -11,6 +11,8 @@ import { medianDifferenceInterval } from '../../scripts/linux-engine-diff/events
 import { rejudge } from '../../scripts/linux-engine-diff/rejudge.mjs';
 import { declaredGapVerdict, judgeWithDecisions, lifecycleAudit, planOps, plannedVerdicts } from '../../scripts/linux-engine-diff/run.mjs';
 import { stepNamed, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
+import { renderSummary } from '../../scripts/linux-engine-diff/report.mjs';
+import { judgeSceneEnds } from '../../scripts/linux-engine-diff/scene-ended.mjs';
 import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
 import { CANDIDATES, gateRows } from './gate-rows.mjs';
 
@@ -136,6 +138,27 @@ test("the verdicts a plan owes: a device case's for cua, a block operation's for
     'device-gtk4 gtk4_click_shared cua', 'chrome-input click cua', 'chrome-input click cua:variant', 'chrome-textarea focus_change cua', 'cases bus_trace cua',
   ]);
   assert.deepEqual(plannedVerdicts([{ scene: 'chrome-input', op: 'click' }], ['cua']), ['chrome-input click cua'], 'no case, no bus trace');
+});
+
+test("the run's end carries both: T2's declared losses and planned verdicts beside T4's text windows a lane ended", () => {
+  const rows = gateRows(CANDIDATES[3], 'V3');
+  const verdicts = rows.filter((r) => r.kind === 'verdict').map((v) => (v.op === 'activate_window' && !v.device && v.candidate === 'cua' ? { ...v, ...judgeOp(rows, v.scene, v.op) } : v));
+  const options = { valid: true, faults: rows.find((r) => r.kind === 'prepare-faults'), planned: V3_PLANNED };
+  const restart = { kind: 'scene-ended', engine: 'pinned', scene: 'gedit', op: 'type_text', block: 0, i: 1, ended: 'gone', last: { op: 'type_text', block: 0, i: 0 }, restart: { old_pid: 7, new_pid: 8, old_id: 42, new_id: 100, warm_up: null } };
+  const outcome = runOutcome(verdicts, { ...options, sceneEnds: judgeSceneEnds([restart], [...VENDORS, 'cua'], VENDORS) });
+  assert.equal(outcome.code, 0, outcome.failed.join('; '));
+  assert.deepEqual(outcome.declared['declared gap'], ['chrome-input activate_window cua']);
+  assert.deepEqual(outcome.sceneEnds, { pinned: 1, newest: 0, cua: 0 });
+  const line = verdictLine(outcome);
+  assert.match(line, /declared gap \(a loss, not a pass\): chrome-input activate_window cua; .*text windows a lane ended \(a vendor's restarted, never scored\): pinned 1, newest 0, cua 0$/);
+  // the summary reads the end row as run.mjs writes it: `declared` and `scene_ends` together
+  const end = { kind: 'end', run: 'r', valid: true, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, declared: outcome.declared, restores: { pinned: 0, newest: 0, cua: 0 }, scene_ends: outcome.sceneEnds };
+  const summary = renderSummary([{ kind: 'meta', run: 'r', engines: [] }, end]);
+  assert.match(summary, /\*\*declared gap\*\* \(a loss, not a pass\): chrome-input activate_window cua/);
+  assert.match(summary, /text windows a lane ended \(a vendor's restarted, never scored\): pinned 1, newest 0, cua 0/);
+  // either side's failure still fails the run: a candidate's ended window, a planned verdict gone
+  assert.ok(runOutcome(verdicts, { ...options, sceneEnds: judgeSceneEnds([{ ...restart, engine: 'cua', restart: undefined }], [...VENDORS, 'cua'], VENDORS) }).failed.some((f) => /cua's own gedit window ended/.test(f)));
+  assert.deepEqual(runOutcome(verdicts.filter((v) => v.op !== 'minimized_scroll'), { ...options, sceneEnds: judgeSceneEnds([restart], [...VENDORS, 'cua'], VENDORS) }).failed, ['minimized minimized_scroll cua: no verdict']);
 });
 
 test("a declared gap's audit observed in every lifecycle: a trace, a watcher, a watcher's error, in any one of them, fails it", () => {

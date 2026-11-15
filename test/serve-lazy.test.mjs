@@ -209,7 +209,7 @@ test('a MAWS session\'s notes, js hint and js rules name the in-app browser; a p
   assert.match(maws.notes, /\n- In MAWS: cua\.getBrowser\(\) with no id is this session's in-app browser \(key maws\)\./);
   assert.ok(maws.notes.length <= 2048, `${maws.notes.length} characters`);
   assert.match(maws.hint, /this session's MAWS in-app browser/);
-  assert.match(maws.rules, /\n- In MAWS: cua\.getBrowser\(\) with no id is this session's in-app browser \(key maws\)\..*no profiles_list call is needed for it\./);
+  assert.match(maws.rules, /\n- In MAWS: cua\.getBrowser\(\) with no id is this session's in-app browser \(key maws\), the pane the user watches; use it for any page, and it needs no profiles_list call\. Use a Chrome profile only when the user names one/);
   for (const text of Object.values(plain)) assert.doesNotMatch(text, /In MAWS|in-app browser/);
 });
 

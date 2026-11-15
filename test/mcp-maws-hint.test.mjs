@@ -8,7 +8,7 @@ import {hostNotesFor, jsRulesFor, modelTools} from '../src/mcp/surface.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
 
 const MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws). Use a Chrome profile only when the user names one.';
-const JS_MAWS_RULE = `${MAWS_RULE} It is the pane the user watches, for any page; no profiles_list call is needed for it.`;
+const JS_MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws), the pane the user watches; use it for any page, and it needs no profiles_list call. Use a Chrome profile only when the user names one, and then follow profiles_list\'s rules.';
 const UPSTREAM_INSTRUCTIONS = 'UI automation through cua_repl using the initialized cua API.';
 const CAP = 2048;
 const PLATFORMS = ['darwin', 'linux'];
@@ -41,6 +41,7 @@ test('with a MAWS backend, js\'s rules carry the in-app browser rule itself, ahe
     const lines = rules.split('\n');
     const rule = lines.indexOf(JS_MAWS_RULE);
     assert.ok(rule > 0, `${label}: the rule is there`);
+    assert.ok(JS_MAWS_RULE.indexOf('needs no profiles_list call') < JS_MAWS_RULE.indexOf('Chrome profile'), `${label}: the exemption comes before the Chrome sentence`);
     assert.match(lines[rule + 1], /^- Chrome: follow the rules in profiles_list's description/, `${label}: the Chrome pointer follows`);
     assert.equal(lines.length, jsRulesFor(surfaces, {platform}).split('\n').length + 1, `${label}: one line added`);
     assert.ok(rules.length + 2 < CAP, `${label}: not cut`);

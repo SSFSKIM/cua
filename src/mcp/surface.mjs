@@ -129,8 +129,9 @@ export const PROFILES_LIST_TOOL = {
 // browser (key maws, listed first) is what cua.getBrowser() with no id selects, so the first rule's "never pick" gives
 // way to the owner's default: the in-app browser, a Chrome profile only when the user names one.
 const MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws). Use a Chrome profile only when the user names one.';
-// The same rule in js's own rules, which an agent reads without ever loading profiles_list (#368).
-const JS_MAWS_RULE = `${MAWS_RULE} It is the pane the user watches, for any page; no profiles_list call is needed for it.`;
+// The same rule in js's own rules, which an agent reads without ever loading profiles_list (#368). The no-call
+// exemption names the in-app browser and comes before the Chrome sentence, so it cannot be read as covering Chrome.
+const JS_MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws), the pane the user watches; use it for any page, and it needs no profiles_list call. Use a Chrome profile only when the user names one, and then follow profiles_list\'s rules.';
 function profilesListTool(inAppBrowser) {
   const [select, ...rest] = BROWSER_RULES;
   const rules = inAppBrowser ? [select.replace(' Never pick or bind a profile for the user.', ''), MAWS_RULE, ...rest] : [select, ...rest];

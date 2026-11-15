@@ -192,6 +192,27 @@ test('the record is the runtime\'s raw answers; a MAWS session and a plain one r
   assert.equal(await maws.end(), 0, maws.diagnostics.join('\n'));
 });
 
+// #368: with a MAWS backend configured, serve's own notes, js's hint and js's rules name the in-app browser too, so an
+// agent that never loads profiles_list learns of it; the plain session beside it is unchanged.
+test('a MAWS session\'s notes, js hint and js rules name the in-app browser; a plain one\'s do not', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const env = {CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SECRETS: 'off', CUA_FEEDBACK_DIR: ''};
+  const seen = async extra => {
+    const connection = served(t, home, {env: {...env, ...extra}});
+    const init = await connection.request('initialize', INIT);
+    const js = (await connection.request('tools/list')).result.tools.find(tool => tool.name === 'js');
+    assert.equal(await connection.end(), 0, connection.diagnostics.join('\n'));
+    return {notes: init.result.instructions, hint: js._meta['anthropic/searchHint'], rules: js.description};
+  };
+  const maws = await seen({CUA_BROWSER_BACKENDS: join(home, 'nothing-listens.sock')});
+  const plain = await seen({});
+  assert.match(maws.notes, /\n- In MAWS: cua\.getBrowser\(\) with no id is this session's in-app browser \(key maws\)\./);
+  assert.ok(maws.notes.length <= 2048, `${maws.notes.length} characters`);
+  assert.match(maws.hint, /this session's MAWS in-app browser/);
+  assert.match(maws.rules, /\n- In MAWS: cua\.getBrowser\(\) with no id is this session's in-app browser \(key maws\)\..*no profiles_list call is needed for it\./);
+  for (const text of Object.values(plain)) assert.doesNotMatch(text, /In MAWS|in-app browser/);
+});
+
 // The browser surface always runs cua's own service (#79): every connection teaches its rules (per-phase budgets up to
 // 120 s, evaluate in the page) and launches it, on a home with no registration, one whose only record is the removed
 // ChatGPT route's, or cua's own, whatever CUA_BROWSER_SERVICE the caller still sets.

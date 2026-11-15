@@ -49,6 +49,7 @@ import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
 import { cleanupOnFatal, cleanupOnStop } from './stop.mjs';
 import { signalIfSame } from './pid-identity.mjs';
+import { SCRATCH_PREFIX, leftoverCheck, leftoverLines } from './leftovers.mjs';
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { RECORD_DECLINED, RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
 
@@ -190,14 +191,16 @@ export function desktopEnding(ending) {
       ...(ending.session ? { session: ending.session } : {}),
       // the cleanup's failed steps, each also a failure above; every other step ran (ruling 721)
       ...(ending.cleanup?.length ? { cleanup_failures: ending.cleanup } : {}),
+      // the end check's findings (leftovers.mjs): other runs' scratch and buses, left alone, failing nothing
+      ...(ending.leftovers ? { leftovers: ending.leftovers } : {}),
       record: record.skipped ? { skipped: record.skipped } : { clean: record.clean, requests: record.requests, mutating: record.mutating, foreign: record.foreign.slice(0, 10).map(foreignLine), ...(record.foreign.length ? { first_foreign: record.foreign.slice(0, 5).map(({ client, what, window, text }) => ({ client, what, window, request: text })) } : {}), unplaced: record.unplaced ?? 0, unattributed: record.unattributed ?? null, ...(record.error ? { error: record.error } : {}) },
     },
     foreign,
   };
 }
 
-/** The run's scratch directory's name, before mkdtemp's six characters: short, since gedit's titles show the path. */
-export const SCRATCH_PREFIX = 'cua171-run-';
+// the run's scratch directory's name before mkdtemp's six characters (leftovers.mjs, whose end check lists others')
+export { SCRATCH_PREFIX };
 
 /**
  * The longest label tail the scenes give a gedit window (`openGedit`): the minimized scene's text window of a vendor
@@ -508,6 +511,11 @@ export class Desktop {
   liveOwned(id) {
     const scene = this.windows.find((w) => w.id === id);
     return Boolean(scene) && this.stillOurs(scene);
+  }
+
+  /** A line the run's end reports beside its records (the cleanup's failures, the end check's findings): stderr. */
+  report(line) {
+    process.stderr.write(line);
   }
 
   /** Something the harness did not do, and why: the run's end row records it. */
@@ -1207,10 +1215,17 @@ export class Desktop {
       if (this.trace) this.ending = await this.finishTrace();
     });
     await step("ending the watch of the engines' operations", () => this.unwatchOperations?.());
+    // the end check (rulings 721, 724): every other run's scratch and its session buses, named and left alone, made
+    // after this run's own is gone, whatever ended the run
+    await step('the end check of what runs left', () => {
+      this.leftovers = leftoverCheck({ own: [this.dir], ...(this.leftoverOptions ?? {}) });
+      const lines = leftoverLines(this.leftovers);
+      if (lines.length) this.report(`the end check (findings, left alone): ${lines.join('; ')}\n`);
+    });
     // reported together, beside the run's end (`desktopEnding` fails the run with each)
     this.cleanupFailures = failures;
-    if (this.ending) this.ending.cleanup = failures;
-    if (failures.length) process.stderr.write(`the run's cleanup: ${failures.length} step${failures.length === 1 ? '' : 's'} failed, every other step ran: ${failures.join('; ')}\n`);
+    if (this.ending) Object.assign(this.ending, { cleanup: failures, leftovers: this.leftovers ?? null });
+    if (failures.length) this.report(`the run's cleanup: ${failures.length} step${failures.length === 1 ? '' : 's'} failed, every other step ran: ${failures.join('; ')}\n`);
     // only once everything is closed: a signal meanwhile still waits for this cleanup
     this.unhookStop();
   }

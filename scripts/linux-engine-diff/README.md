@@ -147,6 +147,20 @@ and `step.json` carrying the label; a pilot's record lists what it left unjudged
 ok, a missing landing, an error for a drop that landed and a missing cell fail; landed drops answered unconfirmed are
 findings with their counts.
 
+## The run's cleanup and the end check (#171 M5's T4 round 2)
+
+A run's end (`Desktop.closeEverything`) tries every step whatever an earlier one did: the windows, the reader, the
+holder, the run's Chrome, the session bus, the engines' scratch, the scratch directory, the logs, the trace. The failures
+are reported together on stderr and in the end record (`cleanup_failures`), and each fails the run. It runs on a normal
+end, a throw (each runner's `finally`), a stop (SIGINT, SIGTERM, the watchdog's own stop) and an error nothing caught
+(`stop.mjs` `cleanupOnFatal`: an uncaught exception, a child's unhandled `error` event, an unhandled rejection; then exit
+1). Its last step is the end check (`leftovers.mjs`): every `cua171-run-*` directory under TMPDIR and /tmp but the run's
+own, and every session-bus process (`dbus-daemon`, `at-spi-bus-launcher`, `at-spi2-registryd`) whose config or socket
+lies in one, listed in the end record's `leftovers` as findings, named and never removed or signalled, since another run
+may own them. A process killed past all of this (SIGKILL) gets the same check from its launcher: `gate.mjs` makes it
+after every step and records it in the step's `step.json` and README (`end_check`), and `gate.mjs leftovers` makes it
+alone.
+
 ## Instances of the run's own (task 43)
 
 The harness never hands a window to, starts on, or takes over a person's application instance or profile, on any

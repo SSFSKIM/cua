@@ -482,3 +482,47 @@ test("a pilot step's record lists what it left unjudged, from the harness's end 
   const text = readFileSync(new URL(`../../${SUITES_SCRIPT}`, import.meta.url), 'utf8');
   assert.match(text, /if \[ "\$c" -ne 0 \] && \[ -n "\$need" \] && \[ "\$LABEL" = pilot \]; then\n(.*\n){1,3}\s+exit 0\n\s+fi\n\s+if \[ "\$c" -ne 0 \] && \[ -n "\$need" \]; then\n\s+log "top-up for/, "a pilot's R2 ends before its top-up");
 });
+
+// #171 M5, T4's second round (rulings 721, 724): the end check runs where it always runs, after every step whatever
+// ended the step's process, and its findings are the step's all-clear record: the scratch a step left, and every other
+// run's, each with its session buses, named and left alone
+
+test("every step's record carries the end check, made after its process ended however it ended: what it left, what others left", async () => {
+  const candidate = join(fresh('c'), 'cua-engine');
+  writeFileSync(candidate, 'x');
+  const out = fresh('out');
+  const root = fresh('tmp');
+  const earlier = join(root, 'cua171-run-AdXsUJ');
+  mkdirSync(earlier);
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate, leftovers: { roots: [root], proc: fresh('proc') } };
+  // the step's harness died past its cleanup: its scratch stays, and so does the earlier run's
+  const a = parseGateArgs(['run', 'D2', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
+  const exit = await runStep(a, { ...deps, privateDisplay: async () => {
+    mkdirSync(join(root, 'cua171-run-7nTGZK'));
+    return { code: null, signal: 'SIGKILL', clean: true };
+  } });
+  assert.equal(exit, 1);
+  const dir = join(out, 'D2.development-run.pilot');
+  const record = JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8'));
+  assert.deepEqual(record.end_check.left_by_step.map((d) => d.dir), [join(root, 'cua171-run-7nTGZK')]);
+  assert.deepEqual(record.end_check.foreign.map((d) => d.dir), [earlier]);
+  assert.equal(record.end_check.clear, false);
+  const readme = readFileSync(join(dir, 'README.md'), 'utf8');
+  assert.match(readme, /- end check \(findings, left alone\): 2\n  - left by this step: .*cua171-run-7nTGZK.*\n  - a cua171-run-\* directory not this run's, left alone: .*cua171-run-AdXsUJ/);
+  assert.equal(existsSync(earlier), true, 'named, never removed');
+  // a step that left nothing, with nothing else there: its record says the all-clear
+  rmSync(join(root, 'cua171-run-7nTGZK'), { recursive: true });
+  rmSync(earlier, { recursive: true });
+  const b = parseGateArgs(['run', 'D4', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
+  await runStep(b, { ...deps, privateDisplay: async () => ({ code: 0, clean: true }) });
+  const clear = JSON.parse(readFileSync(join(out, 'D4.development-run.pilot', 'step.json'), 'utf8')).end_check;
+  assert.equal(clear.clear, true);
+  assert.match(readFileSync(join(out, 'D4.development-run.pilot', 'README.md'), 'utf8'), /- end check: clear \(no cua171-run-\* directory or session bus of one\)/);
+});
+
+test('`gate.mjs leftovers` runs the end check on its own, for a :0 sitting\'s all-clear', () => {
+  assert.equal(parseGateArgs(['leftovers']).mode, 'leftovers');
+  const { status, stdout } = spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/linux-engine-gate/gate.mjs', import.meta.url)), 'leftovers'], { encoding: 'utf8', env: { ...process.env, TMPDIR: fresh('tmp') } });
+  assert.ok([0, 1].includes(status), stdout);
+  assert.match(stdout, /^end check: (clear|\d+ findings?, left alone)/);
+});

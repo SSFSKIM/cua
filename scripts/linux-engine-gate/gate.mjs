@@ -7,6 +7,11 @@
 //   node scripts/linux-engine-gate/gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
 //   node scripts/linux-engine-gate/gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
 //   node scripts/linux-engine-gate/gate.mjs check --pinned <home>
+//   node scripts/linux-engine-gate/gate.mjs leftovers
+//
+// After every step, whatever ended its process, the runner makes the end check (leftovers.mjs; rulings 721, 724): the
+// `cua171-run-*` scratch the step left and every other run's, with their session buses, named in the step's record and
+// left alone. `leftovers` makes it alone, for a :0 sitting's all-clear.
 //
 // `--list` prints every step's estimated minutes, display, load and command, with the totals per display and per load.
 // `print` prints one step's command and writes its directory's labelled README; `run` runs one step, and never a `:0`
@@ -51,6 +56,7 @@ import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PINNED_DEVELOPMENT, REPO_ROOT, candidateLine, gateLabel, isPinnedRule, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
+import { leftoverCheck, leftoverLines, scratchDirs } from '../linux-engine-diff/leftovers.mjs';
 import { pinnedEngine } from '../linux-engine-diff/pinned-home.mjs';
 import { linuxEnginePath } from '../../src/runtime/linux-engine.mjs';
 import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
@@ -97,6 +103,7 @@ const USAGE = `usage:
   gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
   gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
   gate.mjs check --pinned <home>
+  gate.mjs leftovers
   options: [--vendor <bin>] [--newest <bin>] [--vendor-js <@oai/sky dir>] [--holder <name>]
   --pinned <home>: the CUA_HOME of a run home whose cua install --engine placed the pinned engine (acceptance on the pinned release)`;
 
@@ -127,9 +134,11 @@ export function parseGateArgs(argv, { arch = process.arch, env = process.env } =
       a.mode = flag;
       a.step = value();
     } else if (!a.mode && flag === 'check') a.mode = 'check';
+    else if (!a.mode && flag === 'leftovers') a.mode = 'leftovers';
     else throw new GateRefused(`unknown argument ${flag}\n${USAGE}`);
   }
   if (!a.mode) throw new GateRefused(USAGE);
+  if (a.mode === 'leftovers') return a;
   if (given.pinned && given.candidate) throw new GateRefused('give --pinned or --candidate, not both: acceptance takes the engine a run home\'s cua install placed');
   Object.assign(a, defaultsFor(arch, given.pinned), { device: env.DEVICE || DEVICES_BY_ARCH[arch] || null }, given);
   if (a.pinned) {
@@ -224,6 +233,7 @@ function writeRecord(dir, record) {
     ...(r.finished ? [`- finished ${r.finished}; exit ${r.exit}${r.display_watchdog ? `; private display's watchdog: ${r.display_watchdog}` : ''}`] : []),
     ...(r.unproved ? [`- unproved (declared gaps, not passes): ${r.unproved.length || 'none'}`, ...r.unproved.map((l) => `  - ${l}`)] : []),
     ...(r.unjudged ? [`- unjudged (a pilot takes no top-up; not passes): ${r.unjudged.length || 'none'}`, ...r.unjudged.map((l) => `  - ${l}`)] : []),
+    ...(r.end_check ? endCheckText(r.end_check) : []),
     '',
   ];
   writeFileSync(join(dir, 'README.md'), md.join('\n'));
@@ -263,7 +273,7 @@ function labelledLog(path, label) {
  * step directory that exists, or (a gate) from an unclean checkout. Answers the step's exit code: the harness's, or 1
  * when its private display's watchdog was not clean.
  */
-export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null } = {}) {
+export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null, leftovers = {} } = {}) {
   const step = stepNamed(a.step);
   if (step.display === ':0') throw new GateRefused(`${step.name} runs on :0, in the declared sitting under task 50's guards: launch it with \`gate.mjs print ${step.name} ...\`'s command; this runner never runs on the person's display`);
   if (held()) throw new GateRefused(`${a.hold} exists: the host is held for sittings, and nothing starts`);
@@ -306,6 +316,8 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   const suiteLogs = step.kind === 'suite' ? mkdtempSync('/tmp/cua171-gl-') : null;
   const suiteVars = suiteLogs ? suiteEnv({ candidate: candidatePath, dir, gate: a.gate, logs: suiteLogs, pinned: Boolean(a.pinned), device: a.device }) : null;
   if (suiteVars) record.env = suiteVars;
+  // the scratch there before the step: every other run's, whatever the step leaves (the end check, below)
+  const before = new Set(scratchDirs(leftovers.roots).map((d) => d.dir));
   record.started = new Date().toISOString();
   writeRecord(dir, record);
   const out = labelledLog(join(dir, 'stdout.log'), label);
@@ -336,6 +348,10 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
       result = await runOnPrivateDisplay({ dir, label, script: join(root, script), args, cwd: root, env, out, err });
     }
   } finally {
+    // the end check (rulings 721, 724), made here, after the step's process ended however it ended: a harness killed
+    // past its own cleanup still gets one. Its findings are named, never removed or signalled
+    record.end_check = stepEndCheck(before, leftovers);
+    writeRecord(dir, record);
     if (store) rmSync(store, { recursive: true, force: true });
     if (suiteLogs) {
       // the logs kept with the step, the sockets left behind (a bus's socket is no log)
@@ -375,6 +391,26 @@ function pilotUnjudged(dir) {
   return rows.filter((r) => ['end', 'experiment-summary'].includes(r.kind)).flatMap((r) => r.unjudged ?? []);
 }
 
+/**
+ * A step's end check (leftovers.mjs): every `cua171-run-*` directory once the step's process has ended, split into those
+ * the step left (`left_by_step`, not there before it: its own cleanup did not finish) and those that were (`foreign`,
+ * another run's), with the session-bus processes of each. `{left_by_step, foreign, buses, clear}`; a finding, never a
+ * failure, and nothing is touched.
+ */
+export function stepEndCheck(before, options = {}) {
+  const check = leftoverCheck(options);
+  return { left_by_step: check.dirs.filter((d) => !before.has(d.dir)), foreign: check.dirs.filter((d) => before.has(d.dir)), buses: check.buses, clear: check.clear };
+}
+
+/** The end check in the step's README: the all-clear, or each finding. */
+function endCheckText(e) {
+  if (e.clear) return ['- end check: clear (no cua171-run-* directory or session bus of one)'];
+  const of = (dirs) => ({ dirs, buses: e.buses.filter((b) => dirs.some((d) => d.dir === b.dir)) });
+  const left = leftoverLines(of(e.left_by_step)).map((l) => l.replace(/^a cua171-run-\* directory not this run's, left alone: /, 'left by this step: '));
+  const lines = [...left, ...leftoverLines(of(e.foreign))];
+  return [`- end check (findings, left alone): ${e.left_by_step.length + e.foreign.length + e.buses.length}`, ...lines.map((l) => `  - ${l}`)];
+}
+
 const noEngine = (a) => `no engine at ${a.candidate}: install it in the run home first, CUA_HOME=${a.pinned} node bin/cua.mjs install --engine`;
 
 /**
@@ -404,6 +440,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const a = parseGateArgs(process.argv.slice(2));
     if (a.mode === 'list') process.stdout.write(`${listText(a)}\n`);
+    else if (a.mode === 'leftovers') {
+      // the end check alone (a :0 sitting's all-clear): exit 0 when clear, 1 with findings
+      const check = leftoverCheck();
+      const lines = leftoverLines(check);
+      process.stdout.write(`end check: ${check.clear ? 'clear' : `${lines.length} finding${lines.length === 1 ? '' : 's'}, left alone`}\n${lines.map((l) => `${l}\n`).join('')}`);
+      process.exit(check.clear ? 0 : 1);
+    }
     else if (a.mode === 'print') process.stdout.write(`${printStep(a)}\n`);
     else if (a.mode === 'check') {
       const record = await checkPinned(a);

@@ -24,6 +24,10 @@ let n = 0;
 /** A run's Desktop with a session bus of the test's own, whose stop is recorded, and its scratch in use. */
 function desktopWithBus(over = {}) {
   const desktop = new Desktop({ cua: 'unused', run: `cleanup${n++}`, reader: { async close() {} }, startActive: 0, nonce: 'n0' });
+  // the end check over a root of the test's own, and the run's end reports kept for the test
+  desktop.leftoverOptions = { roots: [mkdtempSync(join(scratch, 'root-'))] };
+  desktop.reported = [];
+  desktop.report = (line) => desktop.reported.push(line);
   const stopped = [];
   desktop.session = { address: `unix:path=${desktop.dir}/session/bus/dbus-test`, stop: async () => (stopped.push('session'), { terminated: true }) };
   mkdirSync(join(desktop.dir, 'session', 'bus'), { recursive: true });
@@ -56,6 +60,7 @@ test("every failing step is reported, together, and fails the run's ending", asy
   assert.deepEqual(stopped, ['session']);
   assert.equal(existsSync(desktop.dir), false);
   assert.deepEqual(desktop.cleanupFailures, ["closing the run's windows: BadWindow", "stopping the run's Chrome: the profile is locked"]);
+  assert.deepEqual(desktop.reported, ["the run's cleanup: 2 steps failed, every other step ran: closing the run's windows: BadWindow; stopping the run's Chrome: the profile is locked\n"], 'reported together, once');
   const { record, foreign } = desktopEnding(desktop.ending);
   assert.deepEqual(record.cleanup_failures, desktop.cleanupFailures);
   assert.deepEqual(foreign.filter((f) => /cleanup/.test(f)), ["the run's cleanup: closing the run's windows: BadWindow", "the run's cleanup: stopping the run's Chrome: the profile is locked"], 'each fails the run');
@@ -66,6 +71,7 @@ test("every failing step is reported, together, and fails the run's ending", asy
   clean.desktop.finishTrace = desktop.finishTrace;
   await clean.desktop.closeAll();
   assert.deepEqual(clean.desktop.cleanupFailures, []);
+  assert.deepEqual(clean.desktop.reported, [], 'nothing to report');
   assert.deepEqual(desktopEnding(clean.desktop.ending).foreign, []);
 });
 
@@ -80,6 +86,7 @@ import { Desktop } from ${JSON.stringify(SCENES)};
 import { stopBecause } from ${JSON.stringify(STOP)};
 const desktop = new Desktop({ cua: 'unused', run: 'cleanupchild', reader: { async close() {} }, startActive: 0, nonce: 'n0' });
 desktop.session = { address: 'unix:path=' + desktop.dir + '/session/bus/dbus-test', stop: async () => { writeFileSync(${JSON.stringify(marker)}, 'stopped'); return {}; } };
+desktop.leftoverOptions = { roots: [${JSON.stringify(tmp)}] };
 mkdirSync(join(desktop.dir, 'session', 'bus'), { recursive: true });
 process.stdout.write(desktop.dir + '\\n');
 setInterval(() => {}, 1000);

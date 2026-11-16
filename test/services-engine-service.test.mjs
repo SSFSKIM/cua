@@ -18,6 +18,7 @@ import {createSkyService} from '../src/services/sky.mjs';
 import {bind_mac_app} from '../src/cua-api/bind-mac-app.mjs';
 import {createEngineClient} from '../src/services/engine/client.mjs';
 import {METHODS, createService, cursorParams} from '../src/services/engine/service.mjs';
+import {WINDOW_PLACEMENT} from '../src/services/engine/render.mjs';
 import {infoPlist} from '../scripts/spike/engine/assemble.mjs';
 
 const APPS = {
@@ -653,6 +654,36 @@ test('an observation of a minimized window carries no screenshot and its meta sa
   assert.equal(meta['cua/screenshotOmitted'], 'windowMinimized', 'getScreenshot\'s refusal is the facade\'s; the meta says why');
   Object.assign(tree, {screenshot: shown, screenshotOmitted: undefined});
   await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/screenshotOmitted'], null);
+});
+
+test('#367: a window off screen or on another Space: the state says so in one line and getScreenshot names the reason; back on screen, both are as before', async t => {
+  const {getApp, call, meta, trees} = await session(t);
+  const {app} = await getApp('TextEdit');
+  const tree = trees.get(APPS.TextEdit.appPath);
+  const shown = {screenshot: tree.screenshot, window: tree.window};
+  // On screen: the text and the screenshot as ever, pinned byte for byte.
+  const before = await call(() => app.getAXState({emit: false, disableDiffing: true}));
+  assert.equal(before, 'Window: "Untitled", App: TextEdit.\n0 standard window Untitled, Secondary Actions: Raise\n\t1 button OK\n\t2 button Cancel\n');
+  assert.deepEqual([...await call(() => app.getScreenshot({emit: false}))], [0xff, 0xd8, 0xff, 0xd9]);
+
+  for (const [placement, omitted, reason] of [
+    ['offScreen', 'windowOffScreen', 'the window is off screen, outside every display. Its Raise action can bring it back without activating the app: use it if the user asked you to work in this window, otherwise ask them to move it.'],
+    ['anotherSpace', 'windowOnAnotherSpace', 'the window is on another Space. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.'],
+  ]) {
+    Object.assign(tree, {screenshot: null, screenshotOmitted: omitted, window: {...shown.window, placement}});
+    const state = await call(() => app.getAXState({emit: false, disableDiffing: true}));
+    assert.equal(state, `${before}${WINDOW_PLACEMENT[placement].line}\n`, 'one line after the tree');
+    assert.equal(meta['cua/screenshotOmitted'], omitted);
+    await assert.rejects(call(() => app.getScreenshot({emit: false})), {message: `Screenshot unavailable for ${APPS.TextEdit.appPath}: ${reason}`});
+    const both = await call(() => app.getAXStateAndScreenshot({emit: false}));
+    assert.equal(both.screenshot, undefined, 'the combined observation returns the state alone');
+    assert.ok(both.state.includes(WINDOW_PLACEMENT[placement].line), 'its diff keeps the line');
+  }
+
+  Object.assign(tree, {...shown, screenshotOmitted: undefined});
+  assert.equal(await call(() => app.getAXState({emit: false, disableDiffing: true})), before, 'back on screen: byte for byte as before');
+  assert.deepEqual([...await call(() => app.getScreenshot({emit: false}))], [0xff, 0xd8, 0xff, 0xd9]);
   assert.equal(meta['cua/screenshotOmitted'], null);
 });
 

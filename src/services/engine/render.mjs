@@ -43,6 +43,27 @@
 // The vendor's selection note [E §5.1], the first of its two variants (they print identically).
 export const NOTE = 'Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that\'s visible, too).';
 
+// cua's own words for a primary window the engine found off every display or on another Space (#367; the Skyshot's
+// `window.placement`): the observation's line, and the reason the facade's getScreenshot gives (`screenshot`). The
+// remedy is stated with cua's host rule, so the line names the Raise action without inviting a raise the user did not
+// ask for.
+const RAISE = 'without activating the app: use it if the user asked you to work in this window, otherwise ask them to';
+export const WINDOW_PLACEMENT = Object.freeze({
+  offScreen: Object.freeze({
+    line: `[window off screen: the window lies outside every display, so it may show no content and has no screenshot. Its Raise action can bring it back ${RAISE} move it.]`,
+    screenshot: `the window is off screen, outside every display. Its Raise action can bring it back ${RAISE} move it.`,
+  }),
+  anotherSpace: Object.freeze({
+    line: `[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Its Raise action can bring it here ${RAISE} bring it here.]`,
+    screenshot: `the window is on another Space. Its Raise action can bring it here ${RAISE} bring it here.`,
+  }),
+});
+
+// The placement line of a Skyshot, or null for a window on screen (or a placement this renderer does not know).
+export function placementLine(skyshot) {
+  return Object.hasOwn(WINDOW_PLACEMENT, skyshot.window?.placement ?? '') ? WINDOW_PLACEMENT[skyshot.window.placement].line : null;
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Numbering.
 
@@ -78,7 +99,9 @@ export function render(skyshot, numbering) {
 
 // The numbered, rendered tree of one observation, shared with ./diff.mjs: `roots` are {index, depth, text, detailText,
 // children} (text compared by the diff, detailText never [B §9]), `lines` the element lines in preorder, `nodeCount`
-// their number (the diff's line budget [B §9]), `trailer` the selection or focus trailer (with its leading newline).
+// their number (the diff's line budget [B §9]), `placement` the window's placement line or null, `markers` cua's lines
+// after the tree (the placement line, then the truncation markers), `trailer` the selection or focus trailer (with its
+// leading newline).
 export function layout(skyshot, numbering) {
   const presented = present(skyshot);
   const urls = urlConfiguration(presented);
@@ -97,9 +120,12 @@ export function layout(skyshot, numbering) {
   // A trailer line is the element's own line without the width rule's `(showing …)`, which only the tree's layout gives
   // [golden: Finder, the vendor's focused list view].
   const lineOf = node => elementLine({index: indexOf(node.token), depth: 0, text: lineText(node, urls)});
+  // The placement line (#367) comes first among cua's lines after the tree, and stands alone in a diff with no change.
+  const placement = placementLine(skyshot);
   return {
     title: presented.title, appName: presented.appName, header: `Window: "${presented.title}", App: ${presented.appName}.`,
-    roots, lines, nodeCount: lines.length, markers: truncationMarkers(skyshot), trailer: trailer(presented, lineOf),
+    roots, lines, nodeCount: lines.length, placement, markers: [...(placement ? [placement] : []), ...truncationMarkers(skyshot)],
+    trailer: trailer(presented, lineOf),
   };
 }
 

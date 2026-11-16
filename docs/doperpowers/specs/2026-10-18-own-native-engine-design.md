@@ -4714,6 +4714,51 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
     browser measured exposes one; the case is covered by unit tests only.
   Date/Author: 2026-11-09, cursor235's lane-1 implementer for the design session's ruling 31a62775 on #298; the live
   results 2026-11-10.
+- Decision (#367, 2026-11-16, `fix/367-offscreen-reason`; the issue's intent, from the 2026-11-11 dogfood's Problems §2
+  (MAWS on the MacBook: an off-screen window gave `container MAWS > container` and a bare "Screenshot unavailable");
+  the dispatching session's rulings on the checkpoint of the same day): **a primary window that lies outside every
+  display, or that the window server does not show on the current Space, is named in its observation by one line
+  after the tree, is not captured, and the facade's getScreenshot error gives the reason and the remedy. A window on
+  screen is observed byte for byte as before.**
+  1. **Detection (Placement.swift `windowPlacement`), cheap and claiming only what it read.** *Off screen*: the AX frame,
+     already read for the walk and the capture, overlaps no screen frame (ScreenScaleCache's NSScreen frames, top-left
+     global points like AX frames) by any area. This costs no read, and is checked first because it is geometry: a window
+     the window server also lists as not shown is still named for where it is. *Another Space*: the window lies on a
+     display, but its CGWindow (the number from `_AXUIElementGetWindow`, then one
+     `CGWindowListCopyWindowInfo(.optionIncludingWindow)`) has no `kCGWindowIsOnscreen`, the window is not minimized
+     (Minimized.swift's rule runs first and is unchanged), and its app does not read AXHidden. Those are the other two
+     causes of the flag's absence that an observation meets. A read-only probe on the MacBook (2026-11-16) found the key
+     absent, not false, on all 111 layer-0 windows not shown (12 shown), and the per-window read at p50 0.089 ms (max
+     2.7 ms, n 123). No frame, no screens read, or no window number makes no claim. Alternatives rejected: SkyLight's
+     space SPIs (`CGSCopySpacesForWindows` against each display's current space), which name the Space positively but add
+     two SPIs and a dictionary walk for a line the flag already earns; and reading the window server's bounds instead of
+     the AX frame, which is the same rectangle for one more read.
+  2. **No capture, as for a minimized window** (`placementObservation`): `screenshotOmitted` "windowOffScreen" or
+     "windowOnAnotherSpace" (the meta's `cua/screenshotOmitted`), and the Skyshot's `window` gains `placement`
+     ("offScreen" | "anotherSpace") only then. A window off every display gives a screenshot no coordinate can act on. A
+     window on another Space is not in `SCShareableContent(onScreenWindowsOnly: true)`, so until now its whole
+     observation, getAXState included, failed `noCapturableWindow`. It now succeeds and carries the line. That is the one
+     behaviour change, and it is narrow: with no placement the minimized rule's plan stands, so every other
+     `noCapturableWindow` cause (no frame, a frame under one point, no window number, a window the shareable content does
+     not list though the window server shows it) still fails the observation as before (PlacementTests). No input is
+     refused for a placed window. An earlier screenshot of the window stays the lineage's, as a minimized window's does.
+  3. **The words (render.mjs `WINDOW_PLACEMENT`).** They follow the bracketed form of cua's truncation marker. The
+     line is the first of cua's lines after the tree, and it stays in a diff with no change, so every observation of the
+     window says why:
+     `[window off screen: the window lies outside every display, so it may show no content and has no screenshot. Its Raise action can bring it back without activating the app: use it if the user asked you to work in this window, otherwise ask them to move it.]`
+     and `[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.]`.
+     The service adds `screenshotUnavailable` to the get_app_state result. The facade's error
+     (bind-mac-app.mjs, cua's one addition to the port) becomes `Screenshot unavailable for <app>: the window is off
+     screen, outside every display. Its Raise action …` or `…: the window is on another Space. Its Raise action …`. The
+     vendor's engine and a minimized window keep the bare sentence. The remedy is stated as a fact plus cua's host rule
+     (the person's windows are left as they are unless asked), on the dispatching session's ruling, so the line never
+     invites an unprompted raise. The truncation paragraph of `docs/cua-api/agent-cursor.md` gains one sentence (the
+     surface inventory's "Table 3 addition (2026-11-16, #367)").
+  4. **Not proven live.** Raise was seen to bring the dogfood's off-screen Electron window back. Whether it brings a
+     window back from another Space is unmeasured, hence "can". The live check is an owned window moved off screen
+     (and to a second Space) on a hosted macOS runner: getApp and getAXState carry the line, and getScreenshot names the
+     reason. It waits on GitHub Actions.
+  Date/Author: 2026-11-16, cursor235's implementer for #367.
 
 ## Outcomes & Retrospective
 

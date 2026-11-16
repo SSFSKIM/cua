@@ -823,3 +823,15 @@ a document title left uncompared (limit 4: the window's, the page's, Chrome's ta
 paragraph now reads:
 
 > A click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, has given way to another control, or has been relabelled (a Save button that now reads Delete), it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it. The check reads the accessibility tree at the point, and also refuses a click or drag when the app has opened a new window over the one in the screenshot, when the point has left the page the screenshot showed, or when a web page has added an element over the point since the screenshot, such as a suggestion list or popup. A suggestion list the page shows without adding elements (one shown by opacity, or moved into place) still takes a click aimed at the control under it. In Chrome, so can a list that overflows its field's container, because Chrome's hit-test answers the covered control. Chrome's own popup of a field's `<datalist>` suggestions lets a click pass through to the page under it. The check still cannot see text that has moved within the same text view (after Return or a paste in TextEdit), a label that changed only in its numbers (a list row reused from "Order #1234" for "Order #1235"), or a toggle switched with its label unchanged. After typing into a field that offers suggestions, press Escape or take a new screenshot before clicking near it. After editing text above the point, take a new screenshot before clicking at coordinates. When a screenshot shows a panel over the page, aim at what the screenshot shows, not at the page's elements under it.
+
+### Table 3 addition (2026-11-16, #367)
+
+#367 (the native engine spec's Decision Log, the #367 entry) adds a line to an observation: when the primary window lies
+outside every display or on another Space, the tree says so in one line after it, and `getScreenshot()` fails with
+the reason and the remedy in place of the bare "Screenshot unavailable". The #301 ruling asks for any change to an
+observation's wording in the first-call document, so the truncation paragraph, the one on cua's lines after the tree,
+gains a last sentence. It states the remedy with the host's rule that the person's windows are left as they are: the
+window's Raise action brings it back without activating the app (the 2026-11-11 dogfood, MAWS), and is for a window the
+user asked the model to work in. The paragraph now ends:
+
+> … In a Chromium-based app, a table's column and header elements take new element IDs at every observation. When the app's window lies outside every display or on another Space, the tree says so in a line such as `[window off screen: …]`, the window may show no content, and `getScreenshot()` fails naming the reason; its Raise action can bring it back without activating the app, but use it only if the user asked you to work in that window, and otherwise ask them to move it.

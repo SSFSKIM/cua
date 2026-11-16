@@ -5,7 +5,7 @@ import Foundation
 // Observation (the spec's Design, "Observation (skyshot)"): get_app_state settles first when the engine just launched or
 // reopened the app or the app was acted on since its last observation (Settle.swift), enables a web-shaped app's
 // accessibility (Enablement.swift), observes a minimized primary window in place with no screenshot (Minimized.swift),
-// then walks the app's primary window (AXFocusedWindow, else AXMainWindow, else the last of AXWindows) plus the menu bar's top-level
+// and one off every display or on another Space with no screenshot and its placement named (Placement.swift), then walks the app's primary window (AXFocusedWindow, else AXMainWindow, else the last of AXWindows) plus the menu bar's top-level
 // items (Walk.swift) and returns a `Skyshot` JSON tree; rendering to the model's text is the service's. `timings`
 // carries the per-phase durations and counts the M0 spike measures; the request's switches choose what it prices.
 
@@ -254,7 +254,7 @@ extension Engine {
     let minimized = isMinimized(window)
     if minimized { timings.set("minimized", true) }
     let exposesTree = !minimized || connection.menuRoot(app: app.key) != nil || !elementList(attribute(window, kAXChildrenAttribute)).isEmpty
-    let plan = try minimizedObservation(minimized: minimized, exposesTree: exposesTree, includeScreenshot: includeScreenshot, app: app.displayName)
+    let minimizedPlan = try minimizedObservation(minimized: minimized, exposesTree: exposesTree, includeScreenshot: includeScreenshot, app: app.displayName)
     // The wait follows any enabling (the named bundles' too) and every Chromium window.
     var waited = false
     var chromium = false
@@ -288,6 +288,14 @@ extension Engine {
     let menuBarElement = menuRoot != nil ? nil : timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute) }
     let menuItems = timings.time("menuBar") { menuBarElement.map { elementList(attribute($0, kAXChildrenAttribute)) } ?? [] }
     let windowFrame = frame(of: window)
+    // A window off every display or on another Space (Placement.swift, #367) is observed with no screenshot and its
+    // placement named; a minimized window is the minimized rule's.
+    let placement = minimized ? nil : windowPlacement(
+      frame: windowFrame, screens: screenScales.current.map(\.frame),
+      onScreen: { windowNumber(of: window, pid: pid(of: window), frame: windowFrame).flatMap(windowServerOnScreen) },
+      appHidden: { bool(attribute(application, kAXHiddenAttribute)) == true })
+    if let placement { timings.set("placement", placement.rawValue) }
+    let plan = placementObservation(placement, plan: minimizedPlan, includeScreenshot: includeScreenshot)
     // The window capture runs beside the tree walk (in-sitting tuning iteration 1): it needs only the window and its
     // frame, and the walk does not depend on it, so the observation costs the longer of the two, not their sum.
     // Its file is named with the revision this observation commits, which the Skyshot reports.
@@ -405,7 +413,7 @@ extension Engine {
     appWire["catalyst"] = bool(attribute(application, "_AXExhibitsMacCatalystBehavior")) ?? false
     var skyshot: [String: Any] = [
       "app": appWire,
-      "window": ["title": windowTitle(window, pid: pid(of: window), frame: windowFrame) ?? NSNull(), "frame": rectWire(windowFrame), "pid": Int(pid(of: window))],
+      "window": windowWire(title: windowTitle(window, pid: pid(of: window), frame: windowFrame), frame: windowFrame, pid: pid(of: window), placement: placement),
       "lineage": lineage.id,
       "revision": lineage.revision,
       "nodes": walk.nodes,

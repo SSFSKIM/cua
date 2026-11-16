@@ -3,7 +3,7 @@
 // item 3; the rules are sky-behaviour.md §5–§8). The scenes' recorded captures are test/services-engine-render-goldens.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {advanceNumbering, indexState, render, formatNumber, shortenUrl, NOTE} from '../src/services/engine/render.mjs';
+import {advanceNumbering, indexState, render, formatNumber, shortenUrl, NOTE, WINDOW_PLACEMENT, placementLine} from '../src/services/engine/render.mjs';
 import {node, skyshot} from './native-goldens/builder.mjs';
 
 const win = (children = []) => [node('w', 0, 'AXWindow', {roleDescription: 'standard window', title: 'W', actions: ['AXRaise']}), ...children];
@@ -278,6 +278,37 @@ test('#301: a cut walk of the window says how many elements it omitted and which
   assert.equal(marker({count: 31, above: 0, below: 30}), '[truncated: at least 31 elements omitted, below the visible area]', 'parts placed neither way: in the total');
   assert.equal(marker({count: 7, above: 0, below: 0}), '[truncated: at least 7 elements omitted]', 'none placed: no direction');
   assert.equal(marker({count: 5}), '[truncated: 5 elements omitted]', 'a walk with no visible area to place them by (a menu-bar root)');
+});
+
+// #367: a window the engine found off every display or on another Space.
+const placed = (placement, fields = {}) => skyshot(win([group('g', 1)]),
+  {window: {title: 'W', frame: {x: -5000, y: 0, width: 100, height: 100}, pid: 1, ...(placement ? {placement} : {})}, ...fields});
+
+test('#367: a window on screen renders byte for byte as before: no placement, no line', () => {
+  const shot = skyshot(win([button('a', 1, 'A')]), {truncated: {count: 3, above: 0, below: 3}});
+  assert.equal(render(shot, advanceNumbering(null, shot)),
+    'Window: "W", App: Example.\n0 standard window W, Secondary Actions: Raise\n\t1 button A\n[truncated: at least 3 elements omitted, below the visible area]\n');
+  assert.equal(placementLine(shot), null);
+  assert.equal(placementLine(placed('somewhereElse')), null, 'a placement this renderer does not know prints nothing');
+});
+
+test('#367: a window off every display says so in one line after the tree, before any truncation marker', () => {
+  const shot = placed('offScreen', {truncated: {count: 3}});
+  assert.equal(render(shot, advanceNumbering(null, shot)),
+    'Window: "W", App: Example.\n0 standard window W, Secondary Actions: Raise\n'
+    + '[window off screen: the window lies outside every display, so it may show no content and has no screenshot. Its Raise action can bring it back without activating the app: use it if the user asked you to work in this window, otherwise ask them to move it.]\n'
+    + '[truncated: 3 elements omitted]\n');
+});
+
+test('#367: a window on another Space says so in one line', () => {
+  const shot = placed('anotherSpace');
+  assert.equal(render(shot, advanceNumbering(null, shot)).split('\n').at(-2),
+    '[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.]');
+  assert.equal(WINDOW_PLACEMENT.anotherSpace.line, placementLine(shot));
+  assert.equal(WINDOW_PLACEMENT.offScreen.screenshot,
+    'the window is off screen, outside every display. Its Raise action can bring it back without activating the app: use it if the user asked you to work in this window, otherwise ask them to move it.');
+  assert.equal(WINDOW_PLACEMENT.anotherSpace.screenshot,
+    'the window is on another Space. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.');
 });
 
 // ---- The transformations (sky-behaviour.md §5) ----

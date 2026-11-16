@@ -69,6 +69,8 @@ not a setup exclusion. Three consecutive setup failures stop the run.
    **unchanged key** (no Command modifier invented), then subtype-2. No focus-hold registry, screen hold,
    NSRunningApplication activation, AXRaise, or production foreground/order repairs. It is action-scoped,
    not a test of the full held production route. Every prelude event is logged and side effects are priced.
+   As in production, the prelude and its inert click go to the app pid and the key to `keyboardTarget`; the
+   two are not assumed equal, and each event's actual `postToPid` is recorded.
 10. `ax-range`: direct AXSelectedTextRange write to the independently specified fixture destination.
     No key event is posted. This prices an AX alternative, **not** a generic word-motion implementation:
     a production Option+Left replacement would need native word-boundary semantics and readable same-field range.

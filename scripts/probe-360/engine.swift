@@ -52,17 +52,19 @@ func probe360Press(_ args: [String: Any], application: AXUIElement, presses: [Ke
   let number = window.flatMap { windowNumber(of: $0, pid: pid, frame: frame(of: $0)) }
   var posted: [[String: Any]] = [], failedConstruction = 0
   var releaseEvent: CGEvent?
-  func post(_ event: CGEvent, _ phase: String) {
+  // Every post names its recipient. Keys go to the keyboard target; the prelude goes to the app pid, as production's
+  // FakeActivation does. The two pids are not assumed equal, and each row records the postToPid actually used.
+  func post(_ event: CGEvent, _ phase: String, to recipient: pid_t) {
     event.timestamp = DispatchTime.now().uptimeNanoseconds
-    var row = probe360Fields(event, target: target, phase: phase)
-    gatedPost(event, target)
-    row["afterPost"] = probe360Fields(event, target: target, phase: phase)
+    var row = probe360Fields(event, target: recipient, phase: phase)
+    gatedPost(event, recipient)
+    row["afterPost"] = probe360Fields(event, target: recipient, phase: phase)
     posted.append(row)
     if let data = try? JSONSerialization.data(withJSONObject: ["probe360Event": row, "id": args["probe360Id"] as? String ?? ""], options: [.sortedKeys]) {
       FileHandle.standardError.write(data + Data([10]))
     }
   }
-  defer { if let event = releaseEvent { post(event, "synthetic-app-inactive-on-error") } }
+  defer { if let event = releaseEvent { post(event, "synthetic-app-inactive-on-error", to: pid) } }
   let source: CGEventSourceStateID = variant == "private-source" ? .privateState : variant == "combined-source" ? .combinedSessionState : .hidSystemState
   let poster = EventPoster.toProcess(target, sourceState: source)
   meta.inputRoute = .plainPost
@@ -101,21 +103,22 @@ func probe360Press(_ args: [String: Any], application: AXUIElement, presses: [Ke
         throw EngineError.invalidArguments("probe cannot construct equivalent prelude")
       }
       let point = CGPoint(x: rect.minX - 8, y: rect.minY - 8)
-      let inert = clickEvents(ClickTarget(point: point, windowFrame: rect, windowID: number, pid: target), button: .left, count: 1, flags: [])
+      let inert = clickEvents(ClickTarget(point: point, windowFrame: rect, windowID: number, pid: pid), button: .left, count: 1, flags: [])
       guard inert.count == 2 else { throw EngineError.invalidArguments("probe cannot construct inert prelude click") }
-      post(activate, "synthetic-app-active")
-      for e in inert { post(e, "inert-outside-click") }
+      post(activate, "synthetic-app-active", to: pid)
+      for e in inert { post(e, "inert-outside-click", to: pid) }
       probe["routing"] = "route-3 core prelude, no held registry or repairs; same key modifiers unchanged"
       probe["syntheticAppFocus"] = true
-      // Events are FIFO to this pid; the core prelude is action-scoped, not a production held activation.
+      // Prelude and key events are separate FIFOs when the app pid and keyboard target differ. The core prelude is
+      // action-scoped, not a production held activation.
       releaseEvent = deactivate
     }
     try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { spec in
       guard let event = probe360Event(spec, variant: variant, poster: poster, window: number) else { failedConstruction += 1; return false }
-      post(event, "key")
+      post(event, "key", to: target)
       return true
     }, meta: &meta)
-    if let event = releaseEvent { post(event, "synthetic-app-inactive"); releaseEvent = nil }
+    if let event = releaseEvent { post(event, "synthetic-app-inactive", to: pid); releaseEvent = nil }
   }
   probe["posted"] = posted
   probe["failedConstruction"] = failedConstruction

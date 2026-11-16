@@ -751,7 +751,7 @@ async function series(ctx, family, lane, name, windows) {
   const wrongText = rows.filter((r) => !Object.values(r.exact).every(Boolean)).length;
   const missCauses = {};
   for (const r of rows) if (r.miss) missCauses[r.miss] = (missCauses[r.miss] ?? 0) + 1;
-  const out = { family, lane, scenario: name, need, ...verdict, raw: { misses: raw.misses, streak: raw.streak, reached: raw.reached }, wrong_text: wrongText, miss_causes: missCauses, ...(PASTES.includes(name) ? { confirm_rules: confirmRules(rows), settle: settleCost(rows) } : {}), burst_ms_median: tenth(median(rows.map((r) => r.burst_ms))), first_miss: rows.find((r) => !r.ok) ?? null };
+  const out = { family, lane, scenario: name, need, ...verdict, raw: { misses: raw.misses, streak: raw.streak, reached: raw.reached }, wrong_text: wrongText, miss_causes: missCauses, false_ok: rows.filter((r) => !r.ok && r.answered_ok).length, ...(PASTES.includes(name) ? { confirm_rules: confirmRules(rows), settle: settleCost(rows) } : {}), burst_ms_median: tenth(median(rows.map((r) => r.burst_ms))), first_miss: rows.find((r) => !r.ok) ?? null };
   emit({ kind: 'focus-timer-series', ...out });
   return out;
 }
@@ -962,12 +962,12 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
     watched = await server.stop();
   }
   const ending = desktopEnding(desktop.ending);
-  const { md, failed } = focusTimerVerdict(results, { families, stopsOnly: Boolean(args.stopsOnly) });
+  const { md, failed, unjudged } = focusTimerVerdict(results, { families, stopsOnly: Boolean(args.stopsOnly), pilot: Boolean(args.pilot) });
   for (const f of ending.foreign) failed.push(`a window the experiment did not open was changed: ${f}`);
   if (!watched.clean) failed.push(`the private display's watchdog: ${watched.reason}`);
   if (failed.length) md.push('', `**Incomplete or failed:** ${failed.join('; ')}.`);
-  emit({ kind: 'focus-timer-verdict', pass: failed.length === 0, failed });
-  return { md, complete: failed.length === 0, failed, ending };
+  emit({ kind: 'focus-timer-verdict', pass: failed.length === 0, failed, ...(unjudged.length ? { unjudged } : {}) });
+  return { md, complete: failed.length === 0, failed, unjudged, ending };
 }
 
 /**
@@ -975,17 +975,28 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
  * series showed the reorder, every audit is clean, every SIGTERM run kept its order and settled, every SIGKILL run did
  * not settle; a family that could not be opened fails it. Returns the summary's lines and the failures.
  */
-export function focusTimerVerdict({ series: all, audits, stops, skipped, notApplicable = [] }, { families, stopsOnly = false }) {
+export function focusTimerVerdict({ series: all, audits, stops, skipped, notApplicable = [] }, { families, stopsOnly = false, pilot = false }) {
   const failed = [];
+  // a pilot's series shorter than the proof's minimum (ruling 730): unjudged, never passed
+  const unjudged = [];
   const md = ['| family | lane | scenario | runs | misses | passing streak at the end | verdict | raw misses | raw streak | median burst ms |', '|---|---|---|---:|---:|---:|---|---:|---:|---:|'];
   for (const s of all) {
     let verdict;
     if (judged(s.lane)) {
       const need = s.need ?? CONSECUTIVE;
       const name = `${s.family} ${s.scenario}${s.lane === 'shipped' ? '' : ` (${s.lane})`}`;
-      verdict = s.reached ? `${need} consecutive` : '**not reached**';
-      if (!s.reached) failed.push(`${name}: no ${need} consecutive passing runs in ${s.runs}`);
-      if (need < CONSECUTIVE) failed.push(`${name}: a development series of ${need}, not the ${CONSECUTIVE} the proof needs`);
+      // a run answered ok with the wrong result is a false ok in any series, a pilot's short one too (wave 2); a stored
+      // series from before `false_ok` is read by its first miss
+      const falseOks = s.false_ok ?? (s.first_miss && s.first_miss.ok === false && s.first_miss.answered_ok === true ? 1 : 0);
+      if (pilot && need < CONSECUTIVE) {
+        verdict = falseOks ? '**false ok**' : '**unjudged** (a pilot)';
+        if (falseOks) failed.push(`${name}: ${falseOks} of ${s.runs} runs answered ok with the wrong text (a false ok)`);
+        else unjudged.push(`${name}: a series of ${need}, shorter than the ${CONSECUTIVE} the proof needs (a pilot)`);
+      } else {
+        verdict = s.reached ? `${need} consecutive` : '**not reached**';
+        if (!s.reached) failed.push(`${name}: no ${need} consecutive passing runs in ${s.runs}`);
+        if (need < CONSECUTIVE) failed.push(`${name}: a development series of ${need}, not the ${CONSECUTIVE} the proof needs`);
+      }
     } else {
       const required = CHROMIUM.includes(s.family);
       verdict = s.misses > 0 ? `fails without its protection (${s.misses}/${s.runs}; the text wrong in ${s.wrong_text ?? '?'})` : required ? '**shows nothing**' : 'no reorder (not required)';
@@ -1025,5 +1036,6 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped, notAppl
     const measured = all.some((s) => s.family === family) || (stopsOnly && stops.some((s) => s.family === family)) || notApplicable.some((n) => n.family === family);
     if (!measured && !skipped.some((s) => s.family === family)) failed.push(`${family} was not measured`);
   }
-  return { md, failed };
+  if (unjudged.length) md.push('', `Unjudged in this pilot (a series shorter than its minimum; not a pass): ${unjudged.join('; ')}.`);
+  return { md, failed, unjudged };
 }

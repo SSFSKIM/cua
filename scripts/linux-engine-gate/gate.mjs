@@ -7,6 +7,17 @@
 //   node scripts/linux-engine-gate/gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
 //   node scripts/linux-engine-gate/gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
 //   node scripts/linux-engine-gate/gate.mjs check --pinned <home>
+//   node scripts/linux-engine-gate/gate.mjs leftovers [--remove <dir> [--confirm]]
+//
+// After every step, whatever ended its process, the runner makes the end check (leftovers.mjs; rulings 721, 724): the
+// `cua171-run-*` scratch the step left and every other run's, with their session buses, named in the step's record and
+// left alone. `leftovers` makes it alone. Before every step the start check refuses to start on anything earlier runs
+// left, naming it and its evidence, and removes nothing (leftovers.mjs, ruling 730, fix wave 3); `leftovers --remove
+// <dir>` prints the proof that one may go and, given `--confirm`, removes it only when the proof holds. A step's unclean
+// end (its run's own side) is in its record, and
+// `summary --out <dir>` lists every step's. A :0 step is printed under the sitting launcher (sitting.mjs), which makes
+// the end check and the sitting's all-clear however the sitting ends, and writes hold-sittings when the person's side
+// is not clear.
 //
 // `--list` prints every step's estimated minutes, display, load and command, with the totals per display and per load.
 // `print` prints one step's command and writes its directory's labelled README; `run` runs one step, and never a `:0`
@@ -32,7 +43,10 @@
 // architecture, from that home's runtime. The facade suites run the one runner (suites.sh) with ENGINE=installed: it
 // passes no engine and checks each of its own homes by the same rule, on the device the environment names (`DEVICE`,
 // else this architecture's VM); on a `--candidate`, ENGINE=candidate names it, as M4's facade.sh did. `check --pinned <home>` runs the rule alone and prints its record. `--pinned --dev` takes the
-// home's engine unchecked, as a development run (a pilot).
+// home's engine unchecked, as a development run; `--pinned <home> --pilot <n>` (no `--dev`) is a development run on the
+// pinned release (M5's T4 round 2, task 87's finding 1): the pinned rule run inside the step, every record labelled
+// "development run on the pinned release, not acceptance, never counted". A pilot takes no top-up (ruling 722), and its
+// record lists what it left unjudged.
 //
 // Labels (the design session's condition): every directory and file a step writes carries "release gate" or
 // "development run, not a release gate": the step's directory is named `<step>.release-gate` or
@@ -42,12 +56,15 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { REPO_ROOT, candidateLine, gateLabel, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
+import { PINNED_DEVELOPMENT, REPO_ROOT, candidateLine, gateLabel, isPinnedRule, prepareCandidate } from '../linux-engine-diff/candidate.mjs';
+import { defaultScope, leftoverCheck, leftoverLines, removeLeftover, scratchDirs, startCheck, startRefusalText } from '../linux-engine-diff/leftovers.mjs';
+// a test process reaches no real display (hermetic.mjs); the leftover checks' scope is never switched by it
+import '../linux-engine-diff/hermetic.mjs';
 import { pinnedEngine } from '../linux-engine-diff/pinned-home.mjs';
 import { linuxEnginePath } from '../../src/runtime/linux-engine.mjs';
 import { MAX_STEP_MINUTES, STEPS, runName, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals } from './steps.mjs';
@@ -71,12 +88,15 @@ export function defaultsFor(arch = process.arch, cuaHome = join(HOME, '.local/sh
     // task 59's Mozilla Firefox, first on PATH in every M4 sitting (its README says why)
     firefoxDir: join(HOME, '.local/share/cua-171/task59/bin'),
     locked: join(HOME, '.local/share/cua-171/locked.sh'),
-    holder: 't18-gate',
+    // the host lock's holder a step's command and record name, unless `--holder` names the executor's own
+    holder: 'm5-gate',
     hold: join(HOME, '.local/share/cua-171/hold-sittings'),
   };
 }
 /** Task 50's guards for a `:0` step, as T19's sitting ran them (pointer-route/scripts). */
 const GUARDS = 'docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts';
+/** The :0 sitting's outer launcher, relative to the checkout. */
+const SITTING = 'scripts/linux-engine-gate/sitting.mjs';
 /** The harness's X client, built in the checkout (xtools.mjs `XPROBE`). */
 const XPROBE_BUILT = 'scripts/linux-engine-diff/xprobe/target/release/xprobe';
 
@@ -93,6 +113,8 @@ const USAGE = `usage:
   gate.mjs print <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
   gate.mjs run <step> (--pinned <home> | --candidate <file>) --out <dir> [--dev] [--pilot <n>]
   gate.mjs check --pinned <home>
+  gate.mjs leftovers [--remove <dir> [--confirm]]
+  gate.mjs summary --out <dir>
   options: [--vendor <bin>] [--newest <bin>] [--vendor-js <@oai/sky dir>] [--holder <name>]
   --pinned <home>: the CUA_HOME of a run home whose cua install --engine placed the pinned engine (acceptance on the pinned release)`;
 
@@ -101,7 +123,7 @@ const USAGE = `usage:
  * runtime when `--pinned` names one), and the suites' device is `env.DEVICE`, else `arch`'s VM. A flag still wins.
  */
 export function parseGateArgs(argv, { arch = process.arch, env = process.env } = {}) {
-  const a = { mode: null, step: null, gate: true, pilot: null, candidate: null, pinned: null, out: null };
+  const a = { mode: null, step: null, gate: true, pilot: null, candidate: null, pinned: null, out: null, remove: null, confirm: false };
   const given = {};
   const flags = { '--candidate': 'candidate', '--pinned': 'pinned', '--out': 'out', '--vendor': 'vendor', '--newest': 'newest', '--vendor-js': 'vendorJs', '--holder': 'holder' };
   for (let i = 0; i < argv.length; i++) {
@@ -111,6 +133,8 @@ export function parseGateArgs(argv, { arch = process.arch, env = process.env } =
       return argv[++i];
     };
     if (flag === '--list') a.mode = 'list';
+    else if (flag === '--remove') a.remove = resolve(value());
+    else if (flag === '--confirm') a.confirm = true;
     else if (flag === '--dev') a.gate = false;
     else if (flag === '--pilot') {
       a.pilot = Number(value());
@@ -123,21 +147,31 @@ export function parseGateArgs(argv, { arch = process.arch, env = process.env } =
       a.mode = flag;
       a.step = value();
     } else if (!a.mode && flag === 'check') a.mode = 'check';
+    else if (!a.mode && flag === 'leftovers') a.mode = 'leftovers';
+    else if (!a.mode && flag === 'summary') a.mode = 'summary';
     else throw new GateRefused(`unknown argument ${flag}\n${USAGE}`);
   }
   if (!a.mode) throw new GateRefused(USAGE);
+  if (a.confirm && !a.remove) throw new GateRefused(`--confirm needs --remove <dir>\n${USAGE}`);
+  if (a.remove && a.mode !== 'leftovers') throw new GateRefused(`--remove belongs to leftovers\n${USAGE}`);
+  if (a.mode === 'leftovers') return a;
+  if (a.mode === 'summary') {
+    if (!given.out) throw new GateRefused(`summary needs --out <dir>\n${USAGE}`);
+    return { ...a, out: given.out };
+  }
   if (given.pinned && given.candidate) throw new GateRefused('give --pinned or --candidate, not both: acceptance takes the engine a run home\'s cua install placed');
   Object.assign(a, defaultsFor(arch, given.pinned), { device: env.DEVICE || DEVICES_BY_ARCH[arch] || null }, given);
   if (a.pinned) {
     a.candidate = linuxEnginePath(a.pinned);
-    if (a.gate) a.gate = 'pinned';
+    // a pilot on the pinned rule is a development run on the pinned release, never counted (task 87's finding 1)
+    if (a.gate) a.gate = a.pilot ? PINNED_DEVELOPMENT : 'pinned';
   }
   if (a.mode === 'check') {
     if (!a.pinned) throw new GateRefused(`check needs --pinned <home>\n${USAGE}`);
     if (!a.gate) throw new GateRefused('check is the pinned rule itself: no --dev');
     return a;
   }
-  if (a.gate && a.pilot) throw new GateRefused('a pilot is never a release gate, nor acceptance: give --dev with --pilot');
+  if (a.gate && a.pilot && a.gate !== PINNED_DEVELOPMENT) throw new GateRefused('a pilot is never a release gate, nor acceptance: give --dev with --pilot, or --pinned <home> for a development run on the pinned release');
   if (a.mode !== 'list') {
     if (!STEPS.some((s) => s.name === a.step)) throw new GateRefused(`no gate step ${a.step}; the steps: ${STEPS.map((s) => s.name).join(', ')}`);
     if (!a.candidate) throw new GateRefused(`${a.mode} needs --pinned <home> or --candidate <file>\n${USAGE}`);
@@ -167,7 +201,7 @@ export function checkCheckout({ root = REPO_ROOT, out, gate, git = (args) => exe
   return { commit, clean: true };
 }
 
-const runsFrom = (gate) => (gate === 'pinned' ? 'acceptance on the pinned release runs from a clean git checkout' : "a gate runs from a clean git checkout at the candidate's commit");
+const runsFrom = (gate) => (gate === 'pinned' ? 'acceptance on the pinned release runs from a clean git checkout' : gate === PINNED_DEVELOPMENT ? 'a development run on the pinned release runs from a clean git checkout (the pinned rule)' : "a gate runs from a clean git checkout at the candidate's commit");
 
 const quote = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, "'\\''")}'`);
 const line = (argv) => argv.map(quote).join(' ');
@@ -180,7 +214,10 @@ export function launchCommand(step, a, root = REPO_ROOT) {
   const lock = [a.locked, a.holder];
   if (step.display === ':0') {
     const args = stepArgs(step, { paths: { ...a, candidate: a.candidate ?? '<candidate>' }, gate: a.gate, pilot: a.pilot });
-    return line([...lock, 'env', `WRAP=${join(root, GUARDS, 'wrap71.py')}`, join(root, GUARDS, 'run71.sh'), a.out ? stepDir(step, a) : '<out>/<step>', root, ...args]);
+    const dir = a.out ? stepDir(step, a) : '<out>/<step>';
+    // under the sitting launcher (sitting.mjs): its refusal while hold-sittings exists, the start check, and the end check
+    // and the all-clear however the sitting ends (review finding 3, ruling 730)
+    return line([...lock, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--terminal', step.kind === 'verdict' ? 'end' : 'experiment-summary', '--', 'env', `WRAP=${join(root, GUARDS, 'wrap71.py')}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
   }
   const engine = a.pinned ? ['--pinned', a.pinned] : ['--candidate', a.candidate ?? '<candidate>'];
   return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, ...engine, '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : [])]);
@@ -218,6 +255,9 @@ function writeRecord(dir, record) {
     ...(r.started ? [`- started ${r.started}`] : []),
     ...(r.finished ? [`- finished ${r.finished}; exit ${r.exit}${r.display_watchdog ? `; private display's watchdog: ${r.display_watchdog}` : ''}`] : []),
     ...(r.unproved ? [`- unproved (declared gaps, not passes): ${r.unproved.length || 'none'}`, ...r.unproved.map((l) => `  - ${l}`)] : []),
+    ...(r.unjudged ? [`- unjudged (a pilot takes no top-up; not passes): ${r.unjudged.length || 'none'}`, ...r.unjudged.map((l) => `  - ${l}`)] : []),
+    ...(r.end_check ? endCheckText(r.end_check) : []),
+    ...(r.unclean ? (r.unclean.length ? [`- unclean end (the run's own side, not a verdict failure): ${r.unclean.length}`, ...r.unclean.map((l) => `  - ${l}`)] : ["- end: clean (nothing left on the run's own side)"]) : []),
     '',
   ];
   writeFileSync(join(dir, 'README.md'), md.join('\n'));
@@ -257,7 +297,7 @@ function labelledLog(path, label) {
  * step directory that exists, or (a gate) from an unclean checkout. Answers the step's exit code: the harness's, or 1
  * when its private display's watchdog was not clean.
  */
-export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null } = {}) {
+export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSync(a.hold), loadRunning = () => pgrep('stress-ng'), xprobe = join(root, XPROBE_BUILT), prepare = prepareCandidate, pinned = pinnedEngine, spawnChild = spawn, privateDisplay = null, leftovers = defaultScope(), start: check = startCheck } = {}) {
   const step = stepNamed(a.step);
   if (step.display === ':0') throw new GateRefused(`${step.name} runs on :0, in the declared sitting under task 50's guards: launch it with \`gate.mjs print ${step.name} ...\`'s command; this runner never runs on the person's display`);
   if (held()) throw new GateRefused(`${a.hold} exists: the host is held for sittings, and nothing starts`);
@@ -268,6 +308,10 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   const checkout = checkCheckout({ root, out: a.out, gate: a.gate, git });
   const dir = stepDir(step, a);
   if (existsSync(dir)) throw new GateRefused(`${dir} exists: each execution of a step writes a directory of its own`);
+  // what earlier runs left on their own side (ruling 730): the step refuses to start on any of it, naming it and its
+  // evidence; nothing is removed (`leftovers --remove` is the explicit command)
+  const start = check({ ...leftovers });
+  if (start.refused.length) throw new GateRefused(startRefusalText(start.refused));
   mkdirSync(dir, { recursive: true });
   const { label } = stepLabel(a);
   const record = stepRecord(step, a, { root, checkout, command: launchCommand(step, a, root) });
@@ -284,7 +328,7 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
     store = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
     try {
       const prepared = await prepare({ source: a.candidate, gate: a.gate, dir: store, root });
-      candidatePath = a.gate === 'pinned' ? pinned(a.candidate, prepared.record).cua : prepared.path;
+      candidatePath = isPinnedRule(a.gate) ? pinned(a.candidate, prepared.record).cua : prepared.path;
       record.candidate.record = prepared.record;
     } catch (error) {
       rmSync(store, { recursive: true, force: true });
@@ -300,6 +344,8 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   const suiteLogs = step.kind === 'suite' ? mkdtempSync('/tmp/cua171-gl-') : null;
   const suiteVars = suiteLogs ? suiteEnv({ candidate: candidatePath, dir, gate: a.gate, logs: suiteLogs, pinned: Boolean(a.pinned), device: a.device }) : null;
   if (suiteVars) record.env = suiteVars;
+  // the scratch there before the step: every other run's, whatever the step leaves (the end check, below)
+  const before = new Set(scratchDirs(leftovers.roots).map((d) => d.dir));
   record.started = new Date().toISOString();
   writeRecord(dir, record);
   const out = labelledLog(join(dir, 'stdout.log'), label);
@@ -330,6 +376,10 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
       result = await runOnPrivateDisplay({ dir, label, script: join(root, script), args, cwd: root, env, out, err });
     }
   } finally {
+    // the end check (rulings 721, 724), made here, after the step's process ended however it ended: a harness killed
+    // past its own cleanup still gets one. Its findings are named, never removed or signalled
+    record.end_check = stepEndCheck(before, leftovers);
+    writeRecord(dir, record);
     if (store) rmSync(store, { recursive: true, force: true });
     if (suiteLogs) {
       // the logs kept with the step, the sockets left behind (a bus's socket is no log)
@@ -343,9 +393,109 @@ export async function runStep(a, { root = REPO_ROOT, git, held = () => existsSyn
   // its exit status: the suites runner writes them, and the step's README and step.json list them
   const unproved = join(dir, 'run', 'baseline', 'unproved.txt');
   if (existsSync(unproved)) record.unproved = readFileSync(unproved, 'utf8').split('\n').filter(Boolean);
+  // what a pilot left unjudged (ruling 722), never a pass: the harness's end or summary row, or R2's list
+  if (a.pilot) record.unjudged = pilotUnjudged(dir);
+  // the step's unclean end (ruling 730, part (a)): what its run recorded on its own side, and what the step left
+  record.unclean = stepUnclean(dir, record.end_check);
   writeRecord(dir, record);
   appendFileSync(join(dir, 'stdout.log'), `${label}: ${step.name} exit ${exit}\n`);
   return exit;
+}
+
+/** A step's harness rows (`run/results.jsonl`), each that reads. */
+function harnessRows(dir) {
+  const results = join(dir, 'run', 'results.jsonl');
+  if (!existsSync(results)) return [];
+  return readFileSync(results, 'utf8').split('\n').filter(Boolean).flatMap((l) => {
+    try {
+      return [JSON.parse(l)];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/**
+ * A step's unclean end (ruling 730, part (a)), never a verdict failure: what its run's end recorded on its own side
+ * (the end or summary row's `desktop.unclean`), each scratch directory the step left (the end check's `left_by_step`) and
+ * each session-bus process of one.
+ */
+export function stepUnclean(dir, endCheck) {
+  const own = harnessRows(dir).filter((r) => ['end', 'experiment-summary'].includes(r.kind)).flatMap((r) => r.desktop?.unclean ?? []);
+  return [...own, ...endCheckUnclean(endCheck)];
+}
+
+/** What a step's end check shows it left on its own side: each scratch directory it left, and their session buses. */
+export function endCheckUnclean(endCheck) {
+  const left = endCheck?.left_by_step ?? [];
+  const buses = (endCheck?.buses ?? []).filter((b) => left.some((d) => d.dir === b.dir));
+  return [...left.map((d) => `its scratch left behind: ${d.dir}`), ...buses.map((b) => `a session bus of it still runs: pid ${b.pid} ${b.program}`)];
+}
+
+/**
+ * The gate's summary of an out root (`gate.mjs summary --out <dir>`): every step's label, exit, unclean end and, for a
+ * :0 step, its sitting's all-clear (sitting.mjs), so T5's and T7's READMEs list every unclean end. Markdown.
+ */
+export function gateSummary(out) {
+  const order = (name) => {
+    const i = STEPS.findIndex((s) => s.name === name);
+    return i < 0 ? STEPS.length : i;
+  };
+  const dirs = readdirSync(out).filter((d) => existsSync(join(out, d, 'step.json'))).sort((x, y) => order(x.split('.')[0]) - order(y.split('.')[0]) || x.localeCompare(y));
+  const lines = ['| step | label | exit | unclean end | :0 all-clear |', '|---|---|---:|---|---|'];
+  let unclean = 0;
+  for (const d of dirs) {
+    const r = JSON.parse(readFileSync(join(out, d, 'step.json'), 'utf8'));
+    const clear = existsSync(join(out, d, 'all-clear.json')) ? JSON.parse(readFileSync(join(out, d, 'all-clear.json'), 'utf8')) : null;
+    const left = [...(r.unclean ?? []), ...(clear?.run ?? [])];
+    if (left.length) unclean += 1;
+    const exit = r.exit ?? clear?.exit ?? '–';
+    const zero = clear ? (clear.clear ? 'clear' : `**not clear**: ${clear.person.join('; ')}`) : '–';
+    lines.push(`| ${r.step} | ${r.label}${r.pilot ? ' (pilot)' : ''} | ${exit} | ${left.length ? `**${left.length}**: ${left.join('; ')}` : 'clean'} | ${zero} |`);
+  }
+  lines.push('', `Unclean ends: ${unclean} of ${dirs.length} steps (the run's own side, never a verdict failure; the next run's start check refuses to start on what each left; \`gate.mjs leftovers --remove <dir> --confirm\` removes it once its proof holds).`);
+  return lines.join('\n');
+}
+
+/**
+ * What a pilot step left unjudged, as its run wrote it: the harness's last `end` (a verdict run) or `experiment-summary`
+ * row's `unjudged` in `run/results.jsonl`, or the suites runner's `run/baseline/unjudged.txt` (R2).
+ */
+function pilotUnjudged(dir) {
+  const listed = join(dir, 'run', 'baseline', 'unjudged.txt');
+  if (existsSync(listed)) return readFileSync(listed, 'utf8').split('\n').filter(Boolean);
+  const results = join(dir, 'run', 'results.jsonl');
+  if (!existsSync(results)) return [];
+  const rows = readFileSync(results, 'utf8').split('\n').filter(Boolean).flatMap((l) => {
+    try {
+      return [JSON.parse(l)];
+    } catch {
+      return [];
+    }
+  });
+  return rows.filter((r) => ['end', 'experiment-summary'].includes(r.kind)).flatMap((r) => r.unjudged ?? []);
+}
+
+/**
+ * A step's end check (leftovers.mjs): every `cua171-run-*` directory once the step's process has ended, split into those
+ * the step left (`left_by_step`, not there before it: its own cleanup did not finish) and those that were (`foreign`,
+ * another run's), with the session-bus processes of each. `{left_by_step, foreign, buses, clear}`; a finding, never a
+ * failure, and nothing is touched.
+ */
+export function stepEndCheck(before, options = {}) {
+  const check = leftoverCheck(options);
+  return { left_by_step: check.dirs.filter((d) => !before.has(d.dir)), foreign: check.dirs.filter((d) => before.has(d.dir)), buses: check.buses, clear: check.clear };
+}
+
+/** The end check in the step's README: the all-clear, or each finding. */
+function endCheckText(e) {
+  if (e.clear) return ['- end check: clear (no cua171-run-* directory or session bus of one)'];
+  const of = (dirs) => ({ dirs, buses: e.buses.filter((b) => dirs.some((d) => d.dir === b.dir)) });
+  const left = leftoverLines(of(e.left_by_step)).map((l) => l.replace(/^a cua171-run-\* directory not this run's, left alone: /, 'left by this step: '));
+  // the buses whose directory neither list holds (gone, or outside the roots): named too
+  const orphans = e.buses.filter((b) => ![...e.left_by_step, ...e.foreign].some((d) => d.dir === b.dir));
+  const lines = [...left, ...leftoverLines(of(e.foreign)), ...leftoverLines({ dirs: [], buses: orphans })];
+  return [`- end check (findings, left alone): ${e.left_by_step.length + e.foreign.length + e.buses.length}`, ...lines.map((l) => `  - ${l}`)];
 }
 
 const noEngine = (a) => `no engine at ${a.candidate}: install it in the run home first, CUA_HOME=${a.pinned} node bin/cua.mjs install --engine`;
@@ -377,6 +527,20 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const a = parseGateArgs(process.argv.slice(2));
     if (a.mode === 'list') process.stdout.write(`${listText(a)}\n`);
+    else if (a.mode === 'summary') process.stdout.write(`${gateSummary(a.out)}\n`);
+    else if (a.mode === 'leftovers' && a.remove) {
+      // the explicit removal: the proof first; exit 0 when removed or when it holds without --confirm, 2 when refused
+      const result = removeLeftover(a.remove, { confirm: a.confirm });
+      process.stdout.write(`${result.text}\n`);
+      process.exit(result.proof.holds ? 0 : 2);
+    }
+    else if (a.mode === 'leftovers') {
+      // the end check alone (a :0 sitting's all-clear): exit 0 when clear, 1 with findings
+      const check = leftoverCheck();
+      const lines = leftoverLines(check);
+      process.stdout.write(`end check: ${check.clear ? 'clear' : `${lines.length} finding${lines.length === 1 ? '' : 's'}, left alone`}\n${lines.map((l) => `${l}\n`).join('')}`);
+      process.exit(check.clear ? 0 : 1);
+    }
     else if (a.mode === 'print') process.stdout.write(`${printStep(a)}\n`);
     else if (a.mode === 'check') {
       const record = await checkPinned(a);

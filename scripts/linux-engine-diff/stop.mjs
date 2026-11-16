@@ -59,3 +59,55 @@ export function stopBecause(cause, { proc = process } = {}) {
   if (!hooks.get(proc)) proc.stderr.write(stoppedLine(cause, 'no cleanup was in place, so none ran'));
   proc.kill(proc.pid, 'SIGTERM');
 }
+
+// per process: the cleanups a fatal error runs (`cleanupOnFatal`), and the one handler that runs them
+const FATAL_CLEANUP_MS = 120000;
+const fatalHooks = new WeakMap();
+const fatalHandlers = new WeakMap();
+
+/**
+ * `cleanup` run when the process meets an error nothing caught (an uncaught exception, among them a child's 'error'
+ * event with no listener, as M4 candidate 1's D2 spawn of a missing Electron binary was, or an unhandled rejection),
+ * which would otherwise end node at once, past every `finally` (#171 M5, T4 round 2; ruling 721). The error is written
+ * to stderr, every hooked cleanup runs (each on its own; one that fails is reported), the last line names the error and
+ * says the cleanup ran, and the process exits 1. Answers a function that removes the hook; with no hook left the process
+ * keeps node's own handling.
+ */
+export function cleanupOnFatal(cleanup, { proc = process } = {}) {
+  const hooked = fatalHooks.get(proc) ?? new Set();
+  fatalHooks.set(proc, hooked);
+  if (!fatalHandlers.has(proc)) {
+    let fatal = false;
+    const handler = (error) => {
+      if (fatal) return;
+      fatal = true;
+      proc.stderr.write(`${error?.stack ?? String(error)}\n`);
+      const cleanups = [...(fatalHooks.get(proc) ?? [])];
+      // a cleanup that hangs (a display gone mid-call) never keeps the process: it exits 1 after `FATAL_CLEANUP_MS`
+      setTimeout(() => {
+        proc.stderr.write(`cua171 FATAL: ${String(error?.message ?? error).split('\n')[0]}; the run's cleanup did not end within ${FATAL_CLEANUP_MS / 1000} s.\n`);
+        proc.exit(1);
+      }, FATAL_CLEANUP_MS);
+      Promise.allSettled(cleanups.map((c) => Promise.resolve().then(c)))
+        .then((settled) => {
+          for (const s of settled) if (s.status === 'rejected') proc.stderr.write(`a cleanup after the fatal error failed: ${s.reason?.message ?? s.reason}\n`);
+          proc.stderr.write(`cua171 FATAL: ${String(error?.message ?? error).split('\n')[0]}; the run's cleanup ran before the exit.\n`);
+        })
+        .finally(() => proc.exit(1));
+    };
+    fatalHandlers.set(proc, handler);
+    proc.on('uncaughtException', handler);
+    proc.on('unhandledRejection', handler);
+  }
+  const entry = () => cleanup();
+  hooked.add(entry);
+  return () => {
+    hooked.delete(entry);
+    if (hooked.size) return;
+    const handler = fatalHandlers.get(proc);
+    if (!handler) return;
+    proc.off('uncaughtException', handler);
+    proc.off('unhandledRejection', handler);
+    fatalHandlers.delete(proc);
+  };
+}

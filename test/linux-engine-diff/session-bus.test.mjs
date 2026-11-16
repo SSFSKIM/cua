@@ -12,6 +12,8 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { Desktop, desktopEnding } from '../../scripts/linux-engine-diff/scenes.mjs';
 import * as sessionBus from '../../scripts/linux-engine-diff/session-bus.mjs';
@@ -19,6 +21,14 @@ import * as sessionBus from '../../scripts/linux-engine-diff/session-bus.mjs';
 const { busEnvironment, enableAccessibility, sessionBusConfig, startPrivateSession, startSessionBus, wireAccessibility } = sessionBus;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/**
+ * `promise`, or a failure naming `what` once `ms` pass (task 88's fix wave 4: a start refused before the stage a test
+ * waits for left that wait unsettled, and the file hung the suite for a day under the host lock).
+ */
+function within(promise, what, ms = 15000) {
+  let timer;
+  return Promise.race([promise, new Promise((_, fail) => (timer = setTimeout(() => fail(new Error(`${what}: not settled within ${ms} ms`)), ms)))]).finally(() => clearTimeout(timer));
+}
 const found = (cmd) => spawnSync('sh', ['-c', `command -v ${cmd}`]).status === 0;
 const HAS_BUS = found('dbus-daemon') && found('busctl');
 
@@ -501,15 +511,16 @@ for (const stage of STAGES) {
     try {
       const begun = desktop.begin({ startWatchdog: start('watchdog'), startSession: start('session'), startRecord: start('record'), startTrace: start('trace'), existing: () => [], privateDisplay: () => true });
       begun.catch(() => {});
-      await atStage;
+      // the start reaching the stage, or its refusal before it (then the test fails with the start's own error)
+      await within(Promise.race([atStage, begun]), `the start reaching its ${stage}`);
       let stopDone = false;
       const stopped = desktop.stop().then(() => (stopDone = true));
       // longer than a stop that waits for nothing takes (its windows' close, 1 s)
       await sleep(1500);
       assert.equal(stopDone, false, `the stop waits for the ${stage} it interrupted`);
       release();
-      await stopped;
-      await assert.rejects(begun, /stopped while the run was starting/);
+      await within(stopped, 'the stop');
+      await assert.rejects(within(begun, 'the start'), /stopped while the run was starting/);
       const upTo = STAGES.slice(0, STAGES.indexOf(stage) + 1);
       assert.deepEqual(log.filter((l) => !l.endsWith(' stopped')), upTo, `nothing starts after the ${stage}`);
       assert.deepEqual(log.filter((l) => l.endsWith(' stopped')), upTo.toReversed().map((n) => `${n} stopped`), 'everything the start acquired ends before the stop returns, the watchdog last');
@@ -558,8 +569,8 @@ for (const stage of ['watchdog', 'session', 'record']) {
     };
     const before = busVars();
     try {
-      await assert.rejects(desktop.begin({ startWatchdog: start('watchdog'), startSession: start('session'), startRecord: start('record'), startTrace: start('trace'), existing: () => [], privateDisplay: () => true }), /stopped while the run was starting/);
-      await stopped;
+      await assert.rejects(within(desktop.begin({ startWatchdog: start('watchdog'), startSession: start('session'), startRecord: start('record'), startTrace: start('trace'), existing: () => [], privateDisplay: () => true }), 'the start'), /stopped while the run was starting/);
+      await within(Promise.resolve(stopped), 'the stop');
       const upTo = STAGES.slice(0, STAGES.indexOf(stage) + 1);
       assert.deepEqual(log.filter((l) => !l.endsWith(' stopped')), upTo, `nothing starts after the ${stage}`);
       assert.deepEqual(log.filter((l) => l.endsWith(' stopped')), upTo.toReversed().map((n) => `${n} stopped`));
@@ -613,8 +624,8 @@ for (const point of ['before begin', ...PREFLIGHT]) {
     const before = busVars();
     try {
       if (point === 'before begin') signal();
-      await assert.rejects(desktop.begin({ startWatchdog: start('watchdog'), startSession: start('session'), startRecord: start('record'), startTrace: start('trace'), existing: probe('existing', []), privateDisplay: probe('privacy', true) }), /stopped (while|before) the run/);
-      await stopped;
+      await assert.rejects(within(desktop.begin({ startWatchdog: start('watchdog'), startSession: start('session'), startRecord: start('record'), startTrace: start('trace'), existing: probe('existing', []), privateDisplay: probe('privacy', true) }), 'the start'), /stopped (while|before) the run/);
+      await within(Promise.resolve(stopped), 'the stop');
       const acquired = point === 'before begin' ? [] : ['watchdog'];
       // the preflight's reads run on to its end (they acquire nothing); the barrier after them sees the signal
       const probed = point === 'before begin' ? [] : PREFLIGHT;

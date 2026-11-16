@@ -1,0 +1,36 @@
+{
+  "label": "development run on the pinned release, not acceptance, never counted",
+  "note": "a verdict step on a private display (never :0), by task 88's driver, not the gate's sitting: its pinned preparation and pilot form seen live",
+  "step": "V3",
+  "gate": "pinned-dev",
+  "argv": [
+    "--vendor",
+    "/Users/new/.local/share/cua-171/m5-t4r2/home/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "--newest",
+    "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "--cua",
+    "/Users/new/.local/share/cua-171/m5-t4r2/home/engine/linux/cua-engine",
+    "--scene",
+    "chrome-input,retention,minimized,minimized-xterm,minimized-recorder",
+    "--ops",
+    "click_element,right_click,right_click_fallback,secondary_action,move,drag,scroll,scroll_element_hidden,key_down,key_up,activate_window,after_resize,after_remap,after_covered_change,minimized_press_key,minimized_key_down,minimized_click,minimized_right_click,minimized_click_element,minimized_secondary_action,minimized_move,minimized_scroll,minimized_drag,minimized_type_text,minimized_type_characters,minimized_clipboard_read,minimized_clipboard_write,minimized_press_key_dedicated,minimized_click_dedicated,minimized_type_text_dedicated,minimized_list,minimized_tree,minimized_shot,minimized_restored_shot,minimized_restored_list,minimized_activate,minimized_activate_withdrawn,minimized_xterm_key_shared,minimized_xterm_key_dedicated,minimized_xterm_key_up_foreground,minimized_key_up_background",
+    "--blocks",
+    "1",
+    "--run",
+    "m5-pinned-dev-V3-pilot",
+    "--pinned",
+    "--pilot",
+    "--out",
+    "/Users/new/.local/share/cua-171/m5-t4r2/out/V3.private-display.development-run.pinned.pilot/run"
+  ],
+  "started": "2026-11-15T11:11:29.777Z",
+  "finished": "2026-11-15T11:20:12.896Z",
+  "child_exit": 0,
+  "display_watchdog": "clean",
+  "end_check": {
+    "left_by_step": [],
+    "foreign": [],
+    "buses": [],
+    "clear": true
+  }
+}

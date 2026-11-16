@@ -606,3 +606,22 @@ test('the pinned rule\'s refusals each come before the engine is run', async () 
     assert.deepEqual(ran(calls), [], `refused (${pattern}) after running the engine`);
   }
 });
+
+// #171 M5, T4's second round (task 87's finding 1): a pilot on the pinned release ('pinned-dev') takes the same rule as
+// acceptance, so the rule runs inside the step, and its record is labelled a development run on the pinned release
+test('a development run on the pinned release takes the pinned rule whole, and its record says it is no acceptance', async () => {
+  const dev = (source, { run = pinnedFake().run, env = {} } = {}) => prepareCandidate({ dir: fresh(), source, gate: 'pinned-dev', root: pinnedRoot(), run, env, hostArch: 'x64' });
+  const candidate = await dev(installed(MUSL));
+  try {
+    assert.equal(candidate.record.gate, 'pinned-dev');
+    assert.equal(candidate.record.attestation.verified, true);
+    assert.deepEqual(candidate.record.engine_tree, { path: 'native/linux-engine', commit: RELEASED, equal: true });
+    assert.equal(gateLabel(candidate.record.gate), 'development run on the pinned release, not acceptance, never counted');
+  } finally {
+    rmSync(dirname(candidate.path), { recursive: true, force: true });
+  }
+  await refusal(() => dev(installed(MUSL), { env: { CUA_LINUX_ENGINE_BIN: '/x/cua-engine' } }), /an override is set/);
+  await refusal(() => dev(installed(ARM)), /the pin's arm64 asset/);
+  await refusal(() => dev(installed(MUSL, null)), /no install\.json beside it/);
+  await refusal(() => dev(installed(MUSL), { run: pinnedFake({ diff: { status: 0, stdout: 'native/linux-engine/src/lib.rs\n', stderr: '' } }).run }), /differs/);
+});

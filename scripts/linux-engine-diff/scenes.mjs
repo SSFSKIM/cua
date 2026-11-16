@@ -30,7 +30,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { closeSync, createReadStream, createWriteStream, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, createReadStream, createWriteStream, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import { tmpdir } from 'node:os';
@@ -47,7 +47,11 @@ import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } 
 import { geditTitle } from './gedit-title.mjs';
 import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
-import { cleanupOnStop } from './stop.mjs';
+import { cleanupOnFatal, cleanupOnStop } from './stop.mjs';
+import { processIdentity, processState, signalIfSame } from './pid-identity.mjs';
+// a test process reaches no real display (hermetic.mjs); the leftover checks' scope is never switched by it
+import './hermetic.mjs';
+import { SCRATCH_PREFIX, busesIn, defaultScope, leftoverCheck, leftoverLines, startCheck, startRefusalText, writeMarker } from './leftovers.mjs';
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { RECORD_DECLINED, RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
 
@@ -185,14 +189,20 @@ export function desktopEnding(ending) {
       // the run's Chrome as its end stopped it (pids it spawned: terminated, killed, still running), and its session bus
       ...(ending.chrome ? { chrome: { spawned: ending.chrome.spawned.length, terminated: ending.chrome.terminated, killed: ending.chrome.killed, left: ending.chrome.left } } : {}),
       ...(ending.session ? { session: ending.session } : {}),
+      // the cleanup's failed steps (every other step ran, ruling 721), and what the run left on its own side: an
+      // unclean end, never a verdict failure (ruling 730, part (a)); the next run's start check refuses on it
+      ...(ending.cleanup?.length ? { cleanup_failures: ending.cleanup } : {}),
+      ...(ending.unclean?.length ? { unclean: ending.unclean } : {}),
+      // the end check's findings (leftovers.mjs): other runs' scratch and buses, left alone, failing nothing
+      ...(ending.leftovers ? { leftovers: ending.leftovers } : {}),
       record: record.skipped ? { skipped: record.skipped } : { clean: record.clean, requests: record.requests, mutating: record.mutating, foreign: record.foreign.slice(0, 10).map(foreignLine), ...(record.foreign.length ? { first_foreign: record.foreign.slice(0, 5).map(({ client, what, window, text }) => ({ client, what, window, request: text })) } : {}), unplaced: record.unplaced ?? 0, unattributed: record.unattributed ?? null, ...(record.error ? { error: record.error } : {}) },
     },
     foreign,
   };
 }
 
-/** The run's scratch directory's name, before mkdtemp's six characters: short, since gedit's titles show the path. */
-export const SCRATCH_PREFIX = 'cua171-run-';
+// the run's scratch directory's name before mkdtemp's six characters (leftovers.mjs, whose end check lists others')
+export { SCRATCH_PREFIX };
 
 /**
  * The longest label tail the scenes give a gedit window (`openGedit`): the minimized scene's text window of a vendor
@@ -264,7 +274,19 @@ export class Desktop {
     this.starting = null;
     // a run stopped by SIGINT or SIGTERM closes what it opened, as one that ends does (stop.mjs)
     this.stopHooks = [];
-    this.unhookStop = cleanupOnStop(() => this.stop());
+    // every process the run spawned (`spawnApp`): its pid, label, start time and whether it exited, so its end can tell
+    // a survivor (wave 2); and each signal its close sent that failed for a reason other than the process being gone
+    this.spawned = [];
+    this.closeErrors = [];
+    // and so does a run that meets an error nothing caught, which would end node past every finally (ruling 721)
+    const unhookSignals = cleanupOnStop(() => this.stop());
+    const unhookFatal = cleanupOnFatal(() => this.stop());
+    this.unhookStop = () => {
+      unhookSignals();
+      unhookFatal();
+    };
+    // the run's mark on its scratch (leftovers.mjs, ruling 730): what the explicit removal command proves it by
+    writeMarker(this.dir, { run, nonce: this.nonce, pid: process.pid, pid_start: processIdentity(process.pid)?.start ?? 'unknown', created: new Date().toISOString() });
   }
 
   /** The harness's own reader (one cua-engine process), started at its first use. */
@@ -313,6 +335,10 @@ export class Desktop {
     };
     // a signal that landed just before the run began (in its caller's synchronous code): nothing is acquired
     await unlessStopped();
+    // what earlier runs left on their own side (ruling 730): the run refuses to start on any of it, naming it and its
+    // evidence, and removes nothing (fix wave 3); nothing of this run's is acquired yet
+    const check = startCheck({ own: [this.dir], ...this.leftoverScope() });
+    if (check.refused.length) throw new Error(startRefusalText(check.refused));
     this.unwatchOperations = watchOperations(({ engine, window, start, end }) => {
       if (engine !== this.ownReader) this.operations.push({ window, start, end });
     });
@@ -499,6 +525,46 @@ export class Desktop {
     return Boolean(scene) && this.stillOurs(scene);
   }
 
+  /**
+   * Where the run's start and end checks read: the caller's (`leftoverOptions`), else leftovers.mjs `defaultScope`, the
+   * real scratch roots and /proc unless a test file set its fixture (fix wave 4: never a mode the environment
+   * switches). The checks of the run's own (its bus, its children) read the real /proc wherever the scope names none.
+   */
+  leftoverScope() {
+    return this.leftoverOptions ?? defaultScope();
+  }
+
+  /** The /proc the checks of the run's own read: the caller's, else the real one. */
+  ownProc() {
+    return this.leftoverScope().proc ?? undefined;
+  }
+
+  /**
+   * What the run left on its own side once its cleanup ran (ruling 730, part (a)): each cleanup step that threw, its
+   * Chrome's processes still running, its own session bus still running (a bus process naming its scratch), and its
+   * scratch directory still there.
+   */
+  uncleanEnd(failures) {
+    const unclean = failures.map((f) => `a cleanup step threw: ${f}`);
+    const left = this.chromeEnding?.left;
+    const chromeLeft = Array.isArray(left) ? left.length : Number(left) || 0;
+    if (chromeLeft) unclean.push(`its Chrome left ${chromeLeft} process${chromeLeft === 1 ? '' : 'es'} running`);
+    for (const b of busesIn({ only: [this.dir], proc: this.ownProc() })) unclean.push(`its session bus still runs: pid ${b.pid} ${b.program} (its ${b.by} in ${b.dir})`);
+    for (const e of this.closeErrors ?? []) unclean.push(`a scene's close failed: ${e}`);
+    for (const c of (this.spawned ?? []).filter((x) => !x.exited)) {
+      const now = processState(c.pid, { proc: this.ownProc() });
+      if (now.state === 'live' && now.start === c.start) unclean.push(`a process it spawned still runs: pid ${c.pid} ${c.label}`);
+      else if (now.state === 'unknown') unclean.push(`whether a process it spawned still runs cannot be read: pid ${c.pid} ${c.label} (${now.reason})`);
+    }
+    if (existsSync(this.dir)) unclean.push(`its scratch directory ${this.dir} is still there`);
+    return unclean;
+  }
+
+  /** A line the run's end reports beside its records (the cleanup's failures, the end check's findings): stderr. */
+  report(line) {
+    process.stderr.write(line);
+  }
+
   /** Something the harness did not do, and why: the run's end row records it. */
   skip(what, window, reason) {
     this.skips.push({ what, window: typeof window === 'number' ? `0x${window.toString(16).padStart(8, '0')}` : window, reason });
@@ -591,6 +657,9 @@ export class Desktop {
       // `stdout: 'pipe'` for a scene program that reports on it (pages/identity-windows.py)
       const child = xSpawn(cmd, args, { ...options, env, stdio: ['ignore', stdout, fd === null ? 'ignore' : fd], detached: true });
       child.unref();
+      const entry = { pid: child.pid, label, start: processState(child.pid).start ?? null, exited: false };
+      child.once('exit', () => (entry.exited = true));
+      this.spawned.push(entry);
       return child;
     } finally {
       // the child holds its own copy
@@ -1114,13 +1183,11 @@ export class Desktop {
    */
   async close(scenes) {
     for (const scene of [...scenes].reverse()) {
-      // a window another process owns (gnome-terminal's server): its program, whose PID it wrote, ends first
+      // a window another process owns (gnome-terminal's server): its program, whose PID it wrote, ends first, signalled
+      // only while that pid is still the program the scene started (pid-identity.mjs, ruling 725); else left, recorded
       if (scene.pidfile) {
-        try {
-          process.kill(Number(readFileSync(scene.pidfile, 'utf8').trim()), 'SIGTERM');
-        } catch {
-          // never started, or already gone
-        }
+        const sent = signalIfSame(scene.pidIdentity ?? null, 'SIGTERM');
+        if (!sent.signalled && sent.reason !== 'gone') this.skip('signal', scene.id ?? null, `the pid ${scene.pidfile} names: ${sent.reason}`);
       }
       try {
         if (scene.kind === 'chrome') {
@@ -1139,8 +1206,9 @@ export class Desktop {
         }
         else if (scene.group) process.kill(-scene.pid, 'SIGTERM');
         else process.kill(scene.pid, 'SIGTERM');
-      } catch {
-        // already gone
+      } catch (error) {
+        // already gone; anything else is kept for the run's end (an unclean end, never swallowed)
+        if (error?.code !== 'ESRCH') this.closeErrors.push(`closing ${scene.label ?? scene.id ?? scene.pid}: ${error?.message ?? error}`);
       }
     }
     this.windows = this.windows.filter((w) => !scenes.includes(w));
@@ -1169,17 +1237,53 @@ export class Desktop {
    * covers this cleanup too.
    */
   async closeEverything() {
-    await this.close(this.windows.filter((w) => w !== this.holder));
-    await this.ownReader?.close();
+    // every step is tried, whatever an earlier one did (ruling 721): a step that throws is recorded, never the end of
+    // the cleanup, so the session bus and the scratch directory go whatever the windows did
+    const failures = [];
+    const step = async (what, act) => {
+      try {
+        await act();
+      } catch (error) {
+        failures.push(`${what}: ${String(error?.message ?? error).split('\n')[0]}`);
+      }
+    };
+    await step("closing the run's windows", () => this.close(this.windows.filter((w) => w !== this.holder)));
+    await step("closing the harness's reader", () => this.ownReader?.close());
     // the holder last: until here the window manager's fallback lands on it; after it, the window manager chooses
-    if (this.holder && this.windows.includes(this.holder)) await this.close([this.holder]);
-    this.chromeEnding = this.chrome ? await this.chrome.stop() : null;
-    this.sessionEnding = await this.endSession();
-    this.endEngines?.();
-    rmSync(this.dir, { recursive: true, force: true });
-    this.pruneLogs();
-    if (this.trace) this.ending = await this.finishTrace();
-    this.unwatchOperations?.();
+    await step('closing the holder', async () => {
+      if (this.holder && this.windows.includes(this.holder)) await this.close([this.holder]);
+    });
+    await step("stopping the run's Chrome", async () => {
+      this.chromeEnding = this.chrome ? await this.chrome.stop() : null;
+    });
+    await step("stopping the run's session bus", async () => {
+      this.sessionEnding = await this.endSession();
+    });
+    await step("ending the engines' scratch", () => this.endEngines?.());
+    await step("removing the run's scratch directory", () => rmSync(this.dir, { recursive: true, force: true }));
+    await step("pruning the applications' logs", () => this.pruneLogs());
+    await step("stopping the run's trace", async () => {
+      if (this.trace) this.ending = await this.finishTrace();
+    });
+    await step("ending the watch of the engines' operations", () => this.unwatchOperations?.());
+    // the end check (rulings 721, 724): every other run's scratch and its session buses, named and left alone, made
+    // after this run's own is gone, whatever ended the run
+    await step('the end check of what runs left', () => {
+      // the real roots and /proc unless the caller names a scope of its own (a test's fixture; `leftoverScope`)
+      this.leftovers = leftoverCheck({ own: [this.dir], ...this.leftoverScope() });
+      const lines = leftoverLines(this.leftovers);
+      if (lines.length) this.report(`the end check (findings, left alone): ${lines.join('; ')}\n`);
+    });
+    // reported together, beside the run's end
+    this.cleanupFailures = failures;
+    // what the run left on its own side (ruling 730, part (a)): its end is unclean, never a verdict failure
+    try {
+      this.unclean = this.uncleanEnd(failures);
+    } catch (error) {
+      this.unclean = [...failures.map((f) => `a cleanup step threw: ${f}`), `its end could not be read: ${error.message}`];
+    }
+    if (this.unclean.length) this.report(`the run's end is unclean (its own side, not a verdict failure): ${this.unclean.join('; ')}\n`);
+    if (this.ending) Object.assign(this.ending, { cleanup: failures, unclean: this.unclean, leftovers: this.leftovers ?? null });
     // only once everything is closed: a signal meanwhile still waits for this cleanup
     this.unhookStop();
   }

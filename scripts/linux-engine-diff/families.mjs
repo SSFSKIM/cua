@@ -28,6 +28,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CHROME_ENV } from './chrome.mjs';
 import { preorder } from './normalize.mjs';
 import { PAGES, placeOnScreen } from './scenes.mjs';
+import { pidfileIdentity } from './pid-identity.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = join(here, '..', '..');
@@ -479,7 +480,8 @@ const TERMINAL_SCRIPT = 'server="$1"; client="$2"; id="$3"; shift 3; "$server" -
  * gnome-terminal running the recorder, on a terminal server of the scene's own (`terminalAppId`): a plain
  * `gnome-terminal` hands its window to the session's running server, the person's. The title is set by the program
  * itself as well as asked for, and its PID written to a file (ending the recorder closes the window, as the terminal
- * exits with its command). The recorder also shows what it receives, so a paste's text appears in the terminal's own
+ * exits with its command); the scene records that process's identity once it runs its program (`pidProgram`), so its
+ * close signals the pid only while it is still that process (pid-identity.mjs). The recorder also shows what it receives, so a paste's text appears in the terminal's own
  * text, where an engine can confirm it.
  */
 export function vteLaunch(ctx, { client = terminalClient() } = {}) {
@@ -488,13 +490,13 @@ export function vteLaunch(ctx, { client = terminalClient() } = {}) {
     const file = scratchFile(ctx);
     const pidfile = join(ctx.dir, `${ctx.label}.pid`);
     const script = `echo $$ > "$2"; printf '\\033]0;%s\\007' "$3"; cat "$1"; exec sleep 86400`;
-    return { ...terminal(['sh', '-c', script, 'sh', file, pidfile, ctx.label]), match: (w) => w.title === ctx.label, record: null, pidfile };
+    return { ...terminal(['sh', '-c', script, 'sh', file, pidfile, ctx.label]), match: (w) => w.title === ctx.label, record: null, pidfile, pidProgram: 'sleep' };
   }
   const record = join(ctx.dir, `${ctx.label}.input`);
   const pidfile = join(ctx.dir, `${ctx.label}.pid`);
   writeFileSync(record, '');
   const script = `echo $$ > "$2"; printf '\\033]0;%s\\007\\033[?${ctx.motion ? 1003 : 1000}h' "$3"; stty raw -echo; exec tee -a "$1"`;
-  return { ...terminal(['sh', '-c', script, 'sh', record, pidfile, ctx.label]), match: (w) => w.title === ctx.label, record, pidfile };
+  return { ...terminal(['sh', '-c', script, 'sh', record, pidfile, ctx.label]), match: (w) => w.title === ctx.label, record, pidfile, pidProgram: 'tee' };
 }
 
 /**
@@ -534,6 +536,8 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
     const match = spec.byPid ? byPid(child.pid) : spec.match;
     const info = await desktop.waitForWindow(match, label, 60000);
     scene.id = info.id;
+    // the program its pidfile names, as it runs now: the close signals that pid only while it is still this process
+    if (spec.pidfile) scene.pidIdentity = await pidfileIdentity(spec.pidfile, { program: spec.pidProgram });
   }
   // at the screen's top left, its frame wholly on the screen whatever the window manager's theme (`placeOnScreen`)
   placeOnScreen(scene.id, ...(geometry ?? family.geometry));

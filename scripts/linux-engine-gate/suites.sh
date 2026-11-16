@@ -15,12 +15,14 @@
 #             When the comparison names series only a top-up can decide (TOP-UP NEEDED), one top-up: three more runs a
 #             lane under $OUT/baseline-topup/, and compare --engines with it, whose verdict is the part's (the gate's R2,
 #             the design session, 2026-11-13). A series reported UNPROVED under a declared gap (F8a) is logged and
-#             listed in $OUT/baseline/unproved.txt, which the step's record carries (gate.mjs)
+#             listed in $OUT/baseline/unproved.txt, which the step's record carries (gate.mjs). A pilot (LABEL=pilot)
+#             takes no top-up (ruling 722): the series only it could decide are unjudged, $OUT/baseline/unjudged.txt
 #   accept    scripts/accept/linux-native.mjs, CUA_NATIVE_ENGINE=cua, in a home of the run's (installed: checked), under
 #             the 50 ms sampler, whose record is judged (engine-watch.mjs)                       (--session)
 #   device    scripts/accept/linux-device-mode.mjs, the same way                                  (--session)
 # Environment: ENGINE (installed or candidate), ENGINE_BIN (candidate only), OUT (the evidence directory), LOGS (the log
-# directory), LABEL (pilot or counted; a counted run refuses a dirty tree and any home the pinned rule refuses), DEVICE
+# directory), LABEL (pilot or counted; a counted run refuses a dirty tree and any home the pinned rule refuses),
+# PINNED_RULE (enforce: any home the pinned rule refuses stops its part, whatever LABEL says), DEVICE
 # (the declared Linux device the lanes run on). CUA_LINUX_ENGINE_BIN is refused in the environment either way.
 # usage: suites.sh <part>      Run each part under the host lock (locked.sh), one at a time; gate.mjs runs R1-R4 so.
 set -u
@@ -55,7 +57,9 @@ log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$L/suites.log"; }
 
 # installed: the pinned rule on the engine of the cua home $1, its record into $2. gh's sign-in is the caller's, so the
 # check runs under the HOME (and XDG_CONFIG_HOME) this runner started with, never a run home's. A counted part stops on
-# a refusal; a pilot logs it and runs on (a development run refuses nothing). A candidate is checked by gate.mjs.
+# a refusal, and so does any part on the pinned rule (PINNED_RULE=enforce: acceptance, and a development run on the
+# pinned release, gate.mjs suiteEnv), before any session starts in that home (review finding 1); only a development run
+# that takes the engine unchecked (gate.mjs --pinned --dev) logs a refusal and runs on. A candidate is checked by gate.mjs.
 REAL_HOME=$HOME
 REAL_XDG=${XDG_CONFIG_HOME-}
 pinned_check() {
@@ -65,7 +69,7 @@ pinned_check() {
   env "${config[@]}" HOME="$REAL_HOME" node "$WT/scripts/linux-engine-gate/gate.mjs" check --pinned "$1" > "$2" 2>&1
   local c=$?
   log "pinned check of $1: exit $c, $(head -1 "$2")"
-  [ "$c" -eq 0 ] || [ "$LABEL" != counted ]
+  [ "$c" -eq 0 ] || { [ "$LABEL" != counted ] && [ "${PINNED_RULE:-}" != enforce ]; }
 }
 
 # the run-owned home of the acceptance fixtures: HOME and the XDG directories, an empty secret store, a cua home with the
@@ -131,6 +135,13 @@ case "$part" in
     # Acceptance 3's remedy, once: the series the sitting left undetermined, when only they fail it, pooled with one
     # top-up of the same engine and display (the same private desktop and experiment); never a second
     need=$(sed -n 's/^TOP-UP NEEDED: //p' "$L/compare.out")
+    # a pilot takes no top-up (ruling 722): the series only a top-up could decide are unjudged, listed in
+    # $OUT/baseline/unjudged.txt for the step's record, never a pass; nothing else failed, so the part does not fail
+    if [ "$c" -ne 0 ] && [ -n "$need" ] && [ "$LABEL" = pilot ]; then
+      for op in $need; do echo "UNJUDGED (a pilot takes no top-up; not a pass): $op"; done > "$OUT/baseline/unjudged.txt"
+      log "pilot: no top-up; unjudged $need"
+      exit 0
+    fi
     if [ "$c" -ne 0 ] && [ -n "$need" ]; then
       log "top-up for $need"
       sitting "$OUT/baseline-topup" "topup-"

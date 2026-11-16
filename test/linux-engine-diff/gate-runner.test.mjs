@@ -9,13 +9,16 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
-import { GateRefused, checkCheckout, launchCommand, listText, parseGateArgs, printStep, runStep, stepDir } from '../../scripts/linux-engine-gate/gate.mjs';
+import { GateRefused, checkCheckout, gateSummary, launchCommand, listText, parseGateArgs, printStep, runStep, stepDir } from '../../scripts/linux-engine-gate/gate.mjs';
 import { GATE_SCENES, MAX_STEP_MINUTES, STEPS, SUITES_SCRIPT, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { planOps } from '../../scripts/linux-engine-diff/run.mjs';
 import { dropSignalsVerdict } from '../../scripts/linux-engine-diff/drop-signals-judge.mjs';
 import { PREDICATE_KINDS } from '../../scripts/linux-engine-diff/predicates.mjs';
+import { controlRootRefusal } from '../../scripts/linux-engine-diff/engine-stop.mjs';
 
 const scratch = mkdtempSync(join(tmpdir(), 'cua171-gate-test-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -84,7 +87,7 @@ test('every experiment step parses; a gate\'s takes --gate, a development run\'s
     const gate = parseArgs([...stepArgs(s, { paths: PATHS, gate: true }), '--out', '/o']);
     assert.equal(gate.mode, 'experiment', s.name);
     assert.equal(gate.gate, true, s.name);
-    assert.equal(gate.run, `m4-gate-${s.name}`);
+    assert.equal(gate.run, `m5-gate-${s.name}`, 'M5\'s run names (task 87\'s finding 6)');
     assert.equal(parseArgs([...stepArgs(s, { paths: PATHS, gate: false }), '--out', '/o']).gate, undefined, s.name);
     assert.equal(gate.loadFactor === 2, s.load === 'load2', `${s.name}: twice the load exactly when planned so`);
     assert.equal(gate.ballast === 'gate', s.load === 'gate-windows', `${s.name}: the gate's window load`);
@@ -132,7 +135,7 @@ test('a pilot is a development run in its smallest form: --trials, the leave cas
   assert.throws(() => parseGateArgs(['run', 'D1', '--candidate', '/c', '--out', '/o', '--pilot', '2']), (e) => e instanceof GateRefused && /never a release gate/.test(e.message));
   const pilot = (name) => parseArgs([...stepArgs(stepNamed(name), { paths: PATHS, gate: false, pilot: 2 }), '--out', '/o']);
   assert.equal(pilot('D1').samplesTrials, 2);
-  assert.equal(pilot('D1').run, 'm4-dev-D1-pilot');
+  assert.equal(pilot('D1').run, 'm5-dev-D1-pilot');
   assert.equal(pilot('L1').load, false, 'the drag at load refuses fewer than 40 a side, so its pilot drops the load');
   assert.equal(pilot('L1').samplesTrials, 2);
   assert.equal(pilot('L3a').loadFactor, 2, 'other load steps keep their load');
@@ -151,7 +154,7 @@ test('a gate runs only from a clean checkout whose commit reads, writing outside
 test('a :0 step is printed as task 50\'s guarded sitting under the host lock, and the runner refuses to run it', async () => {
   const a = parseGateArgs(['print', 'V1', '--candidate', PATHS.candidate, '--out', '/gate']);
   const command = launchCommand(stepNamed('V1'), a, ROOT);
-  assert.match(command, /locked\.sh t18-gate env WRAP=\/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/wrap71\.py \/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/run71\.sh \/gate\/V1\.release-gate \/checkout --vendor /);
+  assert.match(command, /locked\.sh m5-gate \S+ \/checkout\/scripts\/linux-engine-gate\/sitting\.mjs --dir \/gate\/V1\.release-gate --hold \S+ --terminal end -- env WRAP=\/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/wrap71\.py \/checkout\/docs\/evidence\/.*\/pointer-route\/scripts\/run71\.sh \/gate\/V1\.release-gate \/checkout --vendor /);
   assert.doesNotMatch(command, / --out /, 'run71.sh gives the harness its --out');
   const run = parseGateArgs(['run', 'Z0', '--candidate', PATHS.candidate, '--out', '/gate']);
   await assert.rejects(runStep(run, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false }), /runs on :0.*never runs on the person's display/);
@@ -193,7 +196,7 @@ test('a step\'s directory carries its label: its name, its README and its step.j
 test('--list prints every step\'s minutes, display and command, and the totals per display and per load', () => {
   const text = listText(parseGateArgs(['--list']), ROOT);
   for (const s of STEPS) assert.match(text, new RegExp(`^${s.name}\\s+${s.minutes} min\\s+${s.display.replace(':', '\\:')}`, 'm'));
-  assert.equal(text.split('\n').filter((l) => /locked\.sh t18-gate /.test(l)).length, STEPS.length);
+  assert.equal(text.split('\n').filter((l) => /locked\.sh m5-gate /.test(l)).length, STEPS.length, 'M5\'s default holder, unless --holder names one');
   const t = totals();
   assert.match(text, new RegExp(`total ${t.all} min .*per display: :0 ${t.display[':0']} min, private ${t.display.private} min; per load: idle ${t.load.idle} min, gate-windows ${t.load['gate-windows']} min, load2 ${t.load.load2} min`));
 });
@@ -248,7 +251,8 @@ test('--pinned <home> takes the engine its cua install placed, as acceptance on 
   assert.deepEqual([a.gate, a.pinned, a.candidate], ['pinned', ACC, ACC_ENGINE]);
   assert.equal(parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--dev', '--pilot', '1'], { arch: 'x64', env: {} }).gate, false);
   assert.throws(() => parseGateArgs(['run', 'D1', '--pinned', ACC, '--candidate', '/c', '--out', '/o']), /--pinned or --candidate, not both/);
-  assert.throws(() => parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--pilot', '1']), /never a release gate|never acceptance/);
+  // a pilot on the pinned rule is a development run on the pinned release (task 87's finding 1): see below
+  assert.equal(parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--pilot', '1']).gate, 'pinned-dev');
   assert.throws(() => parseGateArgs(['run', 'D1', '--out', '/o']), /needs --pinned <home> or --candidate <file>/);
   assert.deepEqual([parseGateArgs(['check', '--pinned', ACC]).mode, parseGateArgs(['check', '--pinned', ACC]).candidate], ['check', ACC_ENGINE]);
   assert.throws(() => parseGateArgs(['check', '--candidate', '/c']), /check needs --pinned <home>/);
@@ -290,7 +294,7 @@ test('a pinned step passes the home\'s engine with --pinned to every harness ste
 test('the facade suites on the pinned release: one runner, the installed engine, no ENGINE_BIN, the device named', () => {
   assert.equal(stepScript(stepNamed('R1')), SUITES_SCRIPT, 'one runner, whatever the engine: no step runs M4\'s facade.sh');
   const env = suiteEnv({ candidate: ACC_ENGINE, dir: '/o/R3.pinned-release', gate: 'pinned', logs: '/tmp/l', pinned: true, device: 'cua-171' });
-  assert.deepEqual(env, { ENGINE: 'installed', OUT: '/o/R3.pinned-release/run', LOGS: '/tmp/l', LABEL: 'counted', DEVICE: 'cua-171' });
+  assert.deepEqual(env, { ENGINE: 'installed', OUT: '/o/R3.pinned-release/run', LOGS: '/tmp/l', LABEL: 'counted', PINNED_RULE: 'enforce', DEVICE: 'cua-171' });
   assert.equal(suiteEnv({ candidate: ACC_ENGINE, dir: '/d', gate: false, logs: '/tmp/l', pinned: true, device: 'cua-171' }).LABEL, 'pilot');
 });
 
@@ -391,4 +395,211 @@ test("a pinned suite step: the installed engine, no ENGINE_BIN, CUA_HOME the run
   const record = JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8'));
   assert.deepEqual(record.unproved, ['UNPROVED (a declared gap, not a pass; ruling 9): click [-1, 3] ms, bound 1 ms, 40 / 40 samples']);
   assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /- unproved \(declared gaps, not passes\): 1\n  - UNPROVED \(a declared gap, not a pass; ruling 9\): click/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// #171 M5, T4's second round: a pilot takes no top-up (ruling 722), and a pilot can run the pinned rule (task 87's
+// finding 1): `--pinned <home> --pilot <n>`, a development run on the pinned release, never counted, every record saying so
+
+test('--pinned with --pilot is a development run on the pinned release: the rule runs, labelled apart, never counted', () => {
+  const a = parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--pilot', '1'], { arch: 'x64', env: {} });
+  assert.deepEqual([a.gate, a.candidate, a.pilot], ['pinned-dev', ACC_ENGINE, 1]);
+  assert.throws(() => parseGateArgs(['run', 'D1', '--candidate', '/c', '--out', '/o', '--pilot', '1']), /never a release gate/, 'a candidate pilot still needs --dev');
+  assert.equal(parseGateArgs(['run', 'D1', '--pinned', ACC, '--out', '/o', '--dev', '--pilot', '1']).gate, false, '--dev still takes the engine unchecked');
+  assert.deepEqual(stepLabel({ gate: 'pinned-dev', pilot: 1 }), { label: 'development run on the pinned release, not acceptance, never counted', slug: 'development-run.pinned.pilot', pilot: true });
+  assert.equal(stepDir(stepNamed('D1'), a), '/o/D1.development-run.pinned.pilot');
+  assert.match(launchCommand(stepNamed('D1'), a, ROOT), new RegExp(`gate\\.mjs run D1 --pinned ${ACC} --out /o --pilot 1$`));
+  assert.match(launchCommand(stepNamed('V3'), a, ROOT), new RegExp(`--blocks 1 --run m5-pinned-dev-V3-pilot --pinned --pilot$`), "the :0 step's printed command too");
+  for (const s of STEPS.filter((x) => ['verdict', 'experiment'].includes(x.kind))) {
+    const parsed = parseArgs([...stepArgs(s, { paths: a, gate: 'pinned-dev', pilot: 1 }), '--out', '/o']);
+    assert.equal(parsed.gate, 'pinned-dev', s.name);
+    assert.equal(parsed.pilot, true, s.name);
+    assert.equal(parsed.cua, ACC_ENGINE, s.name);
+    assert.equal(parsed.run, `m5-pinned-dev-${s.name}-pilot`);
+  }
+  const env = suiteEnv({ candidate: ACC_ENGINE, dir: '/d', gate: 'pinned-dev', logs: '/tmp/l', pinned: true, device: 'cua-171' });
+  assert.deepEqual([env.ENGINE, env.LABEL, env.ENGINE_BIN, env.PINNED_RULE], ['installed', 'pilot', undefined, 'enforce'], 'never counted, the rule enforced in its own homes');
+  assert.equal(suiteEnv({ candidate: ACC_ENGINE, dir: '/d', gate: 'pinned', logs: '/tmp/l', pinned: true, device: 'cua-171' }).PINNED_RULE, 'enforce');
+  assert.equal(suiteEnv({ candidate: ACC_ENGINE, dir: '/d', gate: false, logs: '/tmp/l', pinned: true, device: 'cua-171' }).PINNED_RULE, undefined, '--pinned --dev: unchecked');
+  assert.match(listText(a, ROOT), /^The gate: .*development run on the pinned release, not acceptance, never counted, pilot \(1\)/);
+});
+
+test('every pilot step tells the harness it is a pilot; no gate or acceptance step does', () => {
+  for (const s of STEPS.filter((x) => ['verdict', 'experiment'].includes(x.kind))) {
+    assert.equal(parseArgs([...stepArgs(s, { paths: PATHS, gate: false, pilot: 2 }), '--out', '/o']).pilot, true, s.name);
+    for (const gate of [true, 'pinned', false]) assert.equal(parseArgs([...stepArgs(s, { paths: PATHS, gate }), '--out', '/o']).pilot, undefined, `${s.name} ${gate}`);
+  }
+});
+
+test("a pinned pilot's facade step: the rule runs on the home's engine, the installed engine runs, the record says what it is", async () => {
+  const { home, engine, seen, prepare, pinned } = pinnedFixture();
+  const out = fresh('out');
+  const a = parseGateArgs(['run', 'FB', '--pinned', home, '--out', out, '--pilot', '1'], { arch: 'x64', env: {} });
+  const privateDisplay = async ({ args, env }) => {
+    Object.assign(seen, { args, env });
+    return { code: 0, clean: true };
+  };
+  const exit = await runStep(a, { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: engine, prepare, pinned, privateDisplay });
+  assert.equal(exit, 0);
+  assert.deepEqual(seen.prepared, { source: engine, gate: 'pinned-dev' }, 'the pinned rule, inside the step');
+  assert.equal(seen.args[seen.args.indexOf('--engine') + 1], engine, 'the installed engine, not the copy');
+  const dir = join(out, 'FB.development-run.pinned.pilot');
+  const record = JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8'));
+  assert.equal(record.label, 'development run on the pinned release, not acceptance, never counted');
+  assert.equal(record.pilot, true);
+  const readme = readFileSync(join(dir, 'README.md'), 'utf8');
+  assert.match(readme, /^# FB \(development run on the pinned release, not acceptance, never counted, pilot\)/);
+  assert.doesNotMatch(readme, /acceptance on the pinned release|release gate/, 'never read as acceptance or a gate');
+  assert.equal(readFileSync(join(dir, 'stdout.log'), 'utf8').split('\n')[0], 'development run on the pinned release, not acceptance, never counted');
+});
+
+test("a pilot step's record lists what it left unjudged, from the harness's end row or summary row, and from R2's list", async () => {
+  const candidate = join(fresh('c'), 'cua-engine');
+  writeFileSync(candidate, 'x');
+  const out = fresh('out');
+  const rows = (dir, row) => {
+    mkdirSync(join(dir, 'run'), { recursive: true });
+    writeFileSync(join(dir, 'run', 'results.jsonl'), `${JSON.stringify({ run: 'r', kind: 'meta' })}\n${JSON.stringify(row)}\n`);
+  };
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate };
+  // the harness writes its rows; the display wrapper's stand-in writes the row the run would end with
+  const a = parseGateArgs(['run', 'D1', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
+  const exit = await runStep(a, { ...deps, privateDisplay: async ({ dir }) => {
+    rows(dir, { run: 'r', kind: 'experiment-summary', complete: true, failed: [], unjudged: ['chrome canvas: cua speed unjudged (a pilot takes no top-up)'] });
+    return { code: 0, clean: true };
+  } });
+  assert.equal(exit, 0);
+  const dir = join(out, 'D1.development-run.pilot');
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8')).unjudged, ['chrome canvas: cua speed unjudged (a pilot takes no top-up)']);
+  assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /- unjudged \(a pilot takes no top-up; not passes\): 1\n  - chrome canvas: cua speed unjudged/);
+  const v = parseGateArgs(['run', 'FB', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
+  await runStep(v, { ...deps, privateDisplay: async ({ dir: d }) => {
+    rows(d, { run: 'r', kind: 'end', pass: true, failed: [], unjudged: ['chrome-input move cua'] });
+    return { code: 0, clean: true };
+  } });
+  assert.deepEqual(JSON.parse(readFileSync(join(out, 'FB.development-run.pilot', 'step.json'), 'utf8')).unjudged, ['chrome-input move cua']);
+  // R2's pilot: the suites runner lists the series only a top-up could decide, and takes none
+  const root = fresh('root');
+  mkdirSync(join(root, SUITES_SCRIPT, '..'), { recursive: true });
+  writeFileSync(join(root, SUITES_SCRIPT), '#!/bin/bash\nmkdir -p "$OUT/baseline" && echo "UNJUDGED (a pilot takes no top-up; not a pass): click" > "$OUT/baseline/unjudged.txt"\n');
+  await runStep(parseGateArgs(['run', 'R2', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']), { ...deps, root });
+  assert.deepEqual(JSON.parse(readFileSync(join(out, 'R2.development-run.pilot', 'step.json'), 'utf8')).unjudged, ['UNJUDGED (a pilot takes no top-up; not a pass): click']);
+  const text = readFileSync(new URL(`../../${SUITES_SCRIPT}`, import.meta.url), 'utf8');
+  assert.match(text, /if \[ "\$c" -ne 0 \] && \[ -n "\$need" \] && \[ "\$LABEL" = pilot \]; then\n(.*\n){1,3}\s+exit 0\n\s+fi\n\s+if \[ "\$c" -ne 0 \] && \[ -n "\$need" \]; then\n\s+log "top-up for/, "a pilot's R2 ends before its top-up");
+});
+
+// #171 M5, T4's second round (rulings 721, 724): the end check runs where it always runs, after every step whatever
+// ended the step's process, and its findings are the step's all-clear record: the scratch a step left, and every other
+// run's, each with its session buses, named and left alone
+
+test("every step's record carries the end check, made after its process ended however it ended: what it left, what others left", async () => {
+  const candidate = join(fresh('c'), 'cua-engine');
+  writeFileSync(candidate, 'x');
+  const out = fresh('out');
+  const root = fresh('tmp');
+  const earlier = join(root, 'cua171-run-AdXsUJ');
+  mkdirSync(earlier);
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate, leftovers: { roots: [root], proc: fresh('proc') } };
+  // the step's harness died past its cleanup: its scratch stays, and so does another run's (one the start check let be,
+  // its own test's: here a check that refuses nothing, as when that run had been running beside it under no lock)
+  const a = parseGateArgs(['run', 'D2', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
+  const exit = await runStep(a, { ...deps, start: () => ({ refused: [] }), privateDisplay: async () => {
+    mkdirSync(join(root, 'cua171-run-7nTGZK'));
+    return { code: null, signal: 'SIGKILL', clean: true };
+  } });
+  assert.equal(exit, 1);
+  const dir = join(out, 'D2.development-run.pilot');
+  const record = JSON.parse(readFileSync(join(dir, 'step.json'), 'utf8'));
+  assert.deepEqual(record.end_check.left_by_step.map((d) => d.dir), [join(root, 'cua171-run-7nTGZK')]);
+  assert.deepEqual(record.end_check.foreign.map((d) => d.dir), [earlier]);
+  assert.equal(record.end_check.clear, false);
+  const readme = readFileSync(join(dir, 'README.md'), 'utf8');
+  assert.match(readme, /- end check \(findings, left alone\): 2\n  - left by this step: .*cua171-run-7nTGZK.*\n  - a cua171-run-\* directory not this run's, left alone: .*cua171-run-AdXsUJ/);
+  assert.equal(existsSync(earlier), true, 'named, never removed');
+  // a step that left nothing, with nothing else there: its record says the all-clear
+  rmSync(join(root, 'cua171-run-7nTGZK'), { recursive: true });
+  rmSync(earlier, { recursive: true });
+  const b = parseGateArgs(['run', 'D4', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
+  await runStep(b, { ...deps, privateDisplay: async () => ({ code: 0, clean: true }) });
+  const clear = JSON.parse(readFileSync(join(out, 'D4.development-run.pilot', 'step.json'), 'utf8')).end_check;
+  assert.equal(clear.clear, true);
+  assert.match(readFileSync(join(out, 'D4.development-run.pilot', 'README.md'), 'utf8'), /- end check: clear \(no cua171-run-\* directory or session bus of one\)/);
+});
+
+test('`gate.mjs leftovers` runs the end check on its own, for a :0 sitting\'s all-clear', () => {
+  assert.equal(parseGateArgs(['leftovers']).mode, 'leftovers');
+  const { status, stdout } = spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/linux-engine-gate/gate.mjs', import.meta.url)), 'leftovers'], { encoding: 'utf8', env: { ...process.env, TMPDIR: fresh('tmp') } });
+  assert.ok([0, 1].includes(status), stdout);
+  assert.match(stdout, /^end check: (clear|\d+ findings?, left alone)/);
+});
+
+// #171 M5, T4's second round (task 87's finding 2, ruling 728): engine-stop's `cua serve` on the pinned release is a gate
+// step of its own, so the frozen list backs the Decision Log's claim that it selects the run home's installed engine
+
+test("ES runs engine-stop's drain lane through cua serve on every production path and case, on a private server of its own", () => {
+  const es = stepNamed('ES');
+  assert.deepEqual([es.kind, es.display, es.load], ['experiment', 'own', 'idle']);
+  assert.ok(es.minutes <= MAX_STEP_MINUTES);
+  const names = STEPS.map((s) => s.name);
+  assert.equal(names.indexOf('ES'), names.indexOf('F2') + 1, "beside T7 revised's stops, the private idle steps' own");
+  const parsed = parseArgs([...stepArgs(es, { paths: PATHS, gate: true }), '--out', '/o']);
+  assert.deepEqual([parsed.experiment, parsed.lanes, parsed.paths, parsed.cases, parsed.controlRoot], ['engine-stop', ['drain'], undefined, undefined, undefined], 'every path and case, the drain lane alone: no control checkout');
+  assert.equal(parsed.samplesTrials, undefined, 'its 10 runs a cell');
+  const a = parseGateArgs(['print', 'ES', '--pinned', ACC, '--out', '/o'], { arch: 'x64', env: {} });
+  const pinned = parseArgs([...stepArgs(es, { paths: a, gate: 'pinned' }), '--out', '/o']);
+  assert.deepEqual([pinned.gate, pinned.cua, pinned.run], ['pinned', ACC_ENGINE, 'pinned-ES']);
+  assert.equal(parseArgs([...stepArgs(es, { paths: a, gate: 'pinned-dev', pilot: 1 }), '--out', '/o']).samplesTrials, 1, 'its pilot: one run a cell');
+  assert.match(listText(a, ROOT), /^ES\s+\d+ min\s+own\s+idle\s+.*cua serve.*\n\s+.*gate\.mjs run ES --pinned /m);
+  assert.match(launchCommand(es, a, ROOT), new RegExp(`gate\\.mjs run ES --pinned ${ACC} --out /o$`));
+});
+
+test('engine-stop needs a control checkout only for its kill lane', () => {
+  assert.equal(controlRootRefusal({ lanes: ['drain'] }), null);
+  assert.match(controlRootRefusal({ lanes: ['drain', 'kill'] }), /--control-root names the checkout whose REPL host is the control/);
+  assert.match(controlRootRefusal({}), /--control-root/, 'both lanes by default');
+  assert.equal(controlRootRefusal({ controlRoot: '/c' }), null);
+});
+
+// ruling 730, part (a): a step's unclean end (what its run left on its own side) is named in its record and README and
+// listed by the gate's summary, and a step starts only once the start check found nothing (fix wave 3: it removes nothing)
+
+test("a step refuses to start while the start check refuses what earlier runs left, naming it, and leaves it there", async () => {
+  const candidate = join(fresh('c'), 'cua-engine');
+  writeFileSync(candidate, 'x');
+  const out = fresh('out');
+  const root = fresh('tmp');
+  mkdirSync(join(root, 'cua171-run-NoMark'), { mode: 0o700 });
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate, leftovers: { roots: [root], proc: fresh('proc') }, privateDisplay: async () => ({ code: 0, clean: true }) };
+  const a = parseGateArgs(['run', 'D2', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']);
+  await assert.rejects(runStep(a, deps), (e) => e instanceof GateRefused && /the start check refuses to run: .*cua171-run-NoMark: .*no marker of the harness's/.test(e.message));
+  assert.deepEqual(readdirSync(out), [], 'nothing of the step was written');
+  assert.equal(existsSync(join(root, 'cua171-run-NoMark')), true, 'the leftover is left as it was');
+});
+
+test("a step's record names its unclean end, from its run's end row and from what the step left; the gate's summary lists every one", async () => {
+  const candidate = join(fresh('c'), 'cua-engine');
+  writeFileSync(candidate, 'x');
+  const out = fresh('out');
+  const root = fresh('tmp');
+  const deps = { root: ROOT, git: cleanGit(), held: () => false, loadRunning: () => false, xprobe: candidate, leftovers: { roots: [root], proc: fresh('proc') } };
+  const rows = (dir, row) => {
+    mkdirSync(join(dir, 'run'), { recursive: true });
+    writeFileSync(join(dir, 'run', 'results.jsonl'), `${JSON.stringify(row)}\n`);
+  };
+  await runStep(parseGateArgs(['run', 'D2', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']), { ...deps, privateDisplay: async ({ dir }) => {
+    rows(dir, { run: 'r', kind: 'experiment-summary', complete: true, failed: [], desktop: { unclean: ['its Chrome left 1 process running'] } });
+    mkdirSync(join(root, 'cua171-run-Left01'));
+    return { code: 0, clean: true };
+  } });
+  const record = JSON.parse(readFileSync(join(out, 'D2.development-run.pilot', 'step.json'), 'utf8'));
+  assert.equal(record.exit, 0, 'never a verdict failure');
+  assert.deepEqual(record.unclean, ['its Chrome left 1 process running', `its scratch left behind: ${join(root, 'cua171-run-Left01')}`]);
+  assert.match(readFileSync(join(out, 'D2.development-run.pilot', 'README.md'), 'utf8'), /- unclean end \(the run's own side, not a verdict failure\): 2\n  - its Chrome left 1 process running\n/);
+  rmSync(join(root, 'cua171-run-Left01'), { recursive: true });
+  await runStep(parseGateArgs(['run', 'D4', '--candidate', candidate, '--out', out, '--dev', '--pilot', '1']), { ...deps, privateDisplay: async () => ({ code: 0, clean: true }) });
+  const summary = gateSummary(out);
+  assert.match(summary, /^\| step \| label \| exit \| unclean end \| :0 all-clear \|/m);
+  assert.match(summary, /^\| D2 \| development run, not a release gate \(pilot\) \| 0 \| \*\*2\*\*: its Chrome left 1 process running; its scratch left behind: .*cua171-run-Left01 \| – \|$/m);
+  assert.match(summary, /^\| D4 \| development run, not a release gate \(pilot\) \| 0 \| clean \| – \|$/m);
+  assert.match(summary, /Unclean ends: 1 of 2 steps/);
 });

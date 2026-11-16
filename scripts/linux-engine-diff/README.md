@@ -116,6 +116,19 @@ HOME of the run's under its scratch, with an empty secret store, CUA_HOME the ru
 it selects the installed engine itself; the services the harness builds in its own process (the settle, the facade's
 two services) are given that installed path, and so are the wire-driven verdict runs and experiments.
 
+### A pilot (`--pilot`, #171 M5's T4 round 2)
+
+`--pilot` marks a development run as a pilot, a step's smallest form (`gate.mjs --pilot <n>` passes it with the form):
+it takes no top-up (the design session's ruling 722), so a pilot step lasts about as long as its form, not its full
+step. A series it could not decide is reported **unjudged** in every record it writes: a verdict run's verdict
+`unjudged` (`run.mjs` `pilotVerdict`) and its `end` row's `unjudged` list, a drag cell's speed and the events
+experiment's groups in their summary row's `unjudged`, R2's `unjudged.txt` (`suites.sh`). Unjudged is never a pass, so
+the run's line reads "no verdict FAIL", never "every verdict PASS"; it fails nothing, and everything else a run judges
+(answers, witness, audit, effect, a decided loss) is judged as before. With `--pinned` a pilot is a **development run on
+the pinned release** (`gate` `pinned-dev`, candidate.mjs `PINNED_DEVELOPMENT`): its engine taken by the pinned rule
+above, so the rule runs inside the step, every artifact labelled `development run on the pinned release, not
+acceptance, never counted`. `--pilot` is refused with `--gate`, and on a verdict run without `--dev` or `--pinned`.
+
 ## M4's gate as steps (`../linux-engine-gate/`, T18)
 
 `scripts/linux-engine-gate/steps.mjs` is the gate as one runnable sequence: steps of 45 minutes or less, each a valid run of its own (its
@@ -126,11 +139,56 @@ labelled directory; `run <step>` runs one step that is not `:0`'s, under the hos
 `locked.sh`). The `:0` steps are only ever printed: they run in the declared sitting through task 50's guards
 (`run71.sh` under `wrap71.py`). A gate step runs from a clean checkout at the candidate's commit (a symlinked
 `node_modules` counts as a change), with its out directory outside it; `--dev` runs a development build, and `--dev
---pilot <n>` each step's smallest form. Each step's directory is named `<step>.release-gate` or
-`<step>.development-run[.pilot]` and opens with a README and `step.json` carrying the label. T17's Electron cells
+--pilot <n>` each step's smallest form; `--pinned <home> --pilot <n>` the same as a development run on the pinned
+release, the pinned rule run inside the step. Each step's directory is named `<step>.release-gate`,
+`<step>.pinned-release`, `<step>.development-run[.pilot]` or `<step>.development-run.pinned.pilot` and opens with a README
+and `step.json` carrying the label; a pilot's record lists what it left unjudged. T17's Electron cells
 (`drop-signals --family electron --plan t17-fix3`) are judged by `drop-signals-judge.mjs` `electronDropVerdict`: a false
 ok, a missing landing, an error for a drop that landed and a missing cell fail; landed drops answered unconfirmed are
 findings with their counts.
+
+## The run's cleanup and the end check (#171 M5's T4 round 2)
+
+A run's end (`Desktop.closeEverything`) tries every step whatever an earlier one did: the windows, the reader, the
+holder, the run's Chrome, the session bus, the engines' scratch, the scratch directory, the logs, the trace. The failures
+are recorded in the end record (`cleanup_failures`) and mark the run's end unclean: never a verdict failure (the one
+rule below, ruling 730). It runs on a normal
+end, a throw (each runner's `finally`), a stop (SIGINT, SIGTERM, the watchdog's own stop) and an error nothing caught
+(`stop.mjs` `cleanupOnFatal`: an uncaught exception, a child's unhandled `error` event, an unhandled rejection; then exit
+1). Its last step is the end check (`leftovers.mjs`): every `cua171-run-*` directory under TMPDIR and /tmp but the run's
+own, and every session-bus process (`dbus-daemon`, `at-spi-bus-launcher`, `at-spi2-registryd`) whose config or socket
+lies in one, listed in the end record's `leftovers` as findings, named and never removed or signalled, since another run
+may own them. A process killed past all of this (SIGKILL) gets the same check from its launcher: `gate.mjs` makes it
+after every step and records it in the step's `step.json` and README (`end_check`), and `gate.mjs leftovers` makes it
+alone. A bus is found by the scratch path it names, so one outliving its removed directory is still a finding.
+
+One unclean-end rule, drawn by who can see it (the design session's ruling 730):
+
+- **The run's own side** (a cleanup step that threw, its own session bus still running, its Chrome's processes, its
+  scratch still there, the scratch a step left) marks the end record `unclean`, never a verdict failure; the run's
+  summary, the step's `step.json` and README name it, and `gate.mjs summary --out <dir>` lists every step's. Each
+  Desktop marks its scratch at once (`cua171-run.json`: the run, its pid and start time, when). The next run's
+  **start check** (every Desktop's start, every gate step, every `:0` sitting) detects and refuses; it never removes
+  and never signals. On any leftover (a `cua171-run-*` directory but the run's own, marked or not, or a scratch
+  already gone that a process of this user's still refers to: an orphaned bus, a scene process that outlived its run)
+  it refuses to start, naming each one with its evidence (its marker, its creator, the processes referring to it).
+  **Removal is a separate, explicit command** for a person or the controller: `gate.mjs leftovers --remove <dir>`
+  prints the proof, and with `--confirm` removes the directory only when every part holds: a `cua171-run-*` directory
+  (not a link), its marker, this user's, mode 700, its creator absent by its stat, the marker's time before now, every
+  process of this user's fully observed, and none referring to it. Otherwise it refuses with the reason (exit 2).
+  One reference model serves both (`process-references.mjs`): each process's argv, environment, cwd, root,
+  executable, open files and mappings, read from /proc, every field kept that was read when another was not. A
+  reference is a literal or relative path naming the directory in argv or environment, or a link inside it, a
+  `(deleted)` one included. A field that cannot be read is unobserved: never proof of absence, so it fails the
+  removal proof, and in detection never proof of presence, so it blocks no run. (On the x64 VM `(sd-pam)` is never
+  observable, so the removal proof refuses there, and a leftover is a person's to remove by hand.)
+- **The person's side on `:0`**: gate.mjs prints every `:0` step under `scripts/linux-engine-gate/sitting.mjs`, which
+  refuses while hold-sittings exists, and after the sitting, however it ended, makes the end check and the all-clear
+  (`all-clear.json`, `all-clear.txt` in the step's directory), keeping the sitting's exit. A window of the run's left
+  on `:0`, a held key or button, a process of the run still alive (the only way a grab outlives the sitting), the
+  pointer not put back, a change to a window the harness did not open, the owner's side changed, or a reach into the
+  person's session fails it, and so does a missing record or a failed read; then hold-sittings is written with the
+  reason, and no `:0` work starts until the controller or the design session clears it and removes the file.
 
 ## Instances of the run's own (task 43)
 

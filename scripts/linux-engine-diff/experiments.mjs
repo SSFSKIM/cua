@@ -20,7 +20,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'no
 import { availableParallelism, loadavg, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { PreparationStopped, candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
+import { PreparationStopped, candidateLine, gateLabel, isCounted, isPinnedRule, prepareCandidate } from './candidate.mjs';
 import { pinnedEngine } from './pinned-home.mjs';
 import { dropSignalsVerdict, judgedChromePlan, judgedElectronPlan } from './drop-signals-judge.mjs';
 import { RunRefused, runHasRows } from './run.mjs';
@@ -360,7 +360,7 @@ export async function withExperimentCandidate(args, body, { prepare = prepareCan
     }
     // stopped during the checks: the stop exits once the command in flight has ended, and nothing more starts
     if (stopping.signal.aborted) await new Promise(() => {});
-    if (args.gate === 'pinned') {
+    if (isPinnedRule(args.gate)) {
       const { cua, cuaHome } = pinned(args.cua, candidate.record);
       return await body({ ...args, cua, pinnedHome: cuaHome }, candidate.record);
     }
@@ -389,13 +389,14 @@ export async function runExperiment(args, { prepare = prepareCandidate, start = 
   // and candidate), or a gate step with no judge to fail it
   const results = join(args.out, 'results.jsonl');
   if (runHasRows(results, run)) throw new RunRefused(`the run name ${run} already has rows in ${results}: give each execution a --run name of its own`);
-  if (args.gate && args.experiment === 'drop-signals' && !judgedElectronPlan(args) && !judgedChromePlan(args)) {
+  if (isCounted(args.gate) && args.experiment === 'drop-signals' && !judgedElectronPlan(args) && !judgedChromePlan(args)) {
     throw new RunRefused(`no gate judge holds the drop-signals plan ${args.plan ?? 'main'} (${args.families?.[0] ?? 'chrome'}): its counts would pass whatever they are; run it as a development run`);
   }
-  if (args.gate && args.experiment === 'drop-signals' && args.samplesTrials != null) throw new RunRefused('a gate drop-signals step runs its plan whole: --trials caps it (a pilot, a development run)');
+  if (isCounted(args.gate) && args.experiment === 'drop-signals' && args.samplesTrials != null) throw new RunRefused('a gate drop-signals step runs its plan whole: --trials caps it (a pilot, a development run)');
   return withExperimentCandidate(args, async (runArgs, record) => {
     mkdirSync(args.out, { recursive: true });
-    // true (a release gate), 'pinned' (acceptance on the pinned release) or false (a development run)
+    // true (a release gate), 'pinned' (acceptance on the pinned release), 'pinned-dev' (a development run on it, a pilot)
+    // or false (a development run)
     const gate = args.gate || false;
     const label = gateLabel(gate);
     const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row, ...(LABELLED.has(row.kind) ? { gate, label, ...(row.kind === 'meta' && record ? { candidate: record } : {}) } : {}) })}\n`);
@@ -411,8 +412,9 @@ async function experimentRun(args, { emit, results }) {
   if (args.experiment === 'focus-timer') {
     // on a private X server of its own, like the AT-SPI probe (focus-timer.mjs), its load started there
     emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
-    const { md, complete, failed, ending } = await runFocusTimer(args, { emit, run, startLoad });
-    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    const { md, complete, failed, unjudged = [], ending } = await runFocusTimer(args, { emit, run, startLoad });
+    // a pilot's series shorter than its minimum (ruling 730), listed apart, never a pass
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, ...(unjudged.length ? { unjudged } : {}), desktop: ending.record, finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);
     return complete;
@@ -429,8 +431,9 @@ async function experimentRun(args, { emit, results }) {
   if (args.experiment === 'settle') {
     // through cua's own service, on a private X server of its own (action-settle.mjs), its load started there
     emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, kinds: args.kinds ?? [], routes: args.routes ?? [], lanes: args.lanes ?? null, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
-    const { md, complete, failed, ending } = await runSettle(args, { emit, run, startLoad });
-    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    const { md, complete, failed, unjudged = [], ending } = await runSettle(args, { emit, run, startLoad });
+    // a pilot's series shorter than its minimum (ruling 730), listed apart, never a pass
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, ...(unjudged.length ? { unjudged } : {}), desktop: ending.record, finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);
     return complete;
@@ -456,8 +459,8 @@ async function experimentRun(args, { emit, results }) {
   emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), ...(args.experiment === 'drop-signals' ? { plan: args.plan ?? 'main', ballast: args.ballast ?? null, load_factor: args.load ? (args.loadFactor ?? 1) : null, lanes: args.lanes ?? null, trials: args.samplesTrials ?? null } : {}), ...(args.experiment === 'writer-drag' ? { plan: args.plan ?? 'observe', trials: args.samplesTrials ?? null, variants: args.variants.map((v) => v.label) } : {}), ...(args.experiment === 'drag' ? { load_factor: args.load ? (args.loadFactor ?? 1) : null, ops: args.ops, trials: args.samplesTrials ?? null } : {}), started: new Date().toISOString() });
   if (args.experiment === 'events') {
     // on a private X server of its own, watched as a Desktop's display is (events.mjs): no scene windows, no desktop
-    const { md, pass } = await runEvents(args, emit);
-    emit({ kind: 'experiment-summary', markdown: md, complete: pass, failed: [], finished: new Date().toISOString() });
+    const { md, pass, unjudged } = await runEvents(args, emit);
+    emit({ kind: 'experiment-summary', markdown: md, complete: pass, failed: [], ...(unjudged.length ? { unjudged } : {}), finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);
     return pass;
@@ -487,6 +490,8 @@ async function experimentRun(args, { emit, results }) {
       const result = await measure(args, { desktop, emit });
       md = result.md;
       outcome = measuredOutcome(result);
+      // a pilot's series no top-up decided (ruling 722), listed apart in the summary row, never a pass
+      if (result.unjudged?.length) outcome.unjudged = result.unjudged;
       // the gate's drop-signals cells are judged (drop-signals-judge.mjs `dropSignalsVerdict`): T17's Electron cells and
       // T14's Chrome cells. A false ok, an unreported late take, a broken pending contract, a missing landing or a
       // missing cell fails the run; the unconfirmed drops are findings with their counts. A gate run of any other plan
@@ -511,7 +516,7 @@ async function experimentRun(args, { emit, results }) {
   // makes the run incomplete, whatever it measured
   const ending = desktopEnding(desktop.ending);
   outcome = finishOutcome(outcome, ending.foreign);
-  emit({ kind: 'experiment-summary', markdown: md, complete: outcome.complete, failed: outcome.failed, desktop: ending.record, finished: new Date().toISOString() });
+  emit({ kind: 'experiment-summary', markdown: md, complete: outcome.complete, failed: outcome.failed, ...(outcome.unjudged?.length ? { unjudged: outcome.unjudged } : {}), desktop: ending.record, finished: new Date().toISOString() });
   process.stdout.write(`${md.join('\n')}\n`);
   writeSummary(args.out);
   return outcome.complete;
@@ -529,5 +534,5 @@ export const measuredOutcome = (result) => ({ complete: result.complete && resul
  */
 export function finishOutcome(outcome, foreign) {
   if (!foreign.length) return outcome;
-  return { complete: false, failed: [...outcome.failed, ...foreign.map((f) => `a window the harness did not open was changed: ${f}`)] };
+  return { ...outcome, complete: false, failed: [...outcome.failed, ...foreign.map((f) => `a window the harness did not open was changed: ${f}`)] };
 }

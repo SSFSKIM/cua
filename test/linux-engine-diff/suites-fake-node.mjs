@@ -2,7 +2,11 @@
 // FAKE_* variables, every call appended to FAKE_LOG. The runner's other node calls run the real node.
 //   FAKE_DIFF       repl-parity diff's exit status (0)
 //   FAKE_CLEANUP    the exit statuses of repl-parity cleanup-prepared, in call order, comma-separated (0)
-//   FAKE_COMPARE    native-baseline compare --engines's answers in call order, comma-separated: pass, topup, unproved
+//   FAKE_COMPARE    native-baseline compare --engines's answers in call order, comma-separated: pass, topup, unproved, fail
+//   FAKE_CHECK      gate.mjs check --pinned's exit status (0)
+//   bin/cua.mjs install (a fixture's run home) answers 0 and installs nothing
+//   FAKE_CHECK      gate.mjs check --pinned's exit status (0)
+//   bin/cua.mjs install (a fixture's run home) answers 0 and installs nothing
 import { appendFileSync, readFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
@@ -20,14 +24,20 @@ if (script.endsWith('repl-parity.mjs')) {
   process.exit(0);
 }
 if (script.endsWith('gate.mjs')) {
-  console.log('acceptance on the pinned release: (fake)');
-  process.exit(0);
+  const code = Number(process.env.FAKE_CHECK ?? '0');
+  console.log(code ? 'gate step refused: (fake) not the pinned engine' : 'acceptance on the pinned release: (fake)');
+  process.exit(code);
 }
+if (script === 'bin/cua.mjs') process.exit(0);
 if (script.endsWith('native-baseline.mjs')) {
   if (action !== 'compare') process.exit(0);
   const answer = pick(process.env.FAKE_COMPARE, nth(/native-baseline\.mjs compare/), 'pass');
   if (answer === 'topup') {
     console.error('TOP-UP NEEDED: click');
+    console.error('VERDICT: FAIL');
+    process.exit(1);
+  }
+  if (answer === 'fail') {
     console.error('VERDICT: FAIL');
     process.exit(1);
   }

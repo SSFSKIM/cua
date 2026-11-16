@@ -671,9 +671,19 @@ function useDisplay(display) {
   process.env.DISPLAY = display;
 }
 
+/**
+ * Why a run cannot start without a control checkout, or null: the `kill` lane runs `--control-root`'s REPL host, and
+ * every lane runs unless `--lanes` names some. The drain lane alone (the gate's ES step, M5) needs none.
+ */
+export function controlRootRefusal({ controlRoot, lanes }) {
+  const named = lanes?.length ? lanes : LANES;
+  return named.includes('kill') && !controlRoot ? '--control-root names the checkout whose REPL host is the control (a stop that SIGKILLs at once)' : null;
+}
+
 /** `--experiment engine-stop`: every lane, path and case; `{md, complete, failed, ending}`. */
 export async function runEngineStop(args, { emit, run, startLoad }) {
-  if (!args.controlRoot) throw new Error('--control-root names the checkout whose REPL host is the control (a stop that SIGKILLs at once)');
+  const refusal = controlRootRefusal(args);
+  if (refusal) throw new Error(refusal);
   const paths = args.paths?.length ? args.paths : PATHS;
   const cases = args.cases?.length ? args.cases : CASES;
   const lanes = args.lanes?.length ? args.lanes : LANES;

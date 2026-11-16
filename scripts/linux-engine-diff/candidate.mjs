@@ -225,7 +225,8 @@ async function engineTreeAt(commits, { root, run }) {
  * AbortSignal, stops the checks: the command in flight is killed (SIGKILL) and reaped, and the promise rejects with a
  * `PreparationStopped`, never an ordinary command result.
  *
- * `gate` 'pinned' is acceptance on the pinned release (the header): before the ELF is read it refuses an override in
+ * `gate` 'pinned' is acceptance on the pinned release (the header), and 'pinned-dev' a development run on it, which
+ * takes the same rule and is labelled apart (`PINNED_DEVELOPMENT`): before the ELF is read it refuses an override in
  * `env`, bytes that are not the checkout pin's asset for this host (the other architecture's named), and an engine with
  * no install record of a pinned `cua install` beside it; then, as a gate, a file that is not a static musl ELF for this
  * host, an unclean checkout, bytes no attestation names; then a checkout whose native/linux-engine/ differs from every
@@ -237,7 +238,7 @@ export async function prepareCandidate({ source, gate, dir, signal, root = REPO_
     if (signal?.aborted) throw new PreparationStopped();
     return runWith(command, args, { signal });
   };
-  const pinnedRule = gate === 'pinned';
+  const pinnedRule = isPinnedRule(gate);
   const refuse = (why) => {
     const rule = pinnedRule
       ? '. Acceptance on the pinned release takes the engine a run home\'s cua install placed, at the pin, attested, its sources unchanged in the checkout (scripts/linux-engine-diff/README.md, "The candidate"); --dev runs any build, not as acceptance'
@@ -327,7 +328,18 @@ export const RELEASE_GATE = 'release gate';
 export const DEVELOPMENT_RUN = 'development run, not a release gate';
 /** M5's label: a run on the pinned release, by the pinned rule (`gate` 'pinned'). */
 export const PINNED_RELEASE = 'acceptance on the pinned release';
-export const gateLabel = (gate) => (gate === true ? RELEASE_GATE : gate === 'pinned' ? PINNED_RELEASE : gate === false ? DEVELOPMENT_RUN : null);
+/**
+ * A development run on the pinned release (`gate` 'pinned-dev', M5's T4 round 2, task 87's finding 1): a pilot that
+ * takes its engine by the pinned rule, as acceptance does, so the rule runs inside the step, and is labelled so that it
+ * never reads as acceptance or a gate, and is never counted.
+ */
+export const PINNED_DEVELOPMENT = 'pinned-dev';
+export const DEVELOPMENT_ON_PINNED = 'development run on the pinned release, not acceptance, never counted';
+export const gateLabel = (gate) => (gate === true ? RELEASE_GATE : gate === 'pinned' ? PINNED_RELEASE : gate === PINNED_DEVELOPMENT ? DEVELOPMENT_ON_PINNED : gate === false ? DEVELOPMENT_RUN : null);
+/** Whether a run's engine is taken by the pinned rule: acceptance on the pinned release, or a development run on it. */
+export const isPinnedRule = (gate) => gate === 'pinned' || gate === PINNED_DEVELOPMENT;
+/** Whether a run counts: a release gate, or acceptance on the pinned release; never a development run of either kind. */
+export const isCounted = (gate) => gate === true || gate === 'pinned';
 
 /**
  * The candidate in one line of the summary: its sha256, target, version, and its attestation or why there is none; on

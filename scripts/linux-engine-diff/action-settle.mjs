@@ -957,9 +957,9 @@ export async function runSettle(args, { emit, run, startLoad }) {
     watched = await server.stop();
   }
   const ending = desktopEnding(desktop.ending);
-  const { md, failed, held } = sittingVerdict({
-    series: all, cells: cells.map(cellName), search: plan.search, skipped, audits, audited: cells.filter(audited).map(cellName), foreign: ending.foreign, watchdog: watched,
+  const { md, failed, held, unjudged } = sittingVerdict({
+    series: all, cells: cells.map(cellName), search: plan.search, skipped, audits, audited: cells.filter(audited).map(cellName), foreign: ending.foreign, watchdog: watched, pilot: Boolean(args.pilot),
   });
-  emit({ kind: 'settle-verdict', pass: failed.length === 0, failed, held });
-  return { md, complete: failed.length === 0, failed, ending };
+  emit({ kind: 'settle-verdict', pass: failed.length === 0, failed, held, ...(unjudged.length ? { unjudged } : {}) });
+  return { md, complete: failed.length === 0, failed, unjudged, ending };
 }

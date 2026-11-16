@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { DEVELOPMENT_RUN, PINNED_RELEASE, RELEASE_GATE, candidateLine, gateLabel } from './candidate.mjs';
+import { DEVELOPMENT_ON_PINNED, DEVELOPMENT_RUN, PINNED_RELEASE, RELEASE_GATE, candidateLine, gateLabel } from './candidate.mjs';
 import { matrixMarkdown } from './matrix-judge.mjs';
 import { UNCONFIRMED_LANDED_SHARE, dropCounts, summarizeEngine, verdictLine } from './stats.mjs';
 
@@ -34,6 +34,9 @@ export function desktopLine(record) {
   const line = `desktop: started with ${activeText(record.active_start)}, ended with ${activeText(record.active_end)}, neither acted on; holder ${record.holder ? windowId(record.holder) : 'none'}; the harness's own trace: ${trace.requests} requests, ${changes}, ${audit}`;
   const parts = [line, ...(record.record ? [recordText(record.record)] : [])];
   if (record.skipped?.length) parts.push(`left undone, the window not the run's then: ${record.skipped.map((s) => `${s.what} on ${s.window}`).join('; ')}`);
+  // what the run left on its own side (ruling 730): its end unclean, not a verdict failure
+  if (record.unclean?.length) parts.push(`**its end unclean** (its own side, not a verdict failure): ${record.unclean.join('; ')}`);
+  if (record.leftovers && !record.leftovers.clear) parts.push(`the end check's findings (other runs', left alone): ${record.leftovers.dirs.length} scratch, ${record.leftovers.buses.length} bus processes`);
   return parts.join('; ');
 }
 
@@ -57,7 +60,7 @@ const frac = (rows, key) => {
 /** What a run name's rows of more than one kind of execution mix: their labels, or "executions of different kinds". */
 const kindsMixed = (kinds) => {
   if ([...kinds].some((k) => gateLabel(k) === null)) return 'executions of different kinds';
-  const named = { [RELEASE_GATE]: 'a release gate', [PINNED_RELEASE]: PINNED_RELEASE, [DEVELOPMENT_RUN]: 'a development run' };
+  const named = { [RELEASE_GATE]: 'a release gate', [PINNED_RELEASE]: PINNED_RELEASE, [DEVELOPMENT_ON_PINNED]: 'a development run on the pinned release', [DEVELOPMENT_RUN]: 'a development run' };
   return Object.keys(named).filter((label) => [...kinds].some((k) => gateLabel(k) === label)).map((label) => named[label]).join(' and ');
 };
 
@@ -155,7 +158,7 @@ export function renderSummary(lines) {
         const noise = labelled || (v?.noise?.length ? ` (same within noise: ${v.noise.map((n) => `${n.series} ${Math.round(n.candidate * 100) / 100} against ${Math.round(n.bar * 100) / 100}, [${n.interval.join(', ')}]`).join('; ')})` : '');
         const r2 = (x) => Math.round(x * 100) / 100;
         const parity = v?.parity?.length ? ` (${v.parity.map((p) => `${p.series} ${r2(p.candidate)} against ${r2(p.bar)}, within the ${p.against} build's spread [${p.spread.join(', ')}]; ${p.section}`).join('; ')})` : '';
-        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : v.verdict === 'declared gap' ? `**declared gap** (${v.gap.issue}), a loss, not a pass: ${v.declared_gap.join('; ')} (${v.gap.section})` : ['declared refusal', 'declared unconfirmed'].includes(v.verdict) ? `**${v.verdict}**, a loss, not a pass (${v.refusal?.section ?? ''})` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`;
+        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : v.verdict === 'declared gap' ? `**declared gap** (${v.gap.issue}), a loss, not a pass: ${v.declared_gap.join('; ')} (${v.gap.section})` : ['declared refusal', 'declared unconfirmed'].includes(v.verdict) ? `**${v.verdict}**, a loss, not a pass (${v.refusal?.section ?? ''})` : v.verdict === 'unjudged' ? `**unjudged** (a pilot takes no top-up), not a pass: ${v.unjudged.join('; ')}${declared}` : `FAIL: ${v.reasons.join('; ')}${v.unjudged?.length ? `; unjudged (a pilot takes no top-up): ${v.unjudged.join('; ')}` : ''}${noise}${declared}`;
         const a = audits.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const audit = a ? (a.clean ? 'clean' : `**${[...new Set(a.forbidden.map((f) => f.what))].join(', ') || 'not traced'}**`) : '–';
         const wasted = mine.map((r) => r.stats?.tree?.wasted_calls).filter((w) => typeof w === 'number');

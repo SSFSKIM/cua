@@ -135,10 +135,11 @@ If window-only or flag-only repairs work, the field intervention supplies strong
 report the tested limit; stock logs and these external interventions may narrow a native mechanism without proving
 its exact internal branch. Do not turn all-negative cells into a claim that every possible background path is impossible.
 
-**Expectations, not measured outcomes:** the best guess is a native keybinding/IME/key-window dependency, rather
-than a wrong pid: the same pid/code reaches textarea, and Command keys take a different focus-establishing route.
-The original builder has no window stamp and overwrites any generated arrow flags with modifier-only flags, so
-those are credible competing causes. Expect AX range to be available but sometimes stale (the #354 input/textarea
+**Expectations, not measured outcomes:** the best guess is a native keybinding/IME/key-window dependency:
+plain arrows and Command chords take different focus-establishing paths. A wrong target pid is not yet ruled out:
+`keyboardTarget` chooses the focused AX element's owner, and the kit must establish whether failing and working
+editors actually resolve to the same pid. The original builder has no window stamp and overwrites any generated
+arrow flags with modifier-only flags, so those are credible competing causes. Expect AX range to be available but sometimes stale (the #354 input/textarea
 controls reported the old caret after successful DOM motion), making readability alone unsafe. An AX write may
 work, but cannot be promoted to a generic Option+Left replacement from this ASCII fixture.
 
@@ -148,7 +149,8 @@ Code readers: `Keyboard.swift` (keyPressEvents/EventPoster), `Input.swift` (pres
 
 Upstream research, not a substitute for the measured Firefox version:
 - [Gecko NativeKeyBindings](https://raw.githubusercontent.com/mozilla-firefox/firefox/main/widget/cocoa/NativeKeyBindings.mm):
-  moveLeft/moveWordLeft selectors map to caret commands; single/multiline/rich-text bindings differ.
+  moveLeft/moveWordLeft selectors map to caret commands. Single-line bindings differ from the shared multiline/rich-text
+  bindings; that table alone does not explain the textarea/contenteditable split.
 - [Gecko TextInputHandler](https://raw.githubusercontent.com/mozilla-firefox/firefox/main/widget/cocoa/TextInputHandler.mm):
   HandleKeyDownEvent calls interpretKeyEvents; IMEInputHandler::IsFocused requires first responder, key window, active app.
   That check's existence does not prove it gates this failing path; logs/interventions must establish the connection.

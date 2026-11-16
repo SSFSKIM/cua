@@ -4,6 +4,9 @@ export const EDITORS=['textarea','input','contenteditable','compose'];
 export const KEYS=['Left','alt+Left','cmd+Left','cmd+shift+Left'];
 export const VARIANTS=['baseline','window','nsevent-window','numpad','function','arrow-flags','private-source','combined-source','equivalent-prelude','ax-range'];
 export const DELAYS=[0,50,250,1000];
+// NSWorkspace's foreground state refreshes only as the helper's main run loop turns; a sample taken this long after the
+// last turn can be frozen, so it cannot show that the foreground was undisturbed. This bounds a frozen loop, not lag.
+export const MAIN_LOOP_STALE_MS=250;
 export function expected(key,boundary=false){if(boundary)return [0,0];return {'Left':[28,0],'alt+Left':[24,0],'cmd+Left':[0,0],'cmd+shift+Left':[0,29]}[key]?.slice()??null}
 export function plan(smoke=false){
  const cells=[];
@@ -33,7 +36,7 @@ export function classify(r){
  const setupOK=owner(r.setup,r.owner)&&r.setup?.text===SEED&&equal(r.setup.selection,before)&&r.setup.focused;
  const watchOK=r.watch?.complete===true&&r.watch.samples?.length>0;
  const expectedFront=r.scene==='foreground'?r.targetPid:r.coverPid;
- const sideEffectKnown=watchOK&&r.watch.samples.every(s=>s.frontmostPid>0&&s.orderReadable===true);
+ const sideEffectKnown=watchOK&&r.watch.samples.every(s=>s.frontmostPid>0&&s.orderReadable===true&&Number.isFinite(s.mainLoopAgeMs)&&s.mainLoopAgeMs<=MAIN_LOOP_STALE_MS);
  const sideEffect=!!r.watch?.samples?.some(s=>s.frontmostPid!==expectedFront||(r.scene!=='foreground'&&s.targetAboveCover===true));
  const scorable=!!(samplesOK&&identityOK&&setupOK&&watchOK&&!r.problem);
  const editorFocusLost=!!r.samples?.some(s=>s.focused!==true);
@@ -64,5 +67,5 @@ export function summarize(rows,smoke){
  }
  const missing=wanted.filter(c=>!counts.has(c.id)).length;
  return {smoke,planned:wanted.length,recorded:rows.length,coverage:{missing,duplicates,unknown,mismatched,complete:missing+duplicates+unknown+mismatched===0},cells:[...groups.values()],
-  interpretation:'effect/scorable is observed DOM end-state, safeEffect additionally requires readable sampled foreground/order with no violation. AX agreement is against DOM, never its replacement. An unchanged boundary never acknowledges consumption. Missing coverage is not a pass.'};
+  interpretation:'effect/scorable is observed DOM end-state, safeEffect additionally requires readable sampled foreground/order, each sample taken within MAIN_LOOP_STALE_MS of a main run-loop turn, with no violation. AX agreement is against DOM, never its replacement. An unchanged boundary never acknowledges consumption. Missing coverage is not a pass.'};
 }

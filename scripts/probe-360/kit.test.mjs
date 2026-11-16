@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {plan, classify, summarize, expected, ENGINE_REF} from './model.mjs';
+import {plan, classify, summarize, expected, ENGINE_REF, MAIN_LOOP_STALE_MS} from './model.mjs';
 
 // These checks protect denominators and prevent a successful post from being called an effect.
 test('full and smoke cover every labelled cell, without silently reducing repetitions',()=>{
@@ -20,7 +20,7 @@ function fixture(overrides={}){
  const snap=(s,delay)=>({...owner,op:'sample',text:'Old draft sentence goes here.',selection:s,focused:true,visibility:'visible',delay});
  return {...c,owner,setup:{...snap([29,0],0),...owner},samples:[snap([28,0],0),snap([28,0],50),snap([28,0],250),snap([28,0],1000)],
   identityBefore:{windowTitle:'probe354:'+owner.pageId,windowID:42,frontmostPid:2},identityAfter:{windowTitle:'probe354:'+owner.pageId,windowID:42,frontmostPid:2},targetPid:1,coverPid:2,
-  action:{error:null,probe:{posted:[{type:10,keycode:123}],variant:'baseline'}},watch:{complete:true,samples:[{frontmostPid:2,targetAboveCover:false,orderReadable:true}]},
+  action:{error:null,probe:{posted:[{type:10,keycode:123}],variant:'baseline'}},watch:{complete:true,samples:[{frontmostPid:2,targetAboveCover:false,orderReadable:true,mainLoopAgeMs:6}]},
   axBefore:{range:[29,0],sameFocused:true},axSamples:[{delay:1000,range:[28,0],sameFocused:true}],...overrides};
 }
 test('DOM movement, not RPC success or readable AX, is the effect oracle',()=>{
@@ -49,10 +49,20 @@ test('ownership loss, missing final sample and focus/window mismatch exclude eff
  ])assert.equal(classify({...r,...change}).scorable,false);
 });
 test('transient foreground or ordering change remains a side effect, never repaired away',()=>{
- const r=fixture({watch:{complete:true,samples:[{frontmostPid:1,targetAboveCover:true,orderReadable:true},{frontmostPid:2,targetAboveCover:false,orderReadable:true}]}});
+ const r=fixture({watch:{complete:true,samples:[{frontmostPid:1,targetAboveCover:true,orderReadable:true,mainLoopAgeMs:6},{frontmostPid:2,targetAboveCover:false,orderReadable:true,mainLoopAgeMs:6}]}});
  assert.equal(classify(r).sideEffect,true);assert.equal(classify(r).safeEffect,false);
- const missing=classify(fixture({watch:{complete:true,samples:[{frontmostPid:2,targetAboveCover:null,orderReadable:false}]}}));
+ const missing=classify(fixture({watch:{complete:true,samples:[{frontmostPid:2,targetAboveCover:null,orderReadable:false,mainLoopAgeMs:6}]}}));
  assert.equal(missing.sideEffectKnown,false);assert.equal(missing.safeEffect,false);
+});
+test('foreground samples taken while the helper main run loop was not turning leave side effects unknown',()=>{
+ const sample=mainLoopAgeMs=>({frontmostPid:2,targetAboveCover:false,orderReadable:true,mainLoopAgeMs});
+ const clean=classify(fixture());
+ assert.equal(clean.sideEffectKnown,true);assert.equal(clean.sideEffect,false);assert.equal(clean.safeEffect,true);
+ for(const stale of [MAIN_LOOP_STALE_MS+1,undefined,null,Number.NaN]){
+  const s=classify(fixture({watch:{complete:true,samples:[sample(6),sample(stale)]}}));
+  assert.equal(s.effect,true);assert.equal(s.sideEffect,false);assert.equal(s.sideEffectKnown,false);assert.equal(s.safeEffect,false);
+ }
+ assert.equal(classify(fixture({watch:{complete:true,samples:[sample(MAIN_LOOP_STALE_MS)]}})).sideEffectKnown,true);
 });
 test('key-induced editor focus loss is a scored failure, not a fixture exclusion',()=>{
  const r=fixture();r.samples.at(-1).focused=false;

@@ -5,10 +5,11 @@ import Foundation
 import Darwin
 
 guard ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] == "github-hosted" else { fatalError("hosted runner only") }
-func now() -> Double { Date().timeIntervalSince1970 * 1000 }
 func attr(_ e: AXUIElement, _ name: String) -> CFTypeRef? { var v: CFTypeRef?; return AXUIElementCopyAttributeValue(e, name as CFString, &v) == .success ? v : nil }
 func element(_ v: CFTypeRef?) -> AXUIElement? { guard let v, CFGetTypeID(v) == AXUIElementGetTypeID() else { return nil }; let e = v as! AXUIElement; AXUIElementSetMessagingTimeout(e, 0.1); return e }
 func app(_ pid: pid_t) -> AXUIElement { let e = AXUIElementCreateApplication(pid); AXUIElementSetMessagingTimeout(e, 0.1); return e }
+// NSWorkspace's cached foreground app. NSRunningApplication.h: time-varying properties persist until the next turn of
+// the main run loop in a common mode, so this is only as fresh as the main run loop's last turn (see `serve`).
 func front() -> pid_t? { NSWorkspace.shared.frontmostApplication?.processIdentifier }
 typealias GetWindow = @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError
 func windowID(_ w: AXUIElement?) -> CGWindowID? {
@@ -61,11 +62,13 @@ final class Watch: @unchecked Sendable {
   let queue = DispatchQueue(label: "probe360.watch")
   var timer: DispatchSourceTimer?, samples: [[String: Any]] = []
   var target: CGWindowID = 0, cover: CGWindowID = 0
+  let beat: Beat
+  init(beat: Beat) { self.beat = beat }
   func sample() {
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
     let ids = list.compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value }
     let t = ids.firstIndex(of: target), c = ids.firstIndex(of: cover)
-    samples.append(["at": now(), "frontmostPid": front() as Any? ?? NSNull(),
+    samples.append(["at": now(), "frontmostPid": front() as Any? ?? NSNull(), "mainLoopAgeMs": beat.ageMs,
       "orderReadable": t != nil && c != nil, "targetAboveCover": t.flatMap { ti in c.map { ti < $0 } } as Any? ?? NSNull()])
   }
   func start(_ target: CGWindowID, _ cover: CGWindowID) {
@@ -77,8 +80,38 @@ final class Watch: @unchecked Sendable {
   }
   func stop() -> [String: Any] { queue.sync { timer?.cancel(); timer = nil; sample(); return ["complete": true, "intervalMs": 20, "samples": samples] } }
 }
-let watch = Watch()
-while let line = readLine() {
+// serve:begin (side.test.mjs compiles this region verbatim: Foundation only, no AppKit or AX)
+func now() -> Double { Date().timeIntervalSince1970 * 1000 }
+/// Heartbeat of the main run loop. Watch samples carry its age, so a main thread that stopped turning shows in the data.
+final class Beat: @unchecked Sendable {
+  private let lock = NSLock()
+  private var last = now(), turns = 0
+  func tick() { lock.lock(); last = now(); turns += 1; lock.unlock() }
+  var count: Int { lock.lock(); defer { lock.unlock() }; return turns }
+  var ageMs: Double { lock.lock(); defer { lock.unlock() }; return now() - last }
+}
+/// Serial JSON-lines server: one request is read, answered and flushed before the next is read. The main thread never
+/// blocks on stdin or on a request. It turns its run loop for the life of the process, which is what refreshes
+/// NSWorkspace/NSRunningApplication's cached foreground state for the watch timer's reads. Requests run on one
+/// dedicated thread, so a slow AX read cannot park the main run loop either.
+func serve(beat: Beat, handle: @escaping (String) -> String?) -> Never {
+  let requests = Requests(handle)
+  requests.name = "probe360.requests"; requests.stackSize = 4 << 20; requests.start()
+  RunLoop.main.add(Timer(timeInterval: 0.005, repeats: true) { _ in beat.tick() }, forMode: .common)
+  beat.tick()
+  while true { RunLoop.main.run(mode: .default, before: .distantFuture) }
+}
+final class Requests: Thread, @unchecked Sendable {
+  let handle: (String) -> String?
+  init(_ handle: @escaping (String) -> String?) { self.handle = handle; super.init() }
+  override func main() {
+    while let line = readLine() { if let answer = handle(line) { print(answer); fflush(stdout) } }
+    Foundation.exit(0)
+  }
+}
+// serve:end
+let beat = Beat(), watch = Watch(beat: beat)
+func respond(_ line: String) -> String? {
   var answer: [String: Any] = ["startedAt": now()]
   do {
     let q = try JSONSerialization.jsonObject(with: Data(line.utf8)) as! [String: Any]
@@ -89,9 +122,10 @@ while let line = readLine() {
       let activate = q["activate"] as? Bool ?? false
       if activate {
         guard watch.timer == nil else { throw NSError(domain: "activation during watch", code: 1) }
-        answer["activationAccepted"] = NSRunningApplication(processIdentifier: pid)?.activate(options: []) ?? false
+        answer["activationAccepted"] = DispatchQueue.main.sync { NSRunningApplication(processIdentifier: pid)?.activate(options: []) ?? false }
+        // The main run loop is turning on its own thread, so front() refreshes while this request polls it.
         let deadline = Date().addingTimeInterval(2)
-        while front() != pid && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+        while front() != pid && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
       }
       answer.merge(identity(pid)) { _, n in n }; answer["ok"] = front() == pid
     case "window-title": answer.merge(identity(pid)) { _, n in n }
@@ -104,5 +138,7 @@ while let line = readLine() {
     }
   } catch { answer["error"] = String(describing: error) }
   answer["endedAt"] = now()
-  if let data = try? JSONSerialization.data(withJSONObject: answer, options: [.sortedKeys]), let line = String(data: data, encoding: .utf8) { print(line); fflush(stdout) }
+  guard let data = try? JSONSerialization.data(withJSONObject: answer, options: [.sortedKeys]) else { return nil }
+  return String(data: data, encoding: .utf8)
 }
+serve(beat: beat) { respond($0) }

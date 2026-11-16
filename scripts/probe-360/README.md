@@ -90,7 +90,7 @@ node scripts/probe-360/read.mjs /absolute/path/to/artifact/data
   or Homebrew, so its **recorded version**, not an assumed historical version, bounds the result.
 - `rows.jsonl`: one attempted row, owned DOM setup and samples at requested 0/50/250/1000 ms after RPC return,
   actual timestamps, key answer, native fields, before/after window identity, retained-field AX ranges, and
-  20 ms passive foreground/order samples. No AXValue/selected-text reads or secret fixtures are used.
+  20 ms passive foreground/order samples, each with `mainLoopAgeMs`. No AXValue/selected-text reads or secret fixtures are used.
 - `rates.tsv`: per-cell planned/attempted/scorable/exact/safe effects, errors, false plain successes,
   side effects/unknown side-effect coverage, editor focus loss, AX readability/agreement/false confirmations.
 - `events.tsv`: all posted types, flags, keycodes, fields 51/91/92, NSEvent window number, target-pid field,
@@ -113,6 +113,14 @@ An exact effect means the known seed is unchanged and the DOM range equals the i
 A safe effect additionally requires readable foreground/order samples without a violation or editor focus loss.
 The watcher stops the run on any observed foreground/order violation; it never repairs it. Sub-20-ms flashes
 cannot be excluded by this sampling, so 0/20 is not proof of zero risk. No variant is a general delivery guarantee.
+
+The foreground sample is NSWorkspace's cached frontmost app. Apple documents that such state persists until the next
+main run-loop turn in a common mode, so the side helper keeps its main thread turning that loop for its whole life and
+runs requests (AX reads included) on another thread; the main thread never waits on stdin. Each sample records
+`mainLoopAgeMs`, the time since the loop's last 5 ms heartbeat. A sample older than 250 ms (`MAIN_LOOP_STALE_MS`), or
+without the field, leaves that row's side-effect coverage unknown and so never counts as a safe effect. That
+detects a frozen cache, not lag: the delay between a real foreground change and the cache catching up is not measured,
+and is a second reason (with the 20 ms interval) a brief flash can be missed.
 
 ## What the run can decide
 
@@ -145,6 +153,10 @@ Upstream research, not a substitute for the measured Firefox version:
   HandleKeyDownEvent calls interpretKeyEvents; IMEInputHandler::IsFocused requires first responder, key window, active app.
   That check's existence does not prove it gates this failing path; logs/interventions must establish the connection.
 
-Offline checks: `node --test scripts/probe-360/*.test.mjs scripts/probe-354/transport.test.mjs`;
+Offline checks: `node --test scripts/probe-360/*.test.mjs scripts/probe-354/transport.test.mjs`
+(`side.test.mjs` compiles the helper's `serve` region with `swiftc` and shows its main run loop keeps turning while
+stdin is idle, against a negative control of the old blocking shape; it skips without `swiftc`);
 `swiftc -typecheck scripts/probe-360/side.swift`; a scratch build and focused `Probe360EventChecks` test
-construct events without posting or making AX requests. They cannot validate GUI delivery or live effect rates.
+construct events without posting or making AX requests. They cannot validate GUI delivery, live effect rates, or that
+the hosted runner's NSWorkspace cache refreshes as the documentation says; the first hosted run's `mainLoopAgeMs`
+and `frontmostPid` samples are the evidence for that.

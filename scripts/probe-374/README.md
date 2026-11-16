@@ -3,9 +3,12 @@
 This is a hosted kit for the macOS engine's perform_secondary_action "Show Menu" (AXShowMenu). The engine answers
 success only once a menu is seen to open within 1 s, and `menuUnconfirmed` otherwise. The design is the native engine
 spec's Decision Log entry for #374. The kit is disposable experiment code, not product code. It runs only on
-GitHub-hosted macOS runners and only by hand (`workflow_dispatch`): `gh workflow run probe-374.yml --ref
-probe/374-measure -f reps=10`, or `-f reps=1` for a smoke run. **It has not been dispatched:** GitHub Actions is
-billing-locked as of 2026-11-15.
+GitHub-hosted macOS runners. A push to `probe/374-measure` that touches the kit (`scripts/probe-374/**` or the
+workflow) is the smoke run (reps 1, labelled smoke). It is also what registers the workflow: a dispatch-only workflow
+that exists only on a non-default branch gets no workflow ID, so `gh workflow run` cannot find it. Once the workflow is
+registered, the measurement is a dispatch by its ID: `gh workflow run <id> --ref probe/374-measure -f reps=10`, with the
+ID from `gh api repos/SSFSKIM/cua/actions/workflows --jq '.workflows[] | select(.path==".github/workflows/probe-374.yml") | .id'`.
+**It has not run:** GitHub Actions is billing-locked as of 2026-11-15.
 
 ## What runs
 

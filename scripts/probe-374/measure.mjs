@@ -151,7 +151,7 @@ const w = await connect();
 const target = await launchTarget();
 const coverPid = await launchCover();
 const pid = target.pid;
-const meta = {family: FAMILY, reps: REPS, cells: CELLS.map(c => c[0]), placements: PLACEMENTS, kit: process.env.GITHUB_SHA, engine: process.env.ENGINE_REF,
+const meta = {family: FAMILY, reps: REPS, smoke: process.env.SMOKE === 'true', event: process.env.GITHUB_EVENT_NAME, cells: CELLS.map(c => c[0]), placements: PLACEMENTS, kit: process.env.GITHUB_SHA, engine: process.env.ENGINE_REF,
   image: process.env.ImageVersion, os: sh('sw_vers', ['-productVersion']).stdout.trim(), appVersion: target.version, startedAt: started};
 writeFileSync(join(OUT, 'config.json'), JSON.stringify(meta, null, 2));
 
@@ -222,7 +222,7 @@ await ask({op: 'close', pid});
 const summary = summarize(rows);
 const verdict = {...gate(summary), stopped};
 writeFileSync(join(OUT, 'summary.json'), JSON.stringify({meta, verdict, summary}, null, 2));
-writeFileSync(join(OUT, 'summary.md'), `# #374 ${FAMILY} (${meta.appVersion})\n\n${table(summary)}\n\nfalse ok: ${verdict.falseOk}; open cells: ${verdict.open.join('; ') || 'none'}\n`);
+writeFileSync(join(OUT, 'summary.md'), `# #374 ${FAMILY} (${meta.appVersion})${meta.smoke ? ', smoke' : ''}\n\n${table(summary)}\n\nfalse ok: ${verdict.falseOk}; open cells: ${verdict.open.join('; ') || 'none'}\n`);
 console.log(table(summary));
 console.log('gate', JSON.stringify(verdict));
 engine.kill(); oracle.kill(); server.close();

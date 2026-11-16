@@ -293,7 +293,7 @@ extension Engine {
     let placement = minimized ? nil : windowPlacement(
       frame: windowFrame, screens: screenScales.current.map(\.frame),
       onScreen: { windowNumber(of: window, pid: pid(of: window), frame: windowFrame).flatMap(windowServerOnScreen) },
-      appHidden: { bool(attribute(application, kAXHiddenAttribute)) == true })
+      minimized: { bool(attribute(window, kAXMinimizedAttribute)) }, appHidden: { bool(attribute(application, kAXHiddenAttribute)) })
     if let placement { timings.set("placement", placement.rawValue) }
     let plan = placementObservation(placement, plan: minimizedPlan, includeScreenshot: includeScreenshot)
     // The window capture runs beside the tree walk (in-sitting tuning iteration 1): it needs only the window and its

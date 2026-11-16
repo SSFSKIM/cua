@@ -16,9 +16,10 @@ import Foundation
 //   first, so a window the window server also lists as not on screen is still named for where it is.
 // - Another Space: the window lies on a display but its CGWindow carries no kCGWindowIsOnscreen (the window server
 //   omits the key for a window it does not show; one CGWindowListCopyWindowInfo(.optionIncludingWindow) read, about
-//   0.1 ms), it is not minimized (Minimized.swift's rule runs first) and its app is not hidden (AXHidden), the two
-//   other causes of the flag's absence an observation meets.
-// - No frame, no screens read, or no window number: no claim, and the observation is as it was.
+//   0.1 ms), and its AXMinimized reads false and its app's AXHidden reads false (Minimized.swift's rule runs first),
+//   since a minimized window and a hidden app's are the other causes of the flag's absence an observation meets.
+// - No usable frame (none, or under one point), no screens read, no window number, or an unread AXMinimized or AXHidden:
+//   no claim, and the observation is as it was (a capture it plans still fails noCapturableWindow where it did).
 
 /// Where the primary window is when it is not shown on any display.
 enum WindowPlacement: String {
@@ -28,17 +29,19 @@ enum WindowPlacement: String {
   var screenshotOmitted: String { self == .offScreen ? "windowOffScreen" : "windowOnAnotherSpace" }
 }
 
-/// The window's placement from its AX frame, the screens' frames, the window server's on-screen flag (nil unread) and
-/// whether its app is hidden (read only when the flag is false) -> nil when it is shown, or when nothing read says not.
-func windowPlacement(frame: CGRect?, screens: [CGRect], onScreen: () -> Bool?, appHidden: () -> Bool) -> WindowPlacement? {
-  if let frame, frame.width >= 1, frame.height >= 1, !screens.isEmpty,
-     !screens.contains(where: { screen in
-       let overlap = screen.intersection(frame)
-       return !overlap.isNull && overlap.width > 0 && overlap.height > 0
-     }) {
-    return .offScreen
+/// The window's placement from its AX frame, the screens' frames, the window server's on-screen flag, and the window's
+/// AXMinimized and its app's AXHidden (each nil when unread; the last three read only as needed) -> nil when it is
+/// shown, or when nothing read says not. Both claims need a usable frame and the screens: without them the window's
+/// geometry is unknown, and the capture's own noCapturableWindow stands. Another Space needs the flag read absent and
+/// the window confirmed not minimized and its app confirmed not hidden, since either also clears the flag.
+func windowPlacement(frame: CGRect?, screens: [CGRect], onScreen: () -> Bool?, minimized: () -> Bool?, appHidden: () -> Bool?) -> WindowPlacement? {
+  guard let frame, frame.width >= 1, frame.height >= 1, !screens.isEmpty else { return nil }
+  let onADisplay = screens.contains { screen in
+    let overlap = screen.intersection(frame)
+    return !overlap.isNull && overlap.width > 0 && overlap.height > 0
   }
-  if onScreen() == false, !appHidden() { return .anotherSpace }
+  if !onADisplay { return .offScreen }
+  if onScreen() == false, minimized() == false, appHidden() == false { return .anotherSpace }
   return nil
 }
 

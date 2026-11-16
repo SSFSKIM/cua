@@ -8,10 +8,11 @@ final class WindowPlacementTests: XCTestCase {
   /// Two displays side by side, top-left global points: the primary 1440 × 900 and one to its right.
   private let screens = [CGRect(x: 0, y: 0, width: 1440, height: 900), CGRect(x: 1440, y: 0, width: 1920, height: 1080)]
   private let shown: () -> Bool? = { true }
-  private let notHidden: () -> Bool = { false }
+  private let no: () -> Bool? = { false }
 
-  private func placement(_ frame: CGRect?, screens: [CGRect]? = nil, onScreen: (() -> Bool?)? = nil, appHidden: (() -> Bool)? = nil) -> WindowPlacement? {
-    windowPlacement(frame: frame, screens: screens ?? self.screens, onScreen: onScreen ?? shown, appHidden: appHidden ?? notHidden)
+  private func placement(_ frame: CGRect?, screens: [CGRect]? = nil, onScreen: (() -> Bool?)? = nil, minimized: (() -> Bool?)? = nil,
+                         appHidden: (() -> Bool?)? = nil) -> WindowPlacement? {
+    windowPlacement(frame: frame, screens: screens ?? self.screens, onScreen: onScreen ?? shown, minimized: minimized ?? no, appHidden: appHidden ?? no)
   }
 
   func testAWindowOutsideEveryDisplayIsOffScreenWhateverTheWindowServerSays() {
@@ -39,24 +40,42 @@ final class WindowPlacementTests: XCTestCase {
     XCTAssertEqual(placement(CGRect(x: 100, y: 100, width: 800, height: 600), onScreen: { false }), .anotherSpace)
   }
 
-  func testAHiddenAppsWindowIsNotClaimedToBeOnAnotherSpace() {
-    XCTAssertNil(placement(CGRect(x: 100, y: 100, width: 800, height: 600), onScreen: { false }, appHidden: { true }))
+  func testAHiddenAppsOrAMinimizedWindowIsNotClaimedToBeOnAnotherSpace() {
+    let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+    XCTAssertNil(placement(frame, onScreen: { false }, appHidden: { true }))
+    XCTAssertNil(placement(frame, onScreen: { false }, minimized: { true }))
+  }
+
+  func testAnUnreadMinimizedOrHiddenAttributeMakesNoSpaceClaim() {
+    let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+    XCTAssertNil(placement(frame, onScreen: { false }, appHidden: { nil }), "AXHidden unread: the app may be hidden")
+    XCTAssertNil(placement(frame, onScreen: { false }, minimized: { nil }), "AXMinimized unread: the window may be minimized")
   }
 
   func testNothingReadMeansNoClaim() {
-    XCTAssertNil(placement(nil), "no frame read, and the window server shows it")
-    XCTAssertNil(placement(CGRect(x: -5000, y: 0, width: 800, height: 600), screens: []), "no screens read")
-    XCTAssertNil(placement(CGRect(x: -5000, y: 0, width: 0.5, height: 600)), "a frame under one point is the capture's case")
+    for onScreen in [shown, no] {
+      XCTAssertNil(placement(nil, onScreen: onScreen), "no frame read")
+      XCTAssertNil(placement(CGRect(x: -5000, y: 0, width: 800, height: 600), screens: [], onScreen: onScreen), "no screens read")
+      XCTAssertNil(placement(CGRect(x: 100, y: 100, width: 0.5, height: 600), onScreen: onScreen), "a frame under one point is the capture's case")
+      XCTAssertNil(placement(CGRect(x: -5000, y: 0, width: 0.5, height: 600), onScreen: onScreen))
+      XCTAssertNil(placement(CGRect(x: 100, y: 100, width: 800, height: 600), screens: [], onScreen: onScreen))
+    }
     XCTAssertNil(placement(CGRect(x: 100, y: 100, width: 800, height: 600), onScreen: { nil }), "no window number or no window info")
   }
 
-  func testTheHiddenReadAndTheFlagReadAreMadeOnlyWhenNeeded() {
-    var flagReads = 0, hiddenReads = 0
-    _ = placement(CGRect(x: -5000, y: 0, width: 800, height: 600), onScreen: { flagReads += 1; return true }, appHidden: { hiddenReads += 1; return false })
+  func testTheFlagMinimizedAndHiddenReadsAreMadeOnlyWhenNeeded() {
+    var flagReads = 0, minimizedReads = 0, hiddenReads = 0
+    let counted = { (frame: CGRect, flag: Bool) in
+      _ = self.placement(frame, onScreen: { flagReads += 1; return flag }, minimized: { minimizedReads += 1; return false },
+                         appHidden: { hiddenReads += 1; return false })
+    }
+    counted(CGRect(x: -5000, y: 0, width: 800, height: 600), true)
     XCTAssertEqual(flagReads, 0, "a window off every display needs no window server read")
-    _ = placement(CGRect(x: 100, y: 100, width: 800, height: 600), onScreen: { flagReads += 1; return true }, appHidden: { hiddenReads += 1; return false })
+    counted(CGRect(x: 100, y: 100, width: 800, height: 600), true)
     XCTAssertEqual(flagReads, 1)
-    XCTAssertEqual(hiddenReads, 0, "the app's AXHidden is read only when the flag is absent")
+    XCTAssertEqual(minimizedReads + hiddenReads, 0, "AXMinimized and AXHidden are read only when the flag is absent")
+    counted(CGRect(x: 100, y: 100, width: 800, height: 600), false)
+    XCTAssertEqual([flagReads, minimizedReads, hiddenReads], [2, 1, 1])
   }
 }
 
@@ -84,12 +103,14 @@ final class PlacementObservationTests: XCTestCase {
     let screens = [CGRect(x: 0, y: 0, width: 1440, height: 900)]
     let causes: [(String, CGRect?, Bool?)] = [
       ("no frame", nil, true),
+      ("no frame, not shown", nil, false),
       ("a frame under one point", CGRect(x: 100, y: 100, width: 0, height: 600), true),
+      ("a frame under one point, not shown", CGRect(x: 100, y: 100, width: 0, height: 600), false),
       ("no window number", CGRect(x: 100, y: 100, width: 800, height: 600), nil),
       ("not in the shareable content, shown by the window server", CGRect(x: 100, y: 100, width: 800, height: 600), true),
     ]
     for (cause, frame, onScreen) in causes {
-      let placement = windowPlacement(frame: frame, screens: screens, onScreen: { onScreen }, appHidden: { false })
+      let placement = windowPlacement(frame: frame, screens: screens, onScreen: { onScreen }, minimized: { false }, appHidden: { false })
       XCTAssertNil(placement, cause)
       let plan = placementObservation(placement, plan: try minimizedObservation(minimized: false, exposesTree: true, includeScreenshot: true, app: "TextEdit"),
                                       includeScreenshot: true)

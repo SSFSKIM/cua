@@ -4725,11 +4725,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      global points like AX frames) by any area. This costs no read, and is checked first because it is geometry: a window
      the window server also lists as not shown is still named for where it is. *Another Space*: the window lies on a
      display, but its CGWindow (the number from `_AXUIElementGetWindow`, then one
-     `CGWindowListCopyWindowInfo(.optionIncludingWindow)`) has no `kCGWindowIsOnscreen`, the window is not minimized
-     (Minimized.swift's rule runs first and is unchanged), and its app does not read AXHidden. Those are the other two
+     `CGWindowListCopyWindowInfo(.optionIncludingWindow)`) has no `kCGWindowIsOnscreen`, and both the window's AXMinimized
+     and its app's AXHidden read false (Minimized.swift's rule runs first and is unchanged). Those are the other two
      causes of the flag's absence that an observation meets. A read-only probe on the MacBook (2026-11-16) found the key
      absent, not false, on all 111 layer-0 windows not shown (12 shown), and the per-window read at p50 0.089 ms (max
-     2.7 ms, n 123). No frame, no screens read, or no window number makes no claim. Alternatives rejected: SkyLight's
+     2.7 ms, n 123). Neither claim is made from an unknown: no usable frame (none, or under one point), no screens read,
+     no window number, or an unread AXMinimized or AXHidden makes no claim. That was the branch review's finding:
+     the first cut let an unread geometry or attribute through to "another Space". Alternatives rejected: SkyLight's
      space SPIs (`CGSCopySpacesForWindows` against each display's current space), which name the Space positively but add
      two SPIs and a dictionary walk for a line the flag already earns; and reading the window server's bounds instead of
      the AX frame, which is the same rectangle for one more read.

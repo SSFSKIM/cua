@@ -61,10 +61,12 @@ export function summarize(rows) {
  const groups=new Map();
  for(const r of rows.filter(r=>r.phase==='rate')) {
   const key=[r.browser,r.scene,r.foreground?'front':'behind',r.operation,r.variant].join('/');
-  if(!groups.has(key))groups.set(key,{cell:key,attempted:0,valid:0,invalid:0,invalidByStage:{},answeredOK:0,delivered:0,falseSuccess:0,closed:0,raises:0,times:[],confirmations:{}});
+  if(!groups.has(key))groups.set(key,{cell:key,attempted:0,valid:0,invalid:0,invalidByStage:{},answeredOK:0,delivered:0,falseSuccess:0,closed:0,axUnknownRows:0,raises:0,times:[],confirmations:{}});
   const g=groups.get(key),j=judge(r);g.attempted++;
   if(!j.eligible){g.invalid++;const stage=r.failureStage??'state-validation';g.invalidByStage[stage]=(g.invalidByStage[stage]??0)+1;continue}g.valid++;
   for(const k of ['answeredOK','delivered','falseSuccess','closed'])if(j[k])g[k]++;
+  // An AX read that could not establish dialog presence is reported, never folded into disappearance.
+  if(r.samples?.some(x=>x.ax&&x.ax.dialog===null))g.axUnknownRows++;
   if(!r.foreground&&(r.frontAfter?.frontmostPid===r.targetPid||r.trace?.some(e=>e.frontmostPid===r.targetPid)||r.samples?.some(s=>s.frontmostPid===r.targetPid||s.order?.targetAboveCover===true)))g.raises++;
   if(Number.isFinite(r.call?.endedAt-r.call?.startedAt))g.times.push(r.call.endedAt-r.call.startedAt);
   for(const policy of ['dialog-survives','effect'])for(const ms of [0,50,250,1000]) {

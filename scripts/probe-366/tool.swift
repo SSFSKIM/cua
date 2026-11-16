@@ -18,43 +18,62 @@ func window(_ pid: pid_t) -> AXUIElement? {
  let a = appElement(pid)
  return element(attr(a, kAXFocusedWindowAttribute)) ?? element(attr(a, kAXMainWindowAttribute)) ?? (attr(a, kAXWindowsAttribute) as? [AXUIElement])?.first
 }
-func walk(_ root: AXUIElement) -> ([AXUIElement], Bool) {
- var queue = [root], i = 0, seen = Set<CFHashCode>(), nodes: [AXUIElement] = [], complete = true
+// presence:begin
+// An attribute that is legitimately absent is not a failed lookup; every other AX error is.
+func benign(_ error: AXError) -> Bool { error == .success || error == .attributeUnsupported || error == .noValue }
+// Absence of the dialog is established only by a complete walk whose every lookup answered.
+// A found button proves presence whatever else timed out; otherwise a failure leaves presence unknown (nil).
+func presence(found: Bool, complete: Bool, errors: [String: Int]) -> Bool? {
+ if found { return true }
+ return complete && errors.isEmpty ? false : nil
+}
+// presence:end
+struct Node {
+ let element: AXUIElement; let role: String, title: String, description: String, domId: String, identifier: String, value: String
+ func named(_ name: String) -> Bool { [title, description, domId, identifier].contains(name) }
+}
+struct Scan { var nodes: [Node] = []; var complete = true; var errors: [String: Int] = [:] }
+func walk(_ root: AXUIElement) -> Scan {
+ var queue = [root], i = 0, seen = Set<CFHashCode>(), scan = Scan()
+ func lookup(_ e: AXUIElement, _ name: String) -> String {
+  let (v, error) = copy(e, name)
+  if !benign(error) { scan.errors[name + ":" + String(error.rawValue), default: 0] += 1 }
+  return v as? String ?? ""
+ }
  while i < queue.count && i < 1500 {
   let e = queue[i]; i += 1
   if !seen.insert(CFHash(e)).inserted { continue }
-  AXUIElementSetMessagingTimeout(e, 0.2); nodes.append(e)
+  AXUIElementSetMessagingTimeout(e, 0.2)
+  scan.nodes.append(Node(element: e, role: lookup(e, kAXRoleAttribute), title: lookup(e, kAXTitleAttribute), description: lookup(e, kAXDescriptionAttribute),
+   domId: lookup(e, "AXDOMIdentifier"), identifier: lookup(e, kAXIdentifierAttribute), value: lookup(e, kAXValueAttribute)))
   let (v, error) = copy(e, kAXChildrenAttribute)
-  if error != .success && error != .attributeUnsupported && error != .noValue { complete = false }
+  if !benign(error) { scan.complete = false; scan.errors[kAXChildrenAttribute + ":" + String(error.rawValue), default: 0] += 1 }
   if let children = v as? [AXUIElement] { queue += children }
  }
- return (nodes, complete && i == queue.count)
+ scan.complete = scan.complete && i == queue.count
+ return scan
 }
-func named(_ e: AXUIElement, _ name: String) -> Bool {
- [kAXTitleAttribute, kAXDescriptionAttribute, "AXDOMIdentifier", kAXIdentifierAttribute].contains { text(e, $0) == name }
-}
+func isButton(_ n: Node) -> Bool { n.role == "AXButton" && n.named("Run probe button") }
+func isField(_ n: Node) -> Bool { ["AXTextField","AXSearchField","AXTextArea"].contains(n.role) && (n.named("Probe search") || n.named("search")) }
 struct Controls { let window: AXUIElement; let button: AXUIElement; let field: AXUIElement }
 var bound: [pid_t: Controls] = [:]
 func bind(_ pid: pid_t) throws -> Controls {
  guard let w = window(pid) else { throw NSError(domain: "no owned window", code: 1) }
- let (nodes, complete) = walk(w)
- guard complete, let b = nodes.first(where: { text($0,kAXRoleAttribute) == "AXButton" && named($0,"Run probe button") }),
-       let f = nodes.first(where: { ["AXTextField","AXSearchField","AXTextArea"].contains(text($0,kAXRoleAttribute)) && (named($0,"Probe search") || named($0,"search")) }) else {
-  let labels = nodes.map { text($0,kAXRoleAttribute)+" "+text($0,kAXTitleAttribute)+" "+text($0,kAXDescriptionAttribute) }
-  throw NSError(domain: "controls missing: "+labels.joined(separator: " | "), code: 2)
+ let scan = walk(w)
+ guard scan.complete, let b = scan.nodes.first(where: isButton), let f = scan.nodes.first(where: isField) else {
+  let labels = scan.nodes.map { $0.role + " " + $0.title + " " + $0.description }
+  throw NSError(domain: "controls missing: " + labels.joined(separator: " | "), code: 2)
  }
- let c = Controls(window:w, button:b, field:f); bound[pid] = c; return c
+ let c = Controls(window: w, button: b.element, field: f.element); bound[pid] = c; return c
 }
 func read(_ pid: pid_t) -> [String: Any] {
  guard let c = bound[pid] else { return ["dialog":NSNull(), "error":"unbound AX controls"] }
- let started = now(), (nodes, complete) = walk(c.window)
- let b = nodes.first { text($0,kAXRoleAttribute) == "AXButton" && named($0,"Run probe button") }
- let f = nodes.first { ["AXTextField","AXSearchField","AXTextArea"].contains(text($0,kAXRoleAttribute)) && (named($0,"Probe search") || named($0,"search")) }
- let strings = nodes.flatMap { [text($0,kAXValueAttribute),text($0,kAXTitleAttribute)] }
- let marker = strings.first { $0.hasPrefix("Press marker ") }.flatMap { Int($0.dropFirst("Press marker ".count)) }
- return ["startedAt":started,"at":now(),"complete":complete,"dialog":complete ? (b != nil) as Any : NSNull(),
-         "marker":marker as Any? ?? NSNull(),"value":f.flatMap { attr($0,kAXValueAttribute) as? String } as Any? ?? NSNull(),
-         "fieldFocused":f.flatMap { attr($0,kAXFocusedAttribute) as? Bool } as Any? ?? NSNull(),
+ let started = now(), scan = walk(c.window)
+ let b = scan.nodes.first(where: isButton), f = scan.nodes.first(where: isField)
+ let marker = scan.nodes.flatMap { [$0.value, $0.title] }.first { $0.hasPrefix("Press marker ") }.flatMap { Int($0.dropFirst("Press marker ".count)) }
+ return ["startedAt":started,"at":now(),"complete":scan.complete,"dialog":presence(found: b != nil, complete: scan.complete, errors: scan.errors) as Any? ?? NSNull(),
+         "axErrors":scan.errors,"marker":marker as Any? ?? NSNull(),"value":f.flatMap { attr($0.element,kAXValueAttribute) as? String } as Any? ?? NSNull(),
+         "fieldFocused":f.flatMap { attr($0.element,kAXFocusedAttribute) as? Bool } as Any? ?? NSNull(),
          "main":attr(c.window,kAXMainAttribute) as Any? ?? NSNull(),
          "frontmost":attr(appElement(pid),kAXFrontmostAttribute) as Any? ?? NSNull()]
 }

@@ -8,6 +8,7 @@ const dir=dirname(fileURLToPath(import.meta.url)),root=resolve(dir,'../..');
 function run(bin,args){const r=spawnSync(bin,args,{stdio:'inherit'});if(r.status!==0)throw Error(bin+' failed: '+r.status);}
 for(const name of readdirSync(dir).filter(n=>n.endsWith('.mjs')))run(process.execPath,['--check',join(dir,name)]);
 run(process.execPath,['--check',join(dir,'fixture/main.cjs')]);
+run(process.execPath,['--check',join(dir,'fixture/lifecycle.mjs')]);
 run(process.execPath,['--test',join(dir,'kit.test.mjs')]);
 run(process.execPath,[join(dir,'build-fixture.mjs')]);
 mkdirSync(join(dir,'.offline'),{recursive:true});const scratch=mkdtempSync(join(dir,'.offline/parse-'));

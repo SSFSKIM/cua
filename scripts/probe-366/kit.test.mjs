@@ -2,6 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {plan,judge,summarize,timeline,confirmation,ab} from './read.mjs';
 import {FixtureTransport} from './transport.mjs';
+import {createLifecycle,pressMarker,valueMarker} from './fixture/lifecycle.mjs';
+import {readFileSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {createRequire} from 'node:module';
+import {tmpdir} from 'node:os';
+import {join,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
+const here=dirname(fileURLToPath(import.meta.url));
 
 const state=(open=true,presses=0,value='')=>({pageId:'a'.repeat(32),timeOrigin:1000,trial:'t',visibility:'visible',open,presses,value,reactValue:value,events:[]});
 const row=(extra={})=>({id:'t',phase:'rate',browser:'electron',variant:'main',scene:'modal',foreground:false,operation:'press',rep:0,valid:true,expected:'needle',before:state(),after:state(true,1),call:{startedAt:2000,endedAt:2010,raw:{result:{meta:{inputRoute:3}}}},samples:[],...extra});
@@ -67,4 +75,73 @@ test('plan is reproducible, balanced and no measured action is retried',()=>{
  assert.deepEqual(plan({browser:'electron',smoke:false}),full);
  assert.equal(full.filter(c=>c.variant==='no-focus'&&c.operation==='press').length,0);
  assert.equal(full.filter(c=>c.variant==='no-click'&&c.foreground).length,0);
+});
+
+test('reset drains the old Radix close lifecycle instead of guessing a delay',async()=>{
+ const lifecycle=createLifecycle(),log=[];
+ assert.equal(await lifecycle.drained(),undefined); // nothing opened yet
+ // Model react-focus-scope: unmount schedules a zero-timer that fires the close event, then focuses the trigger.
+ const open=()=>lifecycle.mounted();
+ const unmount=()=>setTimeout(()=>{lifecycle.closed();log.push('trigger focused');},0);
+ open();unmount();
+ const drained=lifecycle.drained().then(()=>log.push('reopen'));
+ assert.deepEqual(log,[]);
+ await drained;
+ assert.deepEqual(log,['trigger focused','reopen']); // reopen's continuation runs after Radix's own callback
+ // A dismissal caused by the previous action may still have a pending close; reset waits for it too.
+ open();unmount();
+ await lifecycle.drained();assert.equal(lifecycle.idle(),true);
+});
+test('a stuck close lifecycle fails the fixture and does not leave a waiter behind',async()=>{
+ const lifecycle=createLifecycle();lifecycle.mounted();
+ await assert.rejects(lifecycle.drained(5),/did not complete/);
+ lifecycle.closed();assert.equal(lifecycle.idle(),true); // late completion is harmless
+});
+test('each marker renders as one text node',()=>{
+ assert.equal(pressMarker(3),'Press marker 3');assert.equal(valueMarker('x'),'Search marker x');
+ const require=createRequire(join(here,'fixture/package.json'));let server;
+ try {server=require('react-dom/server');} catch {return;} // dependencies are installed by the workflow
+ const React=require('react');
+ assert.equal(server.renderToStaticMarkup(React.createElement('p',null,pressMarker(3))),'<p>Press marker 3</p>');
+ assert.equal(server.renderToString(React.createElement('p',null,pressMarker(3))),'<p>Press marker 3</p>'); // no <!-- --> text-node split
+});
+test('AX lookup failures leave dialog presence unknown; only a clean complete walk proves absence',{skip:process.platform!=='darwin'||spawnSync('swiftc',['--version']).status!==0&&'swiftc unavailable'},()=>{
+ const swift=readFileSync(join(here,'tool.swift'),'utf8'),begin=swift.indexOf('// presence:begin'),end=swift.indexOf('// presence:end');
+ assert.ok(begin>=0&&end>begin);
+ const dir=mkdtempSync(join(tmpdir(),'p366-presence-'));
+ try {
+  // Pure decision logic only: no AX call, no window and no GUI binary.
+  const main=`import ApplicationServices
+import Foundation
+${swift.slice(begin,end)}
+func check(_ ok: Bool, _ what: String) { if !ok { print("FAIL " + what); exit(1) } }
+let timeout = ["AXRole:" + String(AXError.cannotComplete.rawValue): 1]
+check(presence(found: false, complete: true, errors: [:]) == false, "clean absence")
+check(presence(found: false, complete: true, errors: timeout) == nil, "role timeout is not absence")
+check(presence(found: false, complete: false, errors: [:]) == nil, "incomplete walk is not absence")
+check(presence(found: true, complete: false, errors: timeout) == true, "found button proves presence")
+check(benign(.success) && benign(.attributeUnsupported) && benign(.noValue), "absent attributes are benign")
+check(!benign(.cannotComplete) && !benign(.invalidUIElement) && !benign(.failure), "lookup errors are not benign")
+print("ok")
+`;
+  writeFileSync(join(dir,'main.swift'),main);
+  const build=spawnSync('swiftc',['-o',join(dir,'presence'),join(dir,'main.swift')],{encoding:'utf8'});
+  assert.equal(build.status,0,build.stderr);
+  const run=spawnSync(join(dir,'presence'),{encoding:'utf8'});
+  assert.equal(run.stdout.trim(),'ok',run.stdout+run.stderr);
+ } finally {rmSync(dir,{recursive:true,force:true});}
+});
+test('null dialog reads never confirm, and are surfaced instead of counted as disappearance',()=>{
+ const unknown=ax=>({dialog:null,marker:null,value:null,...ax});
+ const r=row({after:state(false,0),samples:[{at:2012,ax:unknown()},{at:2060,ax:unknown()},{at:2300,startedAt:2290,ax:unknown()}]});
+ for(const policy of ['dialog-survives','effect']) {
+  const c=confirmation(r,250,policy);
+  assert.equal(c.confirmed,false);assert.equal(c.deliveryProof,false);
+  assert.equal(c.addedMs,250,'unknown reads still cost the full bounded wait');
+ }
+ // An unknown read followed by a definite absence is decided by the definite read, at its real time.
+ const later=row({after:state(false,0),samples:[{at:2012,ax:unknown()},{at:2100,ax:{dialog:false,marker:null,value:null}}]});
+ assert.deepEqual(confirmation(later,250),{policy:'dialog-survives',confirmed:false,decisionAt:2100,addedMs:90,deliveryProof:false});
+ const s=summarize([r,row()])[0];
+ assert.equal(s.axUnknownRows,1);
 });

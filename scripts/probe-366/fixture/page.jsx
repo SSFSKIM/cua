@@ -2,11 +2,13 @@ import React,{useState,useLayoutEffect} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import * as Dialog from '@radix-ui/react-dialog';
+import {createLifecycle,pressMarker,valueMarker} from './lifecycle.mjs';
 
 const pageId=crypto.randomUUID().replaceAll('-',''),timeOrigin=performance.timeOrigin;
 document.title='probe366:'+pageId;
 const at=()=>performance.timeOrigin+performance.now();
 let trial=null,events=[],api,reason=null;
+const lifecycle=createLifecycle();
 const label=node=>node?.id||node?.getAttribute?.('aria-label')||node?.tagName||null;
 function note(type,data={}) {events.push({at:at(),wallAt:Date.now(),type,...data});}
 window.__probe366Note=note;
@@ -28,8 +30,8 @@ function Fixture() {
    <Dialog.Portal>
     <Dialog.Overlay id="overlay" style={{position:'fixed',inset:0,background:'#ddd'}}/>
     <Dialog.Content id="content" style={{position:'fixed',left:90,top:90,width:380,padding:24,background:'white',border:'2px solid black'}}
-      onOpenAutoFocus={e=>{note('openAutoFocus');e.preventDefault();document.getElementById('action')?.focus();}}
-      onCloseAutoFocus={()=>note('closeAutoFocus')}
+      onOpenAutoFocus={e=>{lifecycle.mounted();note('openAutoFocus');e.preventDefault();document.getElementById('action')?.focus();}}
+      onCloseAutoFocus={()=>{note('closeAutoFocus');lifecycle.closed();}}
       onPointerDownOutside={e=>outside('pointerDownOutside',e)}
       onFocusOutside={e=>outside('focusOutside',e)}
       onInteractOutside={e=>outside('interactOutside',e)}
@@ -38,7 +40,7 @@ function Fixture() {
      <button id="action" onClick={()=>{note('button.handler');setPresses(n=>n+1);}}>Run probe button</button>
      <label htmlFor="search">Probe search</label>
      <input id="search" type="text" placeholder="Search" value={value} onChange={e=>{note('search.handler',{value:e.target.value});setValue(e.target.value);}}/>
-     <p id="marker">Press marker {presses}</p><p id="value-marker">Search marker {value}</p>
+     <p id="marker">{pressMarker(presses)}</p><p id="value-marker">{valueMarker(value)}</p>
      <Dialog.Close id="close">Close</Dialog.Close>
     </Dialog.Content>
    </Dialog.Portal>
@@ -52,6 +54,7 @@ function snapshot() {
 async function command(q) {
  if(q.op==='reset') {
   flushSync(()=>api.setOpen(false));
+  await lifecycle.drained();
   window.__probe366Trap=q.scene==='modal';reason=null;trial=q.trial;
   flushSync(()=>{api.setPresses(0);api.setValue('');});
   flushSync(()=>api.setOpen(true));

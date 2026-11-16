@@ -1,0 +1,4 @@
+fixture/node_modules/
+fixture/bundle.js
+fixture/build.json
+.offline/

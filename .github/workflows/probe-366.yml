@@ -1,0 +1,83 @@
+name: probe-366
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'smoke: one repetition, ~5 minutes; full: 20 rate / 3 diagnostic repetitions, ~1 hour'
+        type: choice
+        options: [smoke, full]
+        default: smoke
+permissions:
+  contents: read
+env:
+  ENGINE_REF: b99232def1e37307848dd1ccb08726729eb81b66
+concurrency:
+  group: probe-366
+  cancel-in-progress: false
+jobs:
+  measure:
+    runs-on: macos-latest
+    timeout-minutes: 85
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        browser: [electron, cft]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install pinned owned fixture (Electron 44.4.5, Radix 1.1.15)
+        run: |
+          npm ci --prefix scripts/probe-366/fixture --no-audit --no-fund
+          node scripts/probe-366/build-fixture.mjs
+          if [ '${{ matrix.browser }}' = cft ]; then
+            test -x '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+            '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing' --version
+          fi
+      - name: Build instrumented pinned main, only in runner scratch tree
+        run: |
+          git log -1 --format='kit %H %s'
+          git worktree add --detach "$RUNNER_TEMP/src366" "$ENGINE_REF"
+          node scripts/probe-366/patch.mjs "$RUNNER_TEMP/src366"
+          swift build -c release --package-path "$RUNNER_TEMP/src366/native/engine" --scratch-path "$RUNNER_TEMP/build366"
+          swiftc -O -o "$RUNNER_TEMP/tool366" scripts/probe-366/tool.swift
+          mkdir -p "$RUNNER_TEMP/Probe366 Cover.app/Contents/MacOS"
+          cp "$RUNNER_TEMP/tool366" "$RUNNER_TEMP/Probe366 Cover.app/Contents/MacOS/cover366"
+          cp scripts/probe-366/cover.plist "$RUNNER_TEMP/Probe366 Cover.app/Contents/Info.plist"
+      - name: Measure (never retries the action)
+        env:
+          BROWSER: ${{ matrix.browser }}
+          SMOKE: ${{ inputs.mode == 'smoke' }}
+        run: |
+          node scripts/probe-366/measure.mjs --browser "$BROWSER" --smoke "$SMOKE" --engine "$RUNNER_TEMP/build366/release/cua-engine" --tool "$RUNNER_TEMP/tool366" --out "$RUNNER_TEMP/probe-366/$BROWSER"
+      - name: Read denominators and rates
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/probe-366/${{ matrix.browser }}/rows.jsonl" ]; then
+            node scripts/probe-366/read.mjs summary "$RUNNER_TEMP/probe-366/${{ matrix.browser }}" > "$RUNNER_TEMP/probe-366/${{ matrix.browser }}/summary.json"
+            node scripts/probe-366/read.mjs coverage "$RUNNER_TEMP/probe-366/${{ matrix.browser }}"
+          fi
+      - name: Upload owned-fixture evidence (never its browser profile)
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-366-${{ matrix.browser }}-${{ inputs.mode }}
+          path: |
+            ${{ runner.temp }}/probe-366/**/rows.jsonl
+            ${{ runner.temp }}/probe-366/**/config.json
+            ${{ runner.temp }}/probe-366/**/progress.json
+            ${{ runner.temp }}/probe-366/**/fatal.json
+            ${{ runner.temp }}/probe-366/**/summary.json
+            ${{ runner.temp }}/probe-366/**/transport.jsonl
+            ${{ runner.temp }}/probe-366/**/engine-stderr.txt
+            ${{ runner.temp }}/probe-366/**/app-stdout.txt
+            ${{ runner.temp }}/probe-366/**/app-stderr.txt
+            ${{ runner.temp }}/probe-366/**/process-error.txt
+            ${{ runner.temp }}/probe-366/**/initial-observation.json
+            ${{ runner.temp }}/probe-366/**/shots/**
+          if-no-files-found: warn

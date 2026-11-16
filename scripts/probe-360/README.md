@@ -1,0 +1,150 @@
+# #360: background Firefox caret delivery, measure first
+
+Disposable kit based on `probe/354-measure` at `4ab1ebd6`. Nothing here is a proposed product fix.
+The engine is the exact reproduction pin, `3c669314e0a5f35aedf20f9b792604fc09628c45`, not moving main.
+Only a runner-owned scratch copy is patched. The vendor runtime is untouched.
+
+## Dispatch (not run during preparation)
+
+**The kit commit remains local while Actions is billing-locked. Do not push it yet.**
+A manual-only workflow on a non-default branch is not registered for dispatch. Per the updated brief,
+`probe-360.yml` has a push trigger restricted to `probe/360-measure` and the kit/workflow paths.
+When the owner pushes the kit at #360's turn, that first eligible push registers it and runs **smoke only**.
+Full measurement is available by explicit dispatch after registration. No inherited workflow is changed.
+
+```sh
+# Smoke: 128 attempts, one repetition per labelled cell.
+gh workflow run probe-360.yml -R SSFSKIM/cua --ref probe/360-measure -f smoke=true
+# Full: 2,560 attempts, 20 repetitions per labelled cell.
+gh workflow run probe-360.yml -R SSFSKIM/cua --ref probe/360-measure -f smoke=false
+```
+
+The only push trigger is this branch plus the kit's own paths; push always defaults to smoke.
+There are no PR, schedule or workflow-call triggers. One hosted macOS job,
+approximately an hour for full measurement plus installation/build margin;
+60-minute measurement budget, 80-minute job timeout. This is an estimate, not a measured duration.
+A budget expiry retains partial evidence and fails coverage; it never trims the planned denominator.
+The Mac mini and the owner's GUI/profile are not used. Actions is billing-locked at preparation time;
+**preparation stops at the local commit: no push, dispatch or hosted run**.
+
+## Cells and denominators
+
+Four ordinary public fixtures: textarea, input, contenteditable (`span` content), and compose
+(nested `div`, textbox role). All use `Old draft sentence goes here.` (29 ASCII characters).
+Each row sets up the visible owned document in the foreground without an engine click, brings the
+cover forward, settles 250 ms, verifies the intended selection, then measures **one key only**.
+No typing, screenshot, activation, raise, repair, or automatic key retry occurs in the measurement interval.
+Foreground-reference rows deliberately keep Firefox in front; they are not background successes.
+
+| Cohort | Labelled cells | Full attempts |
+| --- | ---: | ---: |
+| Left / Option+Left × 4 editors × 10 variants | 80 | 1,600 |
+| Cmd+Left / Cmd+Shift+Left × 4 editors × baseline and equivalent prelude | 16 | 320 |
+| Foreground baseline references, all 4 keys × 4 editors | 16 | 320 |
+| Background baseline, no AX range reader or event tracing, Left / Option+Left × 4 editors | 8 | 160 |
+| Background baseline at offset zero, Left / Option+Left × 4 editors | 8 | 160 |
+| **Total** | **128** | **2,560** |
+
+Smoke uses the identical plan at one repetition per cell, not a shortened subset. Order rotates each repetition.
+There are no replacement trials: attempted, scorable, invalid, errors, exact effects, safe effects, and missing rows
+remain distinct. The reader rejects duplicate, unknown, mode-mixed and missing IDs. Native effect failures do
+not invalidate a trial; fixture/identity/watch failures do. A key-induced editor focus loss is a scored failure,
+not a setup exclusion. Three consecutive setup failures stop the run.
+
+### Variants
+
+1. `baseline`: original EventPoster event creation and keyPresses; force plain route 2′ without a focus hold.
+   This is Firefox's failing route, **not** a claim that production routes every Command chord by 2′.
+2. `window`: request window fields 51, 91 and 92 on the original events. Record what survives and the
+   resulting NSEvent window number. Offline on this Mac, 51 survives and 91/92 do not on keyboard events.
+3. `nsevent-window`: create down/up with AppKit's keyboard event initializer, the target window, U+F702
+   arrow characters and unchanged requested modifiers. This is a compound construction/source comparison,
+   not a one-field intervention. Record actual fields rather than assuming the same source.
+4. `numpad`: add numeric-pad only to down/up.
+5. `function`: add secondary-Fn only to down/up.
+6. `arrow-flags`: add both. Restore and flags-changed events retain the original semantics.
+7. `private-source`: original builder, private source requested.
+8. `combined-source`: original builder, combined-session source requested.
+9. `equivalent-prelude`: route 3's core synthetic subtype-1 + window-stamped inert outside click, the
+   **unchanged key** (no Command modifier invented), then subtype-2. No focus-hold registry, screen hold,
+   NSRunningApplication activation, AXRaise, or production foreground/order repairs. It is action-scoped,
+   not a test of the full held production route. Every prelude event is logged and side effects are priced.
+10. `ax-range`: direct AXSelectedTextRange write to the independently specified fixture destination.
+    No key event is posted. This prices an AX alternative, **not** a generic word-motion implementation:
+    a production Option+Left replacement would need native word-boundary semantics and readable same-field range.
+
+The reader-free baseline uses the original fast poster, skipping engine window probes/per-event serialization
+as well as the side range reader. It detects aggregate instrumentation observer effects, not AX-only causality.
+The owned-document title checks and passive foreground/order watcher remain in both arms.
+
+## Evidence and readers
+
+Download the `probe-360-smoke` or `probe-360-full` artifact, then run offline, with no GUI or engine:
+
+```sh
+node scripts/probe-360/read.mjs /absolute/path/to/artifact/data
+```
+
+- `plan.json`, `config.json`, `progress.json`, `engine-stopped.json`: expected IDs, pins, versions, image,
+  mode, timing budget, progress, and verified engine termination. Firefox is installed from the hosted image
+  or Homebrew, so its **recorded version**, not an assumed historical version, bounds the result.
+- `rows.jsonl`: one attempted row, owned DOM setup and samples at requested 0/50/250/1000 ms after RPC return,
+  actual timestamps, key answer, native fields, before/after window identity, retained-field AX ranges, and
+  20 ms passive foreground/order samples. No AXValue/selected-text reads or secret fixtures are used.
+- `rates.tsv`: per-cell planned/attempted/scorable/exact/safe effects, errors, false plain successes,
+  side effects/unknown side-effect coverage, editor focus loss, AX readability/agreement/false confirmations.
+- `events.tsv`: all posted types, flags, keycodes, fields 51/91/92, NSEvent window number, target-pid field,
+  **postToPid argument separately**, source pid and actual source-state field. Rows retain before/after-post
+  fields. Private sources report generated state IDs; `-1` is the constructor selector, not the actual ID.
+- `dom.tsv`: per-attempt keydown/up, beforeinput, input and selectionchange traces, including selection,
+  key modifiers and the public seed. The absence of beforeinput alone does not imply failed caret movement.
+- `ax.tsv`: the detection counterfactual. Availability is not accuracy: compare pre/post ranges against DOM,
+  require the same focused AX element and a genuine non-boundary transition; count false confirmations.
+  At offset zero, unchanged state never acknowledges consumption. DOM and AX samples are asynchronous,
+  with timestamps retained; they are not an atomic receipt fence. No claim extends to secure fields.
+- `engine-stderr.jsonl`: per-event diagnostic records (including posts before an RPC error).
+  `gecko.log*`: stock Firefox `NativeKeyBindings`, `KeyboardHandler` and `IMEHandler` logs with timestamps.
+  Search for `HandleKeyDownEvent`, `GetEditCommands`, `DoCommandBySelector`, `moveLeft` and focus/IME messages,
+  aligned to the attempt's key timestamps. Logs can be absent in a release build; absence is not proof.
+- `patch.json`, `engine-head.txt`, `event-check.txt`, installer provenance: source hashes, engine pin,
+  offline event-construction checks and browser/image origin. Browser profiles/caches are not uploaded.
+
+An exact effect means the known seed is unchanged and the DOM range equals the intended destination after 1 s.
+A safe effect additionally requires readable foreground/order samples without a violation or editor focus loss.
+The watcher stops the run on any observed foreground/order violation; it never repairs it. Sub-20-ms flashes
+cannot be excluded by this sampling, so 0/20 is not proof of zero risk. No variant is a general delivery guarantee.
+
+## What the run can decide
+
+- Was the key received in the owned editor at all (DOM keydown), with which native fields, and did the caret move?
+- Does changing a window field, arrow flag or source fix exactly the failing contexts without breaking input/textarea?
+- Does the synthetic key-equivalent prelude change Gecko's command/IME path without foreground/order side effects?
+- Can AX range writes substitute for this fixture movement, and can the range reader honestly detect failure?
+- Does adding the reader/tracing itself change the outcome? Do boundary predicates falsely look like receipts?
+
+If only DOM keydown arrives but the selector/default action is missing, native editor/keybinding focus is implicated.
+If window-only or flag-only repairs work, the field intervention supplies stronger causal evidence. If none works,
+report the tested limit; stock logs and these external interventions may narrow a native mechanism without proving
+its exact internal branch. Do not turn all-negative cells into a claim that every possible background path is impossible.
+
+**Expectations, not measured outcomes:** the best guess is a native keybinding/IME/key-window dependency, rather
+than a wrong pid: the same pid/code reaches textarea, and Command keys take a different focus-establishing route.
+The original builder has no window stamp and overwrites any generated arrow flags with modifier-only flags, so
+those are credible competing causes. Expect AX range to be available but sometimes stale (the #354 input/textarea
+controls reported the old caret after successful DOM motion), making readability alone unsafe. An AX write may
+work, but cannot be promoted to a generic Option+Left replacement from this ASCII fixture.
+
+Code readers: `Keyboard.swift` (keyPressEvents/EventPoster), `Input.swift` (pressKey/keyboardTarget),
+`Routes.swift` (pressKeyRoute/isKeyEquivalent), `FocusHold.swift` (holdKeyFocus), `Activation.swift`
+(FakeActivation's subtype/inert-click core and the repairs deliberately excluded here).
+
+Upstream research, not a substitute for the measured Firefox version:
+- [Gecko NativeKeyBindings](https://raw.githubusercontent.com/mozilla-firefox/firefox/main/widget/cocoa/NativeKeyBindings.mm):
+  moveLeft/moveWordLeft selectors map to caret commands; single/multiline/rich-text bindings differ.
+- [Gecko TextInputHandler](https://raw.githubusercontent.com/mozilla-firefox/firefox/main/widget/cocoa/TextInputHandler.mm):
+  HandleKeyDownEvent calls interpretKeyEvents; IMEInputHandler::IsFocused requires first responder, key window, active app.
+  That check's existence does not prove it gates this failing path; logs/interventions must establish the connection.
+
+Offline checks: `node --test scripts/probe-360/*.test.mjs scripts/probe-354/transport.test.mjs`;
+`swiftc -typecheck scripts/probe-360/side.swift`; a scratch build and focused `Probe360EventChecks` test
+construct events without posting or making AX requests. They cannot validate GUI delivery or live effect rates.

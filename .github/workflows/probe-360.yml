@@ -1,0 +1,80 @@
+name: probe-360
+# The first eligible push registers this workflow and runs smoke. Keep the kit local while Actions is locked.
+on:
+  push:
+    branches: ['probe/360-measure']
+    paths: ['scripts/probe-360/**', '.github/workflows/probe-360.yml']
+  workflow_dispatch:
+    inputs:
+      smoke:
+        description: 'true = one repetition per cell; false = 20 per cell (~1 hour)'
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+permissions:
+  contents: read
+concurrency:
+  group: probe-360-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  measure:
+    if: github.ref == 'refs/heads/probe/360-measure'
+    runs-on: macos-latest
+    timeout-minutes: 80
+    env:
+      ENGINE_REF: '3c669314e0a5f35aedf20f9b792604fc09628c45'
+      SMOKE: ${{ github.event_name == 'push' && 'true' || inputs.smoke }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Pure kit checks, before any GUI setup
+        run: |
+          test "$GITHUB_REF" = refs/heads/probe/360-measure
+          node --test scripts/probe-360/*.test.mjs scripts/probe-354/transport.test.mjs
+          git log -1 --format='kit %H %s'
+          mkdir -p "$RUNNER_TEMP/probe-360"
+      - name: Runner-owned Firefox and cover preferences
+        run: |
+          bash scripts/probe-316/install.sh firefox
+          test -x /Applications/Firefox.app/Contents/MacOS/firefox
+          mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+          printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json
+          defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
+          defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
+      - name: Build the pinned engine copy, never patch the kit or vendor runtime
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/probe-360-src" "$ENGINE_REF"
+          git -C "$RUNNER_TEMP/probe-360-src" rev-parse HEAD > "$RUNNER_TEMP/probe-360/engine-head.txt"
+          node scripts/probe-360/patch.mjs "$RUNNER_TEMP/probe-360-src" > "$RUNNER_TEMP/probe-360/patch.json"
+          cp scripts/probe-360/event-check.swift "$RUNNER_TEMP/probe-360-src/native/engine/Tests/EngineTests/Probe360EventChecks.swift"
+          swift test --package-path "$RUNNER_TEMP/probe-360-src/native/engine" --scratch-path "$RUNNER_TEMP/probe-360-check" --filter Probe360EventChecks > "$RUNNER_TEMP/probe-360/event-check.txt" 2>&1
+          swift build -c release --package-path "$RUNNER_TEMP/probe-360-src/native/engine" --scratch-path "$RUNNER_TEMP/probe-360-build"
+          swiftc -O -o "$RUNNER_TEMP/side360" scripts/probe-360/side.swift
+      - name: Key-only cells, no automatic retries or foreground/order repairs
+        run: |
+          node scripts/probe-360/measure.mjs --engine "$RUNNER_TEMP/probe-360-build/release/cua-engine" --side "$RUNNER_TEMP/side360" --out "$RUNNER_TEMP/probe-360/data" --smoke "$SMOKE"
+      - name: Rebuild offline tables, including partial coverage
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/probe-360/data/config.json" ]; then
+            node scripts/probe-360/read.mjs "$RUNNER_TEMP/probe-360/data"
+          fi
+      - name: Upload rows, event fields, DOM traces, raw Gecko logs and provenance
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-360-${{ (github.event_name == 'push' || inputs.smoke == 'true') && 'smoke' || 'full' }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/probe-360/*.json
+            ${{ runner.temp }}/probe-360/*.txt
+            ${{ runner.temp }}/probe-360/data/*.json
+            ${{ runner.temp }}/probe-360/data/*.jsonl
+            ${{ runner.temp }}/probe-360/data/*.tsv
+            ${{ runner.temp }}/probe-360/data/gecko.log*
+            ${{ runner.temp }}/probe-316/install.txt
+          # Allow-list only: no disposable browser profile/cache or owner files.
+          retention-days: 30
+          include-hidden-files: false

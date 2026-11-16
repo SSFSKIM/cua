@@ -9,6 +9,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { GateRefused, checkCheckout, gateSummary, launchCommand, listText, parseGateArgs, printStep, runStep, stepDir } from '../../scripts/linux-engine-gate/gate.mjs';
 import { GATE_SCENES, MAX_STEP_MINUTES, STEPS, SUITES_SCRIPT, stepArgs, stepLabel, stepNamed, stepScript, suiteEnv, totals, verdictOps } from '../../scripts/linux-engine-gate/steps.mjs';

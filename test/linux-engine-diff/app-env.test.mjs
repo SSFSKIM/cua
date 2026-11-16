@@ -9,6 +9,8 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { delimiter, join, relative } from 'node:path';
 import test from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { HOME_VARS, launchEnvironment, runHome } from '../../scripts/linux-engine-diff/app-env.mjs';
 import * as chromeModule from '../../scripts/linux-engine-diff/chrome.mjs';

@@ -49,8 +49,9 @@ import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
 import { cleanupOnFatal, cleanupOnStop } from './stop.mjs';
 import { processIdentity, processState, signalIfSame } from './pid-identity.mjs';
-import { inTest } from './hermetic.mjs';
-import { SCRATCH_PREFIX, busesIn, leftoverCheck, leftoverLines, startCheck, startRefusalText, writeMarker } from './leftovers.mjs';
+// a test process reaches no real display (hermetic.mjs); the leftover checks' scope is never switched by it
+import './hermetic.mjs';
+import { SCRATCH_PREFIX, busesIn, defaultScope, leftoverCheck, leftoverLines, startCheck, startRefusalText, writeMarker } from './leftovers.mjs';
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { RECORD_DECLINED, RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
 
@@ -525,12 +526,12 @@ export class Desktop {
   }
 
   /**
-   * Where the run's start and end checks read: its caller's (`leftoverOptions`); in a test process no real scratch root
-   * and no real process table (hermetic.mjs; `proc: null`), so a parallel test's processes are never this run's
-   * leftovers. The checks of the run's own (its bus, its children) read the real /proc wherever it is not named.
+   * Where the run's start and end checks read: the caller's (`leftoverOptions`), else leftovers.mjs `defaultScope`, the
+   * real scratch roots and /proc unless a test file set its fixture (fix wave 4: never a mode the environment
+   * switches). The checks of the run's own (its bus, its children) read the real /proc wherever the scope names none.
    */
   leftoverScope() {
-    return this.leftoverOptions ?? (inTest() ? { roots: [], proc: null } : {});
+    return this.leftoverOptions ?? defaultScope();
   }
 
   /** The /proc the checks of the run's own read: the caller's, else the real one. */
@@ -1268,7 +1269,7 @@ export class Desktop {
     // the end check (rulings 721, 724): every other run's scratch and its session buses, named and left alone, made
     // after this run's own is gone, whatever ended the run
     await step('the end check of what runs left', () => {
-      // a test process reads no real scratch root unless its test names one (hermetic.mjs), as it reaches no real display
+      // the real roots and /proc unless the caller names a scope of its own (a test's fixture; `leftoverScope`)
       this.leftovers = leftoverCheck({ own: [this.dir], ...this.leftoverScope() });
       const lines = leftoverLines(this.leftovers);
       if (lines.length) this.report(`the end check (findings, left alone): ${lines.join('; ')}\n`);

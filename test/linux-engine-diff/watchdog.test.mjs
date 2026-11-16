@@ -14,6 +14,8 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 import { fileURLToPath } from 'node:url';
 
 import { TEST_DISPLAY } from '../../scripts/linux-engine-diff/hermetic.mjs';

@@ -11,6 +11,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, wri
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { removalProof, removeLeftover, startCheck, writeMarker } from '../../scripts/linux-engine-diff/leftovers.mjs';
 import { observeProcesses, referencesTo, scratchReferences } from '../../scripts/linux-engine-diff/process-references.mjs';
@@ -26,6 +28,16 @@ const fresh = (name) => {
   return dir;
 };
 const uid = process.getuid();
+
+/** A child's spawn, failing on its error or after 10 s rather than waiting without bound (fix wave 4). */
+function spawned(child) {
+  let timer;
+  return new Promise((ok, fail) => {
+    timer = setTimeout(() => fail(new Error('the child did not spawn within 10 s')), 10000);
+    child.once('spawn', ok);
+    child.once('error', fail);
+  }).finally(() => clearTimeout(timer));
+}
 
 /**
  * A process in the test's /proc with every field the model reads: argv, environ, cwd, root, exe, fds, maps, its stat
@@ -133,6 +145,9 @@ test('a relative path or a mapping into the scratch is a reference; a zombie hol
   processIn(proc, 400, { argv: ['tail', '-f', 'cua171-run-RelPth/home/log'], cwd: root });
   processIn(proc, 401, { maps: [`${dir}/lib.so (deleted)`] });
   processIn(proc, 402, { state: 'Z', unreadable: ['argv', 'environ', 'cwd', 'root', 'exe', 'fds', 'maps'] });
+  // its one task, the leader, exited too (wave 4: a dead leader with a live worker is read through the worker)
+  mkdirSync(join(proc, '402', 'task', '402'), { recursive: true });
+  writeFileSync(join(proc, '402', 'task', '402', 'stat'), '402 (x) Z 0\n');
   const { processes } = observeProcesses({ proc });
   const by = Object.fromEntries(processes.map((p) => [p.pid, referencesTo(p, dir)]));
   assert.deepEqual(by, { 400: ['argv'], 401: ['maps'], 402: [] });
@@ -194,16 +209,18 @@ test("gate.mjs leftovers takes --remove <dir> and --confirm; --confirm alone is 
   assert.throws(() => parseGateArgs(['leftovers', '--confirm']), /--confirm needs --remove <dir>/);
 });
 
-// the suite under the lock: a parallel test's child holding its own removed scratch reached a test-default start check
-// through the real /proc. A test process's default reads no real process table (`proc: null`), as it reads no real root.
-test("a test process's default start check reads no real process: another test's child in a removed scratch is not a leftover", { skip: process.platform !== 'linux' }, async () => {
+// the suite under the lock: a parallel test's child holding its own removed scratch reached a start check through the
+// real /proc. A test names its fixture scope (`leftoverOptions`; `proc: null` reads no process table); the default is
+// always the real roots and /proc (fix wave 4, wave4-regressions.test.mjs).
+test("a test's fixture scope reads no real process: another test's child in a removed scratch is not a leftover", { skip: process.platform !== 'linux' }, async () => {
   const held = mkdtempSync(join(fresh('real'), 'cua171-run-'));
   const child = spawn('sleep', ['30'], { cwd: held, stdio: 'ignore' });
   try {
-    await new Promise((r) => child.once('spawn', r));
+    await spawned(child);
     rmSync(held, { recursive: true });
     assert.match(startCheck({ roots: [] }).refused.map((r) => r.reason).join(), new RegExp(`pid ${child.pid} sleep \\(its cwd\\)`), 'the real /proc shows it');
     const desktop = new Desktop({ cua: 'unused', run: 'scope', reader: { async close() {} }, startActive: 0, nonce: 'n0' });
+    desktop.leftoverOptions = { roots: [], proc: null };
     try {
       assert.deepEqual(startCheck({ own: [desktop.dir], ...desktop.leftoverScope() }).refused, []);
     } finally {

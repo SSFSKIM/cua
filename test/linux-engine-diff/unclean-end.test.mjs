@@ -10,6 +10,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { MARKER, readMarker, startCheck, writeMarker } from '../../scripts/linux-engine-diff/leftovers.mjs';
 import { Desktop, desktopEnding } from '../../scripts/linux-engine-diff/scenes.mjs';

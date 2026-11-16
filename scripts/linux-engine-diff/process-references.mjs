@@ -41,48 +41,83 @@ const read = (path) => {
 /** A /proc/<pid>/maps line's path: what follows its five fixed columns. */
 const MAPS_PATH = /^\S+ \S+ \S+ \S+ \S+\s+(.+)$/;
 
-/**
- * One process's fields, `{pid, program, fields, unobserved: [{field, reason}]}`, or null when it ended while being read.
- * A zombie has released its files, working directory and memory: it holds nothing, so it is fully observed as empty.
- */
-function observeOne(pid, at) {
+/** A process's or task's state, from its stat (`S`, `R`, `Z`...), or undefined when the stat does not read. */
+const stateAt = (at) => {
   const stat = read(join(at, 'stat'));
-  const state = stat?.slice(stat.lastIndexOf(')') + 2).split(' ')[0];
-  const fields = {};
-  const unobserved = [];
+  return stat?.slice(stat.lastIndexOf(')') + 2).split(' ')[0];
+};
+const exited = (state) => state === 'Z' || state === 'X';
+
+/** Each field at `at` (a process's directory, or one task's), handed to `got(name, value)` or `missed(name, reason)`. */
+function readFields(at, got, missed) {
   const field = (name, readIt) => {
     try {
-      fields[name] = readIt();
+      got(name, readIt());
     } catch (error) {
-      fields[name] = null;
-      unobserved.push({ field: name, reason: error.code ?? String(error.message) });
+      missed(name, error.code ?? String(error.message));
     }
   };
-  if (state === 'Z' || state === 'X') {
-    for (const f of [...TEXT_FIELDS, ...LINK_FIELDS]) fields[f] = ['cwd', 'root', 'exe'].includes(f) ? null : [];
+  const parts = (text) => text.split('\0').filter(Boolean);
+  field('argv', () => parts(readFileSync(join(at, 'cmdline'), 'utf8')));
+  field('environ', () => parts(readFileSync(join(at, 'environ'), 'utf8')));
+  for (const name of ['cwd', 'root', 'exe']) field(name, () => readlinkSync(join(at, name)));
+  field('fds', () =>
+    readdirSync(join(at, 'fd')).flatMap((fd) => {
+      try {
+        return [readlinkSync(join(at, 'fd', fd))];
+      } catch (error) {
+        // closed meanwhile: not a file it holds
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      }
+    }),
+  );
+  field('maps', () => [...new Set(readFileSync(join(at, 'maps'), 'utf8').split('\n').map((l) => MAPS_PATH.exec(l)?.[1]).filter((p) => p?.startsWith('/')))]);
+}
+
+/**
+ * One process's fields, `{pid, program, fields, unobserved: [{field, reason}]}`, or null when it ended while being read.
+ * A leader that has exited (`Z`) while worker threads live (fix wave 4: its main thread called pthread_exit) is read
+ * through its live tasks, `/proc/<pid>/task/<tid>/`: every live task's fields count, each a list of what the tasks hold,
+ * and a task that cannot be read is unobserved. Only a leader with no live task is a zombie: it has released its
+ * files, working directory and memory, so it holds nothing and is fully observed as empty. A task list that cannot be
+ * read is unobserved.
+ */
+function observeOne(pid, at) {
+  const state = stateAt(at);
+  const fields = {};
+  const unobserved = [];
+  let zombie = false;
+  if (!exited(state)) {
+    readFields(at, (name, value) => (fields[name] = value), (name, reason) => {
+      fields[name] = null;
+      unobserved.push({ field: name, reason });
+    });
   } else {
-    const parts = (text) => text.split('\0').filter(Boolean);
-    field('argv', () => parts(readFileSync(join(at, 'cmdline'), 'utf8')));
-    field('environ', () => parts(readFileSync(join(at, 'environ'), 'utf8')));
-    for (const name of ['cwd', 'root', 'exe']) field(name, () => readlinkSync(join(at, name)));
-    field('fds', () =>
-      readdirSync(join(at, 'fd')).flatMap((fd) => {
-        try {
-          return [readlinkSync(join(at, 'fd', fd))];
-        } catch (error) {
-          // closed meanwhile: not a file it holds
-          if (error.code === 'ENOENT') return [];
-          throw error;
-        }
-      }),
-    );
-    field('maps', () => [...new Set(readFileSync(join(at, 'maps'), 'utf8').split('\n').map((l) => MAPS_PATH.exec(l)?.[1]).filter((p) => p?.startsWith('/')))]);
+    for (const f of [...TEXT_FIELDS, ...LINK_FIELDS]) fields[f] = [];
+    let tids = null;
+    try {
+      tids = readdirSync(join(at, 'task')).filter((x) => /^\d+$/.test(x));
+    } catch (error) {
+      unobserved.push({ field: 'tasks', reason: error.code ?? String(error.message) });
+    }
+    // a task whose stat does not read is taken for live, and then read like one
+    const live = (tids ?? []).filter((tid) => !exited(stateAt(join(at, 'task', tid))));
+    for (const tid of live) {
+      const task = join(at, 'task', tid);
+      const missed = [];
+      readFields(task, (name, value) => fields[name].push(...[value].flat()), (name, reason) => missed.push({ field: `task ${tid} ${name}`, reason }));
+      // a task that ended meanwhile is gone, not unobserved
+      if (existsSync(task)) unobserved.push(...missed);
+    }
+    zombie = tids !== null && !live.length;
   }
   // a process that ended meanwhile is gone, not unobserved
   if (!existsSync(at)) return null;
   const comm = read(join(at, 'comm'))?.trim() ?? '';
-  const program = fields.exe ? basename(fields.exe.replace(DELETED, '')) : comm;
-  return { pid, program, ...(state === 'Z' || state === 'X' ? { zombie: true } : {}), fields, unobserved };
+  const exe = [fields.exe].flat().find((e) => typeof e === 'string');
+  const program = exe ? basename(exe.replace(DELETED, '')) : comm;
+  return { pid, program, ...(zombie ? { zombie: true } : {}), fields, unobserved };
 }
 
 /**

@@ -10,6 +10,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } 
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import test from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { GEDIT_TITLE_MAX, geditTitle } from '../../scripts/linux-engine-diff/gedit-title.mjs';
 import { Desktop, scratchRoot } from '../../scripts/linux-engine-diff/scenes.mjs';

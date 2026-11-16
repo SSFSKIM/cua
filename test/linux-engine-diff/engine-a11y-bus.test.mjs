@@ -19,6 +19,8 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { Engine } from '../../scripts/linux-engine-diff/engine.mjs';

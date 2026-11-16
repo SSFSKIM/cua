@@ -9,6 +9,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
+// its runs' start and end checks read a fixture, never the real roots or /proc (fixture-scope.mjs)
+import './fixture-scope.mjs';
 
 import { pidfileIdentity, processIdentity, signalIfSame } from '../../scripts/linux-engine-diff/pid-identity.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';

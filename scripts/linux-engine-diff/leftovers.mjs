@@ -24,6 +24,19 @@ export const BUS_PROGRAMS = ['dbus-daemon', 'dbus-broker', 'at-spi-bus-launcher'
 /** The variables that name a bus's socket in a process's environment. */
 const BUS_VARS = ['DBUS_SESSION_BUS_ADDRESS', 'AT_SPI_BUS_ADDRESS'];
 
+/**
+ * The scope a run's start and end checks read when their caller names none (scenes.mjs `leftoverScope`, gate.mjs
+ * `runStep`): the real scratch roots and /proc. Nothing in the harness changes it, and no environment switches it (fix
+ * wave 4: a child of a `node --test` process inherits its marker). A test file that wants its Desktops and steps to read
+ * a fixture instead says so by importing test/linux-engine-diff/fixture-scope.mjs, which calls `useFixtureScope`.
+ */
+let fallbackScope = {};
+export const defaultScope = () => fallbackScope;
+/** The seam a test file sets its fixture scope by (`{roots, proc}`; `proc: null` reads no process table). */
+export function useFixtureScope(scope) {
+  fallbackScope = scope;
+}
+
 /** The roots a run's scratch may lie in (scenes.mjs `scratchRoot`): the harness's TMPDIR, and /tmp. */
 export const scratchRoots = () => [...new Set([tmpdir(), '/tmp'])];
 

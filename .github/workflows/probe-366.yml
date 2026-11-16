@@ -1,5 +1,9 @@
 name: probe-366
+# The registration push is itself a smoke run. Keep this commit local until the hosted queue is released.
 on:
+  push:
+    branches: ['probe/366-measure']
+    paths: ['.github/workflows/probe-366.yml', 'scripts/probe-366/**']
   workflow_dispatch:
     inputs:
       mode:
@@ -52,7 +56,7 @@ jobs:
       - name: Measure (never retries the action)
         env:
           BROWSER: ${{ matrix.browser }}
-          SMOKE: ${{ inputs.mode == 'smoke' }}
+          SMOKE: ${{ github.event_name == 'push' || inputs.mode == 'smoke' }}
         run: |
           node scripts/probe-366/measure.mjs --browser "$BROWSER" --smoke "$SMOKE" --engine "$RUNNER_TEMP/build366/release/cua-engine" --tool "$RUNNER_TEMP/tool366" --out "$RUNNER_TEMP/probe-366/$BROWSER"
       - name: Read denominators and rates
@@ -66,7 +70,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: probe-366-${{ matrix.browser }}-${{ inputs.mode }}
+          name: probe-366-${{ matrix.browser }}-${{ inputs.mode || 'smoke' }}
           path: |
             ${{ runner.temp }}/probe-366/**/rows.jsonl
             ${{ runner.temp }}/probe-366/**/config.json

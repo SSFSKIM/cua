@@ -1,7 +1,8 @@
 # #360: background Firefox caret delivery, measure first
 
 Disposable kit based on `probe/354-measure` at `4ab1ebd6`. Nothing here is a proposed product fix.
-The engine is the exact reproduction pin, `3c669314e0a5f35aedf20f9b792604fc09628c45`, not moving main.
+The engine is pinned to current main at preparation, `b99232def1e37307848dd1ccb08726729eb81b66`, not a moving ref.
+The earlier #354 reproduction base was `3c669314`; this kit measures the code a fix would land on.
 Only a runner-owned scratch copy is patched. The vendor runtime is untouched.
 
 ## Dispatch (not run during preparation)

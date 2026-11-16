@@ -14,7 +14,7 @@ mkdirSync(OUT,{recursive:true});
 const sleep=ms=>new Promise(r=>setTimeout(r,Math.max(0,ms))),startedAt=Date.now(),cells=plan(SMOKE);
 const config={kit:process.env.GITHUB_SHA,engine:ENGINE_REF,image:process.env.ImageVersion,smoke:SMOKE,reps:SMOKE?1:20,planned:cells.length,startedAt,
  fixtureOwnershipVersion:3,browser:'firefox',samplingMs:DELAYS,sideWatchMs:20,budgetMinutes:60,
- baseline:'reproduction engine preflight and original EventPoster.event/keyPresses, forced route 2-prime; no inherited focus hold',
+ baseline:'pinned current-main engine preflight and original EventPoster.event/keyPresses, forced route 2-prime; no inherited focus hold',
  setup:'foreground fixture DOM setup without engine clicks; cover foreground; 250ms settle; verify owned document/selection then arm trace',
  expected:'ASCII seed end: Left [28,0], Option+Left [24,0], Cmd+Left [0,0], Cmd+Shift+Left [0,29]; foreground cells independently check these expectations',
  noRetry:'Every planned row is attempted once; setup failures/posted failures stay in the denominator. Three consecutive invalid setups stop the run.',

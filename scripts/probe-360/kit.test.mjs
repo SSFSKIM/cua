@@ -11,7 +11,7 @@ test('full and smoke cover every labelled cell, without silently reducing repeti
  assert.equal(full.filter(x=>x.scene==='background'&&x.key==='Left'&&x.variant==='window').length,80);
  assert.equal(full.filter(x=>x.scene==='foreground').length,320);
  assert.equal(full.filter(x=>x.reader===false).length,160);
- assert.equal(ENGINE_REF,'3c669314e0a5f35aedf20f9b792604fc09628c45');
+ assert.equal(ENGINE_REF,'b99232def1e37307848dd1ccb08726729eb81b66');
  assert.deepEqual(expected('alt+Left'),[24,0]);assert.deepEqual(expected('cmd+shift+Left'),[0,29]);
 });
 const owner={pageId:'a'.repeat(32),timeOrigin:123,ownerEpoch:1};

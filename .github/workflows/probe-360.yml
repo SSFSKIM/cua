@@ -22,7 +22,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 80
     env:
-      ENGINE_REF: '3c669314e0a5f35aedf20f9b792604fc09628c45'
+      ENGINE_REF: 'b99232def1e37307848dd1ccb08726729eb81b66'
       SMOKE: ${{ github.event_name == 'push' && 'true' || inputs.smoke }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd

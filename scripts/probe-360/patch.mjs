@@ -1,4 +1,4 @@
-// Instrument only a disposable copy of the pinned reproduction engine.
+// Instrument only a disposable copy of the pinned current-main engine.
 import {readFileSync,writeFileSync,realpathSync,existsSync} from 'node:fs';
 import {join,resolve} from 'node:path';import {fileURLToPath} from 'node:url';import {createHash} from 'node:crypto';
 const kit=realpathSync(fileURLToPath(new URL('../../',import.meta.url)));

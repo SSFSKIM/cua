@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync,existsSync} from 'node:fs';
-import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {patchEngine} from './patch.mjs';
-const original=readFileSync(new URL('../../native/engine/Sources/Engine/Input.swift',import.meta.url),'utf8');
+import {tmpdir} from 'node:os';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {execFileSync} from 'node:child_process';
+import {patchEngine} from './patch.mjs';import {ENGINE_REF} from './model.mjs';
+// Exercise the engine actually built by the workflow, not the inherited kit checkout's older native source.
+const original=execFileSync('git',['-C',fileURLToPath(new URL('../../',import.meta.url)),'show',ENGINE_REF+':native/engine/Sources/Engine/Input.swift'],{encoding:'utf8'});
 function scratch(t,text=original){const root=mkdtempSync(join(tmpdir(),'probe360-'));t.after(()=>rmSync(root,{recursive:true,force:true}));const dir=join(root,'native/engine/Sources/Engine');mkdirSync(dir,{recursive:true});writeFileSync(join(dir,'Input.swift'),text);return {root,dir}}
 test('patch scratch only; provenance identifies original bytes; second application refuses',t=>{
  const {root,dir}=scratch(t);const m=patchEngine(root);

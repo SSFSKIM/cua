@@ -1,0 +1,58 @@
+name: probe-pw-walk
+on:
+  push:
+    branches: ['probe/pw-walk']
+    paths: ['.github/workflows/probe-pw-walk.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: probe-pw-walk
+  cancel-in-progress: false
+env:
+  ENGINE_REF: 290303c131c20e4dc88001b8b970d03785ec0b1d
+jobs:
+  measure:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [cft, electron, electron-parity, safari, firefox, appkit]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Build existing Electron fixture dependency and independent AX probes
+        run: |
+          npm ci --prefix scripts/probe-390/fixture --no-audit --no-fund
+          swiftc -O -o "$RUNNER_TEMP/pw-ax" scripts/probe-pw-walk/ax.swift
+          swiftc -O -o "$RUNNER_TEMP/pw-fixture" scripts/probe-pw-walk/fixture.swift
+          if [ '${{ matrix.browser }}' = firefox ]; then
+            # Same hosted Firefox source and update policy as probe/359-hosted.
+            if [ ! -d /Applications/Firefox.app ]; then brew install --cask firefox; fi
+            mkdir -p /Applications/Firefox.app/Contents/Resources/distribution
+            printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json
+          fi
+      - name: Build the pinned unmodified main engine
+        run: |
+          test "$(git rev-parse "$ENGINE_REF")" = "$ENGINE_REF"
+          git worktree add --detach "$RUNNER_TEMP/pw-main" "$ENGINE_REF"
+          swift build -c release --package-path "$RUNNER_TEMP/pw-main/native/engine" --scratch-path "$RUNNER_TEMP/pw-build"
+          test -z "$(git -C "$RUNNER_TEMP/pw-main" status --porcelain)"
+      - name: Compare raw AX, native reply, production render and repeated observation
+        run: |
+          node scripts/probe-pw-walk/measure.mjs --browser '${{ matrix.browser }}' --engine "$RUNNER_TEMP/pw-build/release/cua-engine" --source "$RUNNER_TEMP/pw-main" --engine-ref "$ENGINE_REF" --tool "$RUNNER_TEMP/pw-ax" --fixture "$RUNNER_TEMP/pw-fixture" --out "$RUNNER_TEMP/pw-evidence"
+      - name: Upload redacted owned evidence only
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: pw-walk-${{ matrix.browser }}
+          path: ${{ runner.temp }}/pw-evidence/*
+          retention-days: 14
+          if-no-files-found: warn

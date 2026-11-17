@@ -3,17 +3,18 @@ import fs from 'node:fs';
 import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {spawn,execFileSync} from 'node:child_process';
-import {createHash} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {win,usableFrame,offscreenProof,current,spaceIds,anotherSpaceProof,visibleOnSpace,missingAuthorization,windowMatch,raiseTarget,compareReturn} from './evidence.mjs';
-import {offscreenFixture,restoreOriginalFrame,switchToSpace} from './fixtures.mjs';
+import {offscreenFixture,restoreOriginalFrame,switchToSpace,requestOwnedBounds} from './fixtures.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted'||process.platform!=='darwin')throw Error('disposable GitHub-hosted macOS only');
-const [source,engine,tool,fixture,out,head,sha]=process.argv.slice(2);
+const [source,engine,tool,fixture,out,head,sha,fixtureManifest]=process.argv.slice(2);
 fs.mkdirSync(out,{recursive:true});
 const save=(name,value)=>fs.writeFileSync(join(out,name),JSON.stringify(value,null,2)+'\n');
 // Save context before socket startup, imports, permission checks or GUI setup can fail.
-save('config.json',{head,sha,source,engine,fixture,runnerOS:process.env.ImageOS,imageVersion:process.env.ImageVersion,
+const config={head,sha,source,engine,fixture,fixtureManifest,runnerOS:process.env.ImageOS,imageVersion:process.env.ImageVersion,
  runnerArch:process.env.RUNNER_ARCH,node:process.version,kit:process.env.GITHUB_SHA,run:process.env.GITHUB_RUN_ID,
- os:execFileSync('/usr/bin/sw_vers',[],{encoding:'utf8'}),kernel:execFileSync('/usr/bin/uname',['-a'],{encoding:'utf8'})});
+ os:execFileSync('/usr/bin/sw_vers',[],{encoding:'utf8'}),kernel:execFileSync('/usr/bin/uname',['-a'],{encoding:'utf8'})};
+save('config.json',config);
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const load=p=>import(pathToFileURL(join(source,p)));
 const err=e=>({name:e.name,errorName:e.errorName??null,message:e.message});
@@ -34,6 +35,11 @@ const owned=[],rows=[];
 let raw=null,meta={},emitted=[];
 let client;
 try{
+ const fixtureInfo=JSON.parse(fs.readFileSync(fixtureManifest,'utf8'));
+ config.fixtureControl=fixtureInfo.probe367Control;save('config.json',config);
+ if(fixtureInfo.appPath!==fixture||!config.fixtureControl)throw Error('owned fixture control manifest does not match the fixture');
+ if(hash(fs.readFileSync(join(fixture,'Contents','Resources','app','probe367-control.cjs')))!==config.fixtureControl.controlSourceSha256
+  ||hash(fs.readFileSync(join(fixture,'Contents','Resources','app','main.js')))!==config.fixtureControl.instrumentedMainSha256)throw Error('owned fixture control source hashes do not match the manifest');
  const ready=await until(()=>fs.existsSync(socket),Boolean);if(!ready.ok)throw Error('engine socket absent');
  const {nativePipe}=await load('test/helpers/fake-engine.mjs');
  const {createEngineClient}=await load('src/services/engine/client.mjs');
@@ -75,8 +81,10 @@ try{
   const appPath=scene==='textedit'?'/System/Applications/TextEdit.app':fixture;
   const row={head,sha,scene,appPath,...(scene==='textedit'?{documentPath:document}:{})};rows.push(row);
   const checkpoint=()=>save('results.json',rows);checkpoint();
+  const controlDirectory=scene==='electron'?join(out,'fixture-control'):null;
+  if(controlDirectory){fs.mkdirSync(controlDirectory,{recursive:true,mode:0o700});row.fixtureBoundsControl={...config.fixtureControl,directory:controlDirectory,operations:[]};}
   const before=oracle('find',bundle).apps.map(a=>a.pid);
-  execFileSync('/usr/bin/open',['-n','-g','-a',appPath,...(scene==='textedit'?[document]:['--args',`--cua-fixture-user-data=${join(out,'profile')}`,'--cua-fixture-bounds=100,200,900,500'])],{timeout:10000});
+  execFileSync('/usr/bin/open',['-n','-g','-a',appPath,...(scene==='textedit'?[document]:['--args',`--cua-fixture-user-data=${join(out,'profile')}`,'--cua-fixture-bounds=100,200,900,500',`--cua367-control-dir=${controlDirectory}`])],{timeout:10000});
   const found=await until(()=>oracle('find',bundle),i=>i.apps.some(a=>!before.includes(a.pid)));
   if(!found.ok)throw Error(scene+' no owned PID');
   const pid=found.value.apps.find(a=>!before.includes(a.pid)).pid;owned.push(pid);row.pid=pid;
@@ -86,11 +94,12 @@ try{
   const sceneOracle=(...a)=>oracle(...a,`--window=${number}`),info=()=>sceneOracle('info',pid);
   const frameIO={read:info,move:(x,y)=>sceneOracle('move',pid,x,y),size:(w,h)=>sceneOracle('size',pid,w,h),
    wait:(accept,ms=12000)=>until(info,accept,ms)};
-  // Both initial setup and main's lineage-refresh setup use the same bounded routes and independent ID checks.
-  const switchTo=target=>switchToSpace(target,{read:info,wait:accept=>until(info,accept,6000),post:command=>oracle(command),
-   activateFinder:()=>oracle('activate','com.apple.finder'),
-   openMissionControl:async()=>{const posted=oracle('mission-control');await delay(1000);return {posted,oracle:info()};},
-   selectDesktop:ordinal=>oracle('select-desktop',ordinal),dismissMissionControl:()=>oracle('escape')});
+  if(controlDirectory)frameIO.ownedBounds=async bounds=>{
+   const before=info(),operation=await requestOwnedBounds({directory:controlDirectory,bounds,id:randomUUID(),pid,wait:until});
+   const event={...operation,before,readback:info()};row.fixtureBoundsControl.operations.push(event);checkpoint();return event;
+  };
+  // If the actual System Events shortcut does not switch Spaces, stop setup rather than trying more routes.
+  const switchTo=target=>switchToSpace(target,{read:info,wait:accept=>until(info,accept,6000),post:command=>oracle(command)});
   row.initialSize=sceneOracle('size',pid,900,500);row.initialMove=sceneOracle('move',pid,100,200);row.initialActivate=oracle('activate','com.apple.finder');
   let bound;
   // Warm Chromium once, then pin the actual stable public getApp/getAXState/getScreenshot outputs.
@@ -114,7 +123,7 @@ try{
    if(head==='main'&&(!row.offscreenGetApp.ok||!row.offscreen.ok||!row.offscreenDiff.ok||!row.offscreenScreenshot.raw)){
     // disableDiff failures reset native lineage. Rebuild it via a successful *public facade* observation while visible.
     const setup=row.offscreenRaiseSetup={};setup.restoration=await restoreOriginalFrame(frameIO,origin);
-    setup.restoreSize=setup.restoration.size;setup.restore=setup.restoration.move;setup.visible=setup.restoration.verified;
+    setup.restoreSize=setup.restoration.size;setup.restore=setup.restoration.move??setup.restoration.boundsControl;setup.visible=setup.restoration.verified;
     if(setup.visible.ok){
      setup.state=await call(scene+'-2-raise-refresh',()=>bound.getAXState({disableDiffing:true,emit:false}));
      setup.observedOracle=info();target=raiseTarget(setup.state,setup.observedOracle);
@@ -134,7 +143,7 @@ try{
    row.offscreenRaise=unavailable(row.offscreenSetup.reason);
   }
   row.offscreenRestoration=await restoreOriginalFrame(frameIO,origin);
-  row.restoreSizeAfterOffscreen=row.offscreenRestoration.size;row.restoreAfterOffscreen=row.offscreenRestoration.move;
+  row.restoreSizeAfterOffscreen=row.offscreenRestoration.size;row.restoreAfterOffscreen=row.offscreenRestoration.move??row.offscreenRestoration.boundsControl;
   checkpoint();
   if(!row.offscreenRestoration.verified.ok)throw Error(scene+' original size/frame could not be restored after offscreen setup; subsequent fixtures would not be comparable');
   // Keep 110 points visible, independent of the hosted display's width and the app's actual accepted width.
@@ -214,7 +223,11 @@ try{
   }
   row.exitFullscreen=sceneOracle('fullscreen',pid,false);row.fullscreenExited=await until(info,i=>win(i)?.fullScreen===false,15000);
   row.returnToTarget=oracle('activate',bundle);row.targetSpaceRestored=await until(info,visibleOnSpace);
-  row.restoreMove=sceneOracle('move',pid,origin.x,origin.y);row.restoreSize=sceneOracle('size',pid,origin.width,origin.height);row.restoreBackground=oracle('activate','com.apple.finder');
+  if(controlDirectory){
+   row.fullscreenRestoration=await restoreOriginalFrame(frameIO,origin);
+   row.restoreMove=row.fullscreenRestoration.boundsControl;
+  }else{row.restoreMove=sceneOracle('move',pid,origin.x,origin.y);row.restoreSize=sceneOracle('size',pid,origin.width,origin.height);}
+  row.restoreBackground=oracle('activate','com.apple.finder');
   checkpoint();
   row.hide=sceneOracle('hide',pid);row.hiddenOracle=info();
   row.hidden=await call(scene+'-5-state',()=>bound.getAXState({disableDiffing:true,emit:false}));

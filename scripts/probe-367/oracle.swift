@@ -104,10 +104,34 @@ if args.first == "preflight" {
   result=desktopControl(args.first == "select-desktop" ? Int(args[1]) : nil)
 } else if args.first == "find" {
   result = ["apps":NSRunningApplication.runningApplications(withBundleIdentifier:args[1]).map { ["pid":$0.processIdentifier,"path":$0.bundleURL?.path ?? ""] }]
-} else if ["switch-left","switch-right","mission-control","escape"].contains(args.first ?? "") {
-  let code: CGKeyCode = args[0] == "switch-left" ? 123 : args[0] == "switch-right" ? 124 : args[0] == "escape" ? 53 : 126
-  for down in [true,false] { let e=CGEvent(keyboardEventSource:nil,virtualKey:code,keyDown:down)!;if args[0] != "escape" { e.flags = .maskControl };e.post(tap:.cghidEventTap) }
-  result = ["posted":args[0]]
+} else if ["switch-left","switch-right","mission-control"].contains(args.first ?? "") {
+  // The plan's System Events route, not a flags-only CGEvent pair (which did nothing on the hosted image).
+  let code = args[0] == "switch-left" ? 123 : args[0] == "switch-right" ? 124 : 126
+  let script = "with timeout of 3 seconds\n tell application \"System Events\" to key code \(code) using control down\nend timeout"
+  let task=Process(), output=Pipe(), errors=Pipe()
+  task.executableURL=URL(fileURLWithPath:"/usr/bin/osascript");task.arguments=["-e",script]
+  task.standardOutput=output;task.standardError=errors
+  result=["requested":args[0],"mechanism":"osascript/System Events key code","keyCode":code,"modifiers":["control"],"script":script,"posted":NSNull()]
+  do {
+    try task.run()
+    let deadline=ProcessInfo.processInfo.systemUptime+6
+    while task.isRunning && ProcessInfo.processInfo.systemUptime<deadline { Thread.sleep(forTimeInterval:0.05) }
+    let timedOut=task.isRunning
+    if timedOut {
+      task.terminate()
+      let grace=ProcessInfo.processInfo.systemUptime+0.5
+      while task.isRunning && ProcessInfo.processInfo.systemUptime<grace { Thread.sleep(forTimeInterval:0.05) }
+      if task.isRunning { kill(task.processIdentifier,SIGKILL) }
+    }
+    task.waitUntilExit()
+    result["exitCode"]=task.terminationStatus;result["timedOut"]=timedOut
+    result["stdout"]=String(data:output.fileHandleForReading.readDataToEndOfFile(),encoding:.utf8) ?? ""
+    result["stderr"]=String(data:errors.fileHandleForReading.readDataToEndOfFile(),encoding:.utf8) ?? ""
+    if !timedOut && task.terminationStatus==0 { result["posted"]=args[0] }
+  } catch { result["launchError"]=error.localizedDescription }
+} else if args.first == "escape" {
+  for down in [true,false] { CGEvent(keyboardEventSource:nil,virtualKey:53,keyDown:down)?.post(tap:.cghidEventTap) }
+  result=["posted":"escape","mechanism":"CGEvent"]
 } else if args.first == "activate" {
   let a=NSRunningApplication.runningApplications(withBundleIdentifier:args[1]).first
   result=["activated":a?.activate(options:[]) ?? false]

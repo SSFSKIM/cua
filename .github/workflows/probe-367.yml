@@ -55,6 +55,8 @@ jobs:
           swiftc -O -o "$RUNNER_TEMP/oracle367" scripts/probe-367/oracle.swift
           npm ci --no-audit --no-fund
           node scripts/native-matrix/fixtures/electron-fixture.mjs --cache "$RUNNER_TEMP/fixture367" > "$RUNNER_TEMP/fixture367.json"
+          node scripts/probe-367/instrument-fixture.mjs "$RUNNER_TEMP/fixture367.json"
+          cp "$RUNNER_TEMP/fixture367.json" "$RUNNER_TEMP/evidence367/fixture.json"
           git -C "$RUNNER_TEMP/src367-fix" diff --exit-code
           git -C "$RUNNER_TEMP/src367-main" diff --exit-code
       - name: Exercise both heads sequentially (one engine alive at a time)
@@ -65,7 +67,7 @@ jobs:
           status=0
           for head in main fix; do
             SHA=$(git -C "$RUNNER_TEMP/src367-$head" rev-parse HEAD)
-            node scripts/probe-367/measure.mjs "$RUNNER_TEMP/src367-$head" "$RUNNER_TEMP/build367-$head/release/cua-engine" "$RUNNER_TEMP/oracle367" "$FIXTURE" "$RUNNER_TEMP/evidence367/$head" "$head" "$SHA" || status=1
+            node scripts/probe-367/measure.mjs "$RUNNER_TEMP/src367-$head" "$RUNNER_TEMP/build367-$head/release/cua-engine" "$RUNNER_TEMP/oracle367" "$FIXTURE" "$RUNNER_TEMP/evidence367/$head" "$head" "$SHA" "$RUNNER_TEMP/fixture367.json" || status=1
           done
           exit "$status"
       - name: Upload only runner-owned evidence, never profiles

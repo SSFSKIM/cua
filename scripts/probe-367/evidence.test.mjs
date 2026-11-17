@@ -5,7 +5,11 @@ import {createService} from '../../src/services/engine/service.mjs';
 import {createSkyService} from '../../src/services/sky.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {node,skyshot} from '../../test/native-goldens/builder.mjs';
-import {offscreenFixture,restoreOriginalFrame,switchToSpace} from './fixtures.mjs';
+import {offscreenFixture,restoreOriginalFrame,switchToSpace,requestOwnedBounds} from './fixtures.mjs';
+import fs from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {createPoller} from './electron-control.cjs';
 
 const frame={x:-5000,y:200,width:900,height:500};
 const screen={x:0,y:0,width:1440,height:900};
@@ -137,28 +141,70 @@ test('the resized offscreen fixture restores both original size and origin befor
  assert.deepEqual(actions,[['size',900,500],['move',100,200]]);
  assert.deepEqual(win(restored.verified.value).frame,{x:100,y:200,width:900,height:500});
 });
-function spaceSetup({finderWorks=true,selectionWorks=true}={}){
+function spaceSetup({switches=false}={}){
  let active=10;const actions=[];
  const read=()=>({...info({spaces:[10],cgWindowFound:true,cgOnscreen:active===10,inOnscreenList:active===10}),activeSpace:active,
   managedDisplaySpaces:[{'Current Space':{ManagedSpaceID:active},Spaces:[{ManagedSpaceID:1,type:0},{ManagedSpaceID:10,type:4}]}]});
  const io={read,wait:accept=>{const value=read();return {ok:Boolean(accept(value)),value};},
-  post:command=>{actions.push(command);return {posted:command};},activateFinder:()=>{actions.push('activate-finder');if(finderWorks)active=1;return {activated:true};},
-  openMissionControl:()=>{actions.push('mission-control');return {posted:'mission-control'};},selectDesktop:ordinal=>{actions.push(['select-desktop',ordinal]);if(selectionWorks)active=1;return {axPressResult:0};},
-  dismissMissionControl:()=>{actions.push('escape');return {posted:'escape'};}};
+  post:command=>{actions.push(command);if(switches)active=1;return {posted:command,mechanism:'osascript/System Events key code',exitCode:0};},
+  activateFinder:()=>{throw Error('no further Space setup routes after the actual System Events attempt');}};
  return {io,actions};
 }
-test('one ineffective Space shortcut falls back to Finder and independently proves the original desktop',async()=>{
+test('a successful System Events process is not Space-switch proof and gets no further setup routes',async()=>{
  const {io,actions}=spaceSetup(),result=await switchToSpace(1,io);
- assert.equal(result.ok,true);assert.equal(current(result.value),1);assert.equal(anotherSpaceProof(result.value),true);
- assert.deepEqual(actions,['switch-left','activate-finder']);assert.equal(result.steps[0].after.ok,false);
-});
-test('if Finder does not switch Spaces, Mission Control selects the known original desktop exactly once',async()=>{
- const {io,actions}=spaceSetup({finderWorks:false}),result=await switchToSpace(1,io);
- assert.equal(result.ok,true);assert.equal(current(result.value),1);assert.equal(anotherSpaceProof(result.value),true);
- assert.deepEqual(actions,['switch-left','activate-finder','mission-control',['select-desktop',1],'escape']);
-});
-test('an unchanged fullscreen Space remains a switching blocker, not a second-Space creation failure',async()=>{
- const {io,actions}=spaceSetup({finderWorks:false,selectionWorks:false}),result=await switchToSpace(1,io);
  assert.equal(result.ok,false);assert.equal(current(result.value),10);
- assert.match(result.reason,/switch|select/i);assert.equal(actions.filter(a=>a==='switch-left').length,1);
+ assert.deepEqual(actions,['switch-left']);assert.equal(result.steps[0].posted.exitCode,0);assert.equal(result.steps[0].after.ok,false);
+});
+test('actual distinct active/window Space IDs prove a successful System Events switch',async()=>{
+ const {io,actions}=spaceSetup({switches:true}),result=await switchToSpace(1,io);
+ assert.equal(result.ok,true);assert.equal(current(result.value),1);assert.equal(anotherSpaceProof(result.value),true);
+ assert.deepEqual(actions,['switch-left']);
+});
+
+test('owned Electron control executes each operation once and ACKs actual accepted bounds',t=>{
+ const directory=fs.mkdtempSync(join(tmpdir(),'p367-control-'));t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+ const requested={x:-5000,y:200,width:900,height:500},accepted={...requested,x:-4900},calls=[];
+ const poll=createPoller({directory,getWindow:()=>({setBounds:b=>calls.push(b),getBounds:()=>accepted})});
+ fs.writeFileSync(join(directory,'request.json'),JSON.stringify({id:'one',operation:'setBounds',bounds:requested}));
+ poll();poll();
+ assert.deepEqual(calls,[requested]);
+ const ack=JSON.parse(fs.readFileSync(join(directory,'ack.json')));
+ assert.equal(ack.id,'one');assert.deepEqual(ack.requested,requested);assert.deepEqual(ack.accepted,accepted);
+ fs.writeFileSync(join(directory,'request.json'),JSON.stringify({id:'bad',operation:'Raise',bounds:requested}));poll();
+ const refused=JSON.parse(fs.readFileSync(join(directory,'ack.json')));
+ assert.equal(refused.id,'bad');assert.equal(typeof refused.error,'string');assert.equal(calls.length,1);
+});
+test('Electron-only setup keeps all constrained AX attempts, then uses one acknowledged owned setBounds route',async()=>{
+ const {io,actions}=clampedWindow({resizeClamps:true,bottomClamps:true});let owned=false;
+ const nativeRead=io.read;io.read=()=>owned?info({frame,overlapsDisplay:false}):nativeRead();
+ io.wait=accept=>{const value=io.read();return {ok:Boolean(accept(value)),value};};
+ io.ownedBounds=async bounds=>{actions.push(['ownedBounds',bounds]);owned=true;return {ok:true,ack:{id:'owned-one',requested:bounds,accepted:bounds}};};
+ const result=await offscreenFixture(io);
+ assert.equal(result.ok,true);assert.equal(offscreenProof(result.value),true);assert.equal(result.attempts.length,4);
+ assert.deepEqual(actions.at(-1),['ownedBounds',{x:-5000,y:200,width:900,height:500}]);
+ assert.equal(result.attempts.slice(0,3).every(a=>a.proof.ok===false),true);
+});
+test('a successful owned ACK without independent zero overlap cannot authorize the offscreen measurement',async()=>{
+ const {io}=clampedWindow({resizeClamps:true,bottomClamps:true});let controls=0;
+ io.ownedBounds=async bounds=>{controls++;return {ok:true,ack:{id:'clamped',requested:bounds,accepted:bounds}};};
+ const result=await offscreenFixture(io);
+ assert.equal(controls,1);assert.equal(result.ok,false);assert.equal(offscreenProof(result.value),false);
+});
+test('Electron restoration uses its owned bounds control, not the AX setters that clamp outside displays',async()=>{
+ const {io,actions}=clampedWindow();const original={x:100,y:200,width:900,height:500};
+ io.ownedBounds=async bounds=>{actions.push(['ownedBounds',bounds]);return {ok:true,ack:{id:'restore',requested:bounds,accepted:bounds}};};
+ const result=await restoreOriginalFrame(io,original);
+ assert.equal(result.verified.ok,true);assert.deepEqual(actions,[['ownedBounds',original]]);
+});
+test('the real command-file client rejects a stale operation ACK before accepting the owned process response',async t=>{
+ const directory=fs.mkdtempSync(join(tmpdir(),'p367-client-'));t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+ const bounds={x:-5000,y:200,width:900,height:500},calls=[];
+ const poll=createPoller({directory,getWindow:()=>({setBounds:b=>calls.push(b),getBounds:()=>bounds})});
+ fs.writeFileSync(join(directory,'ack.json'),JSON.stringify({id:'stale',pid:process.pid}));
+ const wait=async(read,accept)=>{
+  assert.equal(accept(read()),false,'a stale ACK must not satisfy this operation');poll();
+  const value=read();return {ok:accept(value),value};
+ };
+ const result=await requestOwnedBounds({directory,bounds,id:'fresh',pid:process.pid,wait});
+ assert.equal(result.ok,true);assert.equal(result.ack.id,'fresh');assert.deepEqual(calls,[bounds]);
 });

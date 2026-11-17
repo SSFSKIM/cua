@@ -87,6 +87,13 @@ extension Engine {
       guard let chosen = offeredActions(of: target.element, ax: ax).first(where: { $0.description == action }) else {
         throw invalidSecondaryAction(action)
       }
+      // Ruling 1ea561bc:782 (Placement.swift): a Raise on a window on another Space answers success and does nothing,
+      // so it is refused before anything is sent.
+      if let refusal = raiseRefusal(action: chosen.name, role: target.entry.identity.role, placement: {
+        livePlacement(of: target.element, application: AXUIElementCreateApplication(target.owner), frame: frame(of: target.element))
+      }, app: app.displayName) {
+        throw refusal
+      }
       if target.entry.identity.role == kAXMenuBarItemRole {
         if chosen.name == kAXPickAction, menuOfMenuBarItem(target.element, ax: ax) != nil {
           try holdMenuRecord(target.element, storedFrame: target.entry.frame, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)

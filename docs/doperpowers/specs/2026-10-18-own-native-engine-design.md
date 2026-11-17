@@ -4997,21 +4997,28 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          AXUIElementForTextMarker to an AXStaticText whose AXParent is the field. The window fallback is replaced by
          (a), which is generic where (b) is WebKit's marker API (`readbackFocusedByWalk`): when the application names
          no focused element, its primary window (AXFocusedWindow, else AXMainWindow) is walked breadth first, reading
-         each element's AXFocused and its role only when focused, for an element with AXFocused true and a text-entry
-         role or AXSecureTextField (which the snapshot then refuses unread): the roles the snapshot accepts, a
-         contenteditable region's AXTextArea included. After a key press the same run found Safari's AXWebArea itself
-         reading AXFocused true beside the editor, 10 of 10, so the walk never claims the first focused element it
-         meets: a focused web area, or any other focused element without such a role, is walked through and not
-         counted. It is claimed only when it is the one such element and the walk finished within `typeReadbackFocusWalkNodes` (200) and `typeReadbackFocusWalkMs`
-         (40); zero, several, or a walk cut short claim nothing (`noFocusedElement`), since an element past the bound
-         could be another. Children are read to `typeReadbackFocusWalkDepth` (12, the window at 0) and never of the
-         claimed element, so nothing inside the field, whose children follow its text, is read: the identity check's
-         walk after a secret is typed reads the same elements whatever the secret. The bounds give about 6 times the
+         each element's role. An element with a text-entry role or AXSecureTextField (which the snapshot then refuses
+         unread), the roles the snapshot accepts, a contenteditable region's AXTextArea included, is a leaf of the
+         walk: its AXFocused is read and its children never are, focused or not, so nothing typed into any field is
+         read. Any other element is walked through, focused or not: after a key press the same run found Safari's
+         AXWebArea itself reading AXFocused true beside the editor, 10 of 10, so the walk never claims the first focused
+         element it meets. The one focused text-entry element is claimed only when the walk finished with nothing left
+         unread within `typeReadbackFocusWalkNodes` (200) and `typeReadbackFocusWalkMs` (40): zero, several, a walk
+         past either bound, an element at `typeReadbackFocusWalkDepth` (12, the window at 0) that has children, or a
+         read that failed (any error but noValue and attributeUnsupported, which are absences, or a value of the wrong
+         type) claim nothing (`noFocusedElement`), since what the walk did not read could be another. **Amended by the
+         review of 1bac4017..45e5a5ed** (reviewer-high, three findings, all fixed): (P1) a subtree cut at the depth
+         bound was dropped while the walk still claimed, so a field near the top and another past the bound claimed
+         the first; (P2) only a focused field was a leaf, so after a concealed request moved focus on (a trailing Tab
+         out of a contenteditable) the identity check's walk read the text elements under the field it left, their
+         number and time following the secret; (P2) the live reads turned a failed read into an absence (no children,
+         unfocused, no role), so a timeout could hide a second focused field. The identity check's walk after a secret
+         is typed now reads the same elements whatever the secret. The bounds give about 6 times the
          measured path's nodes, 1.5 times its depth and 3 times its time, since proving one focused element reads
          the whole window, not just that path. Only AX attributes are read; nothing is activated. **The gap (a)
          leaves**, named for the design session: a window larger than the bounds (a long page) claims nothing, where
          (b) costs a few reads whatever the page's size; (b) stays out until a run shows that gap.
-  Proven offline: `TypeReadbackTests` (54) drive the real keyText through `keyTextReadBack` over a fake app whose field
+  Proven offline: `TypeReadbackTests` (57) drive the real keyText through `keyTextReadBack` over a fake app whose field
   takes the posted text: equal, a caret insertion, a late equal inside the window and one past it; a mismatch's
   sentence, excerpt and lengths, a 20,000-character field's answer holding two 200-unit windows at the difference, the
   excerpt's surrogate pairs and quoting; secure by role, subrole or an unreadable subrole with no value or range read,
@@ -5025,8 +5032,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   making no checkpoint (one wait for `a\nb\nc`, `abc\n\n` and keys alone) while the caller's own still do, and every
   concealed confirmation taking the same reads and waits over the same text as over another, a caret that never
   moves unconfirmed; the focused field found by the window's walk when the application names none (one focused
-  text field claimed, two or none or a walk past its node, time or depth bound not, a focused web area neither
-  claimed nor counted, nothing inside the field read, a secure field it finds refused unread), the
+  text field claimed, two or none or a walk past its node, time or depth bound not, one near the top with a subtree
+  cut at the depth bound not, a failed role, focus or children read not, a focused web area neither claimed nor
+  counted, nothing inside any text-entry element read, the same reads whatever an editor left holds, a secure field
+  it finds refused unread, the live reads' errors kept apart from absences), the
   application's answer first; an ending Return's placeholder line confirmed with the caret at its start, refused
   doubled, accepted with an unreadable caret, never without an ending Return, mid-field or on a stale read, a secret's
   on the same schedule; the caret confirming only the value it was read with, a secret's late doubled Return refused
@@ -5039,12 +5048,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   never submitted, text after it expected without it, a Tab checked in a text area and moving focus answered
   `fieldChanged`, the exclusion set with Gecko's contenteditable, keys alone, empty text, the guard before a key read
   after the checkpoint's wait; the snapshot's read order; an intervention's stop keeping the record; press_key's
-  `keyEffect`. 1,181 engine tests pass, 1 skipped as before. Of 139 parts and bounds of the rule changed in turn
-  (`~/.local/share/187/mutate-354.py`), 127 fail a test. Twelve survive by design: the zeroing of the read and the
+  `keyEffect`. 1,184 engine tests pass, 1 skipped as before. Of 146 parts and bounds of the rule changed in turn
+  (`~/.local/share/187/mutate-354.py`), 134 fail a test. Twelve survive by design: the zeroing of the read and the
   expected buffers, which no answer shows (`readbackZero` itself is tested), and ten reached only by a live
   press_key or type_text: the engine's call into the read-back, press_key's record of its key and type_text's request
   for the settle (`RecentKeyPosts` itself is tested), and the live seam's value, units, subrole-error, identity and
-  main-window reads and its walk's children and AXFocused reads (`readbackFocusedByWalk` itself is tested). The service (`cua/typeReadback`,
+  main-window reads and its walk's children and AXFocused reads (`readbackFocusedByWalk` and `readbackWalkRead` are
+  tested). The service (`cua/typeReadback`,
   `cua/keyEffect`, the sentence reaching the model), the wrapper's admission and the matrix's expected difference have
   node tests.
   **The merge gate** (the ruling): a hosted A/B against main on the spike's cells, the real engine's answers, with the

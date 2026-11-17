@@ -65,7 +65,7 @@ test('MAWS Add project: ordinary background element press and search set_value',
     await ask({op:'cover',pid:coverPid,wide:sequence==='covered'});
     row.coverSetup=await ask({op:'front',pid:coverPid});if(row.coverSetup.frontmostPid!==coverPid)throw Error('cover not front');
     if(sequence==='earlier-click'){
-     const nodes=await observe();row.earlierClick=await rpc('click',{element:token(nodes,'AXButton','Add project')});
+     const nodes=await observe();row.earlierClick=await rpc('click',{element:token(nodes,'AXPopUpButton','Add project')});
      await expect(dialog).toBeVisible({timeout:5000});
     }
     await expect(dialog).toBeVisible();

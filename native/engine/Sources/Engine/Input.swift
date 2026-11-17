@@ -118,6 +118,9 @@ struct InputMeta {
   var keyEffectUnconfirmed = false
   /// #374's Show Menu confirmation (MenuConfirm.swift): where the new menu was seen, or that none was, and the wait.
   var menu: MenuConfirmRecord?
+  /// #390's read-back of a set_value written without the focus fallback (ValueWithoutFocus.swift): its result, reads and
+  /// time, never the value.
+  var unfocusedValue: UnfocusedValueReadback?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -184,6 +187,7 @@ struct InputMeta {
     if let typeReadback { wire["typeReadback"] = typeReadback.wire }
     if keyEffectUnconfirmed { wire["keyEffect"] = "unconfirmed" }
     if let menu { wire["menu"] = menu.wire }
+    if let unfocusedValue { wire["unfocusedValue"] = unfocusedValue.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }

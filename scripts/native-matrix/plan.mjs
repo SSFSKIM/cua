@@ -55,6 +55,12 @@ export const REFUSALS = Object.freeze({
   invalidIndex: `${INVALID_INDEX} is an invalid element ID`,
   noWindow: '(noWindowsAvailable|timeoutReached)',
 });
+// #354: cua's keyed typeText reads the focused field back, and a list's type-select has no text field to read, so cua
+// answers `typeUnconfirmed` (its sentence names an element that is not a text field) once the keys are sent, where the
+// vendor answers success. The rows that type into a list judge the outcome alone and keep that one answer as cua's
+// expected difference, recorded in `__m.typeUnconfirmed`; any other error still fails them.
+export const TYPE_UNCONFIRMED_NOT_TEXT = 'the focused element is not a text field';
+export const typeIntoList = text => `try { await __app.typeText(${j(text)}); } catch (e) { if (!String(e?.message ?? e).includes(${j(TYPE_UNCONFIRMED_NOT_TEXT)})) throw e; __m.typeUnconfirmed = true; }`;
 
 // ---- shared bodies --------------------------------------------------------------------------------------------------
 
@@ -324,7 +330,7 @@ const finder = [
     act: 'if (__m.cell === null) throw new Error("the row has no cell beside its name"); await __app.click(__m.cell);', check: selectedRow(FILE(5))},
   {method: 'pressKey', case: 'down', expect: 'outcome', keys: ['Down'], prepare: rowPrepare(FILE(6), {from: FILE(5)}), act: 'await __app.pressKey("Down");', check: selectedRow(FILE(6))},
   // Type-select on the run's list (never the toolbar's search field, which would list the owner's files).
-  {method: 'typeText', case: 'typeSelect', expect: 'outcome', keys: ['typeText'], prepare: rowPrepare(FILE(12)), act: `await __app.typeText(${j(FILE(12))});`, check: selectedRow(FILE(12))},
+  {method: 'typeText', case: 'typeSelect', expect: 'outcome', keys: ['typeText'], prepare: rowPrepare(FILE(12)), act: typeIntoList(FILE(12)), check: selectedRow(FILE(12))},
   refusal({method: 'selectText', kase: 'notText', find: `rowIndexOfName(ax, ${j(FILE(1))})`, act: 'await __app.selectText(__m.index, "scene");',
     watch: 'selectedIndexesOf(ax)', sentence: REFUSALS.notText}),
   ...['scroll', 'performSecondaryAction'].map(method => ({method, case: 'down', expect: 'outcome',

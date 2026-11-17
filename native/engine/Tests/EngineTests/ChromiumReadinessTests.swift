@@ -370,3 +370,220 @@ final class ChromiumReadinessTests: XCTestCase {
     XCTAssertEqual(gate(other, app("Electron"), budgetMs: 3_100), 2_500)
   }
 }
+
+// Ruling 772 (diagnostic run 44068144650): the complete mode's arrival keeps the handles but changes what they say, so the
+// first observation after a write waits for readiness before it reads the tree; one the deadline cuts marks its entries
+// by their read time, and an action's backstop reads a marked target again from its own handle, never re-finding it by
+// identity; a set_value whose re-fetch after an accepted write fails answers valueUnconfirmed.
+
+/// A resolver over a fake tree that counts the re-fetch walks it was asked for.
+private final class FakeResolving {
+  let tree: FakeTree
+  var invalidated = false
+  var valid: Set<Int>? = nil
+  private(set) var treeReads = 0
+
+  init(_ tree: FakeTree) { self.tree = tree }
+
+  var resolver: ElementResolver {
+    ElementResolver(
+      invalidated: { [self] _ in invalidated },
+      stillValid: { [self] element in valid.map { $0.contains(tree.id(element)) } ?? true },
+      source: { [self] in FakeSource(tree) },
+      tree: { [self] _ in
+        treeReads += 1
+        return (Engine.element(0), [])
+      })
+  }
+}
+
+final class ChromiumMetadataTests: XCTestCase {
+  private let launched = Date(timeIntervalSince1970: 1_000)
+
+  /// A window (0) with a page button (1) and a search field (2) as Basic mode shows them: the button offering only
+  /// AXShowMenu and AXScrollToVisible (Chrome for Testing's, run 44068144650), the field without its placeholder.
+  private func basicMode() -> FakeTree {
+    let tree = FakeTree()
+    tree.children = [0: [1, 2]]
+    tree.extra = [1: ["AXRole": "AXButton" as CFString, "AXTitle": "Go" as CFString],
+                  2: ["AXRole": "AXTextField" as CFString, "AXTitle": "Query" as CFString, "AXValue": "" as CFString]]
+    tree.actions = [1: ["AXShowMenu", "AXScrollToVisible"]]
+    return tree
+  }
+
+  /// The complete mode's arrival: the same handles, the button pressable, the field's placeholder exposed.
+  private func completeMode(_ tree: FakeTree) {
+    tree.actions[1] = ["AXPress", "AXShowMenu", "AXScrollToVisible"]
+    tree.extra[2]?["AXPlaceholderValue"] = "Search" as CFString
+  }
+
+  /// One observation of the tree into `lineage`, its entries read at `recordedAt`, as get_app_state stamps them.
+  private func observe(_ tree: FakeTree, _ lineage: Lineage, at recordedAt: Double) {
+    let walk = TreeWalk(source: FakeSource(tree), lineage: lineage, limits: WalkLimits(deadline: .infinity), markdown: false, visibleFrame: nil)
+    walk.revision.recordedAt = recordedAt
+    walk.run(window: Engine.element(0), menuBar: nil, menuItems: [])
+    lineage.commit(walk.revision)
+  }
+
+  private func electronApp(_ directory: URL) throws -> ResolvedApp {
+    let contents = directory.appendingPathComponent("Electron.app/Contents")
+    try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+    XCTAssertTrue(NSDictionary(dictionary: ["NSPrincipalClass": "AtomApplication"]).write(to: contents.appendingPathComponent("Info.plist"), atomically: true))
+    return ResolvedApp(appPath: directory.appendingPathComponent("Electron.app").path, bundleIdentifier: nil, displayName: "Electron", running: nil)
+  }
+
+  /// An engine on the given clock and sleeper whose process 7 was enabled at the clock's now.
+  private func enabledEngine(_ now: @escaping () -> Double, sleep: @escaping (Double) -> Void) -> Engine {
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        screenLocked: { false }, cursorEnabled: false, clock: now, sleep: sleep)
+    _ = engine.webAccessibility.enable(pid: 7, launched: launched, connection: 1, access: EnablementAccess(
+      listed: { ["AXManualAccessibility"] }, readRole: {}, read: { _ in false }, write: { _, _ in .success }, current: { true }))
+    return engine
+  }
+
+  func testTheObservationWaitsTheRestOfTheWindowThenRecordsCompleteModeMetadata() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cua-366-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let electron = try electronApp(directory)
+    let tree = basicMode()
+    var now = 10_000.0
+    var slept: [Double] = []
+    let engine = enabledEngine({ now }, sleep: { ms in
+      slept.append(ms)
+      now += ms
+      self.completeMode(tree)  // the mode arrives during the wait
+    })
+    now = 10_400
+    let readiness = engine.awaitObservationReadiness(app: electron, pid: 7, launched: launched, budgetMs: 120_000)
+    XCTAssertEqual(readiness, .ready(waitedMs: 2_100))
+    XCTAssertEqual(slept, [2_100])
+    let lineage = Lineage()
+    observe(tree, lineage, at: now)
+    let button = try XCTUnwrap(lineage.entry(1))
+    XCTAssertEqual(button.actions, ["AXPress", "AXShowMenu", "AXScrollToVisible"], "the complete mode's actions recorded")
+    XCTAssertEqual(lineage.entry(2)?.identity.placeholder, "Search")
+    XCTAssertFalse(recordedBeforeReadiness(button.recordedAt, readyAt: 12_500))
+
+    // A later observation, the window passed, waits for nothing.
+    XCTAssertEqual(engine.awaitObservationReadiness(app: electron, pid: 7, launched: launched, budgetMs: 120_000), .ready(waitedMs: 0))
+    XCTAssertEqual(slept, [2_100])
+  }
+
+  func testAnObservationTheDeadlineCutsReadsAnywayAndMarksItsEntries() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cua-366-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let electron = try electronApp(directory)
+    var now = 10_000.0
+    var slept: [Double] = []
+    let engine = enabledEngine({ now }, sleep: { slept.append($0); now += $0 })
+    now = 10_400
+    XCTAssertEqual(engine.awaitObservationReadiness(app: electron, pid: 7, launched: launched, budgetMs: 1_000), .deadline(waitedMs: 0),
+                   "no sleep that would end past the deadline")
+    XCTAssertEqual(slept, [])
+    let lineage = Lineage()
+    observe(basicMode(), lineage, at: now)
+    let readiness = try XCTUnwrap(engine.entryReadiness(app: electron, pid: 7, launched: launched))
+    XCTAssertEqual(readiness.readyAt, 12_500)
+    for number in [1, 2] {
+      XCTAssertTrue(recordedBeforeReadiness(lineage.entry(number)?.recordedAt, readyAt: readiness.readyAt), "entry \(number) marked")
+    }
+    XCTAssertFalse(recordedBeforeReadiness(12_500, readyAt: 12_500), "read at readiness is not before it")
+    XCTAssertFalse(recordedBeforeReadiness(nil, readyAt: 12_500))
+  }
+
+  func testTheBackstopReadsAMarkedTargetAgainFromItsOwnHandleAndLeavesAnUnmarkedOneAlone() throws {
+    let tree = basicMode()
+    let lineage = Lineage()
+    observe(tree, lineage, at: 10_400)  // before readiness at 12 500
+    completeMode(tree)
+    let fake = FakeResolving(tree)
+    let marked = try lineage.resolve(elementToken(1), resolver: fake.resolver, readiness: EntryReadiness(readyAt: 12_500, now: 12_600))
+    XCTAssertTrue(CFEqual(marked.element, Engine.element(1)), "the same handle")
+    XCTAssertEqual(marked.actions, ["AXPress", "AXShowMenu", "AXScrollToVisible"], "the click plan finds AXPress")
+    XCTAssertEqual(marked.recordedAt, 12_600, "read again now")
+    XCTAssertEqual(fake.treeReads, 0, "nothing re-found")
+    let field = try lineage.resolve(elementToken(2), resolver: fake.resolver, readiness: EntryReadiness(readyAt: 12_500, now: 12_600))
+    XCTAssertEqual(field.identity.placeholder, "Search", "the identity a later re-fetch matches against")
+
+    // An entry read after readiness is left as recorded, whatever its handle says now.
+    let later = Lineage()
+    let unchanged = basicMode()
+    observe(unchanged, later, at: 13_000)
+    completeMode(unchanged)
+    let unmarked = try later.resolve(elementToken(1), resolver: FakeResolving(unchanged).resolver, readiness: EntryReadiness(readyAt: 12_500, now: 13_100))
+    XCTAssertEqual(unmarked.actions, ["AXShowMenu", "AXScrollToVisible"], "not refreshed")
+    XCTAssertEqual(unmarked.recordedAt, 13_000)
+    // Nor is a marked one without readiness (no Chromium write).
+    let plain = Lineage()
+    let other = basicMode()
+    observe(other, plain, at: 10_400)
+    completeMode(other)
+    XCTAssertEqual(try plain.resolve(elementToken(1), resolver: FakeResolving(other).resolver).actions, ["AXShowMenu", "AXScrollToVisible"])
+  }
+
+  func testTheBackstopNeverAdoptsAnotherHandle() throws {
+    let tree = basicMode()
+    let lineage = Lineage()
+    observe(tree, lineage, at: 10_400)
+    completeMode(tree)
+    // Another element (6) answers the complete mode's identity of the button exactly.
+    tree.children[0] = [1, 2, 6]
+    tree.extra[6] = ["AXRole": "AXButton" as CFString, "AXTitle": "Go" as CFString]
+    tree.actions[6] = ["AXPress", "AXShowMenu", "AXScrollToVisible"]
+    let readiness = EntryReadiness(readyAt: 12_500, now: 12_600)
+
+    // The button's own handle still reads: it is the one kept, even under an invalidation that re-reads it.
+    let fake = FakeResolving(tree)
+    fake.invalidated = true
+    let kept = try lineage.resolve(elementToken(1), resolver: fake.resolver, readiness: readiness)
+    XCTAssertTrue(CFEqual(kept.element, Engine.element(1)))
+    XCTAssertEqual(fake.treeReads, 0)
+
+    // A marked target whose handle no longer validates, or no longer reads, is no longer valid: no walk, no adoption.
+    for gone in ["invalid", "unreadable"] {
+      let again = Lineage()
+      let replaced = basicMode()
+      observe(replaced, again, at: 10_400)
+      completeMode(replaced)
+      replaced.children[0] = [6, 2]
+      replaced.extra[6] = ["AXRole": "AXButton" as CFString, "AXTitle": "Go" as CFString]
+      replaced.actions[6] = ["AXPress", "AXShowMenu", "AXScrollToVisible"]
+      let resolving = FakeResolving(replaced)
+      resolving.invalidated = true
+      if gone == "invalid" { resolving.valid = [0, 2, 6] } else { replaced.unreadable = [1] }
+      XCTAssertThrowsError(try again.resolve(elementToken(1), resolver: resolving.resolver, readiness: readiness), gone) { error in
+        XCTAssertEqual((error as? EngineError)?.errorName, "elementNoLongerValid")
+      }
+      XCTAssertEqual(resolving.treeReads, 0, "\(gone): nothing re-found by identity")
+      XCTAssertTrue(CFEqual(try XCTUnwrap(again.entry(1)).element, Engine.element(1)), "\(gone): the entry keeps its own handle")
+    }
+  }
+
+  func testAnAcceptedWriteWhoseReFetchFailsIsValueUnconfirmed() throws {
+    // The field read after readiness (unmarked), then its metadata changes between the write and the re-fetch: the
+    // placeholder appears, so nothing matches the stored identity any more.
+    let tree = basicMode()
+    let lineage = Lineage()
+    observe(tree, lineage, at: 13_000)
+    tree.extra[2]?["AXValue"] = "cua" as CFString
+    tree.extra[2]?["AXPlaceholderValue"] = "Search" as CFString
+    let fake = FakeResolving(tree)
+    XCTAssertThrowsError(try confirmingWrittenValue(app: "Electron") {
+      _ = try lineage.resolve(elementToken(2), resolver: fake.resolver, refetch: .ignoringValue)
+    }) { error in
+      let engineError = error as? EngineError
+      XCTAssertEqual(engineError?.errorName, "valueUnconfirmed", "not elementNoLongerValid: the value was sent")
+      XCTAssertEqual(engineError?.message, valueUnconfirmed(app: "Electron").message)
+    }
+    XCTAssertEqual(fake.treeReads, 1, "the re-fetch was tried")
+
+    // A re-fetch that finds the field passes through.
+    let found = basicMode()
+    let observed = Lineage()
+    observe(found, observed, at: 13_000)
+    found.extra[2]?["AXValue"] = "cua" as CFString
+    XCTAssertNoThrow(try confirmingWrittenValue(app: "Electron") {
+      _ = try observed.resolve(elementToken(2), resolver: FakeResolving(found).resolver, refetch: .ignoringValue)
+    })
+  }
+}

@@ -4907,6 +4907,43 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      `elementActionMethods` keeps click, set_value, select_text and perform_secondary_action, each of which can act
      through accessibility on every request shape (a coordinate click through #282's element route).
   Date/Author: 2026-11-17, cursor235's implementer for #366 (the design session's acceptance of the review).
+- Decision (#366's observation wait, 2026-11-17, `fix/366-chromium-ax-ready`; the design session's ruling 772 on the
+  live smoke and the cache diagnostic, run 44068144650; amends "#366" and "#366's review" above): **the first
+  observation after a write waits for readiness before it reads the tree, and an action's backstop reads a target
+  recorded before readiness again from its own handle.** The diagnostic found the handles survive the switch to the
+  complete mode (valid, and CFEqual to fresh lookups) while what cua cached about them goes stale: Chrome for Testing's
+  buttons go from [ShowMenu, ScrollToVisible] to [Press, ShowMenu, ScrollToVisible], so a click planned from the
+  recorded actions refused noAction even after the action's wait, and every field's placeholder goes from none to
+  "Search", so set_value's re-fetch after an accepted write (`.ignoringValue`, which compares the placeholder) threw
+  elementNoLongerValid, the old identity's walk finding nothing either.
+  1. **The observation's wait** (`Engine.awaitObservationReadiness`, Skyshot.swift after the enablement step): the
+     rest of `chromiumActionWindowMs` after the process's last accepted write, whichever request made it, the same loop
+     as the action's (`waitForChromiumReadiness`: re-read after every sleep, a sleep that would end at or past the
+     deadline not slept, a wake past it ending the wait). It leaves the holds as every observation does. Its time is
+     the observation's `chromiumReady` phase (and the `observation.chromiumReady` signpost), `chromiumReadyWaitMs` when
+     it slept. A settled tree whose settle began before readiness is not adopted.
+  2. **Deadline-short observations read anyway** (`chromiumReady: "deadline"` in the timings). Every entry records when
+     it was read (`LineageEntry.recordedAt`, the walk's start, `Revision.recordedAt`; a carried entry keeps its own), and
+     an entry is recorded before readiness when that time is earlier than the process's readiness now
+     (`recordedBeforeReadiness`, `chromiumReadyAt`): a later write moves readiness, so an entry read before it is
+     marked again.
+  3. **The action's backstop** (`Lineage.resolve`'s `readiness`, passed by `targetElement` for every element method):
+     after the action's wait, a target recorded before readiness is read again from its cached handle (identity,
+     actions, read time now) and only then resolved as before; a handle that no longer validates or reads is
+     elementNoLongerValid before any write. It never re-finds by identity, so no other handle is adopted for the token.
+     An entry read after readiness, or a process with no readiness, is left as recorded.
+  4. **valueUnconfirmed** (ValueSetting.swift, `confirmingWrittenValue`): a set_value whose write was accepted and
+     whose re-fetch then fails, whatever its refusal, answers `valueUnconfirmed` ("sent, effect not seen", beside
+     clickUnconfirmed, scrollUnconfirmed and menuUnconfirmed) in place of elementNoLongerValid, which told the model
+     the value was not sent. The service passes it through as every engine input error, with the meta.
+  5. **The model's document**: the background-click paragraph's last sentence now says the first observation of a
+     freshly enabled Chromium app may take up to 2.5 s longer, and an action sent before then waits; the fourth
+     paragraph closes with valueUnconfirmed (the surface inventory's "#366, ruling 772" addition; the copies in the
+     docs oracle and the core-documentation test byte for byte).
+  6. **What this costs**: an agent's first observation of a Chromium app cua has just enabled takes up to 2.5 s longer
+     (the action's wait then finds the window passed); a deadline under that reads Basic mode's tree, and the backstop
+     repairs only the target the action names.
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 772).
 
 ## Outcomes & Retrospective
 

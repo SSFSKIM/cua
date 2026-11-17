@@ -165,8 +165,11 @@ try{
     row.anotherRaise=unavailable(row.anotherSpaceBlocker.reason);checkpoint();return;
    }
    row.anotherGetApp=await call(scene+'-4-getApp',async()=>{bound=await cua.getApp(bundle);});
+   row.anotherGetAppAfter=info();
    row.another=await call(scene+'-4-state',()=>bound.getAXState({disableDiffing:true,emit:false}));
+   row.anotherAfter=info();
    row.anotherScreenshot=await call(scene+'-4-screenshot',()=>bound.getScreenshot({emit:false}),{capture:true});
+   row.anotherScreenshotAfter=info();
    row.anotherMatch=windowMatch(row.another,away.value);row.anotherMatchGeometry=windowGeometry(away.value);
    let target=raiseTarget(row.another,away.value,row.anotherScreenshot.raw);
    // Either engine may fail its another-Space observation. Keep those failures above; refresh only on the target's Space.

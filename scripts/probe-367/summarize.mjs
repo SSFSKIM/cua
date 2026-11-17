@@ -1,7 +1,7 @@
 // Reads runner-owned JSON artifacts and writes README-ready tables. No GUI or network access.
 import fs from 'node:fs';
 import {join} from 'node:path';
-import {win,current,compareReturn} from './evidence.mjs';
+import {win,current,compareReturn,windowSpaceIds,windowGeometry,spaceWindow} from './evidence.mjs';
 const [input,output,run]=process.argv.slice(2);
 if(!input||!output||!run)throw Error('usage: summarize.mjs <download-root> <evidence-dir> <run-url>');
 fs.mkdirSync(output,{recursive:true});
@@ -12,11 +12,13 @@ const all=['main','fix'].flatMap(head=>{
  return ['textedit','electron'].map(scene=>({head,scene,sha:config?.sha,headBlocker:blocked,...rows.find(r=>r.scene===scene)}));
 });
 const safe=v=>v==null?'unavailable':String(v).replaceAll('|','/').replaceAll('\n',' ');
-const frame=i=>{const f=win(i)?.frame;return f&&Object.hasOwn(f,'x')?`(${f.x}, ${f.y}, ${f.width}, ${f.height})`:'unread';};
+const frame=i=>{const g=windowGeometry(i),f=g?.bounds;return f?`(${f.x}, ${f.y}, ${f.width}, ${f.height}) [${g.source}]`:'unread';};
 const front=i=>i?.frontmost?.bundleId??'unread';
-const ids=i=>win(i)?.spaces;
+const ids=windowSpaceIds;
 const observation=o=>!o?'not measured':o.ok===true?`ok; ${o.raw?.nodes?.length??'?'} nodes; omitted=${o.meta?.['cua/screenshotOmitted']??'none'}`:`ERROR ${o.error?.errorName??o.error?.message??o.error??o.reason}`;
 const placement=o=>typeof o?.value==='string'?o.value.match(/\[window (?:off screen|on another Space):[^\n]*\]/)?.[0]??'none':'not measured';
+const appPlacement=o=>o?.ok===true?placement({value:(o.emitted??[]).filter(v=>typeof v==='string').join('\n')}):'not measured';
+const spaceEvidence=i=>{const w=spaceWindow(i);return {active:current(i),windowSpaces:ids(i),allCGOnscreen:w?.allCGOnscreen??win(i)?.cgOnscreen??null,includingCGOnscreen:w?.includingCGOnscreen??null,inOnscreenList:w?.inOnscreenList??null,axAvailable:Boolean(win(i)),geometry:windowGeometry(i)};};
 const screenshot=o=>!o?'not measured':o.ok===true&&o.value?.jpeg===true&&o.value?.sha256?`${o.raw?.screenshot?.width??'?'}×${o.raw?.screenshot?.height??'?'}; ${o.value.bytes} B; ${o.value.sha256.slice(0,12)}`:`ERROR ${o.error?.message??'no populated JPEG'}`;
 const median=values=>{const v=values.filter(Number.isFinite).sort((a,b)=>a-b);return v.length?(v[Math.floor((v.length-1)/2)]+v[Math.ceil((v.length-1)/2)])/2:null;};
 const change=(a,b)=>a!=null&&b!=null?a!==b:null;
@@ -36,7 +38,10 @@ const summary=all.map(r=>({head:r.head,sha:r.sha,scene:r.scene,headBlocker:r.hea
  partial:observation(r.partial),partialScreenshot:screenshot(r.partialScreenshot),partialLine:placement(r.partial),partialFrame:frame(r.partialOracle),
  anotherSpaceEstablished:r.anotherSpaceOracle?.ok??false,spaceRoute:r.spaceRoute??null,anotherSpaceBlocker:r.anotherSpaceBlocker??null,
  anotherSpaceGetApp:observation(r.anotherGetApp),anotherSpace:observation(r.another),anotherSpaceMatch:r.anotherMatch??null,
- anotherSpaceLine:placement(r.another),anotherSpaceScreenshot:screenshot(r.anotherScreenshot),anotherSpaceRaise:raise(r,'another'),
+ anotherSpaceLine:placement(r.another),anotherSpaceGetAppLine:appPlacement(r.anotherGetApp),
+ anotherSpaceOmitted:{getApp:r.anotherGetApp?.meta?.['cua/screenshotOmitted']??null,getAXState:r.another?.meta?.['cua/screenshotOmitted']??null,getScreenshot:r.anotherScreenshot?.meta?.['cua/screenshotOmitted']??null},
+ anotherSpaceEvidence:{before:spaceEvidence(r.anotherSpaceOracle?.value),afterGetApp:spaceEvidence(r.anotherGetAppAfter),afterGetAXState:spaceEvidence(r.anotherAfter),afterGetScreenshot:spaceEvidence(r.anotherScreenshotAfter)},
+ anotherSpaceScreenshot:screenshot(r.anotherScreenshot),anotherSpaceRaise:raise(r,'another'),
  hidden:observation(r.hidden),hiddenScreenshot:screenshot(r.hiddenScreenshot),hiddenLine:placement(r.hidden),
  returnComparison:r.returnComparison??null,returned:observation(r.returned),returnScreenshot:screenshot(r.returnScreenshot),
  cost:{successful:r.cost?.filter(c=>c.ok).length??0,total:r.cost?.length??0,walkP50Ms:median((r.cost??[]).map(c=>c.timings?.walkMs)),
@@ -64,6 +69,11 @@ text+=table(['Placement','Head / scene','Action valid','Active Space before → 
 })))+'\n\n';
 text+=table(['Scene','Cross-head on-screen text equal','JPEG bytes equal','JPEG lengths equal','Image dimensions equal'],crossHead.map(r=>[r.scene,r.textEqual,r.jpegBytesEqual,r.byteLengthsEqual,r.dimensionsEqual]))+'\n\n';
 text+=table(['Head / scene','Off-display line','Off-display diff line','Another-Space line'],summary.map(r=>[`${r.head} / ${r.scene}`,r.offscreenLine,r.offscreenDiffLine,r.anotherSpaceLine]))+'\n\n';
+text+='## Another-Space product contract\n\n';
+text+=table(['Head / scene','Independent before (active; window Spaces; on-screen-only)','CG flags All / IncludingWindow','getApp line','getAXState outcome / line','screenshotOmitted metadata','getScreenshot','Independent after getScreenshot'],summary.map(r=>{
+ const b=r.anotherSpaceEvidence.before,a=r.anotherSpaceEvidence.afterGetScreenshot;
+ return [`${r.head} / ${r.scene}`,`${b.active}; ${JSON.stringify(b.windowSpaces)}; ${b.inOnscreenList}`,`${b.allCGOnscreen} / ${b.includingCGOnscreen}`,`${r.anotherSpaceGetApp} / ${r.anotherSpaceGetAppLine}`,`${r.anotherSpace} / ${r.anotherSpaceLine}`,JSON.stringify(r.anotherSpaceOmitted),r.anotherSpaceScreenshot,`${a.active}; ${JSON.stringify(a.windowSpaces)}; ${a.inOnscreenList}`];
+}))+'\n\n';
 text+='Scope: the public facade and trusted service are imported from the same pinned source head as each unmodified engine. The transport adapter is the existing hosted/test nativePipe bridge; this is not an MCP-host/sandbox qualification. All GUI applications and documents belong to the disposable runner. No owner profile, secrets, or local/Mac-mini GUI was used.\n\n';
 text+='Cost: p50 is the ordinary median of successful native timing values (20 observations requested per app/head). Placement has no separately timed native field; walk/total timings do not isolate its added CGWindow read. The independent oracle separately samples the exact per-window CGWindow read. Both arms include #366 after the coordinator-required base merge.\n';
 fs.writeFileSync(join(output,'tables.txt'),text);

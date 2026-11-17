@@ -92,6 +92,9 @@ for (const c of cmds) {
   const late = lateOf.get(c.key);
   if (late) c.lateAfter = Math.round(late.hBack - late.hOut), c.lateChrome = typeof late.e1 === 'number' ? Math.round(late.e1 - late.e0) : null;
 }
+// The agent command each CDP command served: the lane's service rpc in flight at its start (the latest begun).
+const rpcRows = rows.filter(r => r.k === 'rpc');
+for (const c of cmds) c.rpc = rpcRows.filter(r => r.lane === c.lane && r.t0 <= c.s0 && r.t1 >= c.s0).sort((a, b) => b.t0 - a.t0)[0]?.type;
 // The slow commands, each with every segment.
 // Commands answered in the lane while `c` waited: on its own tab, or on others.
 const others = (c, same) => cmds.filter(o => o !== c && o.lane === c.lane && o.ok && o.s0 > c.s0 && typeof o.end === 'number' && o.end < c.s0 + (c.total ?? 0)
@@ -103,7 +106,7 @@ const slow = cmds.filter(c => (c.total ?? 0) > 1000 || c.expired || c.timedOut).
 console.log(`${P} slow commands (over 1s, expired or timed out): ${slow.length}`);
 const t0 = Math.min(...spans.map(s => s.from).filter(Number.isFinite), ...cmds.map(c => c.s0));
 for (const c of slow.slice(0, 80)) {
-  console.log(`${P}   +${Math.round((c.s0 - t0) / 1000)}s ${label(c.lane)} ${label(c.cellCase)} ${label(c.cellLabel)} ${label(c.m)} ok ${c.ok} timedOut ${c.timedOut} expired ${c.expired} limit ${c.limit}`
+  console.log(`${P}   +${Math.round((c.s0 - t0) / 1000)}s ${label(c.lane)} ${label(c.cellCase)} ${label(c.cellLabel)} rpc ${label(c.rpc)} ${label(c.m)} ok ${c.ok} timedOut ${c.timedOut} expired ${c.expired} limit ${c.limit}`
     + `${c.lateAfter !== undefined ? ` lateAnswer ${c.lateAfter} lateChrome ${c.lateChrome}` : ' noLateAnswer'}${c.awaitPromise !== undefined ? ` awaitPromise ${c.awaitPromise}` : ''}`
     + ` | meanwhile same tab ${others(c, true)} other tabs ${others(c, false)}${probeText(c.probe)} | `
     + SEGMENTS.filter(s => c[s] !== null && c[s] !== undefined).map(s => `${s} ${Math.round(c[s])}`).join(' '));

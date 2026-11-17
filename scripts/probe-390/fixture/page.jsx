@@ -2,6 +2,7 @@ import React,{useState,useLayoutEffect} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {chrome} from './window-options.mjs';
+import {transform} from '../protocol.mjs';
 const pageId=crypto.randomUUID().replaceAll('-',''),timeOrigin=performance.timeOrigin;
 document.title='probe366:'+pageId;document.body.style.margin='0';
 let trial=null,events=[],api,mode='plain';
@@ -11,7 +12,7 @@ for(const type of ['focus','blur','focusin','focusout','pointerdown','pointerup'
 for(const type of ['focus','blur','visibilitychange'])window.addEventListener(type,()=>note('window.'+type,{hasFocus:document.hasFocus(),visibility:document.visibilityState}));
 function Fixture(){
  const [value,setValue]=useState('');useLayoutEffect(()=>{api={value,setValue};});
- return <main><header style={{height:chrome.toolbarHeight,background:'#eee',WebkitAppRegion:chrome.drag}}>Owned probe toolbar</header><h1>Background value probe</h1><button id="action">Run probe button</button><p><label htmlFor="search">Probe search</label><input id="search" type="text" value={value} onChange={e=>{const received=e.target.value,next=mode==='uppercase'?received.toUpperCase():received;note('search.handler',{received,next});flushSync(()=>setValue(next));e.target.value=next;}}/></p><p id="marker">{value}</p></main>;
+ return <main><header style={{height:chrome.toolbarHeight,background:'#eee',WebkitAppRegion:chrome.drag}}>Owned probe toolbar</header><h1>Background value probe</h1><button id="action">Run probe button</button><p><label htmlFor="search">Probe search</label><input id="search" type="text" value={value} onChange={e=>{const received=e.target.value,next=transform(mode,received);note('search.handler',{received,next});flushSync(()=>setValue(next));e.target.value=next;}}/></p><p id="marker">{value}</p></main>;
 }
 createRoot(document.getElementById('root')).render(<Fixture/>);
 function snapshot(){return {pageId,timeOrigin,trial,wallAt:Date.now(),active:label(document.activeElement),hasFocus:document.hasFocus(),value:document.getElementById('search')?.value,reactValue:api.value,events:[...events]};}

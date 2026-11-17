@@ -1,28 +1,36 @@
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {CAP_LENGTH,CAP_SUFFIX} from './protocol.mjs';
+const CHECKPOINTS=[0,50,250,1000];
 export function plan(browser,smoke){
  if(!['cft','electron','electron-parity','safari'].includes(browser))throw Error('unknown browser');
- const specs=browser==='safari'?{background:5,foreground:5}:{background:20,guard:5,long:5,secret:5,foreground:5},out=[];
+ const specs=browser==='safari'?{background:5,foreground:5}:{background:20,guard:5,long:5,'cap-suffix':5,secret:5,foreground:5},out=[];
  for(let rep=0;rep<(smoke?1:20);rep++)for(const [cell,n] of Object.entries(specs))if(rep<n)for(const head of rep%2?['fix','main']:['main','fix'])out.push({browser,head,cell,rep,id:[browser,cell,head,rep].join('/')});
  return out;
 }
 export function judge(r){
  const b=r.before,a=r.after,raw=r.call?.raw,meta=raw?.result?.meta??raw?.error?.meta,u=meta?.unfocusedValue;
- const eligible=r.valid===true&&!!b&&!!a&&b.pageId===a.pageId&&b.timeOrigin===a.timeOrigin&&b.trial===r.id&&a.trial===r.id&&Array.isArray(r.samples)&&r.samples.length>0&&!!(raw?.result||raw?.error);
+ // Exactly the planned checkpoints, once each, each bound to the same page, time origin and trial as the row.
+ const cps=Array.isArray(r.checkpoints)?r.checkpoints:[],bound=c=>!!c?.after&&!!b&&c.after.pageId===b.pageId&&c.after.timeOrigin===b.timeOrigin&&c.after.trial===r.id;
+ const owned=cps.length===CHECKPOINTS.length&&CHECKPOINTS.every(ms=>cps.filter(c=>c?.requestedMs===ms).length===1)&&cps.every(bound);
+ const eligible=r.valid===true&&!!b&&!!a&&b.pageId===a.pageId&&b.timeOrigin===a.timeOrigin&&b.trial===r.id&&a.trial===r.id&&Array.isArray(r.samples)&&r.samples.length>0&&!!(raw?.result||raw?.error)&&owned;
  const ok=!!raw?.result&&!raw?.error,error=raw?.error?.errorName??null,delivered=eligible&&a.value===r.expected&&a.reactValue===r.expected;
+ const exactAt=c=>c.after.value===r.expected&&c.after.reactValue===r.expected,settled=eligible&&cps.every(exactAt),emptyAt=eligible&&cps.every(c=>c.after.value===''&&c.after.reactValue==='');
  const bg=r.cell!=='foreground',native=[r.nativeBefore,...(r.samples??[])],want=bg?r.coverPid:r.targetPid;
  const nativeKnown=native.length>1&&native.every(s=>Number.isInteger(s?.frontmostPid)&&typeof s?.order?.targetAboveCover==='boolean');
  const activation=native.some(s=>s?.frontmostPid!==want),raised=bg&&native.some(s=>s?.order?.targetAboveCover===true);
  const events=eligible?a.events.slice(b.events.length):[],counts={};for(const e of events)counts[e.type]=(counts[e.type]??0)+1;
  const pointer=events.some(e=>/^(pointer|mouse|click)/.test(e.type)),key=events.some(e=>/^key/.test(e.type));
- const falseOk=eligible&&ok&&!delivered;
+ // An ok reply promises the requested value is in the page at every sample, not only the last; delivery stays its own metric.
+ const falseOk=eligible&&ok&&!(delivered&&settled);
  let expectedAnswer=false;
- if(r.head==='main'&&bg&&r.browser!=='safari')expectedAnswer=error==='backgroundClickRefused'&&a?.value===''&&a?.reactValue==='';
+ if(r.head==='main'&&bg&&r.browser!=='safari')expectedAnswer=error==='backgroundClickRefused'&&emptyAt;
  else if(r.cell==='guard')expectedAnswer=error==='valueUnconfirmed'&&u?.result==='mismatch'&&u.reads>0&&a?.value===r.expected.toUpperCase()&&a?.reactValue===r.expected.toUpperCase();
- else if(r.cell==='long')expectedAnswer=error==='valueUnconfirmed'&&u?.result==='mismatch'&&u.reads>0&&delivered;
+ else if(r.cell==='long')expectedAnswer=error==='valueUnconfirmed'&&u?.result==='possiblyTruncated'&&u.reads>0&&delivered;
+ else if(r.cell==='cap-suffix'){const landed=eligible&&r.expected?.length===CAP_LENGTH&&a.value===r.expected+CAP_SUFFIX&&a.reactValue===r.expected+CAP_SUFFIX;expectedAnswer=error==='valueUnconfirmed'&&landed;}
  else if(r.cell==='secret')expectedAnswer=error==='valueUnconfirmed'&&u?.result==='concealed'&&u.reads===0&&delivered;
- else expectedAnswer=ok&&delivered&&(!(bg&&r.browser!=='safari')||(u?.result==='confirmed'&&u.reads>0));
+ else expectedAnswer=ok&&delivered&&settled&&(!(bg&&r.browser!=='safari')||(u?.result==='confirmed'&&u.reads>0));
  // Main can post its old inert pointer. Only the new Chromium background path must be pointer/key free.
  const newPath=r.head==='fix'&&bg&&r.browser!=='safari';
  return {eligible,ok,error,delivered,falseOk,expectedAnswer,nativeKnown,activation,raised,pointer,key,events:counts,unfocusedValue:u??null,rpcMs:r.call?.endedAt-r.call?.startedAt,

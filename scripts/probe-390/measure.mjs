@@ -10,6 +10,7 @@ import {randomUUID} from 'node:crypto';
 import {FixtureTransport} from '../probe-366/transport.mjs';
 import {Wire} from '../probe-366/wire.mjs';
 import {plan,judge,summarize,coverage} from './read.mjs';
+import {capValue,modeFor} from './protocol.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted only');
 const arg=n=>process.argv[process.argv.indexOf('--'+n)+1],OUT=resolve(arg('out')),browser=arg('browser'),smoke=arg('smoke')==='true',dir=dirname(fileURLToPath(import.meta.url)),fixture=join(dir,'fixture');
 const engines={main:arg('main-engine'),fix:arg('fix-engine')},sources={main:arg('main-source'),fix:arg('fix-source')},refs={main:arg('main-ref'),fix:arg('fix-ref')};
@@ -24,7 +25,7 @@ createInterface({input:helper.stdout}).on('line',line=>{const w=waiters.shift();
 function ask(q){return new Promise((ok,no)=>{const w={ok,no,timer:setTimeout(()=>no(Error('helper timeout')),15000)};waiters.push(w);helper.stdin.write(JSON.stringify(q)+'\n');});}
 async function front(pid){const r=await ask({op:'front',pid});if(r.frontmostPid!==pid)throw Error('frontmost not verified');return r;}
 async function stop(child){if(!child||child.exitCode!==null||child.signalCode!==null)return;child.kill('SIGTERM');try{await until(()=>child.exitCode!==null||child.signalCode!==null,5000);}catch{child.kill('SIGKILL');await until(()=>child.exitCode!==null||child.signalCode!==null,3000);}}
-const config={browser,smoke,refs,kit:process.env.GITHUB_SHA,image:process.env.ImageVersion,os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8'}).trim(),startedAt:Date.now(),cells:plan(browser,smoke),judge:'DOM and React value at 0,50,250,1000ms after RPC; same page/timeOrigin/trial',nativeSampling:'CGWindow/frontmost polls every 10ms during RPC, then each DOM checkpoint; sampled, not continuous proof',secret:'production sky wrapper and production file store from the matching pinned source, temp HOME; adapter maps its substituted request to native token; no vendor/service error rewriting tested'};
+const config={browser,smoke,refs,kit:process.env.GITHUB_SHA,image:process.env.ImageVersion,os:execFileSync('sw_vers',['-productVersion'],{encoding:'utf8'}).trim(),startedAt:Date.now(),cells:plan(browser,smoke),judge:'DOM and React value at 0,50,250,1000ms after RPC; exactly those checkpoints, each with the same page/timeOrigin/trial; an ok reply must match at every one',nativeSampling:'CGWindow/frontmost polls every 10ms during RPC, then each DOM checkpoint; sampled, not continuous proof',secret:'production sky wrapper and production file store from the matching pinned source, temp HOME; adapter maps its substituted request to native token; no vendor/service error rewriting tested'};
 writeFileSync(join(OUT,'config.json'),JSON.stringify(config,null,2));
 let cover,target,engine,w,coverPid,targetPid,safariOwned=false;const rows=[];
 try{
@@ -46,7 +47,7 @@ try{
   const home=join(OUT,'homes',randomUUID()),socket=join(process.env.RUNNER_TEMP,'p390.sock'),row={...cell,valid:false,targetPid,coverPid,startedAt:Date.now(),samples:[]};let secret=null;
   mkdirSync(home,{recursive:true});rmSync(socket,{force:true});
   try{
-   await front(targetPid);await command({op:'reset',trial:row.id,mode:cell.cell==='guard'?'uppercase':'plain'});
+   await front(targetPid);await command({op:'reset',trial:row.id,mode:modeFor(cell.cell)});
    engine=spawn(engines[cell.head],[],{env:{...process.env,HOME:home,CUA_ENGINE_SOCKET:socket},stdio:['ignore','ignore','pipe']});engine.stderr.on('data',d=>appendFileSync(join(OUT,'engine-stderr.txt'),d));
    w=await Wire.connect(socket);const ping=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});if(ping.error)throw Error('ping '+JSON.stringify(ping.error));
    if(cell.cell!=='foreground')await front(coverPid);
@@ -54,7 +55,7 @@ try{
    const node=ob.result?.nodes?.find(n=>['AXTextField','AXTextArea','AXSearchField'].includes(n.role)&&[n.title,n.description].includes('Probe search'));if(!node?.token)throw Error('ordinary field token missing');
    row.before=await command({op:'clear-events'});if(row.before.active==='search'||row.before.value!==''||row.before.reactValue!=='')throw Error('field setup not unfocused and empty');
    row.nativeBefore=await ask({op:'status',pid:targetPid,coverPid});const want=cell.cell==='foreground'?targetPid:coverPid;if(row.nativeBefore.frontmostPid!==want)throw Error('frontmost precondition lost');if(cell.cell!=='foreground'&&row.nativeBefore.order.targetAboveCover!==false)throw Error('target not behind cover');
-   row.expected='value-'+randomUUID().slice(0,8)+'-'+cell.rep;if(cell.cell==='long')row.expected=row.expected+'x'.repeat(12000)+randomUUID();let action=()=>w.execute('set_value',{pid:targetPid,element:node.token,value:row.expected});
+   row.expected='value-'+randomUUID().slice(0,8)+'-'+cell.rep;if(cell.cell==='long')row.expected=row.expected+'x'.repeat(12000)+randomUUID();if(cell.cell==='cap-suffix')row.expected=capValue('cap-'+randomUUID()+'-'+cell.rep);let action=()=>w.execute('set_value',{pid:targetPid,element:node.token,value:row.expected});
    if(cell.cell==='secret'){
     secret='probe-value-'+randomUUID();row.expected=secret;
     const {createSkyService}=await import(pathToFileURL(join(sources[cell.head],'src/services/sky.mjs'))),{secretsFromEnv}=await import(pathToFileURL(join(sources[cell.head],'src/services/secret-input.mjs')));

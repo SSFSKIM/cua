@@ -3,7 +3,7 @@
 Probe-only branch `probe/390-qual`, forked from `probe/366-measure` at `fc3b8495`.
 No product edits, engine patches, forced routes, native probe gates, owner profiles or owner secrets.
 The workflow pins both engine commits and builds each in a separate scratch worktree.
-The initial candidate is being revised after independent review; do not dispatch until the coordinator supplies its replacement SHA.
+The candidate pin is `2532a1b583b3166b414a5bc8a63c1598c974687d`. Smoke may run once the kit review is clean; the full run awaits coordinator confirmation (the next fix head is not yet supplied).
 
 ## Predeclared cells
 
@@ -13,14 +13,15 @@ Each browser job uses one owned fixture process/profile. Each action gets a fres
 |---|---|---:|---|
 | CfT, default Electron, MAWS-chrome-parity Electron | background distinct value | 20 | Fix: ok, DOM and React exact match, `unfocusedValue.confirmed` with positive read count; main: backgroundClickRefused and empty values |
 | Same | synchronous uppercase-on-input guard | 5 | Fix: valueUnconfirmed and mismatch read-back, DOM/React transformed; main: refused and empty |
-| Same | >12,000-character value | 5 | Fix: valueUnconfirmed and mismatch, DOM/React full value; capped AX prefix must not confirm; main: refused and empty |
+| Same | >12,000-character value | 5 | Fix: valueUnconfirmed and `possiblyTruncated`, DOM/React full value; capped AX prefix must not confirm; main: refused and empty |
+| Same | exactly 10,000-character value (unique random prefix, padded); the fixture synchronously appends a suffix on input | 5 | Fix: valueUnconfirmed, never ok; final DOM/React are exactly the request plus the suffix; any non-`confirmed` `unfocusedValue` result is recorded as measured; main: refused and empty |
 | Same | placeholder secret | 5 | Fix: valueUnconfirmed, concealed with zero read-back reads, DOM/React value delivered; main: refused and empty |
 | Same | foreground ordinary value | 5 | Both: ok and exact DOM/React delivery |
 | Safari | background, foreground ordinary value | 5 each | Both: ok and exact DOM/React delivery |
 
-Smoke runs one repetition of each cell/head (34 actions). Full has 260 actions (80 per Chromium-family fixture and 20 Safari controls).
+Smoke runs one repetition of each cell/head (40 actions). Full has 290 actions (90 per Chromium-family fixture and 20 Safari controls).
 
-The controlled React field judges DOM and React independently. Uppercasing is synchronous in its input handler. Every row retains the engine answer/meta, RPC interval, DOM/React checkpoints at 0/50/250/1000 ms after RPC, focus/blur/pointer/key/input traces, and native frontmost/order snapshots. Page id, performance time origin and trial identity must stay bound. Each distinct requested value is unique across rows. The long-value guard records the complete test value in artifacts, not a length-derived equality shortcut.
+The controlled React field judges DOM and React independently. Uppercasing is synchronous in its input handler. Every row retains the engine answer/meta, RPC interval, DOM/React checkpoints at 0/50/250/1000 ms after RPC, focus/blur/pointer/key/input traces, and native frontmost/order snapshots. The checkpoint set must be exactly 0/50/250/1000 ms, each once, and every checkpoint must carry the row's page id, performance time origin and trial; otherwise the row is ineligible. An `ok` reply must match the requested DOM and React value at every checkpoint, so an early disagreement that converges by 1000 ms is a false ok; final delivery is still reported as its own metric. Error answers (deliberately unconfirmed secrets, guards) may see delivery arrive after the first sample. Baseline refused cells must be empty at every checkpoint. Each distinct requested value is unique across rows. The long-value guard records the complete test value in artifacts, not a length-derived equality shortcut.
 
 The secret comes from a random test value written mode 0600 under that trial's temporary HOME. The matching engine pin's **production sky wrapper and file-store reader** expand `{{secret:PROBE390_VALUE}}`; a narrow adapter maps the resulting substituted request and its concealed flag to the native token. This exercises production substitution and native input/read-back, not the entire REPL/service's error rewriting. Evidence records that substitution matched and concealed=true, and replaces the test value with `[TEST_SECRET]` before persistence. Temporary homes and profiles are removed and excluded from uploads. The read count proves only this route's read-back count; absence of other native reads requires source review, not this metadata alone.
 

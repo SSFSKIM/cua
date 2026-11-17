@@ -823,3 +823,19 @@ a document title left uncompared (limit 4: the window's, the page's, Chrome's ta
 paragraph now reads:
 
 > A click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, has given way to another control, or has been relabelled (a Save button that now reads Delete), it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it. The check reads the accessibility tree at the point, and also refuses a click or drag when the app has opened a new window over the one in the screenshot, when the point has left the page the screenshot showed, or when a web page has added an element over the point since the screenshot, such as a suggestion list or popup. A suggestion list the page shows without adding elements (one shown by opacity, or moved into place) still takes a click aimed at the control under it. In Chrome, so can a list that overflows its field's container, because Chrome's hit-test answers the covered control. Chrome's own popup of a field's `<datalist>` suggestions lets a click pass through to the page under it. The check still cannot see text that has moved within the same text view (after Return or a paste in TextEdit), a label that changed only in its numbers (a list row reused from "Order #1234" for "Order #1235"), or a toggle switched with its label unchanged. After typing into a field that offers suggestions, press Escape or take a new screenshot before clicking near it. After editing text above the point, take a new screenshot before clicking at coordinates. When a screenshot shows a panel over the page, aim at what the screenshot shows, not at the page's elements under it.
+
+### Table 3 addition (2026-11-15, #374)
+
+#374 (the native engine spec's Decision Log, the #374 entry; the Linux engine's `menuUnconfirmed`, cua #171 M4, ruling
+687) adds one answer the model has to read. perform_secondary_action "Show Menu" (AXShowMenu) is confirmed: success once
+a menu is seen to open within 1 s (an AXMenu under the element or one of its ancestors outside the page, or the app's focus moved into one, which is
+how a page's ARIA menu shows), else `menuUnconfirmed`. The vendor answers success as soon as the Accessibility call does,
+menu or none. A page that handles contextmenu itself and draws its own menu answers `menuUnconfirmed` too, though its
+menu is on screen, so the sentence names that case and points at a screenshot. One sentence closes the fourth paragraph,
+after the scroll's answers:
+
+> A Show Menu (`performSecondaryAction` with "Show Menu") succeeds only once a menu was seen to open. Otherwise it fails with `menuUnconfirmed`: the action was sent but no menu was seen within 1 s, and the app may have shown a menu of its own that accessibility does not expose (a web page's own menu, which a screenshot shows) or ignored the request, so observe the app before any retry. A Show Menu that succeeds means a menu appeared, not which one: if something else opens a menu in the same window within that second, its success can be that menu's, so check what the next observation shows before choosing an item.
+
+The last two sentences are ruling 1ea561bc:753's stated limit (the native engine spec's Decision Log, "#374's coincident
+menu"): the hosted controls showed a menu opened in the same window within the wait by something other than the request
+confirming it, and no discriminator separates the two.

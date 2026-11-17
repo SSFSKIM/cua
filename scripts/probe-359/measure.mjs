@@ -7,7 +7,7 @@ import {mkdirSync,writeFileSync,appendFileSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {launch,placePid,version} from '../probe-316/browser.mjs';
 import {FixtureTransport,FixtureError} from '../probe-354/transport.mjs';
-import {cells,diagnosticCells,summary} from './readers.mjs';
+import {BROWSERS,cells,diagnosticCells,summary} from './readers.mjs';
 import {page,SEED,REQUESTED,assertVisibleOwner} from './page.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only; offline stage must not launch this driver');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
@@ -16,7 +16,11 @@ const REPS=Number(arg('reps')??20),SMOKE=arg('smoke')==='true',DIAGNOSTIC=arg('d
 if(!OUT||!ENGINE||!TRACED||!TOOL||!WATCH||!['safari','cft','firefox'].includes(BROWSER)||!['textarea','input','contenteditable','compose'].includes(EDITOR))throw Error('missing or invalid arguments');
 if(REPS!==20&&!SMOKE&&!DIAGNOSTIC)throw Error('non20 repetitions must be explicitly labelled smoke or diagnostic');
 if(DIAGNOSTIC&&(SMOKE||EDITOR!=='textarea'))throw Error('diagnostic is a separate textarea corpus, never smoke');
-const planned=DIAGNOSTIC?diagnosticCells({kind:DIAGNOSTIC,reps:REPS,browsers:[BROWSER],scene:arg('scene')??'foreground-equal'}):cells({reps:REPS,browsers:[BROWSER],editors:[EDITOR]});
+const diagnosticBrowser=arg('diagnostic-browser')??'all';
+if(DIAGNOSTIC&&!['all',...BROWSERS].includes(diagnosticBrowser))throw Error('invalid diagnostic browser request');
+const diagnosticRequest=DIAGNOSTIC?{kind:DIAGNOSTIC,reps:REPS,browsers:DIAGNOSTIC==='confirm'?['cft']:diagnosticBrowser==='all'?BROWSERS:[diagnosticBrowser],scene:arg('scene')??'foreground-equal'}:null;
+if(diagnosticRequest&&!diagnosticRequest.browsers.includes(BROWSER))throw Error('shard browser is outside diagnostic request');
+const planned=DIAGNOSTIC?diagnosticCells({...diagnosticRequest,browsers:[BROWSER]}):cells({reps:REPS,browsers:[BROWSER],editors:[EDITOR]});
 if(!planned.length)throw Error('empty shard manifest');
 mkdirSync(join(OUT,'shots'),{recursive:true});
 const sleep=ms=>new Promise(r=>setTimeout(r,Math.max(0,ms))),startedAt=Date.now();
@@ -114,7 +118,7 @@ async function attempt(c){
  finally{row.endedAt=Date.now();rows.push(row);appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');writeFileSync(join(OUT,'progress.json'),JSON.stringify({attempted:rows.length,requested:planned.length,last:row.id,elapsedMs:Date.now()-startedAt},null,2));console.log('359',row.id,row.valid?'scored':row.problem)}
  if(consecutiveSetupFailures>=3)throw Error('three consecutive invalid setups; abort rather than fabricate coverage');
 }
-const meta={schema:1,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,browser:BROWSER,editor:EDITOR,reps:REPS,smoke:SMOKE,diagnostic:DIAGNOSTIC,image:process.env.ImageVersion,startedAt,planned,transport:'354 owner-v3 visible AX title binds nonce/timeOrigin; no hidden Firefox realm',clock:'same hosted machine epoch clocks; monotonic stamps in DOM/Swift; conservative command RTT uncertainty retained',tailMs:1500};
+const meta={schema:1,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,browser:BROWSER,editor:EDITOR,reps:REPS,smoke:SMOKE,diagnostic:DIAGNOSTIC,diagnosticRequest,image:process.env.ImageVersion,startedAt,planned,transport:'354 owner-v3 visible AX title binds nonce/timeOrigin; no hidden Firefox realm',clock:'same hosted machine epoch clocks; monotonic stamps in DOM/Swift; conservative command RTT uncertainty retained',tailMs:1500};
 try{
  browser=await launch(BROWSER,fixtureURL,join(OUT,'profile'),{x:400,y:30,w:620,h:720});pid=browser.pid;await until(()=>transport.clients.size>0,30000);await sleep(BROWSER==='cft'?Math.max(0,browser.launchedAt+22000-Date.now()):1500);placePid(pid,{x:400,y:30,w:620,h:720});
  const doc=join(OUT,'cover.txt');writeFileSync(doc,'#359 disposable cover.');sh('open',['-a','TextEdit',doc]);await sleep(1000);coverPid=Number(sh('pgrep',['-x','TextEdit']).split('\n')[0]);if(!coverPid)throw Error('cover unavailable');placePid(coverPid,{x:360,y:25,w:660,h:740});

@@ -16,9 +16,112 @@ test('the separate diagnostic crosses equal/end caret with foreground/background
 
 import {assertVisibleOwner,page,SEED} from './page.mjs';
 import vm from 'node:vm';
-import {readFileSync,mkdirSync,mkdtempSync,statSync,rmSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,mkdtempSync,statSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
+import {spawnSync} from 'node:child_process';
+
+function workflowMatrix(inputs){
+ const source=readFileSync(new URL('../../.github/workflows/probe-359.yml',import.meta.url),'utf8');
+ const matrix=source.match(/      matrix:\n([\s\S]*?)    steps:/)[1];
+ // These matrix expressions use the shared JS/GitHub &&, || and == string semantics.
+ const context={inputs,fromJSON:JSON.parse,format:(template,value)=>template.replace('{0}',value)};
+ return Object.fromEntries([...matrix.matchAll(/^        (\w+): \$\{\{ (.*) \}\}$/gm)].map(([,key,expression])=>[key,vm.runInNewContext(expression,context)]));
+}
+
+test('disabled diagnostics ignore leftover browser choices and retain all twelve normal shards',()=>{
+ for(const diagnostic of [undefined,'none'])for(const diagnostic_browser of ['all','cft','safari','firefox']){
+  const matrix=workflowMatrix({diagnostic,diagnostic_browser,scene:'background-end'});
+  assert.deepEqual(matrix.browser,['safari','cft','firefox']);
+  assert.deepEqual(matrix.editor,['textarea','input','contenteditable','compose']);
+  assert.equal(matrix.browser.length*matrix.editor.length,12);
+ }
+});
+
+test('enabled diagnostic matrices honor browser selection except confirm always uses cft',()=>{
+ for(const diagnostic of ['pilot','candidates','confirm'])for(const diagnostic_browser of ['all','cft','safari','firefox']){
+  const matrix=workflowMatrix({diagnostic,diagnostic_browser});
+  assert.deepEqual(matrix.browser,diagnostic==='confirm'?['cft']:diagnostic_browser==='all'?['safari','cft','firefox']:[diagnostic_browser]);
+  assert.deepEqual(matrix.editor,['textarea']);
+ }
+});
+
+function driverConfig(options){
+ const source=readFileSync(new URL('./measure.mjs',import.meta.url),'utf8');
+ const args={out:'/unused',browser:'safari',editor:'textarea',engine:'/plain','traced-engine':'/traced',tool:'/tool',watch:'/watch',reps:'5',diagnostic:'pilot','diagnostic-browser':'all',...options};
+ const ctx=vm.createContext({process:{argv:['node','measure.mjs',...Object.entries(args).flatMap(([k,v])=>['--'+k,v])],env:{}},...readers,join,mkdirSync(){}});
+ // Execute the real argument/manifest/config boundaries, stopping before sidecars or GUI setup.
+ vm.runInContext(source.slice(source.indexOf('const arg='),source.indexOf('class Wire'))+'\n'+source.match(/^const meta=.*$/m)[0]+'\nglobalThis.config=meta;',ctx);
+ return JSON.parse(JSON.stringify(ctx.config));
+}
+
+test('each diagnostic shard records the dispatch request as well as its local planned manifest',()=>{
+ const source=readFileSync(new URL('../../.github/workflows/probe-359.yml',import.meta.url),'utf8');
+ const step=source.match(/      - name: Measure shared-mode ordering\n([\s\S]*?)      - name:/)[1];
+ const env=Object.fromEntries([...step.matchAll(/^          (\w+): \$\{\{ (.*) \}\}$/gm)].map(([,k,expression])=>[k,vm.runInNewContext(expression,{inputs:{diagnostic:'pilot',diagnostic_browser:'cft',reps:'5',smoke:false,scene:'foreground-equal'},matrix:{browser:'cft',editor:'textarea'},github:{event_name:'workflow_dispatch'}})]));
+ // Capture the actual workflow invocation rather than just asserting that an argument exists.
+ const invocation=spawnSync('bash',['-c',`node() { printf '%s\\0' "$@"; }\n${step.slice(step.indexOf('        run: |')+'        run: |'.length)}`],{encoding:'utf8',env:{...process.env,...Object.fromEntries(Object.entries(env).map(([k,v])=>[k,String(v)])),RUNNER_TEMP:'/runner'}});
+ assert.equal(invocation.status,0,invocation.stderr);
+ const argv=invocation.stdout.split('\0').filter(Boolean).slice(1),options=Object.fromEntries(Array.from({length:argv.length/2},(_,i)=>[argv[i*2].slice(2),argv[i*2+1]]));
+ assert.deepEqual(driverConfig(options).diagnosticRequest,{kind:'pilot',reps:5,browsers:['cft'],scene:'foreground-equal'});
+ const safari=driverConfig({}),firefox=driverConfig({browser:'firefox'});
+ const request={kind:'pilot',reps:5,browsers:['safari','cft','firefox'],scene:'foreground-equal'};
+ assert.deepEqual(safari.diagnosticRequest,request);assert.deepEqual(firefox.diagnosticRequest,request);
+ assert.equal(safari.planned.length,40);assert.ok(safari.planned.every(c=>c.browser==='safari'));
+ assert.equal(firefox.planned.length,40);assert.ok(firefox.planned.every(c=>c.browser==='firefox'));
+ const confirm=driverConfig({diagnostic:'confirm',browser:'cft',reps:'20','diagnostic-browser':'firefox'});
+ assert.deepEqual(confirm.diagnosticRequest,{kind:'confirm',reps:20,browsers:['cft'],scene:'foreground-equal'});
+ assert.equal(confirm.planned.length,40);
+ const selected=driverConfig({diagnostic:'candidates',browser:'firefox','diagnostic-browser':'firefox',scene:'background-end'});
+ assert.deepEqual(selected.diagnosticRequest,{kind:'candidates',reps:5,browsers:['firefox'],scene:'background-end'});
+ const normal=driverConfig({diagnostic:'none',smoke:'true','diagnostic-browser':'firefox'});
+ assert.equal(normal.diagnosticRequest??null,null);assert.ok(normal.planned.every(c=>!c.diagnostic));
+});
+
+function summarizeDiagnostic(configs,rows=[]){
+ const root=mkdtempSync(join(tmpdir(),'cua359-'));
+ try{
+  const input=join(root,'input'),output=join(root,'output');mkdirSync(input);
+  for(const [i,config] of configs.entries()){const shard=join(input,String(i));mkdirSync(shard);writeFileSync(join(shard,'config.json'),JSON.stringify(config))}
+  writeFileSync(join(input,'rows.jsonl'),rows.map(r=>JSON.stringify(r)).join('\n'));
+  const result=spawnSync(process.execPath,[new URL('./readers.mjs',import.meta.url).pathname,'summarize',input,output,'--diagnostic'],{encoding:'utf8'});
+  return {...result,summary:result.status===0?JSON.parse(readFileSync(join(output,'summary.json'),'utf8')):null};
+ }finally{rmSync(root,{recursive:true,force:true})}
+}
+
+const pilotRequest={kind:'pilot',reps:5,browsers:['safari','cft','firefox'],scene:'foreground-equal'};
+const pilotConfigs=['safari','cft'].map(browser=>({browser,editor:'textarea',diagnostic:'pilot',diagnosticRequest:pilotRequest,planned:readers.diagnosticCells({...pilotRequest,browsers:[browser]})}));
+test('a pre-driver Firefox failure stays requested even with neither Firefox config nor rows',()=>{
+ const result=summarizeDiagnostic(pilotConfigs,pilotConfigs.flatMap(c=>c.planned.map(p=>({...p,valid:false}))));
+ assert.equal(result.status,0,result.stderr);
+ assert.equal(result.summary.requested,120);assert.equal(result.summary.attempted,80);assert.equal(result.summary.missing.length,40);
+ assert.ok(result.summary.missing.every(id=>id.includes('/firefox/')));
+ const firefox=result.summary.groups.filter(g=>g.cell.includes('/firefox/'));
+ assert.equal(firefox.length,8);assert.ok(firefox.every(g=>g.requested===5&&g.attempted===0));
+});
+
+test('diagnostic summaries reject missing or inconsistent dispatch requests instead of pooling them',()=>{
+ for(const mismatch of [undefined,{...pilotRequest,reps:20},{...pilotRequest,kind:'candidates'},{...pilotRequest,browsers:['safari','cft']},{...pilotRequest,scene:'background-end'}]){
+  const result=summarizeDiagnostic([pilotConfigs[0],{...pilotConfigs[1],diagnosticRequest:mismatch}]);
+  assert.notEqual(result.status,0);assert.match(result.stderr,/diagnostic.*request/i);
+ }
+ const absent=summarizeDiagnostic([]);assert.notEqual(absent.status,0);assert.match(absent.stderr,/diagnostic.*request/i);
+});
+
+test('diagnostic reader reconstructs confirm as cft only and respects a selected candidate browser',()=>{
+ for(const request of [{kind:'confirm',reps:20,browsers:['cft'],scene:'foreground-equal'},{kind:'candidates',reps:20,browsers:['firefox'],scene:'background-end'}]){
+  const result=summarizeDiagnostic([{diagnosticRequest:request,planned:[]}]);
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(result.summary.requested,request.kind==='confirm'?40:300);
+  assert.equal(result.summary.missing.length,result.summary.requested);
+  assert.ok(result.summary.groups.every(g=>g.cell.includes('/'+request.browsers[0]+'/')));
+ }
+});
+
+test('a malformed non-cft confirm request cannot turn into a zero-coverage success',()=>{
+ const result=summarizeDiagnostic([{diagnosticRequest:{kind:'confirm',reps:20,browsers:['firefox'],scene:'foreground-equal'},planned:[]}]);
+ assert.notEqual(result.status,0);assert.match(result.stderr,/diagnostic.*request/i);
+});
 
 test('driver creates the screenshot parent before asking the engine for nested attempt directories',()=>{
  const source=readFileSync(new URL('./measure.mjs',import.meta.url),'utf8'),root=mkdtempSync(join(tmpdir(),'cua359-'));

@@ -26,6 +26,15 @@ export function diagnosticCells({kind='pilot',reps=5,browsers=BROWSERS,scene='fo
  return plan.flatMap(c=>scenes.map(scene=>({...c,diagnostic:kind,scene,foreground:scene.startsWith('foreground'),initialCaret:scene.endsWith('equal')?'target':'end',id:['diagnostic',kind,scene,c.id].join('/')})));
 }
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+export function diagnosticPlan(configs){
+ const requests=configs.map(c=>c.diagnosticRequest),request=requests[0];
+ if(!request||requests.some(r=>!r))throw Error('diagnostic request manifests missing; cannot infer coverage from surviving shards');
+ const signature=r=>[r.kind,r.reps,r.browsers,r.scene];
+ if(requests.some(r=>!same(signature(r),signature(request))))throw Error('inconsistent diagnostic requests; keep dispatches separate');
+ if(!['pilot','confirm','candidates'].includes(request.kind)||!Number.isInteger(request.reps)||!Array.isArray(request.browsers)||!request.browsers.length||request.browsers.some(b=>!BROWSERS.includes(b))||new Set(request.browsers).size!==request.browsers.length||!['foreground-equal','foreground-end','background-equal','background-end'].includes(request.scene))throw Error('invalid diagnostic request manifest');
+ if(request.kind==='confirm'&&!same(request.browsers,['cft']))throw Error('invalid diagnostic confirm request: browsers must be cft only');
+ return diagnosticCells(request);
+}
 const groupKey=r=>[...(r.diagnostic?[r.diagnostic,r.scene]:[]),r.suite,r.browser,r.editor,r.selection,r.mode].join('/');
 function percentiles(v){v=v.filter(Number.isFinite).sort((a,b)=>a-b);const q=p=>v.length?v[Math.ceil(p*v.length)-1]:null;return {n:v.length,p50:q(.5),p95:q(.95),max:v.at(-1)??null}}
 export function facts(r){
@@ -83,7 +92,7 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  if(command==='plan'){const p=cells();console.log(JSON.stringify({attempts:p.length,cells:p},null,2))}
  else if(command==='summarize'||command==='timeline'){
   if(!input||!output)throw Error('usage: readers.mjs summarize|timeline INPUT_DIRECTORY OUTPUT_DIRECTORY');mkdirSync(output,{recursive:true});const rows=load(input);
-  if(command==='summarize'){const smoke=process.argv.includes('--smoke'),diagnostic=process.argv.includes('--diagnostic'),expected=diagnostic?load(input,'config.json').flatMap(c=>c.planned):cells({reps:smoke?1:20});if(diagnostic&&!expected.length)throw Error('diagnostic manifests missing');writeFileSync(join(output,'summary.json'),JSON.stringify(summary(rows,expected,{smoke,diagnostic}),null,2))}
+  if(command==='summarize'){const smoke=process.argv.includes('--smoke'),diagnostic=process.argv.includes('--diagnostic'),expected=diagnostic?diagnosticPlan(load(input,'config.json')):cells({reps:smoke?1:20});writeFileSync(join(output,'summary.json'),JSON.stringify(summary(rows,expected,{smoke,diagnostic}),null,2))}
   else writeFileSync(join(output,'timeline.jsonl'),rows.flatMap(timeline).map(r=>JSON.stringify(r)).join('\n')+'\n');
  }else throw Error('usage: readers.mjs plan | summarize|timeline INPUT_DIRECTORY OUTPUT_DIRECTORY');
 }

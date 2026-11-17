@@ -14,12 +14,18 @@ const reps=Number(process.env.PROBE389_REPS??10);
 const rows:any[]=[];
 // Explicit arm plan; every arm is reported separately, never pooled. The historical arm is the main engine of 2026-11-11 (fresh-observation only).
 const ALL=['fresh-observation','earlier-click','covered'];
-const plan=[
+const cohort=process.env.PROBE389_COHORT??'matrix';
+const matrixPlan=[
  {arm:'unmodified',engineDir:'build389',ref:process.env.ENGINE_REF,sequences:ALL,reps},
  {arm:'trace',engineDir:'trace389',ref:process.env.ENGINE_REF,sequences:ALL,reps:2},
  {arm:'history-unmodified',engineDir:'history389',ref:process.env.HISTORY_REF,sequences:['fresh-observation'],reps},
  {arm:'history-trace',engineDir:'history-trace389',ref:process.env.HISTORY_REF,sequences:['fresh-observation'],reps:2},
 ];
+// Panel cohort: the same four arms, after a real native chooser round trip on the foreground scratch MAWS.
+const PANEL=['panel-roundtrip'];
+const panelPlan=matrixPlan.map(a=>({...a,sequences:PANEL}));
+if(cohort!=='matrix'&&cohort!=='panel')throw Error('PROBE389_COHORT must be matrix or panel');
+const plan=cohort==='panel'?panelPlan:matrixPlan;
 mkdirSync(OUT,{recursive:true});
 function save(row:any){rows.push(row);appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');console.log(JSON.stringify({id:row.id,valid:row.valid,closed:row.after?.dialog===false,handler:row.handlerRan,error:row.problem,meta:row.call?.raw?.result?.meta}));}
 async function stop(p:any){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await Promise.race([new Promise(r=>p.once('exit',r)),sleep(4000)]);if(p.exitCode===null)p.kill('SIGKILL');}
@@ -29,7 +35,7 @@ function summarize(){const groups:any={};for(const r of rows){const key=[r.arm,r
 test('MAWS Add project: ordinary background element press and search set_value',async()=>{
  test.setTimeout(65*60*1000);
  if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
- writeFileSync(join(OUT,'pins.json'),JSON.stringify({engine:process.env.ENGINE_REF,historyEngine:process.env.HISTORY_REF,plan:plan.map(a=>({...a,sequences:a.sequences.join(',')})),maws:process.env.MAWS_REF,kit:process.env.PROBE389_KIT,reps,image:process.env.ImageVersion,arms:'Unmodified engine rate; separate logging-only engine trace; historical unmodified and logging-only arms at HISTORY_REF, fresh-observation only. No forced routes. MAWS build:app product UI, launchMaws scratch profile; no live engine.'},null,2));
+ writeFileSync(join(OUT,'pins.json'),JSON.stringify({cohort,engine:process.env.ENGINE_REF,historyEngine:process.env.HISTORY_REF,plan:plan.map(a=>({...a,sequences:a.sequences.join(',')})),maws:process.env.MAWS_REF,kit:process.env.PROBE389_KIT,reps,image:process.env.ImageVersion,arms:'Unmodified engine rate; separate logging-only engine trace; historical unmodified and logging-only arms at HISTORY_REF, fresh-observation only. No forced routes. MAWS build:app product UI, launchMaws scratch profile; no live engine.'},null,2));
  const helper=spawn(join(TEMP,'tool389'),[],{stdio:['pipe','pipe','inherit']}),waiters:any[]=[];
  createInterface({input:helper.stdout}).on('line',line=>{const w=waiters.shift();if(w){clearTimeout(w.timer);try{w.resolve(JSON.parse(line));}catch(e){w.reject(e);}}});
  function ask(q:any):Promise<any>{return new Promise((resolve,reject)=>{const w={resolve,reject,timer:setTimeout(()=>reject(Error('helper timeout')),10000)};waiters.push(w);helper.stdin.write(JSON.stringify(q)+'\n');});}
@@ -70,6 +76,36 @@ test('MAWS Add project: ordinary background element press and search set_value',
     const open=page.getByRole('button',{name:'Add project',exact:true}).first();
     // Setup may use CDP, but measured calls use only the real engine's execute facade.
     if(sequence!=='earlier-click')await open.click();
+    if(sequence==='panel-roundtrip'){
+     // Setup only: with the e2e pick seam off for this one pick, Choose folder... raises the real native chooser, which is cancelled through its own Cancel button. No engine call is made here.
+     const panelStatus=async()=>(await ask({op:'panel-status'})).panels as any[];
+     const candidates=async()=>(await panelStatus()).filter(p=>p.cancelEnabled>0);
+     const invalid=(why:string)=>Error('setup-invalid: '+why);
+     const panel:any=row.panel={};
+     const before=await panelStatus();panel.preexisting=before;
+     if(before.some(p=>p.cancelEnabled>0))throw invalid('a native panel already exists before opening');
+     await page.evaluate(()=> (window as any).__probe389.mark('before-panel'));
+     await app.evaluate(()=>{delete process.env.MAWS_E2E;});
+     try {
+      await dialog.getByRole('button',{name:'Choose folder…',exact:true}).click({timeout:5000});
+      let found:any[]=[];
+      for(const end=Date.now()+10000;Date.now()<end&&found.length===0;){found=await candidates();if(found.length===0)await sleep(200);}
+      panel.candidates=found;
+      if(found.length!==1)throw invalid('expected one native panel, found '+found.length);
+      panel.cancel=await ask({op:'cancel-panel',pid:found[0].pid});
+      if(panel.cancel.error||panel.cancel.pressError!==0)throw invalid('panel Cancel press failed '+JSON.stringify(panel.cancel));
+      let gone=false;
+      for(const end=Date.now()+10000;Date.now()<end&&!gone;){gone=(await candidates()).length===0;if(!gone)await sleep(200);}
+      panel.gone=gone;
+      if(!gone)throw invalid('native panel did not go after Cancel');
+      await page.evaluate(()=> (window as any).__probe389.mark('after-panel-cancel'));
+     } finally {
+      await app.evaluate(()=>{process.env.MAWS_E2E='1';});
+     }
+     // Choose folder... closed the Add project dialog before the chooser: reopen it through CDP before anything is measured.
+     await expect(dialog).toBeHidden({timeout:5000});
+     await open.click();
+    }
     await ask({op:'cover',pid:coverPid,wide:sequence==='covered'});
     row.coverSetup=await ask({op:'front',pid:coverPid});if(row.coverSetup.frontmostPid!==coverPid)throw Error('cover not front');
     if(sequence==='earlier-click'){

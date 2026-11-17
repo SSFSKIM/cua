@@ -10,6 +10,7 @@ import {Deadline} from '../../src/browser-service/budgets.mjs';
 import {Clipboard} from '../../src/browser-service/clipboard.mjs';
 import {NATIVE_CLIPBOARD_DISABLED} from '../../src/browser-service/keyboard.mjs';
 import {pageClipboardAction, performClipboardShortcut, richTextHtml, typeText} from '../../src/browser-service/paste.mjs';
+import {onControlledClock} from './support/controlled-clock.mjs';
 
 // The virtual clipboard with its page bridge recorded rather than installed (the bridge has its own tests,
 // clipboard-commands.test.mjs): `bridged` lists each installation asked for, with its options.
@@ -214,7 +215,7 @@ test('a page cannot put the typed text or the clipboard\'s items into a rejectio
   assert.ok(!pasted.message.includes(secret));
 });
 
-test('every CDP call of a paste or shortcut carries its deadline; one queued past it dispatches nothing', async () => {
+test('every CDP call of a paste or shortcut carries its deadline; one queued past it dispatches nothing', async t => {
   const {calls, evaluated, bridged, session: s} = session();
   const deadline = soon();
   await typeText(s, {tab_id: '5', text: 'x'}, 'cua_type', {deadline});
@@ -224,14 +225,18 @@ test('every CDP call of a paste or shortcut carries its deadline; one queued pas
   assert.ok(bridged.length >= 2);
   for (const {options} of bridged) assert.equal(options.deadline, deadline, 'the page bridge is installed within the deadline');
 
+  // on a controlled clock: the real one can fire the deadline's timer while Date.now() still reads under its end, and
+  // the queued paste, reached in that gap, then passed its own check (2 of 20 runs failed so)
   let release;
   const busy = s.clipboard.runExclusive(() => new Promise(resolve => { release = resolve; }));
   const before = evaluated.length;
-  const error = await rejection(typeText(s, {tab_id: '5', text: 'late'}, 'cua_type', {deadline: new Deadline(20)}));
-  assert.equal(error.code, 'timeout');
-  release();
-  await busy;
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await onControlledClock(t, async () => {
+    const error = await rejection(typeText(s, {tab_id: '5', text: 'late'}, 'cua_type', {deadline: new Deadline(20)}));
+    assert.equal(error.code, 'timeout');
+    release();
+    await busy;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  });
   assert.equal(evaluated.length, before, 'the queued paste never ran');
 });
 

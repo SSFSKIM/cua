@@ -38,7 +38,10 @@ import os
 // what does not read true would leave the page's tree gone (Decision Log 2026-10-22). The first observation after
 // enabling, and every observation of a Chromium window until a web area has been seen in the process, waits 100 ms and
 // then up to 1 s for an AXWebArea to appear. The vendor's Spotify fake activation before enabling is route 3's and is
-// not done here.
+// not done here. Nothing tells when the complete mode arrives, and an element action before it answers success with no
+// handler run, so a request that may carry one into a Chromium-family app waits out the rest of 2.5 s after the
+// engine's last accepted write (#366, ChromiumReadiness.swift); hence the write's place at the first observation, and
+// never again while owned.
 
 private let enablementLog = Logger(subsystem: "io.github.ssfskim.cua.engine", category: "enablement")
 
@@ -214,6 +217,9 @@ final class WebAccessibility: @unchecked Sendable {
   private var writes: [String: UInt64] = [:]
   /// Per process, its first observation's time, moved to every write attempt's (monotonic ms; `freshSince`).
   private var freshSinceByProcess: [String: Double] = [:]
+  /// Per process, when the engine's last accepted write of its attribute true returned (monotonic ms;
+  /// `lastEnablementWrite`, #366); kept past the entry's retirement, as `writes` is.
+  private var acceptedWriteAt: [String: Double] = [:]
   /// Per process, the token of the grace release armed at its last activity (#292); absent when none is armed. Every
   /// observation and input replaces it, so only the newest armed timer may release.
   private var pendingRelease: [String: Int] = [:]
@@ -225,6 +231,8 @@ final class WebAccessibility: @unchecked Sendable {
   /// of d2568c76..96c6f093: activity landing there must not be reset underneath).
   var beforeGraceRelease: () -> Void = {}
   private let releaseGraceMs: Double
+  /// The monotonic clock (ms) `freshSince` and `lastEnablementWrite` are read on: the engine's, replaced in the unit tests.
+  private let now: () -> Double
   /// Runs `work` after the given milliseconds on another thread (the grace release's timer).
   private let schedule: (Double, @escaping @Sendable () -> Void) -> Void
   /// Told (a bounded, value-free line) when a reset of the attribute the engine set fails; it stays owned.
@@ -239,8 +247,9 @@ final class WebAccessibility: @unchecked Sendable {
          DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
        },
        releaseFailed: @escaping (String) -> Void = { enablementLog.error("\($0, privacy: .public)") },
-       record: EnablementRecord? = nil) {
+       record: EnablementRecord? = nil, now: @escaping () -> Double = monotonicMilliseconds) {
     self.releaseGraceMs = releaseGraceMs
+    self.now = now
     self.schedule = schedule
     self.releaseFailed = releaseFailed
     self.record = record
@@ -289,6 +298,17 @@ final class WebAccessibility: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return freshSinceByProcess[Self.process(pid, launched)]
+  }
+
+  /// When the engine's last accepted write of the process's attribute true returned (monotonic ms), or nil when it has
+  /// made none (#366): the write that restarts Electron's debounce to its complete mode, and Chrome's, which an element
+  /// action waits out (`chromiumActionWaitMs`). Accepted is what `enableReporting` counts as set (success, or Chrome's
+  /// kAXErrorNotImplemented with the attribute reading true after it). An attribute left alone, owned already, read true
+  /// as another client's, or failing its write, moves nothing.
+  func lastEnablementWrite(pid: pid_t, launched: Date?) -> Double? {
+    lock.lock()
+    defer { lock.unlock() }
+    return acceptedWriteAt[Self.process(pid, launched)]
   }
 
   func hasSeenWebArea(pid: pid_t, launched: Date?) -> Bool {
@@ -396,7 +416,7 @@ final class WebAccessibility: @unchecked Sendable {
     processes[key] = entry
     observers[key, default: []].insert(connection)
     let token = armLocked(key)
-    if freshSinceByProcess[key] == nil { freshSinceByProcess[key] = monotonicMilliseconds() }
+    if freshSinceByProcess[key] == nil { freshSinceByProcess[key] = now() }
     lock.unlock()
     scheduleLapse(key, token)
 
@@ -435,8 +455,9 @@ final class WebAccessibility: @unchecked Sendable {
       }
     }
     let written = entry.access.write(name, true)
+    let writtenAt = now()
     lock.lock()
-    freshSinceByProcess[key] = monotonicMilliseconds()
+    freshSinceByProcess[key] = writtenAt
     lock.unlock()
     let after = written == .success ? true : entry.access.read(name)
     guard written == .success || (written == .notImplemented && after == true) else {
@@ -468,6 +489,7 @@ final class WebAccessibility: @unchecked Sendable {
     entry.on = true
     lock.lock()
     writes[key, default: 0] += 1
+    acceptedWriteAt[key] = writtenAt
     if owning {
       entry.owned = name
       entry.recorded = recorded

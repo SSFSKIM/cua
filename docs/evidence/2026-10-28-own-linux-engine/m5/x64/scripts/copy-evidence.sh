@@ -15,6 +15,9 @@ copy() {  # <src out root> <dst subdir>
 copy "$D/m5/out-x64" out
 copy "$D/m5/out-x64-rerun1" out-rerun1
 copy "$D/m5/f3-out-x64" f3-out
+# V5's re-judge at H' (ruling 756, task 90's rejudge-device.mjs over the stored rows), beside the rerun
+mkdir -p "$DST/out-rerun1/V5-rejudge-756"
+cp "$D"/task90/rejudge-fix1.out "$D"/task90/V5-rerun1.rejudge-device.jsonl "$D"/task90/V5-first.rejudge-device.jsonl "$D"/task90/probe-ran.mjs "$D"/task90/probe-ran.out "$DST/out-rerun1/V5-rejudge-756/"
 # the first V5's stop (rulings 749, 750): the proof read from its records, and the controller's clearance record
 mkdir -p "$DST/V5-stopped"
 cp "$T/v5-flag-proof.py" "$T/v5-flag-proof.txt" "$DST/V5-stopped/"

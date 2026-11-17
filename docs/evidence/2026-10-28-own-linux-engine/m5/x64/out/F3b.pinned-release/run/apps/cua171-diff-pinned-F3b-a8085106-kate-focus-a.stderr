@@ -1,0 +1,14 @@
+Hspell: can't open /usr/share/hspell/hebrew.wgz.sizes.
+kf.sonnet.clients.hspell: HSpellDict::HSpellDict: Init failed
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36c6ce2f0 invalid) "/org/a11y/atspi/accessible/2147484962"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36c6ce2f0 invalid) "/org/a11y/atspi/accessible/2147484962"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36c6ce2f0 invalid) "/org/a11y/atspi/accessible/2147484962"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36c6ce2f0 invalid) "/org/a11y/atspi/accessible/2147484962"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36c6ce2f0 invalid) "/org/a11y/atspi/accessible/2147484962"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36d14dbf0 invalid) "/org/a11y/atspi/accessible/2147485047"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36d14dbf0 invalid) "/org/a11y/atspi/accessible/2147485047"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36d14dbf0 invalid) "/org/a11y/atspi/accessible/2147485047"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36d14dbf0 invalid) "/org/a11y/atspi/accessible/2147485047"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36d14dbf0 invalid) "/org/a11y/atspi/accessible/2147485047"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36d14c410 invalid) "/org/a11y/atspi/accessible/2147485132"
+qt.accessibility.atspi: WARNING Qt AtSpiAdaptor: Accessible invalid:  QAccessibleInterface(0x61f36d14c410 invalid) "/org/a11y/atspi/accessible/2147485132"

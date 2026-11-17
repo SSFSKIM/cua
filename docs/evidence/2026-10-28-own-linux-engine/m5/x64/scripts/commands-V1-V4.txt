@@ -19,7 +19,7 @@ drag_handle	none	0 cells
 clipboard_read	V1	1 cells	pass
 clipboard_write	V1	1 cells	pass
 clipboard_release	V1	1 cells	pass
-cases, cua alone, not a command's output (14): V1 gedit/caret_placed: pass; V1 cases/bus_trace: pass; V4 chrome-textarea/focus_change: pass; V4 chrome-textarea/focus_change_takeover: pass; V4 chrome-textarea/silent_owner: pass; V4 chrome-textarea/concurrent: pass; V4 chrome-textarea/contention: pass; V4 chrome-textarea/late_page: pass; V4 chrome-textarea/ignored_page: pass; V4 gnome-text-editor/re
+cases, cua alone, not a command's output (14): V1 gedit/caret_placed: pass; V1 cases/bus_trace: pass; V4 chrome-textarea/focus_change: pass; V4 chrome-textarea/focus_change_takeover: pass; V4 chrome-textarea/silent_owner: pass; V4 chrome-textarea/concurrent: pass; V4 chrome-textarea/contention: pass; V4 chrome-textarea/late_page: pass; V4 chrome-textarea/ignored_page: pass; V4 gnome-text-editor/restore_refused: pass; V4 paste-target/stalled_incr: pass; V4 paste-target/late_convert: pass; V4 paste-target/unreadable: pass; V4 cases/bus_trace: pass
 unmapped (21):
   V2 desktop/capabilities: pass
   V3 minimized/minimized_press_key: pass

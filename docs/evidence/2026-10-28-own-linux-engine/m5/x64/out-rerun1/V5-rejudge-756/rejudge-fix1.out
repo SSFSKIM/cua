@@ -1,0 +1,64 @@
+== H′ gitdir: /Users/new/Developer/GitHub/cua/.git/worktrees/agent-a13a9435b2538fdbc ; H fefe306c288956a48b6c086017f3cd1a58462a07
+== V5 rerun (the counted V5 at H): device verdicts re-judged
+exit 1
+{"path":"/Users/new/.local/share/cua-171/m5/out-x64-rerun1/V5.pinned-release","run":"pinned-V5","name":"device-chrome-dnd chrome_dnd_shared cua","samples":9,"stored":{"verdict":"fail","reasons":["not cancelled with the drag-and-drop sentence on 2 of 9 samples (0/0, 0/1)"]},"then":{"verdict":"fail","reasons":["not cancelled with the drag-and-drop sentence on 2 of 9 samples (0/0, 0/1)"]},"reproduced":true,"now":{"verdict":"pass","reasons":[]},"moved":true}
+{"path":"/Users/new/.local/share/cua-171/m5/out-x64-rerun1/V5.pinned-release","run":"pinned-V5","name":"device-chrome-dnd chrome_dnd_late_take_shared cua","samples":9,"stored":{"verdict":"fail","reasons":["a drop the witness did not record on 1 of 9 samples (0/0)"]},"then":{"verdict":"fail","reasons":["a drop the witness did not record on 1 of 9 samples (0/0)"]},"reproduced":true,"now":{"verdict":"fail","reasons":["a drop the witness did not record on 1 of 9 samples (0/0)"]},"moved":false}
+{"path":"/Users/new/.local/share/cua-171/m5/out-x64-rerun1/V5.pinned-release","run":"pinned-V5","moved":["device-chrome-dnd chrome_dnd_shared cua: fail -> pass"],"failing":["device-chrome-dnd chrome_dnd_late_take_shared cua"],"unreproduced":[],"others":[],"device_verdicts":52}
+== V5 first attempt (stopped): device verdicts re-judged
+exit 0
+{"path":"/Users/new/.local/share/cua-171/m5/out-x64/V5.pinned-release","run":"pinned-V5","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+== every other stored step under out-x64: their device verdicts, none expected to move (only V5 runs a cancel cell)
+C1.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/C1.pinned-release/run/results.jsonl","run":"pinned-C1","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+D1.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/D1.pinned-release/run/results.jsonl","run":"pinned-D1","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+D2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/D2.pinned-release/run/results.jsonl","run":"pinned-D2","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+D3.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/D3.pinned-release/run/results.jsonl","run":"pinned-D3","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+D4.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/D4.pinned-release/run/results.jsonl","run":"pinned-D4","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+D5.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/D5.pinned-release/run/results.jsonl","run":"pinned-D5","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+E1.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/E1.pinned-release/run/results.jsonl","run":"pinned-E1","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+ES.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/ES.pinned-release/run/results.jsonl","run":"pinned-ES","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+F1a.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/F1a.pinned-release/run/results.jsonl","run":"pinned-F1a","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+F1b.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/F1b.pinned-release/run/results.jsonl","run":"pinned-F1b","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+F2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/F2.pinned-release/run/results.jsonl","run":"pinned-F2","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+FB.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/FB.pinned-release/run/results.jsonl","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+H1.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/H1.pinned-release/run/results.jsonl","run":"pinned-H1","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+H2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/H2.pinned-release/run/results.jsonl","run":"pinned-H2","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+L1.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/L1.pinned-release/run/results.jsonl","run":"pinned-L1","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+L2a.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/L2a.pinned-release/run/results.jsonl","run":"pinned-L2a","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+P1.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/P1.pinned-release/run/results.jsonl","run":"pinned-P1","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+P2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/P2.pinned-release/run/results.jsonl","run":"pinned-P2","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+P3.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/P3.pinned-release/run/results.jsonl","run":"pinned-P3","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+P4.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/P4.pinned-release/run/results.jsonl","run":"pinned-P4","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+P5.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/P5.pinned-release/run/results.jsonl","run":"pinned-P5","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+P6.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/P6.pinned-release/run/results.jsonl","run":"pinned-P6","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+R1.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/R1.pinned-release/run/parity/cua/results.jsonl","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+R1.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/R1.pinned-release/run/parity/vendor/results.jsonl","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+R2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/R2.pinned-release/run/baseline/cc/run-3/results.jsonl","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+R2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/R2.pinned-release/run/baseline/cc/run-1/results.jsonl","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+R2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/R2.pinned-release/run/baseline/cc/run-2/results.jsonl","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+R2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/R2.pinned-release/run/baseline/cv/run-3/results.jsonl","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+R2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/R2.pinned-release/run/baseline/cv/run-1/results.jsonl","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+R2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/R2.pinned-release/run/baseline/cv/run-2/results.jsonl","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+S1.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/S1.pinned-release/run/results.jsonl","run":"pinned-S1","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+S2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/S2.pinned-release/run/results.jsonl","run":"pinned-S2","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+S3.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/S3.pinned-release/run/results.jsonl","run":"pinned-S3","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+S4.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/S4.pinned-release/run/results.jsonl","run":"pinned-S4","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+V1.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/V1.pinned-release/run/results.jsonl","run":"pinned-V1","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":0}
+V2.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/V2.pinned-release/run/results.jsonl","run":"pinned-V2","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":1}
+V3.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/V3.pinned-release/run/results.jsonl","run":"pinned-V3","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":27}
+V4.pinned-release: {"path":"/Users/new/.local/share/cua-171/m5/out-x64/V4.pinned-release/run/results.jsonl","run":"pinned-V4","moved":[],"failing":[],"unreproduced":[],"others":[],"device_verdicts":19}
+== ruling 680's re-judge (task 89's copy) of the late-take cell, against H′'s checkout
+# pinned-V5 re-judged with the witness span's limit on a late take's drop (the design session, 2026-11-14 (sminos 680))
+label: release gate; candidate 751ec9be45e1f5b8e10fc3aa0a4695f785ecb12a44acd5b069374926ba383cca (cua-engine 0.4.0 (c55c8e08d9cb)); /Users/new/.local/share/cua-171/m5/out-x64-rerun1/V5.pinned-release/run/results.jsonl
+
+| verdict row | stored | re-judged | why |
+|---|---|---|---|
+| device-chrome-dnd chrome_dnd_shared cua | fail | fail | stored verdict |
+| device-chrome-dnd chrome_dnd_late_take_shared cua | fail | pass | 9 samples; the witness span's limit: 0/0 (dragend 190 ms after the press, answer 162.14 ms + 20); every other rule passes |
+
+rows: 52; failing: device-chrome-dnd chrome_dnd_shared cua
+coverage: 52 of the step's 52 operations (V5) with a verdict
+replaced by the ruling: device-chrome-dnd chrome_dnd_late_take_shared cua
+other terminal failures retained: device-chrome-dnd chrome_dnd_shared cua
+run problems: the run's own failure: device-chrome-dnd chrome_dnd_shared cua
+VERDICT (the run's verdicts, chrome_dnd_late_take_shared with the witness span's limit): FAIL
+exit 1

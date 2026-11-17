@@ -1,0 +1,5 @@
+V1: cua rows 6; series faster 7, within the bound 1, same 0; PASS rows naming no series 2; other verdicts {}
+V2: cua rows 15; series faster 26, within the bound 1, same 1; PASS rows naming no series 1; other verdicts {}
+V3: cua rows 41; series faster 20, within the bound 0, same 0; PASS rows naming no series 27; other verdicts {'declared': 4}
+V4: cua rows 22; series faster 4, within the bound 0, same 0; PASS rows naming no series 20; other verdicts {}
+V5: cua rows 52; series faster 0, within the bound 0, same 0; PASS rows naming no series 50; other verdicts {'FAIL:': 2}

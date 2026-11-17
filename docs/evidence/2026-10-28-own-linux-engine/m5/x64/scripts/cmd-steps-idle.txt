@@ -1,0 +1,4 @@
+E1 drag_handle lines:14 move_relative lines:13
+S1 drag_handle lines:64 move_relative lines:64
+S2 drag_handle lines:33 move_relative lines:0
+V2 drag_handle lines:41 move_relative lines:41

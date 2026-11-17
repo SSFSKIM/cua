@@ -1,0 +1,30 @@
+list_windows	none	0 cells	
+list_apps	none	0 cells	
+get_window_state	V5	14 cells	pass
+get_screenshot	none	0 cells	
+launch_app	none	0 cells	
+activate_window	none	0 cells	
+click	V5	7 cells	pass
+perform_secondary_action	none	0 cells	
+press_key	none	0 cells	
+key_down	none	0 cells	
+key_up	V5	1 cells	pass
+type_text	none	0 cells	
+type_characters	none	0 cells	
+scroll	V5	3 cells	pass
+move	none	0 cells	
+move_relative	none	0 cells	
+drag	V5	20 cells	pass, fail
+drag_handle	none	0 cells	
+clipboard_read	none	0 cells	
+clipboard_write	none	0 cells	
+clipboard_release	none	0 cells	
+cases, cua alone, not a command's output (0): 
+unmapped (7):
+  V5 device-firefox/firefox_move_pointer_out_shared: pass
+  V5 device-firefox/firefox_move_overlap_pointer_in_shared: pass
+  V5 device-firefox/firefox_move_covered_dedicated: pass
+  V5 identity/identity_click_element: pass
+  V5 identity/identity_secondary_action: pass
+  V5 identity/identity_type_text: pass
+  V5 identity/identity_clipboard_read: pass

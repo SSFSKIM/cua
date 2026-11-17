@@ -8,9 +8,12 @@ import Foundation
 //
 // What counts as the menu, read just before the action and then every `menuConfirmIntervalMs` for up to
 // `menuConfirmWindowMs` after it, the first read at once (`openMenus`):
-// - an AXMenu child of the application element, which is where AppKit, Chromium, Electron, Gecko and Safari put the
-//   context menu they pop up (`application`), read under the element's serving process and the app's;
-// - an AXMenu child of the element itself, a popup or menu button's own menu (`element`);
+// - an AXMenu child of the element itself: AppKit's text view's context menu, a popup or menu button's own menu
+//   (`element`);
+// - an AXMenu child of one of the element's ancestors up to and including its window, past any web area (`ancestor`,
+//   `menuHosts`): a context menu hangs under the view that popped it up, which the hosted smoke of 2026-11-16 found
+//   for each browser (Chrome for Testing: the web area's parent scroll area; Electron: the window; Firefox and Safari:
+//   a group under the window), never under the application element;
 // - the application's focused element, or one of its nearest `menuFocusLevels` ancestors, that is an AXMenu
 //   (`focus`): a page's ARIA menu (role=menu, which Chrome and Safari expose as AXMenu) sits inside the page, not under
 //   the application, and the WAI-ARIA menu pattern moves the focus onto its first item.
@@ -32,12 +35,12 @@ let menuConfirmIntervalMs: Double = 20
 /// through a group, so a focused element deep in a page is not read up to its window on every poll.
 let menuFocusLevels = 3
 
-/// What the Show Menu's confirmation found (meta `menu`, value-free): where the new menu was seen (`application`,
-/// `element` or `focus`; null when none was), how many menus were open before the action, the reads after it and the
+/// What the Show Menu's confirmation found (meta `menu`, value-free): where the new menu was seen (`element`,
+/// `ancestor` or `focus`; null when none was), how many menus were open before the action, the reads after it and the
 /// milliseconds from the action's return to the last of them, the action's AXError when it was not success (a timeout,
 /// `showMenuSent`), and the sources the baseline could not read in full.
 struct MenuConfirmRecord: Equatable {
-  enum Seen: String { case application, element, focus }
+  enum Seen: String { case element, ancestor, focus }
   var seen: Seen?
   var openBefore: Int
   var polls: Int
@@ -62,8 +65,39 @@ struct MenuConfirmRecord: Equatable {
 func showMenuSent(_ performed: AXError) -> Bool { performed == .success || performed == .cannotComplete }
 
 
-/// The processes a menu is looked for under: the element's serving process, then the app's when it is another.
+/// The processes whose focus a menu is looked for under: the element's serving process, then the app's when it is
+/// another.
 func menuApplicationPids(owner: pid_t, appPid: pid_t) -> [pid_t] { owner == appPid ? [owner] : [owner, appPid] }
+
+/// How far up the element's ancestors are read for the menu's host: past any page, to the window.
+let menuHostLevels = 40
+
+/// Where a Show Menu's menu is looked for: the element, its hosts (`menuHosts`) and the applications whose focus is read.
+struct MenuScope {
+  let element: AXUIElement
+  let hosts: [AXUIElement]
+  let applications: [AXUIElement]
+}
+
+/// The element's ancestors whose children may hold its context menu, nearest first, read once before the action: from
+/// its parent up to and including its window, leaving out every node inside a web area and the web area itself (the
+/// page's own nodes, which hold no native menu; a page's ARIA menu is the focus's), so the walk resumes above the
+/// outermost web area. The walk stops at the window, at the application, or where a parent does not read; the hosts it
+/// reached are still read, so a short walk only looks in fewer places.
+func menuHosts(of element: AXUIElement, ax: AXOps) -> [AXUIElement] {
+  var chain: [(node: AXUIElement, role: String?)] = []
+  var node = ax.parent(element)
+  for _ in 0..<menuHostLevels {
+    guard let current = node else { break }
+    let role = ax.role(current)
+    if role == kAXApplicationRole { break }
+    chain.append((current, role))
+    if role == kAXWindowRole { break }
+    node = ax.parent(current)
+  }
+  let page = chain.lastIndex { $0.role == "AXWebArea" }
+  return chain.suffix(from: page.map { $0 + 1 } ?? 0).map(\.node)
+}
 
 /// One reading of the menus open now that a Show Menu on `element` could have opened, each with where it was seen, and
 /// the sources whose reading was not complete (`unread`): a read that failed (the children or the focused element, a
@@ -76,7 +110,7 @@ struct MenuReading {
 
 /// Reads the menus open now, in the order above. The deadline (on `ax.now`'s clock) is checked before every read, so a
 /// hung app costs at most one read past it.
-func openMenus(element: AXUIElement, applications: [AXUIElement], ax: AXOps, deadline: Double = .infinity) -> MenuReading {
+func openMenus(_ scope: MenuScope, ax: AXOps, deadline: Double = .infinity) -> MenuReading {
   var reading = MenuReading()
   let spent = { ax.now() >= deadline }
   /// The AXMenu children of `parent`, read child by child.
@@ -89,9 +123,9 @@ func openMenus(element: AXUIElement, applications: [AXUIElement], ax: AXOps, dea
       if role == kAXMenuRole { reading.menus.append((child, seen)) }
     }
   }
-  for application in applications { menuChildren(application, .application) }
-  menuChildren(element, .element)
-  for application in applications {
+  menuChildren(scope.element, .element)
+  for host in scope.hosts { menuChildren(host, .ancestor) }
+  for application in scope.applications {
     guard !spent() else { reading.unread.insert(.focus); break }
     let focused = ax.focusedElement(application)
     guard focused.readable else { reading.unread.insert(.focus); continue }
@@ -115,14 +149,14 @@ func openMenus(element: AXUIElement, applications: [AXUIElement], ax: AXOps, dea
 /// through a source `before` read in full, or `menuConfirmWindowMs` has passed. The reads stop one interval past the
 /// window (`openMenus`'s deadline), so the last poll reads in full and an app whose every read hangs for the messaging
 /// timeout ends the wait one read past it.
-func awaitShownMenu(element: AXUIElement, applications: [AXUIElement], before: MenuReading, performed: AXError, ax: AXOps) -> MenuConfirmRecord {
+func awaitShownMenu(_ scope: MenuScope, before: MenuReading, performed: AXError, ax: AXOps) -> MenuConfirmRecord {
   let start = ax.now()
   var record = MenuConfirmRecord(seen: nil, openBefore: before.menus.count, polls: 0, ms: 0,
                                  actionError: performed == .success ? nil : performed.rawValue,
                                  unreadBefore: before.unread.map(\.rawValue).sorted())
   while true {
     record.polls += 1
-    let open = openMenus(element: element, applications: applications, ax: ax, deadline: start + menuConfirmWindowMs + menuConfirmIntervalMs)
+    let open = openMenus(scope, ax: ax, deadline: start + menuConfirmWindowMs + menuConfirmIntervalMs)
     record.ms = ax.now() - start
     if let new = open.menus.first(where: { menu in
       !before.unread.contains(menu.seen) && !before.menus.contains { ax.same($0.menu, menu.menu) }

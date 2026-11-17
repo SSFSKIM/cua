@@ -556,7 +556,7 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     null, outcome: "moved" | "atEnd" | "unconfirmed", atEnd?: true, endBefore?: true, moved?: points the asked way,
     by?: "content" | "tracked" | "hit" | "bar", barBefore?, barAfter?, firstMoveMs?, polls, barWrite?, barWriteError?,
     fallbackSkipped?: "web" | "clipped", containerBy?: "window", walked?, readMs, ms}
-  menu (#374, on a Show Menu's result and its menuUnconfirmed): {seen: "application" | "element" | "focus" | null,
+  menu (#374, on a Show Menu's result and its menuUnconfirmed): {seen: "element" | "ancestor" | "focus" | null,
     openBefore, polls, ms, actionError?: the AXShowMenu's AXError when it was cannotComplete, taken as sent,
     unreadBefore?: the sources the baseline could not read in full, which confirm nothing}
   pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): ⌘V was sent and the text
@@ -4735,7 +4735,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   2. **What counts as the menu** (MenuConfirm.swift `openMenus`), read once just before the action and then at once
      and every 20 ms (`menuConfirmIntervalMs`) for up to 1 s (`menuConfirmWindowMs`, Linux's MENU_WAIT) after it
      returns: an AXMenu child of the application element, under the element's serving process and the app's
-     (`application`: where AppKit, Chromium, Electron, Gecko and Safari put a popped-up context menu); an AXMenu child
+     (`application`; amended 2026-11-16 by "#374's menu hosts" below: no family puts its context menu there, and the
+     source is the element's ancestors outside the page instead, `ancestor`); an AXMenu child
      of the element (`element`: a popup or menu button's own menu); and the app's AXFocusedUIElement or one of its 3
      nearest ancestors with role AXMenu (`focus`: a page's ARIA role=menu, which Chrome and Safari expose as AXMenu,
      sits inside the page, and the WAI-ARIA menu pattern moves the focus onto its first item). A menu open before the
@@ -4758,7 +4759,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      `menuUnconfirmed`. **Unverified:** that AppKit's AXShowMenu blocks this way is a reading, not yet observed on this
      engine; the live kit's AppKit fixture has a view whose Show Menu runs its menu inside the action
      (`appkit-blocking`), so the hosted run observes the cannotComplete path, and every cell records the AXError.
-  5. **The record** rides as meta `menu` (`cua/menu` through the service): {seen: "application" | "element" | "focus" |
+  5. **The record** rides as meta `menu` (`cua/menu` through the service): {seen: "element" | "ancestor" | "focus" |
      null, openBefore, polls, ms, actionError?, unreadBefore?}, value-free. The app's menu record (MenuRecord.swift) is cleared on
      either answer, since the action was sent.
   6. **A posted right click stays at click's own contract**, matching Linux. click_element has no right-button route
@@ -4781,6 +4782,43 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   web families, a preventDefault page as the negative control, and on AppKit a view that takes AXShowMenu and shows
   nothing (the ignored case) and one that runs its menu inside the action (item 4).
   Date/Author: 2026-11-15, cursor235's implementer for #374 (design 1ea561bc:733).
+- Decision (#374's menu hosts, 2026-11-16, `fix/374-menu-unconfirmed`; the design session's ruling 1ea561bc:752 on
+  the hosted diagnostic smoke, run 44004726498, kit `probe/374-measure` 43d561cf; amends #374's item 2 above): **a
+  context menu counts when it is a new AXMenu child of the element or of one of its ancestors up to and including its
+  window, leaving out the web area and everything inside it; the AXMenu child of the application element is no
+  source.** A pop-up-level window was weighed as the signal and rejected.
+  1. **The finding.** The first smoke (run 44001129810) had the candidate answer `menuUnconfirmed` on every browser's
+     native context menu while the kit's oracle saw it on screen: none of the five families puts its context menu
+     under the application element. The diagnostic smoke hit-tested each menu window's centre through AX and walked
+     the hit's ancestry, the same in the foreground and the background: AppKit's text view, AXMenuItem < AXMenu <
+     AXTextArea (the element, already the `element` source; the popup button likewise); Chrome for Testing, < AXMenu <
+     AXScrollArea (the page's own scroll area) < AXGroup ×6 < AXWindow; Electron, < AXMenu < AXWindow; Firefox, <
+     AXMenu < AXGroup < AXWindow; Safari, < AXMenu < AXGroup < AXTabGroup < AXSplitGroup < AXWindow. A bounded search
+     of each application's tree found only the menu bar's menus under it. The menu hangs under the view that popped it
+     up: the element, or an ancestor of it outside the page.
+  2. **The rule** (MenuConfirm.swift `menuHosts`, `MenuScope`; `seen` "element" | "ancestor" | "focus"). The hosts are
+     read once before the action: the element's parents up to the window (at most `menuHostLevels`, 40; the walk stops
+     at the window, at the application or where a parent does not read), less the outermost web area and every node
+     below it, which are the page's own and hold no native menu (a page's ARIA menu stays the focus's). Each poll reads
+     the element's children and each host's: one children read per host, 2 to 8 hosts on the measured trees. The
+     baseline, the unread rule, the focus source, the bounds and the 1 s wait are unchanged. An AXMenu beside a host
+     (Firefox's autocomplete, an AXMenu inside an AXPopover under a group) is no child of a host and does not count.
+  3. **Why not the window.** Every native menu measured was a new on-screen window at the pop-up menu level (layer
+     101) owned by the app's process, but that signal ties nothing to the request, and it is not unique: Firefox's
+     datalist suggestions are a layer-101 window of Firefox's (Chrome's are at layer 999, Safari's and Electron's showed
+     none; no tooltip was raised by a synthesized pointer move in any family; the ARIA, own and ignored cells raised no
+     pop-up window). AX names the menu and its host; a window level only says something popped up.
+  4. **Verified by the same run:** decision item 4's reading. AppKit's AXShowMenu on the blocking view answered
+     cannotComplete (−25204) in both placements with the menu open, and the candidate answered success (seen on the
+     first read, 1 to 1.5 ms after the call returned), where main answered `actionFailed` ("did not accept") with the
+     menu on screen. Also observed: while a native menu is open its app answers reads slowly (2 to 17 polls in the 1 s
+     wait on the browsers), which the first poll after the menu appears absorbs.
+  5. **What the full run checks besides** (the ruling's negative controls): a menu that appears in the same window
+     within the wait but not from the request (Firefox's datalist autocomplete, a `<select>` popup the page opens, and a
+     menu the page opens on a timer), each raised inside the wait after a Show Menu that opens nothing, must not
+     confirm; if one does, a discriminator (the menu's position against the element's frame, or its appearance after
+     the send) comes before shipping.
+  Date/Author: 2026-11-16, cursor235's implementer for #374 (ruling 1ea561bc:752).
 
 ## Outcomes & Retrospective
 

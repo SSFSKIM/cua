@@ -105,8 +105,9 @@ extension Engine {
       // #374: a Show Menu answers success only once a menu is seen to open (MenuConfirm.swift); the menus open before
       // it are read first, so one already open, or a source whose baseline did not read, confirms nothing.
       let showsMenu = chosen.name == kAXShowMenuAction
-      let menuApplications = showsMenu ? menuApplicationPids(owner: target.owner, appPid: appPid).map { prepare(AXUIElementCreateApplication($0)) } : []
-      let menusBefore = showsMenu ? openMenus(element: target.element, applications: menuApplications, ax: ax) : MenuReading()
+      let menuScope = showsMenu ? MenuScope(element: target.element, hosts: menuHosts(of: target.element, ax: ax),
+                                            applications: menuApplicationPids(owner: target.owner, appPid: appPid).map { prepare(AXUIElementCreateApplication($0)) }) : nil
+      let menusBefore = menuScope.map { openMenus($0, ax: ax) } ?? MenuReading()
       try guarding.checkInFlight()
       var performed = AXError.failure
       // The cursor points at the element after the action returns, and only when it succeeded (Cursor/CursorHub.swift).
@@ -119,8 +120,8 @@ extension Engine {
         throw EngineError(name: "actionFailed", "The element did not accept the \(chosen.description.prefix(256)) action.")
       }
       context.connection.clearMenuRecord(app: app.key)
-      if showsMenu {
-        let record = awaitShownMenu(element: target.element, applications: menuApplications, before: menusBefore, performed: performed, ax: ax)
+      if let menuScope {
+        let record = awaitShownMenu(menuScope, before: menusBefore, performed: performed, ax: ax)
         meta.menu = record
         try menuAnswer(record, app: app.displayName)
       }

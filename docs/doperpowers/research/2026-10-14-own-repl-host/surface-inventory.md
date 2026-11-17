@@ -828,7 +828,7 @@ paragraph now reads:
 
 #374 (the native engine spec's Decision Log, the #374 entry; the Linux engine's `menuUnconfirmed`, cua #171 M4, ruling
 687) adds one answer the model has to read. perform_secondary_action "Show Menu" (AXShowMenu) is confirmed: success once
-a menu is seen to open within 1 s (an AXMenu under the app or the element, or the app's focus moved into one, which is
+a menu is seen to open within 1 s (an AXMenu under the element or one of its ancestors outside the page, or the app's focus moved into one, which is
 how a page's ARIA menu shows), else `menuUnconfirmed`. The vendor answers success as soon as the Accessibility call does,
 menu or none. A page that handles contextmenu itself and draws its own menu answers `menuUnconfirmed` too, though its
 menu is on screen, so the sentence names that case and points at a screenshot. One sentence closes the fourth paragraph,

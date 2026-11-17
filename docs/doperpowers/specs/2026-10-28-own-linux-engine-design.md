@@ -2289,6 +2289,21 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - **Still open, and not this fix's:** a late take during a cancel cell's audit pass would still fail that audit, because the audit rows carry no take timing; fixing it needs the runner. The engine records no wall time for its answer, so whether the ok left before or after a late take can't be proven from the records (#388, P3, waits for a release).
   Date/Author: 2026-11-17, the plan-executor (session linux171), from tasks 89 and 90 and their reviews, on rulings 749, 750 and 756.
 
+- Decision (2026-11-17, M5's `:0` guard and the local proof, and H″, rulings 773, 774 and 779): **H″ = a5218d94**, which is H′ plus task 91, reviewed after one fix wave. The arm64 judged run (T7) runs every step at H″. The x64 steps stand as recorded: on H, and V5 on H′.
+  - **The race (773).** wrap71's accept-queue race on the run's own audit proxy stopped 2 of 9 `:0` steps at H: V5's first attempt (749, 750) and F3's V3, a development run that was not rerun (773). M4 had seen none. At that rate arm64's sittings would pay for it, so the guard is fixed now rather than after M5.
+  - **The fix lives in M5's own copy**, `docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py`, with the rule in `own_audit_proxy.py` beside it. `gate.mjs` prints every `:0` step with `WRAP=` pointing at that copy, and M4's `pointer-route/scripts/wrap71.py` stays unchanged as the record of H.
+  - **The rule.** A no-pid connection counts as the run's own, in counted.jsonl like task 71's session bus, only when all of these hold:
+    - its peer path is exactly `/tmp/.X11-unix/X<N>`;
+    - the same `ss -xapn` snapshot holds a listener at that path, and every listener there belongs to the run's own recorded audit proxy;
+    - that proxy is an xtrace with `-D :<N>` in the run's tree, confirmed by stat, cmdline, stat (the same name and start time, its recorded start, no zombie).
+
+    Anything else flags. The controls that must flag: no recorded proxy, another display, an exited or zombie proxy, a proxy outside the run's tree, an abstract socket, a foreign, ownerless, shared or second listener, display reuse, and a pid reused between reads.
+  - **The cross-check, in place of reruns (773).** The new rule over every completed x64 `:0` step's stored records (V1–V4, both V5s, Z0, F3's V2 and V3) gives old flags 2, new 0, and the two removed are exactly the two race stops (`m5/guards/crosscheck-773.txt`). The stored records keep no socket table, so the listener condition rests on an assumption the output states beside each removal: the recorded proxy alone held the listener.
+  - **The residual (779).** The guard can't tie a queued connection's server end to the proxy, because in the genuine race no process holds it yet. So a foreign root or other-user X server would have to accept a run process's connection, give up its path, and have the run's proxy take that number, all inside one guard tick. The person's Xorg holds X0 for as long as it runs, so this isn't the VM's world. It is debt, with the fixture and an inode-correlation fix (tech-debt-tracker.md, 2026-11-17).
+  - **The local proof (774).** T5's driver summary read exit 0 for every part, because a `$(date)` ran before `$?` was read; the part logs and the lock lines carried the true exits. The repo script `scripts/linux-engine-gate/local-proof.sh` captures each part's exit straight after it ends and passes only when every part exited 0. A deliberately failing part is its test. The x64 README's Corrections section names the defect.
+  - **The engine-linux clipboard test flake** (`clipboard::tests::an_unconfirmed_paste_s_current_time_refusal_covers_the_next_paste_too`) hit ci-gate three times this week. Its fix changes tests under `native/linux-engine/`, which the pinned rule forbids at H, so it rides the next engine release (779). The tracker keeps its tally, and M5's limits name it.
+  Date/Author: 2026-11-17, the plan-executor (session linux171), from task 91 and its reviews, on rulings 773, 774 and 779.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

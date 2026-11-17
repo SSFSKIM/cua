@@ -127,3 +127,6 @@
 2026-11-16T23:53:26Z wait t5-x64 load=0.52 0.46 0.41 render-host=none :: /Users/new/.local/share/cua-171/task89/sitting.sh  /Users/new/.local/share/cua-171/m5/out-x64 pinned-release V1:40 V2:39 V3:35 V4:34 V5:38 Z0:25
 2026-11-16T23:53:26Z acquire t5-x64 load=0.52 0.46 0.41 render-host=none :: /Users/new/.local/share/cua-171/task89/sitting.sh  /Users/new/.local/share/cua-171/m5/out-x64 pinned-release V1:40 V2:39 V3:35 V4:34 V5:38 Z0:25
 2026-11-17T02:16:40Z release t5-x64 status=8 load=0.86 0.94 0.93 render-host=none :: /Users/new/.local/share/cua-171/task89/sitting.sh  /Users/new/.local/share/cua-171/m5/out-x64 pinned-release V1:40 V2:39 V3:35 V4:34 V5:38 Z0:25
+2026-11-17T03:20:07Z wait t5-x64 load=0.02 0.08 0.08 render-host=none :: /Users/new/.local/share/cua-171/task89/sitting.sh -rerun1 /Users/new/.local/share/cua-171/m5/out-x64-rerun1 pinned-release V5:38 Z0:25
+2026-11-17T03:20:07Z acquire t5-x64 load=0.02 0.08 0.08 render-host=none :: /Users/new/.local/share/cua-171/task89/sitting.sh -rerun1 /Users/new/.local/share/cua-171/m5/out-x64-rerun1 pinned-release V5:38 Z0:25
+2026-11-17T04:08:19Z release t5-x64 status=0 load=0.39 0.87 1.02 render-host=none :: /Users/new/.local/share/cua-171/task89/sitting.sh -rerun1 /Users/new/.local/share/cua-171/m5/out-x64-rerun1 pinned-release V5:38 Z0:25

@@ -22,6 +22,8 @@ cp "$D"/hold-sittings-cleared/2026-11-17T02:30:44Z.txt "$DST/V5-stopped/hold-sit
 rm -rf "$DST/scripts"; mkdir -p "$DST/scripts/proof" "$DST/scripts/item9"
 for f in "$T"/*.sh "$T"/*.mjs "$T"/*.log "$T"/*.txt "$T"/*.md "$T"/*.out; do [ -e "$f" ] && cp "$f" "$DST/scripts/"; done
 cp "$T"/proof/*.log "$T"/proof/*.txt "$DST/scripts/proof/" 2>/dev/null
+cp -r "$T/rejudge-680" "$DST/scripts/"
+cp "$T"/*.py "$DST/scripts/"
 # item 9's transcript with the fresh home's mktemp path as <fresh>, and its private desktop's session record
 sed -E 's#/tmp/tmp\.[A-Za-z0-9]+#<fresh>#g' "$T/item9/inner.out" > "$DST/scripts/item9/transcript.txt"
 cp "$T/item9/desktop/session.json" "$DST/scripts/item9/" 2>/dev/null

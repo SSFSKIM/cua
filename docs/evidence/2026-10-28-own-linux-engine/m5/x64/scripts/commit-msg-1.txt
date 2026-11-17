@@ -1,0 +1,14 @@
+#171 M5 T5 x64: evidence so far at H (fefe306c): H's local proof, item 9, the 28 private idle steps, V1-V4, V5's stopped attempt
+
+Task 89's run, acceptance on the pinned release (linux-engine-v0.4.0, 751ec9be...), from the run home m5/home-x64:
+- H's local proof (rulings 742, 743): the harness suite, harness-dbus and engine-linux's lines pass; npm test's failures
+  at H are main b99232de's but one load-sensitive flake that fails 2/20 on both (scripts/proof/).
+- item 9 in an empty home on a private display (scripts/item9/).
+- D1-C1, 28 private idle steps, every one exit 0 (out/<step>.pinned-release/).
+- The :0 sitting (GO 745): V1-V4 exit 0 with their all-clears clear; V5 stopped by wrap71's outside-peer flag on the
+  run's own audit proxy (:40, xtrace 398197), cleared on rulings 749 and 750 (V5-stopped/: the proof and the record).
+  Its rerun and Z0 follow in out-rerun1/.
+The README with the step table follows when the run ends. Raw rows included; files over 1 MB gzipped; scanned for
+token-shaped strings, none.
+
+Sminos-Session: linux171#3c5ca588 (cua on dc-linux171-1e68)

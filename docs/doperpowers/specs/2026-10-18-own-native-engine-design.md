@@ -4868,10 +4868,21 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      of 80 with the prelude (#394), so the press is answered as posted, as every press_key is.
   4. **What the page sees.** The focus the activation gives is a focus event on the field before the key, which the
      model's document now states (agent-cursor.md's background paragraph; the surface inventory's #360 addition).
-  5. **Not yet measured:** the production path end to end (the held activation with its guard, rather than the probe's
-     bare prelude), live on Firefox; the probe priced its bare prelude at p50/p95 4/8 ms with no activation or raise
-     observed at a median 36 ms sampling.
-  Date/Author: 2026-11-16, cursor235's implementer for #360 (ruling 764).
+  5. **Qualified on the production path** (hosted run 44047809532, 2026-11-17, kit `probe/360-measure` 8a0e1dca, the
+     unmodified fix f066023e against main c7eee724, Firefox 160.0; 1,600 of 1,600 scorable;
+     `docs/evidence/2026-11-17-firefox-nav-focus/`). The fix's own press_key, cold on a fresh connection per attempt,
+     judged by the page's DOM against the same repetition's foreground row: background 560 of 560, foreground 560 of
+     560. The rich editors' Left and Option+Left went from 0 of 80 on main to 80 of 80; the rich collapse keys from 40
+     of 120 (Cmd+Left alone) to 120 of 120. The passive watch observed no activation or raise in 501,913 samples (gaps
+     p50/p95/max 5.0/6.7/176 ms; a window-order read up to 230 ms): sampled evidence, not a no-flash guarantee. Home,
+     End and the page keys do nothing in a single-line input, even in the foreground, so those 160 rows are not
+     applicable; in the other editors they scroll rather than move the caret, and main's plain post already matched
+     the foreground there (160 of 160 in the rich editors), so route 3 changes nothing measurable for them.
+  6. **The cost:** route 3's held activation, paid once per hold. Cold, the call is 110/147 ms p50/p95 against the
+     plain post's 3/6 ms on the same cells, of which the guard is 104/142 ms; main's ⌘ chords cost the same (109/146
+     ms). A call inside an already held interaction was not measured.
+  Date/Author: 2026-11-16, cursor235's implementer for #360 (ruling 764); items 5 and 6 2026-11-17, from the
+  qualification run.
 
 ## Outcomes & Retrospective
 

@@ -225,16 +225,34 @@ enum ReadbackPlan<Element> {
   case expect(field: Element, role: String, before: String, range: NSRange, returnIsText: Bool)
 }
 
-func readbackSnapshot<Element>(reads: ReadbackReads<Element>) -> ReadbackPlan<Element> {
+/// The snapshot; `settle`, when not nil, settles it first (`readbackSettle`) and records what that did. The settle comes
+/// after the secure and text-role checks, so it never reads a field the snapshot would not.
+func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout ReadbackSettle?) -> ReadbackPlan<Element> {
   guard let field = reads.focused() else { return .refused(.noFocusedElement) }
   guard let role = reads.role(field) else { return .refused(.roleUnreadable) }
   let subrole = reads.subrole(field)
   if readbackSecure(role: role, subrole: subrole) { return .refused(.secure) }
   guard typeReadbackTextRoles.contains(role) else { return .refused(.notTextField) }
-  guard let before = reads.value(field) else { return .refused(.valueUnreadable) }
+  guard var before = reads.value(field) else { return .refused(.valueUnreadable) }
   if readbackMayBeTruncated(before) { return .refused(.possiblyTruncated) }
-  guard let range = reads.range(field), readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
+  guard var range = reads.range(field), readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
+  if var settled = settle {
+    defer { settle = settled }
+    if let closed = readbackSettle(field, role: role, reads: reads, before: &before, range: &range, record: &settled) { return .refused(closed) }
+    if readbackMayBeTruncated(before) { return .refused(.possiblyTruncated) }
+    guard readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
+  }
   return .expect(field: field, role: role, before: before, range: range, returnIsText: readbackReturnIsText(role: role, subrole: subrole))
+}
+
+/// Why a snapshotted field is read no further, its role and subrole read again: unreadable, secure, or another role.
+func readbackFieldClosed<Element>(_ field: Element, role: String, reads: ReadbackReads<Element>) -> TypeReadbackReason? {
+  guard let seenRole = reads.role(field) else { return .fieldUnreadable }
+  let subrole = reads.subrole(field)
+  if case .failed = subrole { return .fieldUnreadable }
+  if readbackSecure(role: seenRole, subrole: subrole) { return .becameSecure }
+  if seenRole != role { return .fieldChanged }
+  return nil
 }
 
 /// What one value read answered against the expected value: unreadable, equal, or different (possibly cut at the
@@ -269,11 +287,7 @@ func readbackPoll<Element>(_ field: Element, role: String, reads: ReadbackReads<
   var poll = ReadbackPoll()
   let started = reads.now()
   repeat {
-    guard let seenRole = reads.role(field) else { return ReadbackPoll(reads: poll.reads, closed: .fieldUnreadable) }
-    let subrole = reads.subrole(field)
-    if case .failed = subrole { return ReadbackPoll(reads: poll.reads, closed: .fieldUnreadable) }
-    if readbackSecure(role: seenRole, subrole: subrole) { return ReadbackPoll(reads: poll.reads, closed: .becameSecure) }
-    if seenRole != role { return ReadbackPoll(reads: poll.reads, closed: .fieldChanged) }
+    if let closed = readbackFieldClosed(field, role: role, reads: reads) { return ReadbackPoll(reads: poll.reads, closed: closed) }
     poll.reads += 1
     poll.last = compare(field)
     if poll.last == .equal { poll.matched = true; break }
@@ -325,6 +339,10 @@ struct TypeReadbackRecord: Equatable {
   /// from a doubled Return could not be read (accepted all the same, the ruling's residual). A plain request's only.
   var placeholderLine = false
   var placeholderCaretUnread = false
+  /// The settle before the snapshot (`readbackSettle`), when a recent key asked for one: its reads after the first, and
+  /// whether its cap ended it. A plain request's only; a concealed one's time shows in `snapshotMs`.
+  var settleReads = 0
+  var settleCapped = false
   /// A concealed request's record (the review of dad56362..af1860ef, P2): no count and no poll time on the wire, since the
   /// checkpoints, the keys and the reads and time of each checkpoint's poll tell how many control characters and
   /// segments the secret holds (a secret of keys alone, its length); a key left unconfirmed is a flag.
@@ -348,6 +366,8 @@ struct TypeReadbackRecord: Equatable {
     if stoppedBeforeKey { wire["stoppedBeforeKey"] = true }
     if placeholderLine { wire["placeholderLine"] = true }
     if placeholderCaretUnread { wire["placeholderCaretUnread"] = true }
+    if settleReads > 0 { wire["settleReads"] = settleReads }
+    if settleCapped { wire["settleCapped"] = true }
     return wire
   }
 }
@@ -363,14 +383,17 @@ final class TypeReadback<Element> {
   private var unchecked = false
   private(set) var record = TypeReadbackRecord()
 
-  init(units: [TypedUnit], concealed: Bool, reads: ReadbackReads<Element>) {
+  init(units: [TypedUnit], concealed: Bool, settle: Bool, reads: ReadbackReads<Element>) {
     self.units = units
     self.reads = reads
     self.concealed = concealed
     record.concealed = concealed
     let started = reads.now()
-    plan = readbackSnapshot(reads: reads)
+    var settled: ReadbackSettle? = settle ? ReadbackSettle() : nil
+    plan = readbackSnapshot(reads: reads, settle: &settled)
     record.snapshotMs = reads.now() - started
+    record.settleReads = settled?.reads ?? 0
+    record.settleCapped = settled?.capped ?? false
     if case .refused(let reason) = plan { record.reason = reason }
   }
 
@@ -524,14 +547,14 @@ final class TypeReadback<Element> {
 
 /// The keyed route's text with its read-back: the snapshot before the first unit, a checkpoint before each key, the
 /// final poll after the last unit; the record in the meta whatever the answer. Empty text posts nothing and reads nothing.
-func keyTextReadBack<Element>(_ units: [TypedUnit], concealed: Bool, reads: ReadbackReads<Element>,
+func keyTextReadBack<Element>(_ units: [TypedUnit], concealed: Bool, settle: Bool = false, reads: ReadbackReads<Element>,
                               checkSource: (_ entered: Int, _ total: Int) throws -> Void, checkIntervention: () throws -> Void,
                               post: (KeyEvent) -> Bool, pause: () -> Void, meta: inout InputMeta) throws {
   guard !units.isEmpty else {
     return try keyText(units, concealed: concealed, checkSource: checkSource, checkIntervention: checkIntervention, post: post,
                        pause: pause, meta: &meta)
   }
-  let readback = TypeReadback(units: units, concealed: concealed, reads: reads)
+  let readback = TypeReadback(units: units, concealed: concealed, settle: settle, reads: reads)
   defer { meta.typeReadback = readback.record }
   try keyText(units, concealed: concealed, checkSource: checkSource, beforeUnit: readback.beforeUnit,
               checkIntervention: checkIntervention, post: post, pause: pause, meta: &meta)

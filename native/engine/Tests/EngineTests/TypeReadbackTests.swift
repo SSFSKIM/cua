@@ -42,6 +42,9 @@ private final class FakeField {
   var changeAfterRangeReads: Int?
   var changeAtRange: (FakeField) -> Void = { _ in }
   var calls: [String] = []
+  /// Before anything is typed, the value and selected range each value read finds, one per read (an editing key's
+  /// effect landing while the snapshot settles); the field keeps the last.
+  var statesBeforeTyping: [(String, NSRange)] = []
   private var rangeReads = 0
   private(set) var initialRange: NSRange?
   private var shown: String?
@@ -72,6 +75,7 @@ private final class FakeField {
   func readValue() -> String? {
     calls.append("value")
     valueReads += 1
+    if !delivered, !statesBeforeTyping.isEmpty { (value, range) = statesBeforeTyping.removeFirst(); shown = value }
     defer { if valueReads == changeAfterReads { change(self) } }
     if lagLeft > 0 { lagLeft -= 1; return shown }
     shown = value
@@ -119,10 +123,10 @@ final class TypeReadbackTests: XCTestCase {
 
   /// Types `text` into `app` through keyTextReadBack; the error it threw, if any, and the meta.
   @discardableResult
-  private func type(_ text: String, into app: FakeApp, concealed: Bool = false) -> (EngineError?, InputMeta) {
+  private func type(_ text: String, into app: FakeApp, concealed: Bool = false, settle: Bool = false) -> (EngineError?, InputMeta) {
     var meta = meta()
     do {
-      try keyTextReadBack(units(text), concealed: concealed, reads: app.reads, checkSource: { _, _ in }, checkIntervention: {},
+      try keyTextReadBack(units(text), concealed: concealed, settle: settle, reads: app.reads, checkSource: { _, _ in }, checkIntervention: {},
                           post: { event in
                             if event.kind == .down, let text = event.text { app.focused?.deliver(text) }
                             return true
@@ -891,6 +895,136 @@ final class TypeReadbackTests: XCTestCase {
       let (error, meta) = type("a", into: FakeApp(field), concealed: concealed)
       XCTAssertEqual(error?.errorName, "typeUnconfirmed", "concealed: \(concealed)")
       XCTAssertEqual(record(meta)["reason"] as? String, "unchanged", "concealed: \(concealed)")
+    }
+  }
+
+  // MARK: The settle before the snapshot (ruling 1ea561bc:754)
+
+  /// Only a key or chord posted to the app within the window settles the snapshot; it is the engine's call, by pid.
+  func testAKeyPostedWithinTheWindowSettlesTheSnapshot() {
+    let keys = RecentKeyPosts()
+    XCTAssertFalse(keys.settles(pid: 5, at: 1_000), "no key posted")
+    keys.record(pid: 5, at: 1_000)
+    XCTAssertTrue(keys.settles(pid: 5, at: 1_000 + typeReadbackSettleWindowMs))
+    XCTAssertFalse(keys.settles(pid: 5, at: 1_001 + typeReadbackSettleWindowMs), "a key past the window")
+    XCTAssertFalse(keys.settles(pid: 6, at: 1_100), "another app's key")
+    keys.record(pid: 5, at: 1_500)
+    XCTAssertTrue(keys.settles(pid: 5, at: 1_400 + typeReadbackSettleWindowMs), "the latest key counts")
+  }
+
+  /// Without a recent key the snapshot is taken at once, as before; with one, a stable field costs one more value and
+  /// range read and one settle interval.
+  func testTheSettleRunsOnlyWhenAsked() {
+    let plain = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+    let plainApp = FakeApp(plain)
+    XCTAssertNil(type("c", into: plainApp).0)
+    XCTAssertEqual(Array(plain.calls.prefix(6)), ["focused", "role", "subrole", "value", "range", "role"])
+    XCTAssertEqual(plainApp.sleeps, 0)
+    XCTAssertNil(record(type("c", into: FakeApp(FakeField(value: "ab", range: NSRange(location: 2, length: 0)))).1)["settleReads"])
+
+    let settled = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+    let settledApp = FakeApp(settled)
+    let (error, meta) = type("c", into: settledApp, settle: true)
+    XCTAssertNil(error)
+    XCTAssertEqual(Array(settled.calls.prefix(10)), ["focused", "role", "subrole", "value", "range", "role", "subrole", "value", "range", "role"],
+                   "each settle read checks the role and subrole first, as the poll does")
+    XCTAssertEqual(settledApp.sleeps, 1)
+    XCTAssertEqual(settledApp.clock, typeReadbackSettleIntervalMs)
+    XCTAssertEqual(record(meta)["settleReads"] as? Int, 1)
+    XCTAssertNil(record(meta)["settleCapped"])
+  }
+
+  /// A key's effect landing while the snapshot settles (an undo taking the text away in steps): the snapshot is the
+  /// field once two reads an interval apart agree, so the text typed after it is expected over what the key left.
+  func testTheSettleTakesTheSnapshotOnceTwoReadsAgree() {
+    let field = FakeField(value: "abc", range: NSRange(location: 3, length: 0))
+    field.statesBeforeTyping = [("abc", NSRange(location: 3, length: 0)), ("ab", NSRange(location: 2, length: 0)),
+                                ("", NSRange(location: 0, length: 0)), ("", NSRange(location: 0, length: 0))]
+    let (error, meta) = type("x", into: FakeApp(field), settle: true)
+    XCTAssertNil(error, "expected over the field the undo left")
+    XCTAssertEqual(field.value, "x")
+    XCTAssertEqual(record(meta)["settleReads"] as? Int, 3)
+
+    // A select-all landing: the same value, the selection changed.
+    let selecting = FakeField(value: "hello", range: NSRange(location: 5, length: 0))
+    selecting.statesBeforeTyping = [("hello", NSRange(location: 5, length: 0)), ("hello", NSRange(location: 0, length: 5)),
+                                    ("hello", NSRange(location: 0, length: 5))]
+    let (selected, selectedMeta) = type("x", into: FakeApp(selecting), settle: true)
+    XCTAssertNil(selected)
+    XCTAssertEqual(selecting.value, "x")
+    XCTAssertEqual(record(selectedMeta)["settleReads"] as? Int, 2, "a changed selection is a change")
+  }
+
+  /// The settled snapshot keeps the snapshot's checks: a value at the cap, a range outside the value.
+  func testASettledSnapshotKeepsTheSnapshotsChecks() {
+    let capped = FakeField(value: "a", range: NSRange(location: 1, length: 0))
+    let long = String(repeating: "a", count: typeReadbackValueCap)
+    capped.statesBeforeTyping = [("a", NSRange(location: 1, length: 0)), (long, NSRange(location: 0, length: 0)),
+                                 (long, NSRange(location: 0, length: 0))]
+    XCTAssertEqual(record(type("x", into: FakeApp(capped), settle: true).1)["reason"] as? String, "possiblyTruncated")
+    let outside = FakeField(value: "ab", range: NSRange(location: 2, length: 0))
+    outside.statesBeforeTyping = [("ab", NSRange(location: 2, length: 0)), ("ab", NSRange(location: 5, length: 0)),
+                                  ("ab", NSRange(location: 5, length: 0))]
+    // Refused at the snapshot, as an unsettled one is: no checkpoint, so a Tab after the text is not held back.
+    let (_, outsideMeta) = type("x\t", into: FakeApp(outside), settle: true)
+    XCTAssertEqual(record(outsideMeta)["reason"] as? String, "rangeUnreadable")
+    XCTAssertNil(record(outsideMeta)["stoppedBeforeKey"])
+  }
+
+  /// A field that never holds still is snapshotted from the last read the cap allows, and the meta says so.
+  func testTheSettleStopsAtItsCap() {
+    let counter = FakeField(value: "0", range: NSRange(location: 1, length: 0))
+    counter.statesBeforeTyping = (1...12).map { ("\($0)", NSRange(location: 1, length: 0)) }
+    let app = FakeApp(counter)
+    let (error, meta) = type("x", into: app, settle: true)
+    let reads = Int(typeReadbackSettleCapMs / typeReadbackSettleIntervalMs)
+    XCTAssertNil(error)
+    XCTAssertEqual(counter.value, "\(1 + reads)x", "the snapshot is the last read")
+    XCTAssertEqual(record(meta)["settleReads"] as? Int, reads)
+    XCTAssertEqual(record(meta)["settleCapped"] as? Bool, true)
+    XCTAssertEqual(record(meta)["snapshotMs"] as? Double, Double(reads) * typeReadbackSettleIntervalMs)
+    XCTAssertLessThanOrEqual(Double(reads) * typeReadbackSettleIntervalMs, typeReadbackSettleCapMs)
+  }
+
+  /// The settle comes after the secure check: a password field's value and range are never read, settle or not.
+  func testTheSettleNeverReadsASecureField() {
+    let field = FakeField(value: "hunter2", range: NSRange(location: 7, length: 0))
+    field.role = "AXSecureTextField"
+    let app = FakeApp(field)
+    XCTAssertEqual(record(type("pass", into: app, settle: true).1)["reason"] as? String, "secure")
+    XCTAssertFalse(field.calls.contains("value") || field.calls.contains("range"), "\(field.calls)")
+    XCTAssertEqual(app.sleeps, 0)
+
+    // A field that turns secure while the snapshot settles is read no further.
+    let turning = FakeField(value: "user", range: NSRange(location: 4, length: 0))
+    turning.role = "AXTextField"
+    turning.changeAfterReads = 1
+    turning.change = { $0.role = "AXSecureTextField" }
+    XCTAssertEqual(record(type("pass", into: FakeApp(turning), settle: true).1)["reason"] as? String, "becameSecure")
+    XCTAssertEqual(turning.calls.filter { $0 == "value" }.count, 1, "only the snapshot's read, before it turned secure")
+  }
+
+  /// The settle reads the field before any of a secret is typed: its reads, waits and meta are the same whatever the
+  /// secret, over a field that holds still and over one a key is still changing.
+  func testASecretsSettleIsTheSameWhateverTheSecret() {
+    func schedule(_ secret: String, moving: Bool) -> (calls: [String], sleeps: Int, record: NSDictionary) {
+      let field = FakeField(value: "abc", range: NSRange(location: 0, length: 3))
+      if moving {
+        field.statesBeforeTyping = [("abc", NSRange(location: 3, length: 0)), ("abc", NSRange(location: 0, length: 3)),
+                                    ("abc", NSRange(location: 0, length: 3))]
+      }
+      let app = FakeApp(field)
+      let (error, meta) = type(secret, into: app, concealed: true, settle: true)
+      XCTAssertNil(error, secret)
+      XCTAssertEqual(field.value, secret)
+      return (field.calls, app.sleeps, record(meta) as NSDictionary)
+    }
+    for moving in [false, true] {
+      let same = schedule("abc", moving: moving), other = schedule("xyz", moving: moving)
+      XCTAssertEqual(same.calls, other.calls, "moving: \(moving)")
+      XCTAssertEqual(same.sleeps, other.sleeps, "moving: \(moving)")
+      XCTAssertEqual(same.record, other.record, "moving: \(moving)")
+      XCTAssertNil(same.record["settleReads"], "a concealed record counts nothing")
     }
   }
 

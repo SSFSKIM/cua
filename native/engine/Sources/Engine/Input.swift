@@ -599,6 +599,7 @@ extension Engine {
       defer { _ = release?() }  // every path out of the posting, error or success, ends a forced activation's lease
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
+      defer { if meta.startedAt != nil { recentKeys.record(pid: pid) } }  // its effect may land after a type_text's snapshot
       try signposted("pressKey.post") { try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta) }
       return ["meta": meta.wire]
     } catch let error as EngineError {
@@ -659,8 +660,10 @@ extension Engine {
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       let initialSource = currentInputSourceID()
       defer { context.connection.markActed(app) }  // text stopped midway changed the app too
-      // #354: the focused field snapshotted here, the last thing before the first event, and read back after the last.
-      try keyTextReadBack(typedUnits(text, press: layout.press(for:)), concealed: concealed, reads: .live(pid: pid),
+      // #354: the focused field snapshotted here, the last thing before the first event, and read back after the last;
+      // settled first when press_key posted to the app within the window (ruling 1ea561bc:754).
+      try keyTextReadBack(typedUnits(text, press: layout.press(for:)), concealed: concealed,
+                          settle: recentKeys.settles(pid: pid), reads: .live(pid: pid),
                           checkSource: { try self.checkInputSource(initialSource, entered: $0, total: $1) },
                           checkIntervention: guarding.checkInFlight, post: { poster.post($0) },
                           pause: { usleep(250) },  // the vendor's gap between typed-text events (F §12)

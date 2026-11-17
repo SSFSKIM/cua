@@ -4948,6 +4948,26 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      (the action's wait then finds the window passed); a deadline under that reads Basic mode's tree, and the backstop
      repairs only the target the action names.
   Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 772).
+- Decision (#366's grace, 2026-11-17, `fix/366-chromium-ax-ready`; the design session's ruling 775 on the live
+  qualification; amends #292's grace): **the enablement's idle release comes 5 minutes after cua's last observation of
+  or input to the process, not 30 s** (`enablementReleaseGraceMs`, 300 000 ms). end_task and the engine's stop still
+  release at once, unchanged. The qualification showed that after a real release the attribute reads false, so the
+  next observation writes it again and, under ruling 772, waits out the 2.5 s readiness window: with a 30 s grace every
+  agent pause over 30 s paid that. 5 minutes covers an agent's ordinary pauses within a task. Since end_task releases at
+  every turn's end, each turn's first look at a Chromium app still pays it; the model's document says so (agent-cursor.md's
+  background-click paragraph, the surface inventory's "#366, ruling 775" addition, the copies byte for byte).
+  1. **The limit it extends.** #292's side effect of an enablement left on, Chrome's complete mode with its screen-reader
+     flag and its window moves and resizes animated (3 to 5 frames, #288's spike), now lasts up to 5 minutes after
+     cua's last step on an app whose task has not ended, where it lasted 30 s. agent-cursor.md does not describe #292's
+     effect (the model acts on nothing there), so the limit is stated here.
+  2. **The focus hold.** Its 120 s idle bound (`focusHoldIdleMs`) used to outlast the 30 s grace, so an action after a
+     grace release could meet a focus hold left from before it, which the action's readiness wait ends first ("#366",
+     item 2). With 5 minutes the hold lapses first; the wait still ends one that remains (a release by another
+     connection's end_task).
+  3. **Tests.** The grace tests run on the default grace on the fake timers: armed 5 minutes out, nothing at 30 s or at
+     299 999 ms, released at 300 000 ms; a re-observation or an input starts it again; end_task and the stop release at
+     once with the grace pending, and the pending timer does nothing after.
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 775).
 
 ## Outcomes & Retrospective
 

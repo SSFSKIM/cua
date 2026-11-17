@@ -22,7 +22,7 @@ import os
 // whichever comes first (#292): the end of the task of the last connection that observed or acted on the process
 // (end_task, the `endTask` request), the engine's stop (a shutdown request or a termination signal; an engine killed
 // with SIGKILL, or one that crashes, leaves it on until the next engine's start writes it back from the enablement
-// record, #293, EnablementRecord.swift), or `enablementReleaseGraceMs` (30 s) after cua's last observation of or input to the process, whether or not a
+// record, #293, EnablementRecord.swift), or `enablementReleaseGraceMs` (5 minutes, ruling 775) after cua's last observation of or input to the process, whether or not a
 // connection is still open (a model that never calls end_task keeps its connection until the 15-minute idle stop); a
 // new observation or input within that grace starts it again, and one after it sets the attribute again, owned, an
 // input included (`inputEnablement`). It owns, and so releases, only an attribute it read false and then set: one
@@ -46,9 +46,14 @@ import os
 private let enablementLog = Logger(subsystem: "io.github.ssfskim.cua.engine", category: "enablement")
 
 /// How long an owned enablement outlives cua's last observation of or input to its process, short of an end_task or the
-/// engine's stop (#292): long enough that a model's pause between steps does not pay Chrome's 2.2 s debounce again; 0
-/// releases at the close of the last connection that observed the process instead.
-let enablementReleaseGraceMs: Double = 30_000
+/// engine's stop (#292), which still release at once: long enough that a model's pause between steps does not pay the
+/// complete mode's arrival again, since a released Chromium attribute reads false, so the next observation writes it
+/// again and waits out #366's 2.5 s readiness window (ruling 775, from 30 s, which the live qualification showed every
+/// pause over 30 s paying). It outlasts the focus hold's 120 s bound (`focusHoldIdleMs`), so an action after a grace
+/// release no longer meets a focus hold left from before it. The trade is #292's own: a Chromium window moves and
+/// resizes with its animation while the enablement is on, now for up to 5 minutes after cua's last step. 0 releases at
+/// the close of the last connection that observed the process instead.
+let enablementReleaseGraceMs: Double = 300_000
 
 let webAreaLeadMs: UInt32 = 100
 let webAreaWaitMs = 1_000.0
@@ -565,7 +570,7 @@ final class WebAccessibility: @unchecked Sendable {
 
   /// A grace release's timer fired, `releaseGraceMs` after the activity that armed it: unless newer activity took the
   /// token since, the process is released whether or not a connection still observes it (the design session's rule:
-  /// 30 s after cua's last action on it). The token is checked again under the entry's lock, where the reset is made:
+  /// `enablementReleaseGraceMs` after cua's last action on it). The token is checked again under the entry's lock, where the reset is made:
   /// activity takes a new token under `lock` before it touches the entry, so activity landing before the reset makes
   /// this timer stale (no reset), and activity after it waits on the entry's lock and reads after the reset, setting
   /// the attribute again, owned, since the write-back is remembered.

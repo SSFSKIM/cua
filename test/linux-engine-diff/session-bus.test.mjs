@@ -506,7 +506,7 @@ for (const stage of STAGES) {
       reached();
       return new Promise((r) => (release = () => r(parts[name])));
     };
-    const desktop = new Desktop({ cua: 'unused', run: `bus-stop-${stage}`, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+    const desktop = new Desktop({ cua: 'unused', run: `stop-${stage}`, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
     const before = busVars();
     try {
       const begun = desktop.begin({ startWatchdog: start('watchdog'), startSession: start('session'), startRecord: start('record'), startTrace: start('trace'), existing: () => [], privateDisplay: () => true });
@@ -551,7 +551,7 @@ for (const stage of ['watchdog', 'session', 'record']) {
       record: stopping('record', { pid: 1 }),
       trace: stopping('trace', { env: { ...process.env, DISPLAY: ':cua171-test-trace' } }),
     };
-    const desktop = new Desktop({ cua: 'unused', run: `bus-signal-${stage}`, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+    const desktop = new Desktop({ cua: 'unused', run: `sig-${stage}`, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
     let stopped = null;
     // stop.mjs's handler does the same for SIGINT and SIGTERM: the Desktop's stop
     const onSignal = () => {
@@ -601,7 +601,7 @@ for (const point of ['before begin', ...PREFLIGHT]) {
       record: stopping('record', { pid: 1 }),
       trace: stopping('trace', { env: { ...process.env, DISPLAY: ':cua171-test-trace' } }),
     };
-    const desktop = new Desktop({ cua: 'unused', run: `bus-preflight-${point.replace(/ /g, '')}`, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+    const desktop = new Desktop({ cua: 'unused', run: `pre-${point.replace(/ /g, '')}`, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
     let stopped = null;
     const onSignal = () => {
       stopped = desktop.stop();

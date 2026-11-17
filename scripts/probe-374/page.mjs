@@ -9,6 +9,9 @@
 //           menuUnconfirmed, and the page's counter shows the request reached it.
 // The page posts its state to /state on every change and every 100 ms, and takes {op: "reset"} from /cmd.
 export const TARGETS = Object.freeze({native: 'Native menu target', aria: 'ARIA menu target', own: 'Own menu target'});
+// Non-menu pop-ups, for the question whether a pop-up-level window can appear with no menu: a tooltip (title) and a
+// datalist's suggestions.
+export const POPUPS = Object.freeze({tooltip: 'Tooltip target', datalist: 'Datalist target'});
 
 export function page() {
   return `<!doctype html><html><head><meta charset="utf-8"><title>probe374</title><style>
@@ -19,6 +22,8 @@ textarea{height:70px}.target{background:#eef}.menu{position:absolute;background:
 <div id="aria" class="target" role="button" tabindex="0" aria-haspopup="menu" aria-label="${TARGETS.aria}">The page's ARIA menu</div>
 <div id="own" class="target" role="button" tabindex="0" aria-label="${TARGETS.own}">The page's own menu, no menu role</div>
 <div id="ariamenu" class="menu" role="menu" aria-label="Page menu" hidden><div role="menuitem" tabindex="-1">Copy link</div><div role="menuitem" tabindex="-1">Rename</div></div>
+<span id="tip" title="Tooltip text for the probe" aria-label="${POPUPS.tooltip}" style="display:inline-block;padding:10px;border:1px dashed #888">Hover for a tooltip</span>
+<input id="dl" list="dlopts" aria-label="${POPUPS.datalist}" style="display:block;margin-top:14px;width:300px"><datalist id="dlopts"><option value="apple"><option value="apricot"><option value="avocado"></datalist>
 <div id="ownmenu" class="menu" hidden><div>Copy link</div><div>Rename</div></div>
 <script>
 const counts={native:0,aria:0,own:0},prevented={native:0,aria:0,own:0};let seq=0;

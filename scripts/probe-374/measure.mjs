@@ -12,7 +12,7 @@ import {join} from 'node:path';
 import {createRequire} from 'node:module';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
-import {page, TARGETS} from './page.mjs';
+import {page, POPUPS, TARGETS} from './page.mjs';
 import {gate, summarize, table} from './judge.mjs';
 import {placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 
@@ -167,6 +167,9 @@ async function observe(label, tries) {
 }
 async function reset() {
   const closed = await ask({op: 'close', pid});
+  // An Escape the oracle had to post is a key event the engine's intervention tap takes as the user's: wait out its
+  // 5 s debounce; the next observation clears the re-query flag.
+  if (closed.escapes > 0) await sleep(5300);
   if (FAMILY === 'appkit') return {closed};
   const at = Date.now();
   command = {op: 'reset'};
@@ -203,6 +206,9 @@ measure: for (const placement of PLACEMENTS) {
             const r = await w.execute('perform_secondary_action', {pid, element: node.token, action: 'Show Menu'}, lineage);
             row.wallMs = Date.now() - t0;
             row.after = await ask({op: 'menus', pid});
+            // Where the menu lives in the AX tree, whenever one is on screen (or the engine saw none): hit-tests at
+            // each pop-up window and a bounded search of the tree.
+            if (row.after.windows > 0 || row.answer !== 'ok') row.locate = await ask({op: 'locate', pid});
             row.answer = r.error ? r.error.errorName ?? 'error' : 'ok';
             row.message = r.error?.message ?? null;
             const m = r.result?.meta ?? r.error?.meta;
@@ -216,6 +222,38 @@ measure: for (const placement of PLACEMENTS) {
       appendFileSync(join(OUT, 'rows.jsonl'), `${JSON.stringify(row)}\n`);
       console.log('374', FAMILY, placement, rep, cell, row.answer, row.menu?.seen ?? '-', row.menu?.ms ?? '-', 'oracle', row.after?.windows ?? '-', row.after?.axMenus ?? '-');
     }
+  }
+}
+// The non-menu pop-ups (foreground, 3 each): what windows appear, at which layer and whose, with no menu asked for.
+// A tooltip by a pointer move over its target; on the web families, a datalist's suggestions by a click into its field
+// and one typed letter. Recorded in popups.jsonl beside every Show Menu row's own pop-up lists.
+const POPUP_CELLS = FAMILY === 'appkit' ? [['tooltip', 'Ignored menu']] : Object.entries(POPUPS);
+for (let rep = 0; rep < 3 && !stopped; rep++) {
+  for (const [cell, label] of POPUP_CELLS) {
+    const entry = {family: FAMILY, cell, rep};
+    try {
+      await reset();
+      await ask({op: 'front', pid});
+      await sleep(300);
+      const {node, lineage} = await observe(label, 10);
+      if (!node) entry.found = false;
+      else {
+        entry.before = await ask({op: 'menus', pid});
+        const f = node.frame;
+        if (cell === 'tooltip') { await ask({op: 'hover', x: f.x + f.width / 2, y: f.y + f.height / 2}); await sleep(2500); }
+        else {
+          entry.click = (await w.execute('click', {pid, element: node.token}, lineage)).error?.errorName ?? 'ok';
+          await sleep(300);
+          entry.type = (await w.execute('type_text', {pid, text: 'a'}, (await observe(label, 10)).lineage)).error?.errorName ?? 'ok';
+          await sleep(1500);
+        }
+        entry.after = await ask({op: 'menus', pid});
+        entry.locate = await ask({op: 'locate', pid});
+        await ask({op: 'hover', x: 5, y: 5});
+      }
+    } catch (error) { entry.harnessError = String(error); }
+    appendFileSync(join(OUT, 'popups.jsonl'), `${JSON.stringify(entry)}\n`);
+    console.log('374 popup', FAMILY, cell, rep, JSON.stringify(entry.after?.allPopUps ?? null));
   }
 }
 await ask({op: 'close', pid});

@@ -71,6 +71,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
     popup.setAccessibilityLabel("Fixture popup")
     let ignoring = IgnoringTarget(frame: NSRect(x: 20, y: 150, width: 220, height: 60), label: "Ignored menu")
     let blocking = BlockingTarget(frame: NSRect(x: 20, y: 60, width: 220, height: 60), label: "Blocking menu")
+    ignoring.toolTip = "Tooltip text for the probe"
     for view in [scroll, popup, ignoring, blocking] { content.addSubview(view) }
     window.contentView = content
     window.makeKeyAndOrderFront(nil)

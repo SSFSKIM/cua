@@ -10,6 +10,8 @@ import fs from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createPoller} from './electron-control.cjs';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 
 const frame={x:-5000,y:200,width:900,height:500};
 const screen={x:0,y:0,width:1440,height:900};
@@ -237,4 +239,26 @@ test('return-to-target switches the positively known Space before reading AX or 
  assert.equal(result.ok,true);assert.equal(result.targetSpaceId,10);
  operations.push('public refresh','AXFullScreen false');
  assert.deepEqual(operations,[['switch',10],'AX read','public refresh','AXFullScreen false']);
+});
+
+test('the actual summary reader preserves unknown memberships instead of reporting a change or a failed join',t=>{
+ const directory=fs.mkdtempSync(join(tmpdir(),'p367-summary-'));t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+ const input=join(directory,'input'),output=join(directory,'output'),known=serverSnapshot();
+ const unknown={...known,pinnedWindowServer:{...known.pinnedWindowServer,spaces:null}};
+ const joined={...known,pinnedWindowServer:{...known.pinnedWindowServer,spaces:[1],inOnscreenList:true}};
+ const row=(scene,before,after)=>({scene,anotherRaise:{ok:true,available:true,attempted:true},anotherRaiseBefore:before,anotherRaiseAfter:after});
+ for(const [head,rows] of [['main',[row('textedit',known,unknown),row('electron',unknown,known)]],['fix',[row('textedit',known,joined),row('electron',known,known)]]]){
+  fs.mkdirSync(join(input,head),{recursive:true});fs.writeFileSync(join(input,head,'results.json'),JSON.stringify(rows));
+ }
+ execFileSync(process.execPath,[fileURLToPath(new URL('./summarize.mjs',import.meta.url)),input,output,'test-run'],{stdio:'ignore'});
+ const summary=JSON.parse(fs.readFileSync(join(output,'summary.json'),'utf8'));
+ for(const r of summary.rows.filter(r=>r.head==='main')){
+  assert.equal(r.anotherSpaceRaise.windowMembershipChanged,null);
+  assert.equal(r.anotherSpaceRaise.joinedOriginalCurrentSpace,null);
+ }
+ assert.equal(summary.rows.find(r=>r.head==='main'&&r.scene==='textedit').anotherSpaceRaise.afterWindowSpaces,null);
+ const changed=summary.rows.find(r=>r.head==='fix'&&r.scene==='textedit').anotherSpaceRaise;
+ assert.equal(changed.windowMembershipChanged,true);assert.equal(changed.joinedOriginalCurrentSpace,true);
+ const unchanged=summary.rows.find(r=>r.head==='fix'&&r.scene==='electron').anotherSpaceRaise;
+ assert.equal(unchanged.windowMembershipChanged,false);assert.equal(unchanged.joinedOriginalCurrentSpace,false);
 });

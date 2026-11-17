@@ -14,7 +14,7 @@ const all=['main','fix'].flatMap(head=>{
 const safe=v=>v==null?'unavailable':String(v).replaceAll('|','/').replaceAll('\n',' ');
 const frame=i=>{const g=windowGeometry(i),f=g?.bounds;return f?`(${f.x}, ${f.y}, ${f.width}, ${f.height}) [${g.source}]`:'unread';};
 const front=i=>i?.frontmost?.bundleId??'unread';
-const ids=windowSpaceIds;
+const ids=i=>{const value=windowSpaceIds(i);return value.length?value:null;};
 const observation=o=>!o?'not measured':o.ok===true?`ok; ${o.raw?.nodes?.length??'?'} nodes; omitted=${o.meta?.['cua/screenshotOmitted']??'none'}`:`ERROR ${o.error?.errorName??o.error?.message??o.error??o.reason}`;
 const placement=o=>typeof o?.value==='string'?o.value.match(/\[window (?:off screen|on another Space):[^\n]*\]/)?.[0]??'none':'not measured';
 const appPlacement=o=>o?.ok===true?placement({value:(o.emitted??[]).filter(v=>typeof v==='string').join('\n')}):'not measured';
@@ -28,7 +28,7 @@ function raise(r,kind){
  const b=current(before),a=current(after),from=ids(before),to=ids(after);
  return {measured:true,beforeSpace:b,afterSpace:a,beforeWindowSpaces:from,afterWindowSpaces:to,activeChanged:change(b,a),
   windowMembershipChanged:Array.isArray(from)&&Array.isArray(to)?JSON.stringify(from)!==JSON.stringify(to):null,
-  joinedOriginalCurrentSpace:Array.isArray(to)&&b!=null?to.includes(b):null,onDisplayAfter:win(after)?.overlapsDisplay??null,
+  joinedOriginalCurrentSpace:Array.isArray(from)&&Array.isArray(to)&&b!=null?to.includes(b):null,onDisplayAfter:win(after)?.overlapsDisplay??null,
   beforeFrame:frame(before),afterFrame:frame(after),beforeFront:front(before),afterFront:front(after),frontChanged:change(before.frontmost?.pid,after.frontmost?.pid)};
 }
 const summary=all.map(r=>({head:r.head,sha:r.sha,scene:r.scene,headBlocker:r.headBlocker??null,

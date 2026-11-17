@@ -930,6 +930,30 @@ text-marker route that would find the field there is #395. The sixth paragraph n
 
 > `typeText` reads the focused field back after typing, and succeeds only once the field holds what it held before with its selection replaced by the text; for an app in the background that names no focused field, it looks through the app's front window for the one text field that reads as focused, and reads that one. Otherwise it fails with `typeUnconfirmed`: the text was sent, but the field does not read as expected, so some of it may have gone in. Observe the field with `getAXState()`, then put it right with `setValue`; do not type the text again. When the field reads other text, the error shows the expected and the actual text around the first difference; for a `{{secret:…}}` it says only that the field does not match. It fails the same way where the field cannot be read back: a password field, or a field longer than accessibility reports in full. Firefox in the background does not report its caret moving as text is typed, so a `{{secret:…}}` typed there fails with `typeUnconfirmed` even when it went in: observe the field to see whether it did. Safari in the background, on a page with more elements than that search reads, fails the same way, saying no focused field could be found, even when the text went in. Typing into an element that is not a text field, such as Finder's list when you type a name to select a row, also fails with `typeUnconfirmed` once the keys are sent: observe the selection to see whether it moved. macOS's own text substitutions, such as a period added after a double space, automatic capitalisation or text completion, change what was typed, so they make `typeText` fail with `typeUnconfirmed`, never succeed silently. In a multi-line field a Return is checked like any other character, except in Firefox's editable regions, where it is handled as a Tab is; a Return that ends the text may read back with an empty last line, which counts as typed when the caret sits at that line's start, so where the caret cannot be read, a doubled ending Return may read as confirmed in a multi-line field. A Tab, or a Return in a single-line field, is pressed only once the text before it reads back, and what it does, such as moving to the next field or submitting a form, is not confirmed; inside a `{{secret:…}}` it is sent with the rest of the secret, which is checked once, at its end. To replace a field's text, use `setValue`, or `selectText` and then `typeText`, rather than a select-all key and typing: `pressKey` answers once its keys are sent, without confirming what an editing key such as super+a, super+z or super+v did, so text typed right after it can land before the key takes effect. `typeText` within a second of `pressKey` in the same app first waits, up to a tenth of a second, for the field to hold still before taking what it held as its starting point; a key whose effect lands later still can make `typeText` fail with `typeUnconfirmed` while the field holds the right text, so observe the field, as for any `typeUnconfirmed`, to see which. Under an input source that is not a Latin keyboard layout, `typeText` pastes its text instead, and this read-back does not apply.
 
+### Table 3 addition (2026-11-16, #367)
+
+#367 (the native engine spec's Decision Log, the #367 entry) adds a line to an observation: when the primary window lies
+outside every display or on another Space, the tree says so in one line after it, and `getScreenshot()` fails with
+the reason and the remedy in place of the bare "Screenshot unavailable". The #301 ruling asks for any change to an
+observation's wording in the first-call document, so the truncation paragraph, the one on cua's lines after the tree,
+gains a last sentence. It states the remedy with the host's rule that the person's windows are left as they are: the
+window's Raise action brings it back without activating the app (the 2026-11-11 dogfood, MAWS), and is for a window the
+user asked the model to work in. The paragraph now ends:
+
+> … In a Chromium-based app, a table's column and header elements take new element IDs at every observation. When the app's window lies outside every display or on another Space, the tree says so in a line such as `[window off screen: …]`, the window may show no content, and `getScreenshot()` fails naming the reason; its Raise action can bring it back without activating the app, but use it only if the user asked you to work in that window, and otherwise ask them to move it.
+
+### Table 3 amendment (2026-11-17, #367, ruling 1ea561bc:782)
+
+The hosted measurement of #367 (the native engine spec's Decision Log, ruling 782's entry; run 44122922177) found the
+window's Raise action answering success and doing nothing for a window on another Space, in all four cases, and could
+not place a window off every display to measure it there; an Electron app on another Space, whose accessibility lists
+no window off its Space, failed every observation `timeoutReached` after the engine's 5 s window wait. The ruling drops
+Raise from both remedies, which now ask the user, makes the engine refuse that observation at once and a Raise of a
+window on another Space before anything is sent, both as `windowOnAnotherSpace` with the screenshot's reason and remedy.
+The #367 sentence becomes two, so the paragraph now ends:
+
+> … In a Chromium-based app, a table's column and header elements take new element IDs at every observation. When the app's window lies outside every display or on another Space, the tree says so in a line such as `[window off screen: …]`, the window may show no content, and `getScreenshot()` fails naming the reason; ask the user to move it onto a display, or to bring it here or switch to its Space. Some apps' windows on another Space make observing the app fail with `windowOnAnotherSpace` instead, and a window's Raise action fails the same way there, with nothing sent.
+
 ### Table 3 addition (2026-11-17, #366)
 
 #366 (the native engine spec's Decision Log, the #366 entry; the design session's ruling 766) makes the first element

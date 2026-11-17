@@ -35,7 +35,9 @@
 //   whitelist's scalars only), which, like every key here, rides in
 //   the tool result's _meta and never in its content, the model's text; cua/screenshotOmitted on an observation whose screenshot the
 //   engine did not take, with the reason ("windowMinimized": a minimized window is observed in place with no screenshot,
-//   and the facade's getScreenshot then fails "Screenshot unavailable"); on input results and input errors the engine's meta as
+//   and the facade's getScreenshot then fails "Screenshot unavailable"; "windowOffScreen", "windowOnAnotherSpace": a
+//   window off every display or on another Space, #367, whose observation's text carries a line saying so and whose
+//   get_app_state result carries `screenshotUnavailable`, the reason and remedy the facade's error appends); on input results and input errors the engine's meta as
 //   cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs, and when the engine sends
 //   them cua/activationGuardMs, cua/activationClick (what the inert-point rule decided at the window's activation
 //   point: "posted" there, or why not), cua/activationClickKind (the click that consumed the activation's arm and
@@ -99,6 +101,7 @@ import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
 import {SkyComputerUseError} from './protocol.mjs';
+import {WINDOW_PLACEMENT} from './render.mjs';
 
 export const METHODS = ['list_apps', 'get_app_state', 'click', 'drag', 'paste', 'perform_secondary_action', 'press_key', 'scroll', 'select_text', 'set_value', 'type_text'];
 const APP_SCOPED = new Set(METHODS.filter(method => method !== 'list_apps'));
@@ -279,7 +282,10 @@ export function createService({nodeRepl, client = null}) {
     if (skyshot.screenshotOmitted) setMeta({'cua/screenshotOmitted': skyshot.screenshotOmitted});
     if (skyshot.afterActionRepairs) setMeta({'cua/afterActionRepairs': skyshot.afterActionRepairs});
     setMeta({'cua/observation': {...observationDiagnostics(skyshot.timings), ...observations.focus(target.appPath)}});
-    return {app: target.appPath, screenshot: skyshot.screenshot?.url ? {url: skyshot.screenshot.url} : null, text};
+    const screenshot = skyshot.screenshot?.url ? {url: skyshot.screenshot.url} : null;
+    // A window off screen (#367): the facade's getScreenshot names the reason and the remedy.
+    const placement = Object.hasOwn(WINDOW_PLACEMENT, skyshot.window?.placement ?? '') ? WINDOW_PLACEMENT[skyshot.window.placement] : null;
+    return {app: target.appPath, screenshot, text, ...(screenshot === null && placement ? {screenshotUnavailable: placement.screenshot} : {})};
   }
 
   // Every other app-scoped method: forwarded in the facade's shape (the vendor's fields only) with the resolved path, the

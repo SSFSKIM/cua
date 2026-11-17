@@ -5250,6 +5250,53 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      held interaction was not measured.
   Date/Author: 2026-11-16, cursor235's implementer for #360 (ruling 764); items 5 to 7 2026-11-17, from the
   qualification run and ruling 767.
+- Decision (#367, 2026-11-16, `fix/367-offscreen-reason`; the issue's intent, from the 2026-11-11 dogfood's Problems §2
+  (MAWS on the MacBook: an off-screen window gave `container MAWS > container` and a bare "Screenshot unavailable");
+  the dispatching session's rulings on the checkpoint of the same day): **a primary window that lies outside every
+  display, or that the window server does not show on the current Space, is named in its observation by one line
+  after the tree, is not captured, and the facade's getScreenshot error gives the reason and the remedy. A window on
+  screen is observed byte for byte as before.**
+  1. **Detection (Placement.swift `windowPlacement`), cheap and claiming only what it read.** *Off screen*: the AX frame,
+     already read for the walk and the capture, overlaps no screen frame (ScreenScaleCache's NSScreen frames, top-left
+     global points like AX frames) by any area. This costs no read, and is checked first because it is geometry: a window
+     the window server also lists as not shown is still named for where it is. *Another Space*: the window lies on a
+     display, but its CGWindow (the number from `_AXUIElementGetWindow`, then one
+     `CGWindowListCopyWindowInfo(.optionIncludingWindow)`) has no `kCGWindowIsOnscreen`, and both the window's AXMinimized
+     and its app's AXHidden read false (Minimized.swift's rule runs first and is unchanged). Those are the other two
+     causes of the flag's absence that an observation meets. A read-only probe on the MacBook (2026-11-16) found the key
+     absent, not false, on all 111 layer-0 windows not shown (12 shown), and the per-window read at p50 0.089 ms (max
+     2.7 ms, n 123). Neither claim is made from an unknown: no usable frame (none, or under one point), no screens read,
+     no window number, or an unread AXMinimized or AXHidden makes no claim. That was the branch review's finding:
+     the first cut let an unread geometry or attribute through to "another Space". Alternatives rejected: SkyLight's
+     space SPIs (`CGSCopySpacesForWindows` against each display's current space), which name the Space positively but add
+     two SPIs and a dictionary walk for a line the flag already earns; and reading the window server's bounds instead of
+     the AX frame, which is the same rectangle for one more read.
+  2. **No capture, as for a minimized window** (`placementObservation`): `screenshotOmitted` "windowOffScreen" or
+     "windowOnAnotherSpace" (the meta's `cua/screenshotOmitted`), and the Skyshot's `window` gains `placement`
+     ("offScreen" | "anotherSpace") only then. A window off every display gives a screenshot no coordinate can act on. A
+     window on another Space is not in `SCShareableContent(onScreenWindowsOnly: true)`, so until now its whole
+     observation, getAXState included, failed `noCapturableWindow`. It now succeeds and carries the line. That is the one
+     behaviour change, and it is narrow: with no placement the minimized rule's plan stands, so every other
+     `noCapturableWindow` cause (no frame, a frame under one point, no window number, a window the shareable content does
+     not list though the window server shows it) still fails the observation as before (PlacementTests). No input is
+     refused for a placed window. An earlier screenshot of the window stays the lineage's, as a minimized window's does.
+  3. **The words (render.mjs `WINDOW_PLACEMENT`).** They follow the bracketed form of cua's truncation marker. The
+     line is the first of cua's lines after the tree, and it stays in a diff with no change, so every observation of the
+     window says why:
+     `[window off screen: the window lies outside every display, so it may show no content and has no screenshot. Its Raise action can bring it back without activating the app: use it if the user asked you to work in this window, otherwise ask them to move it.]`
+     and `[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Its Raise action can bring it here without activating the app: use it if the user asked you to work in this window, otherwise ask them to bring it here.]`.
+     The service adds `screenshotUnavailable` to the get_app_state result. The facade's error
+     (bind-mac-app.mjs, cua's one addition to the port) becomes `Screenshot unavailable for <app>: the window is off
+     screen, outside every display. Its Raise action …` or `…: the window is on another Space. Its Raise action …`. The
+     vendor's engine and a minimized window keep the bare sentence. The remedy is stated as a fact plus cua's host rule
+     (the person's windows are left as they are unless asked), on the dispatching session's ruling, so the line never
+     invites an unprompted raise. The truncation paragraph of `docs/cua-api/agent-cursor.md` gains one sentence (the
+     surface inventory's "Table 3 addition (2026-11-16, #367)").
+  4. **Not proven live.** Raise was seen to bring the dogfood's off-screen Electron window back. Whether it brings a
+     window back from another Space is unmeasured, hence "can". The live check is an owned window moved off screen
+     (and to a second Space) on a hosted macOS runner: getApp and getAXState carry the line, and getScreenshot names the
+     reason. It waits on GitHub Actions.
+  Date/Author: 2026-11-16, cursor235's implementer for #367.
 - Decision (#366, 2026-11-17, `fix/366-chromium-ax-ready`; the design session's ruling 766 on the spike's findings,
   hosted runs 44032504512 and 44052940748, kit `probe/366-measure`, engine b99232de; ruling 757 narrowed the issue to
   this false success): **an element action into a Chromium-family app waits out what remains of 2.5 s since the
@@ -5375,6 +5422,49 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      299 999 ms, released at 300 000 ms; a re-observation or an input starts it again; end_task and the stop release at
      once with the grace pending, and the pending timer does nothing after.
   Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 775).
+- Decision (#367's remedies and Electron, 2026-11-17, `fix/367-offscreen-reason`; the design session's ruling
+  1ea561bc:782 on the hosted measurement, run 44122922177, kit 16753e19 on `probe/367-live`, both arms on engine
+  2b7804bd and main 15acf09b; amends "#367" above, items 3 and 4): **neither remedy offers Raise; an app whose windows
+  are on another Space where accessibility lists none is refused at once as `windowOnAnotherSpace`, and so is a Raise on
+  a window on another Space.** The evidence (`docs/evidence/2026-11-17-367-hosted/tables.txt` on `probe/367-live`):
+  four public Raise calls on a window in a real fullscreen Space (TextEdit and an owned Electron fixture, each head)
+  answered success and changed nothing: active Space 1 → 1, the window's Spaces unchanged, frame and front app
+  unchanged. No route placed a window off every display (AX moves and Electron's own setBounds clamped to 24–40 px of
+  overlap), so Raise there is unmeasured. TextEdit on another Space gave the line and `windowOnAnotherSpace` meta; the
+  Electron fixture failed getApp, getAXState and getScreenshot `timeoutReached` after about 5 s on both heads, its
+  AXWindows empty before and after while CoreGraphics listed its window (not on screen, on Space 25).
+  1. **The words.** render.mjs's `WINDOW_PLACEMENT` drops Raise: off every display, "Ask the user to move it onto a
+     display."; on another Space, "Ask the user to bring it here or switch to its Space." (`ANOTHER_SPACE_REMEDY`). The
+     line and the facade's screenshot error end with them. agent-cursor.md's #367 sentence becomes two (the surface
+     inventory's "Table 3 amendment (2026-11-17, #367, ruling 1ea561bc:782)", the docs oracle and the
+     core-documentation test byte for byte): the remedies, and that some apps' windows on another Space make the
+     observation fail `windowOnAnotherSpace` instead, and a Raise there fails the same way with nothing sent.
+  2. **The refusal** (Placement.swift `windowOnAnotherSpace`): `The <app> window is on another Space. Ask the user to
+     bring it here or switch to its Space.`, error name `windowOnAnotherSpace`, the screenshot error's reason and remedy
+     after the app's name. A render test reads the Swift source and pins the sentence to `WINDOW_PLACEMENT.anotherSpace`.
+  3. **Where the observation checks** (Skyshot.swift `prepareTarget`'s `absentRefusal`, Placement.swift
+     `windowsOnAnotherSpace`): in the preparation, when a running app's primary window reads as confirmed absent and
+     before the reopen it would send, not inside the 5 s wait. Electron's window never appears to AX off its Space, so
+     the reopen and the wait could only end `timeoutReached`, and checking first spares the app a reopen as well. An app
+     with a window, a failed read, and an app not running never run it (`PreparationTests`). The check claims another
+     Space only on positive reads: one `CGWindowListCopyWindowInfo(.optionAll)` (a mean 2.5 ms with 203 windows listed,
+     the MacBook, 2026-11-17) finds the pid's layer-0 windows, none on screen; SkyLight's `SLSCopySpacesForWindows`
+     (mask 7) puts none of them on a Space `SLSCopyManagedDisplaySpaces` names as a display's current one (any window
+     there, one opening here, vetoes the claim: the review of d7784552, P2) and at least one on another Space; and
+     `NSRunningApplication.isHidden` reads false. The SPIs the #367 entry declined are needed here:
+     with no AX window there is no frame, and the on-screen flag alone cannot tell such a window from an ordered-out
+     one. The same read-only probe found ordered-out windows (helpers, closed panels) on no Space, and windows not shown
+     but on the current Space (Chrome, Safari, Obsidian) on Space 1, so neither kind is claimed. An app merely slow to
+     open its window has none listed, or one on the current Space, and is reopened and waited for as before; a missing
+     SPI or an unread Space claims nothing.
+  4. **The Raise refusal** (SecondaryAction.swift, Placement.swift `raiseRefusal`): once the action is matched and
+     before anything is sent (no focus hold, no perform), a Raise on an element whose role is AXWindow reads that
+     window's placement live (`livePlacement`, the observation's own rule) and is refused when it is another Space. A
+     Raise on a window off every display, or on one shown here, is sent as before; no other action reads the placement.
+  5. **Not proven live.** The refusals are unit-tested on fakes of the window list, the Space reads and the
+     placement; the hosted re-run (Electron on another Space answering `windowOnAnotherSpace` at once, a Raise there
+     refused) waits on GitHub Actions.
+  Date/Author: 2026-11-17, cursor235's implementer for #367 (ruling 1ea561bc:782).
 - Decision (#359, 2026-11-17, `fix/359-click-ordering`; the design session's ruling 1ea561bc:785 on the spike's runs
   44107967517, 44112583792 and 44126242634, kit `probe/359-measure` on main 15acf09b): **a posted pointer press arms a
   per-process window in which an accessibility action on the process's text first waits for the click to land.**

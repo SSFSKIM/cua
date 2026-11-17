@@ -546,7 +546,14 @@ export function createHost({extension: port, hello, home = null, now = () => new
       // told the command timed out, the send behind it is refused, never dispatched.
       let late = false;
       // #384: the command's times, from the service's send to this host's answer.
-      const d = cuaDiag && typeof cuaDiag === 'object' ? {...cuaDiag, hIn: diag.now()} : null;
+      const d = cuaDiag && typeof cuaDiag === 'object' ? {...cuaDiag, hIn: diag.now(),
+        ...(method === 'Runtime.evaluate' || method === 'Runtime.callFunctionOn' ? {awaitPromise: commandParams?.awaitPromise === true, userGesture: commandParams?.userGesture === true} : {})} : null;
+      // #384: a command unanswered after 1 s has its tab probed once (extension diag.probe), the answer kept with its row.
+      let probeTimer = null;
+      if (d && !cursorPeer && targetId == null && sessionId == null) probeTimer = setTimeout(() => {
+        const asked = diag.now();
+        d.probe = extension.request('diag.probe', {tabId}).then(r => ({at: Math.round(asked - d.hIn), took: Math.round(diag.now() - asked), ...r}), () => ({at: Math.round(asked - d.hIn), failed: true}));
+      }, 1000);
       const send = () => {
         if (late) refuse(`CDP command ${method} timed out before it was sent`);
         if (d) d.hOut = diag.now();
@@ -562,7 +569,14 @@ export function createHost({extension: port, hello, home = null, now = () => new
             return reply;
           });
       };
-      const finishDiag = outcome => { if (d) diag.write({k: 'cdp', ...d, m: method, case: s.title, tabId, ...(targetId != null || sessionId != null ? {nested: true} : {}), limit, hDone: diag.now(), ...outcome}); };
+      const finishDiag = outcome => {
+        if (!d) return;
+        clearTimeout(probeTimer);
+        const row = {k: 'cdp', ...d, m: method, case: s.title, tabId, ...(targetId != null || sessionId != null ? {nested: true} : {}), limit, hDone: diag.now(), ...outcome};
+        if (!d.probe) return diag.write(row);
+        delete row.probe;
+        d.probe.then(probe => diag.write({...row, probe}));
+      };
       const command = method === 'Target.getTargets'
         ? extension.request('debugger.getTargets', {}).then(targetInfos => ({targetInfos}))
         : cursorPeer ? send() : closedBy(tabId, {method, sessionId, targetId, params: commandParams}).then(closes => (closes === null || late ? send() : closeTab(closes, send)));

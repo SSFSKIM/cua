@@ -43,7 +43,7 @@ for (const c of rows.filter(r => r.k === 'cdp')) {
   const so = supOut.get(`${s.pid}:${s.id}`), si = supIn.get(`${s.pid}:${s.id}`);
   const d = (a, b) => (typeof a === 'number' && typeof b === 'number' ? Math.round((b - a) * 10) / 10 : null);
   cmds.push({
-    lane: c.lane ?? s.lane ?? laneAt(c.s0), window: laneAt(c.s0), case: c.case, m: c.m, ok: c.ok, timedOut: c.timedOut === true,
+    key: c.key, tabId: c.tabId, awaitPromise: c.awaitPromise, probe: c.probe, end: c.hDone, lane: c.lane ?? s.lane ?? laneAt(c.s0), window: laneAt(c.s0), case: c.case, m: c.m, ok: c.ok, timedOut: c.timedOut === true,
     expired: s.expired !== undefined, late: s.late === true, limit: c.limit, s0: c.s0,
     total: d(c.s0, end ?? c.hDone), svcWait: s.expired !== undefined ? d(c.s0, s.expired) : null,
     // Free of clock skew between processes: each is a difference of one process's own times.
@@ -93,12 +93,19 @@ for (const c of cmds) {
   if (late) c.lateAfter = Math.round(late.hBack - late.hOut), c.lateChrome = typeof late.e1 === 'number' ? Math.round(late.e1 - late.e0) : null;
 }
 // The slow commands, each with every segment.
+// Commands answered in the lane while `c` waited: on its own tab, or on others.
+const others = (c, same) => cmds.filter(o => o !== c && o.lane === c.lane && o.ok && o.s0 > c.s0 && typeof o.end === 'number' && o.end < c.s0 + (c.total ?? 0)
+  && (same ? o.tabId === c.tabId : o.tabId !== c.tabId)).length;
+const word = v => (v === null || v === undefined ? '-' : typeof v === 'number' || typeof v === 'boolean' ? String(v) : label(v));
+const probeText = p => (!p ? '' : p.failed ? ` probe at ${p.at} failed` : ` probe at ${p.at} took ${p.took} tab active ${word(p.tab?.active)} status ${word(p.tab?.status)} frozen ${word(p.tab?.frozen)} discarded ${word(p.tab?.discarded)}`
+  + ` window focused ${word(p.window?.focused)} state ${word(p.window?.state)} target attached ${word(p.target?.attached)} eval1 ${word(p.evalMs)} ${word(p.evalOk)} navHistory ${word(p.navHistoryMs)} ${word(p.navHistoryOk)}`);
 const slow = cmds.filter(c => (c.total ?? 0) > 1000 || c.expired || c.timedOut).sort((a, b) => a.s0 - b.s0);
 console.log(`${P} slow commands (over 1s, expired or timed out): ${slow.length}`);
 const t0 = Math.min(...spans.map(s => s.from).filter(Number.isFinite), ...cmds.map(c => c.s0));
 for (const c of slow.slice(0, 80)) {
   console.log(`${P}   +${Math.round((c.s0 - t0) / 1000)}s ${label(c.lane)} ${label(c.cellCase)} ${label(c.cellLabel)} ${label(c.m)} ok ${c.ok} timedOut ${c.timedOut} expired ${c.expired} limit ${c.limit}`
-    + `${c.lateAfter !== undefined ? ` lateAnswer ${c.lateAfter} lateChrome ${c.lateChrome}` : ' noLateAnswer'} | `
+    + `${c.lateAfter !== undefined ? ` lateAnswer ${c.lateAfter} lateChrome ${c.lateChrome}` : ' noLateAnswer'}${c.awaitPromise !== undefined ? ` awaitPromise ${c.awaitPromise}` : ''}`
+    + ` | meanwhile same tab ${others(c, true)} other tabs ${others(c, false)}${probeText(c.probe)} | `
     + SEGMENTS.filter(s => c[s] !== null && c[s] !== undefined).map(s => `${s} ${Math.round(c[s])}`).join(' '));
 }
 // Slow commands by lane and case.

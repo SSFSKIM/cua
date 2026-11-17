@@ -348,6 +348,31 @@ const primitives = {
 
   'debugger.getTargets': () => chrome.debugger.getTargets(),
 
+  // #384 diagnosis: what Chrome says of a tab whose command has gone unanswered: its state words and booleans, and how
+  // long a trivial Runtime.evaluate takes in it now (null when it did not answer within 2 s).
+  'diag.probe': async ({tabId}) => {
+    const t = await chrome.tabs.get(tabId).catch(() => null);
+    const w = t ? await chrome.windows.get(t.windowId).catch(() => null) : null;
+    const target = (await chrome.debugger.getTargets().catch(() => [])).find(x => x.tabId === tabId);
+    const start = performance.now();
+    const answered = await Promise.race([
+      chrome.debugger.sendCommand({tabId}, 'Runtime.evaluate', {expression: '1', returnByValue: true}).then(() => true, () => false),
+      new Promise(resolve => setTimeout(() => resolve(null), 2000)),
+    ]);
+    const evalMs = answered === null ? null : Math.round(performance.now() - start);
+    const start2 = performance.now();
+    const answered2 = await Promise.race([
+      chrome.debugger.sendCommand({tabId}, 'Page.getNavigationHistory', {}).then(() => true, () => false),
+      new Promise(resolve => setTimeout(() => resolve(null), 1000)),
+    ]);
+    return {
+      tab: t ? {active: t.active, status: t.status, discarded: t.discarded, frozen: t.frozen ?? null, highlighted: t.highlighted, audible: t.audible ?? null} : null,
+      window: w ? {focused: w.focused, state: w.state, type: w.type} : null,
+      target: target ? {attached: target.attached, type: target.type} : null,
+      evalMs, evalOk: answered, navHistoryMs: answered2 === null ? null : Math.round(performance.now() - start2), navHistoryOk: answered2,
+    };
+  },
+
   held: () => [...held.values()],
 };
 

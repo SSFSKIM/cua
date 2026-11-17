@@ -1,0 +1,61 @@
+name: probe-367
+on:
+  push:
+    branches: ['probe/367-live']
+    paths: ['.github/workflows/probe-367.yml', 'scripts/probe-367/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: probe-367
+  cancel-in-progress: false
+jobs:
+  live:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Build pinned real engines and owned spike fixture
+        run: |
+          set -euo pipefail
+          FIX_REF=34edcafe0eb8aa0c037bc6721d6a03efccf06746
+          MAIN_REF=4a3e26ed9fd35a34aba782da44301e400d6cf990
+          git worktree add --detach "$RUNNER_TEMP/src367-fix" "$FIX_REF"
+          git worktree add --detach "$RUNNER_TEMP/src367-main" "$MAIN_REF"
+          swift build -c release --package-path "$RUNNER_TEMP/src367-fix/native/engine" --scratch-path "$RUNNER_TEMP/build367-fix"
+          swift build -c release --package-path "$RUNNER_TEMP/src367-main/native/engine" --scratch-path "$RUNNER_TEMP/build367-main"
+          swiftc -O -o "$RUNNER_TEMP/oracle367" scripts/probe-367/oracle.swift
+          npm ci --no-audit --no-fund
+          node scripts/native-matrix/fixtures/electron-fixture.mjs --cache "$RUNNER_TEMP/fixture367" > "$RUNNER_TEMP/fixture367.json"
+          git -C "$RUNNER_TEMP/src367-fix" diff --exit-code
+          git -C "$RUNNER_TEMP/src367-main" diff --exit-code
+      - name: Exercise both heads sequentially (one engine alive at a time)
+        run: |
+          set -euo pipefail
+          FIXTURE=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1])).appPath)' "$RUNNER_TEMP/fixture367.json")
+          mkdir -p "$RUNNER_TEMP/evidence367"
+          status=0
+          for head in main fix; do
+            SHA=$(git -C "$RUNNER_TEMP/src367-$head" rev-parse HEAD)
+            node scripts/probe-367/measure.mjs "$RUNNER_TEMP/src367-$head" "$RUNNER_TEMP/build367-$head/release/cua-engine" "$RUNNER_TEMP/oracle367" "$FIXTURE" "$RUNNER_TEMP/evidence367/$head" "$head" "$SHA" || status=1
+          done
+          exit "$status"
+      - name: Upload only runner-owned evidence, never profiles
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-367-live
+          path: |
+            ${{ runner.temp }}/evidence367/*/config.json
+            ${{ runner.temp }}/evidence367/*/results.json
+            ${{ runner.temp }}/evidence367/*/fatal.json
+            ${{ runner.temp }}/evidence367/*/engine-stderr.txt
+            ${{ runner.temp }}/evidence367/*/*-*.json
+            ${{ runner.temp }}/evidence367/*/*.jpg
+          if-no-files-found: warn

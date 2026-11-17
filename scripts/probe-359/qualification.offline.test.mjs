@@ -11,7 +11,7 @@ const caretOf=c=>qualificationExpected(c).caret;
 // A row that satisfies every expectation for its cell; tests perturb one fact at a time.
 function good(c,over={}){
  const e=qualificationExpected(c),tail=c.cohort==='tail',t=10000;
- const click=c.suite==='control'?{startedAt:t,endedAt:t,noClick:true}:{startedAt:t,endedAt:t+10,error:null,meta:{elementClick:{caret:'placed'}}};
+ const click=c.suite==='control'?{startedAt:t,endedAt:t,noClick:true}:{startedAt:t,endedAt:t+10,error:null,meta:{elementClick:{caret:'placed',plan:'action',action:'AXSelectedTextRange'}}};
  const next={startedAt:t+11,endedAt:t+20,error:null,meta:{}};
  const typeMeta=tail?{entered:0,typeReadback:{confirmed:false,reason:'selectionChanged'}}:{entered:6,typeReadback:{confirmed:true}};
  const type=tail?{startedAt:t+21,endedAt:t+30,error:{errorName:'typeUnconfirmed',meta:typeMeta}}:{startedAt:t+21,endedAt:t+30,error:null,meta:typeMeta};
@@ -19,7 +19,7 @@ function good(c,over={}){
  const r={...c,requested:REQUESTED,valid:true,smoke:false,click,next,type,clockUncertaintyMs:2,preClick:{text:SEED},
   samples:[sample(t+30),sample(t+280),sample(t+1530)],events:[],foregroundViolation:false,windowRaiseObserved:false};
  if(c.selection==='set_value_type')r.valueWrite=next;
- if(tail){r.stress={busyStartedAt:t-100,busyUntil:t+900};r.events=[{event:'busy-start',at:t-100},{event:'mousedown',at:t+500},{event:'busy-end',at:t+900}]}
+ if(tail){r.ax={pointerHold:{captured:2,released:2,pointerCaptured:2,pointerReleased:2,keyCaptured:0,earlyRelease:false,extraEvents:0,copyFailures:0,overflow:false,stressExercised:true}};r.stress={busyStartedAt:t-100,busyUntil:t+900};r.events=[{event:'busy-start',at:t-100},{event:'mousedown',at:t+500},{event:'busy-end',at:t+900}]}
  return {...r,...over};
 }
 const rowsFor=cells=>cells.map(c=>good(c));
@@ -30,7 +30,7 @@ const tailCell=find(full,c=>c.cohort==='tail'&&c.head==='main'&&c.browser==='cft
 const bg=(editor='input',selection='script')=>find(full,c=>c.cohort==='background'&&c.editor===editor&&c.selection===selection&&c.head==='main'&&c.browser==='cft');
 const only=(cell,row)=>qualificationSummary([row],[cell]).groups[0];
 
-test('the plan crosses both heads with foreground textarea routes, a busy tail and every background editor',()=>{
+test('the plan crosses both heads with foreground textarea routes, a FIFO-held tail and every background editor',()=>{
  const per=(cs,h,b)=>cs.filter(c=>c.head===h&&c.browser===b);
  // foreground: 3 routes x rate/control x 20 ; tail 20 ; background: 4 editors x 2 routes x 10
  assert.equal(full.length,2*3*(120+20+80));
@@ -43,7 +43,7 @@ test('the plan crosses both heads with foreground textarea routes, a busy tail a
   assert.deepEqual([...new Set(f.map(c=>c.selection))].sort(),['cmd+a','select_text','set_value_type']);
   assert.deepEqual([...new Set(f.map(c=>c.suite))].sort(),['control','rate']);
   assert.equal(f.filter(c=>c.suite==='control'&&c.selection==='cmd+a').length,20);
-  assert.ok(t.every(c=>c.selection==='select_text'&&c.suite==='rate'&&c.stressBusyMs===900));
+  assert.ok(t.every(c=>c.selection==='select_text'&&c.suite==='rate'&&c.stressQueueMs===900));
   assert.ok(k.every(c=>c.suite==='rate'&&c.foreground===false&&c.initialCaret==='end'&&['script','cmd+a'].includes(c.selection)));
   assert.deepEqual([...new Set(k.map(c=>c.editor))].sort(),['compose','contenteditable','input','textarea']);
   assert.equal(k.filter(c=>c.editor==='compose'&&c.selection==='script').length,10);
@@ -52,7 +52,7 @@ test('the plan crosses both heads with foreground textarea routes, a busy tail a
   assert.equal(c.qualification,true);assert.equal(c.mode,'natural');assert.equal(c.engineRef,HEADS[c.head]);
   for(const k of ['cohort','head','engineRef','suite','browser','editor','selection','rep'])assert.ok(c[k]!==undefined,k);
   for(const k of [c.cohort,c.head,c.suite,c.browser,c.editor,c.selection,String(c.rep)])assert.ok(c.id.split('/').includes(k),c.id+' lacks '+k);
-  if(c.cohort!=='tail')assert.equal(c.stressBusyMs,undefined);
+  if(c.cohort!=='tail')assert.equal(c.stressQueueMs,undefined);
  }
  assert.ok(smoke.every(c=>c.rep===1));
 });
@@ -119,8 +119,8 @@ test('missing, unexpected, duplicate and lineage-mismatched rows are preserved, 
  assert.equal(g.valid,1,'the duplicate is not scored twice');assert.equal(g.typeUnconfirmed??0,0);
  s=qualificationSummary([good(fg),wrongHead],cells);
  assert.deepEqual(s.mismatched,[bg().id]);assert.deepEqual(s.missing,[bg().id]);assert.equal(s.complete,false);
- for(const field of ['engineRef','cohort','foreground','initialCaret','qualification','mode','stressBusyMs']){
-  const c=field==='stressBusyMs'?tailCell:fg,bad=good(c,{[field]:field==='foreground'?!c.foreground:field==='qualification'?false:'zz'});
+ for(const field of ['engineRef','cohort','foreground','initialCaret','qualification','mode','stressQueueMs']){
+  const c=field==='stressQueueMs'?tailCell:fg,bad=good(c,{[field]:field==='foreground'?!c.foreground:field==='qualification'?false:'zz'});
   assert.deepEqual(qualificationSummary([bad],[c]).mismatched,[c.id],field);
  }
 });
@@ -243,7 +243,7 @@ test('tail safe refusal needs typeUnconfirmed/selectionChanged, entered 0, no in
  assert.deepEqual([g.selectionChanged,g.safeRefusal],[1,0],'selectionChanged counted, but entered>0 is not safe');
 });
 
-test('background rows must not wait anywhere, in any RPC metadata',()=>{
+test('background AX-route rows must not wait anywhere, in any RPC metadata',()=>{
  const b=bg();
  let g=only(b,good(b));assert.equal(g.backgroundWaitViolations,0);
  const pend=ms=>({startedAt:1,endedAt:2,error:null,meta:{pendingClick:{waitMs:ms}}});
@@ -364,7 +364,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
-const request=(over={})=>({smoke:true,heads:{...HEADS},browsers:['safari','cft','firefox'],editors:['textarea','input','contenteditable','compose'],...over});
+const request=(over={})=>({tailStimulus:'queue-hold-v1',smoke:true,heads:{...HEADS},browsers:['safari','cft','firefox'],editors:['textarea','input','contenteditable','compose'],...over});
 const config=(over={},req=request())=>({qualification:true,qualificationRequest:req,planned:[],...over});
 
 test('qualificationPlan rebuilds the whole requested plan from any surviving request',()=>{
@@ -378,6 +378,7 @@ test('qualificationPlan rebuilds the whole requested plan from any surviving req
 test('qualificationPlan rejects absent, inconsistent or malformed requests',()=>{
  const bad=x=>assert.throws(()=>qualificationPlan(x));
  bad([]);bad([{qualification:true}]);bad([config(),{qualification:true}]);
+ bad([config({},request({tailStimulus:undefined}))]);bad([config({},request({tailStimulus:'busy'}))]);
  bad([config(),config({},request({smoke:false}))]);
  bad([config(),config({},request({browsers:['cft']}))]);
  bad([config(),config({},request({editors:['textarea']}))]);
@@ -427,3 +428,28 @@ test('the legacy reader and legacy CLI never ingest qualification rows',()=>{
  const s=qualificationSummary([{id:'rate/cft/textarea/script/natural/1',valid:true}],smoke);assert.deepEqual(s.unexpected,['rate/cft/textarea/script/natural/1']);
 });
 import {summary as legacySummary} from './readers.mjs';
+
+// Pointer and later keys must share the same delayed FIFO; AX remains runnable.
+test('queue-held tail proves complete once-only FIFO release and an early baseline from actual first-post time',()=>{
+ const r=good(tailCell,{stress:{startedAt:9900},ax:{pointerHold:{captured:14,released:14,pointerCaptured:2,pointerReleased:2,keyCaptured:12,earlyRelease:false,extraEvents:0,copyFailures:0,overflow:false,stressExercised:true}},
+  type:{startedAt:10021,endedAt:11500,error:{errorName:'typeUnconfirmed'},meta:{startedAt:10050,endedAt:10300,entered:6,typeReadback:{reason:'valueMismatch'}}},
+  events:[{event:'mousedown',at:10900},{event:'mouseup',at:10901},{event:'keydown',at:10902},{event:'beforeinput',at:10903},{event:'input',at:10904}],samples:[{text:'OldNEW359 draft sentence goes here.',selection:[9,0],at:13000}]});
+ let g=only(tailCell,r);assert.equal(g.tailQualified,1);assert.deepEqual(g.typeUnconfirmedReasons,{valueMismatch:1});assert.equal(g.tailReadbackDecline,1);assert.equal(g.safeRefusal,0,'declined after typing differs from nothing typed');
+ const h=r.ax.pointerHold;
+ for(const bad of [{...h,released:13},{...h,pointerCaptured:1},{...h,earlyRelease:true},{...h,extraEvents:1}]){
+  g=only(tailCell,{...r,ax:{pointerHold:bad}});assert.equal(g.tailQualified,0);assert.deepEqual(g.tailUnqualifiedReasons,{holdNotComplete:1});
+ }
+ g=only(tailCell,{...r,events:[{event:'keydown',at:10800},...r.events]});assert.deepEqual(g.tailUnqualifiedReasons,{postedInputOvertookPointer:1});
+ const late={...r.type,meta:{...r.type.meta,startedAt:10950}};
+ g=only(tailCell,{...r,type:late});assert.equal(g.tailQualified,0,'a first key post after the click does not prove an exposed baseline');
+ const ok={...r.type,error:null};g=only(tailCell,{...r,type:ok});assert.equal(g.tailUnsafeOk,1,'qualification never depends on whether the read-back declined');
+});
+
+test('background posted-route waits are a cost; only AX-route waits violate the no-arm criterion',()=>{
+ const b=bg(),base=good(b),type={...base.type,meta:{...base.type.meta,typeReadback:{confirmed:true,baselineWait:{waitMs:75}}}};
+ const post={...base.click,meta:{inputRoute:3,startedAt:10001,coordinateClick:{},activationClick:'posted'}};
+ let g=only(b,{...base,click:post,type});assert.equal(g.backgroundWaitViolations,0);assert.equal(g.backgroundPosted,1);assert.equal(g.backgroundWaitObserved,1);
+ const ax={...post,meta:{...post.meta,elementClick:{plan:'action',action:'AXSelectedTextRange',caret:'placed'},inputRoute:1}};
+ g=only(b,{...base,click:ax,type});assert.equal(g.backgroundWaitViolations,1);assert.equal(g.backgroundAX,1);
+ g=only(b,{...base,click:{...base.click,meta:{}},type});assert.equal(g.backgroundWaitUnclassified,1,'an unknown carrier does not become a clean AX-route pass');
+});

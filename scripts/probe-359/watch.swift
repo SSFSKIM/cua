@@ -46,16 +46,151 @@ func sample359() {
   }
   event359("sample", ["startedAt": started, "range": range as Any? ?? NSNull(), "focused": read359(f, kAXFocusedAttribute) as Any? ?? NSNull()])
 }
+// pointer-hold model: BEGIN (pure Foundation; pointer-hold.offline.test.mjs compiles this section alone)
+// From the first original left-down routed to the bound pid, holds EVERY later event to that pid in arrival order
+// (the pointer pair and any keys posted after it), then hands the whole buffer back exactly once.
+// Types are CGEventType raw values: 1 leftMouseDown, 2 leftMouseUp, 10 keyDown, 11 keyUp, 12 flagsChanged.
+struct PointerHold359<Event> {
+  let delayMs: Double, armedAt: Double, limit: Int
+  private var held: [Event] = []
+  private(set) var captures: [[String: Any]] = []
+  private(set) var extras: [[String: Any]] = []
+  private(set) var pointerCaptured = 0
+  private(set) var keyCaptured = 0
+  private(set) var copyFailures = 0
+  private(set) var overflow = false
+  private(set) var releasedAt: Double?
+  private(set) var releaseReason: String?
+  private(set) var early = false
+  private(set) var releasedCount = 0
+  init(delayMs: Double, armedAt: Double, limit: Int = 2000) { self.delayMs = delayMs; self.armedAt = armedAt; self.limit = limit }
+  var releaseDueAt: Double? { (captures.first?["at"] as? Double).map { $0 + delayMs } }
+  // suppress: drop the original (a copy is held). releaseAt: set once, at the triggering down.
+  // overflowed: the buffer passed its limit; the caller releases now (the event is still held, never dropped).
+  mutating func observe(type: UInt32, at: Double, sourcePid: Int, copy: () -> Event?) -> (suppress: Bool, releaseAt: Double?, overflowed: Bool) {
+    let pointer = type == 1 || type == 2, triggered = !captures.isEmpty
+    var why: String?
+    if releasedAt != nil { why = pointer ? "after-release" : nil }
+    else if !triggered && type != 1 { why = type == 2 ? "up-before-down" : nil }
+    else {
+      guard let event = copy() else {
+        // Cannot hold it: it passes, so FIFO is broken and the stress is not exercised.
+        copyFailures += 1; extras.append(["type": Int(type), "at": at, "why": "copy-failed", "sourcePid": sourcePid]); return (false, nil, false)
+      }
+      held.append(event); captures.append(["type": Int(type), "at": at, "sourcePid": sourcePid])
+      if (type == 1 && pointerCaptured == 0) || (type == 2 && pointerCaptured == 1) { pointerCaptured += 1 }
+      else if pointer { extras.append(["type": Int(type), "at": at, "why": type == 1 ? "second-down" : "after-pair", "sourcePid": sourcePid]) }
+      if type == 10 || type == 11 || type == 12 { keyCaptured += 1 }
+      let overflowed = !overflow && captures.count > limit; if overflowed { overflow = true }
+      return (true, triggered ? nil : at + delayMs, overflowed)
+    }
+    if let why { extras.append(["type": Int(type), "at": at, "why": why, "sourcePid": sourcePid]) }
+    return (false, nil, false)
+  }
+  // Returns the held originals, in arrival order, on the first call only.
+  mutating func release(at: Double, early: Bool, reason: String) -> [Event] {
+    guard releasedAt == nil else { return [] }
+    releasedAt = at; releaseReason = reason; self.early = early
+    let out = held; held = []; releasedCount = out.count; return out
+  }
+  var stressExercised: Bool {
+    releasedAt != nil && !early && pointerCaptured == 2 && releasedCount == captures.count && copyFailures == 0 && !overflow
+  }
+  func summary() -> [String: Any] {
+    ["delayMs": delayMs, "armedAt": armedAt, "captured": captures.count, "released": releasedCount,
+     "pointerCaptured": pointerCaptured, "pointerReleased": releasedAt == nil ? 0 : pointerCaptured, "keyCaptured": keyCaptured,
+     "earlyRelease": releasedAt != nil && early, "extraEvents": extras.count, "copyFailures": copyFailures, "overflow": overflow,
+     "captures": captures, "extras": extras, "releaseDueAt": releaseDueAt as Any? ?? NSNull(),
+     "releasedAt": releasedAt as Any? ?? NSNull(), "releaseReason": releaseReason as Any? ?? NSNull(), "stressExercised": stressExercised]
+  }
+}
+// pointer-hold model: END
+var hold359: PointerHold359<CGEvent>?
+var holdPid359: pid_t = 0
+var holdTap359: CFMachPort?
+var holdSource359: CFRunLoopSource?
+var holdGeneration359 = 0
+var holdError359: String?
+var holdSignal359: DispatchSourceSignal?
+func closeHoldTap359() {
+  if let tap = holdTap359 { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
+  if let source = holdSource359 { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+  holdTap359 = nil; holdSource359 = nil
+}
+// Idempotent: the tap is disabled and invalidated before the originals are reposted, so they are never seen again.
+func releaseHold359(_ reason: String, early: Bool, generation: Int? = nil) {
+  if let generation, generation != holdGeneration359 { return }
+  guard hold359 != nil, hold359!.releasedAt == nil else { closeHoldTap359(); return }
+  closeHoldTap359()
+  let originals = hold359!.release(at: now359(), early: early, reason: reason)
+  for event in originals { event.postToPid(holdPid359) }
+  event359("pointer-hold-release", ["reason": reason, "early": early, "released": originals.count, "postedAt": now359()])
+}
+func holdSummary359() -> [String: Any]? {
+  guard var s = hold359?.summary() else { return nil }
+  s["pid"] = holdPid359; if let holdError359 { s["error"] = holdError359 }; return s
+}
+let holdCallback359: CGEventTapCallBack = { _, type, event, _ in
+  if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+    // Input is no longer filtered: hand back what is held now, marked early.
+    holdError359 = type == .tapDisabledByTimeout ? "tap disabled by timeout" : "tap disabled by user input"
+    let generation = holdGeneration359
+    DispatchQueue.main.async { releaseHold359("tap-disabled", early: true, generation: generation) }
+    return Unmanaged.passUnretained(event)
+  }
+  guard hold359 != nil else { return Unmanaged.passUnretained(event) }
+  let at = now359(), sourcePid = Int(event.getIntegerValueField(.eventSourceUnixProcessID))
+  let r = hold359!.observe(type: type.rawValue, at: at, sourcePid: sourcePid, copy: { event.copy() })
+  let generation = holdGeneration359
+  if let releaseAt = r.releaseAt {
+    event359("pointer-hold-trigger", ["eventAt": at, "sourcePid": sourcePid])
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(Int((releaseAt - at).rounded()))) {
+      releaseHold359("timer", early: false, generation: generation)
+    }
+  }
+  if r.overflowed { DispatchQueue.main.async { releaseHold359("overflow", early: true, generation: generation) } }
+  return r.suppress ? nil : Unmanaged.passUnretained(event)
+}
+func armHold359(_ q: [String: Any]) -> String? {
+  guard hold359 == nil else { return "pointer hold already armed" }
+  guard let delay = (q["delayMs"] as? NSNumber)?.doubleValue, delay >= 1, delay <= 5000 else { return "pointer hold delay invalid" }
+  guard field359 != nil, let w = window359, !title359.isEmpty, pid359 > 0,
+        (read359(w, kAXTitleAttribute) as? String)?.contains(title359) == true else { return "owned bound window unavailable" }
+  var owner: pid_t = 0
+  guard AXUIElementGetPid(w, &owner) == .success, owner == pid359 else { return "owned bound window unavailable" }
+  // Every event to this pid is seen; nothing is held before the first left-down after arming.
+  let mask = CGEventMask.max
+  guard let tap = CGEvent.tapCreateForPid(pid: pid359, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask, callback: holdCallback359, userInfo: nil) else { return "pointer hold tap create failed" }
+  holdTap359 = tap; holdSource359 = CFMachPortCreateRunLoopSource(nil, tap, 0)
+  guard let source = holdSource359 else { closeHoldTap359(); return "pointer hold tap source failed" }
+  CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes); CGEvent.tapEnable(tap: tap, enable: true)
+  guard CGEvent.tapIsEnabled(tap: tap) else { closeHoldTap359(); return "pointer hold tap enable failed" }
+  if holdSignal359 == nil {
+    // A SIGTERM while events are held hands them back before the default termination.
+    signal(SIGTERM, SIG_IGN)
+    let s = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+    s.setEventHandler { releaseHold359("sigterm", early: true); signal(SIGTERM, SIG_DFL); kill(getpid(), SIGTERM) }
+    s.resume(); holdSignal359 = s
+  }
+  holdGeneration359 += 1; holdPid359 = pid359; holdError359 = nil
+  hold359 = PointerHold359(delayMs: delay, armedAt: now359())
+  event359("pointer-hold-arm", ["delayMs": delay, "pid": Int(pid359)])
+  return nil
+}
 func disarm359() {
+  releaseHold359("cleanup", early: true)
   timer359?.invalidate(); timer359 = nil
   if let observer359 { CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer359), .defaultMode) }
   observer359 = nil; field359 = nil; window359 = nil; title359 = ""; observed359 = false
+  hold359 = nil; holdError359 = nil
 }
 func handle359(_ q: [String: Any]) -> [String: Any] {
   let started = now359(), op = q["op"] as? String ?? ""
   var out: [String: Any] = ["startedAt": started]
   if op == "bind" {
+    releaseHold359("rebind", early: true); let previousHold = holdSummary359()
     disarm359(); events359 = []; registrations359 = []
+    if let previousHold { out["previousPointerHold"] = previousHold }
     pid359 = (q["pid"] as? NSNumber)?.int32Value ?? 0
     coverPid359 = (q["coverPid"] as? NSNumber)?.int32Value ?? 0
     lastOrder359 = 0
@@ -122,7 +257,12 @@ func handle359(_ q: [String: Any]) -> [String: Any] {
     if error != .success { out["error"] = "isolated AX step failed" }
   } else if op == "mark" {
     out["windows"] = order359(); out["frontmostPid"] = NSWorkspace.shared.frontmostApplication?.processIdentifier as Any? ?? NSNull(); event359("mark", ["windows": order359()])
+  } else if op == "hold-pointer" {
+    // Hosted stress only: from the next original left-down, delay every event to the bound pid, in order; inert unless armed here.
+    if let error = armHold359(q) { out["error"] = error }
+    else { out["pointerHold"] = holdSummary359() }
   } else if op == "stop" {
+    releaseHold359("stop", early: true); if let held = holdSummary359() { out["pointerHold"] = held }
     event359("window-order", order359()); event359("stop"); out["events"] = events359; out["registrations"] = registrations359; out["truncated"] = events359.count >= 10_000
     disarm359()
   } else { out["error"] = "unknown operation" }
@@ -142,7 +282,8 @@ Thread.detachNewThread {
       } catch { print("{\"error\":\"bad request\"}"); fflush(stdout) }
     }
   }
-  exit(0)
+  // Queued after any pending command: held events are handed back before exit.
+  DispatchQueue.main.async { releaseHold359("input-closed", early: true); exit(0) }
 }
 // Keep the command loop alive even before the first observer or sampling timer is armed.
 let keepAlive359 = Port()

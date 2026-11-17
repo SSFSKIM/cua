@@ -9,14 +9,13 @@ import {launch,placePid,version} from '../probe-316/browser.mjs';
 import {FixtureTransport,FixtureError} from '../probe-354/transport.mjs';
 import {BROWSERS,cells,diagnosticCells,summary} from './readers.mjs';
 import {page,SEED,REQUESTED,assertVisibleOwner} from './page.mjs';
-import {qualificationPage} from './qualification-page.mjs';
 import {qualificationCells,qualificationExpected,qualificationFollow,qualificationSummary} from './qualification-readers.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only; offline stage must not launch this driver');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
 const OUT=arg('out'),BROWSER=arg('browser'),EDITOR=arg('editor'),ENGINE=arg('engine'),TRACED=arg('traced-engine'),TOOL=arg('tool'),WATCH=arg('watch');
 const REPS=Number(arg('reps')??20),SMOKE=arg('smoke')==='true',DIAGNOSTIC=arg('diagnostic')&&arg('diagnostic')!=='none'?arg('diagnostic'):null;
 const QUALIFICATION=arg('qualification')==='true',HEAD=arg('head');
-const qualificationRequest=QUALIFICATION?{smoke:SMOKE,heads:{main:arg('main-ref'),fix:arg('fix-ref')},browsers:BROWSERS,editors:['textarea','input','contenteditable','compose']}:null;
+const qualificationRequest=QUALIFICATION?{tailStimulus:'queue-hold-v1',smoke:SMOKE,heads:{main:arg('main-ref'),fix:arg('fix-ref')},browsers:BROWSERS,editors:['textarea','input','contenteditable','compose']}:null;
 if(QUALIFICATION&&(DIAGNOSTIC||!['main','fix'].includes(HEAD)||Object.values(qualificationRequest.heads).some(ref=>! /^[a-f0-9]{40}$/.test(ref??''))))throw Error('qualification requires two exact pins, main/fix head, and no diagnostic mode');
 if(!OUT||!ENGINE||!TRACED||!TOOL||!WATCH||!['safari','cft','firefox'].includes(BROWSER)||!['textarea','input','contenteditable','compose'].includes(EDITOR))throw Error('missing or invalid arguments');
 if(REPS!==20&&!SMOKE&&!DIAGNOSTIC)throw Error('non20 repetitions must be explicitly labelled smoke or diagnostic');
@@ -47,7 +46,7 @@ async function front(pid,activate=true){const r=await tool.ask({op:'front',pid,a
 const transport=new FixtureTransport({onEvent:e=>appendFileSync(join(OUT,'transport.jsonl'),JSON.stringify(e)+'\n')});
 const server=createServer(async(req,res)=>{
  res.setHeader('Cache-Control','no-store');const u=new URL(req.url,'http://fixture');
- if(u.pathname==='/'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(QUALIFICATION?qualificationPage():page());return}
+ if(u.pathname==='/'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(page());return}
  res.setHeader('Content-Type','application/json');
  if(u.pathname==='/cmd'){transport.poll({pageId:u.searchParams.get('pageId'),timeOrigin:Number(u.searchParams.get('timeOrigin'))},res);return}
  if(u.pathname==='/answer'){let b='';for await(const c of req)b+=c;try{const a=JSON.parse(b),ok=a.op==='ready'?transport.register(a):transport.accept(a);res.statusCode=ok?200:409}catch{res.statusCode=400}res.end('{}');return}
@@ -112,7 +111,7 @@ async function attempt(c){
   if(row.preClick.text!==SEED||JSON.stringify(row.preClick.selection)!==JSON.stringify([initialCaret,0])||!row.preClick.focused)throw Error('setup/deactivation changed intended caret');
   row.clockUncertaintyMs=Math.max(2,row.preClick.endedAt-row.preClick.startedAt);
   row.beforeClickForeground=await front(expectedForeground,false);
-  if(c.stressBusyMs){stage='stress';row.stress=await command({op:'busy',id:c.id,busyMs:c.stressBusyMs});if(Date.now()>=row.stress.busyUntil-350)throw Error('busy acknowledgement too late to force the tail; no click issued')}
+  if(c.stressQueueMs){stage='stress';row.stress=await watch.ask({op:'hold-pointer',delayMs:c.stressQueueMs});requireOK(row.stress,'owned posted-event FIFO hold')}
   stage='click';
   if(c.suite==='isolate'){const carrierStartedAt=Date.now(),r=await watch.ask({op:'mutate',kind:c.mode,browser:BROWSER});row.click={...r,nativeStartedAt:r.startedAt,nativeEndedAt:r.endedAt,startedAt:carrierStartedAt,endedAt:Date.now()}}
   else if(c.suite==='control'){const at=Date.now();row.click={startedAt:at,endedAt:at,noClick:true}}

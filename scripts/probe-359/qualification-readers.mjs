@@ -1,7 +1,7 @@
 // Pure qualification manifest, route driver and scorer for #359's hosted A/B. Launches nothing.
 import {SEED,REQUESTED} from './page.mjs';
 export const QUAL_BROWSERS=['safari','cft','firefox'],QUAL_EDITORS=['textarea','input','contenteditable','compose'];
-const TAIL_BUSY_MS=900,TAIL_MIN_GAP_MS=300;
+const TAIL_QUEUE_MS=900,TAIL_MIN_GAP_MS=300;
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 
 export function qualificationCells({smoke=false,heads,browsers=QUAL_BROWSERS,editors=QUAL_EDITORS}={}){
@@ -17,7 +17,7 @@ export function qualificationCells({smoke=false,heads,browsers=QUAL_BROWSERS,edi
    for(let rep=1;rep<=fgReps;rep++)for(const selection of ['select_text','set_value_type','cmd+a'])for(const suite of ['rate','control'])for(const head of names)
     add({cohort:'foreground',head,engineRef:heads[head],suite,browser,editor,selection,initialCaret:'target',foreground:true},rep);
    for(let rep=1;rep<=fgReps;rep++)for(const head of names)
-    add({cohort:'tail',head,engineRef:heads[head],suite:'rate',browser,editor,selection:'select_text',initialCaret:'target',foreground:true,stressBusyMs:TAIL_BUSY_MS},rep);
+    add({cohort:'tail',head,engineRef:heads[head],suite:'rate',browser,editor,selection:'select_text',initialCaret:'target',foreground:true,stressQueueMs:TAIL_QUEUE_MS},rep);
   }
   for(let rep=1;rep<=bgReps;rep++)for(const selection of ['script','cmd+a'])for(const head of names)
    add({cohort:'background',head,engineRef:heads[head],suite:'rate',browser,editor,selection,initialCaret:'end',foreground:false},rep);
@@ -55,23 +55,22 @@ function pct(v){v=v.filter(Number.isFinite).sort((a,b)=>a-b);const q=p=>v.length
 const NUMS=['requested','attempted','valid','invalid','scorable','typeMissing','noFinalSample','finalUnstable','finalMet','wrongFinal','wrongPlacement','placedClaims','placedFinalWrong',
  'typeSuccess','typeFalseSuccess','typeHonestUnconfirmed','typeUnconfirmedCorrect','selectionChanged','safeNoType','unsafeRefusal','typedEvents',
  'valueSuccess','valueUnconfirmed','valueFieldClosed','tailQualified','tailUnqualified','tailScorable','tailOk','tailUnsafeOk','tailOkTextMatchesRequested','nothingTypedSeedUnchanged','safeRefusal',
- 'foregroundViolations','windowRaisesObserved','backgroundWaitViolations','backgroundWaitPositive'];
-const MAPS=['typeAnswers','typeUnconfirmedReasons','valueAnswers','valueUnconfirmedDrift','tailUnqualifiedReasons','tailUnqualifiedTypeAnswers','tailUnqualifiedTypeUnconfirmedReasons'];
+ 'foregroundViolations','windowRaisesObserved','backgroundWaitViolations','backgroundWaitPositive','backgroundWaitObserved','backgroundAX','backgroundPosted','backgroundUnknown','backgroundWaitUnclassified','tailReadbackDecline'];
+const MAPS=['typeAnswers','typeUnconfirmedReasons','valueAnswers','valueUnconfirmedDrift','tailUnqualifiedReasons','tailUnqualifiedTypeAnswers','tailUnqualifiedTypeUnconfirmedReasons','backgroundRoutes'];
 const SERIES=['pendingClickWaitMs','baselineWaitMs','totalWaitMs','clickMs','nextMs','typeMs'];
 const blank=()=>({...Object.fromEntries(NUMS.map(k=>[k,0])),...Object.fromEntries(MAPS.map(k=>[k,{}])),...Object.fromEntries(SERIES.map(k=>[k,[]]))});
 const merge=(a,b)=>{for(const k of NUMS)a[k]+=b[k];for(const k of MAPS)for(const [x,n] of Object.entries(b[k]))bump(a[k],x,n);for(const k of SERIES)a[k].push(...b[k])};
 const finish=g=>({...g,...Object.fromEntries(SERIES.map(k=>[k,pct(g[k])]))});
 const groupKey=c=>[c.head,c.cohort,c.browser,c.editor,c.selection,c.suite].join('/');
-const LINEAGE=['cohort','head','engineRef','suite','browser','editor','selection','rep','foreground','initialCaret','stressBusyMs','qualification','mode'];
+const LINEAGE=['cohort','head','engineRef','suite','browser','editor','selection','rep','foreground','initialCaret','stressQueueMs','qualification','mode'];
 const inputsSince=(r,since)=>(r.events??[]).filter(e=>['input','beforeinput'].includes(e.event)&&(!(e.at<since))).length;
 
-// A tail is exercised only if the delayed pointer was still pending when select_text and type_text had both
-// returned (each by more than the clock uncertainty). A mousedown that merely arrives late, after the AX selection
-// was written or after type_text finished, shows recovery from stress and not the tested answer boundary.
-// Qualification never depends on the answer or on wait metadata.
+// Prove an intact posted-event FIFO and that the selection plus typing baseline ran while its click was pending.
+// Either the complete type RPC or its actual first key post (which follows the baseline) must precede delivery.
+// This uses action timestamps, never snapshotMs or the typing answer, and keeps recovered stress unqualified.
 export function tailQualification(r){
  const events=[...(r.events??[])].sort((a,b)=>a.at-b.at),md=events.find(e=>e.event==='mousedown')?.at,u=r.clockUncertaintyMs??2;
- const stress=num(r.stress?.busyStartedAt)??num(events.find(e=>e.event==='busy-start')?.at);
+ const stress=num(r.stress?.busyStartedAt)??num(r.stress?.startedAt)??num(events.find(e=>e.event==='busy-start')?.at);
  const no=reason=>({qualified:false,reason});
  if(!Number.isFinite(md))return no('noMousedown');
  if(!(stress!==null&&stress<r.click?.startedAt))return no('stressNotBeforeClick');
@@ -79,7 +78,14 @@ export function tailQualification(r){
  if(!r.next||r.next.error||!Number.isFinite(r.next.endedAt))return no('selectionNotSuccessful');
  if(!(r.next.endedAt+u<md))return no('mousedownBeforeSelection');
  if(!r.type||!Number.isFinite(r.type.startedAt)||!Number.isFinite(r.type.endedAt))return no('typeNotAttempted');
- if(!(r.type.endedAt+u<md))return no('mousedownBeforeTypeReturn');
+ const h=r.ax?.pointerHold;
+ if(!h||h.stressExercised!==true||h.earlyRelease!==false||h.pointerCaptured!==2||h.pointerReleased!==2||!Number.isInteger(h.captured)||h.captured<2||h.released!==h.captured||h.extraEvents!==0||h.copyFailures!==0||h.overflow||h.error)return no('holdNotComplete');
+ if(events.some(e=>['keydown','keyup','beforeinput','input'].includes(e.event)&&e.at+u<md))return no('postedInputOvertookPointer');
+ // InputMeta.startedAt is the actual first key post, after the baseline. No snapshotMs reconstruction.
+ const firstPost=metas(r.type).map(m=>num(m.startedAt)).find(v=>v!==null);
+ const postedBefore=Number.isFinite(firstPost)&&firstPost+u<md;
+ if(!(r.type.endedAt+u<md)&&!postedBefore)return no('mousedownBeforeTypeReturn');
+ if(postedBefore&&!(h.keyCaptured>0))return no('postedKeysNotHeld');
  return {qualified:true};
 }
 
@@ -96,8 +102,13 @@ function scoreRow(r,cell,g){
  if(r.next)g.nextMs.push(r.next.endedAt-r.next.startedAt);
  if(r.type)g.typeMs.push(r.type.endedAt-r.type.startedAt);
  if(cell.cohort==='background'){
-  // The criterion is that no wait record appears at all, even a zero or watch-only one.
-  if(w.some(x=>x.pendingRecord||x.baselineRecord))g.backgroundWaitViolations++;
+  // #341's AX action arms nothing. A posted background pointer deliberately arms ruling 785's window.
+  const cm=metas(r.click)[0]??{},ec=cm.elementClick;
+  const carrier=ec?.plan==='action'?'AX:'+String(ec.action??'action'):cm.coordinateClick&&Number.isFinite(cm.startedAt)?'posted':'unknown';
+  bump(g.backgroundRoutes,carrier);
+  const ax=carrier.startsWith('AX:'),posted=carrier==='posted',observed=w.some(x=>x.pendingRecord||x.baselineRecord);
+  if(ax)g.backgroundAX++;else if(posted)g.backgroundPosted++;else g.backgroundUnknown++;
+  if(observed){g.backgroundWaitObserved++;if(ax)g.backgroundWaitViolations++;else if(!posted)g.backgroundWaitUnclassified++}
   if([...pend,...base].some(v=>v>0))g.backgroundWaitPositive++;
  }
  if(tail){const q=tailQualification(r);if(!q.qualified){
@@ -121,6 +132,7 @@ function scoreRow(r,cell,g){
  const nothingTyped=!typed&&type&&entered(type)===0,refusal=reason==='selectionChanged'&&nothingTyped;
  if(tail){
   const seedKept=final?.text===SEED,safe=refusal&&seedKept;
+  if(type&&a==='typeUnconfirmed'&&reason!=='selectionChanged')g.tailReadbackDecline++;
   if(type&&a==='success'){g.tailOk++;g.tailUnsafeOk++;if(final?.text===REQUESTED)g.tailOkTextMatchesRequested++}
   if(!typed&&seedKept)g.nothingTypedSeedUnchanged++;
   if(!seedKept)g.wrongFinal++;
@@ -166,9 +178,10 @@ const HEX40=/^[a-f0-9]{40}$/;
 export function qualificationPlan(configs){
  const requests=configs.map(c=>c?.qualificationRequest);
  if(!requests.length||requests.some(r=>!r))throw Error('qualification request manifests missing; cannot infer coverage from surviving shards');
- const sig=r=>JSON.stringify([r.smoke,r.heads,r.browsers,r.editors]),request=requests[0];
+ const sig=r=>JSON.stringify([r.smoke,r.heads,r.browsers,r.editors,r.tailStimulus]),request=requests[0];
  if(requests.some(r=>sig(r)!==sig(request)))throw Error('inconsistent qualification requests; keep dispatches separate');
  const names=Object.keys(request.heads??{}),unique=a=>new Set(a).size===a.length;
+ if(request.tailStimulus!=='queue-hold-v1')throw Error('qualification request must name queue-hold-v1; keep earlier busy-stress runs on their pinned reader');
  if(typeof request.smoke!=='boolean')throw Error('invalid qualification request: smoke must be boolean');
  if(!same(names,['main','fix'])||names.some(h=>!HEX40.test(request.heads[h]))||request.heads.main===request.heads.fix)throw Error('invalid qualification request: heads must be exactly main and fix, distinct 40-hex refs');
  for(const [key,known] of [['browsers',QUAL_BROWSERS],['editors',QUAL_EDITORS]])

@@ -37,6 +37,13 @@ export function windowSpaceIds(i){
 export const anotherSpaceProof=i=>Boolean(current(i)!==null&&windowSpaceIds(i).length>0&&!windowSpaceIds(i).includes(current(i))
  &&spaceWindow(i)?.inOnscreenList===false);
 export const visibleOnSpace=i=>Boolean(current(i)!==null&&windowSpaceIds(i).includes(current(i))&&spaceWindow(i)?.inOnscreenList===true);
+export function placementChecks(before,after){
+ const a=current(before),b=current(after),from=windowSpaceIds(before),to=windowSpaceIds(after);
+ return {activeSpace:a!==null&&b===a,
+  windowSpaces:from.length>0&&to.length>0&&JSON.stringify([...from].sort((x,y)=>x-y))===JSON.stringify([...to].sort((x,y)=>x-y)),
+  frame:sameFrame(windowGeometry(before)?.bounds,windowGeometry(after)?.bounds),
+  frontmost:Number.isInteger(before?.frontmost?.pid)&&before.frontmost.pid>0&&after?.frontmost?.pid===before.frontmost.pid&&after.frontmost.bundleId===before.frontmost.bundleId};
+}
 export const missingAuthorization=(oracle,engine)=>[
  ...['accessibility','screenRecording','canPostHid'].filter(k=>oracle?.[k]!==true).map(k=>'oracle.'+k),
  ...['accessibility','screenRecording'].filter(k=>engine?.[k]!==true).map(k=>'engine.'+k),

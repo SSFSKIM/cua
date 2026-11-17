@@ -4,14 +4,15 @@ import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {spawn,execFileSync} from 'node:child_process';
 import {createHash,randomUUID} from 'node:crypto';
-import {win,usableFrame,offscreenProof,current,spaceIds,anotherSpaceProof,visibleOnSpace,missingAuthorization,windowMatch,windowGeometry,raiseTarget,compareReturn} from './evidence.mjs';
+import {win,usableFrame,offscreenProof,current,spaceIds,anotherSpaceProof,visibleOnSpace,missingAuthorization,windowMatch,windowGeometry,raiseTarget,compareReturn,placementChecks} from './evidence.mjs';
 import {offscreenFixture,restoreOriginalFrame,switchToSpace,requestOwnedBounds,returnToWindowSpace} from './fixtures.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted'||process.platform!=='darwin')throw Error('disposable GitHub-hosted macOS only');
 const [source,engine,tool,fixture,out,head,sha,fixtureManifest]=process.argv.slice(2);
+const onlyOtherSpace=process.env.ONLY_OTHER_SPACE==='1';
 fs.mkdirSync(out,{recursive:true});
 const save=(name,value)=>fs.writeFileSync(join(out,name),JSON.stringify(value,null,2)+'\n');
 // Save context before socket startup, imports, permission checks or GUI setup can fail.
-const config={head,sha,source,engine,fixture,fixtureManifest,runnerOS:process.env.ImageOS,imageVersion:process.env.ImageVersion,
+const config={head,sha,source,engine,fixture,fixtureManifest,onlyOtherSpace,runnerOS:process.env.ImageOS,imageVersion:process.env.ImageVersion,
  runnerArch:process.env.RUNNER_ARCH,node:process.version,kit:process.env.GITHUB_SHA,run:process.env.GITHUB_RUN_ID,
  os:execFileSync('/usr/bin/sw_vers',[],{encoding:'utf8'}),kernel:execFileSync('/usr/bin/uname',['-a'],{encoding:'utf8'})};
 save('config.json',config);
@@ -66,11 +67,12 @@ try{
  const cua=await create_tinysky_alt({browser:false});
  async function call(label,fn,{capture=false}={}){
   raw=null;meta={};emitted=[];
-  let value,error;
+  let value,error;const startedAt=new Date().toISOString(),started=performance.now();
   try{value=await fn();}catch(e){error=err(e);}
+  const elapsedMs=performance.now()-started,endedAt=new Date().toISOString();
   const bytes=value instanceof Uint8Array?Buffer.from(value):null;
   if(bytes&&capture)fs.writeFileSync(join(out,label+'.jpg'),bytes);
-  const row={label,ok:!error,error,value:bytes?{bytes:bytes.length,sha256:hash(bytes),jpeg:bytes.length>=3&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255}:typeof value==='string'?value:undefined,
+  const row={label,startedAt,endedAt,elapsedMs,ok:!error,error,value:bytes?{bytes:bytes.length,sha256:hash(bytes),jpeg:bytes.length>=3&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255}:typeof value==='string'?value:undefined,
    emitted,meta:structuredClone(meta),raw};
   save(label+'.json',row);return row;
  }
@@ -79,7 +81,7 @@ try{
  for(const scene of ['textedit','electron']){
   const bundle=scene==='textedit'?'com.apple.TextEdit':'io.github.ssfskim.cua.fixture.electron';
   const appPath=scene==='textedit'?'/System/Applications/TextEdit.app':fixture;
-  const row={head,sha,scene,appPath,...(scene==='textedit'?{documentPath:document}:{})};rows.push(row);
+  const row={head,sha,scene,appPath,onlyOtherSpace,...(scene==='textedit'?{documentPath:document}:{})};rows.push(row);
   const checkpoint=()=>save('results.json',rows);checkpoint();
   const controlDirectory=scene==='electron'?join(out,'fixture-control'):null;
   if(controlDirectory){fs.mkdirSync(controlDirectory,{recursive:true,mode:0o700});row.fixtureBoundsControl={...config.fixtureControl,directory:controlDirectory,operations:[]};}
@@ -112,6 +114,18 @@ try{
   row.baselineMatch=windowMatch(row.baseline,row.baselineOracle);
   const origin=win(info())?.frame;if(!usableFrame(origin))throw Error(scene+' original frame unknown');
   checkpoint();
+  if(onlyOtherSpace){
+   row.onScreenRaiseBefore=info();row.onScreenRaiseTarget=raiseTarget(row.baseline,row.onScreenRaiseBefore,row.baselineScreenshot.raw);
+   row.onScreenRaise=row.onScreenRaiseTarget.available
+    ?{...await call(scene+'-control-raise',()=>bound.performSecondaryAction(row.onScreenRaiseTarget.index,'Raise')),available:true,attempted:true}
+    :unavailable(row.onScreenRaiseTarget.reason);
+   if(row.onScreenRaise.attempted)await delay(1600);
+   row.onScreenRaiseAfter=info();
+   row.onScreenAfter=await call(scene+'-control-after-state',()=>bound.getAXState({disableDiffing:true,emit:false}));
+   row.onScreenControlAssertions={observation:row.baseline.ok&&row.baselineScreenshot.ok,raise:row.onScreenRaise.ok===true,
+    ...placementChecks(row.onScreenRaiseBefore,row.onScreenRaiseAfter),afterObservation:row.onScreenAfter.ok};checkpoint();
+  }
+  if(!onlyOtherSpace){
   row.offscreenSetup=await offscreenFixture(frameIO);row.offscreenMove=row.offscreenSetup.attempts[0].setter;
   const off={ok:row.offscreenSetup.ok,value:row.offscreenSetup.value};row.offscreenOracle=off;checkpoint();
   if(off.ok){
@@ -155,6 +169,7 @@ try{
   row.partialScreenshot=await call(scene+'-3-screenshot',()=>bound.getScreenshot({emit:false}),{capture:true});
   row.restoreAfterPartial=sceneOracle('move',pid,origin.x,origin.y);
   checkpoint();
+  }
   async function measureAnotherSpace(away){
    row.anotherSpaceOracle=away;
    if(!away.ok){
@@ -191,7 +206,11 @@ try{
     ?{...await call(scene+'-4-raise',()=>bound.performSecondaryAction(target.index,'Raise')),available:true,attempted:true}
     :unavailable(target.reason??'another-Space precondition no longer proven');
    if(row.anotherRaise.attempted)await delay(1600);
-   row.anotherRaiseAfter=info();checkpoint();
+   row.anotherRaiseAfter=info();
+   if(onlyOtherSpace)row.anotherRaiseAssertions={expectedAnswer:head==='fix'
+    ?row.anotherRaise.attempted===true&&row.anotherRaise.ok===false&&row.anotherRaise.error?.errorName==='windowOnAnotherSpace'
+    :row.anotherRaise.ok===true,...placementChecks(row.anotherRaiseBefore,row.anotherRaiseAfter)};
+   checkpoint();
   }
   row.spaceStart=info();row.fullscreenSet=sceneOracle('fullscreen',pid,true);
   const full=await until(info,i=>win(i)?.fullScreen===true&&spaceIds(i).some(s=>!spaceIds(row.spaceStart).includes(s)),15000);
@@ -245,6 +264,7 @@ try{
   }else{row.restoreMove=sceneOracle('move',pid,origin.x,origin.y);row.restoreSize=sceneOracle('size',pid,origin.width,origin.height);}
   row.restoreBackground=oracle('activate','com.apple.finder');
   checkpoint();
+  if(!onlyOtherSpace){
   row.hide=sceneOracle('hide',pid);row.hiddenOracle=info();
   row.hidden=await call(scene+'-5-state',()=>bound.getAXState({disableDiffing:true,emit:false}));
   row.hiddenScreenshot=await call(scene+'-5-screenshot',()=>bound.getScreenshot({emit:false}));
@@ -265,11 +285,19 @@ try{
   row.costP50WalkMs=p50(row.cost.map(r=>r.timings?.walkMs));row.costP50ElapsedMs=p50(row.cost.filter(r=>r.ok).map(r=>r.elapsedMs));
   row.cgCostP50Ms=p50(row.cgCost.samples?.filter(s=>s.found).map(s=>s.elapsedMs)??[]);
   checkpoint();
+  }
+  if(onlyOtherSpace){
+   const groups={onScreen:row.onScreenControlAssertions??{missing:false},otherSpace:row.anotherRaiseAssertions??{missing:false}};
+   row.assertionFailures=Object.entries(groups).flatMap(([group,checks])=>Object.entries(checks).filter(([,ok])=>ok!==true).map(([name])=>group+'.'+name));
+   if(row.anotherSpaceOracle?.ok!==true)row.assertionFailures.push('otherSpace.fixture');
+   if(row.assertionFailures.length)process.exitCode=1;
+   checkpoint();
+  }
   // These exact PIDs were created above; never terminate any preexisting application.
   process.kill(pid,'SIGTERM');owned.splice(owned.indexOf(pid),1);
  }
- console.log(JSON.stringify(rows.map(r=>({head,scene:r.scene,offscreen:r.offscreenOracle.ok,secondSpace:r.fullscreenCreated.ok||r.missionControlSetup?.created?.ok===true,
-  anotherSpace:r.anotherSpaceOracle?.ok??false,costP50WalkMs:r.costP50WalkMs,cgCostP50Ms:r.cgCostP50Ms,returnComparison:r.returnComparison}))));
+ console.log(JSON.stringify(rows.map(r=>({head,scene:r.scene,onlyOtherSpace,offscreen:r.offscreenOracle?.ok,secondSpace:r.fullscreenCreated?.ok||r.missionControlSetup?.created?.ok===true,
+  anotherSpace:r.anotherSpaceOracle?.ok??false,assertionFailures:r.assertionFailures,costP50WalkMs:r.costP50WalkMs,cgCostP50Ms:r.cgCostP50Ms,returnComparison:r.returnComparison}))));
 }catch(e){save('fatal.json',err(e));throw e;}
 finally{
  save('results.json',rows);

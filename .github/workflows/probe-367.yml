@@ -46,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           node --test scripts/probe-367/evidence.test.mjs
-          FIX_REF=2b7804bdbbebd29ea7d88568878f329aaa77999d
+          FIX_REF=d778455218656b146508c89179e2428fb4616d7e
           MAIN_REF=15acf09b714dd19efc796e4a3a2ff8d57e2f7994
           git worktree add --detach "$RUNNER_TEMP/src367-fix" "$FIX_REF"
           git worktree add --detach "$RUNNER_TEMP/src367-main" "$MAIN_REF"
@@ -59,7 +59,9 @@ jobs:
           cp "$RUNNER_TEMP/fixture367.json" "$RUNNER_TEMP/evidence367/fixture.json"
           git -C "$RUNNER_TEMP/src367-fix" diff --exit-code
           git -C "$RUNNER_TEMP/src367-main" diff --exit-code
-      - name: Exercise both heads sequentially (one engine alive at a time)
+      - name: Exercise other-Space cells and on-screen controls on both heads
+        env:
+          ONLY_OTHER_SPACE: '1'
         run: |
           set -euo pipefail
           FIXTURE=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1])).appPath)' "$RUNNER_TEMP/fixture367.json")

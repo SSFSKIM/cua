@@ -20,6 +20,23 @@ const state=(extra={})=>({ok:true,value:'Window: "W", App: Example.\n0 standard 
  raw:{app:{pid:123},window:{pid:123,frame},lineage:'fresh',revision:2,nodes:[{token:'w',role:'AXWindow',actions:['AXRaise']}]},...extra});
 const jpeg=(extra={})=>({ok:true,value:{jpeg:true,bytes:40,sha256:'a'.repeat(64)},raw:{screenshot:{width:900,height:500}},...extra});
 
+test('Raise assertions reject changed or unread placement rather than treating acceptance as proof',async()=>{
+ const {placementChecks}=await import('./evidence.mjs');
+ const captured=JSON.parse(fs.readFileSync(new URL('../../docs/evidence/2026-11-17-367-hosted/run-44122922177/independent-evidence.json',import.meta.url),'utf8')).heads.main.results[0];
+ const before=captured.anotherRaiseBefore,after=captured.anotherRaiseAfter;
+ assert.deepEqual(placementChecks(before,after),{activeSpace:true,windowSpaces:true,frame:true,frontmost:true});
+ const missing=structuredClone(after);missing.windows=[];delete missing.pinnedWindowServer;
+ assert.deepEqual(placementChecks(before,missing),{activeSpace:true,windowSpaces:false,frame:false,frontmost:true});
+ const space=structuredClone(after);space.activeSpace=2;space.managedDisplaySpaces[0]['Current Space'].ManagedSpaceID=2;
+ assert.equal(placementChecks(before,space).activeSpace,false);
+ const member=structuredClone(after);member.pinnedWindowServer.spaces=[1];
+ assert.equal(placementChecks(before,member).windowSpaces,false);
+ const moved=structuredClone(after);moved.pinnedWindowServer.cgBounds.x=100;
+ assert.equal(placementChecks(before,moved).frame,false);
+ const front=structuredClone(after);front.frontmost.pid++;
+ assert.equal(placementChecks(before,front).frontmost,false);
+});
+
 test('offscreen proof rejects unread geometry, absent displays, and contradictory overlap',()=>{
  assert.equal(offscreenProof(info()),true);
  for(const input of [info({frame:{}}),info({frame:null}),{...info(),screens:[]},info({frame:{...frame,x:NaN}}),info({overlapsDisplay:null}),info({frame:{...frame,x:100}})]){

@@ -3,6 +3,24 @@ import assert from 'node:assert/strict';
 import {cells,summary,timeline} from './readers.mjs';
 import {assertVisibleOwner,page,SEED} from './page.mjs';
 import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+
+test('clean observation and warmup records retain readiness and enablement timings without raw responses',async()=>{
+ const source=readFileSync(new URL('./measure.mjs',import.meta.url),'utf8');
+ const timings={chromiumReadyWaitMs:2498,chromiumReady:'deadline',enablementPrior:'false',enabled:'AXManualAccessibility'};
+ const raw={jsonrpc:'2.0',id:1,result:{meta:{observation:true},timings,probe359:{events:[]}}};
+ const ctx=vm.createContext({w:{execute:async()=>raw},pid:123});
+ // Execute only the record boundary; importing the driver would launch hosted GUI fixtures.
+ vm.runInContext(source.slice(source.indexOf('async function rpc('),source.indexOf('async function bindVisible('))+'\nglobalThis.record=async()=>clean(await rpc("get_app_state"));',ctx);
+ const observation=await ctx.record(),warmup={instrumented:false,...await ctx.record()};
+ const saved=JSON.parse(JSON.stringify({row:{observation},meta:{warmups:[warmup]}}));
+ assert.deepEqual(saved.row.observation.timings,timings);
+ assert.deepEqual(saved.meta.warmups[0].timings,timings);
+ assert.deepEqual(saved.row.observation.meta,raw.result.meta);
+ assert.deepEqual(saved.row.observation.probe,raw.result.probe359);
+ assert.equal('raw' in saved.row.observation,false);
+ assert.equal('raw' in saved.meta.warmups[0],false);
+});
 
 test('a hidden old fixture cannot remain valid when the visible AX window changes',()=>{
  const owner={pageId:'a'.repeat(32),timeOrigin:100};

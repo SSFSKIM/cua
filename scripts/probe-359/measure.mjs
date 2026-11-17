@@ -55,7 +55,7 @@ async function startEngine(bin){
  // Only connecting is retried, never a ping, RPC, or measured action.
  const ping=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});requireOK(ping,'engine ping');
 }
-async function rpc(method,args={}){const startedAt=Date.now(),raw=await w.execute(method,{pid,...args});return {startedAt,endedAt:Date.now(),error:raw.error??null,meta:raw.result?.meta??raw.error?.data?.meta??raw.error?.meta,probe:raw.result?.probe359,raw}}
+async function rpc(method,args={}){const startedAt=Date.now(),raw=await w.execute(method,{pid,...args});return {startedAt,endedAt:Date.now(),error:raw.error??null,meta:raw.result?.meta??raw.error?.data?.meta??raw.error?.meta,timings:raw.result?.timings,probe:raw.result?.probe359,raw}}
 const clean=r=>{const {raw,...rest}=r;return rest};
 async function bindVisible(){
  const title=await until(async()=>{const r=await tool.ask({op:'window-title',pid});return !r.error&&r.frontmostPid===pid&&/probe354:[a-f0-9]{32}/.test(r.windowTitle??'')?r:false},5000);

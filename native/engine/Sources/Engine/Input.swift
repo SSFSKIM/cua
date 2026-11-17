@@ -577,7 +577,8 @@ extension Engine {
       try signposted("pressKey.minimizedCheck") {  // keys land nowhere (Minimized.swift)
         try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
       }
-      meta.inputRoute = pressKeyRoute(forced: forced, presses: presses, believesFocus: ActivationSystem().believesItHasFocus(pid))
+      meta.inputRoute = pressKeyRoute(forced: forced, presses: presses, believesFocus: ActivationSystem().believesItHasFocus(pid),
+                                      engine: webAccessibility.pageEngine(app.appPath))
       if forced == nil, meta.inputRoute == .activation {
         try holdKeyFocus(app, pid: pid, application: application, guarding: guarding, context: context, meta: &meta)
       }

@@ -1674,7 +1674,7 @@ final class KeyRouteTests: XCTestCase {
   /// press_key takes route 3 when the app does not believe it has focus; plain keys stay on 2′.
   func testACommandChordGoesByRouteThreeOnlyWhenTheAppDoesNotBelieveItHasFocus() throws {
     func route(_ keys: String, focus: Bool, forced: InputRoute? = nil) throws -> InputRoute {
-      pressKeyRoute(forced: forced, presses: try parseKeySequence(keys), believesFocus: focus)
+      pressKeyRoute(forced: forced, presses: try parseKeySequence(keys), believesFocus: focus, engine: .other)
     }
     XCTAssertEqual(try route("super+a", focus: false), .activation)
     XCTAssertEqual(try route("cmd+shift+z", focus: false), .activation)
@@ -1686,6 +1686,50 @@ final class KeyRouteTests: XCTestCase {
     XCTAssertEqual(try route("super", focus: false), .plainPost, "a modifier alone is no key equivalent")
     XCTAssertEqual(try route("super+a", focus: false, forced: .plainPost), .plainPost, "a spike cell's forced route wins")
     XCTAssertEqual(try route("a", focus: false, forced: .activation), .activation)
+  }
+
+  /// Every caret-navigation key press_key names (the arrows, Home and its alias Begin, End, Page Up and Page Down under
+  /// both names), and each under the modifiers a caret move or a selection extension takes.
+  private let navigationKeys = ["Left", "Right", "Up", "Down", "Home", "Begin", "End", "Prior", "Page_Up", "Next", "Page_Down"]
+  private let navigationModifiers = ["", "shift+", "alt+", "alt+shift+", "cmd+", "cmd+shift+", "ctrl+", "ctrl+alt+"]
+
+  private func route(_ keys: String, focus: Bool, engine: PageEngine, forced: InputRoute? = nil) throws -> InputRoute {
+    pressKeyRoute(forced: forced, presses: try parseKeySequence(keys), believesFocus: focus, engine: engine)
+  }
+
+  /// #360 (ruling 764): a background Firefox does not move a rich editor's caret for a posted Left, Option+Left or
+  /// Cmd+Left until the editor has logical focus, so every caret-navigation key there takes the ⌘ chord's route 3.
+  func testInBackgroundFirefoxEveryCaretNavigationKeyTakesRouteThree() throws {
+    for key in navigationKeys {
+      for modifiers in navigationModifiers {
+        XCTAssertEqual(try route(modifiers + key, focus: false, engine: .gecko), .activation, modifiers + key)
+      }
+    }
+    XCTAssertEqual(try route("a Left", focus: false, engine: .gecko), .activation, "a sequence holding one is activated before its first press")
+    XCTAssertEqual(try route("Left", focus: false, engine: .gecko, forced: .plainPost), .plainPost, "a spike cell's forced route wins")
+  }
+
+  /// The same keys keep their route everywhere else: a Firefox that believes it has focus, and a background Chrome or
+  /// Safari (a key equivalent among them stays route 3 as a ⌘ chord, the rest 2′).
+  func testCaretNavigationKeysKeepTheirRouteOutsideBackgroundFirefox() throws {
+    for key in navigationKeys {
+      for modifiers in navigationModifiers {
+        let keys = modifiers + key
+        let chord: InputRoute = modifiers.hasPrefix("cmd+") ? .activation : .plainPost
+        XCTAssertEqual(try route(keys, focus: true, engine: .gecko), .plainPost, "foreground Firefox: \(keys)")
+        XCTAssertEqual(try route(keys, focus: false, engine: .chromium), chord, "background Chrome: \(keys)")
+        XCTAssertEqual(try route(keys, focus: false, engine: .other), chord, "background Safari: \(keys)")
+      }
+    }
+  }
+
+  /// Every key that moves no caret keeps its route in a background Firefox: 2′, or route 3 for a ⌘ chord.
+  func testABackgroundFirefoxKeepsTheRouteOfEveryOtherKey() throws {
+    for plain in ["a", "A", "Return", "Tab", "shift+Tab", "BackSpace", "Delete", "space", "Escape", "alt+Return", "ctrl+a",
+                  "F1", "KP_4", "KP_8", "KP_2", "KP_6", "KP_Enter", "super", "shift", "Tab Return"] {
+      XCTAssertEqual(try route(plain, focus: false, engine: .gecko), .plainPost, plain)
+    }
+    XCTAssertEqual(try route("cmd+a", focus: false, engine: .gecko), .activation, "a ⌘ chord keeps route 3")
   }
 
   func testTypedTextStaysOnRouteTwoPrimeWhateverTheFocus() {

@@ -47,6 +47,7 @@ jobs:
       matrix:
         browser: ${{ fromJSON(inputs.diagnostic == 'confirm' && '["cft"]' || (inputs.diagnostic && inputs.diagnostic != 'none' && inputs.diagnostic_browser && inputs.diagnostic_browser != 'all' && format('["{0}"]', inputs.diagnostic_browser) || '["safari","cft","firefox"]')) }}
         editor: ${{ fromJSON(inputs.diagnostic && inputs.diagnostic != 'none' && '["textarea"]' || '["textarea","input","contenteditable","compose"]') }}
+        route_group: ${{ fromJSON(inputs.diagnostic == 'candidates' && '["script-keys","ax-actions"]' || '["all"]') }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -101,13 +102,14 @@ jobs:
           DIAGNOSTIC: ${{ inputs.diagnostic || 'none' }}
           SCENE: ${{ inputs.scene || 'foreground-equal' }}
           DIAGNOSTIC_BROWSER: ${{ inputs.diagnostic_browser || 'all' }}
+          ROUTE_GROUP: ${{ matrix.route_group }}
         run: |
-          node scripts/probe-359/measure.mjs --browser "$BROWSER" --editor "$EDITOR" --engine "$RUNNER_TEMP/plain-build/release/cua-engine" --traced-engine "$RUNNER_TEMP/traced-build/release/cua-engine" --tool "$RUNNER_TEMP/tool359" --watch "$RUNNER_TEMP/watch359" --out "$RUNNER_TEMP/probe-359/$BROWSER-$EDITOR" --reps "$REPS" --smoke "$SMOKE" --diagnostic "$DIAGNOSTIC" --diagnostic-browser "$DIAGNOSTIC_BROWSER" --scene "$SCENE"
+          node scripts/probe-359/measure.mjs --browser "$BROWSER" --editor "$EDITOR" --engine "$RUNNER_TEMP/plain-build/release/cua-engine" --traced-engine "$RUNNER_TEMP/traced-build/release/cua-engine" --tool "$RUNNER_TEMP/tool359" --watch "$RUNNER_TEMP/watch359" --out "$RUNNER_TEMP/probe-359/$BROWSER-$EDITOR-$ROUTE_GROUP" --reps "$REPS" --smoke "$SMOKE" --diagnostic "$DIAGNOSTIC" --diagnostic-browser "$DIAGNOSTIC_BROWSER" --scene "$SCENE" --route-group "$ROUTE_GROUP"
       - name: Upload evidence even on incomplete coverage
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: probe-359-${{ matrix.browser }}-${{ matrix.editor }}
+          name: probe-359-${{ matrix.browser }}-${{ matrix.editor }}-${{ matrix.route_group }}
           path: |
             ${{ runner.temp }}/probe-359/**/rows.jsonl
             ${{ runner.temp }}/probe-359/**/config.json

@@ -12,6 +12,8 @@ func element359(_ value: CFTypeRef?) -> AXUIElement? {
   let e = value as! AXUIElement; AXUIElementSetMessagingTimeout(e, 0.1); return e
 }
 var field359: AXUIElement?
+var window359: AXUIElement?
+var title359 = ""
 var observer359: AXObserver?
 var timer359: Timer?
 var events359: [[String: Any]] = []
@@ -47,7 +49,7 @@ func sample359() {
 func disarm359() {
   timer359?.invalidate(); timer359 = nil
   if let observer359 { CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer359), .defaultMode) }
-  observer359 = nil; field359 = nil; observed359 = false
+  observer359 = nil; field359 = nil; window359 = nil; title359 = ""; observed359 = false
 }
 func handle359(_ q: [String: Any]) -> [String: Any] {
   let started = now359(), op = q["op"] as? String ?? ""
@@ -76,6 +78,7 @@ func handle359(_ q: [String: Any]) -> [String: Any] {
       if let list = read359(e, kAXChildrenAttribute) as? [AnyObject] { nodes += list.compactMap { element359($0 as CFTypeRef) } }
     }
     guard let f = field359 else { return ["error": "fixture text field unavailable", "startedAt": started, "endedAt": now359()] }
+    window359 = w; title359 = expected
     observed359 = q["observe"] as? Bool == true
     if observed359 {
       var observer: AXObserver?
@@ -93,6 +96,13 @@ func handle359(_ q: [String: Any]) -> [String: Any] {
       sample359()
     }
     out["registrations"] = registrations359
+  } else if op == "raise" {
+    // Setup only: a PID may be foreground while its window is still behind the cover (Firefox's held-focus route).
+    guard field359 != nil, let w = window359, !title359.isEmpty,
+          (read359(w, kAXTitleAttribute) as? String)?.contains(title359) == true else { return ["error": "owned foreground window unavailable"] }
+    let error = AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+    out["raiseError"] = error.rawValue; event359("setup-raise", ["error": error.rawValue])
+    if error != .success { out["error"] = "owned foreground window raise failed" }
   } else if op == "mutate" {
     guard let f = field359 else { return ["error": "no bound field"] }
     let kind = q["kind"] as? String ?? ""
@@ -105,7 +115,7 @@ func handle359(_ q: [String: Any]) -> [String: Any] {
     event359("mutation-end", ["name": kind, "error": error.rawValue]); out["axError"] = error.rawValue
     if error != .success { out["error"] = "isolated AX step failed" }
   } else if op == "mark" {
-    out["windows"] = order359(); event359("mark", ["windows": order359()])
+    out["windows"] = order359(); out["frontmostPid"] = NSWorkspace.shared.frontmostApplication?.processIdentifier as Any? ?? NSNull(); event359("mark", ["windows": order359()])
   } else if op == "stop" {
     event359("window-order", order359()); event359("stop"); out["events"] = events359; out["registrations"] = registrations359; out["truncated"] = events359.count >= 10_000
     disarm359()

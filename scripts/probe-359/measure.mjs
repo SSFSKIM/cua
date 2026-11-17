@@ -20,7 +20,10 @@ const diagnosticBrowser=arg('diagnostic-browser')??'all';
 if(DIAGNOSTIC&&!['all',...BROWSERS].includes(diagnosticBrowser))throw Error('invalid diagnostic browser request');
 const diagnosticRequest=DIAGNOSTIC?{kind:DIAGNOSTIC,reps:REPS,browsers:DIAGNOSTIC==='confirm'?['cft']:diagnosticBrowser==='all'?BROWSERS:[diagnosticBrowser],scene:arg('scene')??'foreground-equal'}:null;
 if(diagnosticRequest&&!diagnosticRequest.browsers.includes(BROWSER))throw Error('shard browser is outside diagnostic request');
-const planned=DIAGNOSTIC?diagnosticCells({...diagnosticRequest,browsers:[BROWSER]}):cells({reps:REPS,browsers:[BROWSER],editors:[EDITOR]});
+const routeGroup=arg('route-group')??'all';
+if(!['all','script-keys','ax-actions'].includes(routeGroup)||(DIAGNOSTIC!=='candidates'&&routeGroup!=='all'))throw Error('invalid route group for corpus');
+const shardPlan=DIAGNOSTIC?diagnosticCells({...diagnosticRequest,browsers:[BROWSER]}):cells({reps:REPS,browsers:[BROWSER],editors:[EDITOR]});
+const planned=shardPlan.filter(c=>routeGroup==='all'||(routeGroup==='script-keys'?['script','cmd+a']:['select_text','set_value']).includes(c.selection));
 if(!planned.length)throw Error('empty shard manifest');
 mkdirSync(join(OUT,'shots'),{recursive:true});
 const sleep=ms=>new Promise(r=>setTimeout(r,Math.max(0,ms))),startedAt=Date.now();
@@ -30,7 +33,7 @@ class Wire {
  constructor(socket){this.socket=socket;this.buffer=Buffer.alloc(0);this.pending=new Map();this.serial=0;socket.on('data',d=>{this.buffer=Buffer.concat([this.buffer,d]);while(this.buffer.length>=4){const n=this.buffer.readUInt32LE();if(n>32e6)throw Error('oversized RPC');if(this.buffer.length<n+4)break;const r=JSON.parse(this.buffer.subarray(4,n+4));this.buffer=this.buffer.subarray(n+4);this.pending.get(r.id)?.resolve(r);this.pending.delete(r.id)}});socket.on('error',e=>this.fail(e));socket.on('close',()=>this.fail(Error('engine socket closed')))}
  fail(e){for(const p of this.pending.values())p.reject(e);this.pending.clear()}
  call(method,params){const id=++this.serial,b=Buffer.from(JSON.stringify({jsonrpc:'2.0',id,method,params})),h=Buffer.alloc(4);h.writeUInt32LE(b.length);return new Promise((ok,no)=>{const t=setTimeout(()=>{this.pending.delete(id);no(Error('RPC timeout '+method))},60000);this.pending.set(id,{resolve:r=>{clearTimeout(t);ok(r)},reject:e=>{clearTimeout(t);no(e)}});this.socket.write(Buffer.concat([h,b]))})}
- execute(method,args){return this.call('execute',{method,args,deadlineUnixMilliseconds:Date.now()+55000})}
+ execute(method,args,lineage){return this.call('execute',{method,args,lineage,deadlineUnixMilliseconds:Date.now()+55000})}
  close(){this.socket.destroy()}
 }
 function sidecar(bin){const child=spawn(bin,[],{stdio:['pipe','pipe','inherit']}),pending=[];createInterface({input:child.stdout}).on('line',l=>{const p=pending.shift();if(!p)return;try{p.ok(JSON.parse(l))}catch(e){p.no(e)}});child.on('exit',()=>{for(const p of pending.splice(0))p.no(Error('sidecar exited'))});return {child,ask:q=>new Promise((ok,no)=>{const t=setTimeout(()=>{no(Error('sidecar timeout; abort shard'));child.kill('SIGTERM')},15000);pending.push({ok:r=>{clearTimeout(t);ok(r)},no:e=>{clearTimeout(t);no(e)}});child.stdin.write(JSON.stringify(q)+'\n')})}}
@@ -61,7 +64,7 @@ async function startEngine(bin){
  // Only connecting is retried, never a ping, RPC, or measured action.
  const ping=await w.call('ping',{clientApiVersion:'cua-engine-1',desktop:'shared'});requireOK(ping,'engine ping');
 }
-async function rpc(method,args={}){const startedAt=Date.now(),raw=await w.execute(method,{pid,...args});return {startedAt,endedAt:Date.now(),error:raw.error??null,meta:raw.result?.meta??raw.error?.data?.meta??raw.error?.meta,timings:raw.result?.timings,probe:raw.result?.probe359,raw}}
+async function rpc(method,args={}){const {lineage,...input}=args,startedAt=Date.now(),raw=await w.execute(method,{pid,...input},lineage);return {startedAt,endedAt:Date.now(),error:raw.error??null,meta:raw.result?.meta??raw.error?.data?.meta??raw.error?.meta,timings:raw.result?.timings,probe:raw.result?.probe359??raw.error?.probe359,raw}}
 const clean=r=>{const {raw,...rest}=r;return rest};
 async function bindVisible(){
  const title=await until(async()=>{const r=await tool.ask({op:'window-title',pid});return !r.error&&r.frontmostPid===pid&&/probe354:[a-f0-9]{32}/.test(r.windowTitle??'')?r:false},5000);
@@ -69,6 +72,17 @@ async function bindVisible(){
 }
 function requireOK(r,stage){if(r.error)throw Error(stage+': '+JSON.stringify(r.error))}
 const rows=[];let consecutiveSetupFailures=0;
+async function followingAction(c,target){
+ if(c.selection==='script')return await command({op:'select-all',id:c.id});
+ if(c.selection==='cmd+a')return clean(await rpc('press_key',{key:'cmd+a'}));
+ if(c.selection==='select_text')return clean(await rpc('select_text',{...target,text:SEED,selection_type:'text'}));
+ if(c.selection==='set_value'){const write=await rpc('set_value',{...target,value:REQUESTED});return {...clean(write),answer:write.raw}}
+ throw Error('unknown continuation route');
+}
+async function sceneForeground(c,expectedForeground,row){
+ if(c.foreground){row.foregroundRaise=await watch.ask({op:'raise'});requireOK(row.foregroundRaise,'owned foreground window raise')}
+ row.foregroundTransition=await front(expectedForeground);if(!c.foreground)row.cover=row.foregroundTransition;await sleep(250);
+}
 async function attempt(c){
  budget();const row={...c,requested:REQUESTED,startedAt:Date.now(),smoke:SMOKE,fixtureOwnershipVersion:3,valid:false};let stage='setup';
  try{
@@ -82,12 +96,13 @@ async function attempt(c){
   const state=shot.raw.result,fields=state.nodes.filter(n=>['AXTextArea','AXTextField'].includes(n.role)&&n.frame&&/Draft control|Message Body/.test([n.title,n.description,n.placeholder].join(' ')));
   if(fields.length!==1)throw Error('fixture field AX identity ambiguous/missing '+fields.length);
   const field=fields[0],frame=state.window.frame,scale=state.screenshot.width/frame.width;
+  row.target={element:field.token,lineage:state.lineage};if(['select_text','set_value'].includes(c.selection)&&(!field.token||!state.lineage))throw Error('AX continuation target token/lineage missing');
   row.point={screen:{x:field.frame.x+35,y:field.frame.y+20},source:'fixture monospace AX text-entry frame +35,+20',intendedOffset:3};
-  const observe=c.suite==='trace'||c.suite==='candidate'||c.suite==='isolate';
+  const observe=c.suite==='trace'||c.suite==='type-trace'||c.suite==='candidate'||c.suite==='isolate';
   row.watchBind=await watch.ask({op:'bind',pid,coverPid,title:'probe354:'+row.binding.owner.pageId,observe});requireOK(row.watchBind,'observer binding');
-  row.foregroundTransition=await front(expectedForeground);if(!c.foreground)row.cover=row.foregroundTransition;await sleep(250);
+  await sceneForeground(c,expectedForeground,row);
   row.preClickOrder=await watch.ask({op:'mark'});requireOK(row.preClickOrder,'window order');
-  if(row.preClickOrder.windows.browserAboveCover!==Boolean(c.foreground))throw Error('browser/cover order does not match the scene');
+  if(row.preClickOrder.frontmostPid!==expectedForeground||row.preClickOrder.windows.browserAboveCover!==Boolean(c.foreground))throw Error('foreground PID or browser/cover order does not match the scene');
   row.preClick=await command({op:'read'});
   if(row.preClick.text!==SEED||JSON.stringify(row.preClick.selection)!==JSON.stringify([initialCaret,0])||!row.preClick.focused)throw Error('setup/deactivation changed intended caret');
   row.clockUncertaintyMs=Math.max(2,row.preClick.endedAt-row.preClick.startedAt);
@@ -97,9 +112,10 @@ async function attempt(c){
   else row.click=clean(await rpc('click',{x:Math.round((row.point.screen.x-frame.x)*scale),y:Math.round((row.point.screen.y-frame.y)*scale),...(observe?{spike359Trace:true}:{}),...(c.suite==='candidate'?{spike359Mode:c.mode}:{})}));
   requireOK(row.click,'measured click');stage='selection';
   // Intentionally no observation, read, cover check or sleep between these calls.
-  row.next=c.selection==='script'?await command({op:'select-all',id:c.id}):clean(await rpc('press_key',{key:'cmd+a'}));requireOK(row.next,'selection');
-  if(c.suite!=='trace'&&c.suite!=='isolate'){
-   stage='type';const typed=await rpc('type_text',{text:REQUESTED});row.type={...clean(typed),answer:typed.raw};
+  row.next=await followingAction(c,row.target);if(c.selection==='set_value')row.valueWrite=row.next;
+  if(row.next.error?.errorName!=='valueUnconfirmed')requireOK(row.next,'selection or value write');
+  if(c.selection!=='set_value'&&c.suite!=='trace'&&c.suite!=='isolate'){
+   stage='type';const typed=await rpc('type_text',{text:REQUESTED,...(['type-trace','candidate'].includes(c.suite)?{spike359TypeTrace:true}:{})});row.type={...clean(typed),answer:typed.raw};
    // #354's honest refusal is a measured answer, not a lost outcome or permission to retry.
    if(row.type.error?.errorName!=='typeUnconfirmed')requireOK(row.type,'type_text');
   }
@@ -118,7 +134,7 @@ async function attempt(c){
  finally{row.endedAt=Date.now();rows.push(row);appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');writeFileSync(join(OUT,'progress.json'),JSON.stringify({attempted:rows.length,requested:planned.length,last:row.id,elapsedMs:Date.now()-startedAt},null,2));console.log('359',row.id,row.valid?'scored':row.problem)}
  if(consecutiveSetupFailures>=3)throw Error('three consecutive invalid setups; abort rather than fabricate coverage');
 }
-const meta={schema:1,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,browser:BROWSER,editor:EDITOR,reps:REPS,smoke:SMOKE,diagnostic:DIAGNOSTIC,diagnosticRequest,image:process.env.ImageVersion,startedAt,planned,transport:'354 owner-v3 visible AX title binds nonce/timeOrigin; no hidden Firefox realm',clock:'same hosted machine epoch clocks; monotonic stamps in DOM/Swift; conservative command RTT uncertainty retained',tailMs:1500};
+const meta={schema:1,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,browser:BROWSER,editor:EDITOR,reps:REPS,smoke:SMOKE,diagnostic:DIAGNOSTIC,diagnosticRequest,routeGroup,image:process.env.ImageVersion,startedAt,planned,transport:'354 owner-v3 visible AX title binds nonce/timeOrigin; no hidden Firefox realm',clock:'same hosted machine epoch clocks; monotonic stamps in DOM/Swift; conservative command RTT uncertainty retained',tailMs:1500};
 try{
  browser=await launch(BROWSER,fixtureURL,join(OUT,'profile'),{x:400,y:30,w:620,h:720});pid=browser.pid;await until(()=>transport.clients.size>0,30000);await sleep(BROWSER==='cft'?Math.max(0,browser.launchedAt+22000-Date.now()):1500);placePid(pid,{x:400,y:30,w:620,h:720});
  const doc=join(OUT,'cover.txt');writeFileSync(doc,'#359 disposable cover.');sh('open',['-a','TextEdit',doc]);await sleep(1000);coverPid=Number(sh('pgrep',['-x','TextEdit']).split('\n')[0]);if(!coverPid)throw Error('cover unavailable');placePid(coverPid,{x:360,y:25,w:660,h:740});

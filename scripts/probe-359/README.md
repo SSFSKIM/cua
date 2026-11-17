@@ -79,7 +79,13 @@ The separately authorized diagnostic leaves the full run at kit `6f8c739b` uncha
 
 - `diagnostic=pilot, reps=5, smoke=false`: textarea in all three browsers; foreground/background × caret 3/end; script selection; separate plain rate and instrumented trace arms. 120 requested attempts.
 - `diagnostic=confirm, reps=20, smoke=false`: the closest original scene only (Chrome, foreground, caret 3), script selection, plain and trace. 40 requested attempts, used if the five-repetition pilot does not reproduce.
-- `diagnostic=candidates, reps=20, smoke=false`: the selected `scene` and `diagnostic_browser` (`all` or one browser); original suites, including no-click controls and isolated carriers, with **both script and Cmd+A** selections. This prices candidates on a failing scene, not on a silently substituted clean one.
+- `diagnostic=candidates, reps=20, smoke=false`: the selected `scene` and `diagnostic_browser` (`all` or one browser), with **script selection, Cmd+A, real select_text, and real set_value** continuations. The latter terminates after its value write, with no invented type_text answer. Plain rate/control, no-typing natural trace, a separate instrumented typing trace, and five candidate modes have 20 requested repetitions per cell. Typing trace omits set_value because it does not type; isolated carriers are not repeated in this foreground follow-up. This is 2,100 requested attempts for all three browsers, split into six disjoint route shards (360 script/keyboard and 340 AX-action attempts per browser), within the original per-shard budget.
+
+The pilot `44112583792` kept 16 Firefox foreground window-order setup failures: both helpers reported its PID foreground, but its window remained behind the cover. Foreground-only setup now raises the already nonce-bound owned window once, then verifies fresh PID, physical order, and intended DOM caret before measurement. This setup raise never runs inside a measured interval or in a background cell; product-caused transient reorders remain separately recorded, and no measured input is retried.
+
+The diagnostic-only fifth candidate, **notify-selected**, registers AXSelectedTextChanged on the bound target before the click, pumps a private worker-thread run-loop mode for a soft 1 s, then requires a same-target receipt plus focused/readable range (equal to a written range when there was one). Registration errors, receipt times, observed ranges and teardown errors are retained. A callback may be stale or coalesced: it is a candidate, not a unique acknowledgement. It introduces no input or raises. There is no claimed window-server queue-drained oracle.
+
+The new `type-trace` arm and candidate arms log the existing #354 snapshot and expected-comparison boundaries, with no extra AX reads. Opt-in requires hosted execution, public text exactly `NEW359`, and non-concealed typing. Value evidence is only UTF-16 length and exact-equality flags for the public seed, requested replacement, and offset-3 insertion; raw AX values are never serialized. Plain rate/control remain the unmodified engine. This distinguishes a baseline taken after a caret reversion from a stale AX baseline without inventing its timing from `snapshotMs`.
 
 Diagnostics have their own workflow concurrency group so a pilot can run beside the unchanged full run. Their default is off; a leftover `diagnostic_browser` choice cannot narrow the normal 12-shard corpus. Each diagnostic config retains both its local `planned` manifest and the dispatch-wide `diagnosticRequest` (kind, repetitions, browsers, scene); confirm records only cft regardless of the browser choice. Summarize a downloaded diagnostic directory with `readers.mjs summarize INPUT OUTPUT --diagnostic`; the reader reconstructs the full requested plan from that request, so a browser job that failed before producing a config still counts as missing coverage. Missing or inconsistent requests are rejected, including older configs without this field. The ordinary reader refuses diagnostic rows, and diagnostic groups keep the four scenes separate. Never merge these rows into the 3,680 or into smoke evidence. Actual image/browser versions remain per-shard qualifications.
 
@@ -113,7 +119,7 @@ Denominators are requested attempts and valid scorable attempts side by side. #3
 ## Offline verification commands
 
 ```sh
-node --test scripts/probe-359/offline.test.mjs
+node --test scripts/probe-359/*.test.mjs
 node --test scripts/probe-354/transport.test.mjs
 node --check scripts/probe-359/measure.mjs
 # Compile only; never run these binaries on the owner's Mac:

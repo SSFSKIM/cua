@@ -11,7 +11,10 @@ test('the separate diagnostic crosses equal/end caret with foreground/background
  for(const c of p){assert.equal(c.foreground,c.scene.startsWith('foreground'));assert.equal(c.initialCaret,c.scene.endsWith('equal')?'target':'end')}
  const confirm=readers.diagnosticCells({kind:'confirm',reps:20});assert.equal(confirm.length,40);assert.ok(confirm.every(c=>c.browser==='cft'&&c.scene==='foreground-equal'&&c.selection==='script'));
  const candidates=readers.diagnosticCells({kind:'candidates',reps:20,browsers:['cft'],scene:'foreground-equal'});
- assert.equal(candidates.filter(c=>c.suite==='candidate').length,160);assert.equal(candidates.filter(c=>c.suite==='candidate'&&c.selection==='cmd+a').length,80);
+ assert.equal(candidates.filter(c=>c.suite==='candidate').length,400);assert.equal(candidates.filter(c=>c.suite==='candidate'&&c.selection==='cmd+a').length,100);
+ assert.equal(candidates.filter(c=>c.suite==='type-trace').length,60);assert.equal(candidates.length,700);
+ assert.deepEqual([...new Set(candidates.map(c=>c.selection))],['script','cmd+a','select_text','set_value']);
+ assert.ok(candidates.some(c=>c.mode==='notify-selected'));assert.ok(!candidates.some(c=>c.suite==='isolate'));
 });
 
 import {assertVisibleOwner,page,SEED} from './page.mjs';
@@ -20,6 +23,41 @@ import {readFileSync,writeFileSync,mkdirSync,mkdtempSync,statSync,rmSync} from '
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
+
+test('foreground setup raises the owned window once before activation, while background setup never raises it',async()=>{
+ const source=readFileSync(new URL('./measure.mjs',import.meta.url),'utf8'),calls=[];
+ const ctx=vm.createContext({watch:{ask:async q=>{calls.push(q.op);return {raiseError:0}}},front:async pid=>{calls.push('front:'+pid);return {frontmostPid:pid}},sleep:async()=>{},requireOK:r=>{if(r.error)throw Error(r.error)}});
+ vm.runInContext(source.slice(source.indexOf('async function sceneForeground('),source.indexOf('async function attempt('))+'\nglobalThis.prepare=sceneForeground;',ctx);
+ const foreground={};await ctx.prepare({foreground:true},7,foreground);assert.deepEqual(calls,['raise','front:7']);assert.equal(foreground.foregroundRaise.raiseError,0);
+ calls.length=0;const background={};await ctx.prepare({},8,background);assert.deepEqual(calls,['front:8']);assert.equal(background.cover.frontmostPid,8);
+});
+
+test('typeUnconfirmed retains the instrumented baseline trace on the error response',async()=>{
+ const source=readFileSync(new URL('./measure.mjs',import.meta.url),'utf8'),probe={events:[{kind:'type-snapshot',range:[3,0],seedValue:true}]};
+ const ctx=vm.createContext({pid:7,w:{execute:async()=>({error:{errorName:'typeUnconfirmed',probe359:probe}})}});
+ vm.runInContext(source.slice(source.indexOf('async function rpc('),source.indexOf('async function bindVisible('))+'\nglobalThis.read=async()=>clean(await rpc("type_text"));',ctx);
+ const r=await ctx.read();assert.equal(r.error.errorName,'typeUnconfirmed');assert.deepEqual(JSON.parse(JSON.stringify(r.probe)),probe);
+});
+
+test('element actions carry lineage at the execute boundary rather than inside action args',async()=>{
+ const source=readFileSync(new URL('./measure.mjs',import.meta.url),'utf8');
+ const ctx=vm.createContext({Buffer,setTimeout,clearTimeout});vm.runInContext(source.slice(source.indexOf('class Wire {'),source.indexOf('function sidecar('))+'\nglobalThis.Wire359=Wire;',ctx);
+ const w=new ctx.Wire359({on(){},destroy(){}});w.call=async(method,params)=>({method,params});
+ const r=await w.execute('select_text',{element:'e1',text:SEED},'owned-lineage');assert.equal(r.params.lineage,'owned-lineage');assert.equal(r.params.args.lineage,undefined);assert.equal(r.params.args.element,'e1');
+});
+
+test('real AX continuation routes use the observed field token and lineage without an inserted observation',async()=>{
+ const source=readFileSync(new URL('./measure.mjs',import.meta.url),'utf8'),calls=[];
+ const ctx=vm.createContext({SEED,REQUESTED:'NEW359',clean:r=>r,rpc:async(method,args)=>{calls.push({method,args});return {error:null,raw:{result:{meta:{}}}}},command:async q=>{calls.push(q);return {}}});
+ vm.runInContext(source.slice(source.indexOf('async function followingAction('),source.indexOf('async function sceneForeground('))+'\nglobalThis.next=followingAction;',ctx);
+ await ctx.next({selection:'select_text'},{element:'e1',lineage:'l1'});assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{method:'select_text',args:{element:'e1',lineage:'l1',text:SEED,selection_type:'text'}}]);
+ calls.length=0;await ctx.next({selection:'set_value'},{element:'e1',lineage:'l1'});assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{method:'set_value',args:{element:'e1',lineage:'l1',value:'NEW359'}}]);
+});
+
+test('a set_value terminal outcome is scored without pretending type_text ran',()=>{
+ const r={...row,selection:'set_value',type:undefined,valueWrite:{error:null},samples:[{text:'WRONG'}]};
+ const g=summary([r],[{...cell,selection:'set_value'}]).groups[0];assert.equal(g.wrongFinal,1);assert.deepEqual(g.typeAnswers,{});assert.equal(g.valueAnswers.success,1);assert.equal(g.valueFalseSuccess,1);
+});
 
 function workflowMatrix(inputs){
  const source=readFileSync(new URL('../../.github/workflows/probe-359.yml',import.meta.url),'utf8');
@@ -34,7 +72,7 @@ test('disabled diagnostics ignore leftover browser choices and retain all twelve
   const matrix=workflowMatrix({diagnostic,diagnostic_browser,scene:'background-end'});
   assert.deepEqual(matrix.browser,['safari','cft','firefox']);
   assert.deepEqual(matrix.editor,['textarea','input','contenteditable','compose']);
-  assert.equal(matrix.browser.length*matrix.editor.length,12);
+  assert.deepEqual(matrix.route_group,['all']);assert.equal(matrix.browser.length*matrix.editor.length*matrix.route_group.length,12);
  }
 });
 
@@ -42,7 +80,7 @@ test('enabled diagnostic matrices honor browser selection except confirm always 
  for(const diagnostic of ['pilot','candidates','confirm'])for(const diagnostic_browser of ['all','cft','safari','firefox']){
   const matrix=workflowMatrix({diagnostic,diagnostic_browser});
   assert.deepEqual(matrix.browser,diagnostic==='confirm'?['cft']:diagnostic_browser==='all'?['safari','cft','firefox']:[diagnostic_browser]);
-  assert.deepEqual(matrix.editor,['textarea']);
+  assert.deepEqual(matrix.editor,['textarea']);assert.deepEqual(matrix.route_group,diagnostic==='candidates'?['script-keys','ax-actions']:['all']);
  }
 });
 
@@ -55,10 +93,19 @@ function driverConfig(options){
  return JSON.parse(JSON.stringify(ctx.config));
 }
 
+test('candidate route shards are disjoint while each retains the whole dispatch request',()=>{
+ const base={diagnostic:'candidates',reps:'20',browser:'cft','diagnostic-browser':'all'};
+ const keys=driverConfig({...base,'route-group':'script-keys'}),ax=driverConfig({...base,'route-group':'ax-actions'});
+ assert.equal(keys.planned.length,360);assert.equal(ax.planned.length,340);assert.deepEqual(keys.diagnosticRequest,ax.diagnosticRequest);
+ const keyIds=new Set(keys.planned.map(c=>c.id));assert.ok(ax.planned.every(c=>!keyIds.has(c.id)));
+ assert.equal(readers.diagnosticPlan([keys,ax]).length,2100);
+ assert.throws(()=>driverConfig({diagnostic:'none',smoke:'true','route-group':'ax-actions'}),/route group/);
+});
+
 test('each diagnostic shard records the dispatch request as well as its local planned manifest',()=>{
  const source=readFileSync(new URL('../../.github/workflows/probe-359.yml',import.meta.url),'utf8');
  const step=source.match(/      - name: Measure shared-mode ordering\n([\s\S]*?)      - name:/)[1];
- const env=Object.fromEntries([...step.matchAll(/^          (\w+): \$\{\{ (.*) \}\}$/gm)].map(([,k,expression])=>[k,vm.runInNewContext(expression,{inputs:{diagnostic:'pilot',diagnostic_browser:'cft',reps:'5',smoke:false,scene:'foreground-equal'},matrix:{browser:'cft',editor:'textarea'},github:{event_name:'workflow_dispatch'}})]));
+ const env=Object.fromEntries([...step.matchAll(/^          (\w+): \$\{\{ (.*) \}\}$/gm)].map(([,k,expression])=>[k,vm.runInNewContext(expression,{inputs:{diagnostic:'pilot',diagnostic_browser:'cft',reps:'5',smoke:false,scene:'foreground-equal'},matrix:{browser:'cft',editor:'textarea',route_group:'all'},github:{event_name:'workflow_dispatch'}})]));
  // Capture the actual workflow invocation rather than just asserting that an argument exists.
  const invocation=spawnSync('bash',['-c',`node() { printf '%s\\0' "$@"; }\n${step.slice(step.indexOf('        run: |')+'        run: |'.length)}`],{encoding:'utf8',env:{...process.env,...Object.fromEntries(Object.entries(env).map(([k,v])=>[k,String(v)])),RUNNER_TEMP:'/runner'}});
  assert.equal(invocation.status,0,invocation.stderr);
@@ -112,7 +159,7 @@ test('diagnostic reader reconstructs confirm as cft only and respects a selected
  for(const request of [{kind:'confirm',reps:20,browsers:['cft'],scene:'foreground-equal'},{kind:'candidates',reps:20,browsers:['firefox'],scene:'background-end'}]){
   const result=summarizeDiagnostic([{diagnosticRequest:request,planned:[]}]);
   assert.equal(result.status,0,result.stderr);
-  assert.equal(result.summary.requested,request.kind==='confirm'?40:300);
+  assert.equal(result.summary.requested,request.kind==='confirm'?40:700);
   assert.equal(result.summary.missing.length,result.summary.requested);
   assert.ok(result.summary.groups.every(g=>g.cell.includes('/'+request.browsers[0]+'/')));
  }
@@ -225,5 +272,5 @@ test('diagnostic evidence cannot enter the primary corpus or pool distinct initi
  const s=summary([d,other],[d,other],{diagnostic:true});assert.equal(s.groups.length,2);assert.equal(s.diagnostic,true);assert.equal(s.missing.length,0);
 });
 test('timeline preserves source and click/next-call offsets',()=>{
- const t=timeline(row);const e=t.find(x=>x.source==='engine'&&x.kind==='read');assert.equal(e.clickReturnMs,-2);assert.equal(e.nextStartMs,-2);assert.ok(t.some(x=>x.source==='dom'&&x.kind==='selectionchange'&&x.clickReturnMs===10));
+ const t=timeline({...row,type:{...row.type,probe:{events:[{kind:'type-snapshot',at:106,range:[3,0],seedValue:true}]}}});assert.ok(t.some(x=>x.source==='engine-type'&&x.kind==='type-snapshot'&&x.clickReturnMs===6));const e=t.find(x=>x.source==='engine'&&x.kind==='read');assert.equal(e.clickReturnMs,-2);assert.equal(e.nextStartMs,-2);assert.ok(t.some(x=>x.source==='dom'&&x.kind==='selectionchange'&&x.clickReturnMs===10));
 });

@@ -16,7 +16,8 @@ export function render(root) {
  // DesktopGate does not otherwise import AppKit.
  edit('DesktopGate.swift','import Foundation','import Foundation\nimport AppKit');
  edit('DesktopGate.swift','  DesktopGate.allows("AXUIElementPerformAction(\\(action))") ? AXUIElementPerformAction(element, action as CFString) : .cannotComplete',
-`  var owner: pid_t = 0; AXUIElementGetPid(element, &owner)
+`  if action == kAXPressAction { spike366BeforeThresholdPress() }
+  var owner: pid_t = 0; AXUIElementGetPid(element, &owner)
   spike366Log("perform.begin", ["action": action, "element": CFHash(element), "pid": owner])
   let error = DesktopGate.allows("AXUIElementPerformAction(\\(action))") ? AXUIElementPerformAction(element, action as CFString) : .cannotComplete
   spike366Log("perform.end", ["action": action, "element": CFHash(element), "pid": owner, "error": error.rawValue])

@@ -1,5 +1,5 @@
 name: probe-366
-# #366 ruling 757: first AXPress delivery, not dismissal. Kit pushes run fresh-app smoke; full is manual.
+# #366: actual enablement readiness. Kit pushes smoke the controlled threshold sweep; full modes are manual.
 on:
   push:
     branches: ['probe/366-measure']
@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'AXPress readiness: smoke 40 fresh apps/browser; full 408, observed main/bare cells 20 reps'
+        description: 'Readiness factorial or controlled threshold sweep (8 delays; 2 smoke / 10 full reps)'
         type: choice
-        options: [smoke, full]
+        options: [smoke, full, threshold-smoke, threshold]
         default: smoke
 permissions:
   contents: read
@@ -56,22 +56,27 @@ jobs:
       - name: Measure (never retries the action)
         env:
           BROWSER: ${{ matrix.browser }}
-          SMOKE: ${{ github.event_name == 'push' || inputs.mode == 'smoke' }}
+          SMOKE: ${{ github.event_name == 'push' || inputs.mode == 'smoke' || inputs.mode == 'threshold-smoke' }}
+          THRESHOLD: ${{ github.event_name == 'push' || startsWith(inputs.mode, 'threshold') }}
         run: |
-          node scripts/probe-366/first-press.mjs --browser "$BROWSER" --smoke "$SMOKE" --engine "$RUNNER_TEMP/build366/release/cua-engine" --tool "$RUNNER_TEMP/tool366" --out "$RUNNER_TEMP/probe-366-first/$BROWSER"
+          node scripts/probe-366/first-press.mjs --browser "$BROWSER" --smoke "$SMOKE" --threshold "$THRESHOLD" --engine "$RUNNER_TEMP/build366/release/cua-engine" --tool "$RUNNER_TEMP/tool366" --out "$RUNNER_TEMP/probe-366-first/$BROWSER"
       - name: Read denominators and rates
         if: always()
+        env:
+          THRESHOLD: ${{ github.event_name == 'push' || startsWith(inputs.mode, 'threshold') }}
         run: |
+          READER=first-read.mjs
+          if [ "$THRESHOLD" = true ]; then READER=threshold-read.mjs; fi
           if [ -f "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}/rows.jsonl" ]; then
-            node scripts/probe-366/first-read.mjs summary "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}" > "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}/summary.json"
+            node "scripts/probe-366/$READER" summary "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}" > "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}/summary.json"
             node scripts/probe-366/first-read.mjs readiness "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}" > "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}/readiness.json"
-            node scripts/probe-366/first-read.mjs coverage "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}"
+            node "scripts/probe-366/$READER" coverage "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}"
           fi
       - name: Upload owned-fixture evidence (never its browser profile)
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: probe-366-first-${{ matrix.browser }}-${{ inputs.mode || 'smoke' }}
+          name: probe-366-first-${{ matrix.browser }}-${{ inputs.mode || 'threshold-smoke' }}
           path: |
             ${{ runner.temp }}/probe-366-first/**/rows.jsonl
             ${{ runner.temp }}/probe-366-first/**/config.json

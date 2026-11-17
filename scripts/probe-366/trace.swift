@@ -14,12 +14,17 @@ func spike366Scope(_ args: [String: Any]) -> () -> Void {
   if let p = args["probe366InertPoint"] as? [NSNumber], p.count == 2 {
     Thread.current.threadDictionary["probe366InertPoint"] = p.map { $0.doubleValue }
   }
+  if let deadline = args["probe366PressDeadline"] as? Double, deadline.isFinite {
+    Thread.current.threadDictionary["probe366PressDeadline"] = deadline
+  }
   spike366Log("scope.begin")
   return {
     spike366Log("scope.end")
     Thread.current.threadDictionary.removeObject(forKey: "probe366Variant")
     Thread.current.threadDictionary.removeObject(forKey: "probe366Id")
     Thread.current.threadDictionary.removeObject(forKey: "probe366InertPoint")
+    Thread.current.threadDictionary.removeObject(forKey: "probe366PressDeadline")
+    Thread.current.threadDictionary.removeObject(forKey: "probe366SignalElement")
   }
 }
 func spike366Log(_ kind: String, _ fields: [String: Any] = [:]) {
@@ -33,6 +38,34 @@ func spike366Log(_ kind: String, _ fields: [String: Any] = [:]) {
      let text = String(data: bytes, encoding: .utf8) {
     FileHandle.standardError.write(Data(("PROBE366 " + text + "\n").utf8))
   }
+}
+
+// Keep the long wait outside the production activation hold, then gate the API itself on the same wall clock.
+private func spike366WaitUntil(_ deadline: Double) {
+  while true {
+    let remaining = deadline - Date().timeIntervalSince1970 * 1000
+    if remaining <= 0 { return }
+    usleep(UInt32(min(remaining * 1000, 50_000)))
+  }
+}
+func spike366BeforeThresholdArming() {
+  guard let deadline = Thread.current.threadDictionary["probe366PressDeadline"] as? Double else { return }
+  spike366WaitUntil(deadline - 400)
+  spike366Log("threshold.arming",["deadline":deadline])
+}
+func spike366BeforeThresholdPress() {
+  guard let deadline = Thread.current.threadDictionary["probe366PressDeadline"] as? Double else { return }
+  spike366WaitUntil(deadline)
+  var record: [String:Any] = ["deadline":deadline,"readStartedAt":Date().timeIntervalSince1970 * 1000]
+  if let raw = Thread.current.threadDictionary["probe366SignalElement"] {
+    let field = raw as! AXUIElement
+    var value: CFTypeRef?, pid: pid_t = 0
+    AXUIElementGetPid(field,&pid)
+    let error = AXUIElementCopyAttributeValue(field,kAXPlaceholderValueAttribute as CFString,&value)
+    record["pid"] = pid; record["error"] = error.rawValue
+    record["value"] = (value as? String) as Any? ?? NSNull()
+  } else { record["error"] = "element-missing" }
+  spike366Log("threshold.signal",record)
 }
 
 // candidate-point:begin

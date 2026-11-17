@@ -14,11 +14,14 @@ import {firstReadiness} from './first-readiness.mjs';
 import {finalizeTiming} from './first-timing.mjs';
 import {recordSample,deriveEffects} from './first-effects.mjs';
 import {removeProfile} from './first-cleanup.mjs';
+import {thresholdPlan,thresholdJudge,thresholdSummarize,thresholdCoverage} from './threshold-read.mjs';
+import {ownedReference} from './threshold-control.mjs';
 import {windowOptions} from './fixture/window-options.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1];};
 const OUT=resolve(arg('out')),ENGINE=arg('engine'),TOOL=arg('tool'),browser=arg('browser'),smoke=arg('smoke')==='true';
-const dir=dirname(fileURLToPath(import.meta.url)),fixture=join(dir,'fixture'),start=Date.now(),cells=firstPlan({browser,smoke});
+const threshold=arg('threshold')==='true';
+const dir=dirname(fileURLToPath(import.meta.url)),fixture=join(dir,'fixture'),start=Date.now(),cells=(threshold?thresholdPlan:firstPlan)({browser,smoke});
 const electron=browser.startsWith('electron'),style=browser==='electron-parity'?'maws':'default';
 const sleep=ms=>new Promise(ok=>setTimeout(ok,Math.max(0,ms)));
 async function until(fn,ms=10000){const end=Date.now()+ms;while(Date.now()<end){const v=await fn();if(v)return v;await sleep(20);}throw Error('condition timeout');}
@@ -64,7 +67,7 @@ async function stopOwned(child){
  try{await until(()=>child.exitCode!==null||child.signalCode!==null,5000);return true;}
  catch{child.kill('SIGKILL');try{await until(()=>child.exitCode!==null||child.signalCode!==null,2000);return true;}catch{return false;}}
 }
-const config={schema:4,experiment:'first-press-readiness',ruling:757,browser,smoke,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,
+const config={schema:5,experiment:threshold?'threshold-press':'first-press-readiness',ruling:757,browser,smoke,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,
  image:process.env.ImageVersion,startedAt:start,cells,windowStyle:electron?style:'browser',windowOptions:electron?windowOptions(style):null,
  cold:'fresh app/profile; no earlier native AXPress',warm:'fresh app/profile; one earlier foreground bare primer AXPress, marker-checked even if dropped; no activation hold',
  observation:'aged+observed: early full getState then another just before press; immediate+observed: one just before; unobserved: no pre-press full walk, only minimal target lookup; smoke screenshots follow the entire 3s effect window',
@@ -74,7 +77,8 @@ const config={schema:4,experiment:'first-press-readiness',ruling:757,browser,smo
  carrier:'probe-only named AXButton resolution, then production input enablement, actionRoute, cursor announcement and elementActionClick in every arm',
  confirmation:'only the handler marker; dialog survival is never confirmation',timelineClock:'renderer wallAt, Electron main Date.now and native wall clock; events within 1ms unordered',
  pointCandidates:'native probe copy: titlebar 75% across visible window top+14; toolbar visible web area x+min(400,width/2) top+22; original window ID retained',
- sideEffectOtherPointer:'a page pointer outside action/primer, or changed active owned-window title',budgetMinutes:75};
+ sideEffectOtherPointer:'a page pointer outside action/primer, or changed active owned-window title',budgetMinutes:threshold?25:75,
+ threshold:threshold?{delaysMs:[1500,1750,2000,2250,2500,2750,3000,3500],reps:smoke?2:10,reference:'actual last owned Manual/Enhanced write.end',control:'native pre-arming wait to deadline-400ms, then final gate immediately before API',signal:'direct AXPlaceholderValue on labeled fixture field at final native gate',timingToleranceMs:75}:null};
 writeFileSync(join(OUT,'config.json'),JSON.stringify(config,null,2));
 let complete=0,invalid=0,consecutiveInvalid=0;
 try {
@@ -89,7 +93,7 @@ try {
  config.browserVersion=electron?JSON.parse(readFileSync(join(fixture,'node_modules/electron/package.json'),'utf8')).version:spawnSync(bin,['--version'],{encoding:'utf8',timeout:10000}).stdout.trim();
  writeFileSync(join(OUT,'config.json'),JSON.stringify(config,null,2));
  for(const cell of cells) {
-  if(Date.now()-start>75*60000)throw Error('75 minute budget exceeded; critical observed cells precede exploratory cells');
+  if(Date.now()-start>config.budgetMinutes*60000)throw Error(config.budgetMinutes+' minute budget exceeded');
   transport.close();transport=newTransport();trace=[];
   const row={...cell,smoke,appLaunchId:randomUUID(),valid:false,targetObservationCount:0,startedAt:Date.now(),sideEffects:{dialogClosed:false,frontmostChanged:false,raised:false,windowMoved:false,otherPointer:false,ownerLost:false}};
   const profile=join(OUT,'profiles',row.appLaunchId);mkdirSync(profile,{recursive:true});
@@ -132,8 +136,15 @@ try {
    row.preMeasureAXPressCount=trace.filter(e=>e.kind==='perform.begin'&&e.action==='AXPress').length;
    if(row.preMeasureAXPressCount!==(cell.temperature==='warm'?1:0))throw Error('unexpected previous native AXPress count '+row.preMeasureAXPressCount);
    row.frontBefore=await front(coverPid,false);row.ageAtPressMs=Date.now()-row.launchedAt;
+   const timingArgs={};
+   if(threshold) {
+    stage='timing-reference';
+    const attribute=electron?'AXManualAccessibility':'AXEnhancedUserInterface';
+    row.referenceEnablementWrite=await until(()=>ownedReference(trace,pid,attribute),1000);
+    timingArgs.probe366PressDeadline=row.referenceEnablementWrite.at+cell.requestedDelayMs;
+   }
    row.valid=true;stage='action';
-   row.call=await rpc(w,pid,'click',{probe366NamedButton:'Run probe button',probe366Variant:cell.variant,probe366Id:cell.id});
+   row.call=await rpc(w,pid,'click',{probe366NamedButton:'Run probe button',probe366Variant:cell.variant,probe366Id:cell.id,...timingArgs});
    stage='readback';row.samples=[];
    for(const requestedMs of config.sampleDelays) {
     await sleep(row.call.endedAt+requestedMs-Date.now());
@@ -163,7 +174,8 @@ try {
   finalizeTiming(row,trace,appInfo);
   row.inertClicks=row.trace.filter(e=>e.kind==='activation.click');
   Object.assign(row.sideEffects,deriveEffects(row,coverPid));
-  row.endedAt=Date.now();row.judgment=firstJudge(row);
+  if(threshold)row.thresholdSignal=row.trace.find(e=>e.kind==='threshold.signal')??null;
+  row.endedAt=Date.now();row.judgment=(threshold?thresholdJudge:firstJudge)(row);
   appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');complete++;
   if(!row.judgment.eligible){invalid++;consecutiveInvalid++;}else consecutiveInvalid=0;
   writeFileSync(join(OUT,'progress.json'),JSON.stringify({complete,planned:cells.length,invalid,last:cell.id,elapsedMs:Date.now()-start},null,2));
@@ -172,8 +184,8 @@ try {
   if(consecutiveInvalid>=3)throw Error('three consecutive invalid cells; stop on broken setup');
  }
  const rows=readFileSync(join(OUT,'rows.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
- writeFileSync(join(OUT,'summary.json'),JSON.stringify(firstSummarize(rows),null,2));
- writeFileSync(join(OUT,'coverage.json'),JSON.stringify(firstCoverage(rows,{browser,smoke}),null,2));
+ writeFileSync(join(OUT,'summary.json'),JSON.stringify((threshold?thresholdSummarize:firstSummarize)(rows),null,2));
+ writeFileSync(join(OUT,'coverage.json'),JSON.stringify((threshold?thresholdCoverage:firstCoverage)(rows,{browser,smoke}),null,2));
  writeFileSync(join(OUT,'readiness.json'),JSON.stringify(firstReadiness(rows),null,2));
  if(invalid)process.exitCode=1;
 } catch(e){writeFileSync(join(OUT,'fatal.json'),JSON.stringify({error:String(e.stack??e),complete,planned:cells.length},null,2));throw e;}

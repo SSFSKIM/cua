@@ -4,12 +4,12 @@ import Foundation
 
 // Probe-only target resolution: no Skyshot, lineage walk, AXValue read or full observation.
 // The normal click execute pipeline still performs its production input enablement before this method.
-private func spike366FindButton(_ application: AXUIElement, name: String) -> AXUIElement? {
+private func spike366FindButton(_ application: AXUIElement, name: String, role: String = kAXButtonRole) -> AXUIElement? {
   var queue = [application], seen = Set<CFHashCode>(), i = 0
   while i < queue.count && i < 500 {
     let e = prepare(queue[i]); i += 1
     if !seen.insert(CFHash(e)).inserted { continue }
-    if attribute(e,kAXRoleAttribute) as? String == kAXButtonRole,
+    if attribute(e,kAXRoleAttribute) as? String == role,
        (attribute(e,kAXTitleAttribute) as? String == name || attribute(e,kAXDescriptionAttribute) as? String == name) { return e }
     queue += (attribute(e,kAXChildrenAttribute) as? [AXUIElement]) ?? []
   }
@@ -53,6 +53,12 @@ extension Engine {
         "screenFrame":spike366FrameWire(screen),"candidatePoint":candidate.map { [Double($0.x),Double($0.y)] } as Any? ?? NSNull()]
       spike366Log("named.lookup",probe)
       meta.elementClick = elementClickRecord(.action(kAXPressAction),forced:.action,button:.left,count:1,actions:actions,hit:nil)
+      if Thread.current.threadDictionary["probe366PressDeadline"] != nil {
+        if let field = spike366FindButton(primaryWindow(of:application) ?? application,name:"Probe search",role:kAXTextFieldRole) {
+          Thread.current.threadDictionary["probe366SignalElement"] = field
+        }
+        spike366BeforeThresholdArming()
+      }
       try armingSettle(&meta,acted:{ context.connection.markActed(app) }) { meta in
         try elementActionClick(button,owner:owner,action:kAXPressAction,route:actionRoute(owner:owner,app:app,connection:context.connection),
                                point:pointing.point,windowID:pointing.windowID,app:app,appPid:pid,guarding:guarding,context:context,meta:&meta)

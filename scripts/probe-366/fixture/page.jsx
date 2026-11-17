@@ -23,8 +23,8 @@ function outside(type,e) {
  queueMicrotask(()=>note(type+'.after',{defaultPrevented:e.defaultPrevented}));
 }
 function Fixture() {
- const [open,setOpen]=useState(false),[presses,setPresses]=useState(0),[value,setValue]=useState('');
- useLayoutEffect(()=>{api={open,presses,value,setOpen,setPresses,setValue};});
+ const [open,setOpen]=useState(false),[presses,setPresses]=useState(0),[value,setValue]=useState(''),[primerPresses,setPrimerPresses]=useState(0);
+ useLayoutEffect(()=>{api={open,presses,value,primerPresses,setOpen,setPresses,setValue};});
  return <main>
   <header id="toolbar" data-toolbar style={{height:chrome.toolbarHeight,boxSizing:'border-box',display:'flex',alignItems:'center',minWidth:0,borderBottom:'1px solid #aaa',background:'#faf9f6',userSelect:'none',WebkitAppRegion:chrome.drag}}>
    <div style={{width:300,boxSizing:'border-box',height:'100%',display:'flex',alignItems:'center',justifyContent:'flex-end',gap:4,flexShrink:0,paddingLeft:chrome.trafficLightPadding,paddingRight:12}}>
@@ -37,6 +37,8 @@ function Fixture() {
    </div>
   </header>
   <h1>Owned dialog probe</h1><button id="outside">Outside button</button>
+  <button id="primer" onClick={()=>{note('primer.handler');setPrimerPresses(n=>n+1);}}>Prime probe button</button>
+  <p>{`Primer marker ${primerPresses}`}</p>
   <Dialog.Root open={open} onOpenChange={next=>{note('onOpenChange',{open:next,reason});setOpen(next);}}>
    <Dialog.Trigger id="trigger">Open dialog</Dialog.Trigger>
    <Dialog.Portal>
@@ -63,7 +65,7 @@ createRoot(document.getElementById('root')).render(<Fixture/>);
 function snapshot() {
  const toolbar=document.getElementById('toolbar'),control=document.getElementById('sidebar-control'),rect=toolbar.getBoundingClientRect();
  const chrome={toolbarHeight:rect.height,toolbarRegion:getComputedStyle(toolbar).getPropertyValue('-webkit-app-region'),controlRegion:getComputedStyle(control).getPropertyValue('-webkit-app-region')};
- return {pageId,timeOrigin,trial,at:at(),wallAt:Date.now(),visibility:document.visibilityState,hasFocus:document.hasFocus(),active:label(document.activeElement),open:!!document.getElementById('content'),presses:api.presses,value:document.getElementById('search')?.value??null,reactValue:api.value,trap:window.__probe366Trap,chrome,events:[...events]};
+ return {pageId,timeOrigin,trial,at:at(),wallAt:Date.now(),visibility:document.visibilityState,hasFocus:document.hasFocus(),active:label(document.activeElement),open:!!document.getElementById('content'),presses:api.presses,primerPresses:api.primerPresses,value:document.getElementById('search')?.value??null,reactValue:api.value,trap:window.__probe366Trap,chrome,events:[...events]};
 }
 async function command(q) {
  if(q.op==='reset') {

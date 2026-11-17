@@ -84,6 +84,24 @@ func order(_ pid: pid_t, _ cover: pid_t) -> [String: Any] {
  let c = ordinary.firstIndex { ($0[kCGWindowOwnerPID as String] as? Int) == Int(cover) }
  return ["targetAboveCover":t.flatMap { ti in c.map { ti < $0 } } as Any? ?? NSNull()]
 }
+func rect(_ e: AXUIElement) -> CGRect? {
+ guard let pv = attr(e,kAXPositionAttribute), CFGetTypeID(pv) == AXValueGetTypeID(),
+       let sv = attr(e,kAXSizeAttribute), CFGetTypeID(sv) == AXValueGetTypeID() else { return nil }
+ var p = CGPoint.zero, s = CGSize.zero
+ guard AXValueGetValue(pv as! AXValue,.cgPoint,&p), AXValueGetValue(sv as! AXValue,.cgSize,&s) else { return nil }
+ return CGRect(origin:p,size:s)
+}
+func wireRect(_ r: CGRect) -> [String:Double] { ["x":r.minX,"y":r.minY,"width":r.width,"height":r.height] }
+func geometry(_ pid: pid_t) -> [String:Any] {
+ guard let c = bound[pid] else { return [:] }
+ let scan = walk(c.window), web = scan.nodes.first { $0.role == "AXWebArea" }
+ let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements],kCGNullWindowID) as? [[String:Any]] ?? []
+ let owned = list.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(pid) && ($0[kCGWindowLayer as String] as? Int) == 0 }
+ return ["windowFrame":rect(c.window).map(wireRect) as Any? ?? NSNull(),
+         "webAreaFrame":web.flatMap { rect($0.element) }.map(wireRect) as Any? ?? NSNull(),
+         "screenFrame":wireRect(CGDisplayBounds(CGMainDisplayID())),
+         "windows":owned.map { ["id":$0[kCGWindowNumber as String] as Any? ?? NSNull(),"bounds":$0[kCGWindowBounds as String] as Any? ?? NSNull()] }]
+}
 func emit(_ v: [String: Any]) {
  if let data = try? JSONSerialization.data(withJSONObject: v, options: [.sortedKeys]), let s = String(data:data,encoding:.utf8) { print(s); fflush(stdout) }
 }
@@ -105,8 +123,9 @@ if CommandLine.arguments.contains("--cover") {
    while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid && now() < deadline { RunLoop.current.run(until:Date().addingTimeInterval(0.01)) }
    r["ok"] = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
   } else if op == "title" { r["title"] = window(pid).map { text($0,kAXTitleAttribute) } as Any? ?? NSNull() }
-  else if op == "bind" { _ = try bind(pid); r["ax"] = read(pid) }
-  else if op == "read" { r["ax"] = read(pid) }
+  else if op == "bind" { _ = try bind(pid); r["ax"] = read(pid); r["geometry"] = geometry(pid) }
+  else if op == "read" { r["ax"] = read(pid); if q["geometry"] as? Bool == true { r["geometry"] = geometry(pid) } }
+  else if op == "forget" { bound.removeValue(forKey:pid); r["ok"] = true }
   else if op.hasPrefix("raw-") {
    guard let c = bound[pid] else { throw NSError(domain:"bind first",code:3) }
    let error: AXError

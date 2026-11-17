@@ -1,5 +1,5 @@
 name: probe-366
-# Kit pushes run smoke. Dispatch full only after the parity fixture reproduces a dismissal.
+# #366 ruling 757: first AXPress delivery, not dismissal. Kit pushes run fresh-app smoke; full is manual.
 on:
   push:
     branches: ['probe/366-measure']
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'smoke: one repetition, ~5 minutes; full: 20 rate / 3 diagnostic repetitions, ~1 hour'
+        description: 'first AXPress: smoke 16 fresh apps per browser; full 320 per browser, 20 reps per factorial cell'
         type: choice
         options: [smoke, full]
         default: smoke
@@ -58,30 +58,30 @@ jobs:
           BROWSER: ${{ matrix.browser }}
           SMOKE: ${{ github.event_name == 'push' || inputs.mode == 'smoke' }}
         run: |
-          node scripts/probe-366/measure.mjs --browser "$BROWSER" --smoke "$SMOKE" --engine "$RUNNER_TEMP/build366/release/cua-engine" --tool "$RUNNER_TEMP/tool366" --out "$RUNNER_TEMP/probe-366/$BROWSER"
+          node scripts/probe-366/first-press.mjs --browser "$BROWSER" --smoke "$SMOKE" --engine "$RUNNER_TEMP/build366/release/cua-engine" --tool "$RUNNER_TEMP/tool366" --out "$RUNNER_TEMP/probe-366-first/$BROWSER"
       - name: Read denominators and rates
         if: always()
         run: |
-          if [ -f "$RUNNER_TEMP/probe-366/${{ matrix.browser }}/rows.jsonl" ]; then
-            node scripts/probe-366/read.mjs summary "$RUNNER_TEMP/probe-366/${{ matrix.browser }}" > "$RUNNER_TEMP/probe-366/${{ matrix.browser }}/summary.json"
-            node scripts/probe-366/read.mjs coverage "$RUNNER_TEMP/probe-366/${{ matrix.browser }}"
+          if [ -f "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}/rows.jsonl" ]; then
+            node scripts/probe-366/first-read.mjs summary "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}" > "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}/summary.json"
+            node scripts/probe-366/first-read.mjs coverage "$RUNNER_TEMP/probe-366-first/${{ matrix.browser }}"
           fi
       - name: Upload owned-fixture evidence (never its browser profile)
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: probe-366-${{ matrix.browser }}-${{ inputs.mode || 'smoke' }}
+          name: probe-366-first-${{ matrix.browser }}-${{ inputs.mode || 'smoke' }}
           path: |
-            ${{ runner.temp }}/probe-366/**/rows.jsonl
-            ${{ runner.temp }}/probe-366/**/config.json
-            ${{ runner.temp }}/probe-366/**/progress.json
-            ${{ runner.temp }}/probe-366/**/fatal.json
-            ${{ runner.temp }}/probe-366/**/summary.json
-            ${{ runner.temp }}/probe-366/**/transport.jsonl
-            ${{ runner.temp }}/probe-366/**/engine-stderr.txt
-            ${{ runner.temp }}/probe-366/**/app-stdout.txt
-            ${{ runner.temp }}/probe-366/**/app-stderr.txt
-            ${{ runner.temp }}/probe-366/**/process-error.txt
-            ${{ runner.temp }}/probe-366/**/initial-observation.json
-            ${{ runner.temp }}/probe-366/**/shots/**
+            ${{ runner.temp }}/probe-366-first/**/rows.jsonl
+            ${{ runner.temp }}/probe-366-first/**/config.json
+            ${{ runner.temp }}/probe-366-first/**/progress.json
+            ${{ runner.temp }}/probe-366-first/**/fatal.json
+            ${{ runner.temp }}/probe-366-first/**/summary.json
+            ${{ runner.temp }}/probe-366-first/**/transport.jsonl
+            ${{ runner.temp }}/probe-366-first/**/engine-stderr.txt
+            ${{ runner.temp }}/probe-366-first/**/app-stdout.txt
+            ${{ runner.temp }}/probe-366-first/**/app-stderr.txt
+            ${{ runner.temp }}/probe-366-first/**/process-error.txt
+            ${{ runner.temp }}/probe-366-first/**/coverage.json
+            ${{ runner.temp }}/probe-366-first/**/shots/**
           if-no-files-found: warn

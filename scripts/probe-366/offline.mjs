@@ -9,7 +9,7 @@ function run(bin,args){const r=spawnSync(bin,args,{stdio:'inherit'});if(r.status
 for(const name of readdirSync(dir).filter(n=>n.endsWith('.mjs')))run(process.execPath,['--check',join(dir,name)]);
 run(process.execPath,['--check',join(dir,'fixture/main.cjs')]);
 for(const name of readdirSync(join(dir,'fixture')).filter(n=>n.endsWith('.mjs')))run(process.execPath,['--check',join(dir,'fixture',name)]);
-run(process.execPath,['--test',join(dir,'kit.test.mjs')]);
+run(process.execPath,['--test',...readdirSync(dir).filter(n=>n.endsWith('.test.mjs')).map(n=>join(dir,n))]);
 run(process.execPath,[join(dir,'build-fixture.mjs')]);
 mkdirSync(join(dir,'.offline'),{recursive:true});const scratch=mkdtempSync(join(dir,'.offline/parse-'));
 try {

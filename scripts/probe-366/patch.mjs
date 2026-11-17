@@ -41,7 +41,14 @@ export function render(root) {
   guard let role = fieldNeedingFocus(element, ax: ax) else { return false }`);
  edit('Activation.swift','  private func postClick(at point: CGPoint) {',
 `  private func postClick(at point: CGPoint) {
-    if spike366Variant == "no-click" { spike366Log("candidate.skipActivationClick", ["x": point.x, "y": point.y]); return }`);
+    if spike366Variant == "no-click" { spike366Log("candidate.skipActivationClick", ["x": point.x, "y": point.y]); return }
+    let actual = spike366InertPoint ?? point
+    spike366Log("activation.click", ["pid": pid, "window": windowID ?? 0, "plannedX": point.x, "plannedY": point.y,
+                                    "x": actual.x, "y": actual.y, "overridden": spike366InertPoint != nil])
+    postClick366(at: actual)
+  }
+
+  private func postClick366(at point: CGPoint) {`);
  edit('Input.swift','        let pointing = ElementPointing(target.element, owner: target.owner, ax: ax)',
 `        if args["probe366HoldOnly"] as? Bool == true {
           try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)

@@ -102,8 +102,9 @@ func unfocusedValueReadback(_ written: CFTypeRef, concealed: Bool, closed: () ->
   return readback
 }
 
-/// Whether a value read is the value written: a string written compares as text (`writtenValueRead`), a string or an
-/// attributed string read; any other value (a number, a Boolean, a date) by CFEqual. Nothing read is no match.
+/// Whether a value read is the value written: a string written compares as text, a string or an attributed string
+/// read, by #359's set_value watch rule (ClickOrdering.swift `writtenValueRead`: UTF-16 equal, or a strict prefix at
+/// Chromium's cap); any other value (a number, a Boolean, a date) by CFEqual. Nothing read is no match.
 func writtenValueMatches(_ found: CFTypeRef?, _ written: CFTypeRef) -> Bool {
   guard let found else { return false }
   guard CFGetTypeID(written) == CFStringGetTypeID() else { return CFEqual(found, written) }
@@ -114,16 +115,6 @@ func writtenValueMatches(_ found: CFTypeRef?, _ written: CFTypeRef) -> Bool {
   default: return false
   }
   return writtenValueRead(text, as: written as! String)
-}
-
-/// Whether a value read is the value written: equal in UTF-16 units, or, read at Chromium's cap
-/// (`readbackMayBeTruncated`), the written value cut there (a strict prefix of it); any other difference near the cap
-/// is a difference.
-func writtenValueRead(_ found: String, as written: String) -> Bool {
-  if found.utf16.elementsEqual(written.utf16) { return true }
-  guard readbackMayBeTruncated(found) else { return false }
-  let read = Array(found.utf16), whole = Array(written.utf16)
-  return read.count < whole.count && whole.starts(with: read)
 }
 
 /// The unfocused write's terms for `setElementValue`: the refusal a write the field does not accept answers (main's

@@ -35,6 +35,9 @@ import Foundation
 //   submits text that went in wrong; the key adds nothing to the expected value, and every one posted is counted
 //   `keysUnconfirmed`, its effect not confirmed. Text after it is expected in the same field, so focus that moved with a
 //   Tab answers `fieldChanged`.
+// - A posted click can land after the snapshot and move the caret back (#359, ruling 1ea561bc:785, ClickOrdering.swift):
+//   within its window the snapshot first waits for the field's range to hold still, and within a second of select_text
+//   for the range select_text wrote, which still missing at the cap means nothing is typed (`selectionChanged`).
 // The paste route (Paste.swift, a non-Latin input source) keeps #187's effect check and is not read back here; its
 // read-back is #361.
 
@@ -65,6 +68,8 @@ enum ReadbackSubrole: Equatable {
 enum TypeReadbackReason: String, Equatable {
   case noFocusedElement, roleUnreadable, secure, notTextField, valueUnreadable, rangeUnreadable, possiblyTruncated
   case valueMismatch, concealedMismatch, unchanged, becameSecure, fieldUnreadable, fieldChanged
+  /// The field's range was not select_text's within the cap (#359): nothing was typed.
+  case selectionChanged
 }
 
 /// Whether nothing of a field's value or range may be read: role or subrole AXSecureTextField, or a role or subrole that
@@ -325,12 +330,39 @@ enum ReadbackPlan<Element> {
 
 /// The snapshot; `settle`, when not nil, settles it first (`readbackSettle`) and records what that did. The settle comes
 /// after the secure and text-role checks, so it never reads a field the snapshot would not.
+///
+/// #359 (ruling 785): `baseline`, when not nil, waits first, after the same checks and before the value is read, on the
+/// field's range read every `pendingClickSampleMs` with its role and subrole checked before each read as the settle
+/// does (`awaitRange`, recorded in `waited`): for select_text's range, which still not read at the cap refuses the
+/// snapshot as `selectionChanged` (nothing is then typed), as does a snapshot whose own range, read after the wait and
+/// after any settle, is not that range; for a stable range, which at the cap goes on regardless.
 func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout ReadbackSettle?) -> ReadbackPlan<Element> {
+  var waited: RangeWait?
+  return readbackSnapshot(reads: reads, settle: &settle, baseline: nil, waited: &waited)
+}
+
+func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout ReadbackSettle?, baseline: BaselineWait?,
+                               waited: inout RangeWait?) -> ReadbackPlan<Element> {
   guard let field = reads.focused() else { return .refused(.noFocusedElement) }
   guard let role = reads.role(field) else { return .refused(.roleUnreadable) }
   let subrole = reads.subrole(field)
   if readbackSecure(role: role, subrole: subrole) { return .refused(.secure) }
   guard typeReadbackTextRoles.contains(role) else { return .refused(.notTextField) }
+  if let baseline {
+    var closed: TypeReadbackReason?
+    let goal: RangeGoal<NSRange>
+    switch baseline {
+    case .stable: goal = .stable
+    case .selection(let written): goal = .equals(written)
+    }
+    let wait = awaitRange(goal, read: {
+      if let why = readbackFieldClosed(field, role: role, reads: reads) { closed = why; return .closed }
+      return reads.range(field).map { .sample($0) } ?? .unread
+    }, now: reads.now, sleep: reads.sleep)
+    waited = wait
+    if let closed { return .refused(closed) }
+    if case .selection = baseline, !wait.met { return .refused(.selectionChanged) }
+  }
   guard var before = reads.value(field) else { return .refused(.valueUnreadable) }
   if readbackMayBeTruncated(before) { return .refused(.possiblyTruncated) }
   guard var range = reads.range(field), readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
@@ -340,6 +372,9 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
     if readbackMayBeTruncated(before) { return .refused(.possiblyTruncated) }
     guard readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
   }
+  // The starting point itself, after any settle, must still be select_text's range: a click landing after the wait's
+  // read would otherwise be adopted, and the read-back would confirm text typed at its caret.
+  if case .selection(let written) = baseline, range != written { return .refused(.selectionChanged) }
   return .expect(field: field, role: role, before: before, range: range, returnIsText: readbackReturnIsText(role: role, subrole: subrole))
 }
 
@@ -441,6 +476,11 @@ struct TypeReadbackRecord: Equatable {
   /// whether its cap ended it. A plain request's only; a concealed one's time shows in `snapshotMs`.
   var settleReads = 0
   var settleCapped = false
+  /// #359's wait before the snapshot (`readbackSnapshot`'s `baseline`), when a pending click or select_text asked for
+  /// one: which, its reads and time, and whether the cap ended it. A plain request's only; a concealed one's time shows
+  /// in `snapshotMs`, and its reason says `selectionChanged`.
+  var baseline: BaselineWait?
+  var baselineWait: RangeWait?
   /// A concealed request's record (the review of dad56362..af1860ef, P2): no count and no poll time on the wire, since the
   /// checkpoints, the keys and the reads and time of each checkpoint's poll tell how many control characters and
   /// segments the secret holds (a secret of keys alone, its length); a key left unconfirmed is a flag.
@@ -466,6 +506,11 @@ struct TypeReadbackRecord: Equatable {
     if placeholderCaretUnread { wire["placeholderCaretUnread"] = true }
     if settleReads > 0 { wire["settleReads"] = settleReads }
     if settleCapped { wire["settleCapped"] = true }
+    if let baseline, let baselineWait {
+      var wait = baselineWait.wire
+      wait["for"] = baseline == .stable ? "stable" : "selection"
+      wire["baselineWait"] = wait
+    }
     return wire
   }
 }
@@ -481,15 +526,18 @@ final class TypeReadback<Element> {
   private var unchecked = false
   private(set) var record = TypeReadbackRecord()
 
-  init(units: [TypedUnit], concealed: Bool, settle: Bool, reads: ReadbackReads<Element>) {
+  init(units: [TypedUnit], concealed: Bool, settle: Bool, baseline: BaselineWait? = nil, reads: ReadbackReads<Element>) {
     self.units = units
     self.reads = reads
     self.concealed = concealed
     record.concealed = concealed
     let started = reads.now()
     var settled: ReadbackSettle? = settle ? ReadbackSettle() : nil
-    plan = readbackSnapshot(reads: reads, settle: &settled)
+    var waited: RangeWait?
+    plan = readbackSnapshot(reads: reads, settle: &settled, baseline: baseline, waited: &waited)
     record.snapshotMs = reads.now() - started
+    record.baseline = baseline
+    record.baselineWait = waited
     record.settleReads = settled?.reads ?? 0
     record.settleCapped = settled?.capped ?? false
     if case .refused(let reason) = plan { record.reason = reason }
@@ -511,6 +559,12 @@ final class TypeReadback<Element> {
     } else {
       unchecked = true
     }
+  }
+
+  /// Whether nothing may be typed (#359): select_text's range was gone at the snapshot, so the text would go elsewhere.
+  var refusesTyping: Bool {
+    if case .refused(.selectionChanged) = plan { return true }
+    return false
   }
 
   /// After the last event: success, or `typeUnconfirmed`.
@@ -645,15 +699,23 @@ final class TypeReadback<Element> {
 
 /// The keyed route's text with its read-back: the snapshot before the first unit, a checkpoint before each key, the
 /// final poll after the last unit; the record in the meta whatever the answer. Empty text posts nothing and reads nothing.
-func keyTextReadBack<Element>(_ units: [TypedUnit], concealed: Bool, settle: Bool = false, reads: ReadbackReads<Element>,
+/// `baseline` is #359's wait before the snapshot (`readbackSnapshot`); one that finds select_text's range gone posts
+/// nothing and answers `typeUnconfirmed` (`selectionChanged`).
+func keyTextReadBack<Element>(_ units: [TypedUnit], concealed: Bool, settle: Bool = false, baseline: BaselineWait? = nil,
+                              reads: ReadbackReads<Element>,
                               checkSource: (_ entered: Int, _ total: Int) throws -> Void, checkIntervention: () throws -> Void,
                               post: (KeyEvent) -> Bool, pause: () -> Void, meta: inout InputMeta) throws {
   guard !units.isEmpty else {
     return try keyText(units, concealed: concealed, checkSource: checkSource, checkIntervention: checkIntervention, post: post,
                        pause: pause, meta: &meta)
   }
-  let readback = TypeReadback(units: units, concealed: concealed, settle: settle, reads: reads)
+  let readback = TypeReadback(units: units, concealed: concealed, settle: settle, baseline: baseline, reads: reads)
   defer { meta.typeReadback = readback.record }
+  // #359: select_text's range gone, nothing is typed, so no text lands where the caret moved to.
+  if readback.refusesTyping {
+    if !concealed { meta.entered = 0 }
+    throw typeUnconfirmed(.selectionChanged)
+  }
   try keyText(units, concealed: concealed, checkSource: checkSource, beforeUnit: readback.beforeUnit,
               checkIntervention: checkIntervention, post: post, pause: pause, meta: &meta)
   try readback.finish()
@@ -679,6 +741,10 @@ func readbackQuoted(_ text: String) -> String {
 /// `typeUnconfirmed`: the text was sent, the field does not read as expected or cannot be read, so some of it may have
 /// gone in; the remedy is to observe, then setValue. A mismatch shows the excerpt; nothing else shows a value.
 func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = nil, beforeKey: Bool = false) -> EngineError {
+  if reason == .selectionChanged {  // #359: answered before anything is typed
+    return EngineError(name: "typeUnconfirmed",
+      "Nothing was typed: the field's selection is no longer the one selectText made (a click sent just before can land after it and move the caret), so the text would have gone elsewhere. Observe the app (take a screenshot or call getAXState()) first, then select the text again before typing.")
+  }
   let why: String
   switch reason {
   case .valueMismatch: why = "the field does not read as expected"
@@ -690,6 +756,7 @@ func typeUnconfirmed(_ reason: TypeReadbackReason, excerpt: ReadbackExcerpt? = n
   case .roleUnreadable, .fieldUnreadable, .valueUnreadable, .rangeUnreadable: why = "the field's text could not be read back"
   case .possiblyTruncated: why = "the field holds more text than accessibility reports in full"
   case .fieldChanged: why = "the focused field changed while the text was typed"
+  case .selectionChanged: why = "the field's selection changed after selectText"  // answered above
   }
   let sent = beforeKey ? "The text before a Return or Tab was typed, but \(why), so the key and the text after it were not sent. Some of the text may have gone in"
     : "The text was typed, but \(why), so it is not confirmed and some or all of it may have gone in"

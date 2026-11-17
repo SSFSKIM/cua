@@ -989,6 +989,32 @@ turn's first look at a Chromium app pays that wait. The background-click paragra
 
 > A web page in a Chromium-based app (Chrome, Electron apps) or in Firefox that is in the background does not take a pointer: unless this Mac is a dedicated desktop, a left click, double click or drag there is refused with "<App>'s web page does not accept a background click; use a dedicated desktop, or ask the person to bring <App> forward", and nothing is sent. A plain click there on a button, checkbox, radio button, link, pop-up button or menu item goes through the accessibility action of that element instead, and one on a checkbox or radio button whose state does not change fails with `clickUnconfirmed`. A plain click there into a text field, text area or editable region gives it keyboard focus through accessibility instead, with no mouse event, so the page sees no click; the result's text says whether the caret was put at the point, and when it was not, typing goes to the field's existing selection or its start, so use select_text or set_value first if the position matters. In Firefox the field is focused by its own accessibility action instead, which does not put the caret at the point. A field that does not report focus fails with `clickUnconfirmed`. Unless this Mac is a dedicated desktop, a click on a background Firefox window outside its page, on the toolbar for instance, can fail with `clickUnconfirmed` even when it took effect, as Reload does. A click or drag that fails with `clickUnconfirmed` was sent but may only have activated the window: observe the app before any retry. In a Firefox window in the background, a `pressKey` of an arrow key, with or without modifiers, first focuses the field the key goes to, which the page can see as a focus event. The first observation of a Chromium-based app in each task (each end_task ends one), and again after 5 minutes without observing or acting on it, may take up to about 2.5 s longer while the app turns on its accessibility, and an action sent before then waits for it.
 
+### Table 3 addition (2026-11-17, #359)
+
+#359 (the native engine spec's Decision Log, the #359 entry; the design session's ruling 1ea561bc:785 on runs
+44107967517, 44112583792 and 44126242634) finds that in a foreground browser a coordinate click answers once its mouse
+events are posted, while the browser can take them in up to about 0.4 s later, after a selectText, setValue or typeText
+that followed. The click then moves the caret back to its point. So within a second after a posted click to the app,
+those first wait, up to about 0.3 s, for the field's selection to hold still; typeText right after selectText types only
+once the field's selection is the one selectText made, and otherwise types nothing and answers `typeUnconfirmed`; and a
+setValue whose field then reads another value, or whose caret moves off the new value's end, answers `valueUnconfirmed`.
+The model sees the wait only as a slower action, and the two answers ask of it what every "sent, effect not seen" answer
+does: observe first. One sentence closes the fourth paragraph:
+
+> Within a second after a click in the same app, a `setValue` whose field then reads another value, or whose caret moves off the end of the new value (as a click the app takes in late moves it), also fails with `valueUnconfirmed`.
+
+and one follows the sixth paragraph's sentence on the wait after `pressKey`:
+
+> A click is sent at once but an app can take it in later, so within a second after a click in the same app, `selectText`, `setValue` and `typeText` first wait, up to about 0.3 s, for the field's selection to hold still; `typeText` right after `selectText` types only over the selection `selectText` made, and when a late click has moved it, it types nothing and fails with `typeUnconfirmed`: observe the app, then select the text again.
+
+### Table 3 amendment (2026-11-17, #359, ruling 1ea561bc:788)
+
+The design session's ruling 1ea561bc:788: the wait after a click is no fence, since a click can still land after it, so
+the model is told what `typeText` answers then and what to do. One sentence follows the "(2026-11-17, #359)" sentence in
+the sixth paragraph:
+
+> A click can still land after that wait; then `typeText` fails with `typeUnconfirmed` rather than claiming the text, which may already have gone in at the click's point, so observe the field and put it right with `setValue`.
+
 ### Table 3 addition (2026-11-17, #390)
 
 #390 (the native engine spec's Decision Log, "#390") stops refusing set_value on a background Chromium page's text field

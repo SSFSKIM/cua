@@ -210,6 +210,36 @@ final class ValueWithoutFocusTests: XCTestCase {
     XCTAssertTrue(try XCTUnwrap(unfocusedValueAnswer(readback, app: "Chrome")?.message).contains("the field's value could not be read back"))
   }
 
+  /// #359's wait and watch stay around the write on this route: the wait before it, then the write, the read-back, then
+  /// the watch; a write the field does not accept is refused before either the read-back or the watch, as before.
+  func testClickOrderingsWaitAndWatchStayAroundTheWrite() throws {
+    for accepted in [true, false] {
+      let ax = field()
+      var ops = ax.ops
+      let write = ops.write
+      var steps: [String] = []
+      ops.write = { element, name, value in
+        if name == kAXValueAttribute { steps.append("write") }
+        return name == kAXValueAttribute && !accepted ? .failure : write(element, name, value)
+      }
+      let terms = UnfocusedValueWrite(refusal: backgroundClickRefused("Chrome", engine: .chromium)) { _ in
+        steps.append("readBack")
+        return UnfocusedValueReadback(result: .confirmed, reads: 1)
+      }
+      var meta = meta()
+      do {
+        try setElementValue("new", on: el(1), role: kAXTextFieldRole, ax: ops, meta: &meta, focus: { _ in },
+                            beforeWrite: { _ in steps.append("wait") }, afterWrite: { _, _ in steps.append("watch") },
+                            checkInFlight: {}, acted: {}, withoutFocus: terms)
+        XCTAssertTrue(accepted)
+      } catch {
+        XCTAssertFalse(accepted)
+        XCTAssertEqual((error as? EngineError)?.errorName, "backgroundClickRefused")
+      }
+      XCTAssertEqual(steps, accepted ? ["wait", "write", "readBack", "watch"] : ["wait", "write"])
+    }
+  }
+
   // MARK: Secrets and password fields
 
   /// A concealed request is written and never read back, not even once: valueUnconfirmed, never a false ok, and the

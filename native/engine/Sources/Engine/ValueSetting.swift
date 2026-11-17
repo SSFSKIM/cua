@@ -8,8 +8,10 @@ import Foundation
 // auto-submit: the vendor turns it off for a node_repl-class client, cua's kind. Route 1, or route 3 when the app does not
 // believe it has focus (its activation held, FocusHold.swift): nothing is posted to the field unless the focus fallback
 // clicks. A concealed request (a substituted secret) goes the same way; no sentence here ever carries the
-// value. A background Chromium page's field that needs focus takes no hold and no fallback click, and its value is read
-// back after the write (#390, ValueWithoutFocus.swift).
+// value. Within the window of a posted pointer press to the app (#359, ClickOrdering.swift), the field's range is let
+// settle before the write and the field is watched after it: a value other than the one written, or a caret off its
+// end, is valueUnconfirmed. A background Chromium page's field that needs focus takes no hold and no fallback click,
+// and its value is read back after the write (#390, ValueWithoutFocus.swift).
 
 /// The type a set_value string is coerced to (`stringValueConversionType` 0x1006d4254).
 enum ValueKind: Equatable { case float, integer, boolean, string, date }
@@ -63,28 +65,44 @@ func coercedValue(_ value: String, to kind: ValueKind?) throws -> CFTypeRef {
 let valueNotSettable = EngineError(name: "valueNotSettable", "Cannot set a value for an element that is not settable")
 
 /// set_value once its element is resolved and scrolled into view: the settable check, the focus (`focus`, which may
-/// click), the coercion, the in-flight intervention check, the write. The app counts as acted on (`acted`) once the
-/// write was made, accepted or not.
+/// click), the coercion, `beforeWrite` (#359's wait for a pending click), the in-flight intervention check, the write,
+/// and once it was accepted `afterWrite` with the value written (#359's watch). The app counts as acted on (`acted`) once
+/// the write was made, accepted or not.
 ///
 /// #390: `withoutFocus`, for a write made without the focus fallback (`ValueFocusPlan.withoutFallback`), refuses a write
-/// the field does not accept with its refusal, and reads an accepted one back, the record in the meta; answers the
-/// read-back, which the caller turns into its answer once its re-check has run (`unfocusedValueAnswer`). Nil otherwise.
+/// the field does not accept with its refusal, and reads an accepted one back before `afterWrite`, the record in the
+/// meta; answers the read-back, which the caller turns into its answer once its re-check has run
+/// (`unfocusedValueAnswer`). Nil otherwise.
 @discardableResult
 func setElementValue(_ value: String, on element: AXUIElement, role: String, ax: AXOps, meta: inout InputMeta,
-                     focus: (inout InputMeta) throws -> Void, checkInFlight: () throws -> Void, acted: () -> Void,
+                     focus: (inout InputMeta) throws -> Void, beforeWrite: (inout InputMeta) -> Void = { _ in },
+                     afterWrite: (CFTypeRef, inout InputMeta) -> Void = { _, _ in },
+                     checkInFlight: () throws -> Void, acted: () -> Void,
                      withoutFocus: UnfocusedValueWrite? = nil) throws -> UnfocusedValueReadback? {
   guard ax.isSettable(element, kAXValueAttribute) else { throw valueNotSettable }
   try focus(&meta)
   let converted = try coercedValue(value, to: valueKind(of: ax.read(element, kAXValueAttribute), role: role, subrole: ax.subrole(element)))
+  beforeWrite(&meta)
   try checkInFlight()
   var written = AXError.failure
   meta.posting { written = ax.write(element, kAXValueAttribute, converted); return true }
   acted()
   guard written == .success else { throw withoutFocus?.refusal ?? EngineError(name: "actionFailed", "The element did not accept the value.") }
-  guard let withoutFocus else { return nil }
-  let readback = withoutFocus.readBack(converted)
-  meta.unfocusedValue = readback
+  let readback = withoutFocus.map { $0.readBack(converted) }
+  if let readback { meta.unfocusedValue = readback }
+  afterWrite(converted, &meta)
   return readback
+}
+
+/// #359's watch after an accepted write within the window of a posted pointer press (ruling 785, item 3), over a text
+/// field's string only: nil for a password field (never read), any other role or a value that is not a string. A
+/// concealed request's value is never read: only its caret is, against the written length.
+func writtenValueWatch(_ converted: CFTypeRef, role: String?, subrole: SubroleRead, concealed: Bool,
+                       watch: (_ written: String?, _ length: Int) -> WrittenValueWatch) -> WrittenValueWatch? {
+  guard CFGetTypeID(converted) == CFStringGetTypeID(), let role, typeReadbackTextRoles.contains(role),
+        !secureTextField(role: role, subrole: subrole) else { return nil }
+  let text = converted as! String
+  return watch(concealed ? nil : text, (text as NSString).length)
 }
 
 /// set_value's re-check after an accepted write (`refetch`): a re-fetch that fails, whatever its refusal (the element
@@ -98,12 +116,28 @@ func confirmingWrittenValue(app: String, _ refetch: () throws -> Void) throws {
   }
 }
 
+/// Whether the watch after set_value's write reads the field no further (#359, the review of ef998db6, P2): its role
+/// unreadable, or it is a password field by role or subrole, or its subrole cannot be read (`secureTextField` fails
+/// closed).
+func writtenValueFieldClosed(role: String?, subrole: SubroleRead) -> Bool {
+  guard let role else { return true }
+  return secureTextField(role: role, subrole: subrole)
+}
+
 /// The answer of a set_value whose value was written and accepted but whose field could not be found again to confirm
 /// it (ruling 772), of the family that says "sent, effect not seen" (`clickUnconfirmed`, `scrollUnconfirmed`,
-/// `menuUnconfirmed`).
-func valueUnconfirmed(app: String) -> EngineError {
-  EngineError(name: "valueUnconfirmed",
-    "The value was sent to \(app) and accepted, but the field could not be found again to confirm it. Observe the app (take a screenshot or call getAXState()) before any retry, and never retry blindly.")
+/// `menuUnconfirmed`); with `drift`, one whose field moved off what was written just after, within the window of a
+/// posted click (#359, ruling 785). No sentence carries the value.
+func valueUnconfirmed(app: String, drift: WrittenValueDrift? = nil) -> EngineError {
+  let why: String
+  switch drift {
+  case nil: why = "the field could not be found again to confirm it"
+  case .valueChanged?: why = "the field read another value just after, as when a click sent just before lands late"
+  case .caretMoved?: why = "the field's caret moved off the end of the new value just after, as a click sent just before does when it lands late, so typing now could go elsewhere in the field"
+  case .fieldClosed?: why = "the field turned into a password field or could no longer be read just after, while a click sent just before may still have been landing, so it was not read to confirm the value"
+  }
+  return EngineError(name: "valueUnconfirmed",
+    "The value was sent to \(app) and accepted, but \(why). Observe the app (take a screenshot or call getAXState()) before any retry, and never retry blindly.")
 }
 
 extension Engine {
@@ -138,6 +172,12 @@ extension Engine {
           }, value: { attribute(element, kAXValueAttribute) }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
         }
       }
+      let pids = [appPid, target.owner]
+      // #359 (ruling 785): within the window of a pointer press posted to the app (an earlier click, or the focus's own
+      // fallback click), the field's range is let settle before the write, and the field is watched after it. #390's
+      // route posts none of its own, so only an earlier click arms the window there.
+      var pending = false
+      var drift: WrittenValueDrift?
       let readback = try setElementValue(value, on: element, role: target.entry.identity.role, ax: .live, meta: &meta,
                           focus: { meta in
                             try prepareValueFocus(plan, focusWrite: {
@@ -148,6 +188,31 @@ extension Engine {
                               try focusField(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
                             })
                           },
+                          beforeWrite: { meta in
+                            pending = clickOrdering.pointerPending(pids: pids)
+                            awaitPendingClick(on: target.element, pids: pids, meta: &meta)
+                          },
+                          afterWrite: { converted, meta in
+                            guard pending else { return }
+                            let watched = signposted("clickOrdering.valueWatch") {
+                              writtenValueWatch(converted, role: stringAttribute(element, kAXRoleAttribute), subrole: subroleRead(element),
+                                                concealed: concealed) { written, length in
+                                watchWrittenValue(written: written, length: length, closed: {
+                                  // Re-classified before every read: a field that turned secure or cannot be read is read no further.
+                                  writtenValueFieldClosed(role: stringAttribute(element, kAXRoleAttribute), subrole: subroleRead(element))
+                                }, value: { stringAttribute(element, kAXValueAttribute) },
+                                                  range: {
+                                  guard let wire = rangeWire(attribute(element, kAXSelectedTextRangeAttribute)), let location = wire["location"],
+                                        let length = wire["length"] else { return nil }
+                                  return NSRange(location: location, length: length)
+                                }, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
+                              }
+                            }
+                            guard let watched else { return }
+                            if meta.pendingClick == nil { meta.pendingClick = PendingClickRecord() }
+                            meta.pendingClick?.watch = watched
+                            drift = watched.drift
+                          },
                           checkInFlight: guarding.checkInFlight, acted: { context.connection.markActed(app) }, withoutFocus: withoutFocus)
       // The write was accepted (setElementValue throws otherwise): the cursor points at the element, read after the write.
       cursor.act(connection: context.connection.id, app: app.key, window: nil, .element(target.element, storedFrame: target.entry.frame))
@@ -157,7 +222,9 @@ extension Engine {
       try confirmingWrittenValue(app: app.displayName) {
         _ = try context.connection.element(token, app: app, lineage: context.lineage ?? "", refetch: .ignoringValue) { ElementResolver.live($0, pid: appPid) }
       }
-      // #390: after the re-fetch, which keeps the token resolvable, never ok over an unfocused write not read back.
+      // #359: after the re-fetch, which keeps the token resolvable, never ok over a field that moved off the write.
+      if let drift { throw valueUnconfirmed(app: app.displayName, drift: drift) }
+      // #390: nor over an unfocused write not read back as written.
       if let readback, let unconfirmed = unfocusedValueAnswer(readback, app: app.displayName) { throw unconfirmed }
       return ["meta": meta.wire]
     } catch let error as EngineError {

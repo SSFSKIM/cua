@@ -4,6 +4,8 @@
 
 This is an experiment branch, never a product change or a PR to main. The offline kit is `probe/359-measure` at `f4ccd10b`, based on `origin/probe/354-measure` at `9c36bed5`. Both engine arms now pin current main `15acf09b714dd19efc796e4a3a2ff8d57e2f7994`, including #354, #360 and #366. Refresh and record the pin at smoke dispatch; keep full-run evidence on the smoke-qualified pin unless a new pin is separately smoked. `patch.mjs` changes only a detached build source and refuses to patch the kit checkout. The branch contains no changes under `native/`.
 
+Pre-dispatch verification (2026-11-17): reviewer-medium found the observation-timings evidence gap and verified its repair in `6aa02513`; no material findings remain. The 30 focused kit/transport tests and workflow lint pass. The watcher and patched engine compile without GUI launch. The registration/smoke commit intentionally omits `[skip ci]`; other kit commits retain it, and only this probe's branch/path filter matches the push.
+
 ## What is already known, and what is not
 
 Read #359 and #354's findings comment `6771144651`. The local `~/.local/share/probe-354/click-order-facts.json` contains 20 Safari/Chrome rows: script selects the whole seed, then a collapsed caret reappears before input in some traces. One Chrome caret event is 237 ms after click return. This makes a single readback insufficient evidence of finality; it does not identify which engine step caused the delayed effect.

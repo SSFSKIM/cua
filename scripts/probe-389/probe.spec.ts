@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 import { launchMaws } from './support/launch';
 import { seedTranscript } from '../test/support/transcripts';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdirSync, appendFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, appendFileSync, writeFileSync, mkdtempSync, rmSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 // @ts-ignore -- the kit checkout is .cua-probe under MAWS's root; Playwright transpiles the test.
@@ -34,7 +34,7 @@ test('MAWS Add project: ordinary background element press and search set_value',
    let maws:any,w:any,engine:any;const work=mkdtempSync('/tmp/p389-');
    try {
     let folder='';
-    maws=await launchMaws({env:{MAWS_ENGINE_REPLAY:'1'},prepare:({userData,claudeConfigDir})=>{folder=join(userData,'probe389-folder');mkdirSync(folder);seedTranscript(claudeConfigDir,folder,'Probe 389 scratch discovered session');}});
+    maws=await launchMaws({env:{MAWS_ENGINE_REPLAY:'1'},prepare:({userData,claudeConfigDir})=>{folder=join(userData,'probe389-folder');mkdirSync(folder);folder=realpathSync.native(folder);seedTranscript(claudeConfigDir,folder,'Probe 389 scratch discovered session');}});
     const {page,app}=maws;const pid=app.process().pid;row.pid=pid;row.folder=folder;
     await expect(page.locator('[data-region="sidebar"]')).toBeVisible({timeout:30000});
     // Pure renderer observation, kept in one clock and sequence. No synthetic events or focus changes here.

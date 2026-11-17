@@ -93,8 +93,10 @@ export function defaultsFor(arch = process.arch, cuaHome = join(HOME, '.local/sh
     hold: join(HOME, '.local/share/cua-171/hold-sittings'),
   };
 }
-/** Task 50's guards for a `:0` step, as T19's sitting ran them (pointer-route/scripts). */
+/** Task 50's guards for a `:0` step, as T19's sitting ran them (pointer-route/scripts): run71.sh and its guards. */
 const GUARDS = 'docs/evidence/2026-10-28-own-linux-engine/m4/pointer-route/scripts';
+/** The outer guard run71.sh runs under: M5's copy of wrap71.py (task 91, ruling 773), M4's left as the record of H. */
+const WRAP71 = 'docs/evidence/2026-10-28-own-linux-engine/m5/guards/wrap71.py';
 /** The :0 sitting's outer launcher, relative to the checkout. */
 const SITTING = 'scripts/linux-engine-gate/sitting.mjs';
 /** The harness's X client, built in the checkout (xtools.mjs `XPROBE`). */
@@ -217,7 +219,7 @@ export function launchCommand(step, a, root = REPO_ROOT) {
     const dir = a.out ? stepDir(step, a) : '<out>/<step>';
     // under the sitting launcher (sitting.mjs): its refusal while hold-sittings exists, the start check, and the end check
     // and the all-clear however the sitting ends (review finding 3, ruling 730)
-    return line([...lock, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--terminal', step.kind === 'verdict' ? 'end' : 'experiment-summary', '--', 'env', `WRAP=${join(root, GUARDS, 'wrap71.py')}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
+    return line([...lock, process.execPath, join(root, SITTING), '--dir', dir, '--hold', a.hold, '--terminal', step.kind === 'verdict' ? 'end' : 'experiment-summary', '--', 'env', `WRAP=${join(root, WRAP71)}`, join(root, GUARDS, 'run71.sh'), dir, root, ...args]);
   }
   const engine = a.pinned ? ['--pinned', a.pinned] : ['--candidate', a.candidate ?? '<candidate>'];
   return line([...lock, process.execPath, fileURLToPath(import.meta.url), 'run', step.name, ...engine, '--out', a.out ?? '<out>', ...(a.gate ? [] : ['--dev']), ...(a.pilot ? ['--pilot', String(a.pilot)] : [])]);

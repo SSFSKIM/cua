@@ -469,6 +469,15 @@ The seven operations, three medians each (cold / warm, ms): the pinned build, th
 cua's `drag` figure is chrome-input's shared-mode refusal (M3.1's declared refusal), not a comparable drag: its time is a
 refusal's, against the vendor builds' drags.
 
+## Corrections
+
+- **The local proof's summary log had false exits** (ruling 774). `scripts/proof-all.sh` wrote
+  `echo "$(date …) <part> exit $?"`, whose `$?` was the `date`'s, so its one-line-per-part summary read exit 0 for every
+  part. The part logs and the host lock's release lines (`scripts/lock-lines.txt`: `status=1` for both npm test parts,
+  `status=0` for the rest) carry the true exits, and the table above was read from them. T5's scripts stay here as what
+  ran. Fixed in `c3b97e0e` (task 91): `scripts/linux-engine-gate/local-proof.sh` reads each part's exit straight after
+  it ends, and its test fails a summary that misses a failing part.
+
 ## Files
 
 - `out/`: each counted step's directory as the runner wrote it (`<step>.pinned-release`: `step.json`, `README.md`,

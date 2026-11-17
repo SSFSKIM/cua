@@ -1,0 +1,64 @@
+ruling 773's cross-check over the stored :0 records in docs/evidence/2026-10-28-own-linux-engine/m5/x64 (the committed evidence)
+rule: docs/evidence/2026-10-28-own-linux-engine/m5/guards/own_audit_proxy.py
+
+== V1 at H: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/V1.pinned-release
+   guard exit 0, 3523 socket samples, 974 processes recorded, 0 flag(s), 1 counted row(s) of task 71's
+   no flag before, none after
+== V2 at H: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/V2.pinned-release
+   guard exit 0, 2291 socket samples, 1058 processes recorded, 0 flag(s), 0 counted row(s) of task 71's
+   no flag before, none after
+== V3 at H: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/V3.pinned-release
+   guard exit 0, 3505 socket samples, 1741 processes recorded, 0 flag(s), 0 counted row(s) of task 71's
+   no flag before, none after
+== V4 at H: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/V4.pinned-release
+   guard exit 0, 2398 socket samples, 4624 processes recorded, 0 flag(s), 0 counted row(s) of task 71's
+   no flag before, none after
+== V5 at H, the first attempt (stopped): docs/evidence/2026-10-28-own-linux-engine/m5/x64/out/V5.pinned-release
+   guard exit 143, 1340 socket samples, 2763 processes recorded, 1 flag(s), 1 counted row(s) of task 71's
+   old flag  outside-peer-connection t=968.282 pids=[465174] peer=/tmp/.X11-unix/X40 peer_pids=[]
+   new       counted: the run's own audit proxy, xtrace pid 398197 (first 5.478, last 973.843, ppid 398109): xtrace -k -m 256 -d :0 -D :40 -c -f /tmp/c71-Ecd7qI/cua171-audit-dbYhzW/Xauthority -F /Users/new/.Xauthority -o /tmp/c71
+             its process conditions from the record; the listener at /tmp/.X11-unix/X40: not in the record, assumed held by pid 398197 alone
+== V5 at H, the rerun: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out-rerun1/V5.pinned-release
+   guard exit 1, 3011 socket samples, 5980 processes recorded, 0 flag(s), 0 counted row(s) of task 71's
+   no flag before, none after
+== Z0 at H: docs/evidence/2026-10-28-own-linux-engine/m5/x64/out-rerun1/Z0.pinned-release
+   guard exit 0, 931 socket samples, 372 processes recorded, 0 flag(s), 0 counted row(s) of task 71's
+   no flag before, none after
+== F3's V2: docs/evidence/2026-10-28-own-linux-engine/m5/x64/f3-out/V2.development-run
+   guard exit 0, 2302 socket samples, 1048 processes recorded, 0 flag(s), 0 counted row(s) of task 71's
+   no flag before, none after
+== F3's V3 (stopped): docs/evidence/2026-10-28-own-linux-engine/m5/x64/f3-out/V3.development-run
+   guard exit 143, 3385 socket samples, 1587 processes recorded, 1 flag(s), 0 counted row(s) of task 71's
+   old flag  outside-peer-connection t=2180.356 pids=[1440708] peer=/tmp/.X11-unix/X40 peer_pids=[]
+   new       counted: the run's own audit proxy, xtrace pid 1371679 (first 0.565, last 2182.497, ppid 1371630): xtrace -k -m 256 -d :0 -D :40 -c -f /tmp/c71-TgQBVD/cua171-audit-cL2BIO/Xauthority -F /Users/new/.Xauthority -o /tmp/c71
+             its process conditions from the record; the listener at /tmp/.X11-unix/X40: not in the record, assumed held by pid 1371679 alone
+
+old flags: 2  new flags: 0  removed: 2  added: 0
+   removed: F3's V3 (stopped)
+   removed: V5 at H, the first attempt (stopped)
+
+controls on the two race flags' own records (each must stay flagged):
+   V5 at H, the first attempt (stopped), without the proxy's record (no recorded proxy): still flagged
+   V5 at H, the first attempt (stopped), at a time after the proxy's last sighting (973.843 s): still flagged
+   V5 at H, the first attempt (stopped), to :41's socket, whose proxies were not alive then: still flagged
+   V5 at H, the first attempt (stopped), to the abstract name of the proxy's socket: still flagged
+   V5 at H, the first attempt (stopped), with the proxy recorded under another kernel name: still flagged
+   V5 at H, the first attempt (stopped), with no listener at the path in the snapshot: still flagged
+   V5 at H, the first attempt (stopped), with the listener another pid's: still flagged
+   V5 at H, the first attempt (stopped), with the listener showing no owner: still flagged
+   V5 at H, the first attempt (stopped), with the listener shared by the proxy and another pid: still flagged
+   V5 at H, the first attempt (stopped), with a second listener at the path, another pid's: still flagged
+   F3's V3 (stopped), without the proxy's record (no recorded proxy): still flagged
+   F3's V3 (stopped), at a time after the proxy's last sighting (2182.497 s): still flagged
+   F3's V3 (stopped), to :41's socket, whose proxies were not alive then: still flagged
+   F3's V3 (stopped), to the abstract name of the proxy's socket: still flagged
+   F3's V3 (stopped), with the proxy recorded under another kernel name: still flagged
+   F3's V3 (stopped), with no listener at the path in the snapshot: still flagged
+   F3's V3 (stopped), with the listener another pid's: still flagged
+   F3's V3 (stopped), with the listener showing no owner: still flagged
+   F3's V3 (stopped), with the listener shared by the proxy and another pid: still flagged
+   F3's V3 (stopped), with a second listener at the path, another pid's: still flagged
+cross-check: HOLDS: the new flag set is the old one minus exactly V5's first attempt and F3's V3
+   (the listener condition is not in the stored records: the two are cleared on their process conditions, which
+   the records hold, and on the assumption that the proxy held its socket's listener alone; any other listener
+   flags both)

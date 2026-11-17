@@ -72,13 +72,15 @@ test('MAWS Add project: ordinary background element press and search set_value',
      const focusEvents=()=>page.evaluate(()=>(window as any).__probe389.log.filter((e:any)=>e.kind==='window.focus').length);
      const fc:any=row.focusControl={};
      try {
-      fc.initialHasFocus=await hasFocus();fc.baselineFocusEvents=await focusEvents();
-      fc.coverFront=await ask({op:'front',pid:coverPid});
+      fc.initialHasFocus=await hasFocus();
+      fc.coverFront=await ask({op:'front',pid:coverPid});if(fc.coverFront.frontmostPid!==coverPid)throw Error('cover did not become frontmost');
       await expect.poll(hasFocus,{timeout:5000}).toBe(false);fc.hasFocusWithCoverFront=false;
-      fc.mawsFront=await ask({op:'front',pid});
+      // The baseline is taken only once the page has lost focus, so no delayed earlier event can satisfy the control.
+      fc.baselineFocusEvents=await focusEvents();
+      fc.mawsFront=await ask({op:'front',pid});if(fc.mawsFront.frontmostPid!==pid)throw Error('MAWS did not become frontmost');
       await expect.poll(hasFocus,{timeout:5000}).toBe(true);fc.hasFocusWithMawsFront=true;
+      await expect.poll(focusEvents,{timeout:5000,message:'no new window.focus event after MAWS was activated'}).toBeGreaterThan(fc.baselineFocusEvents);
       fc.newFocusEvents=await focusEvents()-fc.baselineFocusEvents;
-      if(fc.newFocusEvents<1)throw Error('no new window.focus event after MAWS was activated');
      } catch(e:any){fc.error=String(e.message??e);fc.hasFocusNow=await hasFocus().catch(()=>null);throw Error('focus-control-invalid: '+fc.error);}
     }
     await expect.poll(()=>origin(maws.userData,folder),{timeout:30000}).toBe('discovered');

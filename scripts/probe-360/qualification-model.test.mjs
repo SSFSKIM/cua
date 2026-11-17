@@ -102,8 +102,21 @@ test('notApplicable: valid control with no effect, for itself and dependents; ne
  const self=classify(fgInput);assert.equal(self.outcome,'notApplicable');assert.equal(self.effect,null);assert.equal(self.naReason,'foreground-control-no-dom-effect');
  const dep=classify(row({editor:'input',key:'PageUp',scene:'background'}),cal);
  assert.equal(dep.outcome,'notApplicable');assert.equal(dep.notApplicable,true);assert.equal(dep.safePass,false);
- // a changed key in the background is still N/A: the oracle defines no effect to compare to
- assert.equal(classify(row({editor:'input',key:'PageUp',scene:'background',final:{selection:[0,0]}}),cal).outcome,'notApplicable');
+ assert.equal(classify(row({editor:'input',key:'PageUp',scene:'background'}),cal).outcome,'notApplicable');
+});
+
+test('a background key that changes the DOM against a no-op foreground control is a failure, never N/A',()=>{
+ const cal=calibrate(row({editor:'input',key:'PageUp'}));assert.equal(cal.anyEffect,false);
+ const bg=(o)=>classify(row({editor:'input',key:'PageUp',scene:'background',...o}),cal);
+ const sel=bg({final:{selection:[0,0]}});
+ assert.equal(sel.outcome,'fail');assert.equal(sel.notApplicable,false);assert.equal(sel.effect,false);assert.deepEqual(sel.reasons,['background-effect-despite-foreground-noop:selection']);
+ const scr=bg({final:{scroll:moveScroll(initialScroll('input','PageUp'),{left:100})}});
+ assert.equal(scr.outcome,'fail');assert.deepEqual(scr.reasons,['background-effect-despite-foreground-noop:scroll']);
+ // a change seen only at an earlier sample is still an effect of this trial
+ assert.equal(bg({mutate:r=>{r.samples[1].selection=[0,0]}}).outcome,'fail');
+ // missing control stays uncalibrated; an unchanged trial stays N/A
+ assert.equal(classify(row({editor:'input',key:'PageUp',scene:'background',final:{selection:[0,0]}}),null).outcome,'uncalibrated');
+ assert.equal(bg({}).outcome,'notApplicable');
 });
 
 test('N/A cannot hide wrong text, focus loss, errors or safety violations',()=>{

@@ -155,7 +155,12 @@ export function classify(r,calibration){
   else if(!cal.anyEffect){outcome='notApplicable';naReason='foreground-control-no-dom-effect'}
   else{outcome='pass';effect=true}
  }else if(cal.status!=='calibrated'){outcome='uncalibrated';reasons=cal.reasons}
- else if(!cal.anyEffect){outcome='notApplicable';naReason='foreground-control-no-dom-effect'}
+ else if(!cal.anyEffect){
+  // N/A needs this trial to show no DOM effect either; a background key that moved selection or scroll against a no-op control is a mismatch.
+  const S=r.samples,selection=S.some(s=>!equal(s.selection,r.setup.selection)),scroll=S.some(s=>movedAxes(r.setup.scroll,s.scroll).length>0);
+  if(selection||scroll){outcome='fail';effect=false;reasons=[selection&&'background-effect-despite-foreground-noop:selection',scroll&&'background-effect-despite-foreground-noop:scroll'].filter(Boolean)}
+  else{outcome='notApplicable';naReason='foreground-control-no-dom-effect'}
+ }
  else{
   const unlike=scrollDiff(r.setup.scroll,cal.initial.scroll);
   if(unlike.length){outcome='uncalibrated';reasons=['setup-differs-from-control:'+unlike.join(',')]}
@@ -209,5 +214,5 @@ export function summarize(rows,smoke){
   coverage:{missing,duplicates,unknown,mismatched,orderViolations,complete:missing+duplicates+unknown+mismatched+orderViolations===0},
   denominator:{planned:wanted.length,attempted:totals.all.attempted,missing,judged:totals.all.judged,pass:totals.all.pass,fail:totals.all.fail,notApplicable:totals.all.notApplicable,uncalibrated:totals.all.uncalibrated,invalid:totals.all.invalid},
   totals,cells,
-  interpretation:'pass/fail judge the 1s DOM end-state against the same-repetition foreground control (selection exact, plus every scroll axis the control moved, within SCROLL_TOL_PX); the four original keys also against their independent selection. notApplicable = valid control with no selection/scroll effect, never a pass. uncalibrated = control missing/invalid or not comparable. invalid = the trial itself failed setup or integrity. Hard failures (focus loss, wrong text, action error, observed foreground/order change) are fail regardless of the control. safePass additionally needs readable foreground/order sampling. Coverage is attempts only. AX ranges are not an oracle (#394) and are not read.'};
+  interpretation:'pass/fail judge the 1s DOM end-state against the same-repetition foreground control (selection exact, plus every scroll axis the control moved, within SCROLL_TOL_PX); the four original keys also against their independent selection. notApplicable = valid control with no selection/scroll effect and, for a background row, no selection/scroll change at any sample (a change is a fail), never a pass. uncalibrated = control missing/invalid or not comparable. invalid = the trial itself failed setup or integrity. Hard failures (focus loss, wrong text, action error, observed foreground/order change) are fail regardless of the control. safePass additionally needs readable foreground/order sampling. Coverage is attempts only. AX ranges are not an oracle (#394) and are not read.'};
 }

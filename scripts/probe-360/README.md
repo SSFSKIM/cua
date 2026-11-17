@@ -25,7 +25,8 @@ The four original keys retain the 29-character seed and independent expected sel
 long, scrollable text with an interior caret and scroll offset; input remains genuinely single-line. Every DOM state
 records selection, selection direction, focused editor, text hash/length, and field/ancestor/document scroll positions
 and extents. The full text is retained for setup and the 1s sample. The foreground control for the same editor/key/rep
-calibrates the DOM effect. A valid control with no selection or scroll effect is **not applicable**, never a successful
+calibrates the DOM effect. A valid control with no selection or scroll effect makes a background row **not applicable** only
+if that row also shows no selection/scroll change at any sample (a change there is a failure); N/A is never a successful
 acknowledgment; missing/invalid controls are uncalibrated. Setup scroll must match its foreground preparation and be
 comparable with the control. Final selection is exact, with 2px tolerance only on relevant scroll axes. Errors, focus
 loss, wrong text, or observed activation/raise cannot be hidden as N/A. Read/arm/sample commands never mutate DOM.

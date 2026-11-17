@@ -2,13 +2,13 @@
 import {spawn,spawnSync} from 'node:child_process';
 import {createServer} from 'node:http';import {createConnection} from 'node:net';
 import {createInterface} from 'node:readline';import {once} from 'node:events';
-import {mkdirSync,writeFileSync,appendFileSync,rmSync,createWriteStream} from 'node:fs';import {join} from 'node:path';
+import {mkdirSync,writeFileSync,appendFileSync,createWriteStream} from 'node:fs';import {join} from 'node:path';
 import {FixtureTransport,FixtureError} from '../probe-354/transport.mjs';
 import {launch,placePid,version} from '../probe-316/browser.mjs';
 import {pageQualification} from './qualification-page.mjs';
 import {plan,classify,calibrate,calKey,setupReasons,ENGINE_REF,MAIN_REF,DELAYS} from './qualification-model.mjs';
 import {readQualification} from './qualification-read.mjs';import {bindVisibleFixture} from './setup.mjs';
-import {observeProductionAction} from './qualification-action.mjs';
+import {observeProductionAction} from './qualification-action.mjs';import {engineSockets} from './qualification-runtime.mjs';
 if(process.platform!=='darwin'||process.env.RUNNER_ENVIRONMENT!=='github-hosted'||process.env.GITHUB_ACTIONS!=='true')throw Error('GitHub hosted macOS only; never run on an owner device');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
 const OUT=arg('out'),SIDE=arg('side'),SMOKE=arg('smoke')==='true',paths={fix:arg('fix-engine'),main:arg('main-engine')};
@@ -30,8 +30,7 @@ class Wire {
  execute(method,args){return this.call('execute',{method,args,deadlineUnixMilliseconds:Date.now()+25000})}
  close(){this.s.destroy()}
 }
-const sockets=Object.fromEntries(Object.keys(paths).map(k=>[k,join(process.env.RUNNER_TEMP,'q360-'+k+'.sock')]));
-for(const socket of Object.values(sockets))rmSync(socket,{force:true});
+const sockets=engineSockets(process.env.RUNNER_TEMP,Object.keys(paths));// one private directory per engine: production's lock/usage are directory-scoped
 const engines={};let side,browser,server,pid,coverPid,sideDead=false;const sidePending=[];
 const transport=new FixtureTransport({onEvent:e=>appendFileSync(join(OUT,'transport.jsonl'),JSON.stringify(e)+'\n')});
 async function until(fn,ms=10000){const deadline=Date.now()+ms;for(;;){const x=fn();if(x)return x;if(Date.now()>=deadline)throw Error('condition timeout');await sleep(5)}}

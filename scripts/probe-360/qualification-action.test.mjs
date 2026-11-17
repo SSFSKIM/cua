@@ -27,3 +27,20 @@ test('even a transport failure releases the connection and records cleanup',asyn
   sample:async()=>{throw Error('must not sample')},settle:async()=>events.push('settle'),read:async()=>({focused:true})}),/disconnected/);
  assert.deepEqual(events,['close','settle']);assert.equal(r.cleanup.focused,true);assert.ok(r.connectionClosedAt>0);
 });
+
+// The model labels PageUp/PageDown; production Keyboard.swift accepts Page_Up/Page_Down (or Prior/Next), not the bare labels.
+test('PageUp/PageDown labels are translated only at the RPC, with the row label kept and the submitted key recorded',async()=>{
+ const run=async(key)=>{
+  const sent=[],r={key};
+  await observeProductionAction({wire:{async execute(method,args){sent.push({method,args});return {result:{}}},close(){}},row:r,pid:42,key,
+   sample:async()=>[],settle:async()=>{},read:async()=>({})});
+  return {sent,r};
+ };
+ for(const [label,actual] of [['PageUp','Page_Up'],['PageDown','Page_Down']]){
+  const {sent,r}=await run(label);
+  assert.deepEqual(sent,[{method:'press_key',args:{pid:42,key:actual}}]);
+  assert.equal(r.key,label);assert.equal(r.action.key,actual);
+ }
+ const {sent,r}=await run('cmd+Left');
+ assert.deepEqual(sent[0].args,{pid:42,key:'cmd+Left'});assert.equal(r.action.key,'cmd+Left');
+});

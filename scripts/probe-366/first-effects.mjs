@@ -20,8 +20,9 @@ const verdict=(harm,known)=>harm?true:known?false:null;
 
 export function deriveEffects(row,coverPid) {
  const samples=row.samples??[],trace=row.trace??[],e=row.sideEffects??{};
- const frames=samples.filter(s=>s.geometry).map(s=>s.geometry.windowFrame);
- const a=row.beforeGeometry?.windowFrame,b=row.afterGeometry?.windowFrame??frames.at(-1);
+ // Every recorded after-frame (the cached one and each sample's) is evidence; a move in any of them counts.
+ const after=[row.afterGeometry,...samples.map(s=>s.geometry)].filter(Boolean).map(g=>g.windowFrame);
+ const a=row.beforeGeometry?.windowFrame;
  const events=row.after?.events;
  return {
   dialogClosed:typeof row.after?.open==='boolean'?row.after.open===false:null,
@@ -29,7 +30,8 @@ export function deriveEffects(row,coverPid) {
    samples.length>0&&samples.every(s=>pidKnown(s.frontmostPid))),
   raised:verdict(samples.some(s=>s.order?.targetAboveCover===true)||trace.some(t=>t.kind==='perform.begin'&&t.action==='AXRaise'),
    samples.length>0&&samples.every(s=>typeof s.order?.targetAboveCover==='boolean')),
-  windowMoved:verdict(frameKnown(a)&&frameKnown(b)&&['x','y','width','height'].some(k=>Math.abs(a[k]-b[k])>1),frameKnown(a)&&frameKnown(b)),
+  windowMoved:verdict(frameKnown(a)&&after.some(b=>frameKnown(b)&&['x','y','width','height'].some(k=>Math.abs(a[k]-b[k])>1)),
+   frameKnown(a)&&after.length>0&&after.every(frameKnown)),
   otherPointer:verdict(
    (events??[]).some(x=>x.wallAt>=row.call?.startedAt&&x.type==='pointerdown'&&x.target!=='action')||(typeof row.frontAfter?.title==='string'&&!row.frontAfter.title.includes('probe366:'+row.owner?.pageId)),
    Array.isArray(events)&&typeof row.frontAfter?.title==='string'),

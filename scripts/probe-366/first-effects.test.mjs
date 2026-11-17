@@ -42,6 +42,20 @@ test('missing observations stay unknown, never a clean false',()=>{
  assert.equal(fx({afterGeometry:undefined,samples:[sample(),sample({geometry:{windowFrame:{...frame,y:90}}})]}).windowMoved,true);
  assert.equal(fx({afterGeometry:undefined,samples:[sample(),sample({geometry:{windowFrame:frame}})]}).windowMoved,false);
 });
+test('every sampled frame and the cached final frame count: a preserved move is never hidden by a clean cache',()=>{
+ const moved={windowFrame:{...frame,x:60}},clean={windowFrame:frame};
+ // Stale clean afterGeometry, then a later moved native sample whose renderer read failed (no effect attached).
+ assert.equal(fx({afterGeometry:clean,samples:[sample({geometry:moved})]}).windowMoved,true);
+ // Moved then returned: the transient move shows in an earlier sample although the final frame matches.
+ assert.equal(fx({afterGeometry:clean,samples:[sample({geometry:moved}),sample({geometry:clean})]}).windowMoved,true);
+ // A move in the cached frame alone still counts, and agreeing frames are clean.
+ assert.equal(fx({afterGeometry:moved,samples:[sample({geometry:clean})]}).windowMoved,true);
+ assert.equal(fx({afterGeometry:clean,samples:[sample({geometry:clean}),sample({geometry:clean})]}).windowMoved,false);
+ // Positive evidence wins over an unknown frame; a clean frame beside an unknown one stays unknown.
+ assert.equal(fx({afterGeometry:clean,samples:[sample({geometry:moved}),sample({geometry:{windowFrame:null}})]}).windowMoved,true);
+ assert.equal(fx({afterGeometry:clean,samples:[sample({geometry:{windowFrame:null}})]}).windowMoved,null);
+ assert.equal(fx({afterGeometry:{windowFrame:null},samples:[sample({geometry:clean})]}).windowMoved,null);
+});
 test('observed harm wins over unknown in the same effect',()=>{
  const e=fx({samples:[sample({frontmostPid:TARGET,order:{targetAboveCover:true}}),sample({frontmostPid:0,order:{targetAboveCover:null}})]});
  assert.deepEqual([e.frontmostChanged,e.raised],[true,true]);

@@ -564,7 +564,9 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     "possiblyTruncated" | "valueMismatch" | "concealedMismatch" | "unchanged" | "becameSecure" | "fieldUnreadable" |
     "fieldChanged", snapshotMs, pollMs, reads, checkpoints? (keys that can leave or submit whose preceding text was
     confirmed before they were posted), keysUnconfirmed? (those keys, posted, their effect unconfirmed),
-    expectedLength?, actualLength? (a plain mismatch's only, never a concealed one's), stoppedBeforeKey?: true};
+    expectedLength?, actualLength? (a plain mismatch's only, never a concealed one's), stoppedBeforeKey?: true,
+    placeholderLine?: true, placeholderCaretUnread?: true (an ending Return's placeholder line, item 10.12),
+    settleReads?, settleCapped?: true (the settle before the snapshot after a recent press_key, item 10.15)};
     value-free. A concealed request's is {confirmed, concealed: true, snapshotMs, reason?, keysUnconfirmed?: true,
     stoppedBeforeKey?: true}: no count and no poll time, which would tell the secret's control characters and segments
   keyEffect (#354, on a press_key's result and errors once a press was posted): "unconfirmed", since press_key answers
@@ -4850,8 +4852,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
         secret is not checked before it is posted, so a secret that went in wrong can still be submitted by its own
         Return. A concealed request in an app that does not move its reported caret past typed text answers
         unconfirmed (item 10.10).
-     9. `typeUnconfirmed` right after an editing key may answer a field that ends up holding the right text, since the
-        snapshot can precede the key's effect (item 10.14): #386.
+     9. `typeUnconfirmed` right after an editing key may still answer a field that ends up holding the right text: the
+        settle (item 10.15) covers a press_key's effect that shows within its 100 ms, not one that lands later, nor
+        one that pauses for 15 ms between steps, nor the effect of a key the settle does not track (a type_text's own
+        Tab or Return, the paste method's super+v): #386.
   8. **The documents.** `docs/cua-api/agent-cursor.md` gains a sixth paragraph: what `typeText` confirms, that
      `typeUnconfirmed` may mean some text went in and the remedy is to observe, then `setValue`; the fields it cannot
      read; the OS's substitutions answering unconfirmed, never a silent success; keys in the text; and `setValue`, or
@@ -4956,8 +4960,29 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
          (super+a, super+z, super+v) takes effect, so `typeUnconfirmed` may answer a field that ends up holding the right
          text: 65 of the 296 unconfirmed answers in the race cells held it (Chrome for Testing's super+v cell: 30 of
          40). The answer stays honest (nothing was confirmed) and its remedy, to observe the field, finds that case; the
-         typing paragraph says so. Its follow-up is #386.
-  Proven offline: `TypeReadbackTests` (44) drive the real keyText through `keyTextReadBack` over a fake app whose field
+         typing paragraph says so. Its follow-up is #386; item 10.15 narrows it.
+     15. **The settle before the snapshot** (the follow-up run 44001080688 on 3141f170; ruling 1ea561bc:754). 0 wrong
+         successes in 1,269, but Firefox's race cells answered unconfirmed 170 of 240 times over the right final text
+         (Chrome for Testing and Safari the same, less often): the key's effect (super+a, super+z, super+v) landed
+         between the snapshot and the typing, so the expected value was built over a stale field. Now, when press_key
+         posted to the same app (by pid, `RecentKeyPosts`, the time of its last post) within
+         `typeReadbackSettleWindowMs` (1,000), the snapshot settles (`readbackSettle`, TypeReadbackSettle.swift): after
+         the snapshot's first value and range read, the field's role and subrole are checked as the poll checks them,
+         and its value and range read again every `typeReadbackSettleIntervalMs` (15) until a read agrees with the one
+         before it in code units and range, for at most `typeReadbackSettleCapMs` (100: six reads); the snapshot is
+         the last read, with the snapshot's checks (the cap, a range inside the value) applied to it. Without a recent
+         key the snapshot is taken at once, as before, so ordinary typing pays nothing; a recent key over a still field
+         pays one interval and one read. The plain meta carries `settleReads` and `settleCapped`. **Safety:** typing
+         still follows the snapshot, so a later snapshot cannot make a success false; it only lets the expected value
+         include an earlier key's effect that had not shown yet, and every success still needs the field to read that
+         value after the typing. **Secrets:** the settle runs before any of the secret is typed, so its reads and
+         waits depend on the field and the earlier key, never on the secret, and a concealed record counts none of
+         them (its `snapshotMs` includes them). It comes after the secure and text-role checks and re-checks the role
+         and subrole before every read, so it never reads a secure field's value; a field that turns secure while it
+         settles answers `becameSecure`. Only press_key's keys are tracked: the gap the run measured is an editing
+         key followed by typing; an intervening input to the app does not clear the record, since it does not make the
+         key's effect land, and costs at most the cap.
+  Proven offline: `TypeReadbackTests` (51) drive the real keyText through `keyTextReadBack` over a fake app whose field
   takes the posted text: equal, a caret insertion, a late equal inside the window and one past it; a mismatch's
   sentence, excerpt and lengths, a 20,000-character field's answer holding two 200-unit windows at the difference, the
   excerpt's surrogate pairs and quoting; secure by role, subrole or an unreadable subrole with no value or range read,
@@ -4974,17 +4999,21 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   application's answer first; an ending Return's placeholder line confirmed with the caret at its start, refused
   doubled, accepted with an unreadable caret, never without an ending Return, mid-field or on a stale read, a secret's
   on the same schedule; the caret confirming only the value it was read with, a secret's late doubled Return refused
-  and a value that left and came back read again, plain or concealed; focus moving, a role changing or no longer
+  and a value that left and came back read again, plain or concealed; the settle only after a key posted to the app
+  within the window, one interval over a still field, the snapshot once two reads agree (an undo in steps, a select-all
+  landing), the cap's last read, the snapshot's checks on the settled read, a secure field never read and one turning
+  secure while it settles, a secret's settle the same whatever the secret; focus moving, a role changing or no longer
   reading; UTF-16 replacement with emoji and combining marks; a text area's Returns read back as text and a dropped
   one a mismatch, a single-line field's and a combo box's trailing Return confirmed before it is posted, a wrong text
   never submitted, text after it expected without it, a Tab checked in a text area and moving focus answered
   `fieldChanged`, the exclusion set with Gecko's contenteditable, keys alone, empty text, the guard before a key read
   after the checkpoint's wait; the snapshot's read order; an intervention's stop keeping the record; press_key's
-  `keyEffect`. 1,171 engine tests pass, 1 skipped as before. Of 101 parts and bounds of the rule changed in turn
-  (`~/.local/share/187/mutate-354.py`), 93 fail a test. Eight survive by design: the zeroing of the read and the
-  expected buffers, which no answer shows (`readbackZero` itself is tested), and six reached only by a live type_text:
-  the engine's call into the read-back, and the live seam's value, units, subrole-error, identity and main-window
-  reads. The service (`cua/typeReadback`,
+  `keyEffect`. 1,178 engine tests pass, 1 skipped as before. Of 124 parts and bounds of the rule changed in turn
+  (`~/.local/share/187/mutate-354.py`), 114 fail a test. Ten survive by design: the zeroing of the read and the
+  expected buffers, which no answer shows (`readbackZero` itself is tested), and eight reached only by a live
+  press_key or type_text: the engine's call into the read-back, press_key's record of its key and type_text's request
+  for the settle (`RecentKeyPosts` itself is tested), and the live seam's value, units, subrole-error, identity and
+  main-window reads. The service (`cua/typeReadback`,
   `cua/keyEffect`, the sentence reaching the model), the wrapper's admission and the matrix's expected difference have
   node tests.
   **The merge gate** (the ruling): a hosted A/B against main on the spike's cells, the real engine's answers, with the

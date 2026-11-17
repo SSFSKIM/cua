@@ -5250,6 +5250,131 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      held interaction was not measured.
   Date/Author: 2026-11-16, cursor235's implementer for #360 (ruling 764); items 5 to 7 2026-11-17, from the
   qualification run and ruling 767.
+- Decision (#366, 2026-11-17, `fix/366-chromium-ax-ready`; the design session's ruling 766 on the spike's findings,
+  hosted runs 44032504512 and 44052940748, kit `probe/366-measure`, engine b99232de; ruling 757 narrowed the issue to
+  this false success): **an element action into a Chromium-family app waits out what remains of 2.5 s since the
+  engine's last accepted enablement write of the app's process.** A first AX press into Electron or Chrome answered
+  success and ran no handler when it landed less than about 2.25 s after the write: 0 of 124 presses delivered at 0.92 s
+  or less, 283 of 283 at 3.45 s or more; the threshold sweep delivered 30 of 30 at 2.25 s, 7 of 30 at 2 s and none at
+  1.75 s, in a parity and a default Electron 44.4.5 window and Chrome for Testing 156. Every AXManualAccessibility write
+  restarts Electron's 2 s debounce to its complete mode (`electron_application.mm`), until which a button is exposed but
+  its press does not reach the renderer; Electron announces only the write, and no attribute on every page's root shows
+  the mode's arrival, so the wait is fixed, not read.
+  1. **The gate** (`ChromiumReadiness.swift`): execute's prologue, after the input's own enablement step
+     (`inputEnablement`) and the holds' steps, before the method runs, for the methods that may carry an element action
+     (`elementActionMethods`: click, set_value, select_text, perform_secondary_action, scroll) on an app whose page engine
+     is `.chromium` (`pageEngineOf`), waits `chromiumActionWaitMs`: what remains of `chromiumActionWindowMs` (2.5 s, the
+     sweep's 2.25 s and a margin) since `WebAccessibility.lastEnablementWrite`, 0 once it has passed or with no write.
+     The cause is the renderer's mode, so every element action waits, not the press alone. The answer is unchanged: a
+     dispatch stays a dispatch (ruling 757). The engine takes an injectable monotonic clock and sleeper for it.
+  2. **No hold through the wait.** It runs before the method takes any hold. A focus hold the connection keeps on the
+     app from an earlier action (FocusHold.swift's 120 s bound outlasts the enablement's 30 s grace, so an action after a
+     grace release meets one) ends before the wait, and the action takes it again. A recorded menu's span is the one
+     hold an action keeps, a press on the menu's item, which must land inside it: that press does not wait, its item
+     being AppKit's menu, not the page's renderer. Another connection's hold on the same process is not this request's
+     to end, and is left as it is.
+  3. **Read before write** holds already and is pinned by tests: an owned attribute is neither read nor written again
+     (#244); one that reads true and is not the engine's own write-back is left alone, so neither restarts the window.
+     The one rewrite of a value that reads true is after the engine's own write-back, whose true is AppKit's readback
+     with the mode gone (Decision Log 2026-10-22); that write is a real restart, and is waited out.
+  4. **Where the first write is**: already at the first contact. get_app_state's enablement step (Skyshot.swift,
+     `observeEnablement`) runs before the window read, the web-area wait, the walk and the screenshot, so the window runs
+     while the agent reads the observation; an input with no observation before it writes in `inputEnablement` and then
+     waits the whole window. Only cua's own launch or reopen (its window wait and open settle) and an armed or forced
+     settle come before the step, and the armed one follows an action that has already enabled the process. The write
+     is not moved ahead of the open settle: the settle's adopted tree is keyed on no enablement since it began
+     (`adoptsSettledTree`), and the gain is confined to an app cua itself launched.
+  5. **Accepted** is what `enableReporting` counts as set: success, or Chrome's kAXErrorNotImplemented with the
+     attribute reading true after it (#292). The ruling's "owned" is read as the engine's own write: one that set an
+     attribute whose value could not be read (not owned, so never written back) restarts the countdown all the same, and
+     is waited out.
+  6. **Over-approximation.** The gate is per method, not per Accessibility call, so a coordinate click or scroll that
+     ends as posted events alone (dedicated mode, a non-web view) waits too, once, within 2.5 s of a write; a per-call
+     gate would run inside the holds the actions take before their perform. press_key, type_text, paste and drag post
+     events only and never wait.
+  7. **The model's document** gains one sentence at the end of agent-cursor.md's second paragraph (the surface
+     inventory's #366 addition), copied byte for byte into the docs oracle and the core-documentation test.
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 766).
+- Decision (#366's review, 2026-11-17, `fix/366-chromium-ax-ready`; the review of c7eee724..d94039ec, two P2 findings
+  and one scope note, all accepted by the design session; amends "#366" above, items 1, 2 and 6):
+  1. **The window is read again after every sleep.** A write over a value that could not be read is not owned, so
+     another connection's observation writes it again while a request sleeps (accepted writes at 0 s and 1 s would have
+     woken the request at 2.5 s, 1.5 s after the latest). `waitOutChromiumWindow` re-reads `lastEnablementWrite` after
+     each sleep and waits out what remains, until none does; only then does the method take a hold or dispatch.
+  2. **The wait is bounded by the request's deadline.** A window that would end at or past the remaining deadline
+     (`deadlineUnixMilliseconds`, or receipt plus 120 s) is refused before the sleep as `timeoutReached`, the engine's
+     answer for a settle or launch wait the deadline cuts, with the input meta and nothing dispatched; the holds stay as
+     they were. A refusal before the deadline is preferred to sleeping into it, since nothing could be sent after it.
+     A sleep can overshoot, so every wake checks the deadline again before the ready path returns, and a wake at or past
+     it is `timeoutReached` too (the re-review's probe: a 2,600 ms budget whose 2,500 ms sleep woke at 3,000 ms).
+  3. **Scroll waits only when it names an element** (`mayCarryElementAction`). An element scroll sends AXScrollToVisible
+     (or its fallbacks' writes, Positioning.swift) to the page before its wheel, which is an AX element action into the
+     renderer. A scroll at a point or the window's centre is a posted wheel and its read-back, and its #328 bar write
+     never targets a web area's or a page scroller's bar, so it serves no readiness and no longer waits.
+     `elementActionMethods` keeps click, set_value, select_text and perform_secondary_action, each of which can act
+     through accessibility on every request shape (a coordinate click through #282's element route).
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (the design session's acceptance of the review).
+- Decision (#366's observation wait, 2026-11-17, `fix/366-chromium-ax-ready`; the design session's ruling 772 on the
+  live smoke and the cache diagnostic, run 44068144650; amends "#366" and "#366's review" above): **the first
+  observation after a write waits for readiness before it reads the tree, and an action's backstop reads a target
+  recorded before readiness again from its own handle.** The diagnostic found the handles survive the switch to the
+  complete mode (valid, and CFEqual to fresh lookups) while what cua cached about them goes stale: Chrome for Testing's
+  buttons go from [ShowMenu, ScrollToVisible] to [Press, ShowMenu, ScrollToVisible], so a click planned from the
+  recorded actions refused noAction even after the action's wait, and every field's placeholder goes from none to
+  "Search", so set_value's re-fetch after an accepted write (`.ignoringValue`, which compares the placeholder) threw
+  elementNoLongerValid, the old identity's walk finding nothing either.
+  1. **The observation's wait** (`Engine.awaitObservationReadiness`, Skyshot.swift after the enablement step): the
+     rest of `chromiumActionWindowMs` after the process's last accepted write, whichever request made it, the same loop
+     as the action's (`waitForChromiumReadiness`: re-read after every sleep, a sleep that would end at or past the
+     deadline not slept, a wake past it ending the wait). It leaves the holds as every observation does. Its time is
+     the observation's `chromiumReady` phase (and the `observation.chromiumReady` signpost), `chromiumReadyWaitMs` when
+     it slept. A settled tree whose settle began before readiness is not adopted.
+  2. **Deadline-short observations read anyway** (`chromiumReady: "deadline"` in the timings). Every entry records when
+     it was read (`LineageEntry.recordedAt`, the walk's start, `Revision.recordedAt`; a carried entry keeps its own), and
+     an entry is recorded before readiness when that time is earlier than the process's readiness now
+     (`recordedBeforeReadiness`, `chromiumReadyAt`): a later write moves readiness, so an entry read before it is
+     marked again.
+  3. **The action's backstop** (`Lineage.resolve`'s `readiness`, passed by `targetElement` for every element method):
+     after the action's wait, a target recorded before readiness is read again from its cached handle (identity,
+     actions, read time now) and only then resolved as before; a handle that no longer validates or reads is
+     elementNoLongerValid before any write. It never re-finds by identity, so no other handle is adopted for the token.
+     An entry read after readiness, or a process with no readiness, is left as recorded. Review round 4 (P2, accepted):
+     the refreshed resolution is pinned to the handle and ends there, never entering the ordinary re-read or the
+     identity re-fetch, which could otherwise adopt another element matching the identity just read when the handle
+     went between the two reads (the reviewer's probe moved t1 from handle 1 to 6). The handle is validated before and
+     after its read, and the entry changes only once both pass, so a refusal leaves it as recorded, still marked.
+  4. **valueUnconfirmed** (ValueSetting.swift, `confirmingWrittenValue`): a set_value whose write was accepted and
+     whose re-fetch then fails, whatever its refusal, answers `valueUnconfirmed` ("sent, effect not seen", beside
+     clickUnconfirmed, scrollUnconfirmed and menuUnconfirmed) in place of elementNoLongerValid, which told the model
+     the value was not sent. The service passes it through as every engine input error, with the meta.
+  5. **The model's document**: the background-click paragraph's last sentence now says the first observation of a
+     freshly enabled Chromium app may take up to 2.5 s longer, and an action sent before then waits; the fourth
+     paragraph closes with valueUnconfirmed (the surface inventory's "#366, ruling 772" addition; the copies in the
+     docs oracle and the core-documentation test byte for byte).
+  6. **What this costs**: an agent's first observation of a Chromium app cua has just enabled takes up to 2.5 s longer
+     (the action's wait then finds the window passed); a deadline under that reads Basic mode's tree, and the backstop
+     repairs only the target the action names.
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 772).
+- Decision (#366's grace, 2026-11-17, `fix/366-chromium-ax-ready`; the design session's ruling 775 on the live
+  qualification; amends #292's grace): **the enablement's idle release comes 5 minutes after cua's last observation of
+  or input to the process, not 30 s** (`enablementReleaseGraceMs`, 300 000 ms). end_task and the engine's stop still
+  release at once, unchanged. The qualification showed that after a real release the attribute reads false, so the
+  next observation writes it again and, under ruling 772, waits out the 2.5 s readiness window: with a 30 s grace every
+  agent pause over 30 s paid that. 5 minutes covers an agent's ordinary pauses within a task. Since end_task releases at
+  every turn's end, each turn's first look at a Chromium app still pays it; the model's document says so (agent-cursor.md's
+  background-click paragraph, the surface inventory's "#366, ruling 775" addition, the copies byte for byte).
+  1. **The limit it extends.** #292's side effect of an enablement left on, Chrome's complete mode with its screen-reader
+     flag and its window moves and resizes animated (3 to 5 frames, #288's spike), now lasts up to 5 minutes after
+     cua's last step on an app whose task has not ended, where it lasted 30 s. agent-cursor.md does not describe #292's
+     effect (the model acts on nothing there), so the limit is stated here.
+  2. **The focus hold.** Its 120 s idle bound (`focusHoldIdleMs`) used to outlast the 30 s grace, so an action after a
+     grace release could meet a focus hold left from before it, which the action's readiness wait ends first ("#366",
+     item 2). With 5 minutes the hold lapses first; the wait still ends one that remains (a release by another
+     connection's end_task).
+  3. **Tests.** The grace tests run on the default grace on the fake timers: armed 5 minutes out, nothing at 30 s or at
+     299 999 ms, released at 300 000 ms; a re-observation or an input starts it again; end_task and the stop release at
+     once with the grace pending, and the pending timer does nothing after.
+  Date/Author: 2026-11-17, cursor235's implementer for #366 (ruling 775).
 
 ## Outcomes & Retrospective
 

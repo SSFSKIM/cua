@@ -147,6 +147,9 @@ struct LineageEntry {
   var firstChild: AXUIElement? = nil
   /// How many children it had, before the width rule (#303: its old children are all known only when that many were kept).
   var listed: Int? = nil
+  /// When its identity and actions were read (monotonic ms; ruling 772): the observation's read time, or a backstop's
+  /// refresh. Compared with its process's readiness (`recordedBeforeReadiness`); nil when unknown (the unit tests').
+  var recordedAt: Double? = nil
 }
 
 extension ElementIdentity {
@@ -168,6 +171,9 @@ final class Revision {
   /// The recorded menu-bar item the observation walked from instead of the window (MenuRecord.swift); nil for a walk of
   /// the window and the menu bar. A re-fetch walks the same root.
   var menuRoot: AXUIElement?
+  /// When the observation began reading the tree (monotonic ms; ruling 772), which every entry it emits records as its
+  /// `recordedAt`; an entry carried from an earlier revision keeps its own.
+  var recordedAt: Double?
 
   /// A sibling list of this revision with its handles: the menu bar's items, a node's children, or (no parent) the
   /// window's root.
@@ -229,6 +235,20 @@ final class Lineage {
     current?.entries[number]?.actions = actions
   }
 
+  /// The backstop's refresh (ruling 772): `entry` read again from its own handle, nothing else.
+  /// The handle is validated before the read and again after it, and the entry changes only once both pass: a refusal
+  /// leaves it as recorded, still marked.
+  private func refreshFromHandle(_ number: Int, _ entry: LineageEntry, inMenu: Bool, resolver: ElementResolver, now: Double) throws -> LineageEntry {
+    guard resolver.stillValid(entry.element) else { throw ElementErrors.noLongerValid }
+    let source = resolver.source()
+    guard let data = inMenu ? source.listedData(entry.element) : source.data(entry.element) else { throw ElementErrors.noLongerValid }
+    let actions = source.actions(entry.element)
+    guard resolver.stillValid(entry.element) else { throw ElementErrors.noLongerValid }
+    renew(number, element: entry.element, data: data, owner: entry.identity.pid, actions: actions)
+    current?.entries[number]?.recordedAt = now
+    return self.entry(number)!
+  }
+
   func replace(_ number: Int, element: AXUIElement, owner: pid_t) {
     current?.entries[number]?.element = element
     if let identity = current?.entries[number]?.identity { current?.entries[number]?.identity = identity.owned(by: owner) }
@@ -273,8 +293,18 @@ final class Lineage {
   /// vendor's sentences in the vendor's order: no such token → no longer valid; an invalid handle → no longer valid; the
   /// stored attributes matched by more or fewer than one element of the observed tree → "couldn't be started"; none now
   /// → no longer valid; several now → "couldn't be finished".
-  func resolve(_ token: String, resolver: ElementResolver, refetch: Refetch = .ifNeeded) throws -> LineageEntry {
+  ///
+  /// `readiness` (ruling 772, ChromiumReadiness.swift): an entry recorded before its process's readiness is first read
+  /// again from its own handle, its identity and actions taking what the handle reads now, and its read time now; never
+  /// re-found by identity, so no other handle is adopted for it. That resolution stays pinned to the handle: it never
+  /// enters the re-read or the re-fetch above, and the handle is validated before its read and again after it; a handle
+  /// that no longer validates or reads at any of those points is no longer valid, before anything is written, and the
+  /// entry is left as recorded.
+  func resolve(_ token: String, resolver: ElementResolver, refetch: Refetch = .ifNeeded, readiness: EntryReadiness? = nil) throws -> LineageEntry {
     guard let number = tokenNumber(token), let entry = entry(number), let observed = current else { throw ElementErrors.noLongerValid }
+    if let readiness, recordedBeforeReadiness(entry.recordedAt, readyAt: readiness.readyAt) {
+      return try refreshFromHandle(number, entry, inMenu: observed.menu.contains(number), resolver: resolver, now: readiness.now)
+    }
     if refetch == .ifNeeded, !resolver.invalidated(entry) {
       guard resolver.stillValid(entry.element) else { throw ElementErrors.noLongerValid }
       return entry
@@ -517,10 +547,10 @@ func elementTokenArg(_ args: [String: Any], lineage: String?) throws -> String? 
 extension ConnectionState {
   /// The element `token` names in the app's current lineage, which must be `wanted` (the lineage guard: a token of
   /// another lineage, or of one that ended with disableDiff, a relaunch or a reconnect, is no longer valid).
-  func element(_ token: String, app: ResolvedApp, lineage wanted: String, refetch: Refetch = .ifNeeded,
+  func element(_ token: String, app: ResolvedApp, lineage wanted: String, refetch: Refetch = .ifNeeded, readiness: EntryReadiness? = nil,
                resolver: (Lineage) -> ElementResolver) throws -> LineageEntry {
     guard let lineage = lineages[app.key], wanted == lineage.id else { throw ElementErrors.noLongerValid }
-    return try lineage.resolve(token, resolver: resolver(lineage), refetch: refetch)
+    return try lineage.resolve(token, resolver: resolver(lineage), refetch: refetch, readiness: readiness)
   }
 }
 

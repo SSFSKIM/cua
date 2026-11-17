@@ -47,6 +47,10 @@ export function firstReadiness(rows) {
  const buckets=group(rows,r=>({browser:r.browser,manualBucket:bucketOf(r)})).map(({k,rows})=>({...k,...firstAggregate(rows)}));
  // Only aged observed rows take a second full walk; elsewhere the field has no meaning, so it is not an unknown.
  const walks=rows.filter(r=>r.age==='aged'&&r.observeFirst===true).map(r=>r.secondWalkManualWrites),known=walks.filter(Array.isArray);
- return {groups,buckets,cells:firstSummarize(rows),
+ // 250 ms bins of the successful enabled Manual write delta; every bin is listed, empty ones with zero counts.
+ const ok=['lt2s','transition','ge2.5s'],binOf=r=>{const d=r.readiness?.manualDeltaMs;return ok.includes(bucketOf(r))&&finite(d)?Math.floor((d-1500)/250):-1};
+ const deltaBins=[...new Set(rows.map(r=>r.browser))].flatMap(browser=>Array.from({length:6},(_,i)=>({browser,fromMs:1500+250*i,toMs:1750+250*i,
+  ...firstAggregate(rows.filter(r=>r.browser===browser&&binOf(r)===i))})));
+ return {groups,buckets,deltaBins,cells:firstSummarize(rows),
   secondWalk:{rows:known.length,rowsRewrote:known.filter(w=>w.length>0).length,writes:known.reduce((n,w)=>n+w.length,0),unknownRows:walks.length-known.length}};
 }

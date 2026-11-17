@@ -6,6 +6,7 @@ import {join,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {pressReadiness,firstReadiness} from './first-readiness.mjs';
+import {firstAggregate,firstJudge} from './first-read.mjs';
 const here=dirname(fileURLToPath(import.meta.url));
 const PID=9;
 const w=(at,value=true,error=0,attribute='AXManualAccessibility',pid=PID)=>({kind:'write.end',attribute,pid,at,value,error});
@@ -102,6 +103,32 @@ test('second-walk Manual rewrites are counted over rows and writes',()=>{
   row({age:'aged',observeFirst:false,secondWalkManualWrites:undefined}),row({age:'aged',observeFirst:false,secondWalkManualWrites:[w(8)]})];
  assert.deepEqual(firstReadiness(others).secondWalk,{rows:0,rowsRewrote:0,writes:0,unknownRows:0});
  assert.deepEqual(firstReadiness([...aged,...others]).secondWalk,{rows:3,rowsRewrote:2,writes:3,unknownRows:1});
+});
+test('delivery is binned in 250 ms steps from 1.5 s to 3 s by the successful enabled Manual write delta, with empty bins visible',()=>{
+ const at=(ms,extra={})=>row({readiness:{manualBucket:ms<2000?'lt2s':ms<2500?'transition':'ge2.5s',manualDeltaMs:ms,manual:{value:true,error:0}},...extra});
+ const rows=[at(1500),at(1749),at(1750,{after:page(0)}),at(2600),at(2999),at(2999,{after:page(2)}),at(3000),at(1499),
+  at(2000,{browser:'cft'}),
+  // Not a successful enabled write: never binned, whatever its delta field says.
+  row({readiness:{manualBucket:'disabled',manualDeltaMs:2000}}),row({readiness:{manualBucket:'write-error',manualDeltaMs:2000}}),row({readiness:{manualBucket:'unwritten'}}),
+  row({valid:false,failureStage:'readback',after:undefined,readiness:{manualBucket:'lt2s',manualDeltaMs:1600},sideEffects:{...quietEffects,raised:true}})];
+ const bins=firstReadiness(rows).deltaBins;
+ const electron=bins.filter(b=>b.browser==='electron'),cft=bins.filter(b=>b.browser==='cft');
+ assert.deepEqual(electron.map(b=>[b.fromMs,b.toMs]),[[1500,1750],[1750,2000],[2000,2250],[2250,2500],[2500,2750],[2750,3000]]);
+ assert.deepEqual(electron.map(b=>b.attempted),[3,1,0,0,1,2]);
+ assert.deepEqual(cft.map(b=>b.attempted),[0,0,1,0,0,0]);
+ // Outcome accounting is the same aggregate as the cells use, zero bins included; the invalid row's effects still count.
+ assert.deepEqual([electron[0].exact,electron[0].invalid,electron[0].sideEffects.raised],[2,1,1]);
+ assert.deepEqual([electron[1].exact,electron[1].falseSuccess,electron[1].invalid],[0,1,0]);
+ assert.deepEqual([electron[5].exact,electron[5].duplicates],[1,1]);
+ assert.deepEqual([electron[2].valid,electron[2].callMs],[0,{p50:null,p95:null,max:null}]);
+});
+test('profile cleanup failures are counted over every attempt and never invalidate a marker-known row',()=>{
+ const rows=[row({profileCleanup:{attempted:true,ok:false,error:'EBUSY'}}),row({profileCleanup:{attempted:true,ok:true}}),row(),
+  row({valid:false,failureStage:'launch',profileCleanup:{attempted:true,ok:false,error:'x'}})];
+ const a=firstAggregate(rows);
+ assert.deepEqual([a.attempted,a.valid,a.exact,a.profileCleanupFailures],[4,3,3,2]);
+ assert.equal(firstJudge(rows[0]).eligible,true);
+ assert.equal(firstReadiness(rows).groups[0].profileCleanupFailures,2);
 });
 test('CLI readiness mode reads directories and rows.jsonl',()=>{
  const dir=mkdtempSync(join(tmpdir(),'first-readiness-'));

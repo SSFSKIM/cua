@@ -69,10 +69,12 @@ export const firstStats=latency;
 
 // Outcome counters for any set of rows (a cell, a readiness bucket); exact over every attempted row.
 export function firstAggregate(rows) {
- const g={attempted:0,valid:0,invalid:0,invalidByStage:{},repliesOK:0,errors:0,ran:0,exact:0,falseSuccess:0,duplicates:0,errorWithHandler:0,primerDrops:0,primerFalseSuccess:0,
+ const g={attempted:0,valid:0,invalid:0,invalidByStage:{},repliesOK:0,errors:0,ran:0,exact:0,falseSuccess:0,duplicates:0,errorWithHandler:0,primerDrops:0,primerFalseSuccess:0,profileCleanupFailures:0,
   sideEffects:Object.fromEntries(EFFECTS.map(k=>[k,0])),sideEffectsUnknown:Object.fromEntries(EFFECTS.map(k=>[k,0]))},times=[];
  for(const r of rows) {
   const j=firstJudge(r);g.attempted++;
+  // Cleanup trouble is housekeeping: counted over every attempt, and never part of delivery eligibility.
+  if(r.profileCleanup?.ok===false)g.profileCleanupFailures++;
   // Side effects count over every attempted row: invalid readbacks must not hide a harmful treatment.
   // An effect that is not a known boolean (null or absent) is unknown, counted apart from positive harm.
   for(const k of EFFECTS){const v=r.sideEffects?.[k];if(v===true)g.sideEffects[k]++;else if(v!==false)g.sideEffectsUnknown[k]++;}

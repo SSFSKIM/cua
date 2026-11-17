@@ -13,6 +13,7 @@ import {firstPlan,firstJudge,firstSummarize,firstCoverage} from './first-read.mj
 import {firstReadiness} from './first-readiness.mjs';
 import {finalizeTiming} from './first-timing.mjs';
 import {recordSample,deriveEffects} from './first-effects.mjs';
+import {removeProfile} from './first-cleanup.mjs';
 import {windowOptions} from './fixture/window-options.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1];};
@@ -154,7 +155,8 @@ try {
   finally {
    if(w){try{row.release=await rpc(w,coverPid,'get_app_state',{includeScreenshot:false});}catch(e){row.releaseError=String(e);}w.close();}
    row.appInfo=appInfo;row.trace??=trace.filter(e=>e.trial===cell.id);row.priorTrace??=trace.filter(e=>e.trial===cell.id+'/primer');
-   row.stopped=await stopOwned(target);if(row.stopped)rmSync(profile,{recursive:true,force:true});
+   row.stopped=await stopOwned(target);
+   row.profileCleanup=row.stopped?removeProfile(profile):{attempted:false,ok:null};
    if(row.targetPid)await ask({op:'forget',pid:row.targetPid});
    target=null;
   }

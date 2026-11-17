@@ -6,18 +6,19 @@ import {mkdtempSync,readFileSync,writeFileSync,rmSync} from 'node:fs';import {tm
 
 // The side helper must keep its main run loop turning while stdin is idle: NSWorkspace's foreground state is cached
 // until the main run loop turns (NSRunningApplication.h), and the passive watcher reads it from another thread.
-// The real helper is hosted-only and drives the GUI, so this compiles the helper's own `serve` region (between its
-// serve:begin / serve:end markers) with a Foundation-only harness. No AppKit, AX or app is touched.
+// The real helper is hosted-only and drives the GUI, so this compiles the helper's own `serve` and `logic` regions (between their
+// begin/end markers) with a Foundation-only harness. No AppKit, AX or app is touched.
 const here=dirname(fileURLToPath(import.meta.url));
 const swiftc=spawnSync('swiftc',['--version']).status===0;
 const skip=!swiftc&&'swiftc is not available';
 let dir,bin;
 before(()=>{
  if(!swiftc)return;
- const m=/^\/\/ serve:begin[^\n]*\n([\s\S]*?)^\/\/ serve:end/m.exec(readFileSync(join(here,'side.swift'),'utf8'));
- assert.ok(m,'side.swift lost its serve:begin/serve:end region');
+ const src=readFileSync(join(here,'side.swift'),'utf8');
+ const m=/^\/\/ serve:begin[^\n]*\n([\s\S]*?)^\/\/ serve:end/m.exec(src),l=/^\/\/ logic:begin[^\n]*\n([\s\S]*?)^\/\/ logic:end/m.exec(src);
+ assert.ok(m,'side.swift lost its serve:begin/serve:end region');assert.ok(l,'side.swift lost its logic:begin/logic:end region');
  dir=mkdtempSync(join(tmpdir(),'probe360-side-'));bin=join(dir,'check');
- writeFileSync(join(dir,'main.swift'),m[1]+readFileSync(join(here,'side-loop-check.swift'),'utf8'));
+ writeFileSync(join(dir,'main.swift'),l[1]+m[1]+readFileSync(join(here,'side-loop-check.swift'),'utf8'));
  const built=spawnSync('swiftc',['-O','-module-name','side360check','-o',bin,join(dir,'main.swift')],{encoding:'utf8'});
  assert.equal(built.status,0,built.stderr);
 });
@@ -64,4 +65,34 @@ test('negative control: a main thread blocked in readLine, the old shape, fails 
  assert.equal(second.turns,first.turns,'the control was expected to freeze');
  assert.ok(second.ageMs>=500,'the control heartbeat should be stale: '+second.ageMs);
  assert.equal(second.onMainThread,true);
+});
+
+test('watch interval validation: legacy 20 ms default, bounded numbers only',{skip,timeout:60000},async t=>{
+ const s=session(t),ask=v=>s.ask({op:'interval',...(v===undefined?{}:{value:v})});
+ assert.deepEqual(await ask(),{interval:20,onMainThread:false});
+ for(const v of [5,2,100,2.5])assert.equal((await ask(v)).interval,v);
+ for(const v of [1.99,100.1,0,-5,'5',true,null,[5]])assert.ok((await ask(v)).rejected,'accepted '+JSON.stringify(v));
+});
+
+test('window ids are read from raw CGWindowID array elements, in order',{skip,timeout:60000},async t=>{
+ const s=session(t),r=await s.ask({op:'ids',ids:[7,42,4294967295,3]});
+ assert.deepEqual(r.ids,[7,42,4294967295,3]);
+ assert.deepEqual((await s.ask({op:'ids',ids:[]})).ids,[]);
+});
+
+test('order observation: readable only with both windows, above is front-to-back index order',{skip,timeout:60000},async t=>{
+ const s=session(t),o=(ids,target,cover)=>s.ask({op:'order',ids,target,cover});
+ assert.deepEqual(await o([9,1,2],1,2),{readable:true,above:true,onMainThread:false});
+ assert.equal((await o([9,2,1],1,2)).above,false);
+ for(const ids of [[9,1],[2,9],[]]){const r=await o(ids,1,2);assert.equal(r.readable,false);assert.equal(r.above,undefined)}
+});
+
+test('observation summary reports actual gaps, blind intervals and spans from query times',{skip,timeout:60000},async t=>{
+ const s=session(t),r=(await s.ask({op:'summary',obs:[[0,2],[5,6],[20,21],[22,26]]})).summary;
+ assert.equal(r.samples,4);
+ assert.deepEqual(r.gapMs,{n:3,p50:5,p95:15,max:15});  // start to start: 5,15,2
+ assert.deepEqual(r.blindMs,{n:3,p50:3,p95:14,max:14}); // prev end to next start: 3,14,1
+ assert.deepEqual(r.spanMs,{n:3,p50:6,p95:16,max:16});  // prev start to this end: 6,16,6
+ assert.deepEqual(r.queryMs,{n:4,p50:1,p95:4,max:4});  // durations 2,1,1,4
+ assert.deepEqual((await s.ask({op:'summary',obs:[[0,1]]})).summary.gapMs,{n:0});
 });

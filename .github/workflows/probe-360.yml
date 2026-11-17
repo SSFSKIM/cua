@@ -1,13 +1,18 @@
 name: probe-360
-# The first eligible push registers this workflow and runs smoke. Keep the kit local while Actions is locked.
+# Eligible pushes run only smoke; use [skip ci] when preparing an explicitly dispatched run.
 on:
   push:
     branches: ['probe/360-measure']
     paths: ['scripts/probe-360/**', '.github/workflows/probe-360.yml']
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'qualification = unmodified production fix/main; spike = earlier intervention study'
+        default: 'qualification'
+        type: choice
+        options: ['qualification', 'spike']
       smoke:
-        description: 'true = one repetition per cell; false = 20 per cell (~1 hour)'
+        description: 'true = one repetition per cell; false = 20 per cell'
         default: 'true'
         type: choice
         options: ['true', 'false']
@@ -20,9 +25,12 @@ jobs:
   measure:
     if: github.ref == 'refs/heads/probe/360-measure'
     runs-on: macos-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       ENGINE_REF: 'b99232def1e37307848dd1ccb08726729eb81b66'
+      QUALIFICATION_ENGINE_REF: 'f066023e6e8f91dc3e1570b993bfda8f2f45a9aa'
+      QUALIFICATION_MAIN_REF: 'c7eee72403d64c420231ce59baa445524032102f'
+      MODE: ${{ github.event_name == 'push' && 'qualification' || inputs.mode }}
       SMOKE: ${{ github.event_name == 'push' && 'true' || inputs.smoke }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -43,7 +51,26 @@ jobs:
           printf '%s\n' '{"policies":{"DisableAppUpdate":true}}' > /Applications/Firefox.app/Contents/Resources/distribution/policies.json
           defaults write com.apple.TextEdit ApplePersistenceIgnoreState -bool YES
           defaults write com.apple.TextEdit NSQuitAlwaysKeepsWindows -bool NO
-      - name: Build the pinned engine copy, never patch the kit or vendor runtime
+      - name: Build unmodified production fix and main control
+        if: env.MODE == 'qualification'
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/qualify360-fix" "$QUALIFICATION_ENGINE_REF"
+          git worktree add --detach "$RUNNER_TEMP/qualify360-main" "$QUALIFICATION_MAIN_REF"
+          git -C "$RUNNER_TEMP/qualify360-fix" rev-parse HEAD > "$RUNNER_TEMP/probe-360/fix-head.txt"
+          git -C "$RUNNER_TEMP/qualify360-main" rev-parse HEAD > "$RUNNER_TEMP/probe-360/main-head.txt"
+          swift build -c release --package-path "$RUNNER_TEMP/qualify360-fix/native/engine" --scratch-path "$RUNNER_TEMP/qualify360-fix-build" > "$RUNNER_TEMP/probe-360/fix-build.txt" 2>&1
+          swift build -c release --package-path "$RUNNER_TEMP/qualify360-main/native/engine" --scratch-path "$RUNNER_TEMP/qualify360-main-build" > "$RUNNER_TEMP/probe-360/main-build.txt" 2>&1
+          git -C "$RUNNER_TEMP/qualify360-fix" status --porcelain --untracked-files=all -- native/engine > "$RUNNER_TEMP/probe-360/fix-source-status.txt"
+          git -C "$RUNNER_TEMP/qualify360-main" status --porcelain --untracked-files=all -- native/engine > "$RUNNER_TEMP/probe-360/main-source-status.txt"
+          test ! -s "$RUNNER_TEMP/probe-360/fix-source-status.txt"
+          test ! -s "$RUNNER_TEMP/probe-360/main-source-status.txt"
+          swiftc -O -o "$RUNNER_TEMP/side360" scripts/probe-360/side.swift
+      - name: Qualify whole production paths, including held-focus release
+        if: env.MODE == 'qualification'
+        run: |
+          node scripts/probe-360/qualify.mjs --fix-engine "$RUNNER_TEMP/qualify360-fix-build/release/cua-engine" --main-engine "$RUNNER_TEMP/qualify360-main-build/release/cua-engine" --side "$RUNNER_TEMP/side360" --out "$RUNNER_TEMP/probe-360/qualification" --smoke "$SMOKE"
+      - name: Build the pinned spike copy, never patch the kit or vendor runtime
+        if: env.MODE == 'spike'
         run: |
           git worktree add --detach "$RUNNER_TEMP/probe-360-src" "$ENGINE_REF"
           git -C "$RUNNER_TEMP/probe-360-src" rev-parse HEAD > "$RUNNER_TEMP/probe-360/engine-head.txt"
@@ -52,7 +79,8 @@ jobs:
           swift test --package-path "$RUNNER_TEMP/probe-360-src/native/engine" --scratch-path "$RUNNER_TEMP/probe-360-check" --filter Probe360EventChecks > "$RUNNER_TEMP/probe-360/event-check.txt" 2>&1
           swift build -c release --package-path "$RUNNER_TEMP/probe-360-src/native/engine" --scratch-path "$RUNNER_TEMP/probe-360-build"
           swiftc -O -o "$RUNNER_TEMP/side360" scripts/probe-360/side.swift
-      - name: Key-only cells, no automatic retries or foreground/order repairs
+      - name: Spike key-only cells, no automatic retries or foreground/order repairs
+        if: env.MODE == 'spike'
         run: |
           node scripts/probe-360/measure.mjs --engine "$RUNNER_TEMP/probe-360-build/release/cua-engine" --side "$RUNNER_TEMP/side360" --out "$RUNNER_TEMP/probe-360/data" --smoke "$SMOKE"
       - name: Rebuild offline tables, including partial coverage
@@ -61,11 +89,14 @@ jobs:
           if [ -f "$RUNNER_TEMP/probe-360/data/config.json" ]; then
             node scripts/probe-360/read.mjs "$RUNNER_TEMP/probe-360/data"
           fi
+          if [ -f "$RUNNER_TEMP/probe-360/qualification/config.json" ]; then
+            node scripts/probe-360/qualification-read.mjs "$RUNNER_TEMP/probe-360/qualification"
+          fi
       - name: Upload rows, event fields, DOM traces, raw Gecko logs and provenance
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: probe-360-${{ (github.event_name == 'push' || inputs.smoke == 'true') && 'smoke' || 'full' }}
+          name: probe-360-${{ env.MODE }}-${{ (github.event_name == 'push' || inputs.smoke == 'true') && 'smoke' || 'full' }}
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/probe-360/*.json
@@ -74,6 +105,10 @@ jobs:
             ${{ runner.temp }}/probe-360/data/*.jsonl
             ${{ runner.temp }}/probe-360/data/*.tsv
             ${{ runner.temp }}/probe-360/data/gecko.log*
+            ${{ runner.temp }}/probe-360/qualification/*.json
+            ${{ runner.temp }}/probe-360/qualification/*.jsonl
+            ${{ runner.temp }}/probe-360/qualification/*.tsv
+            ${{ runner.temp }}/probe-360/qualification/gecko.log*
             ${{ runner.temp }}/probe-316/install.txt
           # Allow-list only: no disposable browser profile/cache or owner files.
           retention-days: 30

@@ -58,27 +58,94 @@ func rangeRead(_ pid: pid_t, bind: Bool) -> [String: Any] {
   }
   result["endedAt"] = now(); return result
 }
+// logic:begin (side.test.mjs compiles this region verbatim: Foundation only, no AppKit, AX or window access)
+func mono() -> Double { Double(DispatchTime.now().uptimeNanoseconds) / 1e6 }
+/// Optional watch-start intervalMs: absent means the legacy 20 ms, anything else must be a finite number in [2, 100].
+func watchInterval(_ raw: Any?) throws -> Double {
+  guard let raw else { return 20 }
+  guard let n = raw as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue.isFinite, n.doubleValue >= 2, n.doubleValue <= 100 else {
+    throw NSError(domain: "intervalMs must be a number from 2 to 100", code: 1)
+  }
+  return n.doubleValue
+}
+/// CGWindowListCreate's elements are the raw CGWindowID values stored as pointers (null callbacks), not CF objects.
+func idsFromList(from list: CFArray) -> [UInt32] {
+  (0..<CFArrayGetCount(list)).compactMap { i in CFArrayGetValueAtIndex(list, i).flatMap { UInt32(exactly: UInt(bitPattern: $0)) } }
+}
+/// ids are front to back. Both windows must be present for the order to be readable.
+func orderObservation(_ ids: [UInt32], target: UInt32, cover: UInt32) -> (readable: Bool, above: Bool?) {
+  guard let t = ids.firstIndex(of: target), let c = ids.firstIndex(of: cover) else { return (false, nil) }
+  return (true, t < c)
+}
+func percentiles(_ values: [Double]) -> [String: Any] {
+  guard !values.isEmpty else { return ["n": 0] }
+  let v = values.sorted(), rank = { (p: Double) in v[max(0, Int((p * Double(v.count)).rounded(.up)) - 1)] }
+  return ["n": v.count, "p50": rank(0.5), "p95": rank(0.95), "max": v[v.count - 1]]
+}
+/// Actual cadence evidence from monotonic query times. gap: start to start; blind: previous query's end to this query's
+/// start (nothing observed); span: previous start to this end (the most the order could have changed unseen).
+func observationSummary(_ obs: [(start: Double, end: Double)]) -> [String: Any] {
+  let pairs = Array(zip(obs, obs.dropFirst()))
+  return ["samples": obs.count, "queryMs": percentiles(obs.map { $0.end - $0.start }),
+    "gapMs": percentiles(pairs.map { $1.start - $0.start }), "blindMs": percentiles(pairs.map { $1.start - $0.end }),
+    "spanMs": percentiles(pairs.map { $1.end - $0.start })]
+}
+// logic:end
+/// CGWindowListCreate is CF_SWIFT_UNAVAILABLE ("No replacement at present"), so it is resolved by name. It returns the
+/// on-screen CGWindowIDs front to back, without the per-window dictionaries CGWindowListCopyWindowInfo builds.
+typealias WindowListCreate = @convention(c) (CGWindowListOption, CGWindowID) -> Unmanaged<CFArray>?
+let windowListCreate: WindowListCreate? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreate").map { unsafeBitCast($0, to: WindowListCreate.self) }
+/// The requested interval is a timer target, never a resolution guarantee: each sample carries its own query start/end
+/// times and the stop summary reports the gaps actually achieved, so blind intervals are measured, not assumed.
 final class Watch: @unchecked Sendable {
-  let queue = DispatchQueue(label: "probe360.watch")
-  var timer: DispatchSourceTimer?, samples: [[String: Any]] = []
-  var target: CGWindowID = 0, cover: CGWindowID = 0
+  var queue = DispatchQueue(label: "probe360.watch")
+  var timer: DispatchSourceTimer?, samples: [[String: Any]] = [], obs: [(start: Double, end: Double)] = []
+  var target: CGWindowID = 0, cover: CGWindowID = 0, intervalMs = 20.0, requestedFast = false, fast = false
+  var source = "windowInfoDictionaries", fallbackReason: Any = NSNull()
   let beat: Beat
   init(beat: Beat) { self.beat = beat }
-  func sample() {
+  func windowIDs() -> [UInt32] {
+    if fast, let create = windowListCreate { return create([.optionOnScreenOnly], kCGNullWindowID).map { idsFromList(from: $0.takeRetainedValue()) } ?? [] }
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-    let ids = list.compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value }
-    let t = ids.firstIndex(of: target), c = ids.firstIndex(of: cover)
-    samples.append(["at": now(), "frontmostPid": front() as Any? ?? NSNull(), "mainLoopAgeMs": beat.ageMs,
-      "orderReadable": t != nil && c != nil, "targetAboveCover": t.flatMap { ti in c.map { ti < $0 } } as Any? ?? NSNull()])
+    return list.compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value }
   }
-  func start(_ target: CGWindowID, _ cover: CGWindowID) {
+  func sample(_ reason: String) {
+    // Foreground and order are separate reads; each is stamped so they are not taken as contemporaneous.
+    // The heartbeat age is taken with the foreground read, before the (possibly long) window query: it bounds that read's
+    // staleness. A later heartbeat must not make an older foreground observation look cache-fresh.
+    let frontAt = now(), age = beat.ageMs, pid = front(), qStart = now(), qMono = mono()
+    let ids = windowIDs(), qEnd = now(), qEndMono = mono()
+    let o = orderObservation(ids, target: target, cover: cover)
+    var s: [String: Any] = ["at": qEnd, "reason": reason, "seq": samples.count, "frontAt": frontAt, "frontmostPid": pid as Any? ?? NSNull(),
+      "queryStartedAt": qStart, "queryEndedAt": qEnd, "queryMs": qEndMono - qMono, "mainLoopAgeMs": age, "mainLoopAgeAtQueryEndMs": beat.ageMs,
+      "orderReadable": o.readable, "targetAboveCover": o.above as Any? ?? NSNull()]
+    if let last = obs.last { s["gapMs"] = qMono - last.start; s["blindMs"] = qMono - last.end; s["spanMs"] = qEndMono - last.start }
+    samples.append(s); obs.append((qMono, qEndMono))
+  }
+  func start(_ target: CGWindowID, _ cover: CGWindowID, intervalMs: Double, fastIDs: Bool) {
+    queue.sync { timer?.cancel(); timer = nil }
+    // Legacy keeps its default-QoS queue; the fast watcher takes the top class so a tight cadence is serviceable.
+    queue = fastIDs ? DispatchQueue(label: "probe360.watch.fast", qos: .userInteractive) : DispatchQueue(label: "probe360.watch")
     queue.sync {
-      timer?.cancel(); self.target = target; self.cover = cover; samples = []; sample()
-      let source = DispatchSource.makeTimerSource(queue: queue)
-      source.schedule(deadline: .now(), repeating: .milliseconds(20)); source.setEventHandler { self.sample() }; timer = source; source.resume()
+      self.target = target; self.cover = cover; self.intervalMs = intervalMs; samples = []; obs = []
+      requestedFast = fastIDs; fast = fastIDs && windowListCreate != nil
+      source = fast ? "CGWindowListCreate:ids" : "windowInfoDictionaries"
+      fallbackReason = fastIDs && !fast ? "CGWindowListCreate unavailable via dlsym" as Any : NSNull()
+      sample("start")
+      let t = DispatchSource.makeTimerSource(flags: fastIDs ? [.strict] : [], queue: queue)
+      let period = DispatchTimeInterval.nanoseconds(Int(intervalMs * 1e6))
+      t.schedule(deadline: fastIDs ? .now() + period : .now(), repeating: period)
+      t.setEventHandler { self.sample("timer") }; timer = t; t.resume()
     }
   }
-  func stop() -> [String: Any] { queue.sync { timer?.cancel(); timer = nil; sample(); return ["complete": true, "intervalMs": 20, "samples": samples] } }
+  func info() -> [String: Any] { ["intervalMs": intervalMs, "requestedFastIDs": requestedFast, "source": source, "fallbackReason": fallbackReason] }
+  func stop() -> [String: Any] {
+    queue.sync {
+      timer?.cancel(); timer = nil; sample("stop")
+      var r = info(); r["complete"] = true; r["samples"] = samples; r["summary"] = observationSummary(obs)
+      return r
+    }
+  }
 }
 // serve:begin (side.test.mjs compiles this region verbatim: Foundation only, no AppKit or AX)
 func now() -> Double { Date().timeIntervalSince1970 * 1000 }
@@ -132,7 +199,9 @@ func respond(_ line: String) -> String? {
     case "bind", "range": answer.merge(rangeRead(pid, bind: q["op"] as? String == "bind")) { _, n in n }
     case "watch-start":
       guard let t = q["targetWindow"] as? UInt32, let c = q["coverWindow"] as? UInt32, t > 0, c > 0 else { throw NSError(domain: "window ids missing", code: 1) }
-      watch.start(t, c); answer["ok"] = true
+      // Optional: intervalMs (default 20) and fastIDs (default false) keep the original spike behavior when absent.
+      let interval = try watchInterval(q["intervalMs"]), fast = q["fastIDs"] as? Bool ?? false
+      watch.start(t, c, intervalMs: interval, fastIDs: fast); answer["ok"] = true; answer.merge(watch.info()) { _, n in n }
     case "watch-stop": answer.merge(watch.stop()) { _, n in n }
     default: answer["error"] = "unknown side operation"
     }

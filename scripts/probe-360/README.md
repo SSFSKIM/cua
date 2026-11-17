@@ -1,4 +1,52 @@
-# #360: background Firefox caret delivery, measure first
+# #360: background Firefox caret delivery
+
+## Whole-production-path qualification (ruling 764)
+
+The default workflow mode is now `qualification`: build the **unmodified** production fix
+`f066023e6e8f91dc3e1570b993bfda8f2f45a9aa` and main control
+`c7eee72403d64c420231ce59baa445524032102f`. Neither source tree is patched or given extra native tests;
+source cleanliness and heads are recorded beside build logs. The only measured RPC arguments are `pid` and `key`.
+There is no forced route, bare prelude, AX caret read-back, or change to the posted/unconfirmed API contract.
+
+```sh
+# 80 attempts: all cells once. Push with [skip ci] to avoid a redundant push-trigger smoke.
+gh workflow run 420915277 -R SSFSKIM/cua --ref probe/360-measure -f mode=qualification -f smoke=true
+# 1,600 attempts: all cells 20 times; dispatch only after a sound smoke at the approved final fix head.
+gh workflow run 420915277 -R SSFSKIM/cua --ref probe/360-measure -f mode=qualification -f smoke=false
+```
+
+Each repetition first measures 32 fix-foreground controls, then 32 fix-background cells and 16 main-background
+rich-editor controls. Editors: textarea, input, contenteditable, compose. Keys: Left, Option+Left, Cmd+Left,
+Cmd+Shift+Left, Home, End, PageUp, PageDown. No rows are retried or replaced. The controller budget is 90 minutes;
+the hosted job allows 120 minutes including both native builds. The main control uses natural routing too,
+so its Command chords are **not** plain-post price controls.
+
+The four original keys retain the 29-character seed and independent expected selections. Home/End/Page keys use
+long, scrollable text with an interior caret and scroll offset; input remains genuinely single-line. Every DOM state
+records selection, selection direction, focused editor, text hash/length, and field/ancestor/document scroll positions
+and extents. The full text is retained for setup and the 1s sample. The foreground control for the same editor/key/rep
+calibrates the DOM effect. A valid control with no selection or scroll effect is **not applicable**, never a successful
+acknowledgment; missing/invalid controls are uncalibrated. Setup scroll must match its foreground preparation and be
+comparable with the control. Final selection is exact, with 2px tolerance only on relevant scroll axes. Errors, focus
+loss, wrong text, or observed activation/raise cannot be hidden as N/A. Read/arm/sample commands never mutate DOM.
+
+A fresh connection per attempt measures the cold `holdKeyFocus` path, including its guard. The connection stays open
+through the 1s sample, then closes **while the passive watch remains armed**, followed by 500ms cleanup observation.
+This includes lease release in the watched interval rather than ending observation at RPC return. It is not a test
+of the 120-second idle expiry or a price for subsequent calls inside an already held interaction.
+
+The qualification requests a 5ms, user-interactive-QoS, ID-only `CGWindowListCreate` ordering watch instead of the
+original dictionary query. Foreground capture, query start/end, actual monotonic gaps and query spans are stamped
+separately. Requested cadence is not observed resolution; report median/p95/max gaps beside every result.
+A short flash between observations can remain invisible. Kit setup activation is forbidden while watching;
+production guards/repair are left untouched and observed, not bypassed. Stop on any observed activation/order violation.
+
+`qualification-read.mjs DATA` writes `summary.json`, `rates.tsv`, `judgments.tsv` and `price.tsv`. The summary separates
+coverage, effect qualification, N/A/invalid/uncalibrated rows, route metadata, release cleanup and actual watch gaps.
+Price compares fix route-3 RPC latency with same-editor/key main calls whose reported route was naturally 2′,
+and reports native `activationGuardMs` separately. No Firefox AXSelectedTextRange is an oracle (#394).
+
+## Earlier intervention study (`mode=spike`)
 
 Disposable kit based on `probe/354-measure` at `4ab1ebd6`. Nothing here is a proposed product fix.
 The engine is pinned to current main at preparation, `b99232def1e37307848dd1ccb08726729eb81b66`, not a moving ref.
@@ -14,16 +62,16 @@ billing-locked; hosted execution began with [smoke 44018349366](https://github.c
 
 ```sh
 # Smoke: 128 attempts, one repetition per labelled cell.
-gh workflow run 420915277 -R SSFSKIM/cua --ref probe/360-measure -f smoke=true
+gh workflow run 420915277 -R SSFSKIM/cua --ref probe/360-measure -f mode=spike -f smoke=true
 # Full: 2,560 attempts, 20 repetitions per labelled cell.
-gh workflow run 420915277 -R SSFSKIM/cua --ref probe/360-measure -f smoke=false
+gh workflow run 420915277 -R SSFSKIM/cua --ref probe/360-measure -f mode=spike -f smoke=false
 ```
 
 The only push trigger is this branch plus the kit's own paths; push always defaults to smoke.
 There are no PR, schedule or workflow-call triggers. One hosted macOS job,
 approximately an hour for full measurement plus installation/build margin.
 The first smoke's measured cell times project the full plan to 63 minutes; the controller therefore has a
-75-minute measurement budget and the job a 90-minute timeout. The plan is not reduced to fit the old 60-minute cap.
+75-minute measurement budget (the shared workflow now allows 120 minutes). The plan is not reduced to fit the old 60-minute cap.
 A budget expiry retains partial evidence and fails coverage; it never trims the planned denominator.
 The Mac mini and the owner's GUI/profile are not used.
 

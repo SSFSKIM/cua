@@ -39,6 +39,7 @@ final class Probe354CaretTrace: @unchecked Sendable {
   private let lock = NSLock()
   private var id: String?
   private var startedAt: Double = 0
+  private var typingStartedAt: Double?
   private var typingCompleteAt: Double?
   private var polls: [[String: Any]] = []
   private var outsidePollRanges: [[String: Any]] = []
@@ -48,8 +49,11 @@ final class Probe354CaretTrace: @unchecked Sendable {
     guard args["probe354CaretTrace"] as? Bool == true, let tag = args["probe354Audit"] as? String else { return nil }
     lock.lock(); defer { lock.unlock() }
     precondition(id == nil, "one caret diagnostic at a time")
-    id = tag; startedAt = probe354CaretNow(); typingCompleteAt = nil; polls = []; outsidePollRanges = []; current = nil
+    id = tag; startedAt = probe354CaretNow(); typingStartedAt = nil; typingCompleteAt = nil; polls = []; outsidePollRanges = []; current = nil
     return tag
+  }
+  func typingStarted() {
+    lock.lock(); defer { lock.unlock() }; guard id != nil else { return }; typingStartedAt = probe354CaretNow()
   }
   func typingComplete() {
     lock.lock(); defer { lock.unlock() }; guard id != nil else { return }; typingCompleteAt = probe354CaretNow()
@@ -100,7 +104,8 @@ final class Probe354CaretTrace: @unchecked Sendable {
   func finish(_ tag: String?) {
     guard let tag else { return }; lock.lock()
     var result: [String: Any] = ["id": tag, "readerHook": Self.readerHook, "startedAt": startedAt,
-      "typingCompleteAt": NSNull(), "endedAt": probe354CaretNow(), "polls": polls, "outsidePollRanges": outsidePollRanges]
+      "typingStartedAt": NSNull(), "typingCompleteAt": NSNull(), "endedAt": probe354CaretNow(), "polls": polls, "outsidePollRanges": outsidePollRanges]
+    if let typingStartedAt { result["typingStartedAt"] = typingStartedAt }
     if let typingCompleteAt { result["typingCompleteAt"] = typingCompleteAt }
     id = nil; current = nil; polls = []; outsidePollRanges = []; lock.unlock()
     if let data = try? JSONSerialization.data(withJSONObject: ["probe354CaretTrace": result], options: [.sortedKeys]) { FileHandle.standardError.write(data + Data([10])) }

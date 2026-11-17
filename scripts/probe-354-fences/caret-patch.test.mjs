@@ -23,7 +23,17 @@ const reader=`func readbackPoll<Element>(_ field: Element, role: String, reads: 
   } while true
   return poll
 }
-func finishFixture() throws {
+func keyTextReadBack<Element>(_ units: [TypedUnit], concealed: Bool, reads: ReadbackReads<Element>,
+                              checkSource: (_ entered: Int, _ total: Int) throws -> Void, checkIntervention: () throws -> Void,
+                              post: (KeyEvent) -> Bool, pause: () -> Void, meta: inout InputMeta) throws {
+  guard !units.isEmpty else {
+    return try keyText(units, concealed: concealed, checkSource: checkSource, checkIntervention: checkIntervention, post: post,
+                       pause: pause, meta: &meta)
+  }
+  let readback = TypeReadback(units: units, concealed: concealed, reads: reads)
+  defer { meta.typeReadback = readback.record }
+  try keyText(units, concealed: concealed, checkSource: checkSource, beforeUnit: readback.beforeUnit,
+              checkIntervention: checkIntervention, post: post, pause: pause, meta: &meta)
   try readback.finish()
 }
 `;
@@ -39,6 +49,12 @@ test('reader instrumentation leaves every production guard, compare, exit and re
  assert.equal(report.readerHook,'TypeReadback');assert.equal(strip(readFileSync(join(dir,'TypeReadback.swift'),'utf8')),reader);
  assert.equal(strip(readFileSync(join(dir,'Input.swift'),'utf8')),input);
  assert.throws(()=>patchCaret(root),/fresh/);
+});
+test('the before-selection boundary is after the snapshot and before keyed delivery, never after typing',t=>{
+ const {root,dir}=fixture(t);patchCaret(root);const output=readFileSync(join(dir,'TypeReadback.swift'),'utf8');
+ const snapshot=output.indexOf('let readback = TypeReadback('),start=output.indexOf('Probe354CaretTrace.shared.typingStarted()'),delivery=output.indexOf('try keyText(units, concealed: concealed, checkSource: checkSource, beforeUnit: readback.beforeUnit');
+ assert.ok(snapshot>=0&&start>snapshot&&delivery>start);
+ assert.equal(strip(output),reader);
 });
 test('main is instrumented for actual API replies but does not acquire an invented production reader',t=>{
  const {root,dir,audit}=fixture(t,false),report=patchCaret(root);

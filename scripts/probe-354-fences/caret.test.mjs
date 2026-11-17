@@ -69,6 +69,31 @@ test('diagnostic artifacts withhold both public field text and private exception
  const clean=caret.sanitizeCaretRow(row);assert.equal(JSON.stringify(clean).includes(marker),false);assert.equal(clean.typeRPC.raw.error.errorName,'typeUnconfirmed');assert.equal(clean.typeRPC.raw.error.meta.typeReadback.reads,3);assert.deepEqual(clean.caretTrace,packet());
 });
 
+test('pre-typing AX selection and expected caret are derived from real replies, not invented when the range is unreadable',()=>{
+ const intent=caret.caretIntent({selection:[3,0],typedUtf16:64});
+ assert.deepEqual(intent,{domBefore:{location:'3',length:'0'},typedUtf16:64,expectedDOM:{location:'67',length:'0'}});
+ const before=range(null,{startedAt:2,endedAt:3,range:{location:'3',length:'0'}}),trace=packet({typingStartedAt:7,outsidePollRanges:[before]});
+ assert.deepEqual(caret.parseCaretLine(JSON.stringify({probe354CaretTrace:trace})),{trace});
+ const evidence=caret.caretBeforeEvidence({caretIntent:intent,caretTrace:trace});
+ assert.deepEqual(evidence.beforeRange,{location:'3',length:'0'});assert.deepEqual(evidence.expectedAX,{location:'67',length:'0'});assert.equal(evidence.beforeReplies.length,1);
+ const missing=caret.caretBeforeEvidence({caretIntent:intent,caretTrace:packet({typingStartedAt:7,outsidePollRanges:[range(null,{startedAt:2,endedAt:3,axError:-25205,shape:'missing',range:null})]})});
+ assert.equal(missing.beforeRange,null);assert.equal(missing.expectedAX,null);assert.equal(missing.beforeReplies[0].axError,-25205);
+ assert.throws(()=>caret.caretIntent({selection:[-1,0],typedUtf16:64}));
+});
+
+test('caret comparison tables retain before selection and actual poll/late timing against the expected caret',()=>{
+ const out=mkdtempSync(join(tmpdir(),'probe354-caret-target-'));try{
+  const before=range(null,{startedAt:2,endedAt:3,range:{location:'3',length:'0'}}),trace=packet({typingStartedAt:7,outsidePollRanges:[before]});
+  trace.polls[0].ranges=[range(1,{range:{location:'3',length:'0'}})];
+  const row={id:trace.id,recordKind:'caret-diagnostic',arm:'branch',variant:'secret-insertion',valid:true,caretIntent:caret.caretIntent({selection:[3,0],typedUtf16:64}),caretTrace:trace,typeRPC:{endedAt:20,raw:{error:{errorName:'typeUnconfirmed',meta:{typeReadback:{reason:'unchanged'}}}}},lateCaretSnapshot:{source:'diagnostic-added-late',replyAt:20,actualDelayMs:300,snapshot:{range:range(null,{source:'diagnostic-added-late',startedAt:320,endedAt:321,range:{location:'67',length:'0'}})}}};
+  caret.writeCaretTables(out,[row]);
+  const s=JSON.parse(readFileSync(join(out,'summary.json'),'utf8'));assert.deepEqual(s.cases[0].expectedCaretAX,{location:'67',length:'0'});assert.deepEqual(s.cases[0].beforeRange,{location:'3',length:'0'});
+  assert.match(readFileSync(join(out,'caret-before.tsv'),'utf8'),/location/);
+  const polls=readFileSync(join(out,'caret-polls.tsv'),'utf8');assert.match(polls,/matchesExpectedAX/);assert.match(polls,/false/);
+  const final=readFileSync(join(out,'caret-final.tsv'),'utf8');assert.match(final,/true/);assert.match(final,/300/);
+ }finally{rmSync(out,{recursive:true,force:true})}
+});
+
 test('compact tables keep the main no-poll distinction and never emit primary rates or cost',()=>{
  assert.equal(typeof caret.writeCaretTables,'function');const out=mkdtempSync(join(tmpdir(),'probe354-caret-'));
  try{

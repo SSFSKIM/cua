@@ -38,6 +38,7 @@ export function patchCaret(root){
     }
     Probe354CaretTrace.shared.endPoll(probe354Poll, outcome: probe354Outcome)
     // probe354-caret outcome end`);
+  r=once(r,'  try keyText(units, concealed: concealed, checkSource: checkSource, beforeUnit: readback.beforeUnit,','  // probe354-caret start begin\n  Probe354CaretTrace.shared.typingStarted()\n  // probe354-caret start end\n  try keyText(units, concealed: concealed, checkSource: checkSource, beforeUnit: readback.beforeUnit,');
   r=once(r,'  try readback.finish()','  // probe354-caret typing begin\n  Probe354CaretTrace.shared.typingComplete()\n  // probe354-caret typing end\n  try readback.finish()');
  }
  // Validate every anchor before writing any scratch source. Main intentionally has no reader hook.

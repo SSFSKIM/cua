@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       reps:
-        description: 'Repetitions per cell (20 for gate; 1 for smoke)'
+        description: 'Repetitions per cell (20 for measurement; 10 for isolated diagnostics; 1 for smoke)'
         default: '20'
       smoke:
         description: 'Label smoke evidence separately (set reps to 1)'
@@ -15,7 +15,7 @@ on:
         description: 'Comma-separated browser-editor shard ids of the selected cohort, or all'
         default: 'all'
       diagnostic:
-        description: 'Cohort: primary (default), isolated firefox-caret observer-effect, or followup measurement (ten shards; builder 3141f170 pinned)'
+        description: 'Cohort: primary, followup, or branch-only firefox-caret / safari-no-key-ax diagnostics (3141f170 pinned)'
         default: 'primary'
 permissions:
   contents: read
@@ -35,9 +35,10 @@ jobs:
         env:
           REPS: ${{ github.event.inputs.reps }}
           SMOKE: ${{ github.event.inputs.smoke }}
+          DIAGNOSTIC: ${{ github.event.inputs.diagnostic || 'primary' }}
         run: |
-          node --input-type=module -e 'import {assertPins} from "./scripts/probe-354-fences/ab-model.mjs"; assertPins(process.env.MAIN_REF, process.env.BRANCH_REF); const n=Number(process.env.REPS); if(![1,20].includes(n)||!(["true","false"].includes(process.env.SMOKE))||((process.env.SMOKE==="true")!==(n===1)))throw Error("use 20/full or 1/smoke");'
-          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/ab-extra.test.mjs scripts/probe-354-fences/ab-secret.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs scripts/probe-354-fences/caret.test.mjs scripts/probe-354-fences/caret-patch.test.mjs scripts/probe-354-fences/offline/caret-table.test.mjs scripts/probe-354-fences/followup.test.mjs
+          node --input-type=module -e 'import {assertPins} from "./scripts/probe-354-fences/ab-model.mjs"; import {validateRunInputs} from "./scripts/probe-354-fences/caret.mjs"; assertPins(process.env.MAIN_REF, process.env.BRANCH_REF); validateRunInputs({diagnostic:process.env.DIAGNOSTIC,reps:Number(process.env.REPS),smoke:process.env.SMOKE});'
+          node --test scripts/probe-354-fences/ab.test.mjs scripts/probe-354-fences/ab-extra.test.mjs scripts/probe-354-fences/ab-secret.test.mjs scripts/probe-354-fences/kit.test.mjs scripts/probe-354-fences/audit-patch.test.mjs scripts/probe-354-fences/offline/ab-table.test.mjs scripts/probe-354-fences/caret.test.mjs scripts/probe-354-fences/caret-patch.test.mjs scripts/probe-354-fences/offline/caret-table.test.mjs scripts/probe-354-fences/followup.test.mjs scripts/probe-354-fences/diagnostic.test.mjs scripts/probe-354-fences/safari-ax.test.mjs scripts/probe-354-fences/safari-ax-source.test.mjs scripts/probe-354-fences/offline/safari-ax-table.test.mjs
       - id: matrix
         env:
           ONLY: ${{ github.event.inputs.only }}
@@ -80,7 +81,8 @@ jobs:
           swiftc -parse-as-library -O -o "$RUNNER_TEMP/audit354-check" scripts/probe-354-fences/audit.swift scripts/probe-354-fences/audit-check.swift
           "$RUNNER_TEMP/audit354-check" 2> "$RUNNER_TEMP/probe-354-ab/audit-controls.jsonl"
           node scripts/probe-354-fences/audit-check.mjs "$RUNNER_TEMP/probe-354-ab/audit-controls.jsonl"
-          for arm in main branch; do
+          arms=$(node scripts/probe-354-fences/caret.mjs build-arms "$DIAGNOSTIC")
+          for arm in $arms; do
             if [ "$arm" = main ]; then ref="$MAIN_REF"; else ref="$BRANCH_REF"; fi
             git worktree add --detach "$RUNNER_TEMP/$arm-src" "$ref"
             git -C "$RUNNER_TEMP/$arm-src" rev-parse HEAD
@@ -91,7 +93,7 @@ jobs:
             swift build -c release --package-path "$RUNNER_TEMP/$arm-src/native/engine" --scratch-path "$RUNNER_TEMP/$arm-build"
           done
           swiftc -O -o "$RUNNER_TEMP/side354" scripts/probe-354-fences/side.swift
-      - name: Paired real-engine measurements, one engine process at a time
+      - name: Real-engine measurements, one engine process at a time
         env:
           BROWSER: ${{ matrix.browser }}
           SHARD: ${{ matrix.shard }}
@@ -100,7 +102,7 @@ jobs:
           REPS: ${{ github.event.inputs.reps }}
           SMOKE: ${{ github.event.inputs.smoke }}
         run: |
-          order=$(node --input-type=module -e 'import {armOrder} from "./scripts/probe-354-fences/ab-model.mjs"; console.log(armOrder(process.env.BROWSER,process.env.SHARD).join(" "))')
+          order=$(node scripts/probe-354-fences/caret.mjs run-arms "$DIAGNOSTIC" "$BROWSER" "$SHARD")
           result=0
           for arm in $order; do
             if [ "$arm" = main ]; then ref="$MAIN_REF"; else ref="$BRANCH_REF"; fi
@@ -113,6 +115,8 @@ jobs:
           done
           if [ "$DIAGNOSTIC" = firefox-caret ]; then
             node scripts/probe-354-fences/offline/caret-table.mjs "$RUNNER_TEMP/probe-354-ab/$JOB_ID"
+          elif [ "$DIAGNOSTIC" = safari-no-key-ax ]; then
+            node scripts/probe-354-fences/offline/safari-ax-table.mjs "$RUNNER_TEMP/probe-354-ab/$JOB_ID"
           else
             node scripts/probe-354-fences/offline/ab-table.mjs "$RUNNER_TEMP/probe-354-ab/$JOB_ID" --only "$JOB_ID" --cohort "$DIAGNOSTIC"
           fi
@@ -121,7 +125,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: ${{ github.event.inputs.diagnostic == 'firefox-caret' && 'probe-354-caret' || github.event.inputs.diagnostic == 'followup' && 'probe-354-followup' || 'probe-354-ab' }}-${{ matrix.id }}
+          name: ${{ github.event.inputs.diagnostic == 'firefox-caret' && 'probe-354-caret' || github.event.inputs.diagnostic == 'safari-no-key-ax' && 'probe-354-safari-ax' || github.event.inputs.diagnostic == 'followup' && 'probe-354-followup' || 'probe-354-ab' }}-${{ matrix.id }}
           path: |
             ${{ runner.temp }}/probe-354-ab/*-audit-patch.json
             ${{ runner.temp }}/probe-354-ab/*-caret-patch.json
@@ -132,6 +136,8 @@ jobs:
             ${{ runner.temp }}/probe-354-ab/**/summary.json
             ${{ runner.temp }}/probe-354-ab/**/rows.jsonl
             ${{ runner.temp }}/probe-354-ab/**/caret-rows.jsonl
+            ${{ runner.temp }}/probe-354-ab/**/safari-ax-rows.jsonl
+            ${{ runner.temp }}/probe-354-ab/**/diagnostic-coverage.json
             ${{ runner.temp }}/probe-354-ab/**/calibrations.jsonl
             ${{ runner.temp }}/probe-354-ab/**/foreground-references.jsonl
             ${{ runner.temp }}/probe-354-ab/**/wrong-successes.jsonl

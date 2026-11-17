@@ -11,7 +11,8 @@ import {createFixture,FixtureLost} from './fixture.mjs';
 import {abortReason,coverage} from './classify.mjs';
 import {answer,privacyFindings,warmupCell,calibrationKeys} from './ab-model.mjs';
 import {FOLLOWUP,FOLLOWUP_SCOPES,CAP_RETRIES} from './followup.mjs';
-import {CARET_MODE,planFor,traceArgs,parseCaretLine,caretLogLine,lateCaretSnapshot,sanitizeCaretRow,writeCaretTables} from './caret.mjs';
+import {CARET_MODE,planFor,isDiagnosticMode,validateRunInputs,caretIntent,traceArgs,parseCaretLine,caretLogLine,lateCaretSnapshot,sanitizeCaretRow,writeCaretTables} from './caret.mjs';
+import {SAFARI_AX_MODE,observeSafariCase,writeSafariAXTables} from './safari-ax.mjs';
 import {writeTables} from './offline/ab-table.mjs';
 import {snapshot} from '../probe-354-substitutions/diagnostic.mjs';
 import {readbackStatus,qualifiedKeyAnswer,diagnosticContractFailure,needsForegroundReference,referenceKey,publicDOM,renderedVerdict} from './ab-extra.mjs';
@@ -21,7 +22,9 @@ if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners 
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
 const OUT=arg('out'),ENGINE=arg('engine'),SIDE=arg('side'),KIND=arg('browser'),SHARD=arg('shard'),ARM=arg('arm'),HEAD=arg('head'),REPS=+(arg('reps')??20),SMOKE=arg('smoke')==='true';
 if(!OUT||!ENGINE||!SIDE||!['main','branch'].includes(ARM)||!/^[a-f0-9]{40}$/.test(HEAD??''))throw Error('invalid A/B arguments');
-const DIAGNOSTIC=arg('diagnostic')??'primary',IS_CARET=DIAGNOSTIC===CARET_MODE,IS_FOLLOWUP=DIAGNOSTIC===FOLLOWUP;
+const DIAGNOSTIC=arg('diagnostic')??'primary',IS_CARET=DIAGNOSTIC===CARET_MODE,IS_FOLLOWUP=DIAGNOSTIC===FOLLOWUP,IS_SAFARI_AX=DIAGNOSTIC===SAFARI_AX_MODE,IS_DIAGNOSTIC=isDiagnosticMode(DIAGNOSTIC);
+validateRunInputs({diagnostic:DIAGNOSTIC,reps:REPS,smoke:SMOKE});
+if(IS_DIAGNOSTIC&&ARM!=='branch')throw Error('isolated diagnostic runs are branch-only');
 const cells=planFor({browser:KIND,editor:SHARD,reps:REPS,arm:ARM,diagnostic:DIAGNOSTIC});
 if(cells.some(c=>c.secret)&&!arg('source'))throw Error('secret diagnostics require the pinned --source tree');
 const secretProbe=cells.some(c=>c.secret)?await createSyntheticSecretProbe({sourceRoot:arg('source'),parent:process.env.RUNNER_TEMP}):null;
@@ -76,11 +79,13 @@ const meta={kit:process.env.GITHUB_SHA??null,engine:HEAD,arm:ARM,image:process.e
 meta.cohort=DIAGNOSTIC;
 // A partial cohort uses its own arm-specific denominator; raw cohort collections remain separate.
 if(IS_FOLLOWUP)Object.assign(meta,{primaryEvidence:false,pooling:'same-head control cells may be combined; keep raw cohorts separate and never pool different branch heads or observer-effect caret measurements',followup:{scopes:FOLLOWUP_SCOPES[KIND+'-'+SHARD],...(FOLLOWUP_SCOPES[KIND+'-'+SHARD].includes('unicode-cap-retries')?{capRetries:CAP_RETRIES[ARM]}:{}),noKey:'no press_key between setup and type_text; the secret cell uses the trusted wrapper and an isolated synthetic HOME'}});
-if(IS_CARET)Object.assign(meta,{diagnostic:CARET_MODE,primaryEvidence:false,observerEffect:true,answers:'real result/error/meta retained with field-text strings withheld; no primary verdict inferred',sampling:'no post-type DOM sampling; one guarded range/count sidecar approximately 300ms after actual engine reply',race:'not collected',clean:'not collected',pollDefinition:'production compare calls after role/subrole guards',addedObservations:'AXNumberOfCharacters per guarded production poll, plus range/count sidecar approximately 300ms after reply; no DOM post-type sampling',unitInterpretation:'unresolved; raw replies and known public control offsets only'});
+if(IS_CARET)Object.assign(meta,{diagnostic:CARET_MODE,primaryEvidence:false,observerEffect:true,answers:'real result/error/meta retained with field-text strings withheld; no primary verdict inferred',sampling:'no post-type DOM sampling; one guarded range/count sidecar approximately 300ms after actual engine reply',race:'not collected',clean:'not collected',pollDefinition:'production compare calls after role/subrole guards',addedObservations:'AXNumberOfCharacters per guarded production poll, plus range/count sidecar approximately 300ms after reply; no DOM post-type sampling',unitInterpretation:'unresolved; raw replies and known public control offsets only',arms:['branch'],beforeSelection:'actual production range replies before the keyed-delivery boundary; expected carets from both that AX location and the established DOM location',secrets:'synthetic temporary-HOME secrets only; no field text or secret bytes; intended UTF-16 length and actual AX ranges/counts are retained only in this diagnostic, not added to product wire metadata'});
+if(IS_SAFARI_AX)Object.assign(meta,{diagnostic:SAFARI_AX_MODE,primaryEvidence:false,observerEffect:true,answers:'public synthetic fixture; actual type_text result plus read-only AX path/error evidence, not a confirmation gate',setup:'page focuses input, Safari stays behind the cover; no key in no-key cells; key-first uses Command+A on the same connection and restores DOM selection without a key',sampling:'AX path snapshot before and after typing, then one public DOM read; every actual query is timed; no primary timed samples',flags:'accessibility flags are observed; mutations skipped unless genuinely reversible with no state carryover',arms:['branch']});
 let done=0,valid=0,invalid=0,setupFailures=0,consecutiveInvalid=0,aborted=null;
-const compact=[],calibrations=new Map(),foregroundReferences=new Map();
+const compact=[],calibrations=new Map(),foregroundReferences=new Map();let safariSnapshotOrdinal=0;
 function progress(last){writeFileSync(join(OUT,'progress.json'),JSON.stringify({done,valid,invalid,planned:cells.length,setupFailures,consecutiveInvalid,aborted,last,elapsedMs:Date.now()-start,fixture:{bound:fixture.fx.bound,foreignPolls:fixture.fx.foreignPolls,expired:fixture.fx.expired,bindings:fixture.fx.bindings.length}},null,2))}
 function save(row){
+ if(IS_SAFARI_AX){appendFileSync(join(OUT,'safari-ax-rows.jsonl'),JSON.stringify(row)+'\n');compact.push(row);writeSafariAXTables(OUT,compact);return}
  if(IS_CARET){row=sanitizeCaretRow(row);appendFileSync(join(OUT,'caret-rows.jsonl'),JSON.stringify(row)+'\n');compact.push(row);writeCaretTables(OUT,compact);return}
  appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');
  const {samples,trace,reset,setup,settledSetup,priorKeyEffect,...small}=row;
@@ -152,10 +157,33 @@ async function cell(c,{warmup=false}={}){
  const calibration=c.key?calibrations.get(c.key):null,expected=expectation(calibration?.effect??{text:seedFor(c),selection:initial(c).selection},c.text),requestedFinal=expected.final;
  if(c.expectedText!==undefined)expected.final=c.expectedText;
  if(c.secret)expected.final=secretProbe.expected(privateInitial?.text??seedFor(c),privateInitial?.selection??initial(c).selection);
- let row={...c,recordKind:IS_CARET?'caret-diagnostic':warmup?'warmup':'cell',cohort:DIAGNOSTIC,arm:ARM,browser:KIND,shard:SHARD,kit:meta.kit,engine:HEAD,expectedFinal:c.secret?null:expected.final,requestedFinal:c.expectedText!==undefined?requestedFinal:undefined,calibrationKey:calibration?.key??null,startedAt:Date.now()};
- let w,stage='setup',lost=false;
+ let row={...c,recordKind:IS_CARET?'caret-diagnostic':IS_SAFARI_AX?'safari-ax-diagnostic':warmup?'warmup':'cell',cohort:DIAGNOSTIC,arm:ARM,browser:KIND,shard:SHARD,kit:meta.kit,engine:HEAD,expectedFinal:c.secret?null:expected.final,requestedFinal:c.expectedText!==undefined?requestedFinal:undefined,calibrationKey:calibration?.key??null,startedAt:Date.now()};
+ if(IS_CARET)row.caretIntent=caretIntent({selection:privateInitial?.selection??initial(c).selection,typedUtf16:c.secret?secretProbe.fixture('equal').selection[1]:c.text.length});
+ let w,stage='setup',lost=false,fatalError=null;
  try{
   w=await connect();await setup(c,row,privateInitial);
+  if(IS_SAFARI_AX){
+   stage='ax-diagnostic';
+   Object.assign(row,await observeSafariCase(c,{
+    pid,coverPid,
+    hold:key=>rpc(w,'press_key',{key}),
+    verifyAndRestore:async()=>{
+     await sleep(500);const selected=await fixture.command({op:'read',cell:c.id});
+     const verified=selected.text===seedFor(c)&&sameSel(selected.selection,[0,seedFor(c).length])&&selected.focused===true;
+     const restored=await fixture.command({op:'prepare',cell:c.id,editor:c.editor,key:null,selection:initial(c).selection});check(restored,c,'held-key restored state');
+     await front(coverPid,false);return {verified,selected,restored};
+    },
+    snapshot:async phase=>{
+     const ordinal=++safariSnapshotOrdinal,requestedAt=Date.now();(row.snapshotAttempts??=[]).push({phase,ordinal,requestedAt});
+     const result=await ask({op:'safariAXPaths',pid,lane:SAFARI_AX_MODE,tag:c.id+'/'+phase}),receivedAt=Date.now();
+     return {...result,ordinal,transport:{requestedAt,receivedAt,roundTripMs:receivedAt-requestedAt}};
+    },
+    assertCovered:()=>front(coverPid,false),
+    type:async()=>{row.typeRPC=await rpc(w,'type_text',{text:c.text});return row.typeRPC},
+    readDOM:()=>fixture.command({op:'read',cell:c.id})
+   }));
+   row.answer=answer(row.typeRPC.raw);row.readbackStatus=readbackStatus(row.typeRPC.raw);row.correct=row.afterDOM.text===expected.final;row.valid=true;
+  }else{
   if(c.key){
    stage='key';row.keyRPC=await rpc(w,'press_key',{key:c.key});if(!answer(row.keyRPC.raw).success)throw Error('measured key refused');
    if(c.part!=='race'){
@@ -209,7 +237,10 @@ async function cell(c,{warmup=false}={}){
   row.valid=true;
   if(ARM==='branch'&&row.answer.success&&!row.correct&&!qualifiedKeyAnswer(row,row.typeRPC.raw))console.error('BRANCH SUCCESS WITH WRONG FINAL VALUE',KIND,SHARD,c.id);
   }
+  }
  }catch(e){
+  if(IS_SAFARI_AX&&e.diagnosticEvidence)Object.assign(row,e.diagnosticEvidence);
+  if(IS_SAFARI_AX&&e.fatalDiagnostic)fatalError=new Abort(e.message);
   lost=e instanceof FixtureLost;row.valid=false;row.setupFailure=stage==='setup'||e instanceof SetupError||lost;row.fixtureLost=lost;row.failureStage=stage;row.problem=String(e.stack??e).slice(0,3000);
  }finally{
   w?.close();row.endedAt=Date.now();
@@ -220,6 +251,7 @@ async function cell(c,{warmup=false}={}){
  }
  if(warmup){if(!row.valid)throw new Abort('warmup invalid');return}
  done++;if(row.valid){valid++;consecutiveInvalid=0}else{invalid++;consecutiveInvalid++;if(row.setupFailure)setupFailures++}progress(c.id);
+ if(fatalError)throw fatalError;
  const reason=abortReason({consecutiveInvalid,setupFailures});if(reason)throw new Abort(reason);
 }
 async function stopChild(child){
@@ -244,7 +276,7 @@ try{
   for(let i=0;i<2;i++){await rpc(w,'get_app_state',{includeScreenshot:false});await sleep(1200)}
  }finally{w.close()}
  writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));progress(null);
- if(!IS_CARET){
+ if(!IS_DIAGNOSTIC){
   // The warmup and calibrations come from the shard, not from the plan: a partial plan may hold no clean cell or no key.
   const warmup=warmupCell({browser:KIND,editor:SHARD});
   for(const key of calibrationKeys([...cells,warmup]))await calibrate(key);
@@ -257,7 +289,9 @@ finally{
  meta.finishedAt=Date.now();meta.coverage={...coverage({planned:cells.length,valid,aborted:!!aborted}),invalid,setupFailures,aborted};
  meta.fixture={bound:fixture.fx.bound,bindings:fixture.fx.bindings,ready:fixture.fx.ready,foreignPolls:fixture.fx.foreignPolls,foreignAnswers:fixture.fx.foreignAnswers,expired:fixture.fx.expired};
  meta.defaultsAfter=snapshot('after',spawnSync);
- if(IS_CARET){
+ if(IS_SAFARI_AX){
+  meta.diagnosticSummary=writeSafariAXTables(OUT,compact);if(!meta.coverage.complete)process.exitCode=1;
+ }else if(IS_CARET){
   meta.diagnosticSummary=writeCaretTables(OUT,compact);if(!meta.coverage.complete)process.exitCode=1;
  }else{
   const summary=writeTables(OUT,compact);meta.branchWrongSuccesses=summary.wrongSuccesses.filter(r=>r.arm==='branch').length;

@@ -1,6 +1,6 @@
 # #354 real-engine A/B measurement kit
 
-This is a hosted-only measurement kit, not an engine implementation or shadow reader. The existing `probe-354-fences.yml` workflow builds both immutable heads with observational AX read-count auditing. Do not run its browser/Swift steps on an owner's Mac. Node offline tests and artifact collection need no browser or engine.
+This is a hosted-only measurement kit, not an engine implementation or shadow reader. The existing `probe-354-fences.yml` workflow builds its selected immutable head(s) with observational AX read-count auditing. Do not run its browser/Swift steps on an owner's Mac. Node offline tests and artifact collection need no browser or engine.
 
 ## Denominators and leaving keys
 
@@ -28,34 +28,44 @@ The one-/three-trailing-CR pair and equal-/different-selection pair must each ha
 
 `secret-pairs.tsv` exposes per-repetition comparisons. `secret-pair-latency.tsv` places engine socket RTT (measured inside the trusted native client), end-to-end trusted-call duration, and snapshot timing side by side with n/p50/p95. **Latency is informational, with no threshold or statistical gate.** `secret-confirmation.tsv` reuses existing normal-input secret/equality trials: valid counts, success/confirmation, honest `typeUnconfirmed`, final-field matches, other errors, invalid cells and actual refusal reasons. A refusal is not called a wrong success merely because the final field matches.
 
-## Isolated Firefox caret cohort (offline-prepared; permission held)
+## Branch-only Firefox caret diagnostic
 
-`--diagnostic firefox-caret` is a separate observer-effect cohort. The default is `primary`: its plan, requests and audit-only scratch build remain unchanged. The diagnostic matrix is restricted to Firefox/input and runs one owned engine per head with the same fixture and real trusted secret wrapper/temp HOME. No new push trigger is present. The workflow now pins control 9020bb18 and builder 3141f170; the historical primary run used branch bd63a0cc.
+`--diagnostic firefox-caret` builds and runs **only builder 3141f170**, with no control arm. Ten repetitions give 60 cases: concealed insertion, equal-selected secret, different-selected secret, public ASCII identical replacement, public ASCII insertion, and a non-ASCII identical replacement. The real trusted wrapper and isolated synthetic HOME are retained. The non-ASCII text is U+0061/U+1D11E/U+D55C: 3 code points, 4 UTF-16 units and 8 UTF-8 bytes; ASCII alone cannot identify units.
 
-Each repetition has six cases: normal concealed insertion, equal-selected secret, different-selected secret, public ASCII identical replacement, public ASCII insertion, and a short public non-ASCII identical replacement. The non-ASCII control's code points are U+0061/U+1D11E/U+D55C: 3 code points, 4 UTF-16 units and 8 UTF-8 bytes, with those known end-offset candidates recorded. ASCII observations alone cannot identify units. No automatic unit or caret-timing conclusion is made; the real route is retained, so a different route is not silently treated as equivalent.
+Only this mode applies `caret-patch.mjs` in hosted scratch source. It records actual production `AXSelectedTextRange` replies/errors and compare outcomes (**enum names only**, never associated field text). A boundary after the snapshot but before keyed delivery identifies the real pre-typing selection. `caret-before.tsv` preserves it, and tables compare later ranges to both the AX-before location plus typed UTF-16 length and the established DOM location plus that length, each with selection length zero. An unreadable range is not replaced by a guessed range. The synthetic intended length is diagnostic metadata, never added to concealed product wire replies.
 
-Only this mode applies `caret-patch.mjs` after the ordinary observational audit in hosted scratch source. Interposed single/batch AX boundaries record actual `AXSelectedTextRange` replies, API/embedded errors, timestamps and CFRange shape. A tightly anchored hook identifies production compare calls after their existing role/subrole guards, and serializes **enum case names only**, never a case's associated text. `rangeRead: false` means no range query occurred in that compare; a queried-but-missing/unsupported range has a distinct API error/shape. Reads outside a tagged compare are retained separately, not assigned an invented poll. Main has no TypeReadback hook and reports zero production readback polls rather than a simulated reader.
+Poll rows retain actual query times, time since keyed delivery ended, time relative to the answer, and whether the returned range matches either expected caret. `rangeRead:false` means production did not ask for a range in that compare, not that an API returned zero. Outside-poll reads remain separate. Public changed-value calls may confirm without querying a production caret; their later snapshot still supplies an observation.
 
-**Observer effect:** each traced, production-guarded compare adds an `AXNumberOfCharacters` query before the original compare. This is labelled `diagnostic-added`, not a production request; production does not query it. It may change poll timing, the number of polls or even confirmation. Wrappers also add timestamp/serialization overhead. These results must never be pooled into primary rates or cost. No primary calls acquire the trace flag or these added probes.
+**Observer effect:** each guarded compare adds `AXNumberOfCharacters`, explicitly labelled `diagnostic-added`; wrappers add timestamp/serialization cost. This can change timing or confirmation. These observations are never primary-rate evidence. After the answer, a guarded, value-free sidecar records the range/count at approximately +300ms, with actual times. API integers are decimal strings. There are no post-type DOM value samples; field strings, excerpts, messages/stacks and unstructured logs are withheld, even for public controls.
 
-After the actual engine reply, a value-free sidecar snapshot requests range/count at approximately 300ms. It rechecks role/subrole, refuses secure fields, never queries AXValue, and records each query's timestamps/error plus actual delay. If guards prevent a read, only that guard result is reported—there is no invented range/count. API integers are decimal strings to retain CFIndex precision. Missing values and nonstandard types remain explicit. There are no post-type DOM samples in this cohort.
+Artifacts begin `probe-354-caret-`. The trusted offline collector is `node scripts/probe-354-fences/offline/caret-table.mjs <caret-artifact-root>`; inspect its branch config coverage, since it renders partial observations rather than certifying a paired gate.
 
-`caret-rows.jsonl` retains the real RPC result/error/meta and safe trace packet, with field-text strings, excerpts, messages/stacks and unstructured logs withheld. This also applies to public controls. `caret-cases.tsv`, `caret-polls.tsv`, `caret-outside.tsv` and `caret-final.tsv` expose the observations; the diagnostic writer emits no primary `rates.tsv` or `cost.tsv`. Its separate collector accepts only `caret-rows.jsonl`. Separate artifact names begin `probe-354-caret-`.
+## Branch-only Safari no-key AX path diagnostic
 
-Prepared launch syntax **only after owner permission and a verified committed diagnostic ref**; this has not been executed:
+`--diagnostic safari-no-key-ax` runs only builder 3141f170 on a public normal-input fixture. Ten repetitions contain one no-key case and one key-first reference each (20 cases). The input uses the same public 64-hex text, seed, offset and cover state as the failed no-key probes. No calibration/warmup key runs before diagnostic cells. The reference sends Command+A on the same engine connection (the held activation route), verifies its selection effect, and restores the page selection without another key. Safari must remain behind the cover throughout both AX snapshots.
+
+The `safariAXPaths` sidecar records each actual query's value type/reference or AX error, and its times: application/window/main-window/web-area focus paths; the windows list and each window's focus/main flags; bounded front-web-area discovery and focused-node walk; selected text-marker range, its start marker and `AXUIElementForTextMarker` (with up to six ancestors). It records node/depth/time limits, every budget omission, stable within-snapshot element IDs, frontmost evidence from both workspace/window server, and an app-focus re-read after traversal. Field values, selected text, marker strings/bytes, activation and AX writes are not queried or performed.
+
+AXEnhancedUserInterface and AXManualAccessibility values/settable status are read, **not changed**. WebKit enabling enhanced accessibility builds AX objects/caches that writing false does not undo, so a same-process reversible mutation cannot be guaranteed; the skip is explicit. Ordinary AX reads can also prime WebKit accessibility. Every snapshot therefore has an ordinal within its Safari process, and these results cannot be treated as independent cold-start rates or pooled into primary results.
+
+Messaging timeout is 0.5s/element; total AX budget is 5s, plus one bounded after-traversal re-read. Web-area discovery is capped at depth 12/400 nodes/1.5s; focus search at depth 40/800 nodes/1.5s. At most eight windows and 200 children/node are traversed. Raw `safari-ax-rows.jsonl`, `safari-ax-paths.tsv`, `safari-ax-walks.tsv` and `safari-ax-cases.tsv` preserve observations and cost. The collector is `node scripts/probe-354-fences/offline/safari-ax-table.mjs <artifact-root>`; it rejects mixed cohorts/control rows and reports incomplete coverage.
+
+Both approved diagnostic commands (after publishing the verified kit) are separate runs, and have not been executed merely by documenting them:
 
 ```sh
-gh workflow run probe-354-fences.yml --ref <verified-diagnostic-kit-ref> \
-  -f diagnostic=firefox-caret -f only=firefox-input -f reps=1 -f smoke=true
+gh workflow run 413201833 -R SSFSKIM/cua --ref probe/354-measure \
+  -f diagnostic=firefox-caret -f only=firefox-input -f reps=10 -f smoke=false
+gh workflow run 413201833 -R SSFSKIM/cua --ref probe/354-measure \
+  -f diagnostic=safari-no-key-ax -f only=safari-input -f reps=10 -f smoke=false
 ```
 
-Until permission is granted, use only Node offline tests/lint. Swift compilation and all AX/browser behavior remain unverified for this new instrumentation. Offline artifact collection, from the trusted checkout, is `node scripts/probe-354-fences/offline/caret-table.mjs <caret-artifact-root>`; it never consumes primary rows. The collector renders available diagnostic observations, not a paired-coverage certification: check each arm's `config.json` coverage before drawing a comparison.
+Offline checks are Node tests/syntax and workflow lint only. The first hosted build verifies new Swift compilation; until then no live AX behavior is claimed.
 
-## Follow-up measurement cohort (offline-prepared; not dispatched)
+## Follow-up measurement cohort (completed as run 44001080688)
 
 `--diagnostic followup` (workflow input `diagnostic=followup`) selects a separate measurement cohort for builder **3141f170**. Its artifacts are named `probe-354-followup-<shard>` and are collected separately. The control remains **9020bb18**, so matching control cells can be combined with the primary run's control results; do not pool different branch heads or observer-effect caret measurements. The collector continues to reject mixed raw cohorts. The default stays `primary`, whose plan, requests, scratch builds and startup are unchanged; the isolated Firefox caret mode is untouched.
 
-**Builder `3141f1709451ebf77e3b94c5500308d105619f6f` is now pinned in `BRANCH_REF`; `MAIN_REF` remains `9020bb18acb9091f817a4b648f7c332174b11153`. Do not dispatch until the coordinator reports Actions restored and authorizes the run.** The workflow is dispatch-only (no push trigger); nothing here has been run.
+**Builder `3141f1709451ebf77e3b94c5500308d105619f6f` is pinned in `BRANCH_REF`; `MAIN_REF` remains `9020bb18acb9091f817a4b648f7c332174b11153`.** Run 44001080688 collected the complete 2536-attempt follow-up; a repeat still needs the coordinator's instruction. The workflow remains dispatch-only (no push trigger).
 
 Scope is ten shards, each head with its own expected plan (20 repetitions per head; smoke uses one):
 
@@ -81,7 +91,7 @@ node scripts/probe-354-fences/offline/ab-table.mjs <artifact-root> --only all --
 
 Plain no-key cells appear in `rates.tsv`, `diagnostics.tsv` (expected `confirmed`) and a new `no-key-confirmation.tsv`, which puts plain beside the trusted-secret equality cells with the same counts and every actual refusal reason. The secret no-key cells keep their `privacy.tsv` audit rows; the plain cell is a public field with nothing to audit. A plain success with a wrong final value is a wrong success like any other cell. No cost table is added for these cells; per-cell timings stay in `rows.jsonl`.
 
-Prepared launch syntax, **only after** the coordinator lifts the Actions hold:
+Repeat syntax, **only if** the coordinator requests another follow-up measurement:
 
 ```sh
 gh workflow run 413201833 -R SSFSKIM/cua --ref probe/354-measure \

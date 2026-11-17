@@ -1,4 +1,5 @@
 name: probe-367
+# Registration run: matched #367/#366 product heads; ordinary CI is restricted to ci/**.
 on:
   push:
     branches: ['probe/367-live']

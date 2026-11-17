@@ -13,6 +13,7 @@ import {DocumentResponses, Downloads} from '../../src/browser-service/downloads.
 import {Deadline} from '../../src/browser-service/budgets.mjs';
 import {BrowserServiceError} from '../../src/browser-service/errors.mjs';
 import {execute, readyBrowser, rejection, scriptedPages, serviceOnHost, waitFor} from './support/service-on-host.mjs';
+import {earlyTimers, settle} from './support/early-timer.mjs';
 
 const DOCUMENTS = {requestStage: 'Response', resourceType: 'Document'};
 const URL_A = 'https://example.com/files/parity.txt';
@@ -348,6 +349,25 @@ test('a download\'s release that hangs: the wait times out in its own words, and
   assert.ok(methods(cdp).includes('Fetch.disable'), 'and, that hanging too, recovers the tab');
   assert.equal(downloads.pendingDownloadRequestsByTabId.has(6), false);
   assert.equal(responses.hasOwnedPausedResponses(6), false);
+});
+
+test('a wait answered timeout by its timer lets nothing through after it, though the timer fired before the clock reached the end', async t => {
+  const clock = earlyTimers(t);
+  const {cdp, api} = scriptedController();
+  const responses = new DocumentResponses(cdp);
+  const downloads = new Downloads(api, responses);
+  let refusals = 1;
+  cdp.answers['Fetch.continueResponse'] = () => { if (refusals-- > 0) throw new Error('Internal error'); return {}; };
+  await downloads.enableDownload(6);
+  const waiting = rejection(downloads.waitForDownload(6, 20));
+  cdp.emit('event', {method: 'Fetch.requestPaused', source: {tabId: 6}, params: pausedResponse({requestId: 'dl'})});
+  await settle();
+  assert.equal(methods(cdp).filter(m => m === 'Fetch.continueResponse').length, 1, 'the first release, refused; the next waits its turn');
+  clock.elapse(20);
+  assert.equal((await waiting).message, 'Timed out after 20ms waiting for download.');
+  await settle();
+  assert.equal(methods(cdp).filter(m => m === 'Fetch.continueResponse').length, 1, 'no release of the download after the wait timed out');
+  assert.ok(methods(cdp).includes('Fetch.failRequest'), 'the cleanup fails the paused download');
 });
 
 test('a release refused by an open dialog is left to the dialog (the recorded vendor gap): no recovery', async () => {

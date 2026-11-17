@@ -114,15 +114,16 @@ try{
   row.baselineMatch=windowMatch(row.baseline,row.baselineOracle);
   const origin=win(info())?.frame;if(!usableFrame(origin))throw Error(scene+' original frame unknown');
   checkpoint();
-  if(onlyOtherSpace){
-   row.onScreenRaiseBefore=info();row.onScreenRaiseTarget=raiseTarget(row.baseline,row.onScreenRaiseBefore,row.baselineScreenshot.raw);
+  async function onScreenControl(){
+   row.onScreenControlState=await call(scene+'-control-before-state',()=>bound.getAXState({disableDiffing:true,emit:false}));
+   row.onScreenRaiseBefore=info();row.onScreenRaiseTarget=raiseTarget(row.onScreenControlState,row.onScreenRaiseBefore);
    row.onScreenRaise=row.onScreenRaiseTarget.available
     ?{...await call(scene+'-control-raise',()=>bound.performSecondaryAction(row.onScreenRaiseTarget.index,'Raise')),available:true,attempted:true}
     :unavailable(row.onScreenRaiseTarget.reason);
    if(row.onScreenRaise.attempted)await delay(1600);
    row.onScreenRaiseAfter=info();
    row.onScreenAfter=await call(scene+'-control-after-state',()=>bound.getAXState({disableDiffing:true,emit:false}));
-   row.onScreenControlAssertions={observation:row.baseline.ok&&row.baselineScreenshot.ok,raise:row.onScreenRaise.ok===true,
+   row.onScreenControlAssertions={observation:row.onScreenControlState.ok,raise:row.onScreenRaise.ok===true,
     ...placementChecks(row.onScreenRaiseBefore,row.onScreenRaiseAfter),afterObservation:row.onScreenAfter.ok};checkpoint();
   }
   if(!onlyOtherSpace){
@@ -264,6 +265,7 @@ try{
   }else{row.restoreMove=sceneOracle('move',pid,origin.x,origin.y);row.restoreSize=sceneOracle('size',pid,origin.width,origin.height);}
   row.restoreBackground=oracle('activate','com.apple.finder');
   checkpoint();
+  if(onlyOtherSpace)await onScreenControl();
   if(!onlyOtherSpace){
   row.hide=sceneOracle('hide',pid);row.hiddenOracle=info();
   row.hidden=await call(scene+'-5-state',()=>bound.getAXState({disableDiffing:true,emit:false}));

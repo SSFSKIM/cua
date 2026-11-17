@@ -46,8 +46,8 @@ jobs:
         run: |
           set -euo pipefail
           node --test scripts/probe-367/evidence.test.mjs
-          FIX_REF=d778455218656b146508c89179e2428fb4616d7e
-          MAIN_REF=15acf09b714dd19efc796e4a3a2ff8d57e2f7994
+          FIX_REF=a7c2fcc3310628e32c4d3760ceb1bd9aa4a4b69a
+          MAIN_REF=136183aa196a8fd80a0dcc3fe933adff67f9cc39
           git worktree add --detach "$RUNNER_TEMP/src367-fix" "$FIX_REF"
           git worktree add --detach "$RUNNER_TEMP/src367-main" "$MAIN_REF"
           swift build -c release --package-path "$RUNNER_TEMP/src367-fix/native/engine" --scratch-path "$RUNNER_TEMP/build367-fix"

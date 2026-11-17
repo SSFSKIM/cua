@@ -4797,9 +4797,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      of each application's tree found only the menu bar's menus under it. The menu hangs under the view that popped it
      up: the element, or an ancestor of it outside the page.
   2. **The rule** (MenuConfirm.swift `menuHosts`, `MenuScope`; `seen` "element" | "ancestor" | "focus"). The hosts are
-     read once before the action: the element's parents up to the window (at most `menuHostLevels`, 40; the walk stops
-     at the window, at the application or where a parent does not read), less the outermost web area and every node
-     below it, which are the page's own and hold no native menu (a page's ARIA menu stays the focus's). Each poll reads
+     read once before the action: the element's parents up to the window (at most `menuHostLevels`, 40), less the
+     outermost web area and every node below it, and only when the walk reached the window with every parent and role
+     read; a walk cut short establishes no hosts and leaves the `ancestor` source unread, so it confirms nothing (the
+     review of 5cdc968c, P2: a walk that stopped inside the page had taken the page's own nodes for hosts), which are the page's own and hold no native menu (a page's ARIA menu stays the focus's). Each poll reads
      the element's children and each host's: one children read per host, 2 to 8 hosts on the measured trees. The
      baseline, the unread rule, the focus source, the bounds and the 1 s wait are unchanged. An AXMenu beside a host
      (Firefox's autocomplete, an AXMenu inside an AXPopover under a group) is no child of a host and does not count.

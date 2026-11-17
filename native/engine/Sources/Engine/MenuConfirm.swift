@@ -72,31 +72,33 @@ func menuApplicationPids(owner: pid_t, appPid: pid_t) -> [pid_t] { owner == appP
 /// How far up the element's ancestors are read for the menu's host: past any page, to the window.
 let menuHostLevels = 40
 
-/// Where a Show Menu's menu is looked for: the element, its hosts (`menuHosts`) and the applications whose focus is read.
+/// Where a Show Menu's menu is looked for: the element, its hosts (`menuHosts`; nil when they could not be established,
+/// so the `ancestor` source is unread and confirms nothing) and the applications whose focus is read.
 struct MenuScope {
   let element: AXUIElement
-  let hosts: [AXUIElement]
+  let hosts: [AXUIElement]?
   let applications: [AXUIElement]
 }
 
 /// The element's ancestors whose children may hold its context menu, nearest first, read once before the action: from
 /// its parent up to and including its window, leaving out every node inside a web area and the web area itself (the
 /// page's own nodes, which hold no native menu; a page's ARIA menu is the focus's), so the walk resumes above the
-/// outermost web area. The walk stops at the window, at the application, or where a parent does not read; the hosts it
-/// reached are still read, so a short walk only looks in fewer places.
-func menuHosts(of element: AXUIElement, ax: AXOps) -> [AXUIElement] {
-  var chain: [(node: AXUIElement, role: String?)] = []
+/// outermost web area. Nil unless the walk reached the window with every role read: a walk cut short (a parent or a role
+/// that did not read, the application reached first, `menuHostLevels` spent) cannot show which of its nodes lie outside
+/// the page, and a node inside it would let a menu of the page's confirm (the review of 5cdc968c, P2).
+func menuHosts(of element: AXUIElement, ax: AXOps) -> [AXUIElement]? {
+  var chain: [(node: AXUIElement, role: String)] = []
   var node = ax.parent(element)
   for _ in 0..<menuHostLevels {
-    guard let current = node else { break }
-    let role = ax.role(current)
-    if role == kAXApplicationRole { break }
+    guard let current = node, let role = ax.role(current), role != kAXApplicationRole else { return nil }
     chain.append((current, role))
-    if role == kAXWindowRole { break }
+    if role == kAXWindowRole {
+      let page = chain.lastIndex { $0.role == "AXWebArea" }
+      return chain.suffix(from: page.map { $0 + 1 } ?? 0).map(\.node)
+    }
     node = ax.parent(current)
   }
-  let page = chain.lastIndex { $0.role == "AXWebArea" }
-  return chain.suffix(from: page.map { $0 + 1 } ?? 0).map(\.node)
+  return nil
 }
 
 /// One reading of the menus open now that a Show Menu on `element` could have opened, each with where it was seen, and
@@ -124,7 +126,7 @@ func openMenus(_ scope: MenuScope, ax: AXOps, deadline: Double = .infinity) -> M
     }
   }
   menuChildren(scope.element, .element)
-  for host in scope.hosts { menuChildren(host, .ancestor) }
+  if let hosts = scope.hosts { for host in hosts { menuChildren(host, .ancestor) } } else { reading.unread.insert(.ancestor) }
   for application in scope.applications {
     guard !spent() else { reading.unread.insert(.focus); break }
     let focused = ax.focusedElement(application)

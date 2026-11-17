@@ -82,8 +82,8 @@ final class MenuConfirmTests: XCTestCase {
   /// area and everything inside it are left out.
   func testTheHostsAreTheAncestorsAboveThePage() {
     let scene = MenuScene()
-    XCTAssertEqual(menuHosts(of: el(10), ax: scene.ax.ops).map(FakeAX.id), [5, 2])
-    XCTAssertEqual(menuHosts(of: el(11), ax: scene.ax.ops).map(FakeAX.id), [2], "no page: every ancestor to the window")
+    XCTAssertEqual(menuHosts(of: el(10), ax: scene.ax.ops)?.map(FakeAX.id), [5, 2])
+    XCTAssertEqual(menuHosts(of: el(11), ax: scene.ax.ops)?.map(FakeAX.id), [2], "no page: every ancestor to the window")
   }
 
   /// In a page inside a frame, the walk resumes above the outermost web area.
@@ -91,18 +91,37 @@ final class MenuConfirmTests: XCTestCase {
     let scene = MenuScene()
     scene.ax.roles[6] = "AXWebArea"; scene.ax.roles[7] = kAXGroupRole; scene.ax.roles[12] = kAXTextFieldRole
     scene.ax.parents[7] = 4; scene.ax.parents[6] = 7; scene.ax.parents[12] = 6
-    XCTAssertEqual(menuHosts(of: el(12), ax: scene.ax.ops).map(FakeAX.id), [5, 2])
+    XCTAssertEqual(menuHosts(of: el(12), ax: scene.ax.ops)?.map(FakeAX.id), [5, 2])
   }
 
-  /// The walk stops at the application, and where a parent does not read: the hosts reached are kept.
-  func testTheHostsStopWhereTheWalkEnds() {
+  /// A walk that does not reach the window with every role read establishes no hosts: which of its nodes lie outside
+  /// the page cannot be shown.
+  func testAWalkCutShortEstablishesNoHosts() {
+    let missingParent = MenuScene()
+    missingParent.ax.parents[4] = nil  // below the web area's parent: the page boundary is never reached
+    XCTAssertNil(menuHosts(of: el(10), ax: missingParent.ax.ops))
+    let unreadRole = MenuScene()
+    let ops = unreadRole.ax.ops
+    var ax = ops
+    ax.role = { FakeAX.id($0) == 4 ? nil : ops.role($0) }  // the web area's role does not read
+    XCTAssertNil(menuHosts(of: el(10), ax: ax))
+    let noWindow = MenuScene()
+    noWindow.ax.roles[2] = kAXSheetRole  // the application reached with no window on the way
+    XCTAssertNil(menuHosts(of: el(11), ax: noWindow.ax.ops))
+    let deep = MenuScene()
+    var parent = 4
+    for id in 100..<(100 + menuHostLevels) { deep.ax.roles[id] = kAXGroupRole; deep.ax.parents[id] = parent; parent = id }
+    XCTAssertNil(menuHosts(of: el(parent), ax: deep.ax.ops), "the level bound spent inside a deep page")
+  }
+
+  /// With no hosts established, a menu that comes up under a node the walk passed (here a group inside the page, which
+  /// a walk cut short would have taken for a host) confirms nothing, and the record says the source was unread.
+  func testWithNoHostsAMenuUnderAnInPageNodeDoesNotConfirm() {
     let scene = MenuScene()
-    scene.ax.parents[2] = nil
-    scene.ax.roles[2] = kAXGroupRole  // not a window: the walk goes on, and finds no parent
-    XCTAssertEqual(menuHosts(of: el(10), ax: scene.ax.ops).map(FakeAX.id), [5, 2])
-    scene.ax.roles[2] = kAXSheetRole
-    scene.ax.parents[2] = 1
-    XCTAssertEqual(menuHosts(of: el(11), ax: scene.ax.ops).map(FakeAX.id), [2], "stopped at the application")
+    scene.ax.roles[7] = kAXGroupRole; scene.ax.parents[10] = 7  // the group's parent (the web area) does not read
+    let record = scene.confirm { scene.openMenu(under: 7) }
+    XCTAssertNil(record.seen)
+    XCTAssertEqual(record.unreadBefore, ["ancestor"])
   }
 
   /// Chrome for Testing: the context menu hangs under the scroll area holding the page.

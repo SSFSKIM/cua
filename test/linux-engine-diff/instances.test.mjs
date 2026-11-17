@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test from 'node:test';
@@ -84,24 +84,25 @@ test("a scene terminal's server name is unique to its scene and a valid applicat
 test("the terminal's start: the scene's server under its name, then the client asking that server, the arguments as given", () => {
   const dir = mkdtempSync(join(tmpdir(), 'cua171-terminal-'));
   try {
-    const log = join(dir, 'log');
-    writeFileSync(log, '');
     const stand = (name, body) => {
       writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`);
       chmodSync(join(dir, name), 0o755);
       return join(dir, name);
     };
-    const record = (who) => `printf '%s' "${who}" >> ${JSON.stringify(log)}; for a in "$@"; do printf ' [%s]' "$a" >> ${JSON.stringify(log)}; done; echo >> ${JSON.stringify(log)}`;
+    // each stub records its arguments in a log of its own: the server runs beside the other two, and lines written
+    // piece by piece to one shared log interleave (a lost line, twice in CI)
+    const logOf = (who) => join(dir, `${who}.log`);
+    const record = (who) => `printf '%s' "${who}" >> ${JSON.stringify(logOf(who))}; for a in "$@"; do printf ' [%s]' "$a" >> ${JSON.stringify(logOf(who))}; done; echo >> ${JSON.stringify(logOf(who))}`;
     const server = stand('server', record('server'));
     const client = stand('client', record('client'));
     // the name appears once the server is up, as on a bus
-    stand('gdbus', `for i in $(seq 100); do grep -q '^server' ${JSON.stringify(log)} && break; sleep 0.05; done; ${record('gdbus')}`);
+    stand('gdbus', `for i in $(seq 100); do grep -q '^server' ${JSON.stringify(logOf('server'))} 2>/dev/null && break; sleep 0.05; done; ${record('gdbus')}`);
     const label = 'cua171-diff-r-n0-gnometerminal-r';
     const launch = vteLaunch({ label, dir }, { client });
     const args = launch.args.map((a) => (a === TERMINAL_SERVER ? server : a));
     const ran = spawnSync(launch.cmd, args, { encoding: 'utf8', env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` }, timeout: 10000 });
     assert.equal(ran.status, 0, ran.stderr);
-    const lines = readFileSync(log, 'utf8').trim().split('\n').sort();
+    const lines = ['client', 'gdbus', 'server'].flatMap((who) => (existsSync(logOf(who)) ? readFileSync(logOf(who), 'utf8') : '').trim().split('\n'));
     const id = terminalAppId(label);
     assert.deepEqual(lines.map((l) => l.split(' ')[0]), ['client', 'gdbus', 'server']);
     assert.equal(lines.find((l) => l.startsWith('server')), `server [--app-id] [${id}]`);

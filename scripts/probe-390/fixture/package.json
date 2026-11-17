@@ -1,0 +1,15 @@
+{
+  "name": "probe-366-fixture",
+  "private": true,
+  "version": "1.0.0",
+  "main": "main.cjs",
+  "dependencies": {
+    "@radix-ui/react-dialog": "1.1.15",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "esbuild": "0.25.12"
+  }
+}

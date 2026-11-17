@@ -1,0 +1,83 @@
+name: probe-390
+on:
+  push:
+    branches: ['probe/390-qual']
+    paths: ['.github/workflows/probe-390.yml', 'scripts/probe-390/**']
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Smoke first, full only after smoke evidence inspection'
+        type: choice
+        options: [smoke, full]
+        default: smoke
+permissions:
+  contents: read
+concurrency:
+  group: probe-390
+  cancel-in-progress: false
+env:
+  MAIN_REF: 290303c131c20e4dc88001b8b970d03785ec0b1d
+  # Dispatch is held for the reviewed replacement SHA; c236f268 is the original candidate.
+  FIX_REF: c236f2680f3f4cf3e96aedcb891517a76c7d1405
+jobs:
+  qualify:
+    runs-on: macos-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        browser: [cft, electron, electron-parity, safari]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Check probe judges and build the pinned owned fixture
+        run: |
+          node --test scripts/probe-390/read.test.mjs scripts/probe-366/qualification-connect.test.mjs
+          npm ci --prefix scripts/probe-390/fixture --no-audit --no-fund
+          node scripts/probe-390/build.mjs
+          swiftc -O -o "$RUNNER_TEMP/tool390" scripts/probe-390/tool.swift
+          mkdir -p "$RUNNER_TEMP/Probe366 Cover.app/Contents/MacOS"
+          cp "$RUNNER_TEMP/tool390" "$RUNNER_TEMP/Probe366 Cover.app/Contents/MacOS/cover366"
+          cp scripts/probe-390/cover.plist "$RUNNER_TEMP/Probe366 Cover.app/Contents/Info.plist"
+      - name: Build both exact engine pins without edits
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/main390" "$MAIN_REF"
+          git worktree add --detach "$RUNNER_TEMP/fix390" "$FIX_REF"
+          swift build -c release --package-path "$RUNNER_TEMP/main390/native/engine" --scratch-path "$RUNNER_TEMP/build-main390"
+          swift build -c release --package-path "$RUNNER_TEMP/fix390/native/engine" --scratch-path "$RUNNER_TEMP/build-fix390"
+          git -C "$RUNNER_TEMP/main390" diff --exit-code
+          git -C "$RUNNER_TEMP/fix390" diff --exit-code
+      - name: Measure matched shared-desktop actions, no retries
+        env:
+          BROWSER: ${{ matrix.browser }}
+          SMOKE: ${{ github.event_name == 'push' || inputs.mode == 'smoke' }}
+        run: |
+          node scripts/probe-390/measure.mjs --browser "$BROWSER" --smoke "$SMOKE" --main-ref "$MAIN_REF" --fix-ref "$FIX_REF" --main-engine "$RUNNER_TEMP/build-main390/release/cua-engine" --fix-engine "$RUNNER_TEMP/build-fix390/release/cua-engine" --main-source "$RUNNER_TEMP/main390" --fix-source "$RUNNER_TEMP/fix390" --tool "$RUNNER_TEMP/tool390" --out "$RUNNER_TEMP/probe-390/$BROWSER"
+      - name: Read evidence and enforce exact cell coverage
+        if: always()
+        run: |
+          OUT="$RUNNER_TEMP/probe-390/${{ matrix.browser }}"
+          if [ -f "$OUT/rows.jsonl" ]; then node scripts/probe-390/read.mjs "$OUT"; fi
+      - name: Upload owned evidence only, never profiles or temporary homes
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: probe-390-${{ matrix.browser }}-${{ inputs.mode || 'smoke' }}
+          path: |
+            ${{ runner.temp }}/probe-390/**/config.json
+            ${{ runner.temp }}/probe-390/**/rows.jsonl
+            ${{ runner.temp }}/probe-390/**/summary.json
+            ${{ runner.temp }}/probe-390/**/coverage.json
+            ${{ runner.temp }}/probe-390/**/fatal.json
+            ${{ runner.temp }}/probe-390/**/progress.json
+            ${{ runner.temp }}/probe-390/**/transport.jsonl
+            ${{ runner.temp }}/probe-390/**/engine-stderr.txt
+            ${{ runner.temp }}/probe-390/**/app-stdout.txt
+            ${{ runner.temp }}/probe-390/**/app-stderr.txt
+          if-no-files-found: warn

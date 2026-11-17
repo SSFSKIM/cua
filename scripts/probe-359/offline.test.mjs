@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {cells,summary,timeline} from './readers.mjs';
+import * as readers from './readers.mjs';
+
+test('the separate diagnostic crosses equal/end caret with foreground/background without changing the full plan',()=>{
+ const p=readers.diagnosticCells({kind:'pilot',reps:5});
+ assert.equal(p.length,120);assert.equal(cells().length,3680);assert.equal(new Set(p.map(c=>c.id)).size,120);
+ assert.deepEqual([...new Set(p.map(c=>c.scene))].sort(),['background-end','background-equal','foreground-end','foreground-equal']);
+ assert.ok(p.every(c=>c.editor==='textarea'&&c.selection==='script'&&['rate','trace'].includes(c.suite)&&c.diagnostic==='pilot'));
+ for(const c of p){assert.equal(c.foreground,c.scene.startsWith('foreground'));assert.equal(c.initialCaret,c.scene.endsWith('equal')?'target':'end')}
+ const confirm=readers.diagnosticCells({kind:'confirm',reps:20});assert.equal(confirm.length,40);assert.ok(confirm.every(c=>c.browser==='cft'&&c.scene==='foreground-equal'&&c.selection==='script'));
+ const candidates=readers.diagnosticCells({kind:'candidates',reps:20,browsers:['cft'],scene:'foreground-equal'});
+ assert.equal(candidates.filter(c=>c.suite==='candidate').length,160);assert.equal(candidates.filter(c=>c.suite==='candidate'&&c.selection==='cmd+a').length,80);
+});
+
 import {assertVisibleOwner,page,SEED} from './page.mjs';
 import vm from 'node:vm';
 import {readFileSync,mkdirSync,mkdtempSync,statSync,rmSync} from 'node:fs';
@@ -48,7 +61,8 @@ test('the generated fixture starts at a different caret and records its full-sel
  const command={pageId:id,timeOrigin:100,n:1,ownerEpoch:1,expiresAt:2000,id:'cell',editor:'textarea'};
  await ctx.run({...command,op:'reset'});await ctx.run({...command,n:2,op:'prepare'});
  assert.equal(editor.selectionStart,SEED.length);assert.equal(editor.selectionEnd,SEED.length);
- await ctx.run({...command,n:3,op:'select-all'});assert.equal(editor.selectionStart,0);assert.equal(editor.selectionEnd,SEED.length);
+ await ctx.run({...command,n:3,op:'prepare',initialCaret:3});assert.equal(editor.selectionStart,3);assert.equal(editor.selectionEnd,3);
+ await ctx.run({...command,n:4,op:'select-all'});assert.equal(editor.selectionStart,0);assert.equal(editor.selectionEnd,SEED.length);
  const committed=posts.at(-1).trace.find(e=>e.event==='script-selected');assert.deepEqual([...committed.selection],[0,29]);assert.equal(typeof committed.monoMs,'number');
  assert.equal(typeof listeners.blur,'function');assert.equal(typeof listeners.focus,'function');
 });
@@ -100,6 +114,12 @@ test('type readback answers distinguish honest unconfirmed from false success ag
 });
 test('a missing typing outcome never becomes a false success',()=>{
  const g=summary([{...row,type:undefined}],[cell]).groups[0];assert.deepEqual(g.typeAnswers,{});assert.equal(g.typeFalseSuccess,0);
+});
+test('diagnostic evidence cannot enter the primary corpus or pool distinct initial scenes',()=>{
+ const d={...row,id:'diagnostic/one',diagnostic:'pilot',scene:'foreground-equal'},other={...d,id:'diagnostic/two',scene:'background-end'};
+ assert.throws(()=>summary([d],[d]),/diagnostic/);
+ assert.throws(()=>summary([d,row],[d,cell],{diagnostic:true}),/mixed/);
+ const s=summary([d,other],[d,other],{diagnostic:true});assert.equal(s.groups.length,2);assert.equal(s.diagnostic,true);assert.equal(s.missing.length,0);
 });
 test('timeline preserves source and click/next-call offsets',()=>{
  const t=timeline(row);const e=t.find(x=>x.source==='engine'&&x.kind==='read');assert.equal(e.clickReturnMs,-2);assert.equal(e.nextStartMs,-2);assert.ok(t.some(x=>x.source==='dom'&&x.kind==='selectionchange'&&x.clickReturnMs===10));

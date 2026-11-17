@@ -16,8 +16,17 @@ export function cells({reps=20,browsers=BROWSERS,editors=EDITORS,suites=['rate',
  }
  return out;
 }
+export function diagnosticCells({kind='pilot',reps=5,browsers=BROWSERS,scene='foreground-equal'}={}){
+ if(!['pilot','confirm','candidates'].includes(kind))throw Error('unknown diagnostic kind');
+ const scenes=kind==='pilot'?['foreground-equal','foreground-end','background-equal','background-end']:[kind==='confirm'?'foreground-equal':scene];
+ if(scenes.some(s=>!['foreground-equal','foreground-end','background-equal','background-end'].includes(s)))throw Error('unknown diagnostic scene');
+ if(kind==='confirm')browsers=browsers.filter(b=>b==='cft');
+ const plan=cells({reps,browsers,editors:['textarea'],...(kind==='candidates'?{}:{suites:['rate','trace']})}).filter(c=>kind==='candidates'||c.selection==='script');
+ // Interleave scenes within each repetition/suite; never pool an equal-range setup with a changed-range setup.
+ return plan.flatMap(c=>scenes.map(scene=>({...c,diagnostic:kind,scene,foreground:scene.startsWith('foreground'),initialCaret:scene.endsWith('equal')?'target':'end',id:['diagnostic',kind,scene,c.id].join('/')})));
+}
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-const groupKey=r=>[r.suite,r.browser,r.editor,r.selection,r.mode].join('/');
+const groupKey=r=>[...(r.diagnostic?[r.diagnostic,r.scene]:[]),r.suite,r.browser,r.editor,r.selection,r.mode].join('/');
 function percentiles(v){v=v.filter(Number.isFinite).sort((a,b)=>a-b);const q=p=>v.length?v[Math.ceil(p*v.length)-1]:null;return {n:v.length,p50:q(.5),p95:q(.95),max:v.at(-1)??null}}
 export function facts(r){
  const events=[...(r.events??[])].sort((a,b)=>a.at-b.at),scriptAt=r.next?.scriptCompletedAt;
@@ -33,7 +42,9 @@ export function facts(r){
   barrier,firstInputAt:Number.isFinite(firstInput)?firstInput:null,
   lastCaretAfterReturnMs:late.length?Math.max(...late.map(e=>e.at-r.click.endedAt)):null};
 }
-export function summary(rows,expected=cells(),{smoke=false}={}){
+export function summary(rows,expected=cells(),{smoke=false,diagnostic=false}={}){
+ if(rows.some(r=>r.diagnostic)&&!diagnostic)throw Error('diagnostic evidence cannot enter the primary summary');
+ if(diagnostic&&rows.some(r=>!r.diagnostic))throw Error('mixed diagnostic and primary evidence');
  if(rows.some(r=>r.smoke===true)&&!smoke)throw Error('smoke evidence cannot enter primary summary; use explicit smoke mode');
  if(smoke&&rows.some(r=>r.smoke!==true))throw Error('mixed smoke and primary evidence');
  const seen=new Set(),groups=new Map(),missing=[];
@@ -55,7 +66,7 @@ export function summary(rows,expected=cells(),{smoke=false}={}){
   g.clickTimes.push(r.click?.endedAt-r.click?.startedAt);g.gaps.push(r.next?.startedAt-r.click?.endedAt);g.lastCaretTimes.push(f.lastCaretAfterReturnMs);
  }
  for(const e of expected)if(!seen.has(e.id))missing.push(e.id);
- return {smoke,requested:expected.length,attempted:rows.length,missing,unexpected:rows.filter(r=>!expected.some(e=>e.id===r.id)).map(r=>r.id),groups:[...groups.values()].map(g=>{const {barrierTimes,clickTimes,gaps,lastCaretTimes,...counts}=g;return {...counts,barrierMs:percentiles(barrierTimes),clickMs:percentiles(clickTimes),nextGapMs:percentiles(gaps),lastCaretAfterReturnMs:percentiles(lastCaretTimes)}}),interpretation:'wrongFinal is end-to-end, not a causal click rate; Cmd+A has its own known delivery race. Only script pre-input reversion is late-caret evidence. Association with a traced write is not sole-cause proof; compare no-click and isolated-step controls.'};
+ return {smoke,diagnostic,requested:expected.length,attempted:rows.length,missing,unexpected:rows.filter(r=>!expected.some(e=>e.id===r.id)).map(r=>r.id),groups:[...groups.values()].map(g=>{const {barrierTimes,clickTimes,gaps,lastCaretTimes,...counts}=g;return {...counts,barrierMs:percentiles(barrierTimes),clickMs:percentiles(clickTimes),nextGapMs:percentiles(gaps),lastCaretAfterReturnMs:percentiles(lastCaretTimes)}}),interpretation:'wrongFinal is end-to-end, not a causal click rate; Cmd+A has its own known delivery race. Only script pre-input reversion is late-caret evidence. Association with a traced write is not sole-cause proof; compare no-click and isolated-step controls.'};
 }
 export function timeline(r){
  const out=[],add=(source,kind,at,data={})=>{if(Number.isFinite(at))out.push({id:r.id,source,kind,at,clickReturnMs:at-(r.click?.endedAt??NaN),nextStartMs:at-(r.next?.startedAt??NaN),...data})};
@@ -66,13 +77,13 @@ export function timeline(r){
  for(const e of r.samples??[])add('dom-sample','sample',e.at,{text:e.text,selection:e.selection});
  return out.sort((a,b)=>a.at-b.at);
 }
-function load(dir){let rows=[];for(const e of readdirSync(dir,{withFileTypes:true})){const p=join(dir,e.name);if(e.isDirectory())rows.push(...load(p));else if(e.name==='rows.jsonl')rows.push(...readFileSync(p,'utf8').trim().split('\n').filter(Boolean).map((l,i)=>({...JSON.parse(l),source:p,line:i+1})))}return rows}
+function load(dir,name='rows.jsonl'){let rows=[];for(const e of readdirSync(dir,{withFileTypes:true})){const p=join(dir,e.name);if(e.isDirectory())rows.push(...load(p,name));else if(e.name===name)rows.push(...(name==='config.json'?[JSON.parse(readFileSync(p,'utf8'))]:readFileSync(p,'utf8').trim().split('\n').filter(Boolean).map((l,i)=>({...JSON.parse(l),source:p,line:i+1}))))}return rows}
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const [command,input,output]=process.argv.slice(2);
  if(command==='plan'){const p=cells();console.log(JSON.stringify({attempts:p.length,cells:p},null,2))}
  else if(command==='summarize'||command==='timeline'){
   if(!input||!output)throw Error('usage: readers.mjs summarize|timeline INPUT_DIRECTORY OUTPUT_DIRECTORY');mkdirSync(output,{recursive:true});const rows=load(input);
-  if(command==='summarize'){const smoke=process.argv.includes('--smoke');writeFileSync(join(output,'summary.json'),JSON.stringify(summary(rows,cells({reps:smoke?1:20}),{smoke}),null,2))}
+  if(command==='summarize'){const smoke=process.argv.includes('--smoke'),diagnostic=process.argv.includes('--diagnostic'),expected=diagnostic?load(input,'config.json').flatMap(c=>c.planned):cells({reps:smoke?1:20});if(diagnostic&&!expected.length)throw Error('diagnostic manifests missing');writeFileSync(join(output,'summary.json'),JSON.stringify(summary(rows,expected,{smoke,diagnostic}),null,2))}
   else writeFileSync(join(output,'timeline.jsonl'),rows.flatMap(timeline).map(r=>JSON.stringify(r)).join('\n')+'\n');
  }else throw Error('usage: readers.mjs plan | summarize|timeline INPUT_DIRECTORY OUTPUT_DIRECTORY');
 }

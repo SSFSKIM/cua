@@ -12,6 +12,6 @@ export function page(){
   .replace('Typing delivery probe','Click caret ordering probe #359')
   .replace("'selectionchange','focusin'","'selectionchange','focusin','focusout','focus','blur','mousedown','mouseup','click'")
   .replaceAll('at:Date.now()','at:Date.now(),monoMs:performance.now()')
-  .replace('select(pos,len);','select(SEED.length,0);')
+  .replace('select(pos,len);','select(c.initialCaret??SEED.length,0);')
   .replace("select(0,value().length);const s=state();","select(0,value().length);trace.push({event:'script-selected',seq:trace.length,at:Date.now(),monoMs:performance.now(),selection:selection()});const s=state();");
 }

@@ -7,15 +7,17 @@ import {mkdirSync,writeFileSync,appendFileSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {launch,placePid,version} from '../probe-316/browser.mjs';
 import {FixtureTransport,FixtureError} from '../probe-354/transport.mjs';
-import {cells,summary} from './readers.mjs';
+import {cells,diagnosticCells,summary} from './readers.mjs';
 import {page,SEED,REQUESTED,assertVisibleOwner} from './page.mjs';
 if(process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('hosted runners only; offline stage must not launch this driver');
 const arg=n=>{const i=process.argv.indexOf('--'+n);return i<0?undefined:process.argv[i+1]};
 const OUT=arg('out'),BROWSER=arg('browser'),EDITOR=arg('editor'),ENGINE=arg('engine'),TRACED=arg('traced-engine'),TOOL=arg('tool'),WATCH=arg('watch');
-const REPS=Number(arg('reps')??20),SMOKE=arg('smoke')==='true';
+const REPS=Number(arg('reps')??20),SMOKE=arg('smoke')==='true',DIAGNOSTIC=arg('diagnostic')&&arg('diagnostic')!=='none'?arg('diagnostic'):null;
 if(!OUT||!ENGINE||!TRACED||!TOOL||!WATCH||!['safari','cft','firefox'].includes(BROWSER)||!['textarea','input','contenteditable','compose'].includes(EDITOR))throw Error('missing or invalid arguments');
-if(REPS!==20&&!SMOKE)throw Error('non20 repetitions must be explicitly labelled smoke');
-const planned=cells({reps:REPS,browsers:[BROWSER],editors:[EDITOR]});
+if(REPS!==20&&!SMOKE&&!DIAGNOSTIC)throw Error('non20 repetitions must be explicitly labelled smoke or diagnostic');
+if(DIAGNOSTIC&&(SMOKE||EDITOR!=='textarea'))throw Error('diagnostic is a separate textarea corpus, never smoke');
+const planned=DIAGNOSTIC?diagnosticCells({kind:DIAGNOSTIC,reps:REPS,browsers:[BROWSER],scene:arg('scene')??'foreground-equal'}):cells({reps:REPS,browsers:[BROWSER],editors:[EDITOR]});
+if(!planned.length)throw Error('empty shard manifest');
 mkdirSync(join(OUT,'shots'),{recursive:true});
 const sleep=ms=>new Promise(r=>setTimeout(r,Math.max(0,ms))),startedAt=Date.now();
 const sh=(cmd,args)=>{const r=spawnSync(cmd,args,{encoding:'utf8',timeout:20000});if(r.error||r.status!==0)throw Error(cmd+': '+r.stderr);return r.stdout.trim()};
@@ -68,7 +70,8 @@ async function attempt(c){
  try{
   row.prepareForeground=await front(pid);row.binding=await bindVisible();
   row.reset=await command({op:'reset',id:c.id,editor:EDITOR,key:''});
-  row.prepare=await command({op:'prepare',id:c.id,editor:EDITOR,key:''});
+  const initialCaret=c.initialCaret==='target'?3:SEED.length,expectedForeground=c.foreground?pid:coverPid;
+  row.prepare=await command({op:'prepare',id:c.id,editor:EDITOR,key:'',initialCaret});
   // The one real screenshot on this connection supplies both the point and the stale-point guard's lineage.
   const shot=await rpc('get_app_state',{includeScreenshot:true,outputDirectory:join(OUT,'shots',String(rows.length))});requireOK(shot,'observation');
   row.observation=clean(shot); // #366's readiness wait, if cold, completes before any measured interval.
@@ -78,13 +81,13 @@ async function attempt(c){
   row.point={screen:{x:field.frame.x+35,y:field.frame.y+20},source:'fixture monospace AX text-entry frame +35,+20',intendedOffset:3};
   const observe=c.suite==='trace'||c.suite==='candidate'||c.suite==='isolate';
   row.watchBind=await watch.ask({op:'bind',pid,coverPid,title:'probe354:'+row.binding.owner.pageId,observe});requireOK(row.watchBind,'observer binding');
-  row.cover=await front(coverPid);await sleep(250);
+  row.foregroundTransition=await front(expectedForeground);if(!c.foreground)row.cover=row.foregroundTransition;await sleep(250);
   row.preClickOrder=await watch.ask({op:'mark'});requireOK(row.preClickOrder,'window order');
-  if(row.preClickOrder.windows.browserAboveCover!==false)throw Error('browser is not behind the physical cover');
+  if(row.preClickOrder.windows.browserAboveCover!==Boolean(c.foreground))throw Error('browser/cover order does not match the scene');
   row.preClick=await command({op:'read'});
-  if(row.preClick.text!==SEED||JSON.stringify(row.preClick.selection)!==JSON.stringify([SEED.length,0])||!row.preClick.focused)throw Error('setup/deactivation changed intended caret');
+  if(row.preClick.text!==SEED||JSON.stringify(row.preClick.selection)!==JSON.stringify([initialCaret,0])||!row.preClick.focused)throw Error('setup/deactivation changed intended caret');
   row.clockUncertaintyMs=Math.max(2,row.preClick.endedAt-row.preClick.startedAt);
-  row.beforeClickForeground=await front(coverPid,false);stage='click';
+  row.beforeClickForeground=await front(expectedForeground,false);stage='click';
   if(c.suite==='isolate'){const carrierStartedAt=Date.now(),r=await watch.ask({op:'mutate',kind:c.mode,browser:BROWSER});row.click={...r,nativeStartedAt:r.startedAt,nativeEndedAt:r.endedAt,startedAt:carrierStartedAt,endedAt:Date.now()}}
   else if(c.suite==='control'){const at=Date.now();row.click={startedAt:at,endedAt:at,noClick:true}}
   else row.click=clean(await rpc('click',{x:Math.round((row.point.screen.x-frame.x)*scale),y:Math.round((row.point.screen.y-frame.y)*scale),...(observe?{spike359Trace:true}:{}),...(c.suite==='candidate'?{spike359Mode:c.mode}:{})}));
@@ -103,15 +106,15 @@ async function attempt(c){
   if(row.ax.truncated)throw Error('AX trace truncated');
   row.finalVisibleWindow=await tool.ask({op:'window-title',pid});
   try{assertVisibleOwner(row.finalVisibleWindow.windowTitle,row.binding.owner)}catch(e){row.contextLoss=true;transport.retire('visible-owner-loss');throw e}
-  row.afterForeground=await tool.ask({op:'front',pid:coverPid,activate:false});
-  row.foregroundViolation=row.afterForeground.frontmostPid!==coverPid||row.ax.events.some(e=>e.at>=row.click.startedAt&&e.kind==='workspace-activation'&&e.pid===pid);
-  row.windowRaiseObserved=row.ax.events.some(e=>e.at>=row.click.startedAt&&e.kind==='window-order'&&e.browserAboveCover===true);
+  row.afterForeground=await tool.ask({op:'front',pid:expectedForeground,activate:false});
+  row.foregroundViolation=row.afterForeground.frontmostPid!==expectedForeground||(!c.foreground&&row.ax.events.some(e=>e.at>=row.click.startedAt&&e.kind==='workspace-activation'&&e.pid===pid));
+  row.windowRaiseObserved=!c.foreground&&row.ax.events.some(e=>e.at>=row.click.startedAt&&e.kind==='window-order'&&e.browserAboveCover===true);
   row.valid=true;consecutiveSetupFailures=0;
  }catch(e){row.failureStage=stage;row.problem=String(e.stack??e);if(stage==='setup')consecutiveSetupFailures++;try{row.ax=await watch.ask({op:'stop'})}catch{} }
  finally{row.endedAt=Date.now();rows.push(row);appendFileSync(join(OUT,'rows.jsonl'),JSON.stringify(row)+'\n');writeFileSync(join(OUT,'progress.json'),JSON.stringify({attempted:rows.length,requested:planned.length,last:row.id,elapsedMs:Date.now()-startedAt},null,2));console.log('359',row.id,row.valid?'scored':row.problem)}
  if(consecutiveSetupFailures>=3)throw Error('three consecutive invalid setups; abort rather than fabricate coverage');
 }
-const meta={schema:1,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,browser:BROWSER,editor:EDITOR,reps:REPS,smoke:SMOKE,image:process.env.ImageVersion,startedAt,planned,transport:'354 owner-v3 visible AX title binds nonce/timeOrigin; no hidden Firefox realm',clock:'same hosted machine epoch clocks; monotonic stamps in DOM/Swift; conservative command RTT uncertainty retained',tailMs:1500};
+const meta={schema:1,kit:process.env.GITHUB_SHA,engine:process.env.ENGINE_REF,browser:BROWSER,editor:EDITOR,reps:REPS,smoke:SMOKE,diagnostic:DIAGNOSTIC,image:process.env.ImageVersion,startedAt,planned,transport:'354 owner-v3 visible AX title binds nonce/timeOrigin; no hidden Firefox realm',clock:'same hosted machine epoch clocks; monotonic stamps in DOM/Swift; conservative command RTT uncertainty retained',tailMs:1500};
 try{
  browser=await launch(BROWSER,fixtureURL,join(OUT,'profile'),{x:400,y:30,w:620,h:720});pid=browser.pid;await until(()=>transport.clients.size>0,30000);await sleep(BROWSER==='cft'?Math.max(0,browser.launchedAt+22000-Date.now()):1500);placePid(pid,{x:400,y:30,w:620,h:720});
  const doc=join(OUT,'cover.txt');writeFileSync(doc,'#359 disposable cover.');sh('open',['-a','TextEdit',doc]);await sleep(1000);coverPid=Number(sh('pgrep',['-x','TextEdit']).split('\n')[0]);if(!coverPid)throw Error('cover unavailable');placePid(coverPid,{x:360,y:25,w:660,h:740});
@@ -127,7 +130,7 @@ try{
  }
 }catch(e){meta.failure=String(e.stack??e);console.error(meta.failure);process.exitCode=1}
 finally{
- meta.finishedAt=Date.now();writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));writeFileSync(join(OUT,'summary.json'),JSON.stringify(summary(rows,planned,{smoke:SMOKE}),null,2));
+ meta.finishedAt=Date.now();writeFileSync(join(OUT,'config.json'),JSON.stringify(meta,null,2));writeFileSync(join(OUT,'summary.json'),JSON.stringify(summary(rows,planned,{smoke:SMOKE,diagnostic:Boolean(DIAGNOSTIC)}),null,2));
  transport.retire('shutdown');w?.close();engine?.kill('SIGTERM');tool.child.kill('SIGTERM');watch.child.kill('SIGTERM');if(browser)try{process.kill(browser.pid,'SIGTERM')}catch{}
  server.closeAllConnections();server.close();
 }

@@ -71,6 +71,18 @@ Range stability is not a proof of queue drainage. An already-equal cached range 
 
 Direct AX controls are labelled isolated carriers, not production click outcomes. Safari's AXFocused write is deliberately absent because it is already known to raise Safari. The natural trace alone determines whether Chromium's fallback ran; if it never did, that path has a natural denominator of zero, not evidence that it is safe. The Chromium focus-only isolation is not a substitute for a naturally needed fallback.
 
+## Separate equal-range diagnostic
+
+The 3,680-attempt corpus is background, initially at the seed's end. It does **not** reproduce #354's original setup: the actual click-order facts have `/front/` IDs, and script-only preparation left the caret at offset 3, already equal to the measured click's target. A read-back can therefore pass without witnessing any transition. Do not infer equal-range safety from a clean changed-range run.
+
+The separately authorized diagnostic leaves the full run at kit `6f8c739b` unchanged. It reuses the same input boundary and engine pin, never retries input, and labels every ID and group by diagnostic kind and scene. All preparation remains script-only, so an equal range does not inherit a preparation engine click.
+
+- `diagnostic=pilot, reps=5, smoke=false`: textarea in all three browsers; foreground/background × caret 3/end; script selection; separate plain rate and instrumented trace arms. 120 requested attempts.
+- `diagnostic=confirm, reps=20, smoke=false`: the closest original scene only (Chrome, foreground, caret 3), script selection, plain and trace. 40 requested attempts, used if the five-repetition pilot does not reproduce.
+- `diagnostic=candidates, reps=20, smoke=false`: the selected `scene` and `diagnostic_browser` (`all` or one browser); original suites, including no-click controls and isolated carriers, with **both script and Cmd+A** selections. This prices candidates on a failing scene, not on a silently substituted clean one.
+
+Diagnostics have their own workflow concurrency group so a pilot can run beside the unchanged full run. Their default is off. Summarize a downloaded diagnostic directory with `readers.mjs summarize INPUT OUTPUT --diagnostic`; the requested manifest comes from its configs. The ordinary reader refuses diagnostic rows, and diagnostic groups keep the four scenes separate. Never merge these rows into the 3,680 or into smoke evidence. Actual image/browser versions remain per-shard qualifications.
+
 ## Readers
 
 All readers run offline, without importing the GUI driver.

@@ -7,20 +7,35 @@ on:
   workflow_dispatch:
     inputs:
       reps:
-        description: '20 for measurement, 1 for an explicitly labelled smoke'
+        description: '20 for measurement/candidates, 5 for diagnostic pilot, 1 for smoke'
         default: '1'
         type: choice
-        options: ['20', '1']
+        options: ['20', '5', '1']
       smoke:
         description: 'Smoke evidence is not primary-rate evidence'
         default: true
         type: boolean
+      diagnostic:
+        description: 'Separate corpus: pilot crosses four scenes; confirm repeats original Chrome scene; candidates includes both selections'
+        type: choice
+        options: ['none', 'pilot', 'confirm', 'candidates']
+        default: 'none'
+      scene:
+        description: 'Candidate diagnostic scene (ignored by pilot/confirm)'
+        type: choice
+        options: ['foreground-equal', 'foreground-end', 'background-equal', 'background-end']
+        default: 'foreground-equal'
+      diagnostic_browser:
+        description: 'Diagnostic browsers (confirm always uses cft only)'
+        type: choice
+        options: ['all', 'cft', 'safari', 'firefox']
+        default: 'all'
 permissions:
   contents: read
 env:
   ENGINE_REF: '15acf09b714dd19efc796e4a3a2ff8d57e2f7994'
 concurrency:
-  group: probe-359
+  group: ${{ inputs.diagnostic && inputs.diagnostic != 'none' && 'probe-359-diagnostic' || 'probe-359' }}
   cancel-in-progress: false
 jobs:
   measure:
@@ -30,8 +45,8 @@ jobs:
       fail-fast: false
       max-parallel: 6
       matrix:
-        browser: [safari, cft, firefox]
-        editor: [textarea, input, contenteditable, compose]
+        browser: ${{ fromJSON(inputs.diagnostic == 'confirm' && '["cft"]' || (inputs.diagnostic_browser && inputs.diagnostic_browser != 'all' && format('["{0}"]', inputs.diagnostic_browser) || '["safari","cft","firefox"]')) }}
+        editor: ${{ fromJSON(inputs.diagnostic && inputs.diagnostic != 'none' && '["textarea"]' || '["textarea","input","contenteditable","compose"]') }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -41,8 +56,14 @@ jobs:
         env:
           REPS: ${{ inputs.reps || '1' }}
           SMOKE: ${{ github.event_name == 'push' || inputs.smoke }}
+          DIAGNOSTIC: ${{ inputs.diagnostic || 'none' }}
         run: |
-          test "$REPS" = 20 || test "$SMOKE" = true
+          if [ "$DIAGNOSTIC" = none ]; then
+            test "$REPS" = 20 || test "$SMOKE" = true
+          else
+            test "$SMOKE" = false
+            test "$REPS" = 5 || test "$REPS" = 20
+          fi
       - name: Disposable runner apps
         env:
           BROWSER: ${{ matrix.browser }}
@@ -77,8 +98,10 @@ jobs:
           EDITOR: ${{ matrix.editor }}
           REPS: ${{ inputs.reps || '1' }}
           SMOKE: ${{ github.event_name == 'push' || inputs.smoke }}
+          DIAGNOSTIC: ${{ inputs.diagnostic || 'none' }}
+          SCENE: ${{ inputs.scene || 'foreground-equal' }}
         run: |
-          node scripts/probe-359/measure.mjs --browser "$BROWSER" --editor "$EDITOR" --engine "$RUNNER_TEMP/plain-build/release/cua-engine" --traced-engine "$RUNNER_TEMP/traced-build/release/cua-engine" --tool "$RUNNER_TEMP/tool359" --watch "$RUNNER_TEMP/watch359" --out "$RUNNER_TEMP/probe-359/$BROWSER-$EDITOR" --reps "$REPS" --smoke "$SMOKE"
+          node scripts/probe-359/measure.mjs --browser "$BROWSER" --editor "$EDITOR" --engine "$RUNNER_TEMP/plain-build/release/cua-engine" --traced-engine "$RUNNER_TEMP/traced-build/release/cua-engine" --tool "$RUNNER_TEMP/tool359" --watch "$RUNNER_TEMP/watch359" --out "$RUNNER_TEMP/probe-359/$BROWSER-$EDITOR" --reps "$REPS" --smoke "$SMOKE" --diagnostic "$DIAGNOSTIC" --scene "$SCENE"
       - name: Upload evidence even on incomplete coverage
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f

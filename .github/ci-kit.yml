@@ -220,3 +220,14 @@ gates:
     lane: hosted-macos
     timeout: 50
     run: PARITY_ORDER=cua-first PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser
+  # #384 diagnosis: both orders with the harness Chrome's anti-throttling flags.
+  - name: parity-browser-stress-flags
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_CHROME_FLAGS=anti-throttling PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser
+  - name: parity-browser-stress-flags-swap
+    on: [dispatch]
+    lane: hosted-macos
+    timeout: 50
+    run: PARITY_ORDER=cua-first PARITY_CHROME_FLAGS=anti-throttling PARITY_STRESS=cpu:2 sh scripts/repl-parity/hosted/hosted.sh browser

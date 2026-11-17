@@ -1,3 +1,5 @@
+Latest PR-head qualification and all run links are in [README.md](README.md). The content below is the historical main15acf09b/fix2b7804bd comparison.
+
 # #367 hosted live-check evidence
 
 Recommendation: remove Raise from the other-Space remedy. Four successful public Raise calls neither switched the active Space nor brought the window here. Off-every-display recovery remains unqualified because every tested placement route clamped to partial visibility.

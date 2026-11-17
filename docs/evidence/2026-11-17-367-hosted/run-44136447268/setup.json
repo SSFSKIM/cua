@@ -1,0 +1,12 @@
+{
+  "kit": "d3faa0f39e65369fc2bb3a54cfd4da863b8da564",
+  "run": "44136447268",
+  "runnerOS": "macos26",
+  "imageVersion": "20261112.0504.1",
+  "runnerArch": "ARM64",
+  "node": "v24.22.3",
+  "authorizationPolicy": "Non-prompting preflight only. Never request grants or change TCC.",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.7.2\nBuildVersion:\t\t25G332\n",
+  "kernel": "Darwin dsm12-be218-2bf4e8c4-90ab-491d-b70b-2ba3b90976d8-72A11FCA16A4.local 25.6.0 Darwin Kernel Version 25.6.0: Mon Oct 12 00:39:04 PDT 2026; root:xnu-12377.161.15.701.48~2/RELEASE_ARM64_VMAPPLE arm64\n",
+  "xcode": "Xcode 26.6\nBuild version 17F113\n"
+}

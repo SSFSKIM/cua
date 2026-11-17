@@ -1,0 +1,55 @@
+# #367 ruling 782 targeted rerun
+
+Run: https://github.com/SSFSKIM/cua/actions/runs/44133515588
+
+| Head / app | Product SHA |
+| --- | --- |
+| main / textedit | 15acf09b714dd19efc796e4a3a2ff8d57e2f7994 |
+| main / electron | 15acf09b714dd19efc796e4a3a2ff8d57e2f7994 |
+| fix / textedit | d778455218656b146508c89179e2428fb4616d7e |
+| fix / electron | d778455218656b146508c89179e2428fb4616d7e |
+
+Missing-primary-AX observation-refusal branch: not observed on the fix in this run; successful AX-readable observations do not exercise this conditional path.
+
+Control order: before other-Space cell. AXWindows enumeration can be empty even when the engine still reads a primary window through AXFocusedWindow/AXMainWindow; the list alone is not proof that the absence-refusal branch executed.
+
+## Other-Space public calls
+
+| Head / app | Call | Answer | Error name | Exact error text or placement line | Elapsed ms | screenshotOmitted |
+| --- | --- | --- | --- | --- | --- | --- |
+| main / textedit | getApp | throws | noCapturableWindow | Computer Use server error -10005: No capturable window found: TextEdit | 30.585 | none |
+| main / textedit | getAXState | throws | noCapturableWindow | Computer Use server error -10005: No capturable window found: TextEdit | 9.97 | none |
+| main / textedit | getScreenshot | throws | noCapturableWindow | Computer Use server error -10005: No capturable window found: TextEdit | 9.106 | none |
+| main / textedit | Raise | success (undefined) | none | (full successful state text is retained in ruling-782.json) | 97.665 | none |
+| main / electron | getApp | throws | noCapturableWindow | Computer Use server error -10005: No capturable window found: cua Electron Fixture | 14.47 | none |
+| main / electron | getAXState | throws | noCapturableWindow | Computer Use server error -10005: No capturable window found: cua Electron Fixture | 11.791 | none |
+| main / electron | getScreenshot | throws | noCapturableWindow | Computer Use server error -10005: No capturable window found: cua Electron Fixture | 14.635 | none |
+| main / electron | Raise | success (undefined) | none | (full successful state text is retained in ruling-782.json) | 110.361 | none |
+| fix / textedit | getApp | bound App; initial observation emitted | none | [window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Ask the user to bring it here or switch to its Space.] | 25.497 | windowOnAnotherSpace |
+| fix / textedit | getAXState | state text | none | [window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Ask the user to bring it here or switch to its Space.] | 20.801 | windowOnAnotherSpace |
+| fix / textedit | getScreenshot | throws | none | Screenshot unavailable for /System/Applications/TextEdit.app: the window is on another Space. Ask the user to bring it here or switch to its Space. | 16.585 | windowOnAnotherSpace |
+| fix / textedit | Raise | throws | windowOnAnotherSpace | Computer Use server error -10005: The TextEdit window is on another Space. Ask the user to bring it here or switch to its Space. | 2.966 | none |
+| fix / electron | getApp | bound App; initial observation emitted | none | [window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Ask the user to bring it here or switch to its Space.] | 17.379 | windowOnAnotherSpace |
+| fix / electron | getAXState | state text | none | [window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Ask the user to bring it here or switch to its Space.] | 15.775 | windowOnAnotherSpace |
+| fix / electron | getScreenshot | throws | none | Screenshot unavailable for /Users/runner/work/_temp/fixture367/44.9.0-faee60a202d5/cua Electron Fixture.app: the window is on another Space. Ask the user to bring it here or switch to its Space. | 14.786 | windowOnAnotherSpace |
+| fix / electron | Raise | throws | windowOnAnotherSpace | Computer Use server error -10005: The cua Electron Fixture window is on another Space. Ask the user to bring it here or switch to its Space. | 2.414 | none |
+
+## Independent Raise before/after
+
+| Head / app | Active Space | Window Spaces | CG frame | Frontmost | On-screen-only membership | Assertions |
+| --- | --- | --- | --- | --- | --- | --- |
+| main / textedit | 1 → 1 | [10] → [10] | {'height': 768, 'width': 1024, 'x': 0, 'y': 0} → {'height': 768, 'width': 1024, 'x': 0, 'y': 0} | {'bundleId': 'com.apple.finder', 'pid': 357} → {'bundleId': 'com.apple.finder', 'pid': 357} | False → False | all pass |
+| main / electron | 1 → 1 | [15] → [15] | {'height': 768, 'width': 1024, 'x': 0, 'y': 0} → {'height': 768, 'width': 1024, 'x': 0, 'y': 0} | {'bundleId': 'com.apple.finder', 'pid': 357} → {'bundleId': 'com.apple.finder', 'pid': 357} | False → False | all pass |
+| fix / textedit | 26 → 26 | [1] → [1] | {'height': 422, 'width': 656, 'x': 79, 'y': 56} → {'height': 422, 'width': 656, 'x': 79, 'y': 56} | {'bundleId': 'com.apple.finder', 'pid': 357} → {'bundleId': 'com.apple.finder', 'pid': 357} | False → False | all pass |
+| fix / electron | 1 → 1 | [28] → [28] | {'height': 768, 'width': 1024, 'x': 0, 'y': 0} → {'height': 768, 'width': 1024, 'x': 0, 'y': 0} | {'bundleId': 'com.apple.finder', 'pid': 357} → {'bundleId': 'com.apple.finder', 'pid': 357} | False → False | all pass |
+
+## On-screen controls
+
+| Head / app | Observation before Raise | Raise | Observation after Raise | Placement / frontmost |
+| --- | --- | --- | --- | --- |
+| main / textedit | success 46.996ms | success 328.69ms | success 348.438ms | unchanged; all assertions pass |
+| main / electron | success 38.746ms | success 152.796ms | success 377.479ms | unchanged; all assertions pass |
+| fix / textedit | success 41.787ms | success 127.024ms | success 289.213ms | unchanged; all assertions pass |
+| fix / electron | success 22.496ms | success 122.956ms | success 304.046ms | unchanged; all assertions pass |
+
+Times are direct public-call measurements. Successful getApp/getAXState full text, exact errors, metadata, raw before/after records and assertions are retained in ruling-782.json and independent-evidence.json. Endpoint samples are1.6s after each attempted public Raise; no continuous transient-Space trace is claimed. Off-display, partial, hidden and cost cells were not run. Native Electron code and product sources were unmodified; only the previously reviewed owned-fixture setup code was present.

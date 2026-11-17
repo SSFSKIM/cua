@@ -1,0 +1,1062 @@
+{
+  "run": "https://github.com/SSFSKIM/cua/actions/runs/44136447268",
+  "rows": [
+    {
+      "head": "main",
+      "sha": "136183aa196a8fd80a0dcc3fe933adff67f9cc39",
+      "app": "textedit",
+      "windowNumber": 36,
+      "otherSpace": {
+        "getApp": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "SkyComputerUseError",
+            "errorName": "noCapturableWindow",
+            "message": "Computer Use server error -10005: No capturable window found: TextEdit"
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 9.871916000000056
+        },
+        "getAXState": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "SkyComputerUseError",
+            "errorName": "noCapturableWindow",
+            "message": "Computer Use server error -10005: No capturable window found: TextEdit"
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 16.541667000000416
+        },
+        "getScreenshot": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "SkyComputerUseError",
+            "errorName": "noCapturableWindow",
+            "message": "Computer Use server error -10005: No capturable window found: TextEdit"
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 9.059374999999818
+        },
+        "Raise": {
+          "ok": true,
+          "answer": "success (undefined)",
+          "error": null,
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 94.39625000000069
+        }
+      },
+      "beforeObservation": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          10
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetApp": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          10
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetAXState": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          10
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetScreenshot": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          10
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "beforeRaise": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          10
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterRaise": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          10
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "controlOrder": "after other-Space cell",
+      "observationNamedRefusals": [],
+      "assertions": {
+        "expectedAnswer": true,
+        "activeSpace": true,
+        "windowSpaces": true,
+        "frame": true,
+        "frontmost": true
+      },
+      "control": {
+        "observation": {
+          "ok": true,
+          "answer": "state text",
+          "error": null,
+          "text": "Window: \"Cua367-owned.txt\", App: TextEdit.\n0 standard window Cua367-owned.txt, URL: file:///Users/runner/work/_temp/evidence367/Cua367-owned.txt, Secondary Actions: Raise\n\t1 scroll area Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down\n\t\t2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n\n\t\t3 scroll bar (disabled, settable, float) 1\n\t\t4 scroll bar (disabled, settable, float) 0\n\t5 close button\n\t6 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t7 minimize button\n\t8 menu button (disabled) document actions\n\t9 image Cua367-owned.txt\n\t10 text Cua367-owned.txt\n11 menu bar\n\t12 TextEdit\n\t13 File\n\t14 Edit\n\t15 Format\n\t16 View\n\t17 Window\n\t18 Help\n\nThe focused UI element is 2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 346.1727499999997
+        },
+        "Raise": {
+          "ok": true,
+          "answer": "success (undefined)",
+          "error": null,
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 157.8078340000011
+        },
+        "afterObservation": {
+          "ok": true,
+          "answer": "state text",
+          "error": null,
+          "text": "Window: \"Cua367-owned.txt\", App: TextEdit.\n0 standard window Cua367-owned.txt, URL: file:///Users/runner/work/_temp/evidence367/Cua367-owned.txt, Secondary Actions: Raise\n\t1 scroll area Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down\n\t\t2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n\n\t\t3 scroll bar (disabled, settable, float) 1\n\t\t4 scroll bar (disabled, settable, float) 0\n\t5 close button\n\t6 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t7 minimize button\n\t8 menu button (disabled) document actions\n\t9 image Cua367-owned.txt\n\t10 text Cua367-owned.txt\n11 menu bar\n\t12 TextEdit\n\t13 File\n\t14 Edit\n\t15 Format\n\t16 View\n\t17 Window\n\t18 Help\n\nThe focused UI element is 2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 337.61904200000026
+        },
+        "before": {
+          "activeSpace": 1,
+          "windowSpaces": [
+            1
+          ],
+          "frame": {
+            "height": 500,
+            "width": 900,
+            "x": 100,
+            "y": 200
+          },
+          "frontmost": {
+            "bundleId": "com.apple.finder",
+            "pid": 390
+          },
+          "inOnscreenList": true,
+          "allCGOnscreen": true,
+          "includingCGOnscreen": true,
+          "AXWindowsCount": 1
+        },
+        "after": {
+          "activeSpace": 1,
+          "windowSpaces": [
+            1
+          ],
+          "frame": {
+            "height": 500,
+            "width": 900,
+            "x": 100,
+            "y": 200
+          },
+          "frontmost": {
+            "bundleId": "com.apple.finder",
+            "pid": 390
+          },
+          "inOnscreenList": true,
+          "allCGOnscreen": true,
+          "includingCGOnscreen": true,
+          "AXWindowsCount": 1
+        },
+        "assertions": {
+          "observation": true,
+          "raise": true,
+          "activeSpace": true,
+          "windowSpaces": true,
+          "frame": true,
+          "frontmost": true,
+          "afterObservation": true
+        }
+      }
+    },
+    {
+      "head": "main",
+      "sha": "136183aa196a8fd80a0dcc3fe933adff67f9cc39",
+      "app": "electron",
+      "windowNumber": 78,
+      "otherSpace": {
+        "getApp": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "SkyComputerUseError",
+            "errorName": "timeoutReached",
+            "message": "Computer Use server error -10005: timeoutReached"
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 5018.646917000002
+        },
+        "getAXState": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "SkyComputerUseError",
+            "errorName": "timeoutReached",
+            "message": "Computer Use server error -10005: timeoutReached"
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 5074.572458000002
+        },
+        "getScreenshot": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "SkyComputerUseError",
+            "errorName": "timeoutReached",
+            "message": "Computer Use server error -10005: timeoutReached"
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 5019.579875000003
+        },
+        "Raise": {
+          "ok": true,
+          "answer": "success (undefined)",
+          "error": null,
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 109.06999999999971
+        }
+      },
+      "beforeObservation": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          15
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetApp": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          15
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetAXState": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          15
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetScreenshot": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          15
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "beforeRaise": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          15
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterRaise": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          15
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "controlOrder": "after other-Space cell",
+      "observationNamedRefusals": [],
+      "assertions": {
+        "expectedAnswer": true,
+        "activeSpace": true,
+        "windowSpaces": true,
+        "frame": true,
+        "frontmost": true
+      },
+      "control": {
+        "observation": {
+          "ok": true,
+          "answer": "state text",
+          "error": null,
+          "text": "Window: \"cua Electron fixture\", App: cua Electron Fixture.\n0 standard window cua Electron fixture, Secondary Actions: Raise\n\t1 container cua Electron fixture\n\t\t2 container\n\t\t\t3 HTML content cua Electron fixture, URL: file:///Users/runner/work/_temp/fixture367/44.9.0-faee60a202d5/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html\n\t\t\t\t4 container\n\t\t\t\t\t5 text entry area (settable) Fixture text\n\t\t\t\t\t6 list box Fixture list\n\t\t\t\t\t\t7 text Alpha\n\t\t\t\t\t\t8 text Bravo\n\t\t\t\t\t\t9 text Charlie\n\t\t\t\t\t\t10 text Delta\n\t\t\t\t\t\t11 text Echo\n\t\t\t\t\t\t12 text Foxtrot\n\t\t\t\t\t13 button Fixture button\n\t\t\t\t\t14 container Fixture status\n\t\t\t\t\t\t15 text Pressed 0 times\n\t16 close button\n\t17 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t18 minimize button\n19 menu bar\n\t20 cua Electron Fixture\n\t21 File\n\t22 Edit\n\t23 View\n\t24 Window\n",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 289.08608300000196
+        },
+        "Raise": {
+          "ok": true,
+          "answer": "success (undefined)",
+          "error": null,
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 89.26845799999865
+        },
+        "afterObservation": {
+          "ok": true,
+          "answer": "state text",
+          "error": null,
+          "text": "Window: \"cua Electron fixture\", App: cua Electron Fixture.\n0 standard window cua Electron fixture, Secondary Actions: Raise\n\t1 container cua Electron fixture\n\t\t2 container\n\t\t\t3 HTML content cua Electron fixture, URL: file:///Users/runner/work/_temp/fixture367/44.9.0-faee60a202d5/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html\n\t\t\t\t4 container\n\t\t\t\t\t5 text entry area (settable) Fixture text\n\t\t\t\t\t6 list box Fixture list\n\t\t\t\t\t\t7 text Alpha\n\t\t\t\t\t\t8 text Bravo\n\t\t\t\t\t\t9 text Charlie\n\t\t\t\t\t\t10 text Delta\n\t\t\t\t\t\t11 text Echo\n\t\t\t\t\t\t12 text Foxtrot\n\t\t\t\t\t13 button Fixture button\n\t\t\t\t\t14 container Fixture status\n\t\t\t\t\t\t15 text Pressed 0 times\n\t16 close button\n\t17 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t18 minimize button\n19 menu bar\n\t20 cua Electron Fixture\n\t21 File\n\t22 Edit\n\t23 View\n\t24 Window\n\nThe focused UI element is 5 text entry area (settable) Fixture text",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 314.0019590000011
+        },
+        "before": {
+          "activeSpace": 1,
+          "windowSpaces": [
+            1
+          ],
+          "frame": {
+            "height": 500,
+            "width": 900,
+            "x": 100,
+            "y": 200
+          },
+          "frontmost": {
+            "bundleId": "com.apple.finder",
+            "pid": 390
+          },
+          "inOnscreenList": true,
+          "allCGOnscreen": true,
+          "includingCGOnscreen": true,
+          "AXWindowsCount": 1
+        },
+        "after": {
+          "activeSpace": 1,
+          "windowSpaces": [
+            1
+          ],
+          "frame": {
+            "height": 500,
+            "width": 900,
+            "x": 100,
+            "y": 200
+          },
+          "frontmost": {
+            "bundleId": "com.apple.finder",
+            "pid": 390
+          },
+          "inOnscreenList": true,
+          "allCGOnscreen": true,
+          "includingCGOnscreen": true,
+          "AXWindowsCount": 1
+        },
+        "assertions": {
+          "observation": true,
+          "raise": true,
+          "activeSpace": true,
+          "windowSpaces": true,
+          "frame": true,
+          "frontmost": true,
+          "afterObservation": true
+        }
+      }
+    },
+    {
+      "head": "fix",
+      "sha": "a7c2fcc3310628e32c4d3760ceb1bd9aa4a4b69a",
+      "app": "textedit",
+      "windowNumber": 131,
+      "otherSpace": {
+        "getApp": {
+          "ok": true,
+          "answer": "bound App; initial observation emitted",
+          "error": null,
+          "text": "Window: \"Cua367-owned.txt\", App: TextEdit.\n0 standard window Cua367-owned.txt, URL: file:///Users/runner/work/_temp/evidence367/Cua367-owned.txt, Secondary Actions: Raise\n\t1 scroll area Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down\n\t\t2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n\n\t\t3 scroll bar (disabled, settable, float) 0.1851851791143417\n\t\t4 scroll bar (disabled, settable, float) 0\n\t5 text Cua367-owned.txt\n6 menu bar\n\t7 TextEdit\n\t8 File\n\t9 Edit\n\t10 Format\n\t11 View\n\t12 Window\n\t13 Help\n[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Ask the user to bring it here or switch to its Space.]\n\nThe focused UI element is 2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n",
+          "placementLine": "[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Ask the user to bring it here or switch to its Space.]",
+          "screenshotOmitted": "windowOnAnotherSpace",
+          "elapsedMs": 15.029667000000245
+        },
+        "getAXState": {
+          "ok": true,
+          "answer": "state text",
+          "error": null,
+          "text": "Window: \"Cua367-owned.txt\", App: TextEdit.\n0 standard window Cua367-owned.txt, URL: file:///Users/runner/work/_temp/evidence367/Cua367-owned.txt, Secondary Actions: Raise\n\t1 scroll area Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down\n\t\t2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n\n\t\t3 scroll bar (disabled, settable, float) 0.1851851791143417\n\t\t4 scroll bar (disabled, settable, float) 0\n\t5 text Cua367-owned.txt\n6 menu bar\n\t7 TextEdit\n\t8 File\n\t9 Edit\n\t10 Format\n\t11 View\n\t12 Window\n\t13 Help\n[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Ask the user to bring it here or switch to its Space.]\n\nThe focused UI element is 2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n",
+          "placementLine": "[window on another Space: the window is not on the current Space, so it may show no content and has no screenshot. Ask the user to bring it here or switch to its Space.]",
+          "screenshotOmitted": "windowOnAnotherSpace",
+          "elapsedMs": 11.845000000000255
+        },
+        "getScreenshot": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "Error",
+            "errorName": null,
+            "message": "Screenshot unavailable for /System/Applications/TextEdit.app: the window is on another Space. Ask the user to bring it here or switch to its Space."
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": "windowOnAnotherSpace",
+          "elapsedMs": 10.721667000000252
+        },
+        "Raise": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "SkyComputerUseError",
+            "errorName": "windowOnAnotherSpace",
+            "message": "Computer Use server error -10005: The TextEdit window is on another Space. Ask the user to bring it here or switch to its Space."
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 3.3607919999999467
+        }
+      },
+      "beforeObservation": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          20
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetApp": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          20
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetAXState": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          20
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetScreenshot": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          20
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "beforeRaise": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          20
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterRaise": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          20
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "controlOrder": "after other-Space cell",
+      "observationNamedRefusals": [],
+      "assertions": {
+        "expectedAnswer": true,
+        "activeSpace": true,
+        "windowSpaces": true,
+        "frame": true,
+        "frontmost": true
+      },
+      "control": {
+        "observation": {
+          "ok": true,
+          "answer": "state text",
+          "error": null,
+          "text": "Window: \"Cua367-owned.txt\", App: TextEdit.\n0 standard window Cua367-owned.txt, URL: file:///Users/runner/work/_temp/evidence367/Cua367-owned.txt, Secondary Actions: Raise\n\t1 scroll area Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down\n\t\t2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n\n\t\t3 scroll bar (disabled, settable, float) 1\n\t\t4 scroll bar (disabled, settable, float) 0\n\t5 close button\n\t6 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t7 minimize button\n\t8 menu button (disabled) document actions\n\t9 image Cua367-owned.txt\n\t10 text Cua367-owned.txt\n11 menu bar\n\t12 TextEdit\n\t13 File\n\t14 Edit\n\t15 Format\n\t16 View\n\t17 Window\n\t18 Help\n\nThe focused UI element is 2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 24.706915999999183
+        },
+        "Raise": {
+          "ok": true,
+          "answer": "success (undefined)",
+          "error": null,
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 122.9439169999996
+        },
+        "afterObservation": {
+          "ok": true,
+          "answer": "state text",
+          "error": null,
+          "text": "Window: \"Cua367-owned.txt\", App: TextEdit.\n0 standard window Cua367-owned.txt, URL: file:///Users/runner/work/_temp/evidence367/Cua367-owned.txt, Secondary Actions: Raise\n\t1 scroll area Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down\n\t\t2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n\n\t\t3 scroll bar (disabled, settable, float) 1\n\t\t4 scroll bar (disabled, settable, float) 0\n\t5 close button\n\t6 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t7 minimize button\n\t8 menu button (disabled) document actions\n\t9 image Cua367-owned.txt\n\t10 text Cua367-owned.txt\n11 menu bar\n\t12 TextEdit\n\t13 File\n\t14 Edit\n\t15 Format\n\t16 View\n\t17 Window\n\t18 Help\n\nThe focused UI element is 2 text entry area (settable) ID: First Text View, Value: `Cua 367 owned window\nStable text for window placement checks.`\n",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 430.75887500000135
+        },
+        "before": {
+          "activeSpace": 1,
+          "windowSpaces": [
+            1
+          ],
+          "frame": {
+            "height": 500,
+            "width": 900,
+            "x": 100,
+            "y": 200
+          },
+          "frontmost": {
+            "bundleId": "com.apple.finder",
+            "pid": 390
+          },
+          "inOnscreenList": true,
+          "allCGOnscreen": true,
+          "includingCGOnscreen": true,
+          "AXWindowsCount": 1
+        },
+        "after": {
+          "activeSpace": 1,
+          "windowSpaces": [
+            1
+          ],
+          "frame": {
+            "height": 500,
+            "width": 900,
+            "x": 100,
+            "y": 200
+          },
+          "frontmost": {
+            "bundleId": "com.apple.finder",
+            "pid": 390
+          },
+          "inOnscreenList": true,
+          "allCGOnscreen": true,
+          "includingCGOnscreen": true,
+          "AXWindowsCount": 1
+        },
+        "assertions": {
+          "observation": true,
+          "raise": true,
+          "activeSpace": true,
+          "windowSpaces": true,
+          "frame": true,
+          "frontmost": true,
+          "afterObservation": true
+        }
+      }
+    },
+    {
+      "head": "fix",
+      "sha": "a7c2fcc3310628e32c4d3760ceb1bd9aa4a4b69a",
+      "app": "electron",
+      "windowNumber": 170,
+      "otherSpace": {
+        "getApp": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "SkyComputerUseError",
+            "errorName": "windowOnAnotherSpace",
+            "message": "Computer Use server error -10005: The cua Electron Fixture window is on another Space. Ask the user to bring it here or switch to its Space."
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 2.743291999999201
+        },
+        "getAXState": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "SkyComputerUseError",
+            "errorName": "windowOnAnotherSpace",
+            "message": "Computer Use server error -10005: The cua Electron Fixture window is on another Space. Ask the user to bring it here or switch to its Space."
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 2.745542000000569
+        },
+        "getScreenshot": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "SkyComputerUseError",
+            "errorName": "windowOnAnotherSpace",
+            "message": "Computer Use server error -10005: The cua Electron Fixture window is on another Space. Ask the user to bring it here or switch to its Space."
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 2.5712079999993875
+        },
+        "Raise": {
+          "ok": false,
+          "answer": "throws",
+          "error": {
+            "name": "SkyComputerUseError",
+            "errorName": "windowOnAnotherSpace",
+            "message": "Computer Use server error -10005: The cua Electron Fixture window is on another Space. Ask the user to bring it here or switch to its Space."
+          },
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 2.9000410000007832
+        }
+      },
+      "beforeObservation": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          25
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetApp": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          25
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetAXState": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          25
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterGetScreenshot": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          25
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "beforeRaise": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          25
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "afterRaise": {
+        "activeSpace": 1,
+        "windowSpaces": [
+          25
+        ],
+        "frame": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "frontmost": {
+          "bundleId": "com.apple.finder",
+          "pid": 390
+        },
+        "inOnscreenList": false,
+        "allCGOnscreen": false,
+        "includingCGOnscreen": false,
+        "AXWindowsCount": 0
+      },
+      "controlOrder": "after other-Space cell",
+      "observationNamedRefusals": [
+        "getApp",
+        "getAXState",
+        "getScreenshot"
+      ],
+      "assertions": {
+        "expectedAnswer": true,
+        "activeSpace": true,
+        "windowSpaces": true,
+        "frame": true,
+        "frontmost": true
+      },
+      "control": {
+        "observation": {
+          "ok": true,
+          "answer": "state text",
+          "error": null,
+          "text": "Window: \"cua Electron fixture\", App: cua Electron Fixture.\n0 standard window cua Electron fixture, Secondary Actions: Raise\n\t1 container cua Electron fixture\n\t\t2 container\n\t\t\t3 HTML content cua Electron fixture, URL: file:///Users/runner/work/_temp/fixture367/44.9.0-faee60a202d5/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html\n\t\t\t\t4 container\n\t\t\t\t\t5 text entry area (settable) Fixture text\n\t\t\t\t\t6 list box Fixture list\n\t\t\t\t\t\t7 text Alpha\n\t\t\t\t\t\t8 text Bravo\n\t\t\t\t\t\t9 text Charlie\n\t\t\t\t\t\t10 text Delta\n\t\t\t\t\t\t11 text Echo\n\t\t\t\t\t\t12 text Foxtrot\n\t\t\t\t\t13 button Fixture button\n\t\t\t\t\t14 container Fixture status\n\t\t\t\t\t\t15 text Pressed 0 times\n\t16 close button\n\t17 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t18 minimize button\n19 menu bar\n\t20 cua Electron Fixture\n\t21 File\n\t22 Edit\n\t23 View\n\t24 Window\n",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 25.138417000001937
+        },
+        "Raise": {
+          "ok": true,
+          "answer": "success (undefined)",
+          "error": null,
+          "text": "",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 139.19795800000065
+        },
+        "afterObservation": {
+          "ok": true,
+          "answer": "state text",
+          "error": null,
+          "text": "Window: \"cua Electron fixture\", App: cua Electron Fixture.\n0 standard window cua Electron fixture, Secondary Actions: Raise\n\t1 container cua Electron fixture\n\t\t2 container\n\t\t\t3 HTML content cua Electron fixture, URL: file:///Users/runner/work/_temp/fixture367/44.9.0-faee60a202d5/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html\n\t\t\t\t4 container\n\t\t\t\t\t5 text entry area (settable) Fixture text\n\t\t\t\t\t6 list box Fixture list\n\t\t\t\t\t\t7 text Alpha\n\t\t\t\t\t\t8 text Bravo\n\t\t\t\t\t\t9 text Charlie\n\t\t\t\t\t\t10 text Delta\n\t\t\t\t\t\t11 text Echo\n\t\t\t\t\t\t12 text Foxtrot\n\t\t\t\t\t13 button Fixture button\n\t\t\t\t\t14 container Fixture status\n\t\t\t\t\t\t15 text Pressed 0 times\n\t16 close button\n\t17 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window\n\t18 minimize button\n19 menu bar\n\t20 cua Electron Fixture\n\t21 File\n\t22 Edit\n\t23 View\n\t24 Window\n\nThe focused UI element is 5 text entry area (settable) Fixture text",
+          "placementLine": null,
+          "screenshotOmitted": null,
+          "elapsedMs": 350.6144170000007
+        },
+        "before": {
+          "activeSpace": 1,
+          "windowSpaces": [
+            1
+          ],
+          "frame": {
+            "height": 500,
+            "width": 900,
+            "x": 100,
+            "y": 200
+          },
+          "frontmost": {
+            "bundleId": "com.apple.finder",
+            "pid": 390
+          },
+          "inOnscreenList": true,
+          "allCGOnscreen": true,
+          "includingCGOnscreen": true,
+          "AXWindowsCount": 1
+        },
+        "after": {
+          "activeSpace": 1,
+          "windowSpaces": [
+            1
+          ],
+          "frame": {
+            "height": 500,
+            "width": 900,
+            "x": 100,
+            "y": 200
+          },
+          "frontmost": {
+            "bundleId": "com.apple.finder",
+            "pid": 390
+          },
+          "inOnscreenList": true,
+          "allCGOnscreen": true,
+          "includingCGOnscreen": true,
+          "AXWindowsCount": 1
+        },
+        "assertions": {
+          "observation": true,
+          "raise": true,
+          "activeSpace": true,
+          "windowSpaces": true,
+          "frame": true,
+          "frontmost": true,
+          "afterObservation": true
+        }
+      }
+    }
+  ],
+  "timing": "Direct performance.now() around each awaited public API call; excludes report/file serialization after the call."
+}

@@ -1,0 +1,20 @@
+{
+  "appPath": "/Users/runner/work/_temp/fixture367/44.9.0-faee60a202d5/cua Electron Fixture.app",
+  "bundleId": "io.github.ssfskim.cua.fixture.electron",
+  "electronVersion": "44.9.0",
+  "sourceHash": "faee60a202d5",
+  "reused": false,
+  "probe367Control": {
+    "mechanism": "owned Electron BrowserWindow.setBounds",
+    "controlSourceSha256": "03c4a17b630e587b1a899c7687a0e18c794a4bdf4d74e4534df10359ecc70102",
+    "originalMainSha256": "db00457eed577c0e725e15ad9a269ca741c6f3867ac2568680ebdeefc022da06",
+    "instrumentedMainSha256": "d9af6cc9fe10d1e7348d18a1e1145ad26d5e5cfdcbcab1468e05d1af86a2c5e5",
+    "executableBeforeResignSha256": "56be3b04277db644536300c6cd424a081354f848c9fe619b0f4cad6a91fe2b54",
+    "changes": [
+      "append setup-control bootstrap to copied main.js",
+      "copy probe367-control.cjs",
+      "ad-hoc re-sign copied fixture"
+    ],
+    "protocol": "per-head command file; operation-ID ACK with requested/accepted bounds; independent AX/CG proof required"
+  }
+}

@@ -334,7 +334,8 @@ enum ReadbackPlan<Element> {
 /// #359 (ruling 785): `baseline`, when not nil, waits first, after the same checks and before the value is read, on the
 /// field's range read every `pendingClickSampleMs` with its role and subrole checked before each read as the settle
 /// does (`awaitRange`, recorded in `waited`): for select_text's range, which still not read at the cap refuses the
-/// snapshot as `selectionChanged` (nothing is then typed); for a stable range, which at the cap goes on regardless.
+/// snapshot as `selectionChanged` (nothing is then typed), as does a snapshot whose own range, read after the wait and
+/// after any settle, is not that range; for a stable range, which at the cap goes on regardless.
 func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout ReadbackSettle?) -> ReadbackPlan<Element> {
   var waited: RangeWait?
   return readbackSnapshot(reads: reads, settle: &settle, baseline: nil, waited: &waited)
@@ -371,6 +372,9 @@ func readbackSnapshot<Element>(reads: ReadbackReads<Element>, settle: inout Read
     if readbackMayBeTruncated(before) { return .refused(.possiblyTruncated) }
     guard readbackExpected(before: before, range: range, typed: "") != nil else { return .refused(.rangeUnreadable) }
   }
+  // The starting point itself, after any settle, must still be select_text's range: a click landing after the wait's
+  // read would otherwise be adopted, and the read-back would confirm text typed at its caret.
+  if case .selection(let written) = baseline, range != written { return .refused(.selectionChanged) }
   return .expect(field: field, role: role, before: before, range: range, returnIsText: readbackReturnIsText(role: role, subrole: subrole))
 }
 

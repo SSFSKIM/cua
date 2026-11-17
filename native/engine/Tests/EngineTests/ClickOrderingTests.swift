@@ -224,25 +224,73 @@ final class ClickOrderingTests: XCTestCase {
 
   // MARK: set_value's watch
 
-  private func watch(written: String?, length: Int, values: [String?], ranges: [NSRange?]) -> (WrittenValueWatch, valueReads: Int) {
+  /// The watch over scripted reads; `closedAt`, the classification before that read (1-based) answers closed.
+  private func watch(written: String?, length: Int, values: [String?], ranges: [NSRange?],
+                     closedAt: Int? = nil) -> (WrittenValueWatch, valueReads: Int, rangeReads: Int) {
     var values = values, ranges = ranges
-    var clock = 0.0, valueReads = 0
-    let found = watchWrittenValue(written: written, length: length, value: {
+    var clock = 0.0, valueReads = 0, rangeReads = 0, checks = 0
+    let found = watchWrittenValue(written: written, length: length, closed: {
+      checks += 1
+      return closedAt.map { checks >= $0 } ?? false
+    }, value: {
       valueReads += 1
       return values.count > 1 ? values.removeFirst() : values[0]
-    }, range: { ranges.count > 1 ? ranges.removeFirst() : ranges[0] }, now: { clock }, sleep: { clock += $0 })
-    return (found, valueReads)
+    }, range: {
+      rangeReads += 1
+      return ranges.count > 1 ? ranges.removeFirst() : ranges[0]
+    }, now: { clock }, sleep: { clock += $0 })
+    return (found, valueReads, rangeReads)
+  }
+
+  /// Near Chromium's cap a read may lack the written value's end, and only that: a cut prefix confirms, any other
+  /// difference of a 10,000-unit value is valueChanged.
+  func testAValueAtTheCapIsAcceptedOnlyAsACutPrefix() {
+    let written = String(repeating: "a", count: 12_000)
+    let cut = String(repeating: "a", count: typeReadbackValueCap)
+    let (prefix, _, _) = watch(written: written, length: 12_000, values: [cut], ranges: [NSRange(location: 12_000, length: 0)])
+    XCTAssertNil(prefix.drift, "the written value cut at the cap")
+    let other = String(repeating: "b", count: typeReadbackValueCap)
+    let (different, _, _) = watch(written: written, length: 12_000, values: [cut, other], ranges: [NSRange(location: 12_000, length: 0)])
+    XCTAssertEqual(different.drift, .valueChanged, "another 10,000-unit value")
+    let (differentFirst, _, _) = watch(written: written, length: 12_000, values: [other], ranges: [NSRange(location: 12_000, length: 0)])
+    XCTAssertEqual(differentFirst.drift, .valueChanged, "never landed: the drift at the cap")
+    XCTAssertTrue(writtenValueRead(cut, as: written))
+    XCTAssertFalse(writtenValueRead(other, as: written))
+    XCTAssertTrue(writtenValueRead(cut, as: cut + "x" + String(repeating: "a", count: 10)), "a prefix cut at the cap")
+    XCTAssertFalse(writtenValueRead(String(repeating: "a", count: 9_000), as: written), "a prefix short of the cap is no cut")
+    XCTAssertFalse(writtenValueRead(cut + "a", as: cut), "longer than written is no cut")
+  }
+
+  /// A field that turns secure, or can no longer be classified, is read no further: neither its value nor its caret,
+  /// and the watch ends unconfirmed.
+  func testAFieldTurningSecureDuringTheWatchIsReadNoFurther() {
+    let (turned, valueReads, rangeReads) = watch(written: "NEW359", length: 6, values: ["NEW359"], ranges: [end], closedAt: 3)
+    XCTAssertEqual(turned.drift, .fieldClosed)
+    XCTAssertEqual(valueReads, 2, "only the reads before it turned")
+    XCTAssertEqual(rangeReads, 2)
+    let (atOnce, valueReadsAtOnce, rangeReadsAtOnce) = watch(written: "NEW359", length: 6, values: ["NEW359"], ranges: [end], closedAt: 1)
+    XCTAssertEqual(atOnce.drift, .fieldClosed)
+    XCTAssertEqual(valueReadsAtOnce + rangeReadsAtOnce, 0)
+    XCTAssertTrue(writtenValueFieldClosed(role: nil, subrole: .none), "no role")
+    XCTAssertTrue(writtenValueFieldClosed(role: "AXSecureTextField", subrole: .none))
+    XCTAssertTrue(writtenValueFieldClosed(role: "AXTextField", subrole: .subrole("AXSecureTextField")))
+    XCTAssertTrue(writtenValueFieldClosed(role: "AXTextField", subrole: .failed), "a subrole that cannot be read")
+    XCTAssertFalse(writtenValueFieldClosed(role: "AXTextField", subrole: .none))
+    XCTAssertFalse(writtenValueFieldClosed(role: "AXTextArea", subrole: .subrole("AXSearchField")))
+    let error = valueUnconfirmed(app: "Safari", drift: .fieldClosed)
+    XCTAssertEqual(error.errorName, "valueUnconfirmed")
+    XCTAssertTrue(error.message.contains("turned into a password field or could no longer be read"), error.message)
   }
 
   private let end = NSRange(location: 6, length: 0)
 
   /// The write landed and held: no drift, after the dwell.
   func testAWrittenValueThatHoldsIsConfirmed() {
-    let (held, _) = watch(written: "NEW359", length: 6, values: ["NEW359"], ranges: [end])
+    let (held, _, _) = watch(written: "NEW359", length: 6, values: ["NEW359"], ranges: [end])
     XCTAssertNil(held.drift)
     XCTAssertEqual(held.ms, pendingClickDwellMs)
     // Applied late (the old value first), then held: still confirmed.
-    let (late, _) = watch(written: "NEW359", length: 6, values: ["Old draft", "Old draft", "NEW359"],
+    let (late, _, _) = watch(written: "NEW359", length: 6, values: ["Old draft", "Old draft", "NEW359"],
                           ranges: [NSRange(location: 9, length: 0), NSRange(location: 9, length: 0), end])
     XCTAssertNil(late.drift)
     XCTAssertEqual(late.ms, 2 * pendingClickSampleMs + pendingClickDwellMs)
@@ -251,7 +299,7 @@ final class ClickOrderingTests: XCTestCase {
   /// A late click moving the caret off the written end after the write landed: caretMoved, which set_value answers as
   /// valueUnconfirmed, never ok.
   func testSetValueWithAMovedCaretIsValueUnconfirmed() {
-    let (moved, _) = watch(written: "NEW359", length: 6, values: ["NEW359"], ranges: [end, end, NSRange(location: 3, length: 0)])
+    let (moved, _, _) = watch(written: "NEW359", length: 6, values: ["NEW359"], ranges: [end, end, NSRange(location: 3, length: 0)])
     XCTAssertEqual(moved.drift, .caretMoved)
     XCTAssertEqual(moved.reads, 3)
     let error = valueUnconfirmed(app: "Safari", drift: moved.drift)
@@ -259,16 +307,16 @@ final class ClickOrderingTests: XCTestCase {
     XCTAssertTrue(error.message.contains("caret moved off the end of the new value"), error.message)
     XCTAssertFalse(error.message.contains("NEW359"), "no sentence carries the value")
     // The click landed before the first read: the caret never reads at the end, which at the cap is the drift.
-    let (early, _) = watch(written: "NEW359", length: 6, values: ["NEW359"], ranges: [NSRange(location: 3, length: 0)])
+    let (early, _, _) = watch(written: "NEW359", length: 6, values: ["NEW359"], ranges: [NSRange(location: 3, length: 0)])
     XCTAssertEqual(early.drift, .caretMoved)
     XCTAssertEqual(early.ms, pendingClickCapMs)
   }
 
   /// A value other than the one written after it landed: valueChanged, whether or not its length changed.
   func testAValueChangedAfterTheWriteIsValueUnconfirmed() {
-    let (changed, _) = watch(written: "NEW359", length: 6, values: ["NEW359", "NEW35"], ranges: [end, NSRange(location: 5, length: 0)])
+    let (changed, _, _) = watch(written: "NEW359", length: 6, values: ["NEW359", "NEW35"], ranges: [end, NSRange(location: 5, length: 0)])
     XCTAssertEqual(changed.drift, .valueChanged)
-    let (sameLength, _) = watch(written: "NEW359", length: 6, values: ["NEW359", "NEW358"], ranges: [end])
+    let (sameLength, _, _) = watch(written: "NEW359", length: 6, values: ["NEW359", "NEW358"], ranges: [end])
     XCTAssertEqual(sameLength.drift, .valueChanged, "the same length, other text")
     XCTAssertTrue(valueUnconfirmed(app: "Safari", drift: .valueChanged).message.contains("read another value just after"))
     XCTAssertEqual(valueUnconfirmed(app: "Safari").message,
@@ -279,10 +327,10 @@ final class ClickOrderingTests: XCTestCase {
   /// A field whose value and range cannot be read tells nothing: one read, no drift. A concealed request's value is never
   /// read, only its caret against the written length.
   func testAnUnreadableFieldAndAConcealedValue() {
-    let (unread, _) = watch(written: "NEW359", length: 6, values: [nil], ranges: [nil])
+    let (unread, _, _) = watch(written: "NEW359", length: 6, values: [nil], ranges: [nil])
     XCTAssertNil(unread.drift)
     XCTAssertEqual(unread.reads, 1)
-    let (concealed, valueReads) = watch(written: nil, length: 6, values: ["anything"], ranges: [end, NSRange(location: 0, length: 0)])
+    let (concealed, valueReads, _) = watch(written: nil, length: 6, values: ["anything"], ranges: [end, NSRange(location: 0, length: 0)])
     XCTAssertEqual(valueReads, 0, "a secret's field value is never read")
     XCTAssertEqual(concealed.drift, .caretMoved)
   }

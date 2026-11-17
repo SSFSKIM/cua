@@ -183,6 +183,9 @@ enum WrittenValueDrift: String, Equatable {
   case valueChanged
   /// The field's caret read off the written value's end.
   case caretMoved
+  /// The field turned into a password field, or its role or subrole could not be read, so it was read no further: the
+  /// write is not confirmed.
+  case fieldClosed
 }
 
 /// What the watch after set_value's write found: its reads and time, and the drift that makes it unconfirmed.
@@ -197,10 +200,13 @@ struct WrittenValueWatch: Equatable {
 /// {`length`, 0} (`range`). A read that shows both, of what it can read, has landed the write; once landed, holding
 /// still over `dwellMs` confirms it, and any read off either is the drift. A write still not landed when a further read
 /// would fall past `capMs` answers the drift its last read showed (an app may apply the write late); a field that reads
-/// neither tells nothing and is not held against the write.
-func watchWrittenValue(written: String?, length: Int, value: () -> String?, range: () -> NSRange?, now: () -> Double,
-                       sleep: (Double) -> Void, dwellMs: Double = pendingClickDwellMs, sampleMs: Double = pendingClickSampleMs,
-                       capMs: Double = pendingClickCapMs) -> WrittenValueWatch {
+/// neither tells nothing and is not held against the write. `closed` is asked before every read, as the range wait and
+/// type_text's read-back ask: a field that turned secure or cannot be classified is read no further, its value and
+/// caret unread, and the watch ends unconfirmed (`fieldClosed`). A value read at Chromium's cap
+/// (`readbackMayBeTruncated`) may lack only an end: it counts as the written value only when it is a prefix of it.
+func watchWrittenValue(written: String?, length: Int, closed: () -> Bool, value: () -> String?, range: () -> NSRange?,
+                       now: () -> Double, sleep: (Double) -> Void, dwellMs: Double = pendingClickDwellMs,
+                       sampleMs: Double = pendingClickSampleMs, capMs: Double = pendingClickCapMs) -> WrittenValueWatch {
   struct Sample: Equatable {
     let value: String?
     let range: NSRange?
@@ -211,11 +217,15 @@ func watchWrittenValue(written: String?, length: Int, value: () -> String?, rang
   var landed: (sample: Sample, since: Double)?
   var lastDrift: WrittenValueDrift?
   while true {
+    if closed() {
+      watch.drift = .fieldClosed
+      break
+    }
     let read = Sample(value: written == nil ? nil : value(), range: range())
     watch.reads += 1
     let at = now()
     var drift: WrittenValueDrift?
-    if let found = read.value, let written, !found.utf16.elementsEqual(written.utf16), !readbackMayBeTruncated(found) {
+    if let found = read.value, let written, !writtenValueRead(found, as: written) {
       drift = .valueChanged
     } else if let caret = read.range, caret != end {
       drift = .caretMoved
@@ -243,6 +253,15 @@ func watchWrittenValue(written: String?, length: Int, value: () -> String?, rang
   }
   watch.ms = now() - started
   return watch
+}
+
+/// Whether a value read is the value written: equal in UTF-16 units, or, read at Chromium's cap, the written value cut
+/// there (a strict prefix of it); any other difference near the cap is a difference.
+func writtenValueRead(_ found: String, as written: String) -> Bool {
+  if found.utf16.elementsEqual(written.utf16) { return true }
+  guard readbackMayBeTruncated(found) else { return false }
+  let read = Array(found.utf16), whole = Array(written.utf16)
+  return read.count < whole.count && whole.starts(with: read)
 }
 
 /// What an element action's wait and set_value's watch did, the meta's `pendingClick`.

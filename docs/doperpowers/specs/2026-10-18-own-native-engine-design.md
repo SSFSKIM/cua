@@ -5434,6 +5434,22 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   6. **The model's document**: one sentence after the fourth paragraph's valueUnconfirmed, one after the typing
      paragraph's pressKey wait (the surface inventory's "(2026-11-17, #359)", the copies byte for byte).
   Date/Author: 2026-11-17, cursor235's implementer for #359 (ruling 785).
+- Decision (#359's review, 2026-11-17, `fix/359-click-ordering`; reviewer-high on ef998db6, one P1 and two P2 findings,
+  all verified and accepted; amends "#359" above, items 2 and 3):
+  1. **P1, the starting point itself.** The selection check validated the wait's read, while the snapshot reads the
+     range again and #354's settle can replace it: a click landing in between was adopted and the read-back confirmed
+     text typed at its caret. Now the snapshot's final range, after any settle, must equal select_text's range, else
+     `selectionChanged` with nothing typed (`readbackSnapshot`). Tested with the range moving before the snapshot's own
+     read and during the settle, and with a settle that finds it back (typed over).
+  2. **P2, a value at Chromium's cap.** The watch passed any read that might be cut at the cap; a cut can explain only a
+     missing end, so a read at the cap now counts as the written value only when it is a strict prefix of it
+     (`writtenValueRead`), any other difference `valueChanged`.
+  3. **P2, the field re-classified.** The watch now asks before every read whether the field turned secure or cannot be
+     classified (`writtenValueFieldClosed`: no role, a password role or subrole, a subrole that cannot be read), as the
+     range wait and the read-back do; then it reads neither value nor caret and ends unconfirmed: `valueUnconfirmed`
+     with the new reason `fieldClosed`, since an accepted write that can no longer be checked is "sent, effect not
+     seen".
+  Date/Author: 2026-11-17, cursor235's implementer for #359 (the review of ef998db6).
 
 ## Outcomes & Retrospective
 

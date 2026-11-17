@@ -1304,6 +1304,36 @@ final class TypeReadbackTests: XCTestCase {
     XCTAssertEqual(record(meta)["confirmed"] as? Bool, true)
   }
 
+  /// The click landing after the wait read select_text's range, before the snapshot's own range read or during #354's
+  /// settle: the starting point is not select_text's range, so nothing is typed (the review of ef998db6, P1).
+  func testSelectTextsRangeMovedAfterTheWaitTypesNothing() {
+    for settle in [false, true] {
+      let field = FakeField(value: seed, range: whole)
+      // Without the settle: the wait's read finds the range, the snapshot's finds the click's caret. With it: the
+      // snapshot's read finds the range too, the settle's the caret.
+      field.rangesBeforeTyping = settle ? [whole, whole, clickCaret, clickCaret] : [whole, clickCaret]
+      var posted = 0
+      var meta = meta()
+      XCTAssertThrowsError(try keyTextReadBack(units("NEW359"), concealed: false, settle: settle, baseline: .selection(whole),
+                                               reads: FakeApp(field).reads, checkSource: { _, _ in }, checkIntervention: {},
+                                               post: { _ in posted += 1; return true }, pause: {}, meta: &meta), "settle: \(settle)") {
+        XCTAssertTrue(($0 as? EngineError)?.message.hasPrefix("Nothing was typed") == true, "settle: \(settle)")
+      }
+      XCTAssertEqual(posted, 0, "settle: \(settle)")
+      XCTAssertEqual(field.value, seed, "settle: \(settle)")
+      XCTAssertEqual(record(meta)["reason"] as? String, "selectionChanged", "settle: \(settle)")
+      XCTAssertEqual(baselineRecord(meta)["reads"] as? Int, 1, "the wait itself was met: settle: \(settle)")
+      if settle { XCTAssertEqual(record(meta)["settleReads"] as? Int, 2) }
+    }
+    // Only the final starting point counts: a snapshot read the settle then finds back at select_text's range types over it.
+    let back = FakeField(value: seed, range: whole)
+    back.rangesBeforeTyping = [whole, clickCaret, whole, whole]
+    let (error, meta) = type("NEW359", into: FakeApp(back), settle: true, baseline: .selection(whole))
+    XCTAssertNil(error)
+    XCTAssertEqual(back.value, "NEW359")
+    XCTAssertEqual(record(meta)["settleReads"] as? Int, 2)
+  }
+
   /// select_text's range showing late within the cap is waited for, and typed over.
   func testSelectTextsRangeShowingLateIsWaitedFor() {
     let field = FakeField(value: seed, range: clickCaret)

@@ -105,6 +105,14 @@ func confirmingWrittenValue(app: String, _ refetch: () throws -> Void) throws {
   }
 }
 
+/// Whether the watch after set_value's write reads the field no further (#359, the review of ef998db6, P2): its role
+/// unreadable, or it is a password field by role or subrole, or its subrole cannot be read (`secureTextField` fails
+/// closed).
+func writtenValueFieldClosed(role: String?, subrole: SubroleRead) -> Bool {
+  guard let role else { return true }
+  return secureTextField(role: role, subrole: subrole)
+}
+
 /// The answer of a set_value whose value was written and accepted but whose field could not be found again to confirm
 /// it (ruling 772), of the family that says "sent, effect not seen" (`clickUnconfirmed`, `scrollUnconfirmed`,
 /// `menuUnconfirmed`); with `drift`, one whose field moved off what was written just after, within the window of a
@@ -115,6 +123,7 @@ func valueUnconfirmed(app: String, drift: WrittenValueDrift? = nil) -> EngineErr
   case nil: why = "the field could not be found again to confirm it"
   case .valueChanged?: why = "the field read another value just after, as when a click sent just before lands late"
   case .caretMoved?: why = "the field's caret moved off the end of the new value just after, as a click sent just before does when it lands late, so typing now could go elsewhere in the field"
+  case .fieldClosed?: why = "the field turned into a password field or could no longer be read just after, while a click sent just before may still have been landing, so it was not read to confirm the value"
   }
   return EngineError(name: "valueUnconfirmed",
     "The value was sent to \(app) and accepted, but \(why). Observe the app (take a screenshot or call getAXState()) before any retry, and never retry blindly.")
@@ -158,7 +167,10 @@ extension Engine {
                             let watched = signposted("clickOrdering.valueWatch") {
                               writtenValueWatch(converted, role: stringAttribute(element, kAXRoleAttribute), subrole: subroleRead(element),
                                                 concealed: concealed) { written, length in
-                                watchWrittenValue(written: written, length: length, value: { stringAttribute(element, kAXValueAttribute) },
+                                watchWrittenValue(written: written, length: length, closed: {
+                                  // Re-classified before every read: a field that turned secure or cannot be read is read no further.
+                                  writtenValueFieldClosed(role: stringAttribute(element, kAXRoleAttribute), subrole: subroleRead(element))
+                                }, value: { stringAttribute(element, kAXValueAttribute) },
                                                   range: {
                                   guard let wire = rangeWire(attribute(element, kAXSelectedTextRangeAttribute)), let location = wire["location"],
                                         let length = wire["length"] else { return nil }

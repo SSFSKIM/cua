@@ -76,6 +76,25 @@ func setElementValue(_ value: String, on element: AXUIElement, role: String, ax:
   guard written == .success else { throw EngineError(name: "actionFailed", "The element did not accept the value.") }
 }
 
+/// set_value's re-check after an accepted write (`refetch`): a re-fetch that fails, whatever its refusal (the element
+/// gone, or its metadata changed since it was read, as a Chromium field's placeholder does when the complete mode
+/// arrives, ruling 772), is `valueUnconfirmed`, never a refusal: the value was sent.
+func confirmingWrittenValue(app: String, _ refetch: () throws -> Void) throws {
+  do {
+    try refetch()
+  } catch is EngineError {
+    throw valueUnconfirmed(app: app)
+  }
+}
+
+/// The answer of a set_value whose value was written and accepted but whose field could not be found again to confirm
+/// it (ruling 772), of the family that says "sent, effect not seen" (`clickUnconfirmed`, `scrollUnconfirmed`,
+/// `menuUnconfirmed`).
+func valueUnconfirmed(app: String) -> EngineError {
+  EngineError(name: "valueUnconfirmed",
+    "The value was sent to \(app) and accepted, but the field could not be found again to confirm it. Observe the app (take a screenshot or call getAXState()) before any retry, and never retry blindly.")
+}
+
 extension Engine {
   /// `set_value {app, element, value, concealed?}`.
   func setValue(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
@@ -102,8 +121,11 @@ extension Engine {
       // The write was accepted (setElementValue throws otherwise): the cursor points at the element, read after the write.
       cursor.act(connection: context.connection.id, app: app.key, window: nil, .element(target.element, storedFrame: target.entry.frame))
       // The vendor's re-check after the write: a re-fetch matching without the value, whose result replaces the stored
-      // handle and identity; a failed one propagates, after the write (the interval says it was made).
-      _ = try context.connection.element(token, app: app, lineage: context.lineage ?? "", refetch: .ignoringValue) { ElementResolver.live($0, pid: appPid) }
+      // handle and identity. A failed one is valueUnconfirmed (ruling 772): the write went, accepted, but the field could
+      // not be found again to confirm it (the interval says it was made).
+      try confirmingWrittenValue(app: app.displayName) {
+        _ = try context.connection.element(token, app: app, lineage: context.lineage ?? "", refetch: .ignoringValue) { ElementResolver.live($0, pid: appPid) }
+      }
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

@@ -630,6 +630,60 @@ test('#328: a scroll\'s confirmation rides as cua/scroll, its at-end note reache
   assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null}, 'nothing posted');
 });
 
+test('#354: type_text\'s read-back rides as cua/typeReadback, typeUnconfirmed reaches the model with its excerpt, and press_key says its effect is unconfirmed', async t => {
+  const confirmed = {confirmed: true, snapshotMs: 1.2, pollMs: 21.4, reads: 3};
+  const mismatch = {confirmed: false, reason: 'valueMismatch', snapshotMs: 1.1, pollMs: 1003.2, reads: 201, expectedLength: 8, actualLength: 10};
+  const sentence = 'The text was typed, but the field does not read as expected, so it is not confirmed and some or all of it may have gone in. Observe the field with getAXState() before going on, then use setValue to put it right; do not type the text again. From character 1, expected "word  is"; the field reads "word. . is". The expected text is 8 characters long, the field\'s 10.';
+  let answer = 'confirmed';
+  const {getApp, call, meta} = await session(t, {handlers: {
+    'execute:type_text': () => {
+      if (answer === 'confirmed') return {meta: {...INPUT_META, inputRoute: "2'", entered: 3, typeReadback: confirmed}};
+      throw new EngineFailure(-10005, sentence, 'typeUnconfirmed', {meta: {...INPUT_META, inputRoute: "2'", entered: 4, typeReadback: mismatch}});
+    },
+    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", keyEffect: 'unconfirmed'}}),
+  }});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.typeText('abc'));
+  assert.deepEqual(meta['cua/typeReadback'], confirmed);
+  assert.equal(meta['cua/keyEffect'], null);
+  answer = 'mismatch';
+  await assert.rejects(call(() => app.typeText('  is')), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${sentence}`, 'the whole sentence, the excerpt included');
+    assert.equal(error.errorName, 'typeUnconfirmed');
+    return true;
+  });
+  assert.deepEqual(meta['cua/typeReadback'], mismatch);
+  assert.equal(meta['cua/entered'], 4);
+  await call(() => app.pressKey('super+a'));
+  assert.equal(meta['cua/keyEffect'], 'unconfirmed');
+  assert.equal(meta['cua/typeReadback'], null, 'reset by the next call');
+});
+
+test('#374: a Show Menu\'s confirmation rides as cua/menu, and menuUnconfirmed reaches the model with its sentence, name and meta', async t => {
+  const seen = {seen: 'ancestor', openBefore: 0, polls: 2, ms: 21.4};
+  const unseen = {seen: null, openBefore: 1, polls: 51, ms: 1000.2, actionError: -25204};
+  const unconfirmed = 'The Show Menu action was sent to TextEdit, but no menu was seen to open within 1 s. TextEdit may have shown a menu of its own that accessibility does not expose (a web page\'s own menu, for one), or ignored the request. Observe the app (take a screenshot or call getAXState()) before any retry, and never retry blindly.';
+  const actionMeta = {...INPUT_META, inputRoute: 1, activationGuardMs: undefined, pointUnconfirmed: undefined};
+  let shown = true;
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:perform_secondary_action': () => {
+    if (shown) return {meta: {...actionMeta, menu: seen}};
+    throw new EngineFailure(-10005, unconfirmed, 'menuUnconfirmed', {meta: {...actionMeta, menu: unseen}});
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.performSecondaryAction(2, 'Show Menu'));
+  assert.deepEqual(meta['cua/menu'], seen);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/menu'], null, 'reset by the next call');
+  shown = false;
+  await assert.rejects(call(() => app.performSecondaryAction(2, 'Show Menu')), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${unconfirmed}`, 'the whole sentence');
+    assert.equal(error.errorName, 'menuUnconfirmed');
+    return true;
+  });
+  assert.deepEqual(meta['cua/menu'], unseen);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: 1000, endedAt: 1042}, 'the action was sent');
+});
+
 test('a control build\'s variant rides in cua/nativeEngine, on its results and its input errors alike', async t => {
   const {getApp, call, meta} = await session(t, {identity: {engineVersion: '0.1.0', build: 'b1', variant: 'control-no-inert-click'},
     handlers: {'execute:press_key': () => { throw new EngineFailure(-10005, 'activationFailed', 'activationFailed', {meta: INPUT_META}); }}});

@@ -43,6 +43,8 @@ final class Engine: @unchecked Sendable {
   let routeAdvice = RouteAdviceTracker()
   /// The held activations of menus and focus holds, one per process across connections (MenuSpan.swift, FocusHold.swift).
   let heldActivations = HeldActivations()
+  /// press_key's last post per app, which settles a type_text's snapshot soon after (TypeReadbackSettle.swift, #354).
+  let recentKeys = RecentKeyPosts()
   /// The workspace's real activations and deactivations, which make a held process's activation stale.
   private var activationObservers: [NSObjectProtocol] = []
   /// Whether the Mac is locked now (the session dictionary; replaced in the unit tests).
@@ -61,14 +63,21 @@ final class Engine: @unchecked Sendable {
   let cursorEnabled: Bool
   /// The cursor's diagnostic arm, `cursorDebug` in engine.json as read at launch (Config.swift); nil for none.
   let cursorDebug: CursorDebug?
+  /// The monotonic clock (ms) the web enablement stamps its writes on and the Chromium readiness wait reads (#366,
+  /// ChromiumReadiness.swift), and the sleeper that wait runs on: the system's, replaced in the unit tests.
+  let monotonicClock: () -> Double
+  let pause: (Double) -> Void
   weak var server: Server?
 
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
        screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
        pasteActivation: ActivationSystem = ActivationSystem(), cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true,
-       cursorDebug: CursorDebug? = nil, enablementRecord: EnablementRecord? = nil) {
+       cursorDebug: CursorDebug? = nil, enablementRecord: EnablementRecord? = nil,
+       clock: @escaping () -> Double = monotonicMilliseconds, sleep: @escaping (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }) {
     self.paths = paths
-    self.webAccessibility = WebAccessibility(record: enablementRecord)
+    self.monotonicClock = clock
+    self.pause = sleep
+    self.webAccessibility = WebAccessibility(record: enablementRecord, now: clock)
     self.apps = AppDirectory(usagePath: paths.usage)
     self.routes = routes
     self.cursorEnabled = cursorEnabled
@@ -257,6 +266,19 @@ final class Engine: @unchecked Sendable {
     }
     // The focus hold ends before anything aimed at another app.
     if focusHoldEndsBefore(app: target?.key, heldApp: connection.focusHold.app) { connection.endFocusHold() }
+    // #366: an element action into a Chromium-family app waits out the rest of 2.5 s after the engine's last enablement
+    // write, before the method takes any hold, within the request's deadline (ChromiumReadiness.swift): a window the
+    // deadline cannot wait out is timeoutReached with the input meta, nothing dispatched.
+    if let active {
+      do {
+        _ = try signposted("prologue.chromiumReady") {
+          try awaitChromiumReadiness(method: method, args: args, app: active.app, pid: active.pid, launched: active.generation,
+                                     connection: connection, budgetMs: Double(deadline - unixMilliseconds()))
+        }
+      } catch let error as EngineError {
+        throw withMeta(error, InputMeta(context))
+      }
+    }
     let spanBefore = connection.menuSpan.serial
     defer { if step == .endAfter && connection.menuSpan.serial == spanBefore { connection.endMenuInteraction() } }
     switch method {

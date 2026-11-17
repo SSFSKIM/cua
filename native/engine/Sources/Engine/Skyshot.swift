@@ -201,6 +201,8 @@ extension Engine {
     // connection has enabled the process since (adoptsSettledTree).
     let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
     let enablementsBefore = webAccessibility.enablements(pid: appPid, launched: generation)
+    // When the settles began reading the tree: a settled tree read before the process's Chromium readiness is not adopted.
+    let settlesFrom = monotonicClock()
     for kind in observationSettles(opened: opened, armed: connection.needsSettle.contains(app.key), forced: args["settle"] as? Bool) {
       let prefix = kind == .afterOpen ? "openSettle" : "settle"
       let settleCosts = FetchCosts()
@@ -244,6 +246,19 @@ extension Engine {
     // `freshSince`, as the process's first observation or a write does. Firefox's accessibility comes on at that first
     // contact with nothing written (its attribute then reads true).
     let enabledAt = webAccessibility.freshSince(pid: appPid, launched: generation).flatMap { $0 >= started ? $0 : nil }
+    // Ruling 772 (ChromiumReadiness.swift): a Chromium-family process's tree is read once its complete mode has arrived,
+    // the rest of the window after the last accepted enablement write waited out first, within the deadline. One the
+    // deadline cuts reads anyway, its entries recorded before readiness (`LineageEntry.recordedAt`), which the action's
+    // backstop reads again from their handles.
+    let readiness = signposted("observation.chromiumReady") {
+      timings.time("chromiumReady") {
+        awaitObservationReadiness(app: app, pid: appPid, launched: generation, budgetMs: Double(context.deadline - unixMilliseconds()))
+      }
+    }
+    if readiness.waitedMs > 0 { timings.set("chromiumReadyWaitMs", readiness.waitedMs) }
+    if case .deadline = readiness { timings.set("chromiumReady", "deadline") }
+    let readyAt = chromiumReadyAt(engine: webAccessibility.pageEngine(app.appPath),
+                                  lastWrite: webAccessibility.lastEnablementWrite(pid: appPid, launched: generation))
 
     // The window is there by now when the engine opened the app (waited above); otherwise it is read once.
     guard let window = try timings.time("window", { try awaitPrimaryWindow(of: application, until: unixMilliseconds(), opened: false) }) else {
@@ -312,7 +327,7 @@ extension Engine {
       : nil
     // The settle's reads stand for the tree only when nothing changed it since (adoptsSettledTree).
     let source: ElementSource
-    if let settled, let reused = settled.source, let busyWindow = settled.window,
+    if let settled, let reused = settled.source, let busyWindow = settled.window, !(readyAt.map { settlesFrom < $0 } ?? false),
        adoptsSettledTree(sameWindow: CFEqual(busyWindow, window), enablementsBefore: enablementsBefore, enablementsAfter: enablementsAfter,
                          waited: waited, loadedWebArea: settled.loadedWebArea) {
       source = reused
@@ -328,6 +343,7 @@ extension Engine {
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
                         interactionFlags: interactionFlags, chromium: chromium, visibleFrame: menuRoot == nil ? windowFrame : nil,
                         recordsScreenshot: pendingCapture != nil, clipRereadPoll: clipRereadPoll)
+    walk.revision.recordedAt = monotonicClock()
     timings.time("walk") { walk.run(window: menuRoot ?? window, menuBar: menuBarElement, menuItems: menuItems) }
     walk.revision.menuRoot = menuRoot
     timings.merge(source.costs)

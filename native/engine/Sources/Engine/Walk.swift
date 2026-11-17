@@ -1109,7 +1109,8 @@ final class TreeWalk {
     }
     if inMenu { menuBar.append(node) } else { nodes.append(node) }
     revision.entries[number] = LineageEntry(element: read.element, identity: ElementIdentity(read.data, pid: read.owner), actions: read.actions,
-                                            frame: read.data.frame, firstChild: read.data.children.first, listed: read.data.children.count)
+                                            frame: read.data.frame, firstChild: read.data.children.first, listed: read.data.children.count,
+                                            recordedAt: revision.recordedAt)
     if !inMenu {
       screenshotReads.append(ScreenshotNodeRead(element: read.element, number: number, parent: parent, depth: depth, role: read.data.role,
                                                 title: read.data.title, description: read.data.description, frame: read.data.frame,

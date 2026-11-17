@@ -12,6 +12,20 @@ struct AXOps {
   var frame: (AXUIElement) -> CGRect? = liveFrame
   var parent: (AXUIElement) -> AXUIElement? = { elementAttribute($0, kAXParentAttribute) }
   var children: (AXUIElement) -> [AXUIElement] = { elementList(attribute($0, kAXChildrenAttribute)).map(prepare) }
+  /// The element's children, nil when the read failed (no value or an unsupported attribute is an empty list), for a
+  /// reading that must tell "none" from "unknown" (MenuConfirm.swift's baseline).
+  var childrenRead: (AXUIElement) -> [AXUIElement]? = { element in
+    let (value, error) = copyAttribute(element, kAXChildrenAttribute)
+    if error == .noValue || error == .attributeUnsupported { return [] }
+    return error == .success ? elementList(value).map(prepare) : nil
+  }
+  /// The application's focused element: `readable` false when the read failed, element nil when there is none.
+  var focusedElement: (AXUIElement) -> (element: AXUIElement?, readable: Bool) = { application in
+    let (value, error) = copyAttribute(application, kAXFocusedUIElementAttribute)
+    if error == .noValue || error == .attributeUnsupported { return (nil, true) }
+    guard error == .success, let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return (nil, false) }
+    return (prepare(value as! AXUIElement), true)
+  }
   var actions: (AXUIElement) -> [String] = actionNames(of:)
   var read: (AXUIElement, String) -> CFTypeRef? = { attribute($0, $1) }
   /// An attribute's element value (a scroll area's bars and contents).

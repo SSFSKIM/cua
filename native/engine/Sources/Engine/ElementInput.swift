@@ -241,9 +241,14 @@ extension Engine {
   /// sheet or panel is served by another process than the app) and whose attributed events count as the user's on the
   /// app from now on. A re-fetch walks what the lineage's current revision walked: the recorded menu-bar item when the
   /// observation was rooted there, else the window and the menu bar.
+  /// An entry recorded before the app's Chromium readiness is first read again from its own handle (ruling 772,
+  /// `Lineage.resolve`'s `readiness`), its actions and identity those of the complete mode.
   func targetElement(_ token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext, refetch: Refetch = .ifNeeded) throws -> ElementTarget {
     guard let lineage = context.lineage else { throw EngineError.invalidArguments("lineage is required with an element token") }
-    let entry = try context.connection.element(token, app: app, lineage: lineage, refetch: refetch) { ElementResolver.live($0, pid: appPid) }
+    let readiness = entryReadiness(app: app, pid: appPid, launched: processGeneration(launchDate: app.running?.launchDate, pid: appPid))
+    let entry = try context.connection.element(token, app: app, lineage: lineage, refetch: refetch, readiness: readiness) {
+      ElementResolver.live($0, pid: appPid)
+    }
     let owner = ownerPid(of: entry.element, fallback: appPid)
     try refuseForbiddenOwner(owner)
     actionTargets(owner, app: app, connection: context.connection)

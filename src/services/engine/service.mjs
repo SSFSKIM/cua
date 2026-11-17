@@ -89,6 +89,14 @@
 //   screenshot its coordinates came from is refused, nothing posted (`pointOutsideScreenshot`); a scroll answers success
 //   only when the content under the point was seen to move, or with a note when it was already at its end, else
 //   `scrollUnconfirmed`. Both are input errors with the meta; the scroll's record rides as cua/scroll.
+// - Typed text's read-back (#354): a keyed type_text answers success only once the focused field reads its text in
+//   place of the selection, else `typeUnconfirmed`, an input error with the meta whose sentence (a mismatch's bounded
+//   excerpt included) reaches the model as the engine wrote it; the record rides as cua/typeReadback. A press_key that
+//   posted carries cua/keyEffect "unconfirmed": it answers once its keys are sent.
+// - The Show Menu's confirmation (#374): perform_secondary_action "Show Menu" answers success only once a menu was seen
+//   to open within 1 s, else `menuUnconfirmed`, an input error with the meta; the confirmation's record rides as cua/menu.
+// - set_value's re-check (#366, ruling 772): a value written and accepted whose field cannot be found again after the
+//   write answers `valueUnconfirmed`, an input error with the meta, in place of elementNoLongerValid.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
@@ -119,7 +127,7 @@ const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
-  'cua/pointerEstablish': null, 'cua/stalePoint': null, 'cua/scroll': null,
+  'cua/pointerEstablish': null, 'cua/stalePoint': null, 'cua/scroll': null, 'cua/typeReadback': null, 'cua/keyEffect': null, 'cua/menu': null,
 };
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187; a click into a
 // background web page's text field that focused it instead, #283; a scroll whose content was already at its end, #328),
@@ -131,9 +139,12 @@ const NOTE_CHARS = 500;
 // #188; `coordinateClick`: a coordinate click's placement from the screenshot point to the posted events, #259;
 // `pointerEstablish`: a left click's establishment of a Chromium page tree not yet seen, {ms, webAreaFound, rehits}, #288;
 // `stalePoint`: the stale-point guard's verdict at a coordinate pointer's point, #296; `scroll`: a scroll's confirmation,
-// the container under the point read before and after the wheel, the move seen, the end, the fallback's bar write, #328).
+// the container under the point read before and after the wheel, the move seen, the end, the fallback's bar write, #328;
+// `typeReadback`: a keyed type_text's read-back of the focused field, confirmed or why not, its cost, and on a mismatch
+// both lengths, value-free, #354; `keyEffect`: "unconfirmed" on a press_key that posted, whose keys' effect is not
+// confirmed, #354; `menu`: a Show Menu's confirmation, where the new menu was seen or that none was, and the wait, #374).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
-  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll'];
+  'elementClick', 'coordinateClick', 'pointerEstablish', 'stalePoint', 'scroll', 'typeReadback', 'keyEffect', 'menu'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application

@@ -5591,6 +5591,30 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      focus, wait on a hosted run. A minimized Chromium window's web field also takes this route, where main skipped the
      fallback and answered ok unread.
   Date/Author: 2026-11-17, cursor235's implementer for #390.
+- Decision (#390's review, 2026-11-17, `fix/390-value-without-focus`; the review of c236f268, two P2 findings, both
+  accepted; amends "#390" above, items 3 and 5): **the read-back confirms only an exact read, and a sensitive set_value
+  reads no AXValue anywhere on its path, on every route.**
+  1. **A cut read never confirms** (`writtenValueMatches`). Item 3 took #359's rule, under which a read at Chromium's
+     10,000 cap that is a strict prefix of the write counts. There it only means no drift was seen, the write proven
+     otherwise; here the read-back is the only proof the write landed, and a cut read cannot show its end did. So a
+     string matches only when equal in UTF-16 units; a read at the cap shorter than the write is its own result,
+     `possiblyTruncated`, and answers `valueUnconfirmed` ("the field holds more text than accessibility reports in
+     full"). #359's watch keeps its rule.
+  2. **No AXValue read for a secret or a password field** (`setValueReadsValue`, ValueSetting.swift). Main read it on
+     every route, the foreground's included, in three places: the token's re-reads before the write (an invalidated
+     re-read, the scroll's `.always`, #366's refresh from the handle), the coercion's read of the current value, and the
+     `.ignoringValue` re-check after the write, whose `ElementSource.publicData` requested AXValue and whose walk
+     (`matching`) read it of every element when the handle no longer matched. Now, for a concealed request, or a field
+     whose recorded identity is a password field (role or subrole AXSecureTextField), every one of those resolutions
+     takes a source that requests no AXValue (`ElementSource.readsValue`, `ElementResolver.live`'s `readsValue`), which
+     also drops any value a read answers and marks the data `valueUnread`; the coercion takes the string type without a
+     read; and a field that reads secure once resolved, or cannot be classified, takes the same for the coercion and the
+     re-check. The renewed identity keeps no value (`ElementIdentity.valueUnread`), and a match leaves the value out
+     when either side has none, so the token still resolves for a later action that re-reads the field with its value.
+     A concealed value is thereby always written as a string.
+  3. **Not changed:** the observation itself still reads every element's AXValue as it walks, a password field's
+     included (outside set_value; its value is what the app exposes there).
+  Date/Author: 2026-11-17, cursor235's implementer for #390 (the review of c236f268).
 
 ## Outcomes & Retrospective
 

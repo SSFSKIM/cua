@@ -243,11 +243,14 @@ extension Engine {
   /// observation was rooted there, else the window and the menu bar.
   /// An entry recorded before the app's Chromium readiness is first read again from its own handle (ruling 772,
   /// `Lineage.resolve`'s `readiness`), its actions and identity those of the complete mode.
-  func targetElement(_ token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext, refetch: Refetch = .ifNeeded) throws -> ElementTarget {
+  ///
+  /// `readsValue` false (#390, a sensitive set_value): every re-read and re-fetch here leaves AXValue unread.
+  func targetElement(_ token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext, refetch: Refetch = .ifNeeded,
+                     readsValue: Bool = true) throws -> ElementTarget {
     guard let lineage = context.lineage else { throw EngineError.invalidArguments("lineage is required with an element token") }
     let readiness = entryReadiness(app: app, pid: appPid, launched: processGeneration(launchDate: app.running?.launchDate, pid: appPid))
     let entry = try context.connection.element(token, app: app, lineage: lineage, refetch: refetch, readiness: readiness) {
-      ElementResolver.live($0, pid: appPid)
+      ElementResolver.live($0, pid: appPid, readsValue: readsValue)
     }
     let owner = ownerPid(of: entry.element, fallback: appPid)
     try refuseForbiddenOwner(owner)
@@ -259,9 +262,9 @@ extension Engine {
   /// every element action that positions passes (click, perform_secondary_action, set_value, an element scroll). The
   /// in-flight intervention check runs before each scroll operation.
   func positionedTarget(_ target: ElementTarget, token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext,
-                        guarding: InterventionGuard) throws -> ElementTarget {
+                        guarding: InterventionGuard, readsValue: Bool = true) throws -> ElementTarget {
     try scrolledIntoView(target, ax: .live, beforeMutating: guarding.checkInFlight) {
-      try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always)
+      try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always, readsValue: readsValue)
     }
   }
 

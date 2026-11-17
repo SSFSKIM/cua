@@ -55,6 +55,9 @@ enum UnfocusedValueResult: String, Equatable {
   case confirmed
   /// The field read a value, never the one written within the budget.
   case mismatch
+  /// Its last read sat at Chromium's cap shorter than the value written (`readbackMayBeTruncated`): a cut read, which
+  /// cannot show the rest landed.
+  case possiblyTruncated
   /// No read answered a value.
   case unreadable
   /// A concealed request (a substituted secret): never read back.
@@ -94,7 +97,7 @@ func unfocusedValueReadback(_ written: CFTypeRef, concealed: Bool, closed: () ->
       readback.result = .confirmed
       break
     }
-    if found != nil { readback.result = .mismatch }
+    if found != nil { readback.result = writtenValueCut(found, written) ? .possiblyTruncated : .mismatch }
     if now() - started + sampleMs > budgetMs { break }
     sleep(sampleMs)
   }
@@ -102,19 +105,30 @@ func unfocusedValueReadback(_ written: CFTypeRef, concealed: Bool, closed: () ->
   return readback
 }
 
-/// Whether a value read is the value written: a string written compares as text, a string or an attributed string
-/// read, by #359's set_value watch rule (ClickOrdering.swift `writtenValueRead`: UTF-16 equal, or a strict prefix at
-/// Chromium's cap); any other value (a number, a Boolean, a date) by CFEqual. Nothing read is no match.
+/// Whether a value read is the value written, exactly: a string written equal in UTF-16 units to a string or an
+/// attributed string read; any other value (a number, a Boolean, a date) by CFEqual. Nothing read is no match. Unlike
+/// #359's watch (ClickOrdering.swift `writtenValueRead`), a read cut at Chromium's cap never counts: here the read is
+/// the only proof the write landed, and a cut read cannot show its end did.
 func writtenValueMatches(_ found: CFTypeRef?, _ written: CFTypeRef) -> Bool {
   guard let found else { return false }
   guard CFGetTypeID(written) == CFStringGetTypeID() else { return CFEqual(found, written) }
-  let text: String
+  guard let text = readText(found) else { return false }
+  return text.utf16.elementsEqual((written as! String).utf16)
+}
+
+/// Whether a read is a string at Chromium's cap shorter than the string written (`readbackMayBeTruncated`).
+func writtenValueCut(_ found: CFTypeRef?, _ written: CFTypeRef) -> Bool {
+  guard let found, CFGetTypeID(written) == CFStringGetTypeID(), let text = readText(found) else { return false }
+  return readbackMayBeTruncated(text) && text.utf16.count < (written as! String).utf16.count
+}
+
+/// A string or an attributed string read, as text; nil for any other value.
+private func readText(_ found: CFTypeRef) -> String? {
   switch CFGetTypeID(found) {
-  case CFStringGetTypeID(): text = found as! String
-  case CFAttributedStringGetTypeID(): text = (found as! NSAttributedString).string
-  default: return false
+  case CFStringGetTypeID(): return (found as! String)
+  case CFAttributedStringGetTypeID(): return (found as! NSAttributedString).string
+  default: return nil
   }
-  return writtenValueRead(text, as: written as! String)
 }
 
 /// The unfocused write's terms for `setElementValue`: the refusal a write the field does not accept answers (main's
@@ -131,6 +145,7 @@ func unfocusedValueAnswer(_ readback: UnfocusedValueReadback, app: String) -> En
   switch readback.result {
   case .confirmed: return nil
   case .mismatch: why = "the field does not read back as written"
+  case .possiblyTruncated: why = "the field holds more text than accessibility reports in full"
   case .unreadable: why = "the field's value could not be read back"
   case .concealed: why = "a concealed value is never read back"
   case .passwordField: why = "it is a password field, whose value is never read"

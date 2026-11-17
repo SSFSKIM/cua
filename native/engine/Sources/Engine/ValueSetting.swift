@@ -73,15 +73,18 @@ let valueNotSettable = EngineError(name: "valueNotSettable", "Cannot set a value
 /// the field does not accept with its refusal, and reads an accepted one back before `afterWrite`, the record in the
 /// meta; answers the read-back, which the caller turns into its answer once its re-check has run
 /// (`unfocusedValueAnswer`). Nil otherwise.
+///
+/// `readsValue` false (#390, `setValueReadsValue`): the coercion reads no AXValue, and the value is written as a string.
 @discardableResult
-func setElementValue(_ value: String, on element: AXUIElement, role: String, ax: AXOps, meta: inout InputMeta,
+func setElementValue(_ value: String, on element: AXUIElement, role: String, readsValue: Bool = true, ax: AXOps, meta: inout InputMeta,
                      focus: (inout InputMeta) throws -> Void, beforeWrite: (inout InputMeta) -> Void = { _ in },
                      afterWrite: (CFTypeRef, inout InputMeta) -> Void = { _, _ in },
                      checkInFlight: () throws -> Void, acted: () -> Void,
                      withoutFocus: UnfocusedValueWrite? = nil) throws -> UnfocusedValueReadback? {
   guard ax.isSettable(element, kAXValueAttribute) else { throw valueNotSettable }
   try focus(&meta)
-  let converted = try coercedValue(value, to: valueKind(of: ax.read(element, kAXValueAttribute), role: role, subrole: ax.subrole(element)))
+  let kind = readsValue ? valueKind(of: ax.read(element, kAXValueAttribute), role: role, subrole: ax.subrole(element)) : ValueKind.string
+  let converted = try coercedValue(value, to: kind)
   beforeWrite(&meta)
   try checkInFlight()
   var written = AXError.failure
@@ -103,6 +106,15 @@ func writtenValueWatch(_ converted: CFTypeRef, role: String?, subrole: SubroleRe
         !secureTextField(role: role, subrole: subrole) else { return nil }
   let text = converted as! String
   return watch(concealed ? nil : text, (text as NSString).length)
+}
+
+/// #390: whether a set_value may read the field's AXValue anywhere on its path (its re-reads before the write, the
+/// coercion, the re-fetch after it): never for a concealed request, nor for a password field, by the identity the
+/// observation recorded (role or subrole AXSecureTextField) and again by its live role and subrole once resolved
+/// (`liveClosed`, which a role or subrole that cannot be read also closes).
+func setValueReadsValue(concealed: Bool, recordedRole: String?, recordedSubrole: String?, liveClosed: Bool = false) -> Bool {
+  guard !concealed, !liveClosed else { return false }
+  return !secureTextField(role: recordedRole, subrole: recordedSubrole.map(SubroleRead.subrole) ?? .none)
 }
 
 /// set_value's re-check after an accepted write (`refetch`): a re-fetch that fails, whatever its refusal (the element
@@ -149,9 +161,17 @@ extension Engine {
     var meta = InputMeta(context)
     do {
       let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
-      let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
+      // #390: a concealed value or a password field is never read, on any route: not by a re-read or re-fetch of the
+      // token, not by the coercion, not by the re-check after the write.
+      let concealed = (args["concealed"] as? NSNumber)?.boolValue ?? false
+      let recorded = tokenNumber(token).flatMap { context.connection.lineages[app.key]?.entry($0)?.identity }
+      let readsBefore = setValueReadsValue(concealed: concealed, recordedRole: recorded?.role, recordedSubrole: recorded?.subrole)
+      let resolved = try targetElement(token, app: app, appPid: appPid, context: context, readsValue: readsBefore)
       meta.inputRoute = .action
-      let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
+      let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding,
+                                        readsValue: readsBefore)
+      let readsValue = readsBefore && setValueReadsValue(concealed: concealed, recordedRole: nil, recordedSubrole: nil,
+        liveClosed: writtenValueFieldClosed(role: stringAttribute(target.element, kAXRoleAttribute), subrole: subroleRead(target.element)))
       // Once the element is known settable: route 3's held activation when the app does not believe it has focus
       // (FocusHold.swift), before the focus, so a focusing click finds the app believing itself active.
       let route = actionRoute(for: target, app: app, connection: context.connection)
@@ -162,7 +182,6 @@ extension Engine {
       let plan = valueFocusPlan(element, needsFocus: fieldNeedingFocus(element, ax: .live), engine: engine, desktop: context.connection.desktop,
                                 route: route, foregroundOverride: routeFourOverride(app.bundleIdentifier, routes: routes),
                                 roleOf: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) })
-      let concealed = (args["concealed"] as? NSNumber)?.boolValue ?? false
       let withoutFocus = plan != .withoutFallback ? nil : UnfocusedValueWrite(refusal: backgroundClickRefused(app.displayName, engine: engine)) { written in
         signposted("setValue.unfocusedReadback") {
           unfocusedValueReadback(written, concealed: concealed, closed: {
@@ -178,7 +197,7 @@ extension Engine {
       // route posts none of its own, so only an earlier click arms the window there.
       var pending = false
       var drift: WrittenValueDrift?
-      let readback = try setElementValue(value, on: element, role: target.entry.identity.role, ax: .live, meta: &meta,
+      let readback = try setElementValue(value, on: element, role: target.entry.identity.role, readsValue: readsValue, ax: .live, meta: &meta,
                           focus: { meta in
                             try prepareValueFocus(plan, focusWrite: {
                               try focusFieldIfNeeded(element, bundleIdentifier: app.bundleIdentifier, ax: .live, beforeMutating: guarding.checkInFlight) {}
@@ -220,7 +239,9 @@ extension Engine {
       // handle and identity. A failed one is valueUnconfirmed (ruling 772): the write went, accepted, but the field could
       // not be found again to confirm it (the interval says it was made).
       try confirmingWrittenValue(app: app.displayName) {
-        _ = try context.connection.element(token, app: app, lineage: context.lineage ?? "", refetch: .ignoringValue) { ElementResolver.live($0, pid: appPid) }
+        _ = try context.connection.element(token, app: app, lineage: context.lineage ?? "", refetch: .ignoringValue) {
+          ElementResolver.live($0, pid: appPid, readsValue: readsValue)
+        }
       }
       // #359: after the re-fetch, which keeps the token resolvable, never ok over a field that moved off the write.
       if let drift { throw valueUnconfirmed(app: app.displayName, drift: drift) }
